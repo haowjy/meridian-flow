@@ -63,7 +63,7 @@ export function reversalRefusalCopy(refusal: ReversalRefusal, names?: OwnerNames
       return t`This file is binary, so this change can't be reversed.`;
     case "permission_denied":
       return t`This document's Work is archived. Unarchive the Work to reverse this change.`;
-    case "location_taken":
+    case "ancestor_taken":
     case "folder_missing":
     case "superseded":
       return treeFaultCopy(refusal.status, refusal.direction, refusal.at ?? null, names);
@@ -92,14 +92,14 @@ function treeFaultCopy(
   const place = at ? documentLocationName(at, names) : null;
   const redo = direction === "redo";
   switch (fault) {
-    case "location_taken":
+    case "ancestor_taken":
       if (place)
         return redo
-          ? t`Can't redo: ${place} is already taken. Move or rename what's there, then try again.`
-          : t`Can't undo: ${place} is already taken. Move or rename what's there, then try again.`;
+          ? t`Can't redo: a document blocks the folder path to ${place}. Move it, then try again.`
+          : t`Can't undo: a document blocks the folder path to ${place}. Move it, then try again.`;
       return redo
-        ? t`Can't redo: its location is already taken. Move or rename what's there, then try again.`
-        : t`Can't undo: its location is already taken. Move or rename what's there, then try again.`;
+        ? t`Can't redo: a document blocks its folder path. Move it, then try again.`
+        : t`Can't undo: a document blocks its folder path. Move it, then try again.`;
     case "folder_missing":
       return redo
         ? t`Can't redo: the folder it would move to is gone.`
@@ -129,8 +129,8 @@ function reversalRetryCopy(direction: ReversalDirection): string {
 /** Why one part of a reversal stayed, beside its excerpts or its document's name. */
 export function skipCauseCopy(cause: TurnInverseSkipCause): string {
   switch (cause) {
-    case "location_taken":
-      return t`Its location is taken`;
+    case "ancestor_taken":
+      return t`A document blocks its folder path`;
     case "folder_missing":
       return t`Its folder is gone`;
     case "superseded":

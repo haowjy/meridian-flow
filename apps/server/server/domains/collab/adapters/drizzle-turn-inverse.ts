@@ -14,6 +14,7 @@ import {
   type BranchId,
   type BranchTreeFacts,
   type BranchTreeTransition,
+  type ContextSourceId,
   type DocumentId,
   type FolderId,
   isLiveTransition,
@@ -61,6 +62,8 @@ import {
 } from "../../context/tree/live-tree-state.js";
 import { acquireTreeScope, TreeScopeChangedError } from "../../context/tree/mutation-scope.js";
 import { readRemovalRecords, restoreDocument } from "../../context/tree/removal.js";
+import { createTreeReader } from "../../context/tree/tree-view.js";
+import { loadFolderIdentityRows } from "../../context/tree/tree-view-sql.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { type Attempt, runBoundedAttempts } from "../domain/draft-attempts.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
@@ -86,6 +89,7 @@ import {
   withCurrentFolders,
 } from "../domain/tree-inverse.js";
 import {
+  type CommittedTreeLanding,
   createTurnInverseService,
   type InverseDocument,
   type PreparedDocumentInverse,
@@ -461,6 +465,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const handles: string[] = [];
       const deliveries: (() => Promise<void>)[] = [];
       const skips: TurnInverseSkip[] = [];
+      const landings: CommittedTreeLanding[] = [];
       const treeRuns = sequence.flatMap(({ plan, step }) =>
         step.kind === "tree" ? [{ document: plan.document, planned: step.planned }] : [],
       );
@@ -508,7 +513,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                     : await commitTextStep(entry, step, kind, userId, query);
                 if (typeof outcome === "string") {
                   if (outcome) handles.push(outcome);
-                } else skips.push(outcome);
+                } else if ("kind" in outcome) skips.push(outcome);
+                else {
+                  if (outcome.handle) handles.push(outcome.handle);
+                  if (outcome.landing) landings.push(outcome.landing);
+                }
               }
               for (const entry of documents) await settleDocument(entry, kind, query, deliveries);
             },
@@ -521,6 +530,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         handles,
         updates: documents.flatMap((entry) => entry.updates.map(({ update }) => update)),
         skips,
+        landings,
         reversed: new Map(documents.map((entry) => [entry.documentId, entry.reversed])),
       };
     },
@@ -587,7 +597,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     kind: "undo" | "redo" | "revert" | "rollback",
     userId: UserId | undefined,
     query: TurnInverseQuery,
-  ): Promise<string | TurnInverseSkip> {
+  ): Promise<{ handle: string; landing?: CommittedTreeLanding } | TurnInverseSkip> {
     const { planned } = step;
     const document = entry.plan.document;
     try {
@@ -595,7 +605,30 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         const transition = isLiveTransition(planned)
           ? await commitLiveTransition(entry, planned, userId)
           : await commitBranchTransition(entry, planned, query);
-        return recordStep(entry, step, { transition }, kind, userId, query);
+        const landedAt = await transitionAddress(entry.documentId, transition);
+        const requestedAt = requestedLanding(planned);
+        const handle = await recordStep(
+          entry,
+          step,
+          { transition, ...(landedAt ? { landedAt } : {}) },
+          kind,
+          userId,
+          query,
+        );
+        return {
+          handle,
+          ...(landedAt && requestedAt && landedAt !== requestedAt
+            ? {
+                landing: {
+                  documentId: entry.documentId,
+                  handle: planned.entry.wId === null ? "" : editHandle(planned.entry.wId),
+                  action: planned.op === "restore" ? ("restored" as const) : ("moved" as const),
+                  requestedAt,
+                  landedAt,
+                },
+              }
+            : {}),
+        };
       });
     } catch (cause) {
       if (!(cause instanceof TreeFault)) throw cause;
@@ -609,6 +642,28 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         cause: cause.fault,
       };
     }
+  }
+
+  /** The address the committed transition exposes in its own live or branch view. */
+  async function transitionAddress(
+    documentId: DocumentId,
+    transition: TreeTransition,
+  ): Promise<string | null> {
+    const view = isLiveTransition(transition)
+      ? ({ kind: "live" } as const)
+      : ({ kind: "branch", branchId: transition.destination.branchId } as const);
+    const status = (await createTreeReader(input.db).identityStatus(view, [documentId])).get(
+      documentId,
+    );
+    return status?.kind === "visible" ? status.address.uri : null;
+  }
+
+  /** The recorded address this inverse intended to restore or move to. */
+  function requestedLanding(planned: PlannedTreeInverse): string | null {
+    if (planned.op === "delete") return null;
+    return planned.direction === "invert"
+      ? planned.entry.tree.shownAt
+      : (planned.entry.tree.landedAt ?? planned.entry.tree.shownAt);
   }
 
   /**
@@ -701,6 +756,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         ...committed.transition,
         op: step.planned.op,
         shownAt: entry.plan.document.uri,
+        ...(committed.landedAt ? { landedAt: committed.landedAt } : {}),
         seq: await nextEditSeq(db()),
         targets: [{ editId: step.planned.entry.editId, direction: step.planned.direction }],
       };
@@ -760,10 +816,17 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           { documentId, from: before.at, to: after.at },
           deps,
         );
-        return moved.kind === "moved" ? null : moved.kind;
+        return moved.kind === "moved"
+          ? null
+          : moved.kind === "ancestor_taken"
+            ? "ancestor_taken"
+            : moved.kind;
       }
       case "restore": {
         if (before.living) throw new Error("A restore inverse starts from a removal");
+        if (!after.living) throw new Error("A restore inverse ends at a placement");
+        const at = await restoreTarget(after.at);
+        if (!at) return "folder_missing";
         const restored = await restoreDocument(
           input.db,
           {
@@ -772,11 +835,16 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               time: new Date(before.removal.time),
               locationVersion: BigInt(before.removal.locationVersion),
             },
+            at,
           },
           deps,
         );
         if (restored.kind === "restored") return null;
-        return restored.kind === "already_living" ? "superseded" : restored.kind;
+        return restored.kind === "already_living"
+          ? "superseded"
+          : restored.kind === "ancestor_taken"
+            ? "ancestor_taken"
+            : restored.kind;
       }
       case "delete": {
         if (!before.living) throw new Error("A delete inverse starts from a placement");
@@ -786,6 +854,31 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         return null;
       }
     }
+  }
+
+  /** A recorded placement as placement's live coordinates, resolving a later absorption now. */
+  async function restoreTarget(at: TreePlacement) {
+    if (!at.folderId)
+      return at.rootSourceId
+        ? {
+            contextSourceId: at.rootSourceId as ContextSourceId,
+            parentFolderId: null,
+            name: at.name,
+            extension: at.extension,
+          }
+        : null;
+    const requested = at.folderId as FolderId;
+    const folderId =
+      (await resolveAbsorbedFolders(input.db, [requested])).get(requested) ?? requested;
+    const [folder] = await loadFolderIdentityRows(db(), [folderId]);
+    return folder && !folder.deleted
+      ? {
+          contextSourceId: folder.contextSourceId,
+          parentFolderId: folderId,
+          name: at.name,
+          extension: at.extension,
+        }
+      : null;
   }
 
   /**
@@ -1087,7 +1180,7 @@ type InverseCapture = {
 /** What a step's payload committed, for `recordStep`: its text receipts, or its tree transition. */
 type CommittedStep =
   | { draftId: string | null; receipts: ReceiptWrite["receipts"] }
-  | { transition: TreeTransition };
+  | { transition: TreeTransition; landedAt?: string };
 
 type PlannedInverse = {
   plan: PreparedDocumentInverse;

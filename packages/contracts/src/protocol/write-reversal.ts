@@ -55,11 +55,19 @@ export interface WorkReversalResult {
 }
 
 /**
- * Why a move or delete couldn't be reversed where it stands now: another document holds its
- * location, its folder is gone, or it was moved or deleted again since. A turn reversal that
+ * Why a move or delete couldn't be reversed where it stands now: a document blocks an ancestor
+ * folder, its folder is gone, or it was moved or deleted again since. A turn reversal that
  * reversed nothing else answers with it as its status.
  */
-export type TreeReversalFault = "location_taken" | "folder_missing" | "superseded";
+export type TreeReversalFault = "ancestor_taken" | "folder_missing" | "superseded";
+
+/** A move or restore that committed somewhere other than the recorded destination. */
+export type TreeReversalLanding = {
+  documentId: string;
+  action: "moved" | "restored";
+  requestedAt: string;
+  landedAt: string;
+};
 
 /** Why one part of a turn reversal stayed, for the app to word. */
 export type TurnInverseSkipCause =
@@ -93,6 +101,7 @@ export type TurnInverseSkip = {
 
 export interface ReversalOutcome {
   skips?: TurnInverseSkip[];
+  landings?: TreeReversalLanding[];
   acceptedParts?: number;
   status: WriteStatus | TreeReversalFault;
   documents: DocumentReversalResult[];

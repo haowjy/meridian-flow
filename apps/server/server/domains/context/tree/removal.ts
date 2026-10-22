@@ -205,13 +205,13 @@ export type RestoreOutcome =
   /** A different removal is current: an Undo of one delete never undoes a later one. */
   | { kind: "superseded" }
   /** A document holds a path on the folder chain. */
-  | { kind: "location_taken"; at: string; occupant: NodeRef }
+  | { kind: "ancestor_taken"; at: string; occupant: NodeRef }
   /** Not a document's own delete: a discard, a Work cascade, or a deleted source or project. */
   | { kind: "refused" };
 
 /** A placement fault, carried out of the savepoint it rolls back. */
 class RestoreFault extends Error {
-  constructor(readonly outcome: Extract<RestoreOutcome, { kind: "location_taken" | "refused" }>) {
+  constructor(readonly outcome: Extract<RestoreOutcome, { kind: "ancestor_taken" | "refused" }>) {
     super(`Restore faulted: ${outcome.kind}`);
   }
 }
@@ -311,13 +311,13 @@ export async function restoreDocument(
       if (!landed.ok) {
         // A non-hidden document's chain holds no hidden folder, so only a taken path faults; a
         // drafted move's folders are the branch's, which placement reveals.
-        if (landed.error.code !== "path_taken") {
+        if (landed.error.code !== "ancestor_taken") {
           // A drafted move's hidden folder can be gone since; the document's own chain can't.
           if (input.at) throw new RestoreFault({ kind: "refused" });
           throw new Error(`Restore of ${input.documentId} met a broken folder chain`);
         }
         throw new RestoreFault({
-          kind: "location_taken",
+          kind: "ancestor_taken",
           at: landed.error.at,
           occupant: landed.error.occupant,
         });

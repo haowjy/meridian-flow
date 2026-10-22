@@ -568,6 +568,10 @@ msgstr ""
 msgid "A chat you had open was deleted."
 msgstr ""
 
+#: src/features/chat/turn-receipt-copy.ts
+msgid "A document blocks its folder path"
+msgstr ""
+
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "A document blocks part of this location. Move or rename it, then apply again."
 msgstr ""
@@ -1060,8 +1064,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't redo: {place} is already taken. Move or rename what's there, then try again."
-msgstr ""
+#~ msgid "Can't redo: {place} is already taken. Move or rename what's there, then try again."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: {place} was moved or deleted after you undid this change."
@@ -1072,6 +1076,14 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
+msgid "Can't redo: a document blocks its folder path. Move it, then try again."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Can't redo: a document blocks the folder path to {place}. Move it, then try again."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
 #~ msgid "Can't redo: another document is at {place}. Move or rename that document, then try again."
 #~ msgstr ""
 
@@ -1080,8 +1092,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't redo: its location is already taken. Move or rename what's there, then try again."
-msgstr ""
+#~ msgid "Can't redo: its location is already taken. Move or rename what's there, then try again."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: the document was moved or deleted after you undid this change."
@@ -1104,8 +1116,8 @@ msgid "Can't undo"
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't undo: {place} is already taken. Move or rename what's there, then try again."
-msgstr ""
+#~ msgid "Can't undo: {place} is already taken. Move or rename what's there, then try again."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't undo: {place} was moved or deleted after this change."
@@ -1116,6 +1128,14 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
+msgid "Can't undo: a document blocks its folder path. Move it, then try again."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Can't undo: a document blocks the folder path to {place}. Move it, then try again."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
 #~ msgid "Can't undo: another document is at {place}. Move or rename that document, then try again."
 #~ msgstr ""
 
@@ -1124,8 +1144,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't undo: its location is already taken. Move or rename what's there, then try again."
-msgstr ""
+#~ msgid "Can't undo: its location is already taken. Move or rename what's there, then try again."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't undo: the document was moved or deleted after this change."
@@ -2719,8 +2739,8 @@ msgid "Its folder is gone"
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Its location is taken"
-msgstr ""
+#~ msgid "Its location is taken"
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its paragraph was removed"
@@ -3075,6 +3095,11 @@ msgstr ""
 #. placeholder {0}: folder ?? ""
 #: src/features/project/context/LinkUpdateNote.tsx
 msgid "Moved to {0}"
+msgstr ""
+
+#. placeholder {0}: documentLocationName(landing.landedAt, names)
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Moved to {0}."
 msgstr ""
 
 #: src/features/chat/useQueueControls.ts
@@ -3852,6 +3877,11 @@ msgstr ""
 #. placeholder {0}: work.name
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore {0}"
+msgstr ""
+
+#. placeholder {0}: documentDisplayName(landing.landedAt)
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Restored as {0}."
 msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx

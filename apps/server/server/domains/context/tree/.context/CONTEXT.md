@@ -177,7 +177,8 @@ carries the writer's `restore` (D79). A living document answers
 answer `refused`: a Work's own Restore owns its cascade. It places the document
 through `placeLive` (placement's ancestry and one name-claim rule: a living
 folder at a path is reused, a deleted one restored). A taken leaf counts up to
-the free name; a document blocking an ancestor still answers `location_taken`.
+the free name; the inverse boundary reports a document blocking an ancestor as
+`folder_blocked`.
 It settles arrivals and refreshes the catalog through ports its caller passes,
 and never touches a draft.
 
