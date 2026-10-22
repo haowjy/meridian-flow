@@ -45,7 +45,8 @@ Closed diagram fences draw through the Editor's sanitized provider boundary;
 open fences stay source, including list/quote-contained fences. Verify that
 quoted or four-space-indented delimiters inside a top-level fence stay literal
 code. Checkboxes and ordinary bracketed text must not disable settled-block reuse;
-actual link reference definitions still require whole-document parsing. Chat
+link reference definitions patch only earlier links whose normalized labels they
+resolve, while duplicate definitions keep the first definition authoritative. Chat
 images use the Editor's positive browser-source allowlist; unavailable sources
 show their alt text without fetching an app-origin or disallowed URL.
 
