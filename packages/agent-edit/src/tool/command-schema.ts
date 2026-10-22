@@ -3,7 +3,10 @@
 // Each contract is built twice from the same fields: the model-facing tool input
 // names the document `path`, and the engine command names it `file` and adds the
 // host-only `documentId` and `tool_use_id`. Neither projection renames fields.
+// `move` and `delete` change where a whole document lives, not what it says, so only
+// the tool input has them: the host runs them, never the engine.
 import { z } from "zod";
+import { splitDocumentFile } from "../document-address.js";
 import { parseEditHandle } from "../ports/update-journal.js";
 import { type CopySourceFields, copySourceIssues } from "./copy-rules.js";
 import { type SelectorCommand, type SelectorFields, selectorIssues } from "./selector-rules.js";
@@ -164,7 +167,7 @@ const MUTATION_BRANCHES = {
   },
   remove: {
     description:
-      "Remove the blocks selected by `in` or a `#heading-slug` in `path`. No command deletes a whole document: if asked to, tell the user you can't, and don't empty it.",
+      "Remove the blocks selected by `in` or a `#heading-slug` in `path`; to delete the whole document, use `delete`.",
     fields: { in: BlockSelectorSchema.optional() },
   },
   undo: {
@@ -184,7 +187,50 @@ const MUTATION_BRANCHES = {
   },
 } as const;
 
+/** The host's whole-document commands (D25, D38): `path` is what the command changes. */
+const NAMESPACE_BRANCHES = {
+  move: {
+    description:
+      "Move or rename the whole document at `from.path` to `path`. Its identity, content and history stay the same. Links to it follow the move, so don't edit them.",
+    fields: {
+      from: z.object({ path: SOURCE_PATH }).strict().describe("The document to move."),
+    },
+  },
+  delete: {
+    description:
+      "Delete the whole document at `path`; to remove part of a document, use `remove`. Links to it stop resolving until it is restored.",
+    fields: {},
+  },
+} as const;
+
 type TargetKey = "file" | "path";
+
+/** A whole-document command names whole documents, so neither of its paths takes a `#fragment`. */
+function addNamespaceIssues(
+  ctx: z.RefinementCtx,
+  value: { command: string; path?: string; from?: { path: string } },
+): void {
+  const fragment = (path: string | undefined) =>
+    path === undefined ? undefined : splitDocumentFile(path).fragment;
+  const issue = (path: (string | number)[], message: string) =>
+    ctx.addIssue({ code: "custom", path, message, input: value });
+  if (value.command === "delete" && fragment(value.path) !== undefined)
+    issue(
+      ["path"],
+      "Can't delete a section: `delete` takes a whole document. Use `remove` for the section, or drop the `#fragment` to delete the document.",
+    );
+  if (value.command !== "move") return;
+  if (fragment(value.from?.path) !== undefined)
+    issue(
+      ["from", "path"],
+      "Can't move a section: `move` takes a whole document. Drop the `#fragment` from `from.path` to move the document.",
+    );
+  if (fragment(value.path) !== undefined)
+    issue(
+      ["path"],
+      "Can't move to a section: `path` must name a whole document. Drop the `#fragment` from `path`.",
+    );
+}
 
 /** Reports the selector rule's issues on the argument each one names. */
 function addSelectorIssues(
@@ -226,39 +272,65 @@ function readInput<Target extends z.ZodRawShape>(target: Target, targetKey: Targ
     });
 }
 
-function mutationUnion<Target extends z.ZodRawShape>(target: Target, targetKey: TargetKey) {
-  const branch = <Command extends keyof typeof MUTATION_BRANCHES>(command: Command) =>
-    z
-      .object({
-        command: z.literal(command),
-        ...target,
-        ...(MUTATION_BRANCHES[command].fields as (typeof MUTATION_BRANCHES)[Command]["fields"]),
-      })
-      .strict()
-      .describe(MUTATION_BRANCHES[command].description);
+function branch<Target extends z.ZodRawShape, Fields extends z.ZodRawShape, Command extends string>(
+  command: Command,
+  target: Target,
+  spec: { description: string; fields: Fields },
+) {
   return z
-    .discriminatedUnion("command", [
-      branch("create"),
-      branch("copy"),
-      branch("insert"),
-      branch("replace"),
-      branch("remove"),
-      branch("undo"),
-      branch("redo"),
-      branch("revert"),
-    ])
-    .superRefine((value, ctx) => {
-      const fields = value as Parameters<typeof addSelectorIssues>[2] & { command: string };
-      const command = fields.command;
-      if (command === "insert" || command === "replace" || command === "remove") {
-        addSelectorIssues(ctx, command, fields, targetKey);
-      }
-      if (command === "insert" || command === "replace" || command === "copy") {
-        for (const issue of copySourceIssues(command, fields as CopySourceFields)) {
-          ctx.addIssue({ code: "custom", path: issue.path, message: issue.message, input: value });
-        }
-      }
-    });
+    .object({ command: z.literal(command), ...target, ...spec.fields })
+    .strict()
+    .describe(spec.description);
+}
+
+function mutationBranches<Target extends z.ZodRawShape>(target: Target) {
+  const of = <Command extends keyof typeof MUTATION_BRANCHES>(command: Command) =>
+    branch(
+      command,
+      target,
+      MUTATION_BRANCHES[command] as {
+        description: string;
+        fields: (typeof MUTATION_BRANCHES)[Command]["fields"];
+      },
+    );
+  return [
+    of("create"),
+    of("copy"),
+    of("insert"),
+    of("replace"),
+    of("remove"),
+    of("undo"),
+    of("redo"),
+    of("revert"),
+  ] as const;
+}
+
+function namespaceBranches<Target extends z.ZodRawShape>(target: Target) {
+  const of = <Command extends keyof typeof NAMESPACE_BRANCHES>(command: Command) =>
+    branch(
+      command,
+      target,
+      NAMESPACE_BRANCHES[command] as {
+        description: string;
+        fields: (typeof NAMESPACE_BRANCHES)[Command]["fields"];
+      },
+    );
+  return [of("move"), of("delete")] as const;
+}
+
+function refineMutation(value: unknown, ctx: z.RefinementCtx, targetKey: TargetKey): void {
+  const fields = value as Parameters<typeof addSelectorIssues>[2] & { command: string };
+  const command = fields.command;
+  if (command === "insert" || command === "replace" || command === "remove") {
+    addSelectorIssues(ctx, command, fields, targetKey);
+  }
+  if (command === "insert" || command === "replace" || command === "copy") {
+    for (const issue of copySourceIssues(command, fields as CopySourceFields)) {
+      ctx.addIssue({ code: "custom", path: issue.path, message: issue.message, input: value });
+    }
+  }
+  if (command === "move" || command === "delete")
+    addNamespaceIssues(ctx, value as Parameters<typeof addNamespaceIssues>[1]);
 }
 
 const ENGINE_TARGET = {
@@ -282,31 +354,50 @@ const WRITE_TARGET = {
     .string()
     .min(1)
     .describe(
-      "The document this command creates or changes: a path or context URI, optionally with `#heading-slug` for one section. " +
+      "The document this command creates or changes: a path or context URI. For `move`, the destination. `move` and `delete` take whole documents; other commands may add `#heading-slug` for one section. " +
         DOCUMENT_NAMES_DESCRIPTION,
     ),
 };
 
 /** Engine read input: the document and which of its blocks to render. */
 export const ReadCommandSchema = readInput(ENGINE_TARGET, "file");
-/** Engine mutation input: every `write` command changes a document. */
-export const WriteCommandSchema = mutationUnion(ENGINE_TARGET, "file");
+/** Engine mutation input: every engine command changes a document's content. */
+export const WriteCommandSchema = z
+  .discriminatedUnion("command", mutationBranches(ENGINE_TARGET))
+  .superRefine((value, ctx) => refineMutation(value, ctx, "file"));
 
 /** The `read` tool's published input. */
 export const ReadToolInputSchema = readInput(READ_TARGET, "path");
-/** The `write` tool's published input. */
-export const WriteToolInputSchema = mutationUnion(WRITE_TARGET, "path");
+/** The `write` tool's input: the engine's commands plus the host's `move` and `delete`. */
+export const WriteToolInputSchema = z
+  .discriminatedUnion("command", [
+    ...mutationBranches(WRITE_TARGET),
+    ...namespaceBranches(WRITE_TARGET),
+  ])
+  .superRefine((value, ctx) => refineMutation(value, ctx, "path"));
+/**
+ * What the model is shown of `write` until drafted `move` and `delete` land: neither reaches
+ * the model before both work in draft mode too (D66). PR 3's phase F deletes this, and the
+ * tool publishes `WriteToolInputSchema`.
+ */
+export const PublishedWriteToolInputSchema = z
+  .discriminatedUnion("command", mutationBranches(WRITE_TARGET))
+  .superRefine((value, ctx) => refineMutation(value, ctx, "path"));
 
 export type ReadCommand = z.infer<typeof ReadCommandSchema>;
 export type WriteCommand = z.infer<typeof WriteCommandSchema>;
+/** The commands the engine runs. */
 export type WriteCommandName = WriteCommand["command"];
 export type ReadToolInput = z.output<typeof ReadToolInputSchema>;
 export type WriteToolInput = z.output<typeof WriteToolInputSchema>;
 
-/** Every operation the engine reports a result for. */
-export type DocumentCommandName = "read" | WriteCommandName;
+/** `write`'s commands the host runs itself: they move or delete a whole document. */
+export type NamespaceCommandName = Exclude<WriteToolInput["command"], WriteCommandName>;
 
-export function writeCommandName(input: unknown): WriteCommandName | undefined {
+/** Every operation a `read` or `write` result reports. */
+export type DocumentCommandName = "read" | WriteToolInput["command"];
+
+export function writeCommandName(input: unknown): WriteToolInput["command"] | undefined {
   if (typeof input !== "object" || input === null || !("command" in input)) return undefined;
   const command = (input as { command?: unknown }).command;
   switch (command) {
@@ -318,6 +409,8 @@ export function writeCommandName(input: unknown): WriteCommandName | undefined {
     case "undo":
     case "redo":
     case "revert":
+    case "move":
+    case "delete":
       return command;
     default:
       return undefined;

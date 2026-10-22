@@ -56,6 +56,7 @@ function statusLine(result: AgentEditResultV1): string {
         : `copied: ${blockCount(count)} from ${result.copied.from}`,
     );
   }
+  if (result.namespace) facts.push(namespaceFact(result));
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
     const total = result.read.documentBlocks;
@@ -66,6 +67,20 @@ function statusLine(result: AgentEditResultV1): string {
     if (result.read.format === "outline") facts.push("format: outline");
   }
   return facts.join("; ");
+}
+
+/** A drafted move or delete is pending until the writer applies it, and says so. */
+function namespaceFact(result: AgentEditResultV1): string {
+  const change = result.namespace;
+  if (!change) return "";
+  const drafted = result.destination === "draft";
+  if (change.kind === "moved")
+    return drafted
+      ? `moved from ${change.from} in this chat's draft; applying it moves it in the manuscript`
+      : `moved from ${change.from}`;
+  return drafted
+    ? "deleted in this chat's draft; applying it deletes it from the manuscript"
+    : "deleted";
 }
 
 function blockCount(count: number): string {
@@ -87,6 +102,10 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
   if (result.destination === "draft" && result.draftWork !== undefined)
     facts.push(`version: ${writeVersion(result)}`);
   if (result.copied?.blocks !== undefined) facts.push(`copied ${blockCount(result.copied.blocks)}`);
+  if (result.namespace)
+    facts.push(
+      result.namespace.kind === "moved" ? `moved from ${result.namespace.from}` : "deleted",
+    );
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
     const total = result.read.documentBlocks;
@@ -118,6 +137,11 @@ function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]
     lines.push("later edits were kept, so the text may not match how it was before the write.");
   }
   if (result.documentEmpty) lines.push("document is now empty; its one blank block always stays.");
+  const surviving = result.namespace?.kind === "deleted" ? result.namespace.survivingWorks : [];
+  if (surviving?.length)
+    lines.push(
+      `${listed(surviving)} still ${surviving.length === 1 ? "has" : "have"} changes to it; applying them brings it back.`,
+    );
   if (result.unchanged) lines.push(UNCHANGED_NOTE);
   if (result.concurrent) lines.push(...concurrentLines(result.concurrent));
   const swept = groups.filter((group) => group.relation === "swept");
@@ -131,6 +155,12 @@ function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]
     lines.push("destructive awareness degraded after durable recovery; re-read required");
   }
   return lines;
+}
+
+function listed(items: readonly string[]): string {
+  return items.length < 2
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
 /** The blocks changed since the model last saw them, unlabelled (labels arrive with M3). */

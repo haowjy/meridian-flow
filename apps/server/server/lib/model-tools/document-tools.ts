@@ -8,6 +8,7 @@ import type {
   AgentEditResultV1,
   DocumentCommandName,
   FrontierLookup,
+  NamespaceCommandName,
   ReadToolInput,
   WriteCommand,
   WriteOutcome,
@@ -70,6 +71,9 @@ import {
   type WriteToolErrorOutput,
   writeToolError,
 } from "./tool-context.js";
+
+/** A `write` call the engine runs: everything but the host's whole-document commands. */
+type EngineWriteInput = Exclude<WriteToolInput, { command: NamespaceCommandName }>;
 
 /** Resolves a model path to its tracked document; only `create` may make one. */
 export async function resolveDocumentAddress(
@@ -158,7 +162,7 @@ export async function resolveDocumentAddress(
 }
 
 function buildAgentWriteCommand(
-  input: WriteToolInput,
+  input: EngineWriteInput,
   address: ResolvedDocumentAddress,
   toolUseId: string | undefined,
   copied?: CopiedSource,
@@ -204,7 +208,7 @@ function withDestination(outcome: WriteOutcome, destination: FileDestination): W
 async function writeUnderGrant(
   deps: ToolWiringDeps,
   principal: Principal,
-  parsed: WriteToolInput,
+  parsed: EngineWriteInput,
   address: ResolvedDocumentAddress,
   copied: CopiedSource | undefined,
   ctx: ToolHandlerContext,
@@ -347,6 +351,9 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     const parsed = input as WriteToolInput;
     const skillRefusal = refuseSkillWrite(parsed);
     if (skillRefusal) return skillRefusal;
+    // Unpublished until phase C runs them (D66): the model is never shown either command.
+    if (parsed.command === "move" || parsed.command === "delete")
+      return writeToolError(parsed.command, "This command isn't available.", "internal_error");
     const call = await resolveToolCall(deps, ctx);
     if (isToolError(call)) return writeToolError(parsed.command, call.output.message);
     const { context, principal } = call;
