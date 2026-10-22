@@ -63,12 +63,18 @@ frame installs the divider in the transcript and answers the switch intent in
 the slice; a `meridian.messages.handed_back` frame removes the handed-back
 turns at its seq.
 
-There is no per-run resume and no follow controller. The subscription starts
-at mount. The first accepted snapshot that shows work in progress
-re-subscribes from that snapshot's `resumeAfterSeq`, so the reply it joins
-streams from where the snapshot ends. A later snapshot never rewinds: the live
-stream has already applied what it shows. A first send keeps the subscriber
+There is no per-run resume and no follow controller. The first accepted snapshot
+joins the stream from its `resumeAfterSeq`, or the held delivery cursor if newer.
+Later snapshots do not rewind the subscription. A first send keeps the subscriber
 inactive while the chat is pending creation, then activates it.
+
+Activity and durable-projection subscribers without a cursor start at the server's
+current head. `useThreadActivity` replaces activity from the whole live-state
+acknowledgment. `useThreadDurableProjections` reads trails and Work binding on mount
+and again on each acknowledgment: events between the mount read and head sampling
+are omitted from replay. Mount reads also cover joining an already active shared
+lease, which produces no new acknowledgment. Existing coalescing handles triggers
+during a read; gap reconciliation remains the recovery for missing replay.
 
 Do not gate refreshes on a mount-scoped latch, and do not move the snapshot
 fetch behind a cache window. Either one breaks live updates for a background

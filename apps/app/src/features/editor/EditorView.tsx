@@ -1,5 +1,6 @@
 /** Review composition over a warm live editor and the scope owner's addressed branch binding. */
 import { Trans } from "@lingui/react/macro";
+import { canonicalContextUri } from "@meridian/contracts";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -39,7 +40,7 @@ const REVIEW_MARKS_WAIT_MS = 1500;
 type EditorSurface = "pending" | "review-error" | `live:${string}` | `review:${string}`;
 
 export function EditorView(props: EditorViewProps) {
-  const { controller, roomOwner } = useDraftReview();
+  const { controller, roomOwner, fileForDocument } = useDraftReview();
   // Resolve once against the canonical scope binding, never host-mirrored room/Work fields.
   const requestedItemKey = props.reviewItemKey ?? null;
   const review =
@@ -48,6 +49,10 @@ export function EditorView(props: EditorViewProps) {
       ? controller.inlineReview
       : null;
   const reviewRequested = requestedItemKey !== null;
+  const reviewLocation = review ? fileForDocument(review.documentId)?.contextLocation : null;
+  const reviewHolderUri = reviewLocation
+    ? canonicalContextUri(reviewLocation.scheme, reviewLocation.path)
+    : null;
   const sharedIdentity = {
     documentId: props.documentId,
     projectId: props.projectId,
@@ -188,6 +193,7 @@ export function EditorView(props: EditorViewProps) {
             <SessionEditor
               identity={identity}
               session={reviewSession}
+              holderUri={reviewHolderUri}
               surfaceOptions={{
                 ...surfaceOptions,
                 editable: roomOwner.inputEligible && reviewPainted ? props.editable : false,

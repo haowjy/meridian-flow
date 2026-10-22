@@ -82,8 +82,8 @@ export type ChatSubmission = {
    */
   answer?: ControlAnswer;
   /**
-   * Set before the control's first POST. A control without it never reached the server,
-   * so the writer may withdraw it locally; with it, only the server's Withdraw is safe.
+   * Set before a message or control's first POST. Without it, the server cannot hold the
+   * record; with it, local removal needs a server answer or the server's own withdrawal.
    */
   posted?: true;
   draft?: ComposerDraftSnapshot;
