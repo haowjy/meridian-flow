@@ -157,24 +157,25 @@ export async function movePlacementCycle(
       node: { kind: "document" as const, id: move.documentId },
       at: move.to,
     })),
-    async (target, parentId, at) => {
+    async (placements) => {
+      for (const { target, parentId, at } of placements)
+        await tx
+          .update(documents)
+          .set({
+            contextSourceId: at.contextSourceId,
+            folderId: parentId,
+            name: at.name,
+            extension: at.extension ?? "",
+            updatedAt: now,
+          })
+          .where(inArray(documents.id, [target.node.id]));
       await tx
         .update(documents)
-        .set({
-          contextSourceId: at.contextSourceId,
-          folderId: parentId,
-          name: at.name,
-          extension: at.extension ?? "",
-          updatedAt: now,
-        })
-        .where(inArray(documents.id, [target.node.id]));
+        .set({ hidden: false, updatedAt: now })
+        .where(inArray(documents.id, ids));
     },
   );
   if (!placed.ok) throw new Error(`Placement cycle failed: ${placed.error.code}`);
-  await tx
-    .update(documents)
-    .set({ hidden: false, updatedAt: now })
-    .where(inArray(documents.id, ids));
   const finalRows = await tx
     .select({
       id: documents.id,

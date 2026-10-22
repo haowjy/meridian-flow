@@ -635,7 +635,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await draft({ command: "move", from: { path: "ch2" }, path: "temporary" });
       await draft({ command: "move", from: { path: "ch3" }, path: "ch2" });
       await draft({ command: "move", from: { path: "temporary" }, path: "ch3" });
-      // Apply the newer occupant's row; cycle order must not decide who keeps an exact name.
+      const olderHiddenProposal = randomUUID();
+      await db.insert(schema.documents).values({
+        id: olderHiddenProposal,
+        contextSourceId: SOURCE_ID,
+        name: "ch3",
+        extension: "",
+        fileType: "markdown",
+        hidden: true,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      });
+      // Apply the newer occupant's row. Neither cycle order nor an older hidden proposal may
+      // take an exact live name from the swap.
       expect(await writer.apply(CH2)).toMatchObject({
         status: "applied",
         applied: expect.arrayContaining([

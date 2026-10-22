@@ -201,7 +201,13 @@ export async function placeLive(
 export async function placeLiveCycle(
   db: Database,
   targets: readonly PlaceTarget[],
-  land: (target: PlaceTarget, parentId: FolderId | null, at: LiveLocation) => Promise<void>,
+  land: (
+    placements: readonly {
+      target: PlaceTarget;
+      parentId: FolderId | null;
+      at: LiveLocation;
+    }[],
+  ) => Promise<void>,
 ): Promise<Result<readonly LiveLocation[], PlaceFault>> {
   const placed: {
     target: PlaceTarget;
@@ -213,9 +219,9 @@ export async function placeLiveCycle(
     const prepared = await prepareLivePlacement(db, target);
     if (!prepared.ok) return prepared;
     const { parentId, at, filename } = prepared.value;
-    await land(target, parentId, at);
     placed.push({ target, parentId, at, filename });
   }
+  await land(placed);
   await normalizeNames(
     db,
     placed.map(({ target }) => target.node),
