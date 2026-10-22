@@ -86,7 +86,10 @@ it, or a row reversing such a row: an undo of a revert reapplies the entry, a ro
 undo leaves it as the undo found it; latest, since a redone delete writes a new removal); an
 undo restores the `before`. A later own entry that was undone does not block, so A→B, B→C,
 undo, undo returns to A. Applied or discarded comes only from a later settlement row naming
-the entry. The history writer (`recordDocumentEdit`) is the one place a transition's states
+the entry; an Apply names entries undone before it as discarded, so their redo refuses
+rather than proposing them again. History is read with folders a live folder absorbed since
+resolved to it (`withCurrentFolders`), and a reversal reports each destination it landed in:
+live, or the branch whose text draft or tree facts took it. The history writer (`recordDocumentEdit`) is the one place a transition's states
 are checked against its destination and op; readers trust the rows.
 
 Every inverse (model undo, redo and revert, the card, a reply's rollback) is one ordered

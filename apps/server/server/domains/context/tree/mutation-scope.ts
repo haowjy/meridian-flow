@@ -12,7 +12,7 @@ import type { BranchId, ContextSourceId, DocumentId, TreePlacement } from "@meri
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { lockDocumentNamespaces } from "../adapters/context-fs/document-locations.js";
-import { readHeldFolders } from "./branch-tree-store.js";
+import { readBranchHolds } from "./branch-tree-store.js";
 import { placementSources } from "./live-tree-state.js";
 import { lockDocuments } from "./node-rows.js";
 import { loadBranchTreeRows, loadDocumentIdentityRows } from "./tree-view-sql.js";
@@ -24,8 +24,8 @@ export type TreeScope = {
 };
 
 /**
- * What to lock: each branch's documents with a row or a held folder (all of them, or the named
- * ones) where they sit, where the branch has them, and where every folder its drafted moves
+ * What to lock: each branch's documents with a row or unsettled entries (all of them, or the
+ * named ones) where they sit, where the branch has them, and where every folder its drafted moves
  * hold sits now (the effective placement is a read model; cleanup prunes all of these), other
  * documents where they sit now (an item's text, a document Apply restores, a node a read
  * repairs), and sources a mutation writes into that no row names yet. Tombstones count where
@@ -64,12 +64,11 @@ export async function readTreeScope(db: Database, request: TreeScopeRequest): Pr
       sourceIds.add(row.contextSourceId);
       sourceIds.add(row.effective.contextSourceId);
     }
-    // Every folder the branch's moves hold, masked by a delete or left by a later move or an
-    // undo to no row: settlement prunes them, so cleanup locks where they sit now.
-    for (const held of await readHeldFolders(tx, branchId, named)) {
-      others.add(held.documentId);
-      sourceIds.add(held.contextSourceId);
-    }
+    // Every document with unsettled entries (an undo may have removed its row) and every folder
+    // its moves hold: settlement names the one and prunes the other, so cleanup locks them.
+    const holds = await readBranchHolds(tx, branchId, named);
+    for (const id of holds.documentIds) others.add(id);
+    for (const id of holds.sourceIds) sourceIds.add(id);
   }
   for (const row of await loadDocumentIdentityRows(tx, [...others])) {
     documentIds.add(row.id);

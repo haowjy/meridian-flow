@@ -11,8 +11,13 @@
  */
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { branchTreeChanges, documents, folders } from "@meridian/database/schema";
-import { and, asc, eq, isNull, ne } from "drizzle-orm";
+import {
+  branchTreeChanges,
+  branchTreeFolders,
+  documents,
+  folders,
+} from "@meridian/database/schema";
+import { and, asc, eq, isNull, ne, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { insertFolder, tombstoneFolders } from "./node-rows.js";
@@ -88,12 +93,48 @@ async function fold(db: Database, hidden: FolderId, into: FolderId): Promise<voi
     .update(documents)
     .set({ folderId: into, updatedAt: now })
     .where(and(eq(documents.folderId, hidden), isNull(documents.deletedAt)));
-  // A branch's drafted move into the hidden folder follows it into the live one.
+  // A branch's drafted move into the hidden folder follows it into the live one, and so does
+  // the hold that keeps it from pruning. The tombstone names its absorber: history recorded
+  // against it resolves there (`resolveAbsorbedFolders`), so the move stays reversible.
   await tx
     .update(branchTreeChanges)
     .set({ movedFolderId: into, updatedAt: now })
     .where(eq(branchTreeChanges.movedFolderId, hidden));
+  await tx.execute(sql`
+    INSERT INTO branch_tree_folders (branch_id, document_id, folder_id)
+    SELECT branch_id, document_id, ${into}::uuid FROM branch_tree_folders
+    WHERE folder_id = ${hidden}::uuid
+    ON CONFLICT DO NOTHING`);
+  await tx.delete(branchTreeFolders).where(eq(branchTreeFolders.folderId, hidden));
+  await tx.update(folders).set({ absorbedInto: into }).where(eq(folders.id, hidden));
   await tombstoneFolders(db, [hidden]);
+}
+
+/**
+ * Each folder as it stands now: one a live folder absorbed (§8.2) is that folder, through every
+ * later absorption. What a recorded placement or a branch's fact names means the result.
+ */
+export async function resolveAbsorbedFolders(
+  db: Database,
+  ids: readonly FolderId[],
+): Promise<Map<FolderId, FolderId>> {
+  const out = new Map<FolderId, FolderId>(ids.map((id) => [id, id]));
+  if (ids.length === 0) return out;
+  const rows = await currentDrizzleDb(db).execute<{ id: FolderId; canonical: FolderId }>(sql`
+    WITH RECURSIVE chain(id, at) AS (
+      SELECT f.id, f.id FROM folders f WHERE f.id IN (${sql.join(
+        ids.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})
+      UNION ALL
+      SELECT chain.id, f.absorbed_into FROM chain JOIN folders f ON f.id = chain.at
+      WHERE f.absorbed_into IS NOT NULL
+    )
+    SELECT DISTINCT ON (chain.id) chain.id, chain.at AS canonical
+    FROM chain JOIN folders f ON f.id = chain.at
+    WHERE f.absorbed_into IS NULL`);
+  for (const row of rows) out.set(row.id, row.canonical);
+  return out;
 }
 
 export type SplitResult = {

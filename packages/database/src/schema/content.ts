@@ -230,6 +230,11 @@ export const folders = pgTable(
       .references(() => works.id, { onDelete: "set null" }),
     /** A branch's new folder: in no live view until placed (read only through the tree view). */
     hidden: boolean("hidden").notNull().default(false),
+    /**
+     * The live folder that absorbed this hidden one (it is tombstoned): history and branch
+     * facts that name this folder mean that one. No FK: folders are tombstoned.
+     */
+    absorbedInto: uuid("absorbed_into").$type<FolderId>(),
     locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
   },
   (table) => [

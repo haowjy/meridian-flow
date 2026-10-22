@@ -194,7 +194,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
               {
                 uri: "manuscript://chapter.md",
                 status: "reversed",
-                destination: { kind: "draft", draftId: "draft" },
+                destination: { kind: "draft", branchId: "branch" },
               },
             ],
             acceptedParts: 1,

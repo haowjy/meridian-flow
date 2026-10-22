@@ -36,7 +36,16 @@ after a later move or an undo leaves it: a held folder is in use for
 hidden-folder liveness, so an undo or redo back into it finds it, and
 `settleBranchEntries` (every terminal path: Apply, Discard, end of use, branch
 close, purge) releases and prunes all of them, not only the row's current folder.
-Absorption rewrites the row's folder; a create joins a hidden
+Every facts write also marks the document in `branch_tree_unsettled` until
+settlement, so terminal cleanup finds a document whose row an undo removed (a
+root-to-root rename has no folder to hold) and `readTreeScope` locks it.
+Settlement names stack entries only (moves, deletes, reverts; never the undo,
+redo or rollback rows): those in effect as the caller's applied or discarded,
+those undone as discarded, those rolled back not at all.
+Absorption rewrites the row's folder and repoints its holds; the tombstoned
+hidden folder records `absorbed_into`, and the inverse service reads recorded
+placements through `resolveAbsorbedFolders`, so an entry recorded against the
+hidden folder still matches and writes back the live one. A create joins a hidden
 candidate only while no branch using it moved it away. A live removal clears
 each branch's `created` fact and keeps `moved` and `deleted` (D79, D80).
 

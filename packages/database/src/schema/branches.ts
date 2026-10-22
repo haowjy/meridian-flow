@@ -168,6 +168,24 @@ export const branchTreeChanges = pgTable(
 );
 
 /**
+ * The documents a branch recorded drafted tree entries on that no settlement ended yet,
+ * whatever its row says now (an undo may have removed it): what terminal cleanup must find
+ * and settle. Written with every drafted tree write, released by settlement only.
+ */
+export const branchTreeUnsettled = pgTable(
+  "branch_tree_unsettled",
+  {
+    branchId: uuid("branch_id")
+      .$type<BranchId>()
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+    /** No FK, as `branch_tree_changes.node_id`: project deletion cascades through branches. */
+    documentId: uuid("document_id").$type<DocumentId>().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.branchId, table.documentId] })],
+);
+
+/**
  * The folders a branch's drafted moves have placed a document in, held until the branch's
  * entries on it settle: an undo or redo may return it to any of them, so each stays in use
  * (never pruned) until then, and terminal cleanup prunes all of them, not only where the row
