@@ -1,15 +1,29 @@
 /**
  * The removal record's one owner: the kernel that writes it (delete, overwrite, Work cascade,
- * the last use of a hidden creation), the Work Restore that clears it, and its reader.
+ * the last use of a hidden creation), the two restores that clear it (a Work Restore's
+ * cascade, and one deleted document's `restoreDocument`), and its reader.
  */
-import type { DocumentId, WorkId } from "@meridian/contracts";
+import type { ContextSourceId, DocumentId, FolderId, WorkId } from "@meridian/contracts";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { branchTreeChanges, documents, users, works } from "@meridian/database/schema";
+import {
+  branchTreeChanges,
+  contextSources,
+  documents,
+  projects,
+  users,
+  works,
+} from "@meridian/database/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  type DrizzleDb,
+  runInDrizzleSavepoint,
+} from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
+import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
+import type { DocumentArrivals } from "../ports/document-arrivals.js";
 import type {
   DocumentRemoval,
   DocumentRemovalCollab,
@@ -17,6 +31,8 @@ import type {
 } from "../ports/document-removal.js";
 import { bumpLocationVersions } from "./node-locations.js";
 import { releaseDocumentStorage } from "./node-rows.js";
+import { placeLive } from "./placement.js";
+import type { NodeRef } from "./tree-view.js";
 import { loadActiveBranchUses, loadDocumentIdentityRows } from "./tree-view-sql.js";
 
 /** Works whose branches use these documents, in the caller's transaction. */
@@ -103,6 +119,139 @@ export async function restoreWorkDocuments(db: Database, workId: WorkId): Promis
     tx,
     restored.map(({ id }) => id as DocumentId),
   );
+}
+
+/**
+ * The removal a reversing caller undoes, as the document row held it right after that
+ * removal: its time and the `location_version` it wrote.
+ */
+export type RemovalIdentity = { time: Date; locationVersion: bigint };
+
+export type RestoreOutcome =
+  | { kind: "restored"; placed: readonly NodeRef[] }
+  | { kind: "already_living" }
+  /** A different removal is current: an Undo of one delete never undoes a later one. */
+  | { kind: "superseded" }
+  /** Another node holds the document's path, or a path on its folder chain. */
+  | { kind: "location_taken"; at: string; occupant: NodeRef }
+  /** Not a document's own delete: a discard, a Work cascade, or a deleted source or project. */
+  | { kind: "refused" };
+
+/** A placement fault, carried out of the savepoint it rolls back. */
+class RestoreFault extends Error {
+  constructor(readonly outcome: Extract<RestoreOutcome, { kind: "location_taken" }>) {
+    super(`Restore found ${outcome.at} taken`);
+  }
+}
+
+/**
+ * Brings one deleted document back at the location it held, with every folder on that path
+ * (a living folder there is reused, a deleted one restored), through placement's one
+ * name-claim rule. Apply restores whichever removal is current; a reversing caller (a
+ * reply's rollback, the turn card's Undo) names the removal it reverses. Clears the record,
+ * bumps `location_version`, settles the document's arrival and refreshes the catalog in the
+ * caller's transaction. Touches no draft: drafts outlive a delete (D79). A fault rolls back
+ * everything it placed. The caller holds the document's namespace, then its document lock
+ * (`acquireTreeScope`).
+ */
+export async function restoreDocument(
+  db: Database,
+  input: { documentId: DocumentId; removal?: RemovalIdentity },
+  deps: {
+    arrivals?: Pick<DocumentArrivals, "settle">;
+    catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
+  },
+): Promise<RestoreOutcome> {
+  const tx = currentDrizzleDb(db);
+  const [row] = await tx
+    .select({
+      sourceId: documents.contextSourceId,
+      folderId: documents.folderId,
+      name: documents.name,
+      extension: documents.extension,
+      hidden: documents.hidden,
+      deletedAt: documents.deletedAt,
+      reason: documents.deletionReason,
+      byWork: documents.deletedByWorkId,
+      locationVersion: documents.locationVersion,
+      sourceDeleted: sql<boolean>`${contextSources.deletedAt} IS NOT NULL`,
+      projectDeleted: sql<boolean>`${projects.deletedAt} IS NOT NULL`,
+    })
+    .from(documents)
+    .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+    .leftJoin(works, eq(works.id, contextSources.workId))
+    .innerJoin(
+      projects,
+      eq(projects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
+    )
+    .where(eq(documents.id, input.documentId));
+  if (!row) throw new Error(`Restore of unknown document ${input.documentId}`);
+  if (row.deletedAt === null) return { kind: "already_living" };
+  if (
+    input.removal &&
+    (row.deletedAt.getTime() !== input.removal.time.getTime() ||
+      row.locationVersion !== input.removal.locationVersion)
+  )
+    return { kind: "superseded" };
+  if (
+    row.reason !== "deleted" ||
+    row.hidden ||
+    row.byWork !== null ||
+    row.sourceDeleted ||
+    row.projectDeleted
+  )
+    return { kind: "refused" };
+  const node: NodeRef = { kind: "document", id: input.documentId };
+  try {
+    const placed = await runInDrizzleSavepoint(db, async () => {
+      const landed = await placeLive(
+        db,
+        {
+          node,
+          at: {
+            contextSourceId: row.sourceId as ContextSourceId,
+            parentFolderId: row.folderId as FolderId | null,
+            name: row.name,
+            extension: row.extension,
+          },
+        },
+        async (parentId) => {
+          await currentDrizzleDb(db)
+            .update(documents)
+            .set({
+              folderId: parentId,
+              deletedAt: null,
+              deletionReason: null,
+              deletedByUserId: null,
+              deletionCause: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(documents.id, input.documentId));
+          await bumpLocationVersions(db, { documentIds: [input.documentId] });
+        },
+      );
+      if (!landed.ok) {
+        // A non-hidden document's chain holds no hidden folder, so only a taken path faults.
+        if (landed.error.code !== "path_taken")
+          throw new Error(`Restore of ${input.documentId} met a broken folder chain`);
+        throw new RestoreFault({
+          kind: "location_taken",
+          at: landed.error.at,
+          occupant: landed.error.occupant,
+        });
+      }
+      return [...landed.value.ancestors, node];
+    });
+    await deps.arrivals?.settle([input.documentId]);
+    await deps.catalog.refreshSources(
+      [row.sourceId as ContextSourceId],
+      placed.map((ref) => ref.id),
+    );
+    return { kind: "restored", placed };
+  } catch (cause) {
+    if (cause instanceof RestoreFault) return cause.outcome;
+    throw cause;
+  }
 }
 
 /** The `DocumentRemovals` port: `readRemovalRecords` in the caller's transaction, if any. */

@@ -54,7 +54,8 @@ refresh the catalog in their own surrounding transaction.
 ## Removal facts
 
 `tree/removal.ts` is the removal record's one owner: `createDocumentRemoval`
-writes it, `restoreWorkDocuments` clears it for a Work Restore, and
+writes it, `restoreWorkDocuments` clears it for a Work Restore,
+`restoreDocument` clears one document's own delete (below), and
 `readRemovalRecords` reads it (actor names joined as they read now) through the
 handle its caller gives. Adapters call the reader directly; domain code that
 needs a seam (the reply save fence, the model's file tools) takes the narrow
@@ -97,6 +98,22 @@ use recounts nothing itself: every caller holds the branch's Work. Folder
 deletion locks the complete pre-split subtree, hidden boundary documents
 included, before the split updates any document row. Rollback delivers nothing.
 
+## Restoring one document
+
+`restoreDocument` is the one restore of a deleted document: Apply of a draft
+that outlived the delete (D79), and from PR 3 a reply's rollback and the turn
+card's Undo. The caller holds the document's namespace, then its lock
+(`acquireTreeScope`). A reversing caller names the removal it reverses (its
+time and the `location_version` it wrote), so a later, different removal
+answers `superseded`; Apply names none. A living document answers
+`already_living`. Discards, Work cascades and deleted sources or projects
+answer `refused`: a Work's own Restore owns its cascade. It places the document
+through `placeLive` (placement's ancestry and one name-claim rule: a living
+folder at a path is reused, a deleted one restored), so a taken path answers
+`location_taken` and the savepoint rolls back every folder it restored. It
+settles arrivals and refreshes the catalog through ports its caller passes,
+and never touches a draft.
+
 ## Lock and identity contracts
 
 Before the first document lock, callers take in-process leases, thread/Work and
@@ -106,5 +123,6 @@ namespace lock while holding a document lock.
 
 Location claims and history use location-only CAS tokens. A move snapshots the
 subtree, checks the final path, handles hidden splits/absorbs, and then records
-history and versions. Apply reveals through placement and never restores a
-removed document (W52); it does not move nodes. Tree code never refreshes the catalog independently of its caller.
+history and versions. Apply reveals through placement; it brings a deleted document back only
+through `restoreDocument`, a recorded restore, never as a side effect of a
+write. It does not move nodes. Tree code never refreshes the catalog independently of its caller.
