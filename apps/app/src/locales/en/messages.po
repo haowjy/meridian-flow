@@ -1012,10 +1012,6 @@ msgstr "Can't move {source}: that location is already taken."
 msgid "Can't move {source}: the folder for {place} doesn't exist."
 msgstr "Can't move {source}: the folder for {place} doesn't exist."
 
-#: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: this chat is in draft mode, so the move would be half drafted and half live."
-msgstr "Can't move {source}: this chat is in draft mode, so the move would be half drafted and half live."
-
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: {place} was moved or deleted after you undid this change."
 msgstr "Can't redo: {place} was moved or deleted after you undid this change."

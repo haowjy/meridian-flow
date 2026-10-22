@@ -163,15 +163,15 @@ function placementFor(
   const { thread, placements } = assembly;
   if (!thread || placements === "live-only") return { kind: "live" };
   const destination = sourceDestination(scheme, thread.branchWork);
-  if (destination.kind !== "draft") return { kind: "live" };
-  return {
-    kind: "draft",
-    workId: destination.workId as WorkId,
+  if (!thread.branchWork) return { kind: "live" };
+  const branch = {
+    workId: thread.branchWork.id as WorkId,
     threadId: thread.threadId as ThreadId,
     userId: assembly.owner.userId as UserId,
     branches: placements.branches,
     tree: placements.tree(store),
   };
+  return destination.kind === "draft" ? { kind: "draft", ...branch } : { kind: "live", branch };
 }
 
 function contextFsAdapter(
