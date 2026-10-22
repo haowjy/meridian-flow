@@ -231,3 +231,17 @@ it is `applyTree` alone: empty `groupIds` and `baseViewDelta`, no `snapshot` or
 the branch's items still holds answers `held`, and Apply all re-sends those after
 the others. The item's Discard drops a move or delete on the server
 (`discardTree`) and its text here as always.
+
+The move or delete is a row of its own, the item's tree line (`tree-line.ts`):
+a `ReviewChange` with no frame and `tree` set, listed before the text changes
+(`listedItemChanges`). A selection's target says whether the line is in it
+(`{ kind: "tree" }` alone, `groups.tree` beside text groups), so the line's
+Apply sends only the tree cut and its Discard drops only the move or delete,
+keeping the text. A tree-only item needs no room, so Work Files shows its line
+without expanding. A tree line's Discard and Apply remove it from the cached
+list at once (the refetch restores a refusal); `hidden` covers only a tree
+click in flight, since a later move of the same document reuses the item key.
+The click body's `tree` is `{ revision }` only: the server's schema is strict.
+A live document a Work moves or deletes says so in the identity row's notice
+slot (`ManuscriptStateNotice`), from the document's branch hints
+(`DocumentDraftHint.tree`), naming the Work, never its handle (#914).

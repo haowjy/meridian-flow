@@ -1,4 +1,8 @@
-/** A Work's pending file, expandable to its changes. Commands act in place; the file name opens review. Preview reads begin only when expanded. */
+/**
+ * A Work's pending file, expandable to its changes. Commands act in place; the file name opens
+ * review. Preview reads begin only when expanded; a move or delete with no text needs no read,
+ * so it shows as the file's one row ("ch13: deleting") without expanding.
+ */
 import { t } from "@lingui/core/macro";
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
@@ -11,6 +15,7 @@ import {
   isWholeDocumentChange,
 } from "@/features/draft-review/draft-changes";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
+import { hasTreeLine } from "@/features/draft-review/tree-line";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { cn } from "@/lib/utils";
@@ -34,14 +39,16 @@ export function WorkChangeFile({
   const { openReviewFile } = useAiDraftLauncher();
   const [previewing, setPreviewing] = useState(false);
   const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
-  const view = useDraftView(draft, { controller, enabled: expanded, item: file.draft });
+  const treeOnly = !file.draft.hasDraft && hasTreeLine(file.draft);
+  const shown = expanded || treeOnly;
+  const view = useDraftView(draft, { controller, enabled: shown, item: file.draft });
   if (
     !controller.owner.state(file.draft.itemKey).pending &&
-    expanded &&
+    shown &&
     (view.status === "gone" || (view.status === "ready" && view.items.length === 0))
   )
     return null;
-  const wholeDocument = expanded && isWholeDocumentChange(view);
+  const wholeDocument = shown && isWholeDocumentChange(view);
   const imageOpenable = isDraftImagePath(file.contextLocation?.path);
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
 

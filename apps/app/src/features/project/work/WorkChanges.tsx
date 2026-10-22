@@ -3,11 +3,11 @@
  * Work in the one file order (`sortDraftFiles`), each expandable in place to its
  * changes (`WorkChangeFile`). The group's `…` menu holds Apply all and Discard
  * all, the creation-bound whole-Work batch (`disposeDrafts`). They act on every draft of the Work whatever the
- * search box filters, new documents and formatting-only drafts included, and
+ * search box filters, new documents, moves, deletes and formatting-only drafts included, and
  * only a change row uses the per-change selection
  * commands. Discard all asks first, in the group's footer below the rows; so
- * does an Apply all that would bring back documents deleted from the manuscript
- * (D79), naming each, and again for any a newer delete held back.
+ * does an Apply all that would delete documents or bring back documents deleted from the
+ * manuscript (D79), naming each, and again for any a newer delete held back.
  *
  * Nothing shows until the Work has something to review: no loading flash and no
  * empty group. A list that cannot be read says so, with Retry.
@@ -28,15 +28,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  ApplyAllQuestion,
   CommandNotice,
   type CommandQuestion,
-  RestoreQuestion,
 } from "@/features/draft-review/CommandNotice";
 import {
   isDeletedFromManuscript,
   isGroupApplyWithdrawn,
 } from "@/features/draft-review/deleted-drafts";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
+import { hasTreeLine } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
@@ -79,6 +80,7 @@ export function WorkChanges({
     const read = held[textRows.findIndex((row) => row.draft.itemKey === file.draft.itemKey)];
     return (
       file.draft.wholeItem ||
+      hasTreeLine(file.draft) ||
       read?.status !== "ready" ||
       read.listedChanges.length > 0 ||
       controller.owner.state(file.draft.itemKey).pending ||
@@ -86,12 +88,16 @@ export function WorkChanges({
     );
   });
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
-  const [restoring, setRestoring] = useState<readonly ReviewFileTarget[] | null>(null);
+  /** What an Apply all asks about first: the documents it deletes and those it brings back. */
+  const [asking, setAsking] = useState<{
+    deleting: readonly ReviewFileTarget[];
+    restoring: readonly ReviewFileTarget[];
+  } | null>(null);
   const hasFiles = files.length > 0;
   useEffect(() => {
     if (hasFiles) return;
     setConfirmingDiscard(false);
-    setRestoring(null);
+    setAsking(null);
   }, [hasFiles]);
   const visible = files.filter((file) =>
     matchesSearch(file.documentName || file.contextLocation?.path || ""),
@@ -120,27 +126,30 @@ export function WorkChanges({
   const applyAll = (restore: ReadonlySet<string>) =>
     void controller.disposeDrafts("apply", everyDraft, restore).then((outcomes) => {
       const heldBack = files.filter((_file, index) => outcomes[index]?.kind === "needs-restore");
-      if (heldBack.length > 0) setRestoring(heldBack);
+      if (heldBack.length > 0) setAsking({ deleting: [], restoring: heldBack });
     });
   const startApplyAll = () => {
-    const deleted = files.filter((file) => isDeletedFromManuscript(file.draft));
-    if (deleted.length > 0) setRestoring(deleted);
+    const restoring = files.filter((file) => isDeletedFromManuscript(file.draft));
+    const deleting = files.filter((file) => file.draft.tree?.deleted === true);
+    if (restoring.length > 0 || deleting.length > 0) setAsking({ deleting, restoring });
     else applyAll(new Set());
   };
   const untitled = t`Untitled document`;
   // One question at a time, in the footer below the rows: opening it never moves a row.
-  const question: CommandQuestion | null = restoring
+  const names = (targets: readonly ReviewFileTarget[]) =>
+    targets.map((file) => reviewFileTargetName(file, untitled));
+  const question: CommandQuestion | null = asking
     ? {
-        kind: "restore",
+        kind: "apply-all",
         sentence: (
-          <RestoreQuestion titles={restoring.map((file) => reviewFileTargetName(file, untitled))} />
+          <ApplyAllQuestion deleting={names(asking.deleting)} restoring={names(asking.restoring)} />
         ),
         keep: <Trans>Cancel</Trans>,
         confirm: <Trans>Apply all</Trans>,
-        onKeep: () => setRestoring(null),
+        onKeep: () => setAsking(null),
         onConfirm: () => {
-          setRestoring(null);
-          applyAll(ids(restoring));
+          setAsking(null);
+          applyAll(ids(asking.restoring));
         },
         disabled: controller.dispositionLocked,
       }
@@ -168,7 +177,7 @@ export function WorkChanges({
     <WorkFileGroup
       label={t`Changes to review`}
       actions={
-        confirmingDiscard || restoring ? null : (
+        confirmingDiscard || asking ? null : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -185,6 +194,7 @@ export function WorkChanges({
               files.every(
                 (file) =>
                   (!file.draft.hasDraft && file.draft.isNew) ||
+                  hasTreeLine(file.draft) ||
                   (file.draft.hasDraft &&
                     (held[textRows.findIndex((row) => row.draft.itemKey === file.draft.itemKey)]
                       ?.frame?.groups.length ?? 0) > 0),

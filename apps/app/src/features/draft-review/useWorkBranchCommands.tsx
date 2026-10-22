@@ -68,6 +68,15 @@ export function useWorkBranchCommands({
         queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
       });
     };
+    /** The list without the item's move or delete, until the refetch confirms it. */
+    const dropTreeLine = (item: ThreadDraftListItem) =>
+      queryClient.setQueryData<ThreadDraftListItem[]>(
+        projectQueryKeys.workBranchDrafts(projectId, workId),
+        (rows) =>
+          rows?.flatMap((row) =>
+            row.itemKey !== item.itemKey ? [row] : row.hasDraft ? [{ ...row, tree: null }] : [],
+          ),
+      );
     const blocked = (): CommandStart => ({
       sent: false,
       outcome: Promise.resolve({ kind: "blocked" }),
@@ -114,13 +123,17 @@ export function useWorkBranchCommands({
       if (locked) return blocked();
       const item = row(draft);
       if (mode === "apply") {
-        const started = owner.apply(
-          ref(draft),
-          target,
-          restore ?? isDeletedFromManuscript(item),
-          item?.tree ?? undefined,
-        );
+        const bringBack = restore ?? isDeletedFromManuscript(item);
+        // The tree cut rides with a whole-item click or a selection that includes the tree line.
+        const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
+        const started =
+          target.kind === "tree"
+            ? item?.tree
+              ? owner.applyTree(ref(draft), item.tree, bringBack)
+              : blocked()
+            : owner.apply(ref(draft), target, bringBack, (tree && item?.tree) || undefined);
         void started.outcome.then((outcome) => {
+          if (outcome.kind === "done" && tree && item?.tree) dropTreeLine(item);
           if (outcome.kind === "done" && outcome.restored) restored(item);
           // A needs-restore answer means the row is behind: refresh so it shows the delete.
           if (outcome.kind === "needs-restore" || !owner.state(draft.itemKey).pending) refresh();
@@ -148,8 +161,14 @@ export function useWorkBranchCommands({
         return { sent: true, outcome };
       }
       // A move or delete is discarded on the server; the item's text, if any, here as always.
-      if (item?.tree && target.kind === "draft") {
-        const text = item.hasDraft ? owner.discard(ref(draft), target, surface, endNotice) : null;
+      if (target.kind === "tree" || (item?.tree && (target.kind === "draft" || target.tree))) {
+        if (!item?.tree) return blocked();
+        const text =
+          item.hasDraft && target.kind !== "tree"
+            ? owner.discard(ref(draft), target, surface, endNotice)
+            : null;
+        // The line goes at once; the refetch after the answer restores it if the server refused.
+        dropTreeLine(item);
         const outcome = Promise.all([owner.discardTree(ref(draft), item), text?.outcome]).then(
           ([tree, discardedText]) => {
             refresh();
