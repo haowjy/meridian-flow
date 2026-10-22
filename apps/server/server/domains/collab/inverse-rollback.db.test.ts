@@ -93,7 +93,7 @@ it("failed-response rollback targets the response, is per-part and terminal on r
     ).toHaveLength(1);
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "undo",
-      skips: [{ reason: "Rolled back" }],
+      skips: [{ cause: "rolled_back" }],
     });
   } finally {
     harness.cancelScheduledPulls();

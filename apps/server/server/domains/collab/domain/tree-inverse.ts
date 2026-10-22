@@ -23,6 +23,7 @@ import {
   type TreeTransitionChange,
   type TurnId,
 } from "@meridian/contracts";
+import type { TreeReversalFault } from "@meridian/contracts/protocol";
 
 export { sameBranchFacts, samePlacement };
 
@@ -88,7 +89,7 @@ export type PlannedTreeInverse = (PlannedLiveTransition | BranchTreeTransition) 
  * Why a tree inverse found its destination unable to take it at commit, under the locks: the
  * location is taken, its folder is gone, or a different removal is current.
  */
-export type TreeInverseFault = "location_taken" | "folder_missing" | "superseded" | "refused";
+export type TreeInverseFault = TreeReversalFault | "refused";
 
 /** A model inverse is all or nothing: a tree inverse that can't run refuses the whole command. */
 export class TreeInverseRefused extends Error {
@@ -310,11 +311,11 @@ export function treeEntrySummary(entry: StoredTreeEntry): string {
   }
 }
 
-/** A commit-time fault in the card's and the model's words. */
-export function treeFaultReason(fault: TreeInverseFault, at?: string): string {
+/** A commit-time fault in the model's words; the app words the card's from the typed cause. */
+export function treeFaultReason(fault: TreeInverseFault): string {
   switch (fault) {
     case "location_taken":
-      return at ? `${at} is taken` : "its location is taken";
+      return "its location is taken";
     case "folder_missing":
       return "its folder is gone";
     case "superseded":
@@ -325,11 +326,11 @@ export function treeFaultReason(fault: TreeInverseFault, at?: string): string {
 }
 
 /** Why a tree entry can't be reversed as it stands, for the model and the card. */
-export function treeChangedReason(
+export function treeChangedCause(
   states: TreeStates,
   destination: TreeChangeDestination,
-): "deleted since" | "moved since" | "changed since" {
+): "deleted_since" | "moved_since" | "changed_since" {
   if (destination.kind === "live" && states.live)
-    return states.live.living ? "moved since" : "deleted since";
-  return "changed since";
+    return states.live.living ? "moved_since" : "deleted_since";
+  return "changed_since";
 }

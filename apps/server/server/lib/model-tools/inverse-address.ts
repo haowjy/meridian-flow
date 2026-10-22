@@ -5,12 +5,12 @@
  * have moved since the path was shown), as the card's Undo is. A path a different document
  * now holds still names that one, and the result says so when it has nothing to reverse.
  */
-import { splitDocumentFile } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts";
 import { type FileGrant, isFileAccessDenied } from "../../domains/file-policy/index.js";
 import { resolveDocumentAddress } from "./document-tools.js";
 import { fileAccessDeniedError } from "./file-access.js";
 import {
+  canonicalPath,
   isToolError,
   type ResolvedDocumentAddress,
   type ToolCall,
@@ -29,16 +29,6 @@ export type InverseTarget = {
 
 /** Another document this chat moved or deleted away from the path a visible one now holds. */
 type Displaced = { documentId: DocumentId; uri: string | null };
-
-/** The path as a canonical URI: its folder's own URI (with any owner), then its name. */
-async function canonicalPath(call: ToolCall, path: string): Promise<string> {
-  const { filePath } = splitDocumentFile(path);
-  const uri = filePath.includes("://") ? filePath : `manuscript://${filePath}`;
-  const slash = uri.lastIndexOf("/");
-  const listing = await call.context.port.list(uri.slice(0, slash + 1));
-  const folder = listing.ok ? listing.value.uri : null;
-  return folder ? `${folder.replace(/\/?$/, "/")}${uri.slice(slash + 1)}` : uri;
-}
 
 export async function resolveInverseTarget(
   deps: ToolWiringDeps,

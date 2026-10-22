@@ -54,6 +54,7 @@ export function createDrizzleTreeHistory(
           op: input.op,
           ...transition,
           shownAt: input.shownAt,
+          ...(input.landedAt ? { landedAt: input.landedAt } : {}),
           seq: await nextEditSeq(tx()),
           targets: [],
         },

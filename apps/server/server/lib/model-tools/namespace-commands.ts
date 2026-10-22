@@ -31,6 +31,7 @@ import { threadContainerTarget } from "../file-targets.js";
 import { documentGrant, fileAccessDeniedError, firstRefusal } from "./file-access.js";
 import { namespaceContextRefusal, namespaceRefusal } from "./namespace-refusal.js";
 import {
+  canonicalPath,
   isToolError,
   recordTouchInBackground,
   type ToolCall,
@@ -119,6 +120,7 @@ async function commitLive(
   });
   const history = deps.documentSync.treeHistory();
   const before = await history.liveState(source.documentId);
+  const landedAt = input.command === "move" ? await canonicalPath(call, input.path) : undefined;
   if (!before?.living)
     return namespaceRefusal(input.command, "stale_location", { path: source.uri });
   const origin = {
@@ -138,6 +140,7 @@ async function commitLive(
         op: input.command,
         change: { destination: "live", before },
         shownAt: source.uri,
+        ...(landedAt ? { landedAt } : {}),
       })
     ).handle;
   };
@@ -186,6 +189,7 @@ async function commitDrafted(
   const history = deps.documentSync.treeHistory();
   const threadId = ctx.threadId as ThreadId;
   const turnId = ctx.turnId ? (ctx.turnId as TurnId) : undefined;
+  const landedAt = input.command === "move" ? await canonicalPath(call, input.path) : undefined;
   let recorded: string | undefined;
   const record = async (change: RecordedBranchTreeChange) => {
     recorded = (
@@ -197,6 +201,7 @@ async function commitDrafted(
         op: input.command,
         change: { destination: "draft", ...change },
         shownAt: source.uri,
+        ...(landedAt ? { landedAt } : {}),
       })
     ).handle;
   };
