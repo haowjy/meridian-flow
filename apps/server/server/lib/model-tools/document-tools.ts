@@ -315,7 +315,7 @@ export async function readTrackedDocument(
   );
   // Only a draft that outlived a live delete reads a deleted document (D79).
   const surviving =
-    grant.facts.deleted && grant.destination.kind === "draft"
+    grant.destination.kind === "draft" && grant.facts.deleted
       ? survivingDraftNotice(
           (await deps.documentRemovals.lookup([address.documentId])).get(address.documentId),
         )
