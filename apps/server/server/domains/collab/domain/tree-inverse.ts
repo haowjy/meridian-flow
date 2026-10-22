@@ -7,6 +7,7 @@
 import {
   type BranchId,
   type BranchTreeFacts,
+  type BranchTreeTransition,
   type DocumentId,
   isLiveTransition,
   type LiveTreeState,
@@ -15,6 +16,7 @@ import {
   type TreeChangeDestination,
   type TreeChangeOp,
   type TreePlacement,
+  type TreeRemoval,
   type TreeTransition,
   type TreeTransitionChange,
   type TurnId,
@@ -39,10 +41,20 @@ export type StoredTreeEntry = {
   tree: TreeChange;
 };
 
+/**
+ * A live state as an inverse plans it. A removal that an earlier step of the same inverse makes
+ * has no identity until that step runs: it names the step (`madeBy`) and the removal it stands
+ * in for, the one its recorded transition expects, so a restore planned after it carries the
+ * step's actual removal while a different removal still refuses it.
+ */
+export type PlannedLiveState =
+  | LiveTreeState
+  | { living: false; removal: TreeRemoval; madeBy: number };
+
 /** What a document's destinations hold now: live, and each branch with a tree entry here. */
 export type TreeStates = {
   /** Null when the document is hidden (a branch's creation): no live entry can match it. */
-  live: LiveTreeState | null;
+  live: PlannedLiveState | null;
   branches: ReadonlyMap<BranchId, BranchTreeFacts>;
 };
 
@@ -52,13 +64,20 @@ export type TransitionEntry = StoredTreeEntry & { tree: TreeTransitionChange };
 export const isTransitionEntry = (row: StoredTreeEntry): row is TransitionEntry =>
   row.tree.op !== "settle";
 
-/** One planned tree inverse: the entry, the transition it makes and the row it records. */
-export type PlannedTreeInverse = TreeTransition & {
+/** A planned live transition starts where the inverse's earlier steps leave the document. */
+export type PlannedLiveTransition = {
+  destination: { kind: "live" };
+  before: PlannedLiveState;
+  after: LiveTreeState;
+};
+
+/** One planned tree inverse: the entry, the transition it makes and the step that makes it. */
+export type PlannedTreeInverse = (PlannedLiveTransition | BranchTreeTransition) & {
+  /** This step's number within its inverse, for a later step's `madeBy`. */
+  step: number;
   entry: TransitionEntry;
   direction: "invert" | "reapply";
   op: TreeChangeOp;
-  /** The action the recorded row joins; the plan's own when absent. */
-  actionId?: string;
 };
 
 /**
@@ -136,38 +155,61 @@ export function holdsAfter(states: TreeStates, transition: TreeTransition): bool
     : sameBranchFacts(branchFacts(states, transition.destination.branchId), transition.after);
 }
 
-/** The transition alone, its destination and states still correlated. */
-export function transitionOf(transition: TreeTransition): TreeTransition {
-  return isLiveTransition(transition)
-    ? { destination: transition.destination, before: transition.before, after: transition.after }
-    : { destination: transition.destination, before: transition.before, after: transition.after };
+/** A planned live state as a recorded one: a removal still to be made is the one it stands in for. */
+export function recordedLiveState(state: PlannedLiveState): LiveTreeState {
+  return state.living ? state : { living: false, removal: state.removal };
 }
 
-/** `states` once `transition` ran. */
-export function advanceStates(states: TreeStates, transition: TreeTransition): TreeStates {
-  if (isLiveTransition(transition)) return { ...states, live: transition.after };
+/** A planned step's transition as the history records it, its destination and states correlated. */
+export function plannedTransition(planned: PlannedTreeInverse): TreeTransition {
+  return isLiveTransition(planned)
+    ? {
+        destination: planned.destination,
+        before: recordedLiveState(planned.before),
+        after: planned.after,
+      }
+    : { destination: planned.destination, before: planned.before, after: planned.after };
+}
+
+/** `states` once `planned` ran; a removal it makes names the step until it runs. */
+export function advanceStates(states: TreeStates, planned: PlannedTreeInverse): TreeStates {
+  if (isLiveTransition(planned))
+    return {
+      ...states,
+      live: planned.after.living
+        ? planned.after
+        : { living: false, removal: planned.after.removal, madeBy: planned.step },
+    };
   const branches = new Map(states.branches);
-  branches.set(transition.destination.branchId, transition.after);
+  branches.set(planned.destination.branchId, planned.after);
   return { ...states, branches };
 }
 
 /**
- * The latest row that applied or reversed `entry` and was not itself rolled back: the entry,
- * or an undo, redo, revert or rollback naming it. Its `after` is what the destination holds
- * while nothing else changed it; its direction says whether the entry stands.
+ * The latest row that applied or reversed `entry` and was not itself rolled back: the entry, a
+ * row naming it, or a row reversing such a row (an undo of a revert reapplies the entry; a
+ * rollback of an undo leaves it as the undo found it). Its `after` is what the destination
+ * holds while nothing else changed it; `stands` says whether the entry's effect is in place.
+ * `tree` is ordered by id.
  */
 export function latestTransition(
   entry: TransitionEntry,
   tree: readonly StoredTreeEntry[],
   rolledBack: ReadonlySet<string>,
 ): { row: TransitionEntry; stands: boolean } {
+  // Each row in the chain, with whether it left the entry standing.
+  const stood = new Map<string, boolean>([[entry.editId, true]]);
   let latest: { row: TransitionEntry; stands: boolean } = { row: entry, stands: true };
   for (const row of tree) {
-    if (row.id <= latest.row.id || !isTransitionEntry(row) || rolledBack.has(treeKey(row.editId)))
+    if (row.id <= entry.id || !isTransitionEntry(row) || rolledBack.has(treeKey(row.editId)))
       continue;
-    const target = row.targets.find((t) => t.editId === entry.editId);
-    // A rollback row reverses the entry for good; the index already took it off the stack.
-    if (target) latest = { row, stands: target.direction === "reapply" };
+    for (const target of row.targets) {
+      const prior = stood.get(target.editId);
+      if (prior === undefined) continue;
+      const stands = target.direction === "reapply" ? prior : !prior;
+      stood.set(row.editId, stands);
+      latest = { row, stands };
+    }
   }
   return latest;
 }
@@ -234,26 +276,27 @@ export function planTreeInverse(
   direction: "invert" | "reapply",
   latest: TransitionEntry,
   states: TreeStates,
+  step: number,
 ): PlannedTreeInverse | null {
   if (!holdsAfter(states, latest.tree)) return null;
   const op = direction === "invert" ? INVERSE_OP[entry.tree.op] : entry.tree.op;
-  const common = { entry, direction, op };
+  const common = { step, entry, direction, op };
   const { tree } = entry;
-  const latestTree = latest.tree;
-  if (isLiveTransition(tree)) {
-    if (!isLiveTransition(latestTree)) return null;
-    return {
-      ...common,
-      destination: tree.destination,
-      before: latestTree.after,
-      after: direction === "invert" ? tree.before : tree.after,
-    };
-  }
-  if (isLiveTransition(latestTree)) return null;
+  // The state the destination holds, which `holdsAfter` matched: a removal still to be made
+  // keeps naming the step that makes it.
+  if (isLiveTransition(tree))
+    return states.live
+      ? {
+          ...common,
+          destination: tree.destination,
+          before: states.live,
+          after: direction === "invert" ? tree.before : tree.after,
+        }
+      : null;
   return {
     ...common,
     destination: tree.destination,
-    before: latestTree.after,
+    before: branchFacts(states, tree.destination.branchId),
     after: direction === "invert" ? tree.before : tree.after,
   };
 }
