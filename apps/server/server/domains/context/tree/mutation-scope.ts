@@ -14,7 +14,7 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { lockDocumentNamespaces } from "../adapters/context-fs/document-locations.js";
 import { placementSources } from "./live-tree-state.js";
 import { lockDocuments } from "./node-rows.js";
-import { loadBranchCreatedDocuments, loadDocumentIdentityRows } from "./tree-view-sql.js";
+import { loadBranchTreeRows, loadDocumentIdentityRows } from "./tree-view-sql.js";
 
 /** What a tree mutation touches: documents, and every source they sit in now or in a branch. */
 export type TreeScope = {
@@ -23,9 +23,11 @@ export type TreeScope = {
 };
 
 /**
- * What to lock: each branch's created documents (all of them, or the named ones) at their
- * rows and at the branch's location, and other documents where they sit now (an item's
- * text, a document Apply restores, a node a read repairs). Tombstones count where they sit.
+ * What to lock: each branch's documents with a row (all of them, or the named ones) where
+ * they sit and where the branch has them (a drafted move's folder, in its source now), other
+ * documents where they sit now (an item's text, a document Apply restores, a node a read
+ * repairs), and sources a mutation writes into that no row names yet. Tombstones count where
+ * they sit.
  */
 export type TreeScopeRequest = {
   branches?: readonly { branchId: BranchId; documentIds?: readonly DocumentId[] }[];
@@ -36,6 +38,8 @@ export type TreeScopeRequest = {
    * locked where it went.
    */
   placements?: readonly TreePlacement[];
+  /** Sources the mutation writes into by id (a drafted move's destination). */
+  sourceIds?: readonly ContextSourceId[];
 };
 
 /** The scope moved (a document changed source) between reading and locking it: start over. */
@@ -52,11 +56,10 @@ export async function readTreeScope(db: Database, request: TreeScopeRequest): Pr
   const documentIds = new Set<DocumentId>();
   const sourceIds = new Set<ContextSourceId>();
   for (const { branchId, documentIds: named } of request.branches ?? []) {
-    const only = named ? new Set(named) : null;
-    for (const row of await loadBranchCreatedDocuments(tx, branchId)) {
-      if (only && !only.has(row.id)) continue;
+    for (const row of await loadBranchTreeRows(tx, branchId, named)) {
       documentIds.add(row.id);
       sourceIds.add(row.contextSourceId);
+      sourceIds.add(row.effective.contextSourceId);
     }
   }
   for (const row of await loadDocumentIdentityRows(tx, [...new Set(request.documentIds ?? [])])) {
@@ -64,6 +67,7 @@ export async function readTreeScope(db: Database, request: TreeScopeRequest): Pr
     sourceIds.add(row.contextSourceId);
   }
   for (const id of await placementSources(db, request.placements ?? [])) sourceIds.add(id);
+  for (const id of request.sourceIds ?? []) sourceIds.add(id);
   return { documentIds: [...documentIds].sort(), sourceIds: [...sourceIds].sort() };
 }
 

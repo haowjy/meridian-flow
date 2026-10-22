@@ -11,7 +11,7 @@
  */
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { documents, folders } from "@meridian/database/schema";
+import { branchTreeChanges, documents, folders } from "@meridian/database/schema";
 import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
@@ -88,6 +88,11 @@ async function fold(db: Database, hidden: FolderId, into: FolderId): Promise<voi
     .update(documents)
     .set({ folderId: into, updatedAt: now })
     .where(and(eq(documents.folderId, hidden), isNull(documents.deletedAt)));
+  // A branch's drafted move into the hidden folder follows it into the live one.
+  await tx
+    .update(branchTreeChanges)
+    .set({ movedFolderId: into, updatedAt: now })
+    .where(eq(branchTreeChanges.movedFolderId, hidden));
   await tombstoneFolders(db, [hidden]);
 }
 

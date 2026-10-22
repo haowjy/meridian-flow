@@ -1,10 +1,11 @@
 /**
  * The review list (contract §13.1, sync 8 §3.1): a branch's items are its tree state (every
- * document it created, listed with no text yet, and the documents it edited) merged by
- * document with its `work_draft` drafts. A created document is always an item; an edited
- * one is when its active draft has `hasEffect`, so a write and its
- * undo net to no item. That one predicate feeds the list, the
- * Work counts and the D40 confirmation. A draft with no effect is still addressable
+ * document it created, moved or deleted, listed with no text yet, and the documents it
+ * edited) merged by document with its `work_draft` drafts. An item is listed when the tree
+ * view's one reviewable-pending predicate holds (`TreeStateNode.pending`): a created
+ * document, a move or delete live doesn't already agree with, or an active draft with
+ * `hasEffect` the branch isn't deleting, so a write and its undo net to no item. That one
+ * predicate feeds the list, the Work counts and the D40 confirmation. A draft with no effect is still addressable
  * (`resolve`), unlisted, so its next proposal keeps the same room. Every item is keyed `${branchId}:${documentId}` (F12) and carries the
  * tree-derived address and whether it has a text draft.
  */
@@ -94,7 +95,7 @@ export function createBranchReviewItems(deps: {
       .map((node) => {
         const evidence = draftOf.get(node.nodeId);
         const item = toItem(branchId, node, evidence, creators.get(node.nodeId));
-        return { item, listed: node.origin === "created" || isEdited(evidence) };
+        return { item, listed: node.pending };
       })
       .sort((a, b) => (a.item.path ?? "").localeCompare(b.item.path ?? ""));
   }
@@ -114,11 +115,6 @@ export function createBranchReviewItems(deps: {
       return resolved.find(({ item }) => item.documentId === documentId) ?? null;
     },
   };
-}
-
-/** The §3.1 predicate for a document the branch only edited. */
-function isEdited(evidence: WorkBranchDraftMetadata | undefined): boolean {
-  return evidence?.hasEffect ?? false;
 }
 
 function toItem(
