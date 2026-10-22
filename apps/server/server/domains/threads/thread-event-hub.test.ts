@@ -46,6 +46,14 @@ function createCappedReader(
     async readAfter(_threadId, afterSeq, limit = Number.POSITIVE_INFINITY) {
       return entries.filter((entry) => entry.seq > afterSeq).slice(0, limit);
     },
+    async lastSeqBefore(_threadId, beforeSeq, eventTypes) {
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const entry = entries[index];
+        if (entry && entry.seq < beforeSeq && eventTypes.includes(entry.payload.type))
+          return entry.seq;
+      }
+      return 0n;
+    },
     async headSeq() {
       return headSeq;
     },
@@ -222,9 +230,6 @@ describe("thread event hub committed invalidations", () => {
     let blockRead = false;
     const blockingReader: EventJournalReader = {
       ...reader,
-      async headSeq(threadId) {
-        return reader.headSeq(threadId);
-      },
       async readAfter(threadId, afterSeq, limit) {
         if (blockRead) {
           blockRead = false;
@@ -395,6 +400,7 @@ describe("thread event hub committed invalidations", () => {
     });
     let blockFirstRead = true;
     const blockingReader: EventJournalReader = {
+      ...reader,
       readAfter: async (threadId, afterSeq, limit) => {
         if (blockFirstRead) {
           blockFirstRead = false;
@@ -403,12 +409,6 @@ describe("thread event hub committed invalidations", () => {
         }
         return reader.readAfter(threadId, afterSeq, limit);
       },
-      headSeq: (threadId) => reader.headSeq(threadId),
-      readModelProjectionWatermark: (threadId) => reader.readModelProjectionWatermark(threadId),
-      listByThread: (threadId, opts) => reader.listByThread(threadId, opts),
-      listByType: (threadId, type) => reader.listByType(threadId, type),
-      listSince: (threadId, id) => reader.listSince(threadId, id),
-      listByTimeRange: (threadId, from, to) => reader.listByTimeRange(threadId, from, to),
     };
     const hub = createThreadEventHub({
       journalWriter: journal,

@@ -1,8 +1,14 @@
 # Changelog
 
+Entries through this change are preserved below. Later entries come from merged
+PR bodies via `pnpm changelog`; PRs no longer edit this file.
+
 ## [Unreleased]
 
-- A draft-mode chat's first edit now lands from its live read, whether it targets text or a block hash, and later replies keep credit for the rest of that read. Work draft seeds retain the exact live cut and block origins needed by writes and Undo; edit-history reads stay in the requested live or draft destination (#1002).
+- Start cursorless chat subscriptions at the head; reconcile trails and Work binding without replaying history.
+- Reject thread socket request IDs longer than 64 characters.
+
+- Reconnects behind a warm chat's event cache skip older completed replies when rebuilding the missed stream. Event contents and sequence numbers stay unchanged; cold server reconstruction still reads full history.
 
 - Links inside a still-hidden draft document now resolve from that draft's own address, including relative links and unavailable targets; the “doesn't exist yet” card no longer explains Create (#876).
 - Applying one draft change no longer closes the desktop change list or phone Changes sheet while other changes remain, and its progress line no longer replaces those rows.

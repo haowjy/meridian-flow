@@ -193,8 +193,11 @@ describe("document revisions (postgres and collab)", () => {
   const db = createTestDatabase();
   const harnesses: Array<ReturnType<typeof createHarness>> = [];
   beforeEach(() => resetDatabase(db));
-  afterEach(() => {
-    for (const harness of harnesses.splice(0)) harness.cancelScheduledPulls();
+  afterEach(async () => {
+    for (const harness of harnesses.splice(0)) {
+      harness.cancelScheduledPulls();
+      await harness.settleDraftEffects();
+    }
   });
   afterAll(() => closeDatabase(db));
 
@@ -320,45 +323,50 @@ describe("document revisions (postgres and collab)", () => {
     expect(await f.current()).toBeNull();
   });
 
-  it("PROBE3: current under the thread lock completes with a contending debounced pull", async () => {
+  it("current under the thread lock completes with a contending live pull", async () => {
     const f = await fixture(db, harnesses, "draft");
     await f.provisionDraft();
     await f.read();
     await f.writerDelete();
-    const originalPull = f.draftCoordinator.loadBase.bind(f.draftCoordinator);
-    const originalRead = f.draftCoordinator.readDraft.bind(f.draftCoordinator);
+    const originalPull = f.draftCoordinator.loadBase;
+    const originalCopy = f.draftCoordinator.copyDraft;
     const draft = await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
     const workDraftId = draft.draftId;
     const contending = deferred();
-    let scheduled = false;
+    let pulling: Promise<void> | undefined;
+    let reading: ReturnType<typeof f.current> | undefined;
+    let reached = false;
     f.draftCoordinator.loadBase = async (...args) => {
-      if (scheduled && args[0] === workDraftId) contending.resolve();
+      if (pulling && args[0] === workDraftId) {
+        reached = true;
+        contending.resolve();
+      }
       return originalPull(...args);
     };
-    f.draftCoordinator.readDraft = async (id, callback) => {
-      if (!scheduled && id === workDraftId) {
-        scheduled = true;
+    // Foreground reads copy the draft; readDraft belongs to background projection.
+    f.draftCoordinator.copyDraft = async (id) => {
+      if (!pulling && id === workDraftId) {
         await f.writerDelete();
-        runOutsideDrizzleTransaction(() => f.draftPulls.scheduleLivePull(ALPHA_ID));
-        await contending.promise;
+        pulling = runOutsideDrizzleTransaction(() => f.draftPulls.flushLivePull(ALPHA_ID));
+        await Promise.race([contending.promise, pulling]);
       }
-      return originalRead(id, callback);
+      return originalCopy(id);
     };
-    await createDrizzleThreadLock(db).withThreadLock(THREAD_ID, async () => {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        const revision = await Promise.race([
-          f.current(),
-          new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new Error("contended pull timed out")), 5000);
-          }),
-        ]);
-        expect(revision).toMatch(/^y2:/);
-      } finally {
-        clearTimeout(timer);
-      }
-    });
-    await f.draftPulls.flushLivePull(ALPHA_ID);
+    try {
+      await createDrizzleThreadLock(db).withThreadLock(THREAD_ID, async () => {
+        const current = f.current();
+        reading = current;
+        expect(await bounded(() => current)).toMatch(/^y2:/);
+        expect(reached).toBe(true);
+      });
+    } finally {
+      f.draftCoordinator.copyDraft = originalCopy;
+      f.draftCoordinator.loadBase = originalPull;
+      // A deadline releases the thread lock before joining its unfinished reads and pulls.
+      await Promise.allSettled([reading]);
+      await Promise.allSettled([pulling]);
+    }
+    await pulling;
   }, 10000);
 
   it("a flush joining an older snapshot waits for a fresh committed pull", async () => {
