@@ -305,7 +305,7 @@ checkpoint under the row lock, so an intervening append never makes it miss,
 and only another rewrite does. Whether a draft is frozen is derived on every
 read from its branch's origin Work (archived, deleted, or missing), never
 stored. Archive and restore lock no draft row and bump no revision (Work deletion also
-removes its owned documents through the tree removal protocol, closing their drafts):
+removes its owned documents through the tree removal protocol; a `deleted` removal leaves their drafts active):
 every rewrite and reply save locks the Work through the Works
 mutation boundary below and orders itself against the transition, and the
 append keeps the Work predicate in its `UPDATE`. That predicate keeps its
