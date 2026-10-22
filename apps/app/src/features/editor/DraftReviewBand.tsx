@@ -74,7 +74,8 @@ export function DraftReviewBand({
   const header = useReviewHeader(props);
   const { controller, view, locked, finished } = header;
   const { status } = view;
-  const count = view.items.length;
+  // The stepper walks the text changes; a pending move or delete is listed, not stepped to.
+  const count = view.items.filter(({ change }) => !change.tree).length;
   const listed = view.status === "ready" && count > 0;
   // A finger's 44px targets leave no room for every control in a docked row, so the
   // version menu carries Show changes, and the list and stepper give way before

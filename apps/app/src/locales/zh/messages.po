@@ -101,10 +101,10 @@ msgstr ""
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, other {# 次调用}}"
 
-#. placeholder {0}: (actionSkips ?? receipt?.skips ?? []).length
+#. placeholder {0}: skips.length
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "{0, plural, one {# part stayed} other {# parts stayed}}"
-msgstr ""
+#~ msgid "{0, plural, one {# part stayed} other {# parts stayed}}"
+#~ msgstr ""
 
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
@@ -245,6 +245,22 @@ msgstr ""
 msgid "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "{count, plural, one {Redo leaves # part as it is} other {Redo leaves # parts as they are}}"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "{count, plural, one {Redo left # part as it was} other {Redo left # parts as they were}}"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "{count, plural, one {Undo leaves # part as it is} other {Undo leaves # parts as they are}}"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "{count, plural, one {Undo left # part as it was} other {Undo left # parts as they were}}"
+msgstr ""
+
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{count} changes"
 msgstr ""
@@ -377,12 +393,30 @@ msgstr ""
 msgid "{name} was removed when the reply that created it didn't finish, so this change wasn't made."
 msgstr ""
 
+#: src/features/draft-review/tree-line.ts
+msgid "{name}: deleting"
+msgstr ""
+
+#. placeholder {0}: line.place
+#: src/features/draft-review/tree-line.ts
+msgid "{name}: moving to {0}"
+msgstr ""
+
+#. placeholder {0}: line.place
+#: src/features/draft-review/tree-line.ts
+msgid "{name}: renaming to {0}"
+msgstr ""
+
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{names} are back in the manuscript."
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{names} is back in the manuscript."
+msgstr ""
+
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "{occupant} still has that name. Apply its change first."
 msgstr ""
 
 #: src/features/draft-review/ReviewStepper.tsx
@@ -395,6 +429,18 @@ msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{shown} of {total}"
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "{source} is a folder. Only documents can be moved or deleted."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "{source} is already at {place}."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "{source} is already there."
 msgstr ""
 
 #: src/features/chat/thinking-digest.ts
@@ -457,6 +503,18 @@ msgstr "{who} 在此回复保存其更改之前从草稿中放弃了这份文档
 msgid "{words, plural, one {# word removed} other {# words removed}}"
 msgstr ""
 
+#: src/features/draft-review/tree-line.ts
+msgid "{work} is deleting this."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "{work} is moving this to {place}."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "{work} is renaming this to {place}."
+msgstr ""
+
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "<0.1 s"
 msgstr "<0.1 秒"
@@ -496,6 +554,18 @@ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "3 by 3, header row"
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "A chat is deleting this."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "A chat is moving this to {place}."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "A chat is renaming this to {place}."
 msgstr ""
 
 #: src/features/chat/DeletedChatCard.tsx
@@ -692,6 +762,14 @@ msgstr "所有设备"
 msgid "Already in {0}"
 msgstr ""
 
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Already redone"
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Already undone"
+msgstr ""
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
 msgstr ""
@@ -700,13 +778,25 @@ msgstr ""
 msgid "An entry named {name} already exists in this location."
 msgstr ""
 
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "Another document"
+msgstr ""
+
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Another document is already at this name. Rename or remove it, then apply again."
 msgstr ""
 
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Another document is at its location"
+#~ msgstr ""
+
 #: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 msgid "Another document now has this name. Rename that document to apply this draft."
+msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "Another document this Work moves or deletes still has that name. Apply that one first, or apply all changes."
 msgstr ""
 
 #: src/client/query/work-update-failure.ts
@@ -723,6 +813,10 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Appearance and behavior settings."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Applied to the manuscript"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -764,6 +858,10 @@ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applying brings back {names}, which were deleted from the manuscript."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applying deletes {deletes}."
 msgstr ""
 
 #: src/features/project/work/WorkActionsMenu.tsx
@@ -889,8 +987,168 @@ msgstr "缓存重置"
 msgid "Calls"
 msgstr "调用"
 
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't delete {source} from this location."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+#~ msgid "Can't delete {source} here."
+#~ msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+#~ msgid "Can't delete {source}: it changed at the same time."
+#~ msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't delete {source}: it changed during the delete."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+#~ msgid "Can't move {source} there."
+#~ msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source} to that location."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: {place} is already taken."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+#~ msgid "Can't move {source}: another document is already there."
+#~ msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+#~ msgid "Can't move {source}: another document is at {place}."
+#~ msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+#~ msgid "Can't move {source}: it or its destination changed at the same time."
+#~ msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: it or its destination changed during the move."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: renaming it can't change its file type."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: that extension needs a different kind of document."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: that folder doesn't exist."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: that location is already taken."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: the folder for {place} doesn't exist."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+#~ msgid "Can't move {source}: the new name needs a different kind of document."
+#~ msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+#~ msgid "Can't move {source}: the new name would change its file type."
+#~ msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: this chat is in draft mode, so the move would be half drafted and half live."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+#~ msgid "Can't move {source}: this chat is in draft mode, so this move would be half drafted and half live."
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Can't redo: {place} is already taken. Move or rename what's there, then try again."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Can't redo: {place} was moved or deleted after you undid this change."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Can't redo: {place} was moved or deleted again since."
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Can't redo: another document is at {place}. Move or rename that document, then try again."
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Can't redo: another document is at that location. Move or rename that document, then try again."
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Can't redo: its location is already taken. Move or rename what's there, then try again."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Can't redo: the document was moved or deleted after you undid this change."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Can't redo: the document was moved or deleted again since."
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Can't redo: the document's original folder is gone."
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Can't redo: the folder it would move to is gone."
+msgstr ""
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Can't undo"
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Can't undo: {place} is already taken. Move or rename what's there, then try again."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Can't undo: {place} was moved or deleted after this change."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Can't undo: {place} was moved or deleted again since."
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Can't undo: another document is at {place}. Move or rename that document, then try again."
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Can't undo: another document is at that location. Move or rename that document, then try again."
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Can't undo: its location is already taken. Move or rename what's there, then try again."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Can't undo: the document was moved or deleted after this change."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Can't undo: the document was moved or deleted again since."
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Can't undo: the document's original folder is gone."
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Can't undo: the folder it would return to is gone."
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -944,6 +1202,10 @@ msgid "Change work for this chat, currently {0}"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed {count} documents"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Changed {count} Work"
 msgstr ""
 
@@ -952,7 +1214,15 @@ msgid "Changed {relativeTime}"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed 1 document"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Changed 1 Work"
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Changed since"
 msgstr ""
 
 #: src/features/project/mobile/MobileChangeSheet.tsx
@@ -1325,6 +1595,14 @@ msgstr ""
 msgid "Couldn't apply this draft."
 msgstr ""
 
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Couldn't be restored here"
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Couldn't be reversed"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
 msgstr ""
@@ -1360,6 +1638,10 @@ msgstr ""
 
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Couldn’t create this Work."
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't delete"
 msgstr ""
 
 #: src/features/project/chat-list/useChatRowCommands.tsx
@@ -1410,6 +1692,7 @@ msgstr ""
 msgid "Couldn't find {source} or {destination}."
 msgstr ""
 
+#: src/features/chat/namespace-refusal-copy.ts
 #: src/features/chat/tool-renderers.tsx
 msgid "Couldn't find {source}."
 msgstr ""
@@ -1459,6 +1742,10 @@ msgstr ""
 
 #: src/components/app/QueryErrorRow.tsx
 msgid "Couldn't load. Check your connection."
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't move"
 msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
@@ -1779,12 +2066,18 @@ msgstr ""
 msgid "Delete Work"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted {name}"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Deleted a document"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1794,6 +2087,10 @@ msgstr ""
 #: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 msgid "Deleted from the manuscript"
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Deleted since"
 msgstr ""
 
 #. js-lingui-explicit-id
@@ -1807,6 +2104,10 @@ msgstr ""
 
 #: src/features/editor/ManuscriptStateNotice.tsx
 msgid "Deleted, name taken"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Deleting"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1874,6 +2175,7 @@ msgstr ""
 msgid "Discard this chat's changes?"
 msgstr ""
 
+#: src/features/chat/turn-receipt-copy.ts
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Discarded"
 msgstr ""
@@ -2416,6 +2718,26 @@ msgstr ""
 msgid "Italic"
 msgstr ""
 
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Its document wasn't restored"
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Its file wasn't restored"
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Its folder is gone"
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Its location is taken"
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Its paragraph was removed"
+msgstr ""
+
 #: src/features/chat/SubagentHeader.tsx
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Jump to in chat"
@@ -2455,9 +2777,13 @@ msgstr ""
 msgid "Last name"
 msgstr "姓"
 
-#: src/features/chat/TurnEditsReceipt.tsx
-msgid "Later edits build on this change. View the change instead of undoing it."
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Later edits build on this change, so it can't be reversed. View the change instead."
 msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Later edits build on this change. View the change instead of undoing it."
+#~ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "Leading or trailing whitespace detected in file or folder name."
@@ -2730,6 +3056,34 @@ msgstr ""
 msgid "Move…"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Moved"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moved {source} to"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Moved {source} to {destination}"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moved a document"
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Moved or deleted after this change"
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Moved or deleted again since"
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Moved since"
+msgstr ""
+
 #. placeholder {0}: folder ?? ""
 #: src/features/project/context/LinkUpdateNote.tsx
 msgid "Moved to {0}"
@@ -2741,6 +3095,14 @@ msgstr ""
 
 #: src/features/chat/UserTurn.tsx
 msgid "Moved to the message box."
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moving"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moving {source} to"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -3026,7 +3388,7 @@ msgstr ""
 msgid "Only on this device"
 msgstr ""
 
-#: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/chat/turn-receipt-copy.ts
 msgid "Only part of this change could be reversed."
 msgstr ""
 
@@ -3185,8 +3547,24 @@ msgstr ""
 msgid "PDF"
 msgstr ""
 
+#: src/features/draft-review/tree-line.ts
+msgid "Pending delete"
+msgstr ""
+
 #: src/features/project/work/WorkChanges.tsx
 msgid "Pending drafts couldn’t load"
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "Pending move"
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "Pending moves and deletes"
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "Pending rename"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -3354,11 +3732,11 @@ msgstr ""
 msgid "Redo"
 msgstr ""
 
-#: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/chat/turn-receipt-copy.ts
 msgid "Redo didn't go through. Try again."
 msgstr ""
 
-#: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/chat/turn-receipt-copy.ts
 msgid "Redo is no longer available because the manuscript changed."
 msgstr ""
 
@@ -3563,6 +3941,10 @@ msgstr ""
 msgid "Right"
 msgstr ""
 
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Rolled back"
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Row"
 msgstr ""
@@ -3628,6 +4010,10 @@ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Scratch for {chatTitle}"
+msgstr ""
+
+#: src/features/chat/document-display-name.ts
+msgid "Scratch for {name}"
 msgstr ""
 
 #: src/features/project/chat/use-chat-scratch-source.ts
@@ -3884,6 +4270,10 @@ msgstr ""
 msgid "Status unknown"
 msgstr "状态未知"
 
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Stayed as you edited it"
+msgstr ""
+
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -4121,9 +4511,9 @@ msgstr ""
 msgid "That change wasn't reverted because its text changed or is already gone."
 msgstr ""
 
-#: src/features/chat/TurnEditsReceipt.tsx
-msgid "That chapter is no longer available, so this change can't be reversed."
-msgstr ""
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "That chapter is no longer available, so this change can't be reversed."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "That did not work."
@@ -4135,6 +4525,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That document couldn't be found."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "That document is no longer available, so this change can't be reversed."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -4186,6 +4580,54 @@ msgstr ""
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "The AI asked you a question"
 msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in {chat} deleted {count} documents ({names})."
+msgstr "{chat} 中的 AI 删除了 {count} 份文档（{names}）。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI in {chat} deleted {name} before this reply saved its change."
+msgstr "{chat} 中的 AI 在此回复保存其更改之前删除了 {name}。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in {chat} deleted {title} from the manuscript. Applying brings it back."
+msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in {chat} deleted {title}."
+msgstr "{chat} 中的 AI 删除了{title}。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI in {chat} deleted this document before this reply saved its change."
+msgstr "{chat} 中的 AI 在此回复保存其更改之前删除了这份文档。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in {chat} deleted this document."
+msgstr "{chat} 中的 AI 删除了这份文档。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in a chat deleted {count} documents ({names})."
+msgstr "某个对话中的 AI 删除了 {count} 份文档（{names}）。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI in a chat deleted {name} before this reply saved its change."
+msgstr "某个对话中的 AI 在此回复保存其更改之前删除了 {name}。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in a chat deleted {title} from the manuscript. Applying brings it back."
+msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in a chat deleted {title}."
+msgstr "某个对话中的 AI 删除了{title}。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI in a chat deleted this document before this reply saved its change."
+msgstr "某个对话中的 AI 在此回复保存其更改之前删除了这份文档。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in a chat deleted this document."
+msgstr "某个对话中的 AI 删除了这份文档。"
 
 #: src/features/chat/chat-card-copy.ts
 msgid "The AI provider turned this request down."
@@ -4346,12 +4788,17 @@ msgstr ""
 msgid "This change belongs with others. Select all of them and try again."
 msgstr ""
 
+#: src/features/chat/turn-receipt-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is no longer reversible."
 msgstr ""
 
-#: src/features/chat/TurnEditsReceipt.tsx
-msgid "This change no longer matches the chapter text, so it can't be reversed."
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "This change no longer matches the chapter text, so it can't be reversed."
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "This change no longer matches the document's text, so it can't be reversed."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
@@ -4465,6 +4912,10 @@ msgstr ""
 msgid "This document is still opening."
 msgstr ""
 
+#: src/features/chat/turn-receipt-copy.ts
+msgid "This document was deleted"
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "This document was deleted before this reply saved its change."
 msgstr ""
@@ -4485,6 +4936,10 @@ msgstr "这份文档已随工作区 {work} 删除，在此回复保存其更改�
 msgid "This document was deleted."
 msgstr ""
 
+#: src/features/chat/turn-receipt-copy.ts
+msgid "This document was discarded from the draft"
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "This document was discarded from the draft before this reply saved its change."
 msgstr ""
@@ -4499,6 +4954,14 @@ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was removed when the reply that created it didn't finish."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "This document's Work is archived. Unarchive the Work to reverse this change."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "This draft is archived"
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
@@ -4517,7 +4980,7 @@ msgstr ""
 msgid "This file holds code only."
 msgstr ""
 
-#: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/chat/turn-receipt-copy.ts
 msgid "This file is binary, so this change can't be reversed."
 msgstr ""
 
@@ -4530,9 +4993,17 @@ msgstr ""
 msgid "This file type ({0}) doesn't have an inline viewer yet. Download the original to inspect it."
 msgstr ""
 
-#: src/features/chat/TurnEditsReceipt.tsx
-msgid "This file's Work is archived. Unarchive the Work to reverse this change."
-msgstr ""
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "This file was deleted"
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "This file was discarded"
+#~ msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "This file's Work is archived. Unarchive the Work to reverse this change."
+#~ msgstr ""
 
 #: src/client/api/upload-intake-api.ts
 msgid "This filename contains unsupported characters. Rename the file and attach it again."
@@ -4570,6 +5041,10 @@ msgstr ""
 msgid "This location is unavailable. Refresh and try again."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This move or delete changed since you looked. Check it, then apply again."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "This new document was discarded, so the change wasn't kept. The AI will read it again."
 msgstr ""
@@ -4582,6 +5057,10 @@ msgstr ""
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
 msgstr ""
 
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "This part is in another draft"
+#~ msgstr ""
+
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "This project couldn’t load. It may be unavailable."
 msgstr ""
@@ -4593,6 +5072,10 @@ msgstr ""
 #: src/features/project/work/WorkChanges.tsx
 msgid "This removes pending changes from every document in this Work."
 msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+#~ msgid "This rename or delete changed since you looked. Check it, then apply again."
+#~ msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx
 msgid "This report is from its previous run. It's running again now."
@@ -4767,11 +5250,11 @@ msgstr ""
 msgid "Undo"
 msgstr "撤销"
 
-#: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/chat/turn-receipt-copy.ts
 msgid "Undo didn't go through. Try again."
 msgstr ""
 
-#: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/chat/turn-receipt-copy.ts
 msgid "Undo is no longer available."
 msgstr ""
 
@@ -4812,6 +5295,7 @@ msgid "Untitled chat"
 msgstr ""
 
 #: src/features/chat/document-display-name.ts
+#: src/features/draft-review/tree-line.ts
 #: src/features/project/work/WorkChangeFile.tsx
 #: src/features/project/work/WorkChanges.tsx
 msgid "Untitled document"
@@ -4863,6 +5347,10 @@ msgstr ""
 #: src/features/chat/ChatFilesMenu.tsx
 #: src/features/project/context/context-schemes.ts
 msgid "Uploads"
+msgstr ""
+
+#: src/features/chat/document-display-name.ts
+msgid "Uploads for {name}"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx

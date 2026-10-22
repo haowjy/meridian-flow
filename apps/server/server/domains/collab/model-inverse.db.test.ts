@@ -8,7 +8,6 @@ import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createAllowAllFileAccess } from "../file-policy/index.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
-import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
 import { createTurnReversalService } from "./domain/turn-reversal-service.js";
 import {
   ALPHA_ID,
@@ -34,15 +33,10 @@ describe("model document stack", () => {
     try {
       const resolveDocumentUri = async (documentId: string) =>
         documentId === ALPHA_ID ? "manuscript/alpha.md" : null;
-      const lineage = createTurnLiveLineageReadModel({
-        store: createDrizzleTurnLiveLineageStore(db),
-        resolveDocumentUri,
-        resolveLastDocumentUri: resolveDocumentUri,
-      });
       const card = createTurnReversalService({
         turnInverse: { reverseTurn: view.collab.reverseTurn },
         resolveDocumentUri,
-        listEditedDocumentsForTurn: lineage.listEditedDocumentsForTurn,
+        listTurnTargets: createDrizzleTurnLiveLineageStore(db).listEditedDocumentIdsForTurn,
         fileAccess: createAllowAllFileAccess(),
         threadContext: { requireThreadOwner: async () => ({ projectId: PROJECT_ID }) },
       });

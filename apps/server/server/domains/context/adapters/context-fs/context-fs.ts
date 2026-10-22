@@ -46,6 +46,7 @@ import type {
   AdapterFileRef,
   AdapterMoveResult,
   AdapterSearchHit,
+  ContextBranchTreeAdapter,
   ContextEnsureTrackedOptions,
   ContextSchemeAdapter,
   ContextTreeAdapter,
@@ -136,7 +137,7 @@ function trackedSchemaForPersistedFiletype(
 }
 
 function moveFiletypeTransition(
-  source: Extract<ContextLocationToken, { kind: "file" }>,
+  source: Pick<Extract<ContextLocationToken, { kind: "file" }>, "filetype" | "path">,
   destinationPath: string,
   parsedFiletype?: Filetype | null,
 ): Result<Filetype | null, AdapterFault> {
@@ -148,6 +149,7 @@ function moveFiletypeTransition(
     if (destination.kind !== "tracked") return Ok(null);
     return Err({
       code: "invalid_operation",
+      reason: "file_type_conversion",
       message: `Cannot rename storage-backed file ${source.path} to ${destinationPath} because tracked documents require a Yjs schema`,
     });
   }
@@ -159,12 +161,14 @@ function moveFiletypeTransition(
   if (destination.kind !== "tracked") {
     return Err({
       code: "invalid_operation",
+      reason: "file_type_conversion",
       message: `Cannot rename tracked document ${source.path} to ${destinationPath} because binary and custom files use a different storage model`,
     });
   }
   if (destination.schemaType !== sourceSchema.value) {
     return Err({
       code: "invalid_operation",
+      reason: "document_type_conversion",
       message: `Cannot rename ${source.path} to ${destinationPath} because changing the Yjs schema from ${sourceSchema.value} to ${destination.schemaType} requires an explicit conversion`,
     });
   }
@@ -206,6 +210,7 @@ export class ContextFS implements ContextSchemeAdapter {
     commitPreparedMove: (prepared) => this.commitPreparedMove(prepared),
     commitRecursiveDelete: (command) => this.commitRecursiveDelete(command),
   };
+  readonly branchTree?: ContextBranchTreeAdapter;
 
   constructor(deps: ContextFSDeps) {
     this.links = deps.links;
@@ -266,6 +271,41 @@ export class ContextFS implements ContextSchemeAdapter {
       documentSync: deps.documentSync,
       liveCreate: this.liveCreate,
     });
+    const branchTree = this.placement.branchTree;
+    if (branchTree) {
+      this.branchTree = {
+        sourceId: () => this.store.contextSourceId(),
+        // The destination's name as a move names it: an extensionless one keeps the source's
+        // extension, and a rename never converts a document to another file type.
+        move: async (path, { from, ...command }) => {
+          const { dir, filename } = splitPath(path);
+          const current = parseDocumentFilename(splitPath(from.path).filename);
+          const parsed = parseDocumentFilename(filename, {
+            sourceExtension: current.ok ? current.value.extension : "",
+          });
+          if (!parsed.ok) return Err(parsed.error);
+          const transition = moveFiletypeTransition(from, path, parsed.value.filetype);
+          if (!transition.ok) return transition;
+          const { name, extension } = parsed.value;
+          const moved = await branchTree.move(
+            { dir, name, extension },
+            {
+              ...command,
+              documentId: command.documentId as DocumentId,
+              fromSourceId: from.sourceId,
+            },
+          );
+          return moved.ok
+            ? Ok({
+                moved: moved.value.moved,
+                path: [...dir, renderFilename(name, extension)].join("/"),
+              })
+            : moved;
+        },
+        delete: (_path, command) =>
+          branchTree.delete({ ...command, documentId: command.documentId as DocumentId }),
+      };
+    }
   }
 
   private syncFault(error: SyncError): AdapterFault {

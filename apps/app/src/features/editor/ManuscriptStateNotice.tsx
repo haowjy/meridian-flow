@@ -2,7 +2,9 @@
  * ManuscriptStateNotice — what live did to the document this draft holds (D79): deleted from
  * the manuscript (Apply brings it back), or its name now taken by another document. Once an
  * Apply brings it back the same place says so, until the writer dismisses it or opens another
- * document; a host swap on promotion (the phone's) remounts it and must not end it.
+ * document; a host swap on promotion (the phone's) remounts it and must not end it. With none
+ * of those, it says what a Work's pending move or delete will do to the document (D26), which
+ * live doesn't show until Apply: "Ascension is renaming this to ch12-old."
  *
  * It lives in the free end of a header row the document already has (the identity row, the
  * phone's review row), never in a strip of its own: a delete lands while the writer reads, and
@@ -14,19 +16,26 @@ import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Info, X } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
+import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import type { ContextTab } from "@/client/stores";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { restoredSentence } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { isDeletedFromManuscript, isPathTaken } from "@/features/draft-review/deleted-drafts";
+import {
+  type PendingTreeChange,
+  treeNoticeLabel,
+  treeNoticeSentence,
+} from "@/features/draft-review/tree-line";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import { tabLocation } from "@/features/project/context/identity-location";
 import { deletedFromManuscriptSentence } from "@/features/project/context/RemovedDocumentNotice";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { cn } from "@/lib/utils";
 
 export type ManuscriptState = {
-  kind: "deleted" | "taken" | "restored";
+  kind: "deleted" | "taken" | "restored" | "pending-tree";
   sentence: string;
   label: string;
   dismiss?: () => void;
@@ -49,6 +58,7 @@ export function useManuscriptState(projectId: string, tab: ContextTab): Manuscri
   const removal = useRemovalRecord(projectId, deleted ? documentId : null);
   const taken = isPathTaken(item);
   const title = tab.name;
+  const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
   const takenSentence = t`Another document now has this name. Rename that document to apply this draft.`;
   // Both can hold: a deleted document whose path another document then took.
   if (deleted) {
@@ -68,6 +78,18 @@ export function useManuscriptState(projectId: string, tab: ContextTab): Manuscri
       label: t`Back in the manuscript`,
       dismiss: () => owner.forgetRestored(projectId, documentId),
     };
+  const pending = hints.flatMap((hint): PendingTreeChange[] =>
+    hint.tree ? [{ work: hint.label, line: hint.tree }] : [],
+  );
+  if (pending.length > 0) {
+    const location = tabLocation(tab);
+    const from = location.path ? { scheme: location.scheme, path: location.path } : null;
+    return {
+      kind: "pending-tree",
+      sentence: pending.map((change) => treeNoticeSentence(change, from)).join(" "),
+      label: treeNoticeLabel(pending, from),
+    };
+  }
   return null;
 }
 

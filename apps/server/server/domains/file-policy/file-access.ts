@@ -167,7 +167,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
 /** An agent's document or container access may go through its draft-mode chat's Work branch. */
 function factsRequest(principal: Principal, target: FileTarget): FileFactsRequest {
   const branchWork = principal.agent?.branchWork;
-  return target.kind !== "draft" && branchWork
+  return target.kind !== "draft" && target.kind !== "restore" && branchWork
     ? { target, branchWorkId: branchWork.id }
     : { target };
 }

@@ -51,6 +51,8 @@ try {
     async flushLivePull() {},
     notices: { async record() {} },
     workProjection: h.projection,
+    removal: createTestDocumentRemoval(h.db),
+    catalog: { refreshSources: async () => "" },
     onDraftCommitted: () => {},
   });
 

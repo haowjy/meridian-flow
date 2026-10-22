@@ -1,6 +1,14 @@
-/** Open review rows are the room runtime's group projection, without command or focus ownership. */
+/**
+ * Open review rows are the room runtime's group projection, without command or focus ownership,
+ * after the item's pending move or delete (its tree line) when it has one: a review isn't done
+ * while its document is still being renamed, moved or deleted. Focus and stepping walk the text
+ * changes (`changes`) alone; the tree line has no place in the text.
+ */
+import { useQuery } from "@tanstack/react-query";
+import { workBranchDraftsQueryOptions } from "@/client/query/useWorkBranchDrafts";
 import type { DraftChangesData } from "./draft-changes";
 import { useChangeItems, useDraftCommandState } from "./draft-changes";
+import { treeChange, treeLineOf } from "./tree-line";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { useRoomReview } from "./useRoomReview";
 export function useOpenReviewChanges(
@@ -18,7 +26,16 @@ export function useOpenReviewChanges(
     : null;
   const read = useRoomReview(draft);
   const command = useDraftCommandState(draft?.itemKey ?? "");
-  const { items } = useChangeItems(draft, read.changes);
+  const listed = useQuery({
+    ...workBranchDraftsQueryOptions(controller.projectId, controller.workId),
+    enabled: Boolean(draft),
+  });
+  const item = draft ? listed.data?.find((row) => row.itemKey === draft.itemKey) : undefined;
+  const line = item && !item.isNew ? treeLineOf(item) : null;
+  const { items } = useChangeItems(
+    draft,
+    item && line ? [treeChange(item, line), ...read.changes] : read.changes,
+  );
   return {
     inline,
     documentId: inline?.documentId ?? null,

@@ -8,21 +8,16 @@
  * there is one) and the namespaces; the Work's pending count follows at that transaction's
  * commit. Hidden nodes are tombstoned, never hard-deleted.
  */
-import type { BranchId, DocumentId, FolderId } from "@meridian/contracts";
+import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { RetractionCause } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { DocumentRemoval } from "../ports/document-removal.js";
-import { dropDocumentRows } from "./branch-tree-store.js";
-import { lockDocuments, type RemovalInitiator, tombstoneFolders } from "./node-rows.js";
-import { loadFolderChains } from "./tree-addresses.js";
+import { dropDocumentRows, pruneHiddenFolders } from "./branch-tree-store.js";
+import { lockDocuments, type RemovalInitiator } from "./node-rows.js";
 import type { NodeRef } from "./tree-view.js";
-import {
-  isUnusedHiddenFolder,
-  loadActiveBranchUses,
-  loadDocumentIdentityRows,
-} from "./tree-view-sql.js";
+import { loadActiveBranchUses, loadDocumentIdentityRows } from "./tree-view-sql.js";
 
 /** What an end of use tombstoned, and the stored objects to delete once it commits. */
 export type EndedUse = {
@@ -33,8 +28,9 @@ export type EndedUse = {
 const NOTHING_ENDED: EndedUse = Object.freeze({ tombstoned: [], releasedObjects: [] });
 
 /**
- * The branch stops using these documents: its rows go,
- * then each hidden document no active branch uses any more is tombstoned (`tombstoneUnused`).
+ * The branch stops using these documents: its rows go (settling its moves and deletes, and
+ * pruning the hidden folders only those moves used), then each hidden document no active
+ * branch uses any more is tombstoned (`tombstoneUnused`).
  * A revealed document is live and stays.
  */
 export async function endUse(
@@ -48,8 +44,13 @@ export async function endUse(
 ): Promise<EndedUse> {
   const ids = [...new Set(input.documentIds)].sort();
   if (ids.length === 0) return NOTHING_ENDED;
-  await dropDocumentRows(db, { branchId: input.branchId, documentIds: ids });
-  return tombstoneUnused(db, ids, { actor: input.actor, removal: input.removal });
+  const pruned = await dropDocumentRows(db, {
+    branchId: input.branchId,
+    documentIds: ids,
+    settle: { as: "discarded", userId: "userId" in input.actor ? input.actor.userId : null },
+  });
+  const ended = await tombstoneUnused(db, ids, { actor: input.actor, removal: input.removal });
+  return { ...ended, tombstoned: [...pruned, ...ended.tombstoned] };
 }
 
 /**
@@ -86,26 +87,12 @@ export async function tombstoneUnused(
   const tombstoned: NodeRef[] = removed.map((id) => ({ kind: "document" as const, id }));
   const releasedObjects = ending.flatMap((row) => (row.storageUrl ? [row.storageUrl] : []));
   if (options.keepFolders) return { tombstoned, releasedObjects };
-  // Every ancestor of every ended document, deepest first: a folder is judged only after
-  // all of the batch's folders beneath it, so a sibling still alive at first glance never
-  // leaves its parent behind.
-  const chains = await loadFolderChains(
-    tx,
-    ending.map((row) => row.folderId),
+  tombstoned.push(
+    ...(await pruneHiddenFolders(
+      db,
+      ending.map((row) => row.folderId),
+    )),
   );
-  const depthOf = new Map<FolderId, number>();
-  for (const chain of chains.values()) {
-    chain.forEach((folder, index) => {
-      const depth = chain.length - index;
-      depthOf.set(folder.id, Math.max(depthOf.get(folder.id) ?? 0, depth));
-    });
-  }
-  const deepestFirst = [...depthOf.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
-  for (const folderId of deepestFirst) {
-    if (!(await isUnusedHiddenFolder(tx, folderId))) continue;
-    await tombstoneFolders(db, [folderId]);
-    tombstoned.push({ kind: "folder", id: folderId });
-  }
   return { tombstoned, releasedObjects };
 }
 

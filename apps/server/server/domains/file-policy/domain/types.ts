@@ -100,11 +100,15 @@ export type FileOwnerRef =
 
 /**
  * What a request is about. AI calls pass `document` and the policy picks live
- * or draft; `draft` is for the writer's draft preview, Apply and Discard.
+ * or draft; `draft` is for the writer's draft preview, Apply and Discard;
+ * `restore` is a deleted document where an inverse would bring it back: its own
+ * folder and source, live, without its own delete (a folder or source deleted
+ * above it still hides it).
  */
 export type FileTarget =
   | { kind: "document"; documentId: DocumentId }
   | { kind: "draft"; documentId: DocumentId; workId: WorkId }
+  | { kind: "restore"; documentId: DocumentId }
   | { kind: "container"; scheme: ContextUriScheme; owner: FileOwnerRef };
 
 /** A node of the file tree that grants and future agent rules attach to. */

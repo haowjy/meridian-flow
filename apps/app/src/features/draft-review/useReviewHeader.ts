@@ -107,7 +107,12 @@ export function useReviewHeader({
   const { controller, files } = useDraftReview();
   const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
 
-  const next = nextReviewFile(files, documentId, null);
+  // Only a file with text has a review to move to: a move or delete alone has no draft room.
+  const next = nextReviewFile(
+    files.filter((file) => file.draft.hasDraft || file.documentId === documentId),
+    documentId,
+    null,
+  );
   // Warm the next addressed room lookup without fetching a server text preview.
   const queryClient = useQueryClient();
   const nextDocumentId = next?.documentId;

@@ -14,6 +14,7 @@ import {
 } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import { runWithEditConfirmation } from "../../../../apps/server/server/shared/edit-confirmation.ts";
 import { setTestHook } from "../../../../apps/server/server/shared/test-hooks.ts";
+import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.ts";
 import {
   blocksEqual,
   REVIEW_BASE_FRAGMENT,
@@ -401,6 +402,8 @@ try {
       flushLivePull: (id) => pulls.flushLivePull(id),
       notices: { record: async () => {} },
       workProjection: h.projection,
+      removal: createTestDocumentRemoval(h.db),
+      catalog: { refreshSources: async () => "" },
     });
     const result = await runWithEditConfirmation(workGrant(h, s.workId), () =>
       inverse.modelInverse(

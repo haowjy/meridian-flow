@@ -34,13 +34,16 @@ import {
   spellNodeAddresses,
 } from "./tree-addresses.js";
 import {
+  type BranchTreeFactsRow,
+  type BranchTreeRow,
   type DocumentIdentityRow,
   identityDocuments,
   loadActiveBranchUses,
-  loadBranchCreatedDocuments,
+  loadBranchTreeRows,
   loadDocumentIdentityRows,
   loadDocumentIdsAt,
   loadFolderIdsAt,
+  loadPendingDocumentIds,
   type PathSlot,
   type VisibleDocumentsSubquery,
   type VisibleFoldersSubquery,
@@ -50,11 +53,13 @@ import {
 
 export type { DocumentCoordinates, NodeAddress } from "./tree-addresses.js";
 export {
+  branchDeletedDocuments,
   identityDocumentFields,
   identityDocuments,
   identityFolderFields,
   identityFolders,
   livingDocumentUses,
+  pendingDocuments,
   type VisibleDocumentsSubquery,
   type VisibleFoldersSubquery,
   visibleDocumentFields,
@@ -152,15 +157,22 @@ export type IdentityStatus =
       usedBy: readonly BranchUse[];
       address: NodeAddress;
     }
-  /** Soft-deleted while visible; the last address it held (decision 15). */
+  /** Soft-deleted while visible, or deleted in this branch; the last address it held (decision 15). */
   | { kind: "deleted"; documentId: DocumentId; lastAddress: NodeAddress | null }
   /** A tombstone, a hidden node no branch uses, a missing id, or an address that can't be spelled. */
   | { kind: "gone"; documentId: DocumentId };
 
+/**
+ * A branch row's logical state, delete dominant: `deleting` when it deleted the document (a
+ * move under it is masked intent, kept for the delete's undo), `moving` when it moved it,
+ * `created` when it only created it.
+ */
+export type BranchLogicalState = "deleting" | "moving" | "created";
+
 export type TreeStateNode = {
   nodeKind: "document";
   nodeId: DocumentId;
-  /** created: the branch has a `created` row. edited: the caller names it (text only). */
+  /** created: the branch has a `created` row. edited: the caller names it, or a move or delete. */
   origin: "created" | "edited";
   /** Created and still hidden: "new". */
   hidden: boolean;
@@ -168,7 +180,21 @@ export type TreeStateNode = {
   fileType: string;
   /** Deleted from the manuscript: Apply brings it back (`restoreDocument`), then merges. */
   deleted: boolean;
-  /** The row's own location, the only one a document has: where Apply reveals it. */
+  /** The branch's row on the document; null when only its text changed. */
+  branch: {
+    state: BranchLogicalState;
+    created: boolean;
+    moved: boolean;
+    deleted: boolean;
+    /** What an Apply click freezes; null only on a created row written before PR 3. */
+    revision: bigint | null;
+  } | null;
+  /** The reviewable-pending predicate: review lists it and the Work counts it. */
+  pending: boolean;
+  /**
+   * Where the branch has it, its effective placement: a moving document's moved placement,
+   * otherwise its row's (for a created one, the only location it has, where Apply reveals it).
+   */
   target: {
     contextSourceId: ContextSourceId;
     parentFolderId: FolderId | null;
@@ -180,6 +206,8 @@ export type TreeStateNode = {
     /** `path` spelled as a canonical URI; null when it can't be spelled. */
     uri: string | null;
   };
+  /** Moving: where its row is now, the location the branch's placement replaces. */
+  from: { path: string; uri: string | null } | null;
   /** The rendered location token's source. */
   locationVersion: bigint;
   conflict:
@@ -246,9 +274,9 @@ export interface TreeReader {
     addresses: readonly DocumentCoordinates[],
   ): Promise<ReadonlyMap<string, DocumentId[]>>;
   /**
-   * The branch's created documents, plus the edited documents the caller names (the
-   * branch's drafts with rows; the tree view doesn't read drafts). `only` limits the
-   * created ones to these ids, so one item's lookup costs one item.
+   * The documents the branch has a row on (created, moved or deleted), plus the edited
+   * documents the caller names (the branch's drafts with rows; the tree view doesn't read
+   * drafts). `only` limits the rows to these ids, so one item's lookup costs one item.
    */
   treeState(
     branchId: BranchId,
@@ -629,6 +657,23 @@ export function createTreeReader(
         (row) => [row.id, row],
       ),
     );
+    // A living document this branch deletes is deleted in its view, at its live address.
+    const branchDeleted =
+      view.kind === "branch" && isUuid(view.branchId)
+        ? new Set(
+            (
+              await loadBranchTreeRows(
+                tx(),
+                view.branchId,
+                [...rows.values()]
+                  .filter((row) => !row.hidden && !row.deleted && !visible.has(row.id))
+                  .map((row) => row.id),
+              )
+            )
+              .filter((row) => row.facts.deleted)
+              .map((row) => row.id),
+          )
+        : new Set<DocumentId>();
     const hiddenIds = [...rows.values()]
       .filter((row) => row.hidden && !row.deleted)
       .map((row) => row.id);
@@ -678,7 +723,7 @@ export function createTreeReader(
             : { kind: "gone" },
         );
         if (!chosen) unused.push(id);
-      } else if (row.deleted) {
+      } else if (row.deleted || branchDeleted.has(id)) {
         decided.set(id, { kind: "deleted", location: rowLocation(row) });
       } else {
         decided.set(id, { kind: "gone" });
@@ -770,41 +815,60 @@ export function createTreeReader(
     only?: readonly DocumentId[],
   ): Promise<TreeStateNode[]> {
     const view: TreeView = { kind: "branch", branchId };
-    const created = isUuid(branchId)
-      ? await loadBranchCreatedDocuments(tx(), branchId, only?.filter(isUuid))
+    const rows = isUuid(branchId)
+      ? await loadBranchTreeRows(tx(), branchId, only?.filter(isUuid))
       : [];
-    const createdIds = new Set(created.map((row) => row.id));
+    const rowIds = new Set(rows.map((row) => row.id));
     const editedRows = await loadDocumentIdentityRows(
       tx(),
-      [...new Set(edited)].filter((id) => isUuid(id) && !createdIds.has(id)),
+      [...new Set(edited)].filter((id) => isUuid(id) && !rowIds.has(id)),
     );
-    const items: { origin: "created" | "edited"; row: DocumentIdentityRow }[] = [
+    type Item = {
+      row: DocumentIdentityRow;
+      branch: BranchTreeRow | null;
+      state: BranchLogicalState | null;
+      at: Pick<DocumentIdentityRow, "contextSourceId" | "folderId" | "name" | "extension">;
+    };
+    const items: Item[] = [
       // A tombstone is no longer the branch's: repair-on-touch drops its row (§12.4).
-      ...created
+      ...rows
         .filter((row) => !(row.hidden && row.deleted))
-        .map((row) => ({ origin: "created" as const, row })),
+        .map((row): Item => {
+          const state = logicalState(row.facts);
+          return { row, branch: row, state, at: row.effective };
+        }),
       // A hidden document the branch didn't create isn't in the branch's view.
-      ...editedRows.filter((row) => !row.hidden).map((row) => ({ origin: "edited" as const, row })),
+      ...editedRows
+        .filter((row) => !row.hidden)
+        .map((row): Item => ({ row, branch: null, state: null, at: row })),
     ];
-    const chains = await loadFolderChains(
-      tx(),
-      items.map(({ row }) => row.folderId),
-    );
+    const pending = isUuid(branchId)
+      ? await loadPendingDocumentIds(
+          tx(),
+          branchId,
+          items.map(({ row }) => row.id),
+        )
+      : new Set<DocumentId>();
+    const chains = await loadFolderChains(tx(), [
+      ...items.map(({ at }) => at.folderId),
+      ...items.flatMap(({ row, state }) => (state === "moving" ? [row.folderId] : [])),
+    ]);
     const chainOf = (folderId: FolderId | null) =>
       folderId === null ? [] : (chains.get(folderId) ?? []);
+    const pathOf = (at: Item["at"]) =>
+      folderPath(chainOf(at.folderId), renderFilename(at.name, at.extension));
 
     // Every path a target needs, in the branch's view: its own, then each ancestor folder's,
     // nearest first. Paths, not folder ids: a deleted folder's path may hold a new folder.
-    // Each is a claim of its kind, so the clash is the one Apply's live holds would see.
-    const needs = items.flatMap(({ row }, item) => {
-      const segments = folderPath(
-        chainOf(row.folderId),
-        renderFilename(row.name, row.extension),
-      ).split("/");
+    // Each is a claim of its kind, so the clash is the one Apply's live holds would see. A
+    // document the branch is deleting claims no path.
+    const needs = items.flatMap(({ at, state }, item) => {
+      if (state === "deleting") return [];
+      const segments = pathOf(at).split("/");
       return segments.map((_, drop) => ({
         item,
         target: drop === 0,
-        contextSourceId: row.contextSourceId,
+        contextSourceId: at.contextSourceId,
         path: segments.slice(0, segments.length - drop).join("/"),
         as: drop === 0 ? ("document" as const) : ("folder" as const),
       }));
@@ -824,35 +888,61 @@ export function createTreeReader(
       return null;
     };
 
-    // Spelled from the same read as the paths and the version token.
+    // Spelled from the same read as the paths and the version token: each target, then each
+    // moving document's row.
+    const moving = items.flatMap((item, index) => (item.state === "moving" ? [index] : []));
     const spelled = await spellNodeAddresses(
       tx(),
-      items.map(({ row }) => rowLocation(row)),
+      [
+        ...items.map(({ row, at }) => ({ ...rowLocation(row), ...at })),
+        ...moving.map((index) => rowLocation((items[index] as Item).row)),
+      ],
       chains,
     );
+    const fromOf = new Map(
+      moving.map((index, offset) => {
+        const row = (items[index] as Item).row;
+        return [
+          index,
+          { path: pathOf(row), uri: spelled[items.length + offset]?.uri ?? null },
+        ] as const;
+      }),
+    );
 
-    return items.map(({ origin, row }, item): TreeStateNode => {
-      const chain = chainOf(row.folderId);
+    return items.map(({ row, branch, state, at }, item): TreeStateNode => {
+      const chain = chainOf(at.folderId);
       const clash = clashOf(item);
       const address = spelled[item]?.uri ?? null;
-      const path = folderPath(chain, renderFilename(row.name, row.extension));
+      const path = pathOf(at);
       return {
         nodeKind: "document",
         nodeId: row.id,
-        origin,
+        origin: branch?.facts.created ? "created" : "edited",
         hidden: row.hidden,
         binary: isStorageBackedDocument(row),
         fileType: row.fileType,
         deleted: row.deleted,
+        branch:
+          branch && state
+            ? {
+                state,
+                created: branch.facts.created,
+                moved: branch.facts.moved !== null,
+                deleted: branch.facts.deleted,
+                revision: branch.facts.revision,
+              }
+            : null,
+        pending: pending.has(row.id),
         target: {
-          contextSourceId: row.contextSourceId,
-          parentFolderId: row.folderId,
-          name: row.name,
-          extension: row.extension,
+          contextSourceId: at.contextSourceId,
+          parentFolderId: at.folderId,
+          name: at.name,
+          extension: at.extension,
           path,
           dir: [...chain].reverse().map((folder) => folder.name),
           uri: address,
         },
+        from: fromOf.get(item) ?? null,
         locationVersion: row.locationVersion,
         conflict: clash
           ? {
@@ -963,6 +1053,13 @@ function positions(asks: readonly (Omit<PathSlot, "key"> & { owner: number })[])
 function sameSourceUri(uri: string | null, uriPath: string, path: string): string | null {
   if (!uri?.endsWith(uriPath)) return null;
   return uri.slice(0, uri.length - uriPath.length) + path;
+}
+
+/** A branch row's one logical state (delete dominant); null when it says nothing. */
+export function logicalState(facts: BranchTreeFactsRow): BranchLogicalState | null {
+  if (facts.deleted) return "deleting";
+  if (facts.moved) return "moving";
+  return facts.created ? "created" : null;
 }
 
 /** The identity of a node a reader found. */
