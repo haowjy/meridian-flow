@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
+import { draftMetadataQueryOptions } from "@/client/query/useDraftMetadata";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import {
   useObservedResourceProjection,
@@ -68,9 +69,11 @@ function WorkSettlement({
   const availability = useOptionalProjectContextAvailabilityCoordinator();
   const drafts = useWorkBranchDrafts(projectId, workId);
   const projection = useObservedResourceProjection(resources, projectId);
-  // A draft-only tab whose draft left the active list was disposed of
-  // elsewhere. The list cannot say how, so the catalog decides: a document
-  // that now exists was applied, otherwise the draft was discarded.
+  // The pending list omits a draft with no effect (and one inside the
+  // `has_effect` lag), so leaving it proves nothing. For an unlisted draft-only
+  // tab the catalog decides first: a document that now exists was applied and
+  // the tab goes live. Otherwise only the draft's own metadata may retire it: a
+  // `gone` draft was discarded; an active one keeps its tab (a delete's hold).
   useEffect(() => {
     if (!resources || !projectId || !workId) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
@@ -106,8 +109,21 @@ function WorkSettlement({
           for (const draft of lifecycle.presentations(projectId)) {
             if (!isOrphan(draft, currentDrafts) || JSON.stringify(scopeFor(draft)) !== key)
               continue;
-            if (view.entries.get(draft.documentId)?.kind === "file") void lifecycle.promote(draft);
-            else lifecycle.remove(draft);
+            if (view.entries.get(draft.documentId)?.kind === "file") {
+              void lifecycle.promote(draft);
+              continue;
+            }
+            void queryClient
+              .fetchQuery({ ...draftMetadataQueryOptions(draft), staleTime: 0 })
+              .then((metadata) => {
+                if (attempt.signal.aborted || metadata.status !== "gone") return;
+                const still = lifecycle
+                  .presentations(projectId)
+                  .find((entry) => entry.token === draft.token);
+                if (still) lifecycle.remove(still);
+              })
+              // An unanswered disposition keeps the tab, never guesses Discard.
+              .catch(() => undefined);
           }
         })
         // A failed membership check leaves this scope's tabs intact, never guesses Discard.
