@@ -18,7 +18,10 @@ its predicate is `folders_nonlive_location`'s, so a path slot reaches that index
 outlives (own or folder delete, reason `deleted`, no Work cascade); listing adds
 the pending effect, admission (`survivingDraftDocuments`) only an active draft.
 The identity relations' diagnostic arms exclude a view's surviving rows, so each
-identity appears once. A new live node at a surviving document's path makes that
+identity appears once. Availability lookups in a branch view follow the same
+listing: a surviving document (and a deleted folder the view places it under)
+answers `available` at its deleted-at location, never `deleted`, so a review
+address opens its draft; live lookups still answer `deleted`. A new live node at a surviving document's path makes that
 path `ambiguous` in the branch, and `treeState` reports the clash. A path with two visible nodes answers `ambiguous`; normalization is a
 write operation, while `treeState` reports the clash.
 
