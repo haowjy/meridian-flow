@@ -5,7 +5,9 @@
  * all, the creation-bound whole-Work batch (`disposeDrafts`). They act on every draft of the Work whatever the
  * search box filters, new documents and formatting-only drafts included, and
  * only a change row uses the per-change selection
- * commands. Discard all asks first, inline, in the menu's place.
+ * commands. Discard all asks first, inline, in the menu's place; so does an
+ * Apply all that would bring back documents deleted from the manuscript (D79),
+ * naming each, and again for any a newer delete held back.
  *
  * Nothing shows until the Work has something to review: no loading flash and no
  * empty group. A list that cannot be read says so, with Retry.
@@ -16,6 +18,7 @@ import type { Work } from "@meridian/contracts/works";
 import { MoreHorizontal } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,7 +27,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { DiscardNotice } from "@/features/draft-review/DiscardNotice";
+import { CommandNotice } from "@/features/draft-review/CommandNotice";
+import { isDeletedFromManuscript, isPathTaken } from "@/features/draft-review/deleted-drafts";
+import { RestoreQuestion } from "@/features/draft-review/RestoreQuestion";
+import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
@@ -74,9 +80,12 @@ export function WorkChanges({
     );
   });
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const [restoring, setRestoring] = useState<readonly ReviewFileTarget[] | null>(null);
   const hasFiles = files.length > 0;
   useEffect(() => {
-    if (!hasFiles) setConfirmingDiscard(false);
+    if (hasFiles) return;
+    setConfirmingDiscard(false);
+    setRestoring(null);
   }, [hasFiles]);
   const visible = files.filter((file) =>
     matchesSearch(file.documentName || file.contextLocation?.path || ""),
@@ -98,13 +107,27 @@ export function WorkChanges({
     documentId: file.documentId,
     itemKey: file.draft.itemKey,
   }));
-  const dispose = (mode: "apply" | "discard") => void controller.disposeDrafts(mode, everyDraft);
+  const discardAll = () => void controller.disposeDrafts("discard", everyDraft);
+  const ids = (targets: readonly ReviewFileTarget[]) =>
+    new Set(targets.map((file) => file.documentId));
+  // Brings back only the named documents; a delete the list hadn't shown yet asks again.
+  const applyAll = (restore: ReadonlySet<string>) =>
+    void controller.disposeDrafts("apply", everyDraft, restore).then((outcomes) => {
+      const heldBack = files.filter((_file, index) => outcomes[index]?.kind === "needs-restore");
+      if (heldBack.length > 0) setRestoring(heldBack);
+    });
+  const startApplyAll = () => {
+    const deleted = files.filter((file) => isDeletedFromManuscript(file.draft));
+    if (deleted.length > 0) setRestoring(deleted);
+    else applyAll(new Set());
+  };
+  const untitled = t`Untitled document`;
 
   return (
     <WorkFileGroup
       label={t`Changes to review`}
       actions={
-        confirmingDiscard ? null : (
+        confirmingDiscard || restoring ? null : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -119,16 +142,17 @@ export function WorkChanges({
             <DropdownMenuContent align="end" className="w-56">
               {files.every(
                 (file) =>
-                  (!file.draft.hasDraft && file.draft.isNew) ||
-                  (file.draft.hasDraft &&
-                    (held[textRows.findIndex((row) => row.draft.itemKey === file.draft.itemKey)]
-                      ?.frame?.groups.length ?? 0) > 0),
+                  !isPathTaken(file.draft) &&
+                  ((!file.draft.hasDraft && file.draft.isNew) ||
+                    (file.draft.hasDraft &&
+                      (held[textRows.findIndex((row) => row.draft.itemKey === file.draft.itemKey)]
+                        ?.frame?.groups.length ?? 0) > 0)),
               ) ? (
                 <DropdownMenuItem
                   disabled={
                     controller.dispositionLocked || held.some((read) => read.status !== "ready")
                   }
-                  onSelect={() => dispose("apply")}
+                  onSelect={startApplyAll}
                 >
                   <Trans>Apply all changes</Trans>
                 </DropdownMenuItem>
@@ -145,6 +169,38 @@ export function WorkChanges({
         )
       }
     >
+      {restoring ? (
+        <div
+          className="flex flex-wrap items-center gap-x-1 gap-y-1 pb-2 text-xs"
+          data-work-changes-confirmation="restore"
+        >
+          <span className="min-w-0 basis-full text-muted-foreground">
+            <RestoreQuestion
+              titles={restoring.map((file) => reviewFileTargetName(file, untitled))}
+            />
+          </span>
+          <Button
+            variant="quiet"
+            size={touch ? "default" : "xs"}
+            className={touch ? "min-h-11" : undefined}
+            onClick={() => setRestoring(null)}
+          >
+            <Trans>Cancel</Trans>
+          </Button>
+          <Button
+            variant="quiet"
+            size={touch ? "default" : "xs"}
+            className={touch ? "min-h-11" : undefined}
+            disabled={controller.dispositionLocked}
+            onClick={() => {
+              setRestoring(null);
+              applyAll(ids(restoring));
+            }}
+          >
+            <Trans>Apply all</Trans>
+          </Button>
+        </div>
+      ) : null}
       {confirmingDiscard ? (
         <div className="flex flex-wrap items-center gap-x-1 gap-y-1 pb-2 text-xs">
           <span className="min-w-0 basis-full text-muted-foreground">
@@ -166,7 +222,7 @@ export function WorkChanges({
             disabled={controller.dispositionLocked}
             onClick={() => {
               setConfirmingDiscard(false);
-              dispose("discard");
+              discardAll();
             }}
           >
             <Trans>Discard</Trans>
@@ -188,7 +244,7 @@ export function WorkChanges({
           ),
         }))}
       />
-      <DiscardNotice commands={controller} />
+      <CommandNotice commands={controller} />
     </WorkFileGroup>
   );
 }

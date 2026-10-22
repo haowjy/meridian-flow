@@ -4,11 +4,12 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { DiscardNotice } from "@/features/draft-review/DiscardNotice";
+import { CommandNotice } from "@/features/draft-review/CommandNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
+import { RestoreQuestion } from "@/features/draft-review/RestoreQuestion";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,8 @@ import type { DraftDockModel } from "./useDraftDock";
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  /** Deleted documents an Apply of several files would bring back, asked about first (D79). */
+  const [restoring, setRestoring] = useState<readonly DockFile[] | null>(null);
   const troubledFileCount = dock.files.filter(
     (file) => file.status === "error" || dock.fileFailures(file).length > 0,
   ).length;
@@ -31,6 +34,18 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const multi = dock.files.length > 1;
   const only = dock.files[0];
   const confirming = confirmingDiscard && dock.showCommands;
+  const askingRestore = restoring !== null && restoring.length > 0 && dock.showCommands;
+  const ids = (files: readonly DockFile[]) => new Set(files.map((file) => file.row.documentId));
+  // A delete the strip hadn't shown yet holds those files back; several ask again by name.
+  const apply = (restore: ReadonlySet<string>) =>
+    void dock.apply(restore).then((held) => {
+      if (held.length > 0 && multi) setRestoring(held);
+    });
+  // One file's row shows its delete, so its Apply already says to bring it back.
+  const startApply = () =>
+    multi && dock.deletedToApply.length > 0
+      ? setRestoring(dock.deletedToApply)
+      : apply(ids(dock.deletedToApply));
   const commands = (
     // biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row.
     // biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own.
@@ -38,7 +53,22 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       className="ml-auto flex max-w-full shrink-0 items-center justify-end gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1"
       onClick={(event) => event.stopPropagation()}
     >
-      {confirming ? (
+      {askingRestore ? (
+        <>
+          <QuietButton onClick={() => setRestoring(null)}>
+            <Trans>Cancel</Trans>
+          </QuietButton>
+          <QuietButton
+            onClick={() => {
+              setRestoring(null);
+              apply(ids(restoring));
+            }}
+            disabled={!dock.canCommand}
+          >
+            <Trans>Apply</Trans>
+          </QuietButton>
+        </>
+      ) : confirming ? (
         <>
           <QuietButton onClick={() => setConfirmingDiscard(false)}>
             <Trans>Keep</Trans>
@@ -62,7 +92,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             <Trans>Discard</Trans>
           </QuietButton>
           {dock.canApply ? (
-            <QuietButton onClick={dock.apply} disabled={!dock.canCommand}>
+            <QuietButton onClick={startApply} disabled={!dock.canCommand}>
               <Trans>Apply</Trans>
             </QuietButton>
           ) : null}
@@ -78,7 +108,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
         onClick={
-          confirming
+          confirming || askingRestore
             ? undefined
             : () => {
                 dock.controller.dismissNotice();
@@ -90,7 +120,11 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           multi && "cursor-pointer transition-colors hover:bg-muted/50",
         )}
       >
-        {confirming ? (
+        {askingRestore ? (
+          <span data-draft-dock-confirmation="restore" className="min-w-0 flex-1 text-ink-muted">
+            <RestoreQuestion titles={restoring.map((file) => file.name)} />
+          </span>
+        ) : confirming ? (
           <span
             data-draft-dock-confirmation
             className="min-w-0 flex-1 truncate text-ink-muted"
@@ -153,7 +187,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           />
         ))}
       </div>
-      <DiscardNotice commands={dock.controller} />
+      <CommandNotice commands={dock.controller} />
       <DraftImagePreview target={dock.imagePreview} onClose={dock.closeImagePreview} />
     </div>
   );

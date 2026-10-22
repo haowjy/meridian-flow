@@ -69,8 +69,14 @@ export class ApplyClickQueue {
   observe(commandIds: Iterable<string>): void {
     this.recorded = new Set(commandIds);
     const head = this.clicks[0];
+    // The server's answer, when it came first, carries what the record can't (`restored`).
     if (head && this.recorded.has(head.body.commandId))
-      this.settle(head, { status: "applied", commandId: head.body.commandId });
+      this.settle(
+        head,
+        head.answer?.status === "applied"
+          ? head.answer
+          : { status: "applied", commandId: head.body.commandId },
+      );
     else this.port.changed();
   }
 
@@ -153,7 +159,11 @@ export class ApplyClickQueue {
       // Otherwise keep the optimistic contribution until the room's record arrives.
       return;
     }
-    if (answer?.status === "closed" || answer?.status === "refused") {
+    if (
+      answer?.status === "closed" ||
+      answer?.status === "refused" ||
+      answer?.status === "needs_restore"
+    ) {
       this.port.refused(answer);
       this.settle(click, answer);
       return;
@@ -177,7 +187,8 @@ export class ApplyClickQueue {
       if (
         result.status === "applied" ||
         result.status === "closed" ||
-        result.status === "refused"
+        result.status === "refused" ||
+        result.status === "needs_restore"
       ) {
         if (result.status !== "applied") this.port.refused(result);
         this.settle(click, result);
