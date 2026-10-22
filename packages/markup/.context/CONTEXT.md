@@ -54,8 +54,9 @@ prefixes. Agent-edit owns any hash-prefixed adapter layer.
 `stream(previous, source, { repair })` is the Markdown presentation path for
 append-only replies. The immutable snapshot returns canonical PM blocks, retains
 the identity of unchanged completed nodes, and names the exact open fenced-code
-node from micromark events. Non-append edits reset it. The active suffix keeps two
-top-level nodes as parse context. Reference definitions are carried separately:
+node from micromark events. Non-append edits reset it. The active suffix keeps one
+or two top-level nodes as parse context, depending on whether a blank-line boundary
+has made the preceding block independent. Reference definitions are carried separately:
 when their first-wins normalized map changes, only retained blocks whose parsed
 links change receive replacement nodes. Raw HTML falls back to a whole-source
 parse because its block boundary can remain open across blank lines.

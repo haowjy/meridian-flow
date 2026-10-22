@@ -71,7 +71,7 @@ export function createMarkdownStreamer(parseDocument: ParseDocument) {
           const retained = canonical.slice(0, canonical.length - candidate.length);
           if (repairIsSafe(retained, canonical, candidate)) {
             displaySource = `${source.slice(0, activeOffset)}${candidateSource}`;
-            blocks = reuseEqualNodes([...retained, ...candidate], canonical);
+            blocks = [...retained, ...reuseEqualNodes(candidate, canonical.slice(retained.length))];
           }
         }
       }
@@ -79,15 +79,15 @@ export function createMarkdownStreamer(parseDocument: ParseDocument) {
     const snapshot: MarkdownStreamSnapshot = Object.freeze({
       source,
       displaySource,
-      blocks: Object.freeze([...blocks]),
+      blocks,
       openCode,
       fullParse,
       fullParseReason,
     });
     states.set(snapshot, {
-      ranges: [...ranges],
-      definitions: [...definitions],
-      hasHtml: containsHtml(activeTree),
+      ranges,
+      definitions,
+      hasHtml: activeSource.includes("<") && containsHtml(activeTree),
     });
     return snapshot;
   };
@@ -130,18 +130,29 @@ export function createMarkdownStreamer(parseDocument: ParseDocument) {
     if (resetReason) return whole(previous, source, options, resetReason);
     if (!previous || !previousState) throw new Error("stream snapshot state is unavailable");
 
-    const cutIndex = Math.max(0, previous.blocks.length - 2);
+    const lastIndex = Math.max(0, previous.blocks.length - 1);
+    const previousRange = previousState.ranges[lastIndex - 1];
+    const lastRange = previousState.ranges[lastIndex];
+    const lastSource = lastRange ? previous.source.slice(lastRange.from, lastRange.to).trim() : "";
+    const separated =
+      previousRange && lastRange
+        ? /\r?\n[\t ]*\r?\n/.test(previous.source.slice(previousRange.to, lastRange.from)) &&
+          !/^(?:[-+*]|\d+[.)]?)\s*$/.test(lastSource)
+        : false;
+    const cutIndex = separated ? lastIndex : Math.max(0, previous.blocks.length - 2);
     const cut = previousState.ranges[cutIndex]?.from ?? 0;
     const suffix = source.slice(cut);
     const parsedSuffix = parseDocument(suffix);
-    if (containsHtml(parsedSuffix.tree)) return whole(previous, source, options, "html");
+    if (suffix.includes("<") && containsHtml(parsedSuffix.tree)) {
+      return whole(previous, source, options, "html");
+    }
 
     const retainedDefinitions = previousState.definitions.filter(
       (definition) => definition.to <= cut,
     );
     const definitions = firstDefinitions([
       ...retainedDefinitions,
-      ...collectDefinitions(parsedSuffix.tree, suffix, cut),
+      ...(suffix.includes("]:") ? collectDefinitions(parsedSuffix.tree, suffix, cut) : []),
     ]);
     const definitionSource = definitions.map((definition) => definition.source).join("\n");
     const definitionBlockCount = definitionSource
@@ -155,7 +166,10 @@ export function createMarkdownStreamer(parseDocument: ParseDocument) {
     const patched = definitionsChanged(previousState.definitions, definitions)
       ? patchReferenceBlocks(retained, retainedRanges, source, definitionSource)
       : retained;
-    const canonical = reuseEqualNodes([...patched, ...activeBlocks], previous.blocks);
+    const canonical = [
+      ...patched,
+      ...reuseEqualNodes(activeBlocks, previous.blocks.slice(cutIndex)),
+    ];
     const ranges = [
       ...retainedRanges,
       ...parsedSuffix.ranges.map((range) => ({ from: range.from + cut, to: range.to + cut })),
@@ -280,10 +294,20 @@ function codeNodes(blocks: readonly PMNode[]): PMNode[] {
 }
 
 function openCodeNode(blocks: readonly PMNode[], source: string): PMNode | null {
+  const last = blocks.at(-1);
+  if (!last || !endsInCode(last) || (!source.includes("```") && !source.includes("~~~"))) {
+    return null;
+  }
   const openIndex = markdownSyntax(source).code.findIndex(
     (region) => region.fenced && !region.closed && region.to === source.length,
   );
   return openIndex === -1 ? null : (codeNodes(blocks)[openIndex] ?? null);
+}
+
+function endsInCode(node: PMNode): boolean {
+  if (node.type.name === "code_block") return true;
+  const last = node.lastChild;
+  return last ? endsInCode(last) : false;
 }
 
 function repairIsSafe(
