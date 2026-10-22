@@ -120,8 +120,9 @@ export function useWorkBranchCommands({
       target: ChangeTarget,
       restore?: boolean,
       treeAlreadyApplied = false,
+      resetNotice = true,
     ): CommandStart => {
-      const started = dispatch(mode, draft, target, restore, treeAlreadyApplied);
+      const started = dispatch(mode, draft, target, restore, treeAlreadyApplied, resetNotice);
       void started.outcome.then((outcome) => {
         if (outcome.kind === "change-refused" && outcome.code === "work_archived")
           void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
@@ -139,8 +140,9 @@ export function useWorkBranchCommands({
       target: ChangeTarget,
       restore?: boolean,
       treeAlreadyApplied = false,
+      resetNotice = true,
     ): CommandStart => {
-      endNotice();
+      if (resetNotice) endNotice();
       if (locked) return blocked();
       const item = row(draft);
       if (mode === "apply") {
@@ -258,7 +260,10 @@ export function useWorkBranchCommands({
         restore: ReadonlySet<string> = new Set(),
       ) => {
         // Capture every item in the event turn, not in a promise continuation.
-        if (mode === "apply") return applyInServerOrder(items, restore, start);
+        if (mode === "apply") {
+          endNotice();
+          return applyInServerOrder(items, restore, start);
+        }
         return Promise.all(items.map(({ draft, target }) => start(mode, draft, target).outcome));
       },
       disposeDrafts: (
@@ -267,6 +272,7 @@ export function useWorkBranchCommands({
         restore: ReadonlySet<string> = new Set(),
       ) => {
         if (mode === "apply") {
+          endNotice();
           return applyInServerOrder(
             drafts.map((draft) => ({ draft, target: { kind: "draft" as const } })),
             restore,
@@ -299,6 +305,7 @@ async function applyInServerOrder(
     target: ChangeTarget,
     restore?: boolean,
     treeAlreadyApplied?: boolean,
+    resetNotice?: boolean,
   ) => CommandStart,
 ): Promise<CommandOutcome[]> {
   const appliedTrees = new Set<string>();
@@ -310,6 +317,7 @@ async function applyInServerOrder(
       target,
       restore.has(draft.documentId),
       appliedTrees.has(draft.itemKey),
+      false,
     ).outcome;
     outcomes.push(outcome);
     if (outcome.kind === "done")

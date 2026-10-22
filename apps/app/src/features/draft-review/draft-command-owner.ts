@@ -13,6 +13,7 @@ import {
   recordRestorations,
   writeDiscardBlocks,
 } from "@meridian/agent-edit/diff";
+import { parseDraftItemKey } from "@meridian/contracts";
 import type {
   ApplyClick,
   DraftMetadataResponse,
@@ -148,6 +149,8 @@ export class DraftCommandOwner {
   private readonly reconciling = new Map<string, Promise<boolean>>();
   /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
   private readonly restoredDocuments = new Set<string>();
+  /** Final paths allocated by Apply, until dismissed or another document shows. */
+  private readonly renamedDocuments = new Map<string, string>();
   private active = true;
   private revision = 0;
   constructor(
@@ -367,16 +370,23 @@ export class DraftCommandOwner {
     return this.restoredDocuments.has(JSON.stringify([projectId, documentId]));
   }
 
-  forgetRestored(projectId: string, documentId: string): void {
-    if (this.restoredDocuments.delete(JSON.stringify([projectId, documentId]))) this.publish();
+  renamedPath(projectId: string, documentId: string): string | null {
+    return this.renamedDocuments.get(JSON.stringify([projectId, documentId])) ?? null;
   }
 
-  /** The writer moved on to `documentId`: every other document's mark ends. */
-  keepRestoredOnly(projectId: string, documentId: string): void {
+  forgetApplyFacts(projectId: string, documentId: string): void {
+    const key = JSON.stringify([projectId, documentId]);
+    if (this.restoredDocuments.delete(key) || this.renamedDocuments.delete(key)) this.publish();
+  }
+
+  /** The writer moved on to `documentId`: every other document's Apply fact ends. */
+  keepApplyFactsOnly(projectId: string, documentId: string): void {
     const kept = JSON.stringify([projectId, documentId]);
     let changed = false;
     for (const key of this.restoredDocuments)
       if (key !== kept) changed = this.restoredDocuments.delete(key) || changed;
+    for (const key of this.renamedDocuments.keys())
+      if (key !== kept) changed = this.renamedDocuments.delete(key) || changed;
     if (changed) this.publish();
   }
 
@@ -522,8 +532,14 @@ export class DraftCommandOwner {
     if (answer.status === "applied") {
       if (answer.restored) {
         this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
-        this.publish();
       }
+      for (const item of answer.applied) {
+        if (!item.renamed) continue;
+        const documentId = parseDraftItemKey(item.itemKey)?.documentId;
+        if (documentId)
+          this.renamedDocuments.set(JSON.stringify([ref.projectId, documentId]), item.renamed.path);
+      }
+      if (answer.restored || answer.applied.some((item) => item.renamed)) this.publish();
       const renamed = answer.applied.flatMap((item) => (item.renamed ? [item.renamed.path] : []));
       const appliedTrees = answer.applied.flatMap((item) => (item.tree ? [item.itemKey] : []));
       return {

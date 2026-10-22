@@ -115,6 +115,8 @@ pending text because no frozen click exists for that text; a drafted delete nece
 the deleted item's draft. A cycle moves together, so swaps keep both requested names. Any
 unrelated leaf occupant keeps its name and the arriving document takes the next free name. The
 result lists every tree item it applied and attaches a `renamed` note to any item that yielded.
+If a document occupies an ancestor where the destination needs a folder, Apply answers the
+specific `ancestor_taken` refusal; leaf allocation never uses that path.
 Then each row goes through `dropDocumentRows`,
 which writes the settlement rows every terminal path writes (`as: applied` for the
 entries in effect, `discarded` for those undone before it), and

@@ -17,10 +17,11 @@ import { useLingui } from "@lingui/react";
 import { Info, X } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
+import { documentBasename } from "@/client/query/work-branch-files";
 import type { ContextTab } from "@/client/stores";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { restoredSentence } from "@/features/draft-review/CommandNotice";
+import { appliedSentence } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import {
@@ -35,7 +36,7 @@ import { useRemovalRecord } from "@/features/project/context/use-removal-record"
 import { cn } from "@/lib/utils";
 
 export type ManuscriptState = {
-  kind: "deleted" | "restored" | "pending-tree";
+  kind: "deleted" | "applied" | "pending-tree";
   sentence: string;
   label: string;
   dismiss?: () => void;
@@ -52,7 +53,12 @@ export function useManuscriptState(projectId: string, tab: ContextTab): Manuscri
     () => owner.wasRestored(projectId, documentId),
     () => false,
   );
-  useEffect(() => owner.keepRestoredOnly(projectId, documentId), [owner, projectId, documentId]);
+  const renamedPath = useSyncExternalStore(
+    owner.subscribe,
+    () => owner.renamedPath(projectId, documentId),
+    () => null,
+  );
+  useEffect(() => owner.keepApplyFactsOnly(projectId, documentId), [owner, projectId, documentId]);
   const item = files.find((file) => file.documentId === documentId)?.draft;
   const deleted = isDeletedFromManuscript(item);
   const removal = useRemovalRecord(projectId, deleted ? documentId : null);
@@ -65,12 +71,13 @@ export function useManuscriptState(projectId: string, tab: ContextTab): Manuscri
     );
     return { kind: "deleted", sentence, label: t`Deleted from the manuscript` };
   }
-  if (restored)
+  const renamed = renamedPath ? documentBasename(renamedPath) : null;
+  if (restored || renamed)
     return {
-      kind: "restored",
-      sentence: restoredSentence([title]),
-      label: t`Back in the manuscript`,
-      dismiss: () => owner.forgetRestored(projectId, documentId),
+      kind: "applied",
+      sentence: appliedSentence(restored ? [title] : [], renamed ? [renamed] : []),
+      label: renamed ? t`Added as ${renamed}` : t`Back in the manuscript`,
+      dismiss: () => owner.forgetApplyFacts(projectId, documentId),
     };
   const pending = hints.flatMap((hint): PendingTreeChange[] =>
     hint.tree ? [{ work: hint.label, line: hint.tree }] : [],

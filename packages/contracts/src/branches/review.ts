@@ -50,7 +50,7 @@ export type ApplyClickRefusalReason =
   | "work_archived"
   | "work_deleted"
   | "not_found"
-  | "forbidden";
+  | "ancestor_taken";
 
 export type ApplyRenamedNote = {
   code: "renamed";
@@ -126,11 +126,9 @@ export interface ThreadDraftListItem {
   documentName: string | null;
   /** The document URI's scheme and leading-slash path in the branch's view, independent of the Work. */
   contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
-  conflict: null;
   /**
    * Deleted from the manuscript while this draft has it: live doesn't hold the document, and
-   * Apply brings it back before merging (D79). Independent of `conflict`: another document
-   * may also have taken its path.
+   * Apply brings it back before merging (D79). Another document may also have taken its path.
    */
   deletedLive: boolean;
   /**

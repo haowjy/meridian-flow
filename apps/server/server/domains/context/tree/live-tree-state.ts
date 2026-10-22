@@ -108,7 +108,7 @@ export async function movePlacementCycle(
     arrivals?: Pick<DocumentArrivals, "settle">;
     catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
   },
-): Promise<ReadonlyMap<DocumentId, PlaceTarget["at"]>> {
+): Promise<void> {
   const tx = currentDrizzleDb(db);
   const ids = moves.map(({ documentId }) => documentId);
   const rows = await tx
@@ -151,7 +151,6 @@ export async function movePlacementCycle(
     .update(documents)
     .set({ hidden: true, updatedAt: now })
     .where(inArray(documents.id, ids));
-  const landed = new Map<DocumentId, PlaceTarget["at"]>();
   for (const move of moves) {
     const placed = await placeLive(
       db,
@@ -170,7 +169,6 @@ export async function movePlacementCycle(
       },
     );
     if (!placed.ok) throw new Error(`Placement cycle failed: ${placed.error.code}`);
-    landed.set(move.documentId, placed.value.at);
   }
   await tx
     .update(documents)
@@ -218,7 +216,6 @@ export async function movePlacementCycle(
     ],
     ids,
   );
-  return landed;
 }
 
 /**
