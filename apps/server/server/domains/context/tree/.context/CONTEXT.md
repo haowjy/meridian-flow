@@ -30,7 +30,9 @@ the per-document branch hints all read it; write admission does not.
 `branch-tree-changes.ts` writes drafted moves and deletes (`moveInBranch`,
 `deleteInBranch`) and their inverses (`writeBackBranchFacts`) through the one
 facts writer (`writeBranchTreeFacts`: a new `revision` from its sequence per
-write, the first `base_version` kept). Every folder a moved fact names is
+write, the first `base_version` kept). The row's `changed_thread_id` is the chat
+whose turn the entry or its inverse belongs to, also when the writer's card or a
+rollback runs the inverse: the chat's dock lists the pending item by it. Every folder a moved fact names is
 held in `branch_tree_folders` per (branch, document) until settlement, even
 after a later move or an undo leaves it: a held folder is in use for
 hidden-folder liveness, so an undo or redo back into it finds it, and
