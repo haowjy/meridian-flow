@@ -1,2 +1,0 @@
-
-- `thread-event-hub.ts`: cold initialization still projects from journal zero. If cold reconnect cost warrants it, initialize the shared live projector from a reset boundary independently of subscriber cursors, then replay each subscriber's suffix. Preserve concurrent subscribers, append-during-initialization and retry after initialization failure. Warm old-cursor seeking does not address this lifecycle change.
