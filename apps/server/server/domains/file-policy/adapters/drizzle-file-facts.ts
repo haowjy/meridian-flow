@@ -67,7 +67,9 @@ export function createDrizzleFileFacts(
     const base =
       target.kind === "container"
         ? await loadContainer(db, target.scheme, target.owner)
-        : await loadDocument(db, target.documentId, view);
+        : await loadDocument(db, target.documentId, view, {
+            ownDelete: target.kind !== "restore",
+          });
     if (!base) return null;
     const facts: FileFacts = { ...base, target };
     if (branchWorkId === undefined) return facts;
@@ -188,6 +190,7 @@ function documentBase(
   row: DocumentRow,
   documentId: DocumentId,
   folders: readonly FolderRow[],
+  ownDelete = true,
 ): Omit<BaseFacts, "scheme"> {
   return {
     projectId: row.projectId,
@@ -197,7 +200,7 @@ function documentBase(
     ownerChatThreadId: row.chatThreadId,
     ownerWork: row.work ? workFacts(row.work as WorkRow) : null,
     deleted:
-      row.documentDeletedAt !== null ||
+      (ownDelete && row.documentDeletedAt !== null) ||
       row.sourceDeletedAt !== null ||
       folders.some((folder) => folder.deleted),
     self: { kind: "document", id: documentId },
@@ -208,10 +211,12 @@ function documentBase(
   };
 }
 
+/** `ownDelete: false` reads a deleted document as where a restore would bring it back. */
 async function loadDocument(
   db: Database,
   documentId: DocumentId,
   view: TreeView,
+  options: { ownDelete: boolean },
 ): Promise<BaseFacts | null> {
   const documents = identityDocuments(view);
   if (!isUuid(documentId)) return null;
@@ -220,7 +225,10 @@ async function loadDocument(
   const lineage = await createTreeReader(db).lineage(view, documentId);
   if (!lineage) return null;
   const folders = lineage.folders;
-  return { ...documentBase(row, documentId, folders), scheme: row.scheme };
+  return {
+    ...documentBase(row, documentId, folders, options.ownDelete),
+    scheme: row.scheme,
+  };
 }
 
 async function loadContainer(

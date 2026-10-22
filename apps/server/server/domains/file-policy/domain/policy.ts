@@ -72,6 +72,8 @@ function destinationFor(principal: Principal, facts: FileFacts): FileDestination
   if (target.kind === "draft") {
     return { kind: "draft", workId: target.workId, workHandle: facts.branchWork?.handle ?? null };
   }
+  // A deleted document comes back live, where it was.
+  if (target.kind === "restore") return { kind: "live" };
   return sourceDestination(facts.scheme, principal.agent?.branchWork ?? null);
 }
 

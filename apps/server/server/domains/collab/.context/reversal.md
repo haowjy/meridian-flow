@@ -99,7 +99,9 @@ checkpoint rewrite, at its plan's first text step. Every tree inverse commits un
 re-reads the captured tree states (a mismatch is an attempt miss). Live moves back go through
 `moveToPlacement`, deletes back through `restoreDocument` naming the removal, redone deletes
 through `DocumentRemoval.remove`. A tree-only inverse has no text cuts, so the engine echoes no
-blocks. Turn targets include every document a turn moved or deleted, deleted or not. Drafted
+blocks. Turn targets include every document a turn moved or deleted, deleted or not;
+the card authorizes them from those targets, not the display lineage (which drops documents
+with no path), and a deleted one at its restore destination (file-policy's `restore` target). Drafted
 tree entries (phase E) are not written yet; their inverse throws.
 
 ## Effects and failures

@@ -1,13 +1,13 @@
 /**
  * The document an `undo`, `redo` or `revert` names by path (D76). A path no visible document
  * holds names the document this chat's latest move or delete took away from it; a deleted one
- * is authorized at the folder it would return to, as a restore is. A path a different document
+ * is authorized where its restore would bring it back (its own folder and source, which may
+ * have moved since the path was shown), as the card's Undo is. A path a different document
  * now holds still names that one, and the result says so when it has nothing to reverse.
  */
 import { splitDocumentFile } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts";
 import { type FileGrant, isFileAccessDenied } from "../../domains/file-policy/index.js";
-import { threadContainerTarget } from "../file-targets.js";
 import { resolveDocumentAddress } from "./document-tools.js";
 import { fileAccessDeniedError } from "./file-access.js";
 import {
@@ -23,7 +23,7 @@ type InverseCommand = "undo" | "redo" | "revert";
 
 export type InverseTarget = {
   address: ResolvedDocumentAddress;
-  /** Edit at the folder a deleted document returns to, instead of the document's own grant. */
+  /** Edit where a deleted document returns to, instead of the document's own grant. */
   grant?: FileGrant<"edit">;
 };
 
@@ -59,9 +59,11 @@ export async function resolveInverseTarget(
     const uri = (await currentUri(call, away)) ?? canonical;
     return { address: { documentId: away, uri, filePath: uri } };
   }
-  const target = await threadContainerTarget(deps.works, call.context.resolution, canonical);
-  if (!target) return address;
-  const grant = await deps.fileAccess.authorize(call.principal, target, "edit");
+  const grant = await deps.fileAccess.authorize(
+    call.principal,
+    { kind: "restore", documentId: away },
+    "edit",
+  );
   if (isFileAccessDenied(grant)) return fileAccessDeniedError(command, grant, canonical);
   return { address: { documentId: away, uri: canonical, filePath: canonical }, grant };
 }

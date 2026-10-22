@@ -543,15 +543,16 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     markdownDocuments: runtime.markdownDocuments,
     replaceAuthorityGeneration,
   });
+  const lineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   const lineage = createTurnLiveLineageReadModel({
-    store: createDrizzleTurnLiveLineageStore(deps.db),
+    store: lineageStore,
     receiptStore: turnInverse,
     resolveDocumentUri: documentUriResolver,
   });
   const turnReversal = createTurnReversalService({
     turnInverse,
     resolveDocumentUri: documentUriResolver,
-    listEditedDocumentsForTurn: lineage.listEditedDocumentsForTurn,
+    listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,
     fileAccess: deps.fileAccess,
     threadContext:
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
