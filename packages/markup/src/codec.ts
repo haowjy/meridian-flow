@@ -12,6 +12,7 @@ import { CodecParseError } from "./error.js";
 import { EMPTY_PARAGRAPH_SENTINEL, parseBlockAst } from "./helpers.js";
 import { blockOccurrenceSpans } from "./link-occurrences.js";
 import { attentionHandlers } from "./markdown/attention.js";
+import { originalSource, type PreparedSource } from "./prepared-source.js";
 import { blockSourceMap } from "./presentation-source-map.js";
 import { type CodecRuntime, MARKDOWN_STRINGIFY_OPTIONS, withRuntime } from "./runtime.js";
 import type {
@@ -87,8 +88,19 @@ function buildMarkupCodec(
     .use(remarkGfm)
     .use(remarkPlugins);
 
-  const preprocess = (content: string): string =>
-    preprocessors.reduce((current, hook) => hook(current), content);
+  const preprocess = (content: string): PreparedSource =>
+    preprocessors.reduce((current, hook) => {
+      const next = hook(current.value);
+      if (typeof next === "string") {
+        return next === current.value ? current : originalSource(next);
+      }
+      return {
+        value: next.value,
+        originalOffsets: next.originalOffsets.map(
+          (offset) => current.originalOffsets[offset] ?? current.originalOffsets.at(-1) ?? 0,
+        ),
+      };
+    }, originalSource(content));
 
   const parsePreparedMarkdown = (source: string): MdastRoot => {
     try {
@@ -100,7 +112,8 @@ function buildMarkupCodec(
       throw toCodecParseError(error);
     }
   };
-  const parseMarkdown = (content: string): MdastRoot => parsePreparedMarkdown(preprocess(content));
+  const parseMarkdown = (content: string): MdastRoot =>
+    parsePreparedMarkdown(preprocess(content).value);
   const stringifyMarkdown = (root: MdastRoot): string =>
     stringifyProcessor.stringify(root as Parameters<typeof stringifyProcessor.stringify>[0]);
 
@@ -114,7 +127,8 @@ function buildMarkupCodec(
     withSpans: boolean,
     withSourceMap = false,
   ): { blocks: PMNode[]; spans: OccurrenceSpan[]; sourceMap: PresentationSourceRun[] } => {
-    const source = preprocess(content);
+    const prepared = preprocess(content);
+    const source = prepared.value;
     const runtime = makeRuntime(source);
     const ctx = withRuntime<ParseContext>({ schema: baseCtx.schema }, runtime);
     if (withSourceMap) runtime.inlineOrigins = [];

@@ -6,6 +6,7 @@ import type { PluggableList } from "unified";
 
 import type { MdastRoot } from "./ast.js";
 import type { CodecParseErrorLocation } from "./error.js";
+import type { PreparedSource } from "./prepared-source.js";
 
 export type { CodecParseErrorLocation, PMNode, SpelledHref };
 
@@ -88,7 +89,7 @@ export interface MarkupPlugin {
   blocks?: readonly BlockCodec[];
   marks?: readonly MarkCodec[];
   remarkPlugins?: PluggableList;
-  preprocess?: (text: string) => string;
+  preprocess?: (text: string) => string | PreparedSource;
   /** Receives the preprocessed source matching AST positions, including internal reparses. */
   postParse?: (root: MdastRoot, source: string) => MdastRoot;
   /** Format-specific wrapping applied after a block's ordinary codec. */
