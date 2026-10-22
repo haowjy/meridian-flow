@@ -25,7 +25,7 @@ export function markdownSyntax(source: string): MarkdownSyntax {
 
   for (const [action, token] of events) {
     if (token.type === "codeFencedFence" && action === "enter") {
-      for (let index = fences.size - 1; index >= 0; index--) {
+      for (let index = code.length - 1; index >= 0; index--) {
         const region = code[index];
         if (region?.fenced && token.start.offset >= region.from && token.end.offset <= region.to) {
           fences.set(region, (fences.get(region) ?? 0) + 1);
