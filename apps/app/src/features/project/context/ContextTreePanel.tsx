@@ -313,6 +313,7 @@ function SchemeSection({
         </TreeEnvProvider>
       ) : null}
       <DeleteConfirmationDialog
+        projectId={projectId}
         target={deleteConfirm.target}
         isPending={deleteConfirm.isPending}
         error={deleteConfirm.error}

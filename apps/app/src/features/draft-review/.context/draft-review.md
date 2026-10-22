@@ -89,7 +89,11 @@ Editor model readiness stays local to its mount.
 A draft-only editor is the document's single workspace tab in its review Work,
 not a second tab. Closing its review is not Discard. Catalog removal and
 promotion remain `DraftOnlySettlement`/the context lifecycle's responsibility;
-list omission alone must not infer local Discard or successful Apply.
+list omission alone must not infer local Discard or successful Apply. The list
+omits an active draft with no effect (a delete's held tab, a fully applied draft,
+one inside the `has_effect` lag), so an unlisted draft-only tab goes live when
+the catalog shows its document and closes only when its draft metadata answers
+`gone`; an active or unanswered draft keeps its tab.
 
 ## Account command lifetime
 
@@ -103,12 +107,27 @@ groups (P) and one room-base-to-O delta. Its acknowledgement barrier waits for
 the server to acknowledge every local update in that captured cut before dispatch. The queue
 retains a `readDraftRoom` lease independently of React until terminal.
 
+A deleted document (the list item's `deletedLive`, D79) is draft-only on every
+surface. Existence is its own fact, never read from `conflict`: a deleted
+document's path may also be taken (`path_taken`, which only withdraws Apply); Apply restores it, then merges. `apply(ref, target, restore)` sends
+`restore` only when the writer knew: a single document's Apply whose row showed
+the delete, or an Apply all for the documents its confirmation named. Without it
+the server answers `needs_restore` (nothing changed); the outcome is
+`needs-restore`, the list refreshes so the row shows the delete, and an Apply all
+asks again by name. An applied answer with `restored` makes the outcome
+`{ kind: "done", restored: true }` and marks the document (`wasRestored`) for the
+editor's "back in the manuscript" line; the surface that clicked says the same in
+its reserved notice slot (`CommandNotice`).
+
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds,
 then an item Retry. A terminal acknowledgement failure refuses unsent cuts
 with an item failure; sent heads keep their same-id settlement across session
 replacement. Transient disconnects keep acknowledgement barriers pending.
 A record alone proves landing; an applied answer without
-the record keeps its contribution. Closed/refused answers remove only their
+the record keeps its contribution. A record that arrives before the answer
+releases the head (the next click may send), but the click's outcome waits for
+that answer, which alone carries `restored`; a lost answer reads the stored
+result back under the same command id (never a resend). Closed/refused answers remove only their
 own contribution. A `work_archived` refusal stores no failure (`shownRefusal`):
 the Works query refetches and `ArchivedWorkNotice` explains the reverted change,
 so no surface shows a refusal line. Other refusals still move prose in two cases,

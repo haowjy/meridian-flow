@@ -24,6 +24,7 @@ import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
+import { ManuscriptStateNotice } from "@/features/editor/ManuscriptStateNotice";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import { MobileChangeBar } from "./MobileChangeBar";
 import { MobileChangeSheet } from "./MobileChangeSheet";
@@ -66,6 +67,7 @@ export function MobileDocumentReview({
         ) : (
           <LiveDraftEntry documentId={documentId} />
         )}
+        <ManuscriptStateNotice projectId={projectId} tab={tab} />
         <DocumentDraftHint projectId={projectId} tab={tab} />
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         {itemKey ? (
@@ -121,7 +123,7 @@ function ReviewBottom({
   const { controller, view } = header;
   return (
     <>
-      <MobileChangeBar view={view} />
+      <MobileChangeBar view={view} canApply={header.canApply} />
       <MobileChangeSheet
         open={listOpen}
         onOpenChange={onListOpenChange}

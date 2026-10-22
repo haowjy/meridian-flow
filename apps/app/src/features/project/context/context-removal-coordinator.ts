@@ -6,6 +6,7 @@ import {
   type ContextTab,
   commitContextAvailability,
   commitDraftApplyMetadata,
+  commitDraftHold,
   commitPlannedContextRemoval,
   type DraftWorkspaceSettlementReceipt,
   getContextTabs,
@@ -14,6 +15,7 @@ import {
   matchesReviewItem,
   matchesTabInstance,
   type ProjectTabsSlice,
+  type ReviewEntries,
   reviewEntryOf,
   type ServerContextTab,
 } from "@/client/stores";
@@ -108,6 +110,15 @@ type EditorWorkspacePort = {
     prior: ProjectTabsSlice,
     next: ProjectTabsSlice,
   ): Promise<void> | void;
+  holdForDrafts(projectId: string, documentId: string, reviews: ReviewEntries): void;
+};
+
+/** The drafts of a document some surface holds open (`DraftCommandOwner.boundDrafts`). */
+export type BoundDraftsPort = {
+  boundDrafts(
+    projectId: string,
+    documentId: string,
+  ): readonly { workId: string; itemKey: string }[];
 };
 
 type RemovalFence = {
@@ -195,6 +206,7 @@ const productionWorkspace: EditorWorkspacePort = {
   commit: commitPlannedContextRemoval,
   settleDraft: commitDraftApplyMetadata,
   applyAvailability: commitContextAvailability,
+  holdForDrafts: commitDraftHold,
 };
 
 const productionWorkingSet: ContextRemovalWorkingSetPort = {
@@ -211,6 +223,7 @@ export class ContextRemovalCoordinator {
   private readonly workingSet: ContextRemovalWorkingSetPort;
   private readonly sessions: LiveDocumentSessionAuthority | null;
   private readonly notices: RemovedPresentationPort | null;
+  private readonly drafts: BoundDraftsPort | null;
   private readonly appliedAvailability = new Map<string, AppliedAvailabilityCommand>();
   private readonly pendingSessionEffects = new Map<string, PendingSessionAvailabilityEffect>();
   private readonly sessionEffectRuns = new Map<
@@ -231,6 +244,7 @@ export class ContextRemovalCoordinator {
           route?: ContextRemovalRoutePort;
           sessions?: LiveDocumentSessionAuthority;
           notices?: RemovedPresentationPort;
+          drafts?: BoundDraftsPort;
         }
       | null = null,
     explicitDependencies: {
@@ -239,6 +253,7 @@ export class ContextRemovalCoordinator {
       route?: ContextRemovalRoutePort;
       sessions?: LiveDocumentSessionAuthority;
       notices?: RemovedPresentationPort;
+      drafts?: BoundDraftsPort;
     } = {},
   ) {
     const dependencies =
@@ -251,6 +266,32 @@ export class ContextRemovalCoordinator {
     this.fallbackRoute = dependencies.route ?? null;
     this.sessions = dependencies.sessions ?? null;
     this.notices = dependencies.notices ?? null;
+    this.drafts = dependencies.drafts ?? null;
+  }
+
+  /**
+   * Live deleted these documents. A tab whose document a Work's open draft still has stays,
+   * presented draft-only in that Work (D79); every other tab closes as before. Returns the
+   * documents whose tab stayed.
+   */
+  private holdDraftTabs(projectId: string, documentIds: readonly string[]): Set<string> {
+    const held = new Set<string>();
+    if (!this.drafts) return held;
+    for (const tab of this.workspace.read(projectId).tabs) {
+      if (tab.kind !== "tracked" || !documentIds.includes(tab.documentId)) continue;
+      // Already held (an earlier pass over the same delete), or a draft-created document.
+      if (isDraftOnly(tab)) {
+        held.add(tab.documentId);
+        continue;
+      }
+      const reviews: ReviewEntries = {};
+      for (const draft of this.drafts.boundDrafts(projectId, tab.documentId))
+        reviews[draft.workId] = { itemKey: draft.itemKey, tabInstanceToken: crypto.randomUUID() };
+      if (Object.keys(reviews).length === 0) continue;
+      this.workspace.holdForDrafts(projectId, tab.documentId, reviews);
+      held.add(tab.documentId);
+    }
+    return held;
   }
 
   /** A reversible provider lifetime: cleanup revokes now; replay may reacquire before disposal. */
@@ -517,6 +558,12 @@ export class ContextRemovalCoordinator {
     const state = this.project(projectId);
     let plan: ContextAvailabilityLocalBatchPlan | null = null;
     if (committed.length > 0) {
+      this.holdDraftTabs(
+        projectId,
+        committed.flatMap((command) =>
+          command.kind === "terminal-remove" ? [command.documentId] : [],
+        ),
+      );
       const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
       const routeSearch = route?.readSearch(projectId) ?? null;
       const priorWorkspace = this.workspace.read(projectId);
@@ -807,6 +854,8 @@ export class ContextRemovalCoordinator {
     tab: ContextTab,
   ): ContextRemovalOutcome | Promise<NavigationSettlement> {
     if (this.unavailable()) return { kind: "noop" };
+    if (this.holdDraftTabs(projectId, [tab.documentId]).has(tab.documentId))
+      return { kind: "noop" };
     this.notices?.presentedRemoved(projectId, "editor", [tab]);
     return this.writerClose(projectId, tab);
   }

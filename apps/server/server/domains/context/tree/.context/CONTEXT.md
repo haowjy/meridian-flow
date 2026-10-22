@@ -11,13 +11,17 @@ deleted and hidden rows. A branch view includes its live rows plus the hidden
 documents and folders it created or needs as ancestors, at their row-owned
 location, plus the deleted documents it has pending changes to (D79: an active
 Work draft with `has_effect`, the pending count's predicate) with the deleted
-folders above them. One used-folder walk seeds both the hidden and the deleted
-folder arms; each is its own `UNION ALL` branch so live lookups keep their
-partial indexes. `deletedDocument` is the one definition of a deletion a draft
+folders above them. The live folder arm is its own `UNION ALL` branch so live
+lookups keep their partial indexes; the hidden and deleted folders share one
+non-live arm, so the branch's used-folder walk runs once per statement half, and
+its predicate is `folders_nonlive_location`'s, so a path slot reaches that index. `deletedDocument` is the one definition of a deletion a draft
 outlives (own or folder delete, reason `deleted`, no Work cascade); listing adds
 the pending effect, admission (`survivingDraftDocuments`) only an active draft.
 The identity relations' diagnostic arms exclude a view's surviving rows, so each
-identity appears once. A new live node at a surviving document's path makes that
+identity appears once. Availability lookups in a branch view follow the same
+listing: a surviving document (and a deleted folder the view places it under)
+answers `available` at its deleted-at location, never `deleted`, so a review
+address opens its draft; live lookups still answer `deleted`. A new live node at a surviving document's path makes that
 path `ambiguous` in the branch, and `treeState` reports the clash. A path with two visible nodes answers `ambiguous`; normalization is a
 write operation, while `treeState` reports the clash.
 
@@ -89,7 +93,8 @@ cascade and last use, and returns exactly the documents it tombstoned. It is
 built at the composition root (`lib/compose.ts`), not by collab. Callers take
 Work and namespace locks, then the complete sorted document mutation-lock set
 before any document row lock. The kernel writes the record, collects the Works
-of all tree uses, and calls collab's `closeRemovedDocuments` with the record.
+of all tree uses, and registers the record with collab (`registerRemoved`); a
+discard also closes the drafts it ends (`closeDiscardedDrafts`).
 Independent removal retires uses; Work cascade retains hidden creations' uses
 so `restoreWorkDocuments` brings their membership back with the tombstone (the
 rule lives beside the Restore it serves). Retained uses are inactive while their
@@ -121,7 +126,8 @@ that outlived the delete (D79), and from PR 3 a reply's rollback and the turn
 card's Undo. The caller holds the document's namespace, then its lock
 (`acquireTreeScope`). A reversing caller names the removal it reverses (its
 time and the `location_version` it wrote), so a later, different removal
-answers `superseded`; Apply names none. A living document answers
+answers `superseded`; Apply names none, and calls it only for a click that
+carries the writer's `restore` (D79). A living document answers
 `already_living`. Discards, Work cascades and deleted sources or projects
 answer `refused`: a Work's own Restore owns its cascade. It places the document
 through `placeLive` (placement's ancestry and one name-claim rule: a living

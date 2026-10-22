@@ -6,10 +6,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
+import { draftMetadataQueryOptions } from "@/client/query/useDraftMetadata";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import {
   useObservedResourceProjection,
   useOptionalAccountResourceReplica,
+  useOptionalProjectContextAvailabilityCoordinator,
 } from "@/features/project/context/account-feature-context";
 import { useOptionalOpenEditorReview } from "@/features/project/dock/editor-review-handoff";
 import { usePresentedDocument } from "@/features/project/presented-document";
@@ -64,11 +66,14 @@ function WorkSettlement({
 }) {
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
+  const availability = useOptionalProjectContextAvailabilityCoordinator();
   const drafts = useWorkBranchDrafts(projectId, workId);
   const projection = useObservedResourceProjection(resources, projectId);
-  // A draft-only tab whose draft left the active list was disposed of
-  // elsewhere. The list cannot say how, so the catalog decides: a document
-  // that now exists was applied, otherwise the draft was discarded.
+  // The pending list omits a draft with no effect (and one inside the
+  // `has_effect` lag), so leaving it proves nothing. For an unlisted draft-only
+  // tab the catalog decides first: a document that now exists was applied and
+  // the tab goes live. Otherwise only the draft's own metadata may retire it: a
+  // `gone` draft was discarded; an active one keeps its tab (a delete's hold).
   useEffect(() => {
     if (!resources || !projectId || !workId) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
@@ -104,8 +109,21 @@ function WorkSettlement({
           for (const draft of lifecycle.presentations(projectId)) {
             if (!isOrphan(draft, currentDrafts) || JSON.stringify(scopeFor(draft)) !== key)
               continue;
-            if (view.entries.get(draft.documentId)?.kind === "file") void lifecycle.promote(draft);
-            else lifecycle.remove(draft);
+            if (view.entries.get(draft.documentId)?.kind === "file") {
+              void lifecycle.promote(draft);
+              continue;
+            }
+            void queryClient
+              .fetchQuery({ ...draftMetadataQueryOptions(draft), staleTime: 0 })
+              .then((metadata) => {
+                if (attempt.signal.aborted || metadata.status !== "gone") return;
+                const still = lifecycle
+                  .presentations(projectId)
+                  .find((entry) => entry.token === draft.token);
+                if (still) lifecycle.remove(still);
+              })
+              // An unanswered disposition keeps the tab, never guesses Discard.
+              .catch(() => undefined);
           }
         })
         // A failed membership check leaves this scope's tabs intact, never guesses Discard.
@@ -129,15 +147,25 @@ function WorkSettlement({
   const openReview = useOptionalOpenEditorReview();
   // Draft-only means "hidden live". The replica showing the document (by its
   // current id or an alias: a join, New file, a link's Create) makes it live at
-  // once for every Work. A tab the writer was looking at keeps the review it
-  // showed, opened over the live document: the view the chip's Draft choice gives.
+  // once for every Work. Showing means placed: the replica keeps a deleted
+  // document's record, and its draft stays draft-only until Apply brings it
+  // back. A tab the writer was looking at keeps the review it showed, opened
+  // over the live document: the view the chip's Draft choice gives.
+  // Availability can apply a live delete before the replica hears of it: while
+  // it says the document is removed, a still-placed record is stale and must
+  // not undo the hold that just made the tab draft-only (D79).
   useEffect(() => {
     if (drafts.status !== "ready") return;
     const identities = resourceIdentityIndex(projection.records);
     const promoting = new Set<string>();
     for (const draft of lifecycle.presentations(projectId)) {
       const row = drafts.drafts?.find((candidate) => candidate.itemKey === draft.itemKey);
-      if (draft.workId !== workId || !row || !identities.byDocumentId(draft.documentId)) continue;
+      const record = identities.byDocumentId(draft.documentId);
+      if (draft.workId !== workId || !row || !record) continue;
+      if (record.resource.lifecycle.kind === "terminal") continue;
+      if (!projection.placement.resourceLocation(record)) continue;
+      if (availability?.removalRecord(projectId, draft.documentId).get()?.kind === "removed")
+        continue;
       if (promoting.has(draft.documentId)) continue;
       promoting.add(draft.documentId);
       // The review the Editor shows, captured before promotion clears the entries: its
@@ -169,7 +197,7 @@ function WorkSettlement({
           documentId: draft.documentId,
           itemKey: review.itemKey,
           contextLocation: draft.contextLocation,
-          isNew: false,
+          draftOnly: false,
         }).catch(() => undefined);
       });
     }
@@ -179,10 +207,12 @@ function WorkSettlement({
     drafts.drafts,
     drafts.status,
     projection.records,
+    projection.placement,
     projectId,
     workId,
     editorWorkId,
     openReview,
+    availability,
   ]);
 
   return null;

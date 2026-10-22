@@ -39,7 +39,6 @@ export type CompiledClick = {
   effects: { side: "base" | "draft"; index: number; owners: readonly TrailOwner[] }[];
 };
 export interface ApplyClickStore {
-  closed(command: ApplyClickCommand): Promise<ApplyClickResult>;
   loadBase(command: ApplyClickCommand): Promise<DraftBase | null>;
   execute(
     command: ApplyClickCommand,
@@ -213,14 +212,12 @@ export function createApplyClickService(input: {
       const start = performance.now();
       const base = await input.store.loadBase(command);
       if (!base || base.snapshot.status === "closed") {
-        const result = await input.store.closed(command);
-        return (await lookup()) ?? result;
+        return (await lookup()) ?? { status: "closed", commandId: command.envelope.commandId };
       }
       // Receipts are captured after this replica, so they cover every item a contained click can name.
       const captured = await input.evidence.capture(command.request.draftId);
       if (!captured || captured.draft.documentDraft.status === "closed") {
-        const result = await input.store.closed(command);
-        return (await lookup()) ?? result;
+        return (await lookup()) ?? { status: "closed", commandId: command.envelope.commandId };
       }
       const lifecycle = captured.draft.documentDraft.lifecycle;
       if (lifecycle !== "active")

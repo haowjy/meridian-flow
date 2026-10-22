@@ -114,6 +114,15 @@ export const deletedDocument = sql.raw(
 /** A visible folder's delete: in a branch's view only above a document it still has. */
 const deletedFolder = sql.raw("f.deleted_at IS NOT NULL AND NOT f.hidden");
 /**
+ * A folder a branch's view may show besides live ones: a branch's hidden folder, or a visible
+ * folder's delete above a document a draft outlived. Each only where the branch uses it
+ * (`usedFolderIds`). Spelled as `folders_nonlive_location`'s predicate, so a slot lookup
+ * reaches that index.
+ */
+const nonLiveFolder = sql.raw(
+  "((f.hidden AND f.deleted_at IS NULL) OR (NOT f.hidden AND f.deleted_at IS NOT NULL))",
+);
+/**
  * The branch has pending changes to document `d`: an active Work draft with an effect, the
  * Work's pending count's own predicate (PR 3 adds the branch's tree change rows). Listing
  * only: admission never reads `has_effect` (`survivingDraftDocuments`).
@@ -177,7 +186,7 @@ function documentsQuery(view: TreeView, match?: SlotMatch): SQL {
 /**
  * Folders D's view places something under, and their ancestors (TM invariant 1): seeded
  * from D's change rows (each row's document is one primary-key probe) and from the deleted
- * documents D has pending changes to, in one walk. The arms below keep the hidden and the
+ * documents D has pending changes to, in one walk. The non-live arm keeps the hidden and the
  * deleted ones; live ones are already in the live arm.
  */
 function usedFolderIds(branchId: BranchId): SQL {
@@ -215,15 +224,12 @@ function foldersQuery(view: TreeView, match?: SlotMatch): SQL {
   const live = sql`${select} FROM ${slots}folders f
     WHERE f.deleted_at IS NULL AND NOT f.hidden${position}`;
   if (view.kind === "live") return live;
-  // Separate branches rather than an OR, so live lookups keep their indexes.
+  // The live arm stays separate, so live lookups keep their indexes; the hidden and deleted
+  // folders share one arm, so the branch's used-ancestor walk runs once.
   return sql`${live}
     UNION ALL
     ${select} FROM ${slots}folders f
-    WHERE f.deleted_at IS NULL AND f.hidden${position}
-      AND f.id IN (${usedFolderIds(view.branchId)})
-    UNION ALL
-    ${select} FROM ${slots}folders f
-    WHERE ${deletedFolder}${position}
+    WHERE ${nonLiveFolder}${position}
       AND f.id IN (${usedFolderIds(view.branchId)})`;
 }
 

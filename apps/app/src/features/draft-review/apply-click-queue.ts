@@ -18,6 +18,8 @@ type Click = FrozenApply & {
   attempts: number;
   stalled: boolean;
   answer?: ApplyClickResult;
+  /** The record released this head while its request was in flight; the answer (or, lost, the stored result) reports it. */
+  awaitingAnswer?: true;
   finish(result: ApplyClickResult | { status: "cancelled" }): void;
 };
 export const APPLY_FEEDBACK_MS = 500;
@@ -27,6 +29,7 @@ export class ApplyClickQueue {
   readonly clicks: Click[] = [];
   private recorded = new Set<string>();
   private closed = false;
+  private destroyed = false;
   private request: Click | null = null;
   private retryTimer?: ReturnType<typeof setTimeout>;
   private feedbackTimer?: ReturnType<typeof setTimeout>;
@@ -69,8 +72,17 @@ export class ApplyClickQueue {
   observe(commandIds: Iterable<string>): void {
     this.recorded = new Set(commandIds);
     const head = this.clicks[0];
+    // The record proves landing and releases the head; the server's answer carries what the
+    // record can't (`restored`), so an answer still in flight reports the outcome.
     if (head && this.recorded.has(head.body.commandId))
-      this.settle(head, { status: "applied", commandId: head.body.commandId });
+      this.settle(
+        head,
+        head.answer?.status === "applied"
+          ? head.answer
+          : this.request === head
+            ? "await-answer"
+            : { status: "applied", commandId: head.body.commandId },
+      );
     else this.port.changed();
   }
 
@@ -117,6 +129,7 @@ export class ApplyClickQueue {
   }
 
   destroy(): void {
+    this.destroyed = true;
     clearTimeout(this.retryTimer);
     clearTimeout(this.feedbackTimer);
     for (const click of this.clicks.splice(0)) click.finish({ status: "cancelled" });
@@ -140,6 +153,11 @@ export class ApplyClickQueue {
       // No answer is not a refusal. The immutable command remains the only head.
     }
     if (this.request === click) this.request = null;
+    if (click.awaitingAnswer) {
+      if (answer?.status === "applied" && answer.commandId === click.body.commandId)
+        click.finish(answer);
+      else void this.recoverResult(click);
+    }
     if (this.clicks[0] !== click) {
       const next = this.clicks[0];
       if (next) void this.dispatch(next);
@@ -153,7 +171,11 @@ export class ApplyClickQueue {
       // Otherwise keep the optimistic contribution until the room's record arrives.
       return;
     }
-    if (answer?.status === "closed" || answer?.status === "refused") {
+    if (
+      answer?.status === "closed" ||
+      answer?.status === "refused" ||
+      answer?.status === "needs_restore"
+    ) {
       this.port.refused(answer);
       this.settle(click, answer);
       return;
@@ -177,7 +199,8 @@ export class ApplyClickQueue {
       if (
         result.status === "applied" ||
         result.status === "closed" ||
-        result.status === "refused"
+        result.status === "refused" ||
+        result.status === "needs_restore"
       ) {
         if (result.status !== "applied") this.port.refused(result);
         this.settle(click, result);
@@ -191,6 +214,27 @@ export class ApplyClickQueue {
       /* Remains unknown. */
     }
     this.scheduleRetry(click);
+  }
+
+  /**
+   * The record proved this released click landed, but its answer was lost. Only the stored
+   * result carries `restored`, so read it back under the same command id; never resend.
+   */
+  private async recoverResult(click: Click): Promise<void> {
+    for (const delay of [0, ...RETRY_DELAYS]) {
+      if (this.destroyed) break;
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+      try {
+        const result = await this.port.lookup(click.body);
+        if (result.status === "applied" && result.commandId === click.body.commandId) {
+          click.finish(result);
+          return;
+        }
+      } catch {
+        /* Still unknown; the record already proved landing. */
+      }
+    }
+    click.finish({ status: "applied", commandId: click.body.commandId });
   }
 
   private scheduleRetry(click: Click): void {
@@ -207,12 +251,16 @@ export class ApplyClickQueue {
     this.applying = false;
   }
 
-  private settle(click: Click, result: ApplyClickResult | { status: "cancelled" }): void {
+  private settle(
+    click: Click,
+    result: ApplyClickResult | { status: "cancelled" } | "await-answer",
+  ): void {
     if (this.clicks[0] !== click) return;
     clearTimeout(this.retryTimer);
     this.clicks.shift();
     if (this.request === click) this.request = null;
-    click.finish(result);
+    if (result === "await-answer") click.awaitingAnswer = true;
+    else click.finish(result);
     this.clearFeedbackIfIdle();
     this.port.changed();
     const next = this.clicks[0];
