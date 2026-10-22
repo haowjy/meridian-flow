@@ -19,7 +19,7 @@ import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
 import { bumpLocationVersions, recordLocationHistory } from "./node-locations.js";
 import { moveNode } from "./node-moves.js";
-import { type PlaceTarget, placeLive } from "./placement.js";
+import { type PlaceTarget, placeLiveCycle } from "./placement.js";
 import { loadFolderChains } from "./tree-addresses.js";
 
 /**
@@ -151,25 +151,26 @@ export async function movePlacementCycle(
     .update(documents)
     .set({ hidden: true, updatedAt: now })
     .where(inArray(documents.id, ids));
-  for (const move of moves) {
-    const placed = await placeLive(
-      db,
-      { node: { kind: "document", id: move.documentId }, at: move.to },
-      async (parentId, at) => {
-        await tx
-          .update(documents)
-          .set({
-            contextSourceId: at.contextSourceId,
-            folderId: parentId,
-            name: at.name,
-            extension: at.extension ?? "",
-            updatedAt: now,
-          })
-          .where(inArray(documents.id, [move.documentId]));
-      },
-    );
-    if (!placed.ok) throw new Error(`Placement cycle failed: ${placed.error.code}`);
-  }
+  const placed = await placeLiveCycle(
+    db,
+    moves.map((move) => ({
+      node: { kind: "document" as const, id: move.documentId },
+      at: move.to,
+    })),
+    async (target, parentId, at) => {
+      await tx
+        .update(documents)
+        .set({
+          contextSourceId: at.contextSourceId,
+          folderId: parentId,
+          name: at.name,
+          extension: at.extension ?? "",
+          updatedAt: now,
+        })
+        .where(inArray(documents.id, [target.node.id]));
+    },
+  );
+  if (!placed.ok) throw new Error(`Placement cycle failed: ${placed.error.code}`);
   await tx
     .update(documents)
     .set({ hidden: false, updatedAt: now })

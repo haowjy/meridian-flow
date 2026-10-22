@@ -635,7 +635,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await draft({ command: "move", from: { path: "ch2" }, path: "temporary" });
       await draft({ command: "move", from: { path: "ch3" }, path: "ch2" });
       await draft({ command: "move", from: { path: "temporary" }, path: "ch3" });
-      expect(await writer.apply(CH1)).toMatchObject({
+      // Apply the newer occupant's row; cycle order must not decide who keeps an exact name.
+      expect(await writer.apply(CH2)).toMatchObject({
         status: "applied",
         applied: expect.arrayContaining([
           expect.objectContaining({ itemKey: expect.stringContaining(CH1) }),
