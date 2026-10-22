@@ -469,6 +469,18 @@ export function createDrizzleApplyClick(
                         );
                         if (moved.kind === "ancestor_taken")
                           throw new ApplyClickRefused("ancestor_taken");
+                        if (moved.kind === "folder_missing") {
+                          for (let length = 1; length <= appliedNode.target.dir.length; length++) {
+                            const occupant = await tree.resolvePath(LIVE_TREE, {
+                              contextSourceId: appliedNode.target.contextSourceId,
+                              path: appliedNode.target.dir.slice(0, length).join("/"),
+                              as: "folder",
+                            });
+                            if (occupant.kind === "not_found") break;
+                            if (occupant.kind === "ambiguous" || occupant.node.kind === "document")
+                              throw new ApplyClickRefused("ancestor_taken");
+                          }
+                        }
                         if (moved.kind !== "moved") throw new ApplyClickRefused("not_found");
                       }
                       if (appliedNode.hidden && appliedNode.origin === "created") {
