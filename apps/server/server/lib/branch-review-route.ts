@@ -671,6 +671,7 @@ export function toWireItem(
     documentName: item.documentName,
     contextLocation: reviewContextLocation(item.path),
     conflict: item.conflict,
+    deletedLive: item.deletedLive,
     actorThreads: item.actorThreadIds.map((threadId) => ({
       threadId,
       title: threadTitles.get(threadId) ?? null,

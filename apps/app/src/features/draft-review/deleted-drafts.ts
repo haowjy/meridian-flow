@@ -6,7 +6,7 @@ import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 
 /** Deleted from the manuscript, and Apply can bring it back. */
 export function isDeletedFromManuscript(item: ThreadDraftListItem | null | undefined): boolean {
-  return item?.conflict?.code === "deleted_live";
+  return item?.deletedLive === true;
 }
 
 /** Another document holds the item's path, so Apply can't succeed until it moves. */

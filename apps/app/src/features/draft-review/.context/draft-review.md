@@ -107,8 +107,9 @@ groups (P) and one room-base-to-O delta. Its acknowledgement barrier waits for
 the server to acknowledge every local update in that captured cut before dispatch. The queue
 retains a `readDraftRoom` lease independently of React until terminal.
 
-A deleted document (item conflict `deleted_live`, D79) is draft-only on every
-surface; Apply restores it, then merges. `apply(ref, target, restore)` sends
+A deleted document (the list item's `deletedLive`, D79) is draft-only on every
+surface. Existence is its own fact, never read from `conflict`: a deleted
+document's path may also be taken (`path_taken`, which only withdraws Apply); Apply restores it, then merges. `apply(ref, target, restore)` sends
 `restore` only when the writer knew: a single document's Apply whose row showed
 the delete, or an Apply all for the documents its confirmation named. Without it
 the server answers `needs_restore` (nothing changed); the outcome is

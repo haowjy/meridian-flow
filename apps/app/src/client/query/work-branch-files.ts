@@ -15,7 +15,7 @@ export type ReviewFileTarget = {
   draft: ThreadDraftListItem;
   /**
    * Absent from the live project until Apply: a document the draft created, or one deleted
-   * from the manuscript that this draft still has (`deleted_live`, D79).
+   * from the manuscript that this draft still has (`deletedLive`, D79).
    */
   draftOnly: boolean;
 };
@@ -38,7 +38,7 @@ export function projectWorkBranchFiles(
           ? { scheme: location.scheme, path: location.path }
           : draft.contextLocation,
         draft,
-        draftOnly: draft.isNew === true || draft.conflict?.code === "deleted_live",
+        draftOnly: draft.isNew || draft.deletedLive,
       };
     }),
   );
