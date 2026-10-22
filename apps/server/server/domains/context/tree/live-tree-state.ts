@@ -17,6 +17,7 @@ import { inArray } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
+import { resolveAbsorbedFolders } from "./folder-normalization.js";
 import { moveNode } from "./node-moves.js";
 import { loadFolderChains } from "./tree-addresses.js";
 
@@ -112,14 +113,14 @@ export async function moveToPlacement(
   let sourceId = input.to.rootSourceId as ContextSourceId | null;
   let dir: string[] = [];
   if (input.to.folderId) {
-    const chain = (await loadFolderChains(tx, [input.to.folderId as FolderId])).get(
-      input.to.folderId as FolderId,
-    );
+    const requested = input.to.folderId as FolderId;
+    const folderId = (await resolveAbsorbedFolders(db, [requested])).get(requested) ?? requested;
+    const chain = (await loadFolderChains(tx, [folderId])).get(folderId);
     if (!chain?.length || chain.some((folder) => folder.deleted)) return { kind: "folder_missing" };
     const [folder] = await tx
       .select({ sourceId: folders.contextSourceId })
       .from(folders)
-      .where(inArray(folders.id, [input.to.folderId as FolderId]));
+      .where(inArray(folders.id, [folderId]));
     sourceId = folder?.sourceId ?? null;
     dir = [...chain].reverse().map((folder) => folder.name);
   }

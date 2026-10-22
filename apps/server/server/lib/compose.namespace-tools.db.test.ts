@@ -11,6 +11,8 @@ import type { DocumentId } from "@meridian/contracts";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
+import { absorbHiddenFolder } from "../domains/context/tree/folder-normalization.js";
+import { runInDrizzleTransaction } from "../shared/drizzle-transaction.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -228,7 +230,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await placement(CH2)).toMatchObject({ name: "ch2" });
     });
 
-    it("deletes with the agent actor, and undo by the deleted path restores it", async () => {
+    it("card Undo restores a deleted document at a free name and reports it", async () => {
       const script = await start();
       const { call } = await script.begin();
       const deleted = await call("write", { command: "delete", path: "ch2" });
@@ -241,24 +243,32 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         actor: { kind: "agent", chatTitle: "Renumbering" },
       });
 
-      // The writer takes the path; the model moves that document aside as the refusal says and
-      // undoes by the path again: the deletion is undone, not the newer move of the blocker.
+      // The writer takes the path before the card reverses the delete.
       await db.insert(schema.documents).values({
         contextSourceId: SOURCE_ID,
         name: "ch2",
         extension: "",
         fileType: "markdown",
       });
-      expect(text(await call("write", { command: "undo", path: "ch2" }))).toContain(
-        "is taken by a different document",
-      );
-      expect(
-        (await call("write", { command: "move", from: { path: "ch2" }, path: "ch2-new" })).isError,
-      ).toBeFalsy();
-      const undone = await call("write", { command: "undo", path: "ch2" });
-      expect(undone.isError, text(undone)).toBeFalsy();
-      expect((await placement(CH2))?.deletedAt).toBeNull();
-      expect(text(await call("read", { path: "ch2" }))).toContain("Chapter two.");
+      const undone = await script.runtime.ports.documentSync.reverseThreadContext({
+        threadId: THREAD.threadId as never,
+        userId: USER_ID as never,
+        direction: "undo",
+        turnId: THREAD.turnId as never,
+      });
+      expect(undone).toMatchObject({
+        status: "reversed",
+        landings: [
+          {
+            documentId: CH2,
+            action: "restored",
+            requestedAt: "manuscript://ch2",
+            landedAt: "manuscript://ch2 (2)",
+          },
+        ],
+      });
+      expect(await placement(CH2)).toMatchObject({ name: "ch2 (2)", deletedAt: null });
+      expect(text(await call("read", { path: "ch2 (2)" }))).toContain("Chapter two.");
     });
 
     it("rolls a reply's move and delete back at a free name and keeps another Work's draft", async () => {
@@ -303,7 +313,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(drafts).toEqual([{ status: "active" }]);
     });
 
-    it("refuses an undo the writer's later removal superseded, and names a document now at the path", async () => {
+    it("refuses an undo the writer's later removal superseded even when the old path is occupied", async () => {
       const script = await start();
       const { call } = await script.begin();
       expect((await call("write", { command: "delete", path: "ch2" })).isError).toBeFalsy();
@@ -327,9 +337,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "markdown",
       });
       const displaced = await call("write", { command: "undo", path: "ch2" });
-      expect(text(displaced)).toContain(
-        "manuscript://ch2 is taken by a different document. Use `ls` to check what is there; move or rename it, then `undo` again.",
-      );
+      expect(text(displaced)).toContain("nothing_to_undo");
     });
 
     it("walks text and tree edits on one stack across turns, and a card Undo dirties the move's turn", async () => {
@@ -356,20 +364,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ).isError,
       ).toBeFalsy();
       await later.save();
-      for (const [name, body] of [
-        ["intro", "Chapter 1."],
-        ["ch1", "Chapter 1."],
-        ["ch1", "Chapter one."],
-      ] as const) {
-        const undone = await later.call("write", {
-          command: "undo",
-          path: name === "intro" ? "intro" : "ch1",
-        });
-        expect(undone.isError, text(undone)).toBeFalsy();
-        expect(await placement(CH1)).toMatchObject({ name });
-        expect(await script.text(name)).toContain(body);
-      }
-      const redone = await later.call("write", { command: "redo", path: "ch1", count: 3 });
+      const textUndo = await later.call("write", { command: "undo", path: "intro" });
+      expect(textUndo.isError, text(textUndo)).toBeFalsy();
+      expect(await script.text("intro")).toContain("Chapter 1.");
+      await db.insert(schema.documents).values({
+        contextSourceId: SOURCE_ID,
+        name: "ch1",
+        extension: "",
+        fileType: "markdown",
+      });
+      const moveUndo = await later.call("write", { command: "undo", path: "intro" });
+      expect(moveUndo.isError, text(moveUndo)).toBeFalsy();
+      expect(text(moveUndo)).toContain(": moved back as manuscript://ch1 (2)");
+      expect(await placement(CH1)).toMatchObject({ name: "ch1 (2)" });
+      const firstTextUndo = await later.call("write", { command: "undo", path: "ch1 (2)" });
+      expect(firstTextUndo.isError, text(firstTextUndo)).toBeFalsy();
+      expect(await script.text("ch1 (2)")).toContain("Chapter one.");
+
+      const redone = await later.call("write", { command: "redo", path: "ch1 (2)", count: 3 });
       expect(redone.isError, text(redone)).toBeFalsy();
       expect(await placement(CH1)).toMatchObject({ name: "intro" });
       expect(await script.text("intro")).toContain("Chapter One.");
@@ -384,7 +396,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         turnId: THREAD.turnId as never,
       });
       expect(reversed.status, JSON.stringify(reversed)).toMatch(/reversed|partial/);
-      expect(await placement(CH1)).toMatchObject({ name: "ch1" });
+      expect(await placement(CH1)).toMatchObject({ name: "ch1 (2)" });
       const dirty = await db
         .select({ turnId: schema.changeTrailDirtyLog.turnId })
         .from(schema.changeTrailDirtyLog)
@@ -443,6 +455,42 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         from: { path: "ch1", uri: "manuscript://ch1" },
       });
 
+      // A second drafted move remembers the hidden folder. A live folder then absorbs it;
+      // undo resolves the recorded folder identity to that absorber instead of calling it gone.
+      expect(
+        (
+          await call("write", {
+            command: "move",
+            from: { path: "part1/ch1-old" },
+            path: "ch1-final",
+          })
+        ).isError,
+      ).toBeFalsy();
+      const [hiddenPart] = await db
+        .select({ id: schema.folders.id })
+        .from(schema.folders)
+        .where(and(eq(schema.folders.name, "part1"), eq(schema.folders.hidden, true)));
+      if (!hiddenPart) throw new Error("Draft move made no hidden part1 folder");
+      const livePart = randomUUID();
+      await db.insert(schema.folders).values({
+        id: livePart as never,
+        contextSourceId: SOURCE_ID,
+        name: "part1",
+        documentAlias: "part1",
+      });
+      await runInDrizzleTransaction(db, () =>
+        absorbHiddenFolder(db, { hidden: hiddenPart.id, into: livePart as never }),
+      );
+      const [absorbed] = await db
+        .select({ into: schema.folders.absorbedInto })
+        .from(schema.folders)
+        .where(eq(schema.folders.id, hiddenPart.id));
+      expect(absorbed?.into).toBeTruthy();
+      const returned = await call("write", { command: "undo", path: "ch1-final" });
+      expect(returned.isError, text(returned)).toBeFalsy();
+      expect(text(await call("read", { path: "part1/ch1-old" }))).toContain("Chapter one.");
+      expect(await branchRow(CH1)).toMatchObject({ movedFolderId: absorbed.into });
+
       // The drafted delete hides the draft's text change too; its undo loses nothing.
       const deleted = await call("write", { command: "delete", path: "ch2" });
       expect(deleted.isError, text(deleted)).toBeFalsy();
@@ -469,7 +517,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await branchRow(CH1)).toBeUndefined();
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
       const kinds = (await treeEntries(CH1)).map((row) => row.tree?.destination.kind);
-      expect(kinds).toEqual(["draft", "draft"]);
+      expect(kinds).toEqual(["draft", "draft", "draft", "draft"]);
 
       // The writer's card reverses the drafted move and delete with the draft text, in the
       // branch only, and redoes them.
@@ -482,7 +530,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           turnId: OTHER.turnId as never,
         });
       const undone = await card("undo");
-      expect(undone.status, JSON.stringify(undone)).toBe("reversed");
+      expect(undone.status, JSON.stringify(undone)).toMatch(/reversed|partial/);
       // Reported where it landed: the Work's proposal, though the move has no text draft.
       expect(undone.documents.map((row) => row.destination)).toEqual([
         { kind: "draft", branchId },

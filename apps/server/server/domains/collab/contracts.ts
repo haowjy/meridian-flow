@@ -324,7 +324,7 @@ export type ResponseWriteCommitFinalizeResult =
 
 export type ResponseWriteRollbackFinalizeResult = {
   stagedCreates: ResponseWriteStagedCreates;
-  /** What the rollback couldn't reverse (a move back to a taken location); the rest it did. */
+  /** What the rollback couldn't reverse (a blocked folder path, for example); the rest it did. */
   skipped: import("@meridian/contracts/protocol").TurnInverseSkip[];
 };
 

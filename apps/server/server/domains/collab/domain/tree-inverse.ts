@@ -352,8 +352,8 @@ export function treeEntrySummary(entry: StoredTreeEntry): string {
 /** A commit-time fault in the model's words; the app words the card's from the typed cause. */
 export function treeFaultReason(fault: TreeInverseFault): string {
   switch (fault) {
-    case "location_taken":
-      return "its location is taken";
+    case "folder_blocked":
+      return "a document blocks its folder path";
     case "folder_missing":
       return "its folder is gone";
     case "superseded":

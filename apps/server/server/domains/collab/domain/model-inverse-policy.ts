@@ -130,8 +130,8 @@ type Inspection = ReturnType<typeof inspectionContext>;
 function treeRefusal(cause: TreeInverseRefused): DocumentEditResult {
   const verb = cause.planned.direction === "invert" ? "undo" : "redo";
   const what =
-    cause.fault === "location_taken"
-      ? `${cause.at ?? "its location"} is already taken. Use \`ls\` to check what is there. If it is a document, move or rename it before retrying. Otherwise, tell the user the location is blocked.`
+    cause.fault === "folder_blocked"
+      ? `a document blocks the folder path to ${cause.at ?? "its destination"}. Move that document out of the way, then retry.`
       : cause.fault === "folder_missing"
         ? "the destination folder is gone. Tell the user this change can't be reversed here."
         : `${treeFaultReason(cause.fault)}. Tell the user this change can't be reversed here.`;
@@ -326,7 +326,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       consumes: string[] = [],
       handles: string[] = [],
       skipped: string[] = [],
-      treeFacts: string[] = [];
+      treeFacts: { handle: string; fact: string }[] = [];
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(policy.view));
     // Until its first advance, scratch is identical to the locked view.
     let inspection: Inspection | undefined = policy.inspect();
@@ -411,7 +411,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       ) => {
         const stepActionId = stepAction(kind);
         steps.push({ kind: "tree", planned, actionId: stepActionId, at: planned.entry.id });
-        treeFacts.push(`${handle}: ${treeInverseFact(planned)}`);
+        treeFacts.push({ handle, fact: treeInverseFact(planned) });
         simulation.recordTree(planned, { kind, actionId: stepActionId, consumes: consumed });
         inspection = undefined;
       };
@@ -589,7 +589,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         : {};
       const plan = { document, steps, consumes, skips: [] };
       const committed = preview
-        ? { handles: [], updates: [] }
+        ? { handles: [], updates: [], landings: [] }
         : await store.commit({
             query,
             kind: command.command,
@@ -597,6 +597,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             sequence: steps.map((step) => ({ plan, step })),
           });
       const parts = text.reduce((n, edit) => n + edit.parts.length, 0);
+      const landedByHandle = new Map(
+        committed.landings.map((landing) => [landing.handle, landing.landedAt]),
+      );
       return {
         status: "success",
         actionId,
@@ -608,7 +611,10 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           command.command === "revert" && !reversesTree
             ? `reverted: ${handles[0]} (${parts} of ${parts + skipped.length} parts)${skipped.map((reason) => `\nnot reverted: ${reason}`).join("")}`
             : `${command.command === "undo" ? "undone" : command.command === "redo" ? "redone" : "reverted"}: ${handles.join(", ")}`,
-          ...treeFacts,
+          ...treeFacts.map(({ handle, fact }) => {
+            const landedAt = landedByHandle.get(handle);
+            return `${handle}: ${fact}${landedAt ? ` as ${landedAt}` : ""}`;
+          }),
         ].join("\n"),
       };
     } finally {

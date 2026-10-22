@@ -29,6 +29,7 @@ import {
   settleBranchEntries,
   writeBranchTreeFacts,
 } from "./branch-tree-store.js";
+import { resolveAbsorbedFolders } from "./folder-normalization.js";
 import { filePath, insertFolder, lockDocuments } from "./node-rows.js";
 import { walkFolders } from "./placement.js";
 import { chainPrefix, loadFolderChains } from "./tree-addresses.js";
@@ -230,13 +231,17 @@ export async function writeBackBranchFacts(
   const current = await factsOf(db, input.branchId, input.documentId);
   if (!sameBranchFacts(current, input.expected)) return Err("superseded");
   let facts = input.facts;
-  const moved = facts.moved;
+  let moved = facts.moved;
   if (moved?.folderId) {
+    const requested = moved.folderId as FolderId;
+    const folderId = (await resolveAbsorbedFolders(db, [requested])).get(requested) ?? requested;
+    if (folderId !== requested) {
+      moved = { ...moved, folderId };
+      facts = { ...facts, moved };
+    }
     // A hidden folder is gone once tombstoned; a live folder deleted since still shows in the
     // branch above the document, as a draft that outlived a delete does (D79).
-    const [folder] = await loadFolderIdentityRows(currentDrizzleDb(db), [
-      moved.folderId as FolderId,
-    ]);
+    const [folder] = await loadFolderIdentityRows(currentDrizzleDb(db), [folderId]);
     if (!folder || (folder.hidden && folder.deleted)) return Err("folder_missing");
   }
   if (!facts.deleted) facts = await freeFactsInBranch(db, { ...input, facts });
