@@ -37,7 +37,7 @@ export type DraftReviewItem = {
    * authorizes through the branch's draft on it and its final location (F9, §13.3).
    */
   deletedLive: boolean;
-  /** `isNew || binary || deletedLive`: one change, settled by item Apply or Discard only (§3.3). */
+  /** `isNew || binary`: one change, settled by item Apply or Discard only (§3.3). */
   wholeItem: boolean;
   /** Chats with pending writes on the draft, latest first, then the creating chat. */
   actorThreadIds: string[];
@@ -134,7 +134,8 @@ function toItem(
     origin: node.origin,
     isNew,
     binary: node.binary,
-    wholeItem: isNew || node.binary || deletedLive,
+    // A document deleted live takes per-change Apply too: any Apply restores it first.
+    wholeItem: isNew || node.binary,
     hasDraft: !!evidence,
     documentName: documentTitleFromUri(path),
     path,

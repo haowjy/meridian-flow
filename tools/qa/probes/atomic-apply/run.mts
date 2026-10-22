@@ -713,10 +713,9 @@ try {
     await applied(f, c);
     f.close();
   });
-  await row("removed document closes with durable removal record", async () => {
-    const f = await fixture(["Base."], ["Changed."]);
-    const c = f.click();
-    await h.projection.mutate({ works: [f.workId] }, async () => {
+  /** Deletes the fixture's document live, as the tree's delete does, in its own transaction. */
+  async function deleteLive(f: Awaited<ReturnType<typeof fixture>>) {
+    await runInDrizzleTransaction(h.db, async () => {
       await acquireTreeScope(h.db, { documentIds: [f.documentId] });
       await createTestDocumentRemoval(h.db).remove({
         documentIds: [f.documentId],
@@ -724,10 +723,66 @@ try {
         userId: h.ids.user,
       });
     });
-    const result = await f.send(c);
-    assert.equal(result.status, "closed");
-    assert.equal(result.removal?.reason, "deleted");
-    assert.deepEqual(await f.liveText(), ["Base."]);
+  }
+  const living = async (f: Awaited<ReturnType<typeof fixture>>) =>
+    (await h.raw`select deleted_at is null as living from documents where id=${f.documentId}`)[0]
+      .living;
+  await row("a document deleted live: its draft stays, Apply restores it then merges", async () => {
+    const f = await fixture(["Base."], ["Changed."]);
+    await deleteLive(f);
+    assert.equal(
+      (await h.raw`select status from document_drafts where id=${f.draftId}`)[0].status,
+      "active",
+    );
+    const c = f.click();
+    const result = await applied(f, c);
+    assert.equal(result.status === "applied" && result.restored, true, JSON.stringify(result));
+    assert.equal(await living(f), true);
+    assert.deepEqual(await f.liveText(), ["Changed."]);
+    assert.equal(
+      (await h.raw`select deletion_reason from documents where id=${f.documentId}`)[0]
+        .deletion_reason,
+      null,
+    );
+    // The replay answers the stored result, restore included.
+    assert.deepEqual(await f.send(c), result);
+    f.close();
+  });
+  await row(
+    "a delete between Apply's scope guess and its lock retries namespace-first",
+    async () => {
+      const f = await fixture(["Base."], ["Changed."]);
+      let raced = 0;
+      const remove = setTestHook("apply.afterScopeGuess", async () => {
+        if (raced++ === 0) await independently(() => deleteLive(f));
+      });
+      let result: ApplyClickAnswer;
+      try {
+        result = await applied(f);
+      } finally {
+        remove();
+      }
+      assert.equal(raced, 2, "one guess saw it living, the retry saw it deleted");
+      assert.equal(result.status === "applied" && result.restored, true, JSON.stringify(result));
+      assert.equal(await living(f), true);
+      assert.deepEqual(await f.liveText(), ["Changed."]);
+      f.close();
+    },
+  );
+  await row("Apply holds a deleted document whose path a new document took", async () => {
+    const f = await fixture(["Base."], ["Changed."]);
+    const [{ name, extension, folder_id: folderId }] =
+      await h.raw`select name, extension, folder_id from documents where id=${f.documentId}`;
+    await deleteLive(f);
+    await h.raw`insert into documents (context_source_id, folder_id, name, extension)
+      select context_source_id, ${folderId}, ${name}, ${extension} from documents where id=${f.documentId}`;
+    const c = f.click();
+    assert.deepEqual(await f.send(c), {
+      status: "refused",
+      reason: "forbidden",
+      commandId: c.request.commandId,
+    });
+    assert.equal(await living(f), false);
     f.close();
   });
 
@@ -919,7 +974,7 @@ try {
       }
     },
   );
-  await row("removal after compilation wins with closed record, not a grant refusal", async () => {
+  await row("a delete after compilation overtakes the live grant; the click restores", async () => {
     const f = await fixture(["Base."], ["Changed."]);
     const c = f.click();
     let once = true;
@@ -938,8 +993,8 @@ try {
     });
     try {
       const answer = await f.send(c);
-      assert.equal(answer.status, "closed");
-      assert.equal(answer.removal?.reason, "deleted");
+      assert.equal(answer.status === "applied" && answer.restored, true, JSON.stringify(answer));
+      assert.deepEqual(await f.liveText(), ["Changed."]);
     } finally {
       remove();
       f.close();

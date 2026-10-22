@@ -41,7 +41,18 @@ export type ApplyClickRefusalReason =
   | "forbidden";
 
 export type ApplyClickResult =
-  | { status: "applied"; commandId: BranchCommandId; overrode?: number }
+  | {
+      status: "applied";
+      commandId: BranchCommandId;
+      overrode?: number;
+      /**
+       * The document had been deleted from the manuscript, and this Apply brought it back
+       * before merging (D79). Every Apply restores whichever delete is current, so an Apply
+       * all whose confirmation list was read before a later delete restores that document
+       * too; the client words the notice from this flag, per document.
+       */
+      restored?: true;
+    }
   | { status: "closed"; commandId: BranchCommandId; removal?: DocumentRemovalRecord }
   | { status: "refused"; commandId: BranchCommandId; reason: ApplyClickRefusalReason };
 
@@ -55,7 +66,10 @@ export type ApplyClickObservation =
 /** Stored writer-command outcomes. */
 export type StoredBranchCommandResult = BranchCommandResult | ApplyClickResult;
 
-/** Why an item cannot be applied as-is: another live change collided with it. */
+/**
+ * What a live change did to an item: another node took its path (Apply holds it), or live
+ * deleted it (`deleted_live`: Apply brings it back, then merges; D79).
+ */
 export type DraftItemConflict = { code: "path_taken"; path: string } | { code: "deleted_live" };
 
 /**
@@ -74,7 +88,7 @@ export interface ThreadDraftListItem {
   /** Created and still hidden from the manuscript. */
   isNew: boolean;
   binary: boolean;
-  /** `isNew || binary || deletedLive`: one change, settled by item Apply or Discard only. */
+  /** `isNew || binary`: one change, settled by item Apply or Discard only. */
   wholeItem: boolean;
   documentName: string | null;
   /** The document URI's scheme and leading-slash path in the branch's view, independent of the Work. */

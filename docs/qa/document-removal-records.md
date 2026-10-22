@@ -1,6 +1,7 @@
 # Document removal records
 
-This recipe covers removal records, draft closure, creation admission and server room retirement.
+This recipe covers removal records, which removals close drafts (a discard does, a
+live delete does not: D79), creation admission and server room retirement.
 Run it on a disposable stack. Use `./mf` for server setup/readback and finish
 by deleting a document in the browser. The record lookup is owner-gated through
 `POST /api/projects/:projectId/context/availability`.
@@ -84,26 +85,30 @@ known-id denial can include its record without allowing content access.
 
 1. Open a document with a pending Work draft in both a live room and a draft
    room. Delete it through the tree. Observe the **client close code**, not
-   only its reason: both must be `4208 document-deleted`. Hocuspocus's protocol
-   close alone reports `1000` even with the right reason; the gateway transport
-   must close first. Drafts remain closed with `closed_cause=document_removed`,
-   current-generation pending parts become discarded, all tree-use rows disappear
-   and every affected Work's stored pending count drops.
-2. Pause at `removal.afterClose`, then abort the transaction. No room/runtime
-   retirement or recount may run. The document and drafts remain living/active.
+   only its reason: the live room must close `4208 document-deleted`.
+   Hocuspocus's protocol close alone reports `1000` even with the right reason;
+   the gateway transport must close first. The draft room stays open and its
+   typing saves; the draft stays `active` with its pending parts, the Work's
+   pending count is unchanged, and the Work's branch still lists the document
+   at its path (`./mf` read in that Work), while live and other Works see it
+   gone. Discard all then closes the draft as usual.
+2. Pause at `removal.afterRecord`, then abort the transaction. No room/runtime
+   retirement or recount may run. The document remains living.
 3. Hold both a living document's mutation lock and its Work row lock on one
    connection; ensure its already-active draft on another. It returns
    immediately with no locking SQL. Then race the first Work-draft ensure and first peer creation separately against
    removal. Pause creation at `draft.ensure.afterDocumentLock` or
    `draft.peer.afterDocumentLock` for creation-first. For removal-first pause
-   at `removal.afterClose`. Removal either closes the inserted row or creation
-   refuses with `DocumentNotFoundError` carrying `removal`. No active peer may remain.
+   at `removal.afterRecord`. A first Work draft created first stays active
+   through the delete; removal-first, its creation refuses with
+   `DocumentNotFoundError` carrying `removal`. A peer of an existing Work draft
+   is created either way (the Work draft outlived the delete).
 4. Pull a peer whose ID sorts before its upstream while removing the document.
    The pull holds the upstream shared row lock before its peer update lock;
    removal must wait on parents before locking any peer, without a deadlock.
 5. Move over a drafted victim, and move opposite-direction multi-document
    folders whose path order reverses their document-ID order. Victim drafts
-   close and keep their removal record; both moves finish. Also race folder
+   stay active (the branch shows a `path_taken` clash); both moves finish. Also race folder
    deletion with a save holding a living child's mutation lock: deletion must
    wait **before** `split.beforeRepoint`, because the split updates hidden
    boundary document rows too.
@@ -182,10 +187,10 @@ removed document's live and draft rooms with `4208` after the removal commits.
 - B Discards a created document A is reviewing: A says "<name> discarded <title>
   from the draft." Reopen its review address: the pane says the
   same in place of "This destination is unavailable".
-- Apply during a removal: restart with `HOOK_PAUSE_AT=applyItems.afterStaging
+- Apply during a removal: restart with `HOOK_PAUSE_AT=apply.beforeBoundary
   HOOK_PAUSE_FILE=<file>`, touch the file, click Apply, `./mf doc rm` the
-  document, delete the file. The command answers `held` with `deleted_live` and
-  the record; the review closes with the removal's chip.
+  document, delete the file. The command answers `applied` with
+  `restored: true`: the document is back in the manuscript with the change.
 - A stale 4208 (an init script dispatching the close on the page's `/ws/yjs`
   socket while the document exists): the room reconnects within a few hundred
   ms and typing saves. A second stale 4208 on the same tab reconnects too.

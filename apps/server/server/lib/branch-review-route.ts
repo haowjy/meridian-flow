@@ -472,6 +472,8 @@ async function commandIngress(
 export async function handleApplyClickRequest(
   deps: BranchRouteServices,
   input: CommandScope & { documentId: DocumentId; request: unknown },
+  /** Set on the one re-run after a live delete overtook the grants this click took. */
+  overtaken = false,
 ): Promise<ApplyClickAnswer> {
   const work = await requireBranchWorkIdentity(deps, input);
   const parsedId = BranchCommandIdSchema.safeParse(
@@ -539,14 +541,18 @@ export async function handleApplyClickRequest(
     documentId: input.documentId,
   });
   const grants: FileGrant<"edit">[] = [];
+  // A document deleted live has no live grant to give: Apply restores it, authorized at its
+  // source through the draft's destination (`restoreGrant`), as Discard authorizes it.
+  const deletedLive = item?.item.deletedLive ?? false;
   for (const target of [
     { kind: "draft" as const, documentId: input.documentId, workId: input.workId },
-    ...(item?.item.isNew ? [] : [documentTarget(input.documentId)]),
+    ...(item?.item.isNew || deletedLive ? [] : [documentTarget(input.documentId)]),
   ]) {
     const grant = await deps.fileAccess.authorize({ accountId: input.userId }, target, "edit");
     if (isFileAccessDenied(grant)) return deniedAnswer(grant);
     grants.push(grant);
   }
+  if (item && deletedLive) grants.push(await restoreGrant(deps, input, item.item));
   const result = await runWithEditGrants(deps.fileAccess, grants, () =>
     deps.documentSync.draftReview.applyClick({
       workId: input.workId,
@@ -557,6 +563,10 @@ export async function handleApplyClickRequest(
   );
   if (result.ok) return result.value;
   const denial = result.refusal.refused[0];
+  // A live delete committed after this click took its live grant: nothing was claimed, so
+  // the click runs once more and now authorizes, and restores, the deleted document (D79).
+  if (denial?.facts?.deleted && !deletedLive && !overtaken)
+    return handleApplyClickRequest(deps, input, true);
   return denial ? deniedAnswer(denial) : refuse("not_found");
 }
 

@@ -34,6 +34,8 @@ const TEST_HOOK_POINTS = [
   "draft.beforeAccess",
   "apply.beforeCompile",
   "apply.beforeBoundary",
+  /** Apply chose its lock scope from an unlocked tree read and holds no tree lock yet. */
+  "apply.afterScopeGuess",
   "apply.afterLive",
   "applyItems.beforeStaging",
   "applyItems.afterStaging",

@@ -16,10 +16,28 @@ reading the winner. Pending commands are observations, not a second scheduler.
 
 `adapters/drizzle-apply-click.ts` owns the atomic storage operation. The Works
 boundary locks the Work and confirms the route's bound edit grants before the
-first write (the command claim). A hidden-create reveal verifies its tree namespace before taking live's
-mutation lock. A source moving during that acquisition rolls back and retries
-the transaction, without re-compiling the click. Ordinary text Apply takes only
-live's mutation lock, so unrelated tree changes do not serialize it. The append
+first write (the command claim). A hidden-create reveal or a deleted document's
+restore verifies its tree namespace (`acquireTreeScope`) before taking live's
+mutation lock. The scope comes from an unlocked tree read, so Apply re-reads under
+the lock: a delete that landed in between, or a source moving during the
+acquisition, rolls back and retries the transaction namespace-first (remembered
+for every later attempt), without re-compiling the click and never taking a
+namespace under a document lock. Ordinary text Apply takes only live's mutation
+lock, so unrelated tree changes do not serialize it.
+
+A document deleted live whose draft outlived the delete (D79) comes back first:
+`restoreDocument` clears the record and restores its folders in the same
+transaction, then the ordinary text merge runs against the deleted document's
+last text, which equals its review base. The result carries `restored: true`.
+A path another document took refuses `forbidden` (the item lists `path_taken`);
+a Work cascade, discard or deleted source answers `closed` with the record. The
+route authorizes a deleted item at its source through the draft destination
+(`restoreGrant`) instead of a live grant. When a delete commits after the route
+took the live grant, the transaction's grant confirmation refuses it, nothing is
+claimed, and the route runs the click once more, which now restores. So every
+click restores whichever delete is current, including an Apply all whose
+confirmation list was read before a later delete; the client words its notice
+per document from `restored`. The append
 door is the sole draft-row lock and active-state check: live preparation and its
 staged journal write precede it inside the same Work transaction. A late draft
 closure unwinds that whole transaction before answering `closed`, so no live
