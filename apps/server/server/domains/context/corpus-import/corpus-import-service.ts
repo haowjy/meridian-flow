@@ -1,9 +1,12 @@
 /** Convert supported corpus files into prose, keeping the writer's titles and hierarchy. */
+
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import {
   allocateFilename,
   type ParsedDocumentFilename,
   parseDocumentFilename,
   renderFilename,
+  sameNamespaceName,
 } from "@meridian/contracts/protocol";
 import { joinPath } from "../context/paths.js";
 import type { ContextError } from "../ports/context-port.js";
@@ -142,9 +145,27 @@ export function createCorpusImportService({
   }): Promise<CorpusImportBatchResult> => {
     const port = contextPorts.forProject(input.projectId, input.userId, new Map());
     const taken = new Set<string>();
-    const exists = async (path: string) => {
-      const stat = await port.stat(`kb://${path}`);
-      return stat.ok;
+    const claims = new Map<string, readonly { kind: "document" | "folder"; filename: string }[]>();
+    const existingClaims = async (directory: string) => {
+      const cached = claims.get(directory);
+      if (cached) return cached;
+      const listing = await port.list(`kb://${directory}`);
+      const loaded = listing.ok
+        ? listing.value.entries.flatMap((entry) => {
+            const parsed = parseContextUri(entry.uri);
+            const filename = parsed.ok ? parsed.value.path.split("/").at(-1) : null;
+            return filename
+              ? [
+                  {
+                    kind: entry.kind === "directory" ? ("folder" as const) : ("document" as const),
+                    filename,
+                  },
+                ]
+              : [];
+          })
+        : [];
+      claims.set(directory, loaded);
+      return loaded;
     };
     const items: CorpusImportItemResult[] = [];
 
@@ -247,7 +268,11 @@ export function createCorpusImportService({
           async ({ filename: candidate }) => {
             const path = joinPath(directory, candidate);
             return (
-              taken.has(path) || (path !== ownDesired && desired.has(path)) || (await exists(path))
+              taken.has(path) ||
+              (path !== ownDesired && desired.has(path)) ||
+              (await existingClaims(directory)).some((claim) =>
+                sameNamespaceName({ kind: "document", filename: candidate }, claim),
+              )
             );
           },
         );
@@ -267,16 +292,7 @@ export function createCorpusImportService({
           },
         );
       };
-      // Another intake can claim after stat. Create never overwrites its content;
-      // retry with that candidate held in this batch's taken set.
-      let write = await create();
-      for (
-        let attempt = 1;
-        !write.ok && write.error.code === "conflict" && attempt < 8;
-        attempt += 1
-      ) {
-        write = await create();
-      }
+      const write = await create();
       if (!write.ok) {
         items[index] = {
           status: "failed",

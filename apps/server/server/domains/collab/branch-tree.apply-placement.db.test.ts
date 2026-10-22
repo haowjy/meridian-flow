@@ -33,7 +33,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
     });
   }
 
-  it("restores a document deleted live with its folder, holds one whose path a new document took, and never undoes a later removal (E-8)", async () => {
+  it("restores deleted documents with their folders, counts past a new occupant, and never undoes a later removal (E-8)", async () => {
     const { runtime, s } = await start();
     const ascension = await s.work("Ascension", "draft");
     const harbor = await s.writer.createDocument("lore/harbor", "The harbor.");
@@ -67,13 +67,9 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
     expect.soft(await s.view(ascension).text("lore/harbor")).toContain("The harbor, drafted.");
     expect.soft(await restore(runtime, harbor)).toEqual({ kind: "already_living" });
 
-    expect.soft(await restore(runtime, map)).toMatchObject({
-      kind: "location_taken",
-      at: "atlas/map",
-      occupant: { kind: "document", id: newMap },
-    });
+    expect.soft(await restore(runtime, map)).toMatchObject({ kind: "restored" });
     expect.soft(await live.idAt("atlas/map"), "the new map stays").toBe(newMap);
-    expect.soft(await live.locate(map), "the held one stays deleted").toBeNull();
+    expect.soft(await live.idAt("atlas/map (2)"), "the restored map lands beside it").toBe(map);
   });
 
   it("projects the restore on the device that deleted the folder, from the server's own receipt, catalog and availability (E-8, F23)", async () => {

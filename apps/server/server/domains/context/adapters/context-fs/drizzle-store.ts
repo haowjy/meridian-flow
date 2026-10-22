@@ -30,6 +30,7 @@ import { createLive, findLiveCreateCandidate } from "../../tree/creates.js";
 import { findForward, lastLocationOf, recordForward } from "../../tree/forwards.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
+import { normalizeNames } from "../../tree/name-normalization.js";
 import { insertDocumentRow } from "../../tree/node-rows.js";
 import { ensureLiveFolderPath } from "../../tree/placement.js";
 import {
@@ -300,6 +301,9 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         { hidden: false, ...(input.id ? { id: input.id as DocumentId } : {}) },
       );
       if (!documentId) throw new Error("Failed to create binary document");
+      await normalizeNames(this.deps.db, [
+        { contextSourceId: this.sourceId, parentId: input.folderId as FolderId | null },
+      ]);
       await this.deps.catalogMutations?.refreshSources([this.sourceId]);
       // The upload is an arrival (contract §9.3): its live identity and the settlement of a ref
       // waiting at this address publish together, under the namespace key this command holds.

@@ -262,7 +262,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(await idAt(scenario, ascension, "q/t/hidden")).toBe(stayed);
     });
 
-    it("answers a path two of a branch's documents share with the clash, never one of them (absorb)", async () => {
+    it("gives an absorbed hidden child the next free name instead of leaving a clash", async () => {
       const scenario = await start();
       const ascension = await scenario.work("Ascension", "draft");
       await scenario.seedLiveFolder("branches");
@@ -275,13 +275,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
 
       const view = scenario.view(ascension);
-      const clash = { ok: false, error: { code: "invalid_operation" } };
-      expect.soft(await view.stat("ideas/note"), "stat").toMatchObject(clash);
-      expect.soft(await view.read("ideas/note"), "read").toMatchObject(clash);
+      expect.soft(await view.stat("ideas/note"), "earlier child keeps the name").toMatchObject({
+        ok: true,
+        value: { documentId: first },
+      });
+      expect.soft(await view.stat("ideas/note (2)"), "arriving child yields").toMatchObject({
+        ok: true,
+        value: { documentId: second },
+      });
       expect.soft(await view.ls("ideas"), "listing the folder both landed in").toMatchObject({
         ok: true,
       });
       expect.soft((await document(first)).hidden && (await document(second)).hidden).toBe(true);
+
+      const hiddenArrival = await scenario.model(ascension).create("arrival", "Draft.");
+      const liveArrival = await scenario.seedLive("source");
+      expect.soft(await scenario.writer.move("source", "arrival")).toMatchObject({ ok: true });
+      expect
+        .soft(await idAt(scenario, "live", "arrival"), "live arrival keeps its name")
+        .toBe(liveArrival);
+      expect
+        .soft(await idAt(scenario, ascension, "arrival (2)"), "hidden draft yields")
+        .toBe(hiddenArrival);
     });
 
     it.each([

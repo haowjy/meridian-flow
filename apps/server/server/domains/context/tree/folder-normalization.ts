@@ -20,6 +20,7 @@ import {
 import { and, asc, eq, isNull, ne, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
+import { normalizeNames } from "./name-normalization.js";
 import { insertFolder, tombstoneFolders } from "./node-rows.js";
 import type { NodeRef } from "./tree-view.js";
 import {
@@ -108,6 +109,9 @@ async function fold(db: Database, hidden: FolderId, into: FolderId): Promise<voi
   await tx.delete(branchTreeFolders).where(eq(branchTreeFolders.folderId, hidden));
   await tx.update(folders).set({ absorbedInto: into }).where(eq(folders.id, hidden));
   await tombstoneFolders(db, [hidden]);
+  const [parent] = await loadFolderIdentityRows(tx, [into]);
+  if (parent)
+    await normalizeNames(db, [{ contextSourceId: parent.contextSourceId, parentId: into }]);
 }
 
 /**

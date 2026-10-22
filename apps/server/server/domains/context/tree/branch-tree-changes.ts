@@ -20,7 +20,7 @@ import {
   type TurnId,
   type UserId,
 } from "@meridian/contracts";
-import { renderFilename } from "@meridian/contracts/protocol";
+import { allocateFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -97,20 +97,33 @@ export async function moveInBranch(
   if ((await tree.findById(view, input.documentId)).kind !== "found")
     return Err({ code: "not_found" });
   const { contextSourceId } = input.to;
+  const desiredPath = filePath(input.to.dir, input.to.name, input.to.extension);
   const occupant = await tree.resolvePath(view, {
     contextSourceId,
-    path: filePath(input.to.dir, input.to.name, input.to.extension),
+    path: desiredPath,
     as: "document",
   });
   if (occupant.kind === "ambiguous") return Err({ code: "ambiguous" });
   if (occupant.kind === "found") {
     if (occupant.node.kind === "document" && occupant.node.document.id === input.documentId)
       return Err({ code: "already_there" });
-    return Err({
-      code: "conflict",
-      occupantKind: occupant.node.kind === "folder" ? "folder" : "file",
-    });
   }
+  const filename = await allocateFilename(
+    { kind: "document", name: input.to.name, extension: input.to.extension },
+    async ({ filename }) => {
+      const found = await tree.resolvePath(view, {
+        contextSourceId,
+        path: filePath(input.to.dir, filename, ""),
+        as: "document",
+      });
+      if (found.kind === "not_found") return false;
+      if (found.kind === "ambiguous") return true;
+      return !(found.node.kind === "document" && found.node.document.id === input.documentId);
+    },
+  );
+  const landedName = input.to.extension
+    ? filename.slice(0, -(input.to.extension.length + 1))
+    : filename;
   const walk = await walkFolders(db, view, contextSourceId, input.to.dir, async (gap) => {
     const at = { contextSourceId, ...gap };
     return (await findHiddenFolder(db, at)) ?? (await insertFolder(db, at, { hidden: true }));
@@ -125,7 +138,7 @@ export async function moveInBranch(
     moved: {
       folderId: walk.folderId,
       rootSourceId: walk.folderId === null ? contextSourceId : null,
-      name: input.to.name,
+      name: landedName,
       extension: input.to.extension,
     },
     deleted: false,
@@ -216,7 +229,8 @@ export async function writeBackBranchFacts(
   await lockDocuments(db, [input.documentId]);
   const current = await factsOf(db, input.branchId, input.documentId);
   if (!sameBranchFacts(current, input.expected)) return "superseded";
-  const moved = input.facts.moved;
+  let facts = input.facts;
+  const moved = facts.moved;
   if (moved?.folderId) {
     // A hidden folder is gone once tombstoned; a live folder deleted since still shows in the
     // branch above the document, as a draft that outlived a delete does (D79).
@@ -225,11 +239,11 @@ export async function writeBackBranchFacts(
     ]);
     if (!folder || (folder.hidden && folder.deleted)) return "folder_missing";
   }
-  if (!input.facts.deleted && (await takenInBranch(db, input))) return "location_taken";
+  if (!facts.deleted) facts = await freeFactsInBranch(db, { ...input, facts });
   await writeBranchTreeFacts(db, {
     branchId: input.branchId,
     documentId: input.documentId,
-    facts: input.facts,
+    facts,
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: input.changedBy,
   });
@@ -237,12 +251,12 @@ export async function writeBackBranchFacts(
 }
 
 /** Another node the branch shows holds the place `facts` give the document. */
-async function takenInBranch(
+async function freeFactsInBranch(
   db: Database,
   input: { branchId: BranchId; documentId: DocumentId; facts: BranchTreeFacts },
-): Promise<boolean> {
+): Promise<BranchTreeFacts> {
   const [row] = await loadDocumentIdentityRows(currentDrizzleDb(db), [input.documentId]);
-  if (!row) return false;
+  if (!row) return input.facts;
   const at: TreePlacement = input.facts.moved ?? {
     folderId: row.folderId,
     rootSourceId: row.folderId ? null : row.contextSourceId,
@@ -252,17 +266,27 @@ async function takenInBranch(
   const folderId = at.folderId as FolderId | null;
   const [folder] = folderId ? await loadFolderIdentityRows(currentDrizzleDb(db), [folderId]) : [];
   const contextSourceId = (folder?.contextSourceId ?? at.rootSourceId) as ContextSourceId | null;
-  if (!contextSourceId) return false;
+  if (!contextSourceId) return input.facts;
   const chain = folderId
     ? ((await loadFolderChains(currentDrizzleDb(db), [folderId])).get(folderId) ?? [])
     : [];
-  const path = chainPrefix(chain) + renderFilename(at.name, at.extension);
-  const occupancy = await createTreeReader(db).occupancy(
-    { kind: "branch", branchId: input.branchId },
-    [{ contextSourceId, path, as: "document" }],
+  const prefix = chainPrefix(chain);
+  const view = { kind: "branch", branchId: input.branchId } as const;
+  const filename = await allocateFilename(
+    { kind: "document", name: at.name, extension: at.extension },
+    async ({ filename }) => {
+      const [here] = await createTreeReader(db).occupancy(view, [
+        { contextSourceId, path: prefix + filename, as: "document" },
+      ]);
+      return (
+        !!here && (here.documents.some((id) => id !== input.documentId) || here.folders.length > 0)
+      );
+    },
   );
-  const [here] = occupancy;
-  return (
-    !!here && (here.documents.some((id) => id !== input.documentId) || here.folders.length > 0)
-  );
+  const name = at.extension ? filename.slice(0, -(at.extension.length + 1)) : filename;
+  if (name === at.name) return input.facts;
+  return {
+    ...input.facts,
+    moved: { ...at, name },
+  };
 }

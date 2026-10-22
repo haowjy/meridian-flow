@@ -12,15 +12,16 @@
  * source involved and the document locks of every target document.
  */
 import type { ContextSourceId, FolderId } from "@meridian/contracts";
+import { allocateFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { testHook } from "../../../shared/test-hooks.js";
-import { renderFilename } from "../context/paths.js";
 import { absorbAt, absorbHiddenFolder } from "./folder-normalization.js";
 import type { CreateFault } from "./hidden-node-types.js";
+import { normalizeNames } from "./name-normalization.js";
 import { bumpLocationVersions, claimDocumentLocation } from "./node-locations.js";
 import { insertFolder } from "./node-rows.js";
 import { loadFolderChains } from "./tree-addresses.js";
@@ -108,6 +109,7 @@ export async function ensureLiveFolderPath(
       // Another branch's hidden folder at the same path folds into the revealed one.
       await absorbAt(db, hidden);
     }
+    await normalizeNames(db, [{ contextSourceId, parentId: gap.parentId }]);
     created.push(folderId);
     return folderId;
   });
@@ -135,6 +137,8 @@ export type PlaceResult = {
   placed: readonly NodeRef[];
   /** The sources the catalog refresh covers, with `placed` as its invalidated roots. */
   sourceIds: readonly ContextSourceId[];
+  /** Actual free locations each target claimed, in target order. */
+  landed: readonly PlaceTarget[];
 };
 
 export type PlaceFault =
@@ -152,17 +156,21 @@ export async function place(
 ): Promise<Result<PlaceResult, PlaceFault>> {
   const placed: NodeRef[] = [];
   const sourceIds = new Set<ContextSourceId>();
+  const landedTargets: PlaceTarget[] = [];
   for (const target of input.targets) {
     const stale = await revalidatePlacement(db, target);
     if (stale) return Err(stale);
     await testHook("place.afterRevalidate");
-    const landed = await placeLive(db, target, (parentId) => reveal(db, target, parentId));
+    const landed = await placeLive(db, target, (parentId, at) =>
+      reveal(db, { ...target, at }, parentId),
+    );
     if (!landed.ok) return landed;
     if (target.node.kind === "folder") await absorbAt(db, target.node.id);
     placed.push(...landed.value.ancestors, target.node);
     sourceIds.add(target.at.contextSourceId);
+    landedTargets.push({ ...target, at: landed.value.at });
   }
-  return Ok({ placed, sourceIds: [...sourceIds] });
+  return Ok({ placed, sourceIds: [...sourceIds], landed: landedTargets });
 }
 
 /**
@@ -177,30 +185,43 @@ export async function place(
 export async function placeLive(
   db: Database,
   target: PlaceTarget,
-  land: (parentId: FolderId | null) => Promise<void>,
-): Promise<Result<{ ancestors: readonly NodeRef[] }, PlaceFault>> {
+  land: (parentId: FolderId | null, at: LiveLocation) => Promise<void>,
+): Promise<Result<{ ancestors: readonly NodeRef[]; at: LiveLocation }, PlaceFault>> {
   const tree = createTreeReader(db);
   const ancestors = await placeAncestors(db, tree, target);
   if (!ancestors.ok) return ancestors;
   const { parentId } = ancestors.value;
-  const filename =
+  const desired =
     target.node.kind === "document"
-      ? renderFilename(target.at.name, target.at.extension ?? "")
-      : target.at.name;
-  const taken = pathTaken(
-    [...ancestors.value.path, filename].join("/"),
-    await tree.childAt(LIVE_TREE, {
-      contextSourceId: target.at.contextSourceId,
-      parentId,
-      filename,
-      as: target.node.kind,
-    }),
-    target.node,
+      ? ({
+          kind: "document",
+          name: target.at.name,
+          extension: target.at.extension ?? "",
+        } as const)
+      : ({ kind: "folder", name: target.at.name } as const);
+  const filename = await allocateFilename(desired, async ({ filename }) =>
+    Boolean(
+      pathTaken(
+        [...ancestors.value.path, filename].join("/"),
+        await tree.childAt(LIVE_TREE, {
+          contextSourceId: target.at.contextSourceId,
+          parentId,
+          filename,
+          as: target.node.kind,
+        }),
+        target.node,
+      ),
+    ),
   );
-  if (taken) return Err(taken);
-  await land(parentId);
+  const extension = target.node.kind === "document" ? (target.at.extension ?? "") : undefined;
+  const at: LiveLocation = {
+    ...target.at,
+    name: extension ? filename.slice(0, -(extension.length + 1)) : filename,
+  };
+  await land(parentId, at);
+  await normalizeNames(db, [{ contextSourceId: target.at.contextSourceId, parentId }]);
   await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
-  return Ok({ ancestors: ancestors.value.placed });
+  return Ok({ ancestors: ancestors.value.placed, at });
 }
 
 /** A hidden target's row at its final location, visible. */

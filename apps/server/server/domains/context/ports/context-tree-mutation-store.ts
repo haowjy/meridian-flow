@@ -91,6 +91,8 @@ export type ContextTreeMutationError =
 export interface ContextTreeMutationResult {
   /** Moved document id for files, or moved root folder id for directory moves. */
   movedNodeId: string;
+  /** Actual free path claimed by the move. */
+  destinationPath: string;
   linkUpdate?: { links: number; documents: number };
 }
 
