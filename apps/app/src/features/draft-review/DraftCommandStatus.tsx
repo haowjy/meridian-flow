@@ -1,7 +1,6 @@
 /**
- * A listed file's reserved status line: pending delivery and same-id Retry stay on the
- * addressed item even when no review groups remain. With nothing in flight it says what
- * live did to the document (deleted), so the line never pushes rows.
+ * A listed file's status: pending delivery and same-id Retry stay on the addressed item even
+ * when no review groups remain. With nothing to report, it occupies no line.
  */
 
 import { Trans } from "@lingui/react/macro";
@@ -15,39 +14,38 @@ export function DraftCommandStatus({
   item,
 }: {
   itemKey: string;
-  /** The listed row; its conflict is the line's resting state. */
+  /** The listed row supplies its live deletion state. */
   item?: ThreadDraftListItem;
 }) {
   const owner = useDraftCommandOwner();
   const state = useDraftCommandState(itemKey);
+  const content = state.stalled ? (
+    <>
+      <Trans>Apply is waiting for confirmation.</Trans>
+      <button
+        type="button"
+        className="text-button [@media(pointer:coarse)]:min-h-11"
+        onClick={() => owner.retry(itemKey)}
+      >
+        <Trans>Retry</Trans>
+      </button>
+    </>
+  ) : state.applying ? (
+    <Trans>Applying</Trans>
+  ) : state.failure ? (
+    <span className={state.failure.serverCode === "needs_restore" ? undefined : "text-destructive"}>
+      <ReviewMessageText failure={state.failure} />
+    </span>
+  ) : isDeletedFromManuscript(item) ? (
+    <Trans>Deleted from the manuscript</Trans>
+  ) : null;
+  if (!content) return null;
   return (
     <div
       role="status"
       className="flex min-h-7 [@media(pointer:coarse)]:min-h-11 items-center gap-2 px-2 text-caption text-ink-muted"
     >
-      {state.stalled ? (
-        <>
-          <Trans>Apply is waiting for confirmation.</Trans>
-          <button
-            type="button"
-            className="text-button [@media(pointer:coarse)]:min-h-11"
-            onClick={() => owner.retry(itemKey)}
-          >
-            <Trans>Retry</Trans>
-          </button>
-        </>
-      ) : state.applying ? (
-        <Trans>Applying</Trans>
-      ) : state.failure ? (
-        // Asking to bring a deleted document back is a question, not an error.
-        <span
-          className={state.failure.serverCode === "needs_restore" ? undefined : "text-destructive"}
-        >
-          <ReviewMessageText failure={state.failure} />
-        </span>
-      ) : isDeletedFromManuscript(item) ? (
-        <Trans>Deleted from the manuscript</Trans>
-      ) : null}
+      {content}
     </div>
   );
 }

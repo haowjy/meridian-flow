@@ -105,9 +105,8 @@ export type VisibleFolder = {
 
 /**
  * A path asked as a claim of one kind also meets the shared document and folder namespace
- * (`namespaceName`). Creates, placements, moves, Apply's holds and `treeState`'s clash
- * diagnostics ask this way; browsing (ls, stat, read, a link's resolution) resolves
- * literally and never does.
+ * (`namespaceName`). Creates, placements and moves ask this way; browsing (ls, stat, read,
+ * a link's resolution) resolves literally and never does.
  */
 export type NameClaim = "document" | "folder";
 
@@ -200,13 +199,6 @@ export type TreeStateNode = {
   from: { path: string; uri: string | null } | null;
   /** The rendered location token's source. */
   locationVersion: bigint;
-  conflict:
-    | { kind: "none" }
-    /**
-     * Created-and-revealed or edited, then deleted live while the branch kept pending changes
-     * (D79): the branch still lists it; Apply restores it, then merges.
-     */
-    | { kind: "deleted_live" };
 };
 
 export type DocumentLineage = {
@@ -897,7 +889,6 @@ export function createTreeReader(
         },
         from: fromOf.get(item) ?? null,
         locationVersion: row.locationVersion,
-        conflict: !row.hidden && row.deleted ? { kind: "deleted_live" } : { kind: "none" },
       };
     });
   }

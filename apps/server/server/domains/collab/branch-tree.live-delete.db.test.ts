@@ -37,7 +37,6 @@ describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", 
     expect.soft(await s.view(ascension).text("ch3")).toContain("crossed the river");
     expect.soft(await draftStatuses(ch3), "no draft closed").not.toContain("work_draft:closed");
     expect.soft(itemFor(await s.items(ascension), ch3)).toMatchObject({
-      conflict: null,
       deletedLive: true,
     });
 
@@ -85,7 +84,7 @@ describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", 
       .toBe(false);
   });
 
-  it("lists a drafted document at a freed path as a clash, under a deleted folder, and as a move's victim", async () => {
+  it("lists a drafted document after another takes its freed path, under a deleted folder, and as a move's victim", async () => {
     const { runtime, s } = await start();
     const ascension = await s.work("Ascension", "draft");
     const ch3 = await s.writer.createDocument("ch3", "Three.");
@@ -109,9 +108,8 @@ describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", 
     expect
       .soft(await s.view(ascension).stat("ch3"), "two documents at one path in the branch")
       .toMatchObject({ ok: false, error: { reason: "ambiguous_path" } });
-    // A taken leaf is no conflict: Apply restores at the next free name.
+    // A taken leaf does not block Apply: it restores at the next free name.
     expect.soft(itemFor(await s.items(ascension), ch3)).toMatchObject({
-      conflict: null,
       deletedLive: true,
     });
 
@@ -124,6 +122,5 @@ describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", 
     expect
       .soft(await draftStatuses(ch4), "the victim keeps its draft")
       .toContain("work_draft:active");
-    expect.soft(itemFor(await s.items(ascension), ch4).conflict).toBeNull();
   });
 });

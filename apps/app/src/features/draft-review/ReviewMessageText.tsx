@@ -29,12 +29,14 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This document was deleted from the manuscript. Apply again to bring it back.`;
     case "changed":
       return msg`This move or delete changed since you looked. Check it, then apply again.`;
+    case "ancestor_taken":
+      return msg`A document blocks part of this location. Move or rename it, then apply again.`;
     default:
       return undefined;
   }
 }
 
-/** Holds and stale answers are complete sentences; a lead line like "Couldn't apply" would misstate them. */
+/** State answers are complete sentences; a lead line like "Couldn't apply" would misstate them. */
 function answersAlone(serverCode: string | undefined): boolean {
   return serverCode === "stale" || serverCode === "needs_restore" || serverCode === "changed";
 }

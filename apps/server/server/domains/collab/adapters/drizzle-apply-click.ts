@@ -118,11 +118,11 @@ export function createDrizzleApplyClick(
     status: "closed",
     commandId: command.envelope.commandId,
   });
-  /** Places a hidden creation at `at`; null when a document blocks an ancestor path. */
+  /** Places a hidden creation at `at`; an occupied ancestor cannot name a destination. */
   async function reveal(
     node: TreeStateNode,
     at: Pick<TreeStateNode["target"], "contextSourceId" | "parentFolderId" | "name" | "extension">,
-  ): Promise<TreeStateNode["target"] | null> {
+  ): Promise<TreeStateNode["target"]> {
     const placed = await place(db, {
       targets: [
         {
@@ -137,8 +137,9 @@ export function createDrizzleApplyClick(
       ],
     });
     if (!placed.ok) {
-      if (placed.error.code === "path_taken") return null;
-      throw new ApplyClickRefused("forbidden");
+      throw new ApplyClickRefused(
+        placed.error.code === "path_taken" ? "ancestor_taken" : "not_found",
+      );
     }
     await deps.arrivals?.settle([node.nodeId]);
     await deps.catalog.refreshSources(
@@ -146,15 +147,14 @@ export function createDrizzleApplyClick(
       placed.value.placed.map((ref) => ref.id),
     );
     const [landed] = placed.value.landed;
-    return landed
-      ? {
-          ...node.target,
-          ...landed.at,
-          path: node.target.path,
-          dir: node.target.dir,
-          uri: node.target.uri,
-        }
-      : null;
+    if (!landed) throw new ApplyClickRefused("not_found");
+    return {
+      ...node.target,
+      ...landed.at,
+      path: node.target.path,
+      dir: node.target.dir,
+      uri: node.target.uri,
+    };
   }
   /** The addressed document's node in the branch, never another created document's. */
   async function itemNode(branchId: BranchId, documentId: DocumentId) {
@@ -417,7 +417,7 @@ export function createDrizzleApplyClick(
                           { arrivals: deps.arrivals, catalog: deps.catalog },
                         );
                         if (outcome.kind === "location_taken")
-                          throw new ApplyClickRefused("forbidden");
+                          throw new ApplyClickRefused("ancestor_taken");
                         if (outcome.kind === "refused") throw new ApplyClickRefused("not_found");
                         if (appliedNode.nodeId === command.documentId)
                           restored = outcome.kind === "restored";
@@ -443,13 +443,14 @@ export function createDrizzleApplyClick(
                           },
                           { arrivals: deps.arrivals, catalog: deps.catalog },
                         );
-                        if (moved.kind !== "moved") throw new ApplyClickRefused("forbidden");
+                        if (moved.kind === "location_taken")
+                          throw new ApplyClickRefused("ancestor_taken");
+                        if (moved.kind !== "moved") throw new ApplyClickRefused("not_found");
                         if (appliedNode.nodeId === command.documentId)
                           replaced = appliedNode.from?.uri ?? appliedNode.from?.path;
                       }
                       if (appliedNode.hidden && appliedNode.origin === "created") {
-                        if (!(await reveal(appliedNode, appliedNode.target)))
-                          throw new ApplyClickRefused("forbidden");
+                        await reveal(appliedNode, appliedNode.target);
                       }
                       await settleTreeNode(appliedNode);
                     };
@@ -506,20 +507,17 @@ export function createDrizzleApplyClick(
                           { arrivals: deps.arrivals, catalog: deps.catalog },
                         );
                         if (outcome.kind === "location_taken")
-                          throw new ApplyClickRefused("forbidden");
+                          throw new ApplyClickRefused("ancestor_taken");
                         if (outcome.kind === "refused") return finish(closed(command));
                         restored = outcome.kind === "restored";
                       }
                       if (node?.hidden && node.origin === "created" && base) {
-                        if (
-                          !(await reveal(node, {
-                            contextSourceId: locked.contextSourceId,
-                            parentFolderId: locked.folderId,
-                            name: locked.name,
-                            extension: locked.extension,
-                          }))
-                        )
-                          throw new ApplyClickRefused("forbidden");
+                        await reveal(node, {
+                          contextSourceId: locked.contextSourceId,
+                          parentFolderId: locked.folderId,
+                          name: locked.name,
+                          extension: locked.extension,
+                        });
                       }
                     }
                     if (!cut && node?.origin === "created")

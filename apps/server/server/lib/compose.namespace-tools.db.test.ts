@@ -620,7 +620,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // One row owns its whole dependency chain under the branch lock.
       await draft({ command: "move", from: { path: "ch2" }, path: "ch3" });
       await draft({ command: "move", from: { path: "ch1" }, path: "ch2" });
-      expect((await writer.item(CH1))?.conflict).toBeNull();
       expect(await writer.apply(CH1)).toMatchObject({
         status: "applied",
         applied: [

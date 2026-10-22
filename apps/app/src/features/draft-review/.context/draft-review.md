@@ -146,10 +146,10 @@ its path, Apply restores it at the next free name, then merges. `apply(ref, targ
 the delete, or an Apply all for the documents its confirmation named. Without it
 the server answers `needs_restore` (nothing changed); the outcome is
 `needs-restore`, the list refreshes so the row shows the delete, and an Apply all
-asks again by name. An applied answer with `restored` makes the outcome
-`{ kind: "done", restored: true }` and marks the document (`wasRestored`) for the
-editor's "back in the manuscript" state; the surface that clicked says the same in
-its reserved notice slot (`CommandNotice`).
+asks again by name. An applied answer carries `restored` and every final `renamed`
+path. The account owner retains both facts for the document, so an editor Apply keeps
+its result in the identity row after navigation. Dock and Work surfaces show the same
+facts in `CommandNotice`, which renders only when there is a result or question.
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds,
 then an item Retry. A terminal acknowledgement failure refuses unsent cuts
@@ -173,7 +173,7 @@ between-paragraph bar; both are open in [#992](https://github.com/haowjy/meridia
 which needs one feedback surface outside the manuscript flow rather than another
 per-width fix. A terminal close cancels unsent clicks and observes a sent
 head's durable outcome; applied then needs no room record. Feedback starts at
-500 ms in reserved footer space. No queue or optimistic base persists. Queue changes invalidate its optimistic
+500 ms on the addressed item. No queue or optimistic base persists. Queue changes invalidate its optimistic
 contribution independently of account UI notifications; the account publishes only
 changed command state or a changed item-to-draft binding. Rendering leaves subscribe
 to those records; command callbacks and the project controller do not. The room
