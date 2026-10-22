@@ -7,7 +7,7 @@
  */
 
 import type { BranchCommandId, BranchId } from "@meridian/contracts";
-import { draftItemKey } from "@meridian/contracts";
+import { draftItemKey, parseDraftItemKey } from "@meridian/contracts";
 import {
   type ApplyClick,
   type ApplyClickAnswer,
@@ -125,6 +125,7 @@ const ApplyClickBody = z
       }),
     ),
     groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
+    restore: z.literal(true).optional(),
   })
   .refine((body) => Boolean(body.snapshot) === Boolean(body.draftId));
 const DiscardBody = z.strictObject(Base);
@@ -352,20 +353,27 @@ export async function handleWorkBranchListRequest(
   };
 }
 
-/** Addressability is independent of list membership and reads only persisted metadata. */
+/**
+ * Addressability is independent of list membership and reads only persisted metadata.
+ * Disposition precedes the content grant: the active draft is what grants reading a document
+ * deleted live (or a creation the manuscript never had), so once Discard retires it the grant
+ * is gone too, and a device that did not discard must still learn `gone` from the Work's owner.
+ */
 export async function handleDraftMetadataRequest(
   deps: BranchRouteServices,
   input: CommandScope & { documentId: DocumentId; itemKey: string },
 ): Promise<DraftMetadataResponse> {
   await requireBranchWorkAccess(deps, input);
+  if (parseDraftItemKey(input.itemKey)?.documentId !== input.documentId)
+    throw createError({ statusCode: 404, message: "Draft not found" });
+  const resolved = await deps.documentSync.draftReview.resolveItem(input);
+  if (!resolved?.draftId || resolved.documentId !== input.documentId) return { status: "gone" };
   await requireFileGrant(
     deps.fileAccess,
     input.userId,
     { kind: "draft", documentId: input.documentId, workId: input.workId },
     "read",
   );
-  const resolved = await deps.documentSync.draftReview.resolveItem(input);
-  if (!resolved?.draftId || resolved.documentId !== input.documentId) return { status: "gone" };
   return {
     status: "active",
     draftId: resolved.draftId,
@@ -472,6 +480,8 @@ async function commandIngress(
 export async function handleApplyClickRequest(
   deps: BranchRouteServices,
   input: CommandScope & { documentId: DocumentId; request: unknown },
+  /** Set on the one re-run after a live delete overtook this click's admission. */
+  overtaken = false,
 ): Promise<ApplyClickAnswer> {
   const work = await requireBranchWorkIdentity(deps, input);
   const parsedId = BranchCommandIdSchema.safeParse(
@@ -519,8 +529,7 @@ export async function handleApplyClickRequest(
       grant.facts.projectId === input.projectId
     ) {
       const removed = await deps.documentSync.roomRemoval({ documentId: input.documentId });
-      if (removed)
-        return (await lookup()) ?? { status: "closed", commandId, removal: removed.removal };
+      if (removed) return (await lookup()) ?? { status: "closed", commandId };
     }
     return refuse(
       grant.facts?.branchWork?.deleted || grant.facts?.ownerWork?.deleted
@@ -539,14 +548,27 @@ export async function handleApplyClickRequest(
     documentId: input.documentId,
   });
   const grants: FileGrant<"edit">[] = [];
+  // A document deleted live has no live grant to give: Apply restores it, authorized at its
+  // source through the draft's destination (`restoreGrant`), as Discard authorizes it.
+  const deletedLive = item?.item.deletedLive ?? false;
+  // A live delete that committed after the item resolved, at authorization or at the grants'
+  // confirmation: nothing was claimed, so the click runs once more, resolves the item as
+  // deleted and authorizes its restore (D79). Every other denial is final.
+  const denied = (denial: FileAccessDenied | undefined): Promise<ApplyClickAnswer> =>
+    denial?.facts?.deleted && !deletedLive && !overtaken
+      ? handleApplyClickRequest(deps, input, true)
+      : denial
+        ? deniedAnswer(denial)
+        : refuse("not_found");
   for (const target of [
     { kind: "draft" as const, documentId: input.documentId, workId: input.workId },
-    ...(item?.item.isNew ? [] : [documentTarget(input.documentId)]),
+    ...(item?.item.isNew || deletedLive ? [] : [documentTarget(input.documentId)]),
   ]) {
     const grant = await deps.fileAccess.authorize({ accountId: input.userId }, target, "edit");
-    if (isFileAccessDenied(grant)) return deniedAnswer(grant);
+    if (isFileAccessDenied(grant)) return denied(grant);
     grants.push(grant);
   }
+  if (item && deletedLive) grants.push(await restoreGrant(deps, input, item.item));
   const result = await runWithEditGrants(deps.fileAccess, grants, () =>
     deps.documentSync.draftReview.applyClick({
       workId: input.workId,
@@ -555,9 +577,7 @@ export async function handleApplyClickRequest(
       envelope,
     }),
   );
-  if (result.ok) return result.value;
-  const denial = result.refusal.refused[0];
-  return denial ? deniedAnswer(denial) : refuse("not_found");
+  return result.ok ? result.value : denied(result.refusal.refused[0]);
 }
 
 /** An item the branch no longer holds, as a 200 body status. */
@@ -657,6 +677,7 @@ export function toWireItem(
     documentName: item.documentName,
     contextLocation: reviewContextLocation(item.path),
     conflict: item.conflict,
+    deletedLive: item.deletedLive,
     actorThreads: item.actorThreadIds.map((threadId) => ({
       threadId,
       title: threadTitles.get(threadId) ?? null,

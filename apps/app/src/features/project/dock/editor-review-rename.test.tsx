@@ -32,7 +32,7 @@ function Restore({ review }: { review: DraftReviewContextValue }) {
         draftOnly: false,
         review: { workId, itemKey },
       }}
-      port={{ write: vi.fn(), admit }}
+      port={{ write: vi.fn(), admit: (target) => admit(target).then(() => true) }}
     />
   );
 }

@@ -31,10 +31,13 @@ commands, and a model Undo of a draft edit after the chat's Work moved refuses
 `cant_undo_elsewhere`. A card Undo names and skips a part whose draft was
 discarded (`expired`) or that a later writer edit depends on
 (`cant_undo_dependent`), and inverts the rest.
-A turn's edit targets exclude tombstoned documents (`livingDocumentSql`), so
-a discarded draft-created document or one the writer deleted is never an
-inverse target and drops out of Undo as it does from lineage. Final address
-liveness stays with the lineage reader.
+A turn's edit targets exclude tombstoned documents (`livingOrOutlivedSql`), so
+a discarded draft-created document is never an inverse target. A draft-scoped
+edit of a document deleted live stays one (D79): each draft-scoped target names
+the Work its draft row's branch belongs to, and the card's lineage and Undo
+authorize it at that Work's draft destination (`turnEditDestination`), where
+`survivingDraft` admits it while the draft is active. Its lineage address is the
+location it was deleted at. Live-scoped targets authorize live.
 
 Card authorization and change-viewer discovery share immutable edit and
 origin targets with inverse admission; mutation and draft transport
@@ -50,7 +53,7 @@ wins; otherwise classification membership in an active draft is pending and the
 rest discarded. Inverse capture reads each origin draft once, including closed
 drafts, and matches receipts by edit id and ordinal. Active draft write admission
 is separate; a revision mismatch between the evidence and planning captures
-retries the bounded attempt. A removed document's record takes precedence.
+retries the bounded attempt. For a removed document, an active draft of it is planned on like any draft; the removal record decides only when no active draft exists.
 
 Model Undo/Redo keep `cant_*_applied`. Review disposition is not inverse
 eligibility: an effective Undo that restores the review base has no shown change

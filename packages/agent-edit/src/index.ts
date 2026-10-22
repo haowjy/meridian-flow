@@ -89,7 +89,7 @@ export {
   modelResult,
   type WriteRejection,
 } from "./tool/model-result.js";
-export { removedFile } from "./tool/removal-copy.js";
+export { removedFile, survivingDraftNotice } from "./tool/removal-copy.js";
 export {
   agentEditResultSummary,
   readCall,

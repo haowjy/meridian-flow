@@ -18,6 +18,7 @@ import {
   formatDocumentFile,
   isDocumentNotFoundError,
   splitDocumentFile,
+  survivingDraftNotice,
 } from "@meridian/agent-edit/integration";
 import { documentPathKey } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
@@ -307,13 +308,23 @@ export async function readTrackedDocument(
   );
   if (outcome.isError) return { isError: true, output: outcome.result, revision: outcome.revision };
   recordTouchInBackground(deps, address.documentId, ctx);
-  const notice = await deps.contextPorts.chatFiles.notice(
+  const owner = await deps.contextPorts.chatFiles.notice(
     call.context.resolution.thread.projectId,
     path,
     address.uri,
   );
+  // Only a draft that outlived a live delete reads a deleted document (D79).
+  const surviving =
+    grant.destination.kind === "draft" && grant.facts.deleted
+      ? survivingDraftNotice(
+          (await deps.documentRemovals.lookup([address.documentId])).get(address.documentId),
+        )
+      : null;
+  const notice = [owner && "notice" in owner ? owner.notice : null, surviving]
+    .filter(Boolean)
+    .join("\n");
   return {
-    output: notice ? { ...outcome.result, ...notice } : outcome.result,
+    output: { ...outcome.result, ...owner, ...(notice ? { notice } : {}) },
     revision: outcome.revision,
     metadata: documentRevisionMetadata(address, outcome.revision),
     evidence: evidenceOf(address.documentId, outcome),

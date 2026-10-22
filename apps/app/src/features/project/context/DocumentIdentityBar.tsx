@@ -15,6 +15,7 @@ import type { ContextTab } from "@/client/stores";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
+import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { cn } from "@/lib/utils";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
@@ -139,6 +140,7 @@ export function DocumentIdentityBar({
   const showChip =
     !reviewItemKey && !readOnly && location.provisional && location.scheme !== "uploads";
   const placementOpen = fieldOpen && showChip;
+  const manuscriptState = useManuscriptState(projectId, tab);
 
   const renderRow = (version: ReactNode, controls: ReactNode) => (
     <div
@@ -209,7 +211,7 @@ export function DocumentIdentityBar({
             {!reviewItemKey && !reviewPending ? (
               <DraftReviewChip documentId={tab.documentId} />
             ) : null}
-            <span className="min-w-0 flex-1" />
+            <ManuscriptStateSlot state={manuscriptState} className="ml-1" />
             {/* Only a provisional placement refusal offers repair here; list failures are passive. */}
             {repair?.kind === "set-location" && !placementOpen ? (
               location.provisional && !readOnly ? (

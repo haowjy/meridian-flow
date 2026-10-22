@@ -23,11 +23,14 @@ export interface DocumentRemoval {
 }
 
 /**
- * Collab's half: close every active draft on the removed documents, retiring them after commit,
- * and name the Works those drafts belonged to (their pending counts moved).
+ * Collab's half. Every removal registers its documents, so their live rooms close `4208` once
+ * the transaction commits; a delete closes no draft, since a draft outlives a live delete of its
+ * document (D79). A discard also closes every active draft on its documents and names the Works
+ * those drafts belonged to (their pending counts moved).
  */
 export interface DocumentRemovalCollab {
-  closeRemovedDocuments(
+  registerRemoved(documentIds: readonly DocumentId[], record: DocumentRemovalRecord): void;
+  closeDiscardedDrafts(
     documentIds: readonly DocumentId[],
     record: DocumentRemovalRecord,
   ): Promise<readonly WorkId[]>;

@@ -224,7 +224,11 @@ relative spelling uses only a holder the reader may name and read.
 
 Browser addresses normally resolve in the live tree. A review address may
 supply `reviewWorkId` and an item key `${branchId}:${documentId}`; the server
-checks that item against active review items, then reads the branch tree. Stale,
+checks that item against active review items, then reads the branch tree. The
+item's own draft admits its document the way it admits writes
+(`survivingDraftDocuments`, availability's `admitDrafts`): a no-effect draft of a
+document deleted live is not listed, so its path finds it gone, but its review
+address still opens the open tab's draft (D79). Stale,
 foreign, or mismatched selectors return unavailable rather than falling back
 to live. The address resolver returns the canonical current locator; it never
 makes a path-only URL a capability.

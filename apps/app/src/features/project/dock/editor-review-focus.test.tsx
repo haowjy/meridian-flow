@@ -130,7 +130,10 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
             }}
             port={{
               write: (address) => vi.fn()(address?.itemKey ?? null),
-              admit: (target) => fixture.openReview?.(target),
+              admit: async (target) => {
+                await fixture.openReview?.(target);
+                return true;
+              },
             }}
           />
         )}
