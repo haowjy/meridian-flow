@@ -8,6 +8,7 @@ import type { Database } from "@meridian/database";
 import { branchTreeChanges, documents, users, works } from "@meridian/database/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type {
   DocumentRemoval,
@@ -69,7 +70,10 @@ export function createDocumentRemoval(
           );
       const [record] = (await readRemovalRecords(tx, removed.slice(0, 1))).values();
       if (!record) throw new Error(`Removal of ${removed[0]} wrote no record`);
-      const drafted = await deps.collab.closeRemovedDocuments(removed, record);
+      deps.collab.registerRemoved(removed, record);
+      const drafted =
+        input.reason === "discarded" ? await deps.collab.closeDiscardedDrafts(removed, record) : [];
+      await testHook("removal.afterRecord");
       deps.workProjection.recountAfterCommit([...affected, ...drafted]);
       if (input.reason === "discarded") await releaseDocumentStorage(db, removed);
       return removed;
