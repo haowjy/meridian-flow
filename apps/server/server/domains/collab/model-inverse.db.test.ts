@@ -37,6 +37,7 @@ describe("model document stack", () => {
       const lineage = createTurnLiveLineageReadModel({
         store: createDrizzleTurnLiveLineageStore(db),
         resolveDocumentUri,
+        resolveLastDocumentUri: resolveDocumentUri,
       });
       const card = createTurnReversalService({
         turnInverse: { reverseTurn: view.collab.reverseTurn },
