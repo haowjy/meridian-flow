@@ -26,9 +26,11 @@ owner of writer rows, attempts, recovery status, and draft transfer.
   rejection stays rejected and is not auto-driven; ambiguity keeps the witness
   and retries on mount, reconnect, online, or snapshot refresh. Failure belongs
   on the writer row.
-- Retry reuses the same ID unless the server durably rejected it. Edit fences
-  an admitted record before transferring its structured draft ahead of newer
-  writing. A failed, unacknowledged fork or handoff returns only that send to its
+- Retry reuses the same ID unless the server durably rejected it. Every message
+  and control is marked `posted` under the chat lock before its first POST; an
+  absent mark is the durable cross-tab proof that the server cannot hold it.
+  Edit fences a posted record before transferring its structured draft ahead of
+  newer writing. A failed, unposted fork or handoff returns only that send to its
   existing box locally, preserving the derivation intent and Retry. A
   never-created chat transfers its records and unsent writing to New chat and
   retires the cohort, queued switches included, in one step. Edit stores a

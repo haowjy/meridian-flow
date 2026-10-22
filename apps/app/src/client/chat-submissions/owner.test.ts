@@ -119,7 +119,7 @@ afterEach(async () => {
 });
 
 it("Edit bridges an already-accepted submission rather than returning delivered words", async () => {
-  recordChatSubmission(account, entry());
+  recordChatSubmission(account, { ...entry(), posted: true });
   const scenario = new ThreadRunScenario({
     retire: async ({ submissionId }) => ({
       kind: "already-accepted",
@@ -138,7 +138,7 @@ it("Edit bridges an already-accepted submission rather than returning delivered 
 });
 
 it("Edit leaves a pending admission and its writer row untouched", async () => {
-  recordChatSubmission(account, entry());
+  recordChatSubmission(account, { ...entry(), posted: true });
   const scenario = new ThreadRunScenario({
     retire: async ({ submissionId }) => ({ kind: "pending", submissionId }),
   });
@@ -441,7 +441,7 @@ it("two same-thread owners publish rejection and busy to the same readable snaps
 });
 
 it("Edit retirement refusal cannot duplicate a transferred record or leave Retry beside it", async () => {
-  recordChatSubmission(account, entry());
+  recordChatSubmission(account, { ...entry(), posted: true });
   const scenario = new ThreadRunScenario({
     retire: async ({ submissionId }) => ({ kind: "retired", submissionId, code: "retired" }),
   });
@@ -472,7 +472,7 @@ it("Edit retirement refusal cannot duplicate a transferred record or leave Retry
 });
 
 it("a received Edit survives draft reload and retries only retirement", async () => {
-  recordChatSubmission(account, entry());
+  recordChatSubmission(account, { ...entry(), posted: true });
   const scenario = new ThreadRunScenario({
     retire: async ({ submissionId }) => ({ kind: "retired", submissionId, code: "retired" }),
   });
@@ -581,7 +581,7 @@ it("Edit focuses the invoking pane even when a sibling rebuilt last", async () =
 });
 
 it("disposing a sibling does not abandon the invoking pane's in-flight Edit", async () => {
-  recordChatSubmission(account, entry());
+  recordChatSubmission(account, { ...entry(), posted: true });
   const gate = scenarioGate<{ kind: "retired"; submissionId: string; code: "retired" }>();
   const scenario = new ThreadRunScenario({ retire: () => gate.promise });
   const first = await mount(scenario);
