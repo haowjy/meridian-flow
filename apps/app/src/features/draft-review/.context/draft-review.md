@@ -93,7 +93,14 @@ list omission alone must not infer local Discard or successful Apply. The list
 omits an active draft with no effect (a delete's held tab, a fully applied draft,
 one inside the `has_effect` lag), so an unlisted draft-only tab goes live when
 the catalog shows its document and closes only when its draft metadata answers
-`gone`; an active or unanswered draft keeps its tab.
+`gone`; an active or unanswered draft keeps its tab. While its draft is closed,
+the review address port (`ProjectView`) does not admit the address's review: the
+room owner just ended it, and a draft-only tab keeps its address until
+settlement closes it. The server answers `gone`
+from the Work's ownership and the item key alone, before any content grant:
+the active draft is what grants reading a document deleted live or a hidden
+creation, so after a Discard on another device a content check would answer
+404 forever. Inaccessible active content and network errors stay nonterminal.
 
 ## Account command lifetime
 
@@ -116,18 +123,23 @@ the server answers `needs_restore` (nothing changed); the outcome is
 `needs-restore`, the list refreshes so the row shows the delete, and an Apply all
 asks again by name. An applied answer with `restored` makes the outcome
 `{ kind: "done", restored: true }` and marks the document (`wasRestored`) for the
-editor's "back in the manuscript" line; the surface that clicked says the same in
+editor's "back in the manuscript" state; the surface that clicked says the same in
 its reserved notice slot (`CommandNotice`).
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds,
 then an item Retry. A terminal acknowledgement failure refuses unsent cuts
 with an item failure; sent heads keep their same-id settlement across session
 replacement. Transient disconnects keep acknowledgement barriers pending.
-A record alone proves landing; an applied answer without
-the record keeps its contribution. A record that arrives before the answer
-releases the head (the next click may send), but the click's outcome waits for
-that answer, which alone carries `restored`; a lost answer reads the stored
-result back under the same command id (never a resend). Closed/refused answers remove only their
+Each click has two independent duties. *Release* (the head leaves the FIFO
+and its optimistic contribution ends) happens exactly once: on the room's record,
+or on a terminal answer; an applied answer without the record keeps its
+contribution. *Completion* (the caller's outcome) comes from the full answer,
+which alone carries `restored`. When the record released a click whose answer is
+still in flight, the answer completes it when it arrives; when the answer is
+missing or lost, in either order relative to the record, the queue reads the
+stored result back under the same command id (never a resend), at 0/1/2/4
+seconds. Exhausted reads complete as `landed` (it landed; `restored` is
+unknown), and destroying the queue completes still-reading clicks the same way. Closed/refused answers remove only their
 own contribution. A `work_archived` refusal stores no failure (`shownRefusal`):
 the Works query refetches and `ArchivedWorkNotice` explains the reverted change,
 so no surface shows a refusal line. Other refusals still move prose in two cases,
