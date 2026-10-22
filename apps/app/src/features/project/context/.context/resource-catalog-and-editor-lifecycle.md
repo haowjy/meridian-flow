@@ -317,7 +317,10 @@ surface holds open (`boundDrafts`, never the review list, which lags about a sec
 and turns each such tab into a draft-only tab for those Works (`keep-for-drafts`);
 the removal plan then closes only the rest. Promotion back to an ordinary tab needs
 the document placed in the live tree: the replica keeps a deleted document's record,
-and knowing the id alone is not "live again". `editorTabsForWork` projects one Work's strip. Applying the draft
+and knowing the id alone is not "live again". Availability applies a delete
+before the replica hears of it, so while availability answers `removed` a placed
+record is stale and promotes nothing (`DraftOnlySettlement`); otherwise the hold
+was undone within the same second. `editorTabsForWork` projects one Work's strip. Applying the draft
 settles the same tab in place; a join re-identifies the resource's tab to the draft's
 document and absorbs the draft-only tab into it. Dock restoration already queries the saved review Work and matches
 both draft and document within that list.
