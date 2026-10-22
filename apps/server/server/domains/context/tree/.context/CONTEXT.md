@@ -11,9 +11,10 @@ deleted and hidden rows. A branch view includes its live rows plus the hidden
 documents and folders it created or needs as ancestors, at their row-owned
 location, plus the deleted documents it has pending changes to (D79: an active
 Work draft with `has_effect`, the pending count's predicate) with the deleted
-folders above them. One used-folder walk seeds both the hidden and the deleted
-folder arms; each is its own `UNION ALL` branch so live lookups keep their
-partial indexes. `deletedDocument` is the one definition of a deletion a draft
+folders above them. The live folder arm is its own `UNION ALL` branch so live
+lookups keep their partial indexes; the hidden and deleted folders share one
+non-live arm, so the branch's used-folder walk runs once per statement half, and
+its predicate is `folders_nonlive_location`'s, so a path slot reaches that index. `deletedDocument` is the one definition of a deletion a draft
 outlives (own or folder delete, reason `deleted`, no Work cascade); listing adds
 the pending effect, admission (`survivingDraftDocuments`) only an active draft.
 The identity relations' diagnostic arms exclude a view's surviving rows, so each
