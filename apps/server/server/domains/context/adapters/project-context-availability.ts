@@ -46,6 +46,8 @@ import {
   identityFolderFields,
   identityFolders,
   LIVE_TREE,
+  visibleDocuments,
+  visibleFolders,
 } from "../tree/tree-view.js";
 import {
   type CatalogFileRow,
@@ -366,8 +368,9 @@ export function createDrizzleProjectContextAvailability(
     },
 
     async lookup(input, actor) {
-      const documents = identityDocuments(input.view ?? LIVE_TREE);
-      const folders = identityFolders(input.view ?? LIVE_TREE);
+      const view = input.view ?? LIVE_TREE;
+      const documents = identityDocuments(view);
+      const folders = identityFolders(view);
       const ids = normalizeAvailabilityDocumentIds(input.documentIds);
       const folderIds = normalizeAvailabilityDocumentIds(input.folderIds ?? []);
       if (ids.length + folderIds.length > PROJECT_CONTEXT_AVAILABILITY_MAX_IDS)
@@ -468,12 +471,36 @@ export function createDrizzleProjectContextAvailability(
             : [];
           const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
 
-          const removals = await readRemovalRecords(
-            tx,
-            rows
-              .filter((row) => row.document.deletedAt)
-              .map((row) => row.document.id as DocumentId),
-          );
+          const tombstoned = rows
+            .filter((row) => row.document.deletedAt)
+            .map((row) => row.document.id as DocumentId);
+          const removals = await readRemovalRecords(tx, tombstoned);
+          // A branch's view lists a document deleted live while it has pending changes to it
+          // (D79): there it is available at the location it was deleted at. The view's own
+          // listing decides, so availability and the branch's tree never disagree.
+          const listedInView = new Set<string>();
+          if (view.kind === "branch") {
+            const deletedFolders = requestedFolders
+              .filter((row) => row.folder.deletedAt)
+              .map((row) => row.folder.id);
+            const shownDocuments = visibleDocuments(view);
+            const shownFolders = visibleFolders(view);
+            const shown = await Promise.all([
+              tombstoned.length
+                ? tx
+                    .select({ id: shownDocuments.id })
+                    .from(shownDocuments)
+                    .where(inArray(shownDocuments.id, tombstoned))
+                : [],
+              deletedFolders.length
+                ? tx
+                    .select({ id: shownFolders.id })
+                    .from(shownFolders)
+                    .where(inArray(shownFolders.id, deletedFolders))
+                : [],
+            ]);
+            for (const { id } of shown.flat()) listedInView.add(id);
+          }
           const resolutions: ProjectContextIdentityResolution[] = ids.map((documentId) => {
             const row = byId.get(documentId);
             if (!row) return { kind: "not-visible", documentId, checkedGeneration } as never;
@@ -518,7 +545,8 @@ export function createDrizzleProjectContextAvailability(
             // has to name the one that failed, so it classifies rather than filters.
             // Independent document deletion remains deletion even when its authority hides.
             // Work-cascade tombstones belong to the reversible authority lifecycle.
-            if (document.deletedAt && !document.deletedByWorkId) {
+            const listed = listedInView.has(documentId);
+            if (document.deletedAt && !document.deletedByWorkId && !listed) {
               return {
                 kind: "deleted",
                 documentId,
@@ -567,7 +595,7 @@ export function createDrizzleProjectContextAvailability(
                 reason: "chat_hidden",
               };
             }
-            if (document.deletedAt || source?.deletedAt) {
+            if ((document.deletedAt && !listed) || source?.deletedAt) {
               return {
                 kind: "deleted",
                 documentId,
@@ -621,8 +649,10 @@ export function createDrizzleProjectContextAvailability(
                 checkedGeneration,
               };
             const { scope, scheme, generation, parentPath } = classification.identity;
-            // Independent tombstones are final; Work/lineage unavailability is not deletion.
-            if (row.folder.deletedAt && !row.folder.deletedByWorkId)
+            // Independent tombstones are final, except one the branch's view still places a
+            // surviving draft under. Work/lineage unavailability is not deletion.
+            const listed = listedInView.has(folderId);
+            if (row.folder.deletedAt && !row.folder.deletedByWorkId && !listed)
               return {
                 folderId,
                 kind: "deleted",
