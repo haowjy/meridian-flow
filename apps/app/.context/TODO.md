@@ -53,3 +53,8 @@ The `optimistic-updates` work item owns the profiles and verification specificat
   documents, `phase5.spec.ts` fails on
   `document_yjs_updates_authoring_response_id_model_responses_id_f` during setup.
   Reconcile reset ordering with the current document/response FK graph.
+
+- Primary buttons (for example New Work) show their own drop shadow under
+  keyboard focus instead of the `focus-ring` box-shadow, so focus looks absent.
+  The variant's `shadow-*` class overrides the utility's `box-shadow`
+  (`components/ui/button.tsx`). Make the focus ring win for every variant.
