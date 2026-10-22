@@ -155,6 +155,12 @@ function parsePullRequests(json, source) {
   return value;
 }
 
+function rateLimitAdvice(detail) {
+  return /rate.?limit/i.test(detail)
+    ? "\nCheck the reset time with gh api rate_limit, then retry after the limit resets."
+    : "";
+}
+
 function readGitHubPage(cursor) {
   const args = [
     "api",
@@ -179,7 +185,7 @@ function readGitHubPage(cursor) {
   if (result.status !== 0) {
     const detail = result.stderr.trim();
     throw new Error(
-      `GitHub CLI could not list merged PRs; run gh auth login and try again${detail ? `\n${detail}` : ""}`,
+      `GitHub CLI could not list merged PRs; run gh auth login and try again${detail ? `\n${detail}` : ""}${rateLimitAdvice(detail)}`,
     );
   }
 
@@ -188,7 +194,7 @@ function readGitHubPage(cursor) {
     const details = response.errors
       .map((error) => (typeof error?.message === "string" ? error.message : JSON.stringify(error)))
       .join("; ");
-    throw new Error(`GitHub GraphQL returned errors: ${details}`);
+    throw new Error(`GitHub GraphQL returned errors: ${details}${rateLimitAdvice(details)}`);
   }
   const connection = response?.data?.repository?.pullRequests;
   if (!Array.isArray(connection?.nodes)) {
