@@ -453,8 +453,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toMatchObject({ kind: "hidden", branch: { branchId: first.id } });
 
       // Tree state: every item at its row's location.
-      await scenario.seedLive("intro");
       const intro = await scenario.seedHidden(ascension, "intro");
+      await scenario.seedLive("intro");
       const coast = await scenario.seedHidden(ascension, "maps/coast");
       await scenario.seedLive("maps");
       const chapter = await scenario.seedHidden(ascension, "chapters/one");

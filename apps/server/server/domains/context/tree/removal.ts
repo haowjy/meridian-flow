@@ -217,7 +217,7 @@ export type RestoreOutcome =
   | { kind: "already_living" }
   /** A different removal is current: an Undo of one delete never undoes a later one. */
   | { kind: "superseded" }
-  /** Another node holds the document's path, or a path on its folder chain. */
+  /** A document holds a path on the folder chain. */
   | { kind: "location_taken"; at: string; occupant: NodeRef }
   /** Not a document's own delete: a discard, a Work cascade, or a deleted source or project. */
   | { kind: "refused" };
@@ -230,7 +230,7 @@ class RestoreFault extends Error {
 }
 
 /**
- * Brings one deleted document back at the location it held, or at `at` (Apply of a drafted
+ * Brings one deleted document back at the first free location based on where it held, or at `at` (Apply of a drafted
  * move restores where the branch put it, so an old-path clash never blocks it), with every
  * folder on that path
  * (a living folder there is reused, a deleted one restored), through placement's one

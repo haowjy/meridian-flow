@@ -902,16 +902,6 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
               .some((row) => sameNamespaceName(candidate, { kind: "folder", filename: row.name })),
         );
         destinationPath = [targetParentPath, targetBasename].filter(Boolean).join("/");
-        if (
-          hasOppositeEntry(
-            this.backing,
-            input.destinationSourceId,
-            destParentId,
-            targetBasename,
-            "file",
-          )
-        )
-          return Err({ code: "conflict" });
         const now = this.nextTimestamp();
         if (targetRow) {
           targetRow.deletedAt = now;
@@ -998,16 +988,6 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
             ),
       );
       destinationPath = [targetParentPath, targetBasename].filter(Boolean).join("/");
-      if (
-        hasOppositeEntry(
-          this.backing,
-          input.destinationSourceId,
-          destParentId,
-          targetBasename,
-          "folder",
-        )
-      )
-        return Err({ code: "conflict" });
       const subtree = this.collectSubtree(movedRoot.id, input.source.sourceId);
       const movedDocumentIds = this.documentIdsInSubtree(subtree, input.source.sourceId);
       for (const id of subtree) {

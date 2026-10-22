@@ -574,8 +574,8 @@ msgstr ""
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
-msgid "A file named {0} already exists in this location."
-msgstr ""
+#~ msgid "A file named {0} already exists in this location."
+#~ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "A file named {name} already exists in this location."
@@ -583,8 +583,8 @@ msgstr ""
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
-msgid "A folder named {0} already exists in this location."
-msgstr ""
+#~ msgid "A folder named {0} already exists in this location."
+#~ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "A folder named {name} already exists in this location."
@@ -3454,8 +3454,8 @@ msgid "Open conversation"
 msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
-msgid "Open existing"
-msgstr ""
+#~ msgid "Open existing"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Open full screen"

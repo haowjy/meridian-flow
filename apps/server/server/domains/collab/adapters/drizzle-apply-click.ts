@@ -117,7 +117,7 @@ export function createDrizzleApplyClick(
     status: "closed",
     commandId: command.envelope.commandId,
   });
-  /** Places a hidden creation at `at`; false when another node holds that path. */
+  /** Places a hidden creation at `at`; false when a document blocks an ancestor path. */
   async function reveal(
     node: TreeStateNode,
     at: Pick<TreeStateNode["target"], "contextSourceId" | "parentFolderId" | "name" | "extension">,

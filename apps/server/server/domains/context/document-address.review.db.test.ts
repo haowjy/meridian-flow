@@ -1,11 +1,11 @@
-/** Real branch tree and file policy keep colliding browser addresses identity-bound. */
+/** Real branch tree and file policy keep renamed draft review addresses identity-bound. */
 import { documents } from "@meridian/database/schema";
 import { expect, it } from "vitest";
 import { handleDocumentAddressRequest } from "../../lib/document-address-route.js";
 import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
 
 describeBranchTreeDb("review address identity", (start, db) => {
-  it("selects the hidden KB draft at a live collision and refuses invalid capabilities", async () => {
+  it("selects the renamed hidden KB draft by review identity and refuses invalid capabilities", async () => {
     const { s, runtime } = await start();
     const work = await s.work("review-binding", "draft");
     const hidden = await s.model(work).create("kb://Withern", "MODEL DRAFT words.");
@@ -39,7 +39,7 @@ describeBranchTreeDb("review address identity", (start, db) => {
     const deps = { ...runtime.app, draftReview: runtime.app.documentSync.draftReview };
     await expect(handleDocumentAddressRequest(deps, input, review)).resolves.toMatchObject({
       kind: "current",
-      document: { documentId: hidden, entry: { uri: "kb://Withern" } },
+      document: { documentId: hidden, entry: { uri: "kb://Withern (2)" } },
     });
     await expect(handleDocumentAddressRequest(deps, input)).resolves.toMatchObject({
       kind: "current",
@@ -49,7 +49,7 @@ describeBranchTreeDb("review address identity", (start, db) => {
       handleDocumentAddressRequest(deps, { ...input, path: "Old name" }, review),
     ).resolves.toMatchObject({
       kind: "current",
-      document: { documentId: hidden, entry: { uri: "kb://Withern" } },
+      document: { documentId: hidden, entry: { uri: "kb://Withern (2)" } },
     });
     for (const selector of [
       { ...review, itemKey: "bad" },

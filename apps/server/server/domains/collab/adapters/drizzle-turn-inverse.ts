@@ -655,7 +655,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       .from(branches)
       .where(eq(branches.id, branchId));
     if (branch?.status !== "active") throw new TreeFault("refused");
-    const fault = await writeBackBranchFacts(input.db, {
+    const committed = await writeBackBranchFacts(input.db, {
       branchId,
       documentId: entry.documentId,
       expected: planned.before,
@@ -664,8 +664,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       // or Redo, or a rollback, leaves a pending move or delete the chat's own to review.
       changedBy: { threadId: query.threadId, ...(query.turnId ? { turnId: query.turnId } : {}) },
     });
-    if (fault) throw new TreeFault(fault);
-    return { destination: planned.destination, before: planned.before, after: planned.after };
+    if (!committed.ok) throw new TreeFault(committed.error);
+    return { destination: planned.destination, before: planned.before, after: committed.value };
   }
 
   /**

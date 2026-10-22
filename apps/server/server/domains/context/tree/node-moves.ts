@@ -13,7 +13,7 @@
  * locks of every source involved (current and final) and the row locks §14 names.
  */
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
-import { allocateFilename, type Filetype } from "@meridian/contracts/protocol";
+import { allocateFilename, type Filetype, folderDocumentName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, folders } from "@meridian/database/schema";
 import { eq, inArray } from "drizzle-orm";
@@ -180,7 +180,7 @@ async function prepareMove(db: Database, move: NodeMove): Promise<Result<Prepare
     });
   }
 
-  const free = await checkFinalPath(db, { ...move, to }, path, current.node.id);
+  const free = await checkFinalPath(db, { ...move, to }, path);
   if (!free.ok) return free;
 
   // The split, from the snapshot: original names and coordinates.
@@ -235,7 +235,6 @@ async function checkFinalPath(
   db: Database,
   move: NodeMove,
   path: string,
-  selfId: string,
 ): Promise<Result<void, MoveFault>> {
   const tree = createTreeReader(db);
   const segments = path.split("/");
@@ -246,13 +245,9 @@ async function checkFinalPath(
       path: segments.slice(0, length).join("/"),
       as: isFinal ? move.node.kind : "folder",
     });
-    if (found.kind === "not_found") break;
-    if (found.kind === "ambiguous") return Err({ code: "conflict", node: move.node });
-    const occupant = found.node.kind === "document" ? found.node.document.id : found.node.folder.id;
-    if (occupant === selfId) break;
-    if (isFinal || found.node.kind === "document") {
+    if (found.kind === "not_found" || isFinal) break;
+    if (found.kind === "ambiguous" || found.node.kind === "document")
       return Err({ code: "conflict", node: move.node });
-    }
   }
   return Ok(undefined);
 }
@@ -288,16 +283,22 @@ async function installMove(
         updatedAt: now,
       })
       .where(eq(documents.id, node.id));
-    await normalizeNames(db, [{ contextSourceId: to.contextSourceId, parentId }]);
+    await normalizeNames(db, [node]);
     return Ok(undefined);
   }
   await tx
     .update(folders)
-    .set({ contextSourceId: to.contextSourceId, parentId, name: to.name, updatedAt: now })
+    .set({
+      contextSourceId: to.contextSourceId,
+      parentId,
+      name: to.name,
+      documentAlias: folderDocumentName(to.name),
+      updatedAt: now,
+    })
     .where(eq(folders.id, node.id));
   await carrySource(db, prepared, move);
   await absorbAt(db, node.id);
-  await normalizeNames(db, [{ contextSourceId: to.contextSourceId, parentId }]);
+  await normalizeNames(db, [node]);
   return Ok(undefined);
 }
 

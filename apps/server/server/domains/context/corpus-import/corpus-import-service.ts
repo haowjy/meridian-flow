@@ -278,19 +278,42 @@ export function createCorpusImportService({
         );
         const path = joinPath(directory, filename);
         taken.add(path);
-        return port.createTrackedDocument(
-          `kb://${path}`,
-          markdownForImport(kind, title, converted.markdown),
-          {
-            origin: {
-              type: "import",
-              userId: input.userId,
-              source: input.source.kind,
-              filename: file.filename,
-              sourceId: file.sourceId,
+        const origin = {
+          type: "import" as const,
+          userId: input.userId,
+          source: input.source.kind,
+          filename: file.filename,
+          sourceId: file.sourceId,
+        };
+        const reserved = await port.createUntitledDocument("kb://", {
+          documentId: crypto.randomUUID(),
+          origin,
+          destination: {
+            parent: {
+              kind: "root",
+              scheme: "kb",
+              owner: { workId: null },
+              createFolders: directory.split("/").filter(Boolean),
             },
+            name: filename,
           },
-        );
+        });
+        if (!reserved.ok) return reserved;
+        const uri = `kb://${reserved.value.path}`;
+        const written = await port.write(uri, markdownForImport(kind, title, converted.markdown), {
+          origin,
+        });
+        if (!written.ok) {
+          await port.retractCreate(uri, {
+            documentId: reserved.value.documentId,
+            cause: "create_failed",
+          });
+          return written;
+        }
+        return {
+          ok: true as const,
+          value: { documentId: reserved.value.documentId, uri },
+        };
       };
       const write = await create();
       if (!write.ok) {

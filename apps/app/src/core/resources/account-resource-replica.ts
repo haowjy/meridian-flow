@@ -618,6 +618,7 @@ export class AccountResourceReplica {
     projectId: string,
     key: ResourceKey,
     destination: ResourceDestination,
+    typedName?: string,
   ): Promise<{ isLatest: boolean; operationId?: string }> {
     const operationId = crypto.randomUUID();
     let admitted = false;
@@ -631,6 +632,7 @@ export class AccountResourceReplica {
             operationId,
             eligibleAt: Date.now(),
             destination,
+            typedName,
           }),
         )) === "committed";
       this.reconciler.schedule(key);
@@ -646,9 +648,10 @@ export class AccountResourceReplica {
     projectId: string,
     folderId: string,
     destination: ResourceDestination,
+    typedName?: string,
   ): Promise<{ operationId?: string }> {
     return this.commitFolderPlan(projectId, folderId, (input) =>
-      planFolderLocation({ ...input, destination }),
+      planFolderLocation({ ...input, destination, typedName }),
     );
   }
 

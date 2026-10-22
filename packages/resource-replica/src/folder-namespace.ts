@@ -175,6 +175,7 @@ export function planFolderLocation(input: {
   intentId: string;
   operationId: string;
   destination: ResourceDestination;
+  typedName?: string;
 }): FolderNamespaceWrite | null {
   const previous = input.record ?? null;
   if (previous && folderOwnsDeletion(previous)) throw new Error("Folder is being deleted");
@@ -227,7 +228,11 @@ export function planFolderLocation(input: {
     operationId: input.operationId,
     sequence: Math.max(0, ...record.intents.map((item) => item.sequence)) + 1,
     identityRevision: 1,
-    desired: { kind: "set-folder-location", destination: input.destination },
+    desired: {
+      kind: "set-folder-location",
+      typedName: input.typedName ?? input.destination.name,
+      destination: input.destination,
+    },
     attempts: [],
     state: "pending",
   };
@@ -394,7 +399,7 @@ export function prepareFolderNamespaceAttempt(
         "/",
       ),
       ...owners.body,
-      ...(destination.name !== source.name ? { newName: destination.name } : {}),
+      ...(intent.desired.typedName !== source.name ? { newName: intent.desired.typedName } : {}),
     },
   };
   return replaceIntent(record, intent.intentId, (current) => ({

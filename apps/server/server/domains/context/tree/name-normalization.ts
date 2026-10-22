@@ -1,127 +1,122 @@
-/** Hidden-node yielding after a live tree write installs its rows. */
+/** Hidden-node yielding for the exact claims a live tree write installed. */
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import {
   allocateFilename,
-  type NamespaceNameClaim,
+  folderDocumentName,
+  parseDocumentFilename,
   renderFilename,
-  sameNamespaceName,
 } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { bumpLocationVersions } from "./node-locations.js";
+import type { NodeRef } from "./tree-view.js";
 import { loadSubtreeNodes } from "./tree-view-sql.js";
 
-export type NameParent = {
+type Claim = {
+  id: string;
+  kind: "document" | "folder";
   contextSourceId: ContextSourceId;
   parentId: FolderId | null;
-};
-
-type Child = NamespaceNameClaim & {
-  id: string;
+  name: string;
+  extension: string;
   hidden: boolean;
   createdAt: Date;
 };
 
-/** Keep the strongest claimant and move every weaker claimant to its next free name. */
-export async function normalizeNames(db: Database, parents: readonly NameParent[]): Promise<void> {
+/** Make only hidden nodes conflicting with claims this write installed or reparented yield. */
+export async function normalizeNames(db: Database, arrivals: readonly NodeRef[]): Promise<void> {
   const tx = currentDrizzleDb(db);
-  const unique = new Map(
-    parents.map((parent) => [`${parent.contextSourceId}:${parent.parentId ?? "root"}`, parent]),
-  );
-  for (const parent of unique.values()) {
-    const documentParent = and(
-      eq(documents.contextSourceId, parent.contextSourceId),
-      parent.parentId === null
-        ? isNull(documents.folderId)
-        : eq(documents.folderId, parent.parentId),
+  const seen = new Set<string>();
+  for (const arrival of arrivals) {
+    if (seen.has(`${arrival.kind}:${arrival.id}`)) continue;
+    seen.add(`${arrival.kind}:${arrival.id}`);
+    const [installed] = await tx.execute<Claim>(
+      arrival.kind === "document"
+        ? sql`SELECT id::text, 'document'::text AS kind, context_source_id::text AS "contextSourceId",
+            folder_id::text AS "parentId", name, extension, hidden, created_at AS "createdAt"
+          FROM documents WHERE id = ${arrival.id}::uuid AND deleted_at IS NULL`
+        : sql`SELECT id::text, 'folder'::text AS kind, context_source_id::text AS "contextSourceId",
+            parent_id::text AS "parentId", name, ''::text AS extension, hidden, created_at AS "createdAt"
+          FROM folders WHERE id = ${arrival.id}::uuid AND deleted_at IS NULL`,
     );
-    const folderParent = and(
-      eq(folders.contextSourceId, parent.contextSourceId),
-      parent.parentId === null ? isNull(folders.parentId) : eq(folders.parentId, parent.parentId),
-    );
-    const [documentRows, folderRows] = await Promise.all([
-      tx
-        .select({
-          id: documents.id,
-          name: documents.name,
-          extension: documents.extension,
-          hidden: documents.hidden,
-          createdAt: documents.createdAt,
-        })
-        .from(documents)
-        .where(and(documentParent, isNull(documents.deletedAt))),
-      tx
-        .select({
-          id: folders.id,
-          name: folders.name,
-          hidden: folders.hidden,
-          createdAt: folders.createdAt,
-        })
-        .from(folders)
-        .where(and(folderParent, isNull(folders.deletedAt))),
-    ]);
-    const children: Child[] = [
-      ...documentRows.map((row) => ({
-        ...row,
-        kind: "document" as const,
-        filename: renderFilename(row.name, row.extension),
-      })),
-      ...folderRows.map((row) => ({ ...row, kind: "folder" as const, filename: row.name })),
-    ].sort(
-      (left, right) =>
-        Number(left.hidden) - Number(right.hidden) ||
-        Number(right.kind === "folder") - Number(left.kind === "folder") ||
-        left.createdAt.getTime() - right.createdAt.getTime() ||
-        left.id.localeCompare(right.id),
-    );
-    const accepted: Child[] = [];
-    for (const child of children) {
-      if (!accepted.some((other) => sameNamespaceName(child, other))) {
-        accepted.push(child);
-        continue;
-      }
-      const parsed =
-        child.kind === "document" ? documentRows.find((row) => row.id === child.id) : undefined;
-      const desired =
-        child.kind === "document"
-          ? {
-              kind: "document" as const,
-              name: parsed?.name ?? child.filename,
-              extension: parsed?.extension ?? "",
-            }
-          : { kind: "folder" as const, name: child.filename };
-      const filename = await allocateFilename(desired, (candidate) =>
-        children.some((other) => other.id !== child.id && sameNamespaceName(candidate, other)),
-      );
-      const now = new Date();
-      if (child.kind === "document") {
-        const extension = parsed?.extension ?? "";
-        await tx
-          .update(documents)
-          .set({
-            name: extension ? filename.slice(0, -(extension.length + 1)) : filename,
-            updatedAt: now,
-          })
-          .where(eq(documents.id, child.id as DocumentId));
-        await bumpLocationVersions(db, { documentIds: [child.id as DocumentId] });
-      } else {
-        await tx
-          .update(folders)
-          .set({ name: filename, updatedAt: now })
-          .where(eq(folders.id, child.id as FolderId));
-        const subtree = await loadSubtreeNodes(tx, [child.id as FolderId]);
-        await bumpLocationVersions(db, {
-          folderIds: [
-            child.id as FolderId,
-            ...subtree.filter((n) => n.kind === "folder").map((n) => n.id as FolderId),
-          ],
-          documentIds: subtree.filter((n) => n.kind === "document").map((n) => n.id as DocumentId),
-        });
-      }
-      child.filename = filename;
-      accepted.push(child);
-    }
+    if (!installed) continue;
+    const filename =
+      installed.kind === "document"
+        ? renderFilename(installed.name, installed.extension)
+        : installed.name;
+    const alias = installed.kind === "folder" ? folderDocumentName(filename) : filename;
+    const parsedAlias = parseDocumentFilename(alias);
+    const aliasName = parsedAlias.ok ? parsedAlias.value.name : alias;
+    const aliasExtension = parsedAlias.ok ? parsedAlias.value.extension : "";
+    const losers = await tx.execute<Claim>(sql`
+      SELECT * FROM (
+        SELECT d.id::text, 'document'::text AS kind, d.context_source_id::text AS "contextSourceId",
+          d.folder_id::text AS "parentId", d.name, d.extension, d.hidden, d.created_at AS "createdAt"
+        FROM documents d WHERE d.deleted_at IS NULL
+          AND d.context_source_id = ${installed.contextSourceId}::uuid
+          AND d.folder_id IS NOT DISTINCT FROM ${installed.parentId}::uuid
+          AND d.name = ${aliasName}
+          AND d.extension = ${aliasExtension}
+        UNION ALL
+        SELECT f.id::text, 'folder'::text, f.context_source_id::text, f.parent_id::text,
+          f.name, ''::text, f.hidden, f.created_at
+        FROM folders f WHERE f.deleted_at IS NULL
+          AND f.context_source_id = ${installed.contextSourceId}::uuid
+          AND f.parent_id IS NOT DISTINCT FROM ${installed.parentId}::uuid
+          AND ${installed.kind === "document" ? sql`f.document_alias = ${filename}` : sql`f.name = ${filename}`}
+      ) n ORDER BY hidden ASC, (kind = 'folder') DESC, "createdAt", id`);
+    for (const loser of losers.slice(1)) if (loser.hidden) await renameHiddenClaim(db, loser);
   }
+}
+
+async function renameHiddenClaim(db: Database, claim: Claim): Promise<void> {
+  const tx = currentDrizzleDb(db);
+  const desired =
+    claim.kind === "document"
+      ? ({ kind: "document", name: claim.name, extension: claim.extension } as const)
+      : ({ kind: "folder", name: claim.name } as const);
+  const filename = await allocateFilename(desired, async (candidate) => {
+    const parsed = candidate.kind === "document" ? parseDocumentFilename(candidate.filename) : null;
+    const alias =
+      candidate.kind === "folder" ? folderDocumentName(candidate.filename) : candidate.filename;
+    const [row] = await tx.execute<{ taken: boolean }>(sql`SELECT EXISTS (
+      SELECT 1 FROM documents d WHERE d.deleted_at IS NULL
+        AND d.context_source_id = ${claim.contextSourceId}::uuid
+        AND d.folder_id IS NOT DISTINCT FROM ${claim.parentId}::uuid
+        AND d.name = ${parsed?.ok ? parsed.value.name : alias}
+        AND d.extension = ${parsed?.ok ? parsed.value.extension : ""}
+        AND d.id <> ${claim.id}::uuid
+      UNION ALL
+      SELECT 1 FROM folders f WHERE f.deleted_at IS NULL
+        AND f.context_source_id = ${claim.contextSourceId}::uuid
+        AND f.parent_id IS NOT DISTINCT FROM ${claim.parentId}::uuid
+        AND ${candidate.kind === "document" ? sql`f.document_alias = ${candidate.filename}` : sql`f.name = ${candidate.filename}`}
+        AND f.id <> ${claim.id}::uuid
+    ) AS taken`);
+    return row?.taken ?? false;
+  });
+  const now = new Date();
+  if (claim.kind === "document") {
+    const name = claim.extension ? filename.slice(0, -(claim.extension.length + 1)) : filename;
+    await tx
+      .update(documents)
+      .set({ name, updatedAt: now })
+      .where(eq(documents.id, claim.id as DocumentId));
+    await bumpLocationVersions(db, { documentIds: [claim.id as DocumentId] });
+    return;
+  }
+  await tx
+    .update(folders)
+    .set({ name: filename, documentAlias: folderDocumentName(filename), updatedAt: now })
+    .where(eq(folders.id, claim.id as FolderId));
+  const subtree = await loadSubtreeNodes(tx, [claim.id as FolderId]);
+  await bumpLocationVersions(db, {
+    folderIds: [
+      claim.id as FolderId,
+      ...subtree.filter((n) => n.kind === "folder").map((n) => n.id as FolderId),
+    ],
+    documentIds: subtree.filter((n) => n.kind === "document").map((n) => n.id as DocumentId),
+  });
 }

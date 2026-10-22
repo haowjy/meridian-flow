@@ -247,9 +247,7 @@ export async function createLive(
       ...(provisionalName ? { provisionalName } : {}),
     });
     if (!documentId) return Err({ code: "row_exists" });
-    await normalizeNames(db, [
-      { contextSourceId: input.slot.contextSourceId, parentId: input.slot.folderId },
-    ]);
+    await normalizeNames(db, [{ kind: "document", id: documentId }]);
     return Ok({ kind: "inserted", documentId });
   }
   const placed = await place(db, {
