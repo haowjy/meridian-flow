@@ -10,6 +10,7 @@ export * from "./document-link-api.js";
 export * from "./document-ref.js";
 export type { EditOrigin } from "./edit-origin.js";
 export * from "./enums";
+export * from "./handles.js";
 export * from "./ids";
 export * from "./jsonb";
 export type { ModelResponseIdentity } from "./model-response-identity.js";

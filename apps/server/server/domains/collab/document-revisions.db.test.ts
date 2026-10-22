@@ -133,7 +133,7 @@ async function fixture(
       testFileGrant(
         mode === "direct"
           ? { kind: "live" }
-          : { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" },
+          : { kind: "draft", workId: WORK_ID, workHandle: "atomicity-work" },
       ),
     ),
   };
@@ -300,12 +300,12 @@ describe("document revisions (postgres and collab)", () => {
       projectId: PROJECT_ID,
       createdByUserId: USER_ID,
       name: "Other draft",
-      slug: "other-draft",
+      handle: "w2",
     });
     await createDrizzleThreadWorksRepository(db).rebindPrimary(THREAD_ID, workB);
     expect(await f.current()).not.toBe(before.revision);
     // The thread's grants now name Work B, which has no branch yet: the read is live (S1).
-    const rebound = { kind: "draft", workId: workB, workSlug: "other-draft" } as const;
+    const rebound = { kind: "draft", workId: workB, workHandle: "other-draft" } as const;
     expect((await f.read(undefined, rebound)).revision).toBe(await f.current());
   });
 

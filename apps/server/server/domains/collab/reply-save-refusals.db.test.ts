@@ -178,7 +178,7 @@ describe("reply save refusals (postgres)", () => {
   }
   const NEW_ID = "00000000-0000-4000-8000-000000000830";
   const grantFor = (documentId: string, workId = WORK_ID, slug = "atomicity-work") => {
-    const granted = testFileGrant({ kind: "draft", workId, workSlug: slug }, documentId);
+    const granted = testFileGrant({ kind: "draft", workId, workHandle: slug }, documentId);
     return {
       ...granted,
       principal: { ...granted.principal, accountId: USER_ID as never },

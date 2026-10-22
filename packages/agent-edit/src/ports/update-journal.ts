@@ -13,7 +13,7 @@ type JournalMutationBase = {
   editScopeId?: string;
   /** Stable write attempt id; provider tool ids are scoped by response/turn before persistence. */
   writeId?: string;
-  /** Pre-reserved durable ordinal rendered as w<N>. */
+  /** Pre-reserved durable ordinal rendered as e<N>. */
   wId?: number;
   /** The model's own tool call id (unscoped): the transcript row that made this write. */
   toolCallId?: string;
@@ -115,6 +115,14 @@ export interface DestructiveProvenanceRun {
   provenance: "writer_protected" | "agent";
 }
 
-export function writeHandle(wId: number): string {
-  return `w${wId}`;
+/** The one place an edit handle is formatted: the model names an edit as `e<n>`. */
+export function editHandle(wId: number): string {
+  return `e${wId}`;
+}
+
+/** The one place an edit handle is parsed. Returns undefined for anything but `e<n>`. */
+export function parseEditHandle(handle: string): number | undefined {
+  if (!/^e[1-9]\d*$/.test(handle)) return undefined;
+  const ordinal = Number(handle.slice(1));
+  return Number.isSafeInteger(ordinal) ? ordinal : undefined;
 }

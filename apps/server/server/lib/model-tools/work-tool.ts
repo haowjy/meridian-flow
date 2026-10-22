@@ -8,7 +8,6 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { Work, WorkReceipt, WorkReceiptState } from "@meridian/contracts/works";
 import { workLifecycleState } from "@meridian/contracts/works";
-import { unknownWorkMessage } from "../../domains/context/context/router.js";
 import {
   createWork,
   deleteWorkTransition,
@@ -41,7 +40,7 @@ import {
  */
 function modelWork(work: Work): ModelWork {
   const {
-    slug,
+    handle,
     name,
     goal,
     status,
@@ -52,7 +51,7 @@ function modelWork(work: Work): ModelWork {
     pendingDocumentCount,
   } = work;
   return {
-    slug,
+    handle,
     name,
     goal,
     status,
@@ -101,15 +100,24 @@ function updateReceipt({
   };
 }
 
-async function workBySlug(
+/** A Work by the handle the model copied. A name gets the handle that answers it, never a match. */
+async function workByHandle(
   deps: ToolWiringDeps,
   projectId: string,
-  slug: string,
+  ref: string,
 ): Promise<Work | ToolErrorOutput> {
-  const works = await deps.works.listByProject(projectId, { lifecycle: "all" });
-  const work = works.find((candidate) => candidate.slug === slug);
+  const reference = await deps.contextPorts.chatFiles.workReference(projectId, ref);
+  const work = reference.ok
+    ? await deps.works.findByHandle(projectId, reference.work.handle)
+    : null;
   if (work) return work;
-  return toolError({ code: "work_not_found", message: unknownWorkMessage(slug), workSlug: slug });
+  return toolError({
+    code: "work_not_found",
+    message: reference.ok
+      ? await deps.contextPorts.chatFiles.unknownWork(projectId, ref)
+      : reference.message,
+    workHandle: ref,
+  });
 }
 
 /**
@@ -121,17 +129,17 @@ async function switchPrecheck(
   deps: ToolWiringDeps,
   projectId: string,
   threadId: ThreadId,
-  slug: string | null | undefined,
+  handle: string | null | undefined,
 ): Promise<{ message: string } | ToolErrorOutput | null> {
   let work: Work;
-  if (slug) {
-    const found = await workBySlug(deps, projectId, slug);
+  if (handle) {
+    const found = await workByHandle(deps, projectId, handle);
     if (isToolError(found)) return found;
     if (workLifecycleState(found) === "deleted") {
       return toolError({
         code: "work_not_found",
-        message: unknownWorkMessage(slug),
-        workSlug: slug,
+        message: await deps.contextPorts.chatFiles.unknownWork(projectId, handle),
+        workHandle: handle,
       });
     }
     work = found;
@@ -140,11 +148,11 @@ async function switchPrecheck(
     if (!noWork) return toolError({ message: "No Work is missing for this project" });
     work = noWork;
   }
-  const named = work.slug ? `@${work.slug}` : "No Work";
+  const named = work.handle ?? "No Work";
   if (workLifecycleState(work) === "archived") {
     return toolError({
       code: "work_archived",
-      message: `Work ${named} is archived, so this chat can't switch to it until the user unarchives it.`,
+      message: `Work ${named} is archived. Ask the user to unarchive it before switching.`,
     });
   }
   const current = await deps.threadWorks.findPrimary(threadId);
@@ -159,16 +167,16 @@ async function switchPrecheck(
  */
 function workLifecycleMessage(
   reason: "work_archived" | "work_deleted" | "work_missing",
-  workSlug: string | null,
+  workHandle: string | null,
   mayUnarchive: boolean,
 ): string {
   if (reason !== "work_archived") {
-    return workSlug ? `Work @${workSlug} is unavailable.` : "The requested Work is unavailable.";
+    return workHandle ? `Work ${workHandle} is unavailable.` : "The requested Work is unavailable.";
   }
-  if (!workSlug) return "The requested Work is archived and read-only.";
+  if (!workHandle) return "The requested Work is archived and read-only.";
   return mayUnarchive
-    ? `Work @${workSlug} is archived and read-only. Unarchive it with \`work({"command":"unarchive","work":"${workSlug}"})\` before changing it.`
-    : `Work @${workSlug} is archived and read-only. Ask the user to unarchive @${workSlug}.`;
+    ? `Work ${workHandle} is archived. To change it, use \`work({"command":"unarchive","work":"${workHandle}"})\`.`
+    : `Work ${workHandle} is archived and read-only. Ask the user to unarchive ${workHandle}.`;
 }
 
 function policyRefusal(command: WorkCommand, decision: "ask" | "deny"): ToolErrorOutput {
@@ -187,7 +195,7 @@ type CommandHandler<C extends CommandName> = (
   command: CommandOf<C>,
 ) => Promise<unknown>;
 
-/** A command on one named Work: an unknown slug points to `work list` (D51). */
+/** A command on one named Work: an unknown handle points to `work list` (D51). */
 function onSelectedWork<C extends Exclude<CommandName, "list" | "create">>(
   run: (
     deps: ToolWiringDeps,
@@ -197,8 +205,8 @@ function onSelectedWork<C extends Exclude<CommandName, "list" | "create">>(
   ) => Promise<unknown>,
 ): CommandHandler<C> {
   return async (deps, thread, command) => {
-    const { work: slug } = command as unknown as { work: string };
-    const selected = await workBySlug(deps, thread.projectId, slug);
+    const { work: handle } = command as unknown as { work: string };
+    const selected = await workByHandle(deps, thread.projectId, handle);
     return isToolError(selected) ? selected : run(deps, thread, selected, command);
   };
 }
@@ -331,7 +339,7 @@ export function createWorkHandler(deps: ToolWiringDeps) {
           code: error.state === "archived" ? "work_archived" : "work_not_found",
           message: workLifecycleMessage(
             `work_${error.state}`,
-            "work" in command && command.work ? command.work : (error.workSlug ?? null),
+            "work" in command && command.work ? command.work : (error.workHandle ?? null),
             mayChangeWorks(permission),
           ),
         });

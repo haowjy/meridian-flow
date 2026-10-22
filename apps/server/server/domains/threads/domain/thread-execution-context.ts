@@ -3,11 +3,11 @@ import type { AiWriteMode, ThreadExecutionContext, Work } from "@meridian/contra
 
 /** Draft mode writes drafts in the Work the chat is bound to at the time of the call (D62). */
 export function threadExecutionContext(
-  work: Pick<Work, "id" | "slug">,
+  work: Pick<Work, "id" | "handle">,
   aiWriteMode: AiWriteMode,
 ): ThreadExecutionContext {
   return {
-    scope: { workId: work.id, workSlug: work.slug },
+    scope: { workId: work.id, workHandle: work.handle },
     aiWriteMode,
     branchOwner: aiWriteMode === "draft" ? { kind: "work", workId: work.id } : null,
   };

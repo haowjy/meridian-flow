@@ -314,7 +314,7 @@ async function restoreGrant<N extends FileNeed = "edit">(
       scheme: parsed.value.scheme,
       owner: { scope: "project", projectId: input.projectId },
     },
-    { kind: "draft", workId: input.workId, workSlug: null },
+    { kind: "draft", workId: input.workId, workHandle: null },
     need,
   );
   if (isFileAccessDenied(grant)) throw createError({ statusCode: 404, message: "Draft not found" });

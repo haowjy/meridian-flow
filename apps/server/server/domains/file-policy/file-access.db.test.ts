@@ -69,7 +69,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: p,
         createdByUserId: u,
         name: "Archived scratch probe",
-        slug: "archived-scratch-probe",
+        handle: "w1",
       });
       await db
         .insert(contextSources)

@@ -40,7 +40,7 @@ export function toolCommand(tool: ToolView): ToolCommand {
   }
 }
 
-/** The server's facts for one `work` mutation (Work names before and after, never slugs) and the inverse that would undo it; the app writes the line from them. */
+/** The server's facts for one `work` mutation (Work names before and after, never handles) and the inverse that would undo it; the app writes the line from them. */
 export type { WorkReceipt } from "@meridian/contracts/works";
 
 export function workReceipt(tool: ToolView): WorkReceipt | null {

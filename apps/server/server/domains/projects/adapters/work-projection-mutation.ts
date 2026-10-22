@@ -246,7 +246,7 @@ export function createWorkProjectionMutation(input: {
       for (const workId of workIds) {
         const work = locked.get(workId);
         if (work && work.state !== "active") {
-          throw new WorkLifecycleUnavailableError(workId, work.state, work.slug);
+          throw new WorkLifecycleUnavailableError(workId, work.state, work.handle);
         }
       }
     }

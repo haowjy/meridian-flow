@@ -12,7 +12,7 @@ import {
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
-const _DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" } as const;
+const _DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workHandle: "w1" } as const;
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 if (!enabled || !process.env.DATABASE_URL) {

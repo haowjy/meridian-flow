@@ -1,6 +1,11 @@
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
-import { type AiWriteMode, decodeWorkSlug, type Work } from "@meridian/contracts/works";
+import {
+  type AiWriteMode,
+  decodeWorkHandle,
+  formatWorkHandle,
+  type Work,
+} from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
   contextAvailabilityHeads,
@@ -15,6 +20,7 @@ import {
   runInDrizzleTransaction,
   runInRootDrizzleReadSnapshot,
 } from "../../../../shared/drizzle-transaction.js";
+import { allocateHandleNumber } from "../../../../shared/handle-counter.js";
 import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
@@ -43,7 +49,7 @@ import {
 } from "../../ports/work-repository.js";
 import { cascadeDelete, cascadeRestore } from "../work-cascade.js";
 import type { WorkProjectionMutation } from "../work-projection-mutation.js";
-import { NO_WORK_NAME, nextWorkSlug } from "./shared.js";
+import { NO_WORK_NAME } from "./shared.js";
 
 type WorkRow = typeof works.$inferSelect;
 function workUniqueConstraint(cause: unknown): string | null {
@@ -59,14 +65,14 @@ function workUniqueConstraint(cause: unknown): string | null {
 }
 
 function mapWork(row: WorkRow): Work {
-  const slug = row.isNoWork ? null : decodeWorkSlug(row.slug);
-  if (!row.isNoWork && !slug) throw new Error(`Persisted Work ${row.id} has an invalid slug`);
+  const handle = row.isNoWork ? null : decodeWorkHandle(row.handle);
+  if (!row.isNoWork && !handle) throw new Error(`Persisted Work ${row.id} has an invalid handle`);
   return {
     id: row.id,
     projectId: row.projectId,
     createdByUserId: row.createdByUserId,
     name: row.name,
-    slug,
+    handle,
     isNoWork: row.isNoWork,
     goal: row.goal,
     status: row.status,
@@ -130,7 +136,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     const existing = await findWorkById(id);
     if (!existing) throw new WorkLifecycleUnavailableError(id, "missing");
     if (existing.deletedAt) {
-      throw new WorkLifecycleUnavailableError(id, "deleted", existing.slug);
+      throw new WorkLifecycleUnavailableError(id, "deleted", existing.handle);
     }
     if (existing.isNoWork) throw new WorkLockedError();
     return existing;
@@ -172,10 +178,9 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           .from(projects)
           .where(eq(projects.id, input.projectId))
           .limit(1);
-        const existingSlugs = await activeDb
-          .select({ slug: works.slug })
-          .from(works)
-          .where(eq(works.projectId, input.projectId));
+        const handle = formatWorkHandle(
+          await allocateHandleNumber(activeDb, input.projectId, "work"),
+        );
         let row: WorkRow | undefined;
         try {
           [row] = await activeDb
@@ -186,10 +191,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
               createdByUserId:
                 project?.userId ?? input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
               name: input.name,
-              slug: nextWorkSlug(
-                input.name,
-                existingSlugs.map(({ slug }) => slug),
-              ),
+              handle,
               goal: input.goal ?? null,
             })
             .returning();
@@ -208,6 +210,14 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       // A non-UUID id would reach the `uuid` column and raise a Postgres parse
       // error; treat it as not-found so callers get a clean 404, not a 500.
       return findWorkById(id);
+    },
+    async findByHandle(projectId: ProjectId, handle: string): Promise<Work | null> {
+      const [row] = await currentDrizzleDb(db)
+        .select()
+        .from(works)
+        .where(and(eq(works.projectId, projectId), eq(works.handle, handle)))
+        .limit(1);
+      return row ? mapWork(row) : null;
     },
     async findNoWork(projectId: ProjectId): Promise<Work | null> {
       return findNoWorkRow(projectId);
@@ -241,7 +251,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             projectId,
             createdByUserId: project.userId,
             name: NO_WORK_NAME,
-            slug: null,
+            handle: null,
             isNoWork: true,
             defaultAiWriteMode: "direct",
           })
@@ -402,9 +412,6 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         const constraint = workUniqueConstraint(cause);
         if (constraint === "works_project_name_active") {
           throw new WorkRestoreConflictError("name");
-        }
-        if (constraint === "works_project_slug") {
-          throw new WorkRestoreConflictError("slug");
         }
         throw cause;
       }

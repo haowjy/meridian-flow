@@ -13,7 +13,7 @@ import {
   filetypeForExtension,
 } from "@meridian/contracts/protocol";
 import type { HandBackResult } from "@meridian/contracts/threads";
-import type { WorkSlug } from "@meridian/contracts/works";
+import type { WorkHandle } from "@meridian/contracts/works";
 import { imageCapable as imageFile } from "./occurrences";
 import type {
   BuiltMessageDoc,
@@ -34,7 +34,7 @@ export type ResolveReference = (
 export type ChatReferenceScope = {
   projectId: ProjectId;
   userId: UserId;
-  work: { id: WorkId; slug: WorkSlug | null };
+  work: { id: WorkId; handle: WorkHandle | null };
   /** The lineage's first chat, which owns a No Work chat's Scratch. */
   rootThreadId: string;
   /** That first chat's handle (`c12`), the name a lineage URI carries; null until it is known. */
@@ -84,12 +84,12 @@ export function chatReferenceResolver(scope: ChatReferenceScope): ResolveReferen
         };
     } else if (authority.kind === "work") {
       // A Work owns no uploads, only Scratch.
-      if (scheme === "scratch" && authority.workSlug === scope.work.slug)
+      if (scheme === "scratch" && authority.workHandle === scope.work.handle)
         owner = {
           kind: "work",
           projectId: scope.projectId,
           workId: scope.work.id,
-          workSlug: scope.work.slug,
+          workHandle: scope.work.handle,
         };
     } else if (scheme !== "scratch" && scheme !== "uploads") {
       owner =

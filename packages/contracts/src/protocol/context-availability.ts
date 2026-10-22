@@ -1,7 +1,7 @@
 /** Project-final stable-document availability protocol. */
 import { z } from "zod";
+import type { WorkHandle } from "../handles.js";
 import type { DocumentId, ProjectId, UserId, WorkId } from "../ids.js";
-import type { WorkSlug } from "../works/work-slug.js";
 import type { CatalogFileEntry } from "./context-catalog.js";
 import type { DocumentRemovalRecord } from "./document-removal.js";
 
@@ -73,7 +73,7 @@ export type ProjectContextIdentityLookupRequest = {
 export type ProjectContextAuthority =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "user"; userId: UserId }
-  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null }
+  | { kind: "work"; projectId: ProjectId; workId: WorkId; workHandle: WorkHandle | null }
   | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string }
   /** `chatRef` is null while the chat's row does not exist yet (a New chat's first uploads). */
   | { kind: "chat"; projectId: ProjectId; chatId: string; chatRef: string | null };

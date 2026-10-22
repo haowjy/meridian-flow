@@ -153,7 +153,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         projectId,
         createdByUserId: userId,
         name: NO_WORK_NAME,
-        slug: null,
+        handle: null,
         isNoWork: true,
         defaultAiWriteMode: "direct",
       })

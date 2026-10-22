@@ -7,7 +7,7 @@ const OWNER = "owner";
 const PROJECT = "project";
 const work = (id: string, over: Partial<FileWorkFacts> = {}): FileWorkFacts => ({
   id,
-  slug: id,
+  handle: id,
   isNoWork: false,
   archived: false,
   deleted: false,
@@ -96,7 +96,7 @@ describe("file policy", () => {
       file("manuscript", null, { branchWork }),
     ];
     const live = decide(...drafting(A), ownerGrants);
-    expect(live.destination).toEqual({ kind: "draft", workId: "a", workSlug: "a" });
+    expect(live.destination).toEqual({ kind: "draft", workId: "a", workHandle: "a" });
     expect(live.level).toBe("edit");
     const frozen = decide(...drafting(archived), ownerGrants);
     expect([frozen.level, frozen.limitedBy]).toEqual(["read", "work_archived"]);

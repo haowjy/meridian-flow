@@ -229,7 +229,7 @@ export class ContextFS implements ContextSchemeAdapter {
             ? {
                 code: "context_unavailable",
                 reason: `work_${error.state}`,
-                workSlug: error.workSlug ?? null,
+                workHandle: error.workHandle ?? null,
               }
             : error instanceof ContextEntryConflictError
               ? {

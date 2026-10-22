@@ -195,7 +195,7 @@ export async function copyBinary(
     return writeToolError(input.command, contextErrorMessage(copied.error));
   }
   if (copied.value.documentId) recordTouchInBackground(deps, copied.value.documentId, ctx);
-  // The port's placement decided where the copy landed; only the Work's slug is ours to add.
+  // The port's placement decided where the copy landed; only the Work's handle is ours to add.
   const destination = copied.value.placement;
   const branchWork = context.resolution.primaryBranchWork;
   return {
@@ -206,7 +206,7 @@ export async function copyBinary(
       payload: {
         path: copied.value.uri,
         destination,
-        ...(destination === "draft" ? { draftWork: branchWork?.slug ?? "/" } : {}),
+        ...(destination === "draft" ? { draftWork: branchWork?.handle ?? "/" } : {}),
         copied: { from: source.uri },
       },
     }),

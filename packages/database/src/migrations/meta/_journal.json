@@ -533,6 +533,20 @@
       "when": 1792428329463,
       "tag": "0081_draft_review_validate",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1792616414493,
+      "tag": "0082_owner_handles",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1792616414494,
+      "tag": "0083_owner_handles_online",
+      "breakpoints": true
     }
   ]
 }

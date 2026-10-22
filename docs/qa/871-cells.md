@@ -40,7 +40,7 @@ W=$(jq -r .id work.json)
 ./mf api GET "/api/agents?projectId=$P&limit=100" --json \
   | jq '.agents[] | select(.slug=="general").selection' > agent-selection.json
 for c in c1 c2 c3 c4; do
-  ./mf thread create --work @/ --title "871 $c direct" --json > thread-$c-direct.json
+  ./mf thread create --title "871 $c direct" --json > thread-$c-direct.json
   jq -n --arg p "$P" --arg w "$W" --arg id "$(node -p 'crypto.randomUUID()')" --arg t "871 $c draft" \
     --argjson sel "$(cat agent-selection.json)" \
     '{id:$id,projectId:$p,title:$t,agentSelection:$sel,workId:$w,aiWriteMode:"draft"}' > body-$c.json

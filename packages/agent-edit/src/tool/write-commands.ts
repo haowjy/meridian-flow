@@ -11,7 +11,7 @@ import { type BlockRef, toDocHandle, toRef, unwrapBlock } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import { getTopLevelXmlBlocks } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import { writeHandle } from "../ports/update-journal.js";
+import { editHandle } from "../ports/update-journal.js";
 import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
@@ -838,7 +838,7 @@ export function createWriteCommands(deps: {
     return {
       durableId,
       ordinal,
-      handle: writeHandle(ordinal),
+      handle: editHandle(ordinal),
       ...(toolCallId ? { toolCallId } : {}),
     };
   }

@@ -14,3 +14,11 @@ ContextPort seam, and agent move/reorder behavior as one coherent change.
 `DocumentRevisions.current` and compaction have batch-capable availability
 ports but may still issue per-document lookups. Measure compaction and multi-
 document revision latency before changing the call shape.
+
+## Owner-name collision lookup
+
+`adapters/owner-lookup.ts` bounds returned name candidates, but its normalized-
+name predicate can still scan a project's Works on explicit Scratch receipts.
+Measure query plans at representative Work counts before changing it. If material,
+index one shared normalized-name key; keep corrections and labels in the existing
+owner resolver, without adding address aliases.

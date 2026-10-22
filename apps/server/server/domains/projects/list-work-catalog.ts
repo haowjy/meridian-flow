@@ -33,12 +33,12 @@ export async function listWorkCatalog(
       ...identity,
       requestId,
       works: works.map((work): NamedWorkCatalogEntry => {
-        if (work.isNoWork || work.slug === null) {
+        if (work.isNoWork || work.handle === null) {
           throw new Error(`Named Work catalog included locked Work ${work.id}`);
         }
-        return { ...work, isNoWork: false, slug: work.slug };
+        return { ...work, isNoWork: false, handle: work.handle };
       }),
-      noWork: { ...noWork, isNoWork: true, slug: null } satisfies NoWorkCatalogEntry,
+      noWork: { ...noWork, isNoWork: true, handle: null } satisfies NoWorkCatalogEntry,
     };
   });
 }

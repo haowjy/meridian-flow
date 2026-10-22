@@ -12,7 +12,7 @@ const WORK: Work = {
   projectId: "project-1" as Work["projectId"],
   createdByUserId: "user-1" as Work["createdByUserId"],
   name: "Arc",
-  slug: "arc" as Work["slug"],
+  handle: "w1" as Work["handle"],
   isNoWork: false,
   goal: "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.",
   status: null,

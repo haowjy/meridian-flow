@@ -80,7 +80,7 @@ describeBranchTreeDb("review address identity", (start, db) => {
       deps.fileAccess.authorizeAt(
         { accountId: s.project.userId },
         { kind: "document", documentId: hidden },
-        { kind: "draft", workId: work.id, workSlug: work.slug },
+        { kind: "draft", workId: work.id, workHandle: work.handle },
         "edit",
       ),
     ).resolves.toMatchObject({ denied: true, reason: "work_archived" });

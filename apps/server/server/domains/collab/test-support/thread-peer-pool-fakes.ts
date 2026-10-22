@@ -241,7 +241,7 @@ export function fakeEditGrant(
         ? {
             branchWork: {
               id: destination.workId,
-              slug: destination.workSlug,
+              handle: destination.workHandle,
               isNoWork: false,
               archived: false,
               deleted: false,

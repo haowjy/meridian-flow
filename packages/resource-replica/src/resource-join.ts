@@ -83,7 +83,7 @@ export function pendingJoinTarget(record: ResourceRecord): JoinTarget | null {
   const { address } = outcome.result;
   return {
     documentId: outcome.result.documentId,
-    // A Work-scoped address waits for the catalog observation, which carries the Work's slug.
+    // A Work-scoped address waits for the catalog observation, which carries the Work's handle.
     location: address.workId
       ? null
       : {

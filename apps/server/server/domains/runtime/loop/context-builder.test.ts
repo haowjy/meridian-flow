@@ -151,7 +151,7 @@ it("keeps a durable mode switch in model context when later undo and redo cancel
       kind: "undo",
       scope: { kind: "thread", threadId: THREAD_ID },
       message: "",
-      data: { uri: "manuscript://Scene", writeHandles: ["w1"], direction },
+      data: { uri: "manuscript://Scene", direction },
       createdAt: new Date(id),
     })),
     prevTurnId: switched.turn.id as never,

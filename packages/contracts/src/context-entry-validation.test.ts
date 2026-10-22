@@ -2,14 +2,17 @@ import { describe, expect, it } from "vitest";
 import { validateContextEntryName, validateContextEntryPath } from "./context-entry-validation.js";
 
 describe("context entry validation", () => {
-  it.each(["Branches/@notes.md"])("reserves authority-like segment in %j", (raw) => {
+  it.each([
+    "Branches/@notes.md",
+    "Branches/~b7/x.md",
+  ])("reserves authority-like segment in %j", (raw) => {
     const result = raw.includes("/")
       ? validateContextEntryPath(raw)
       : validateContextEntryName(raw);
     expect(result).toEqual({
       ok: false,
       reason: "name/reserved-authority-qualifier",
-      segment: raw.split("/").find((segment) => segment.startsWith("@")),
+      segment: raw.split("/").find((segment) => segment.startsWith("@") || segment.startsWith("~")),
     });
   });
 

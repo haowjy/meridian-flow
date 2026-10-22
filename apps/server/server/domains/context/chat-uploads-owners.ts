@@ -5,6 +5,7 @@ export interface ChatUploadsOwner {
   chatRef: string;
   /** False while the chat is in the trash: its uploads stay stored but unavailable. */
   live: boolean;
+  title?: string | null;
 }
 
 export interface ChatUploadsOwners {

@@ -912,7 +912,7 @@ export function createResponseCommitter(deps: {
         ...(input.semanticEditIr ? { semanticEditIr: input.semanticEditIr } : {}),
         ...mutationMode(interactionContext),
       },
-      writeId: input.writeId ?? "w0",
+      writeId: input.writeId ?? "e0",
       durableWriteId,
       turnId: input.turnId,
       actor: input.actor,

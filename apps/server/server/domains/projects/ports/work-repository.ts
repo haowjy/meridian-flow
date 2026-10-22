@@ -40,13 +40,11 @@ export class WorkNameConflictError extends Error {
 }
 
 export class WorkRestoreConflictError extends Error {
-  constructor(public readonly reason: "name" | "slug" | "content") {
+  constructor(public readonly reason: "name" | "content") {
     super(
       reason === "name"
         ? "Work cannot be restored because its name is now in use"
-        : reason === "slug"
-          ? "Work cannot be restored because its slug is now in use"
-          : "Work cannot be restored because a file or folder name is now in use",
+        : "Work cannot be restored because a file or folder name is now in use",
     );
     this.name = "WorkRestoreConflictError";
   }
@@ -104,6 +102,8 @@ export interface WorkRepository {
   lockById(id: WorkId): Promise<Work | null>;
   create(input: CreateWorkInput): Promise<Work>;
   findById(id: WorkId): Promise<Work | null>;
+  /** A named Work of the project by handle, deleted ones included: one indexed read. */
+  findByHandle(projectId: ProjectId, handle: string): Promise<Work | null>;
   findNoWork(projectId: ProjectId): Promise<Work | null>;
   ensureNoWork(projectId: ProjectId): Promise<Work>;
   /** Lists most recently updated first. Named Works only unless includeNoWork. */

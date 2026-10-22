@@ -17,7 +17,13 @@ function fixture() {
     path: "Withern",
   };
   const state = {
-    work: { id: "work", slug: "review", projectId: "project", deletedAt: null as Date | null },
+    work: {
+      id: "work",
+      handle: "w1",
+      isNoWork: false,
+      projectId: "project",
+      deletedAt: null as Date | null,
+    },
     // The resolver's explicit answer for the review's item, or null when the draft is inactive.
     resolved: {
       branchId: "whole-branch",

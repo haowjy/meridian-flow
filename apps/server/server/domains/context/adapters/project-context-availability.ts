@@ -14,7 +14,7 @@ import type {
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
 import { PROJECT_CONTEXT_AVAILABILITY_MAX_IDS } from "@meridian/contracts/protocol";
-import { decodeWorkSlug } from "@meridian/contracts/works";
+import { decodeWorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
   contextAvailabilityGeneration,
@@ -207,8 +207,8 @@ function classifySourceIdentity(input: {
     if (!work || work.projectId !== input.requestProjectId) {
       return { kind: "inconsistent" };
     }
-    const workSlug = work.isNoWork ? null : decodeWorkSlug(work.slug);
-    if (!work.isNoWork && !workSlug) {
+    const workHandle = work.isNoWork ? null : decodeWorkHandle(work.handle);
+    if (!work.isNoWork && !workHandle) {
       return { kind: "inconsistent" };
     }
     scope = { kind: "work", projectId: input.requestProjectId, workId: work.id } as never;
@@ -216,7 +216,7 @@ function classifySourceIdentity(input: {
       kind: "work",
       projectId: input.requestProjectId,
       workId: work.id,
-      workSlug,
+      workHandle,
     } as never;
   } else if (isActorUserSource) {
     scope = { kind: "user", userId: input.actorUserId } as never;
@@ -589,7 +589,7 @@ export function createDrizzleProjectContextAvailability(
                   observationVersion: namespaceVersion(scope),
                   scheme,
                   workId: work?.id ?? null,
-                  workSlug: work && !work.isNoWork ? work.slug : null,
+                  workHandle: work && !work.isNoWork ? work.handle : null,
                   parentPath,
                   ownerThreadRef: row.ownerThreadRef,
                   chatOwned: source?.scope === "chat",
@@ -656,7 +656,7 @@ export function createDrizzleProjectContextAvailability(
                   catalogSourceAuthority(
                     scheme,
                     row.work?.id ?? null,
-                    row.work && !row.work.isNoWork ? row.work.slug : null,
+                    row.work && !row.work.isNoWork ? row.work.handle : null,
                     row.ownerThreadRef,
                     row.source?.scope === "chat",
                   ),
@@ -735,7 +735,7 @@ export async function resolveActiveFolderUri(
     catalogSourceAuthority(
       classification.identity.scheme,
       row.work?.id ?? null,
-      row.work && !row.work.isNoWork ? row.work.slug : null,
+      row.work && !row.work.isNoWork ? row.work.handle : null,
       row.ownerThreadRef,
       row.source.scope === "chat",
     ),

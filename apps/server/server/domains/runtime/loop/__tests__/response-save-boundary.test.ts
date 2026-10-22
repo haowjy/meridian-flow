@@ -61,7 +61,7 @@ describe("reply save boundaries", () => {
             metadata: {
               stagedWrite: true,
               documentId: DOCUMENT_ID,
-              writeId: "w1",
+              writeId: "e1",
               settlementId: "settlement-1",
               documentRevisions: [{ documentId: DOCUMENT_ID, uri: URI, revision: null }],
             },
@@ -79,7 +79,7 @@ describe("reply save boundaries", () => {
                   {
                     documentId: DOCUMENT_ID,
                     receipt: {
-                      writeId: "w1",
+                      writeId: "e1",
                       settlementId: "settlement-1",
                       revision: "y2:saved",
                       result: modelResult({

@@ -33,7 +33,7 @@ import type {
   TurnUsage,
 } from "../threads/index.js";
 import { threadSchema } from "../threads/thread.js";
-import type { AiWriteMode, Work, WorkSlug, WorksSnapshot } from "../works/index.js";
+import type { AiWriteMode, Work, WorkHandle, WorksSnapshot } from "../works/index.js";
 import { type Filetype, filetypeSchema, type YjsTrackedSchemaType } from "./filetype.js";
 import { admissionReceiptShape, type SubmittedReference } from "./user-turn-admission.js";
 import { runStateSchema } from "./ws-protocol.js";
@@ -103,7 +103,7 @@ export type ListWorksResponse = WorksSnapshot;
 /** Identity projection for callers resolving a named Work, not a complete catalog validator. */
 export const workCatalogIdentitySchema = z.object({
   projectId: z.string().min(1),
-  works: z.array(z.object({ id: z.string().min(1), slug: z.string().min(1) })),
+  works: z.array(z.object({ id: z.string().min(1), handle: z.string().min(1), name: z.string() })),
 });
 
 export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;
@@ -206,7 +206,7 @@ export type ContextDestinationParent = {
       scheme: ProjectContextTreeScheme;
       owner: {
         workId: string | null;
-        workSlug?: string | null;
+        workHandle?: string | null;
         rootThreadId?: string | null;
         rootThreadRef?: string | null;
       };
@@ -247,7 +247,7 @@ export type MoveContextEntryLocator =
   | {
       scheme: "scratch";
       path: string;
-      authority: { workId: WorkId; workSlug: WorkSlug | null };
+      authority: { workId: WorkId; workHandle: WorkHandle | null };
     }
   | {
       scheme: "scratch";
