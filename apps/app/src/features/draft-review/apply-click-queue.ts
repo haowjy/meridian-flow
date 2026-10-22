@@ -18,6 +18,8 @@ type Click = FrozenApply & {
   attempts: number;
   stalled: boolean;
   answer?: ApplyClickResult;
+  /** The record released this head while its request was in flight; the answer reports it. */
+  awaitingAnswer?: true;
   finish(result: ApplyClickResult | { status: "cancelled" }): void;
 };
 export const APPLY_FEEDBACK_MS = 500;
@@ -69,13 +71,16 @@ export class ApplyClickQueue {
   observe(commandIds: Iterable<string>): void {
     this.recorded = new Set(commandIds);
     const head = this.clicks[0];
-    // The server's answer, when it came first, carries what the record can't (`restored`).
+    // The record proves landing and releases the head; the server's answer carries what the
+    // record can't (`restored`), so an answer still in flight reports the outcome.
     if (head && this.recorded.has(head.body.commandId))
       this.settle(
         head,
         head.answer?.status === "applied"
           ? head.answer
-          : { status: "applied", commandId: head.body.commandId },
+          : this.request === head
+            ? "await-answer"
+            : { status: "applied", commandId: head.body.commandId },
       );
     else this.port.changed();
   }
@@ -146,6 +151,13 @@ export class ApplyClickQueue {
       // No answer is not a refusal. The immutable command remains the only head.
     }
     if (this.request === click) this.request = null;
+    if (click.awaitingAnswer) {
+      click.finish(
+        answer?.status === "applied" && answer.commandId === click.body.commandId
+          ? answer
+          : { status: "applied", commandId: click.body.commandId },
+      );
+    }
     if (this.clicks[0] !== click) {
       const next = this.clicks[0];
       if (next) void this.dispatch(next);
@@ -218,12 +230,16 @@ export class ApplyClickQueue {
     this.applying = false;
   }
 
-  private settle(click: Click, result: ApplyClickResult | { status: "cancelled" }): void {
+  private settle(
+    click: Click,
+    result: ApplyClickResult | { status: "cancelled" } | "await-answer",
+  ): void {
     if (this.clicks[0] !== click) return;
     clearTimeout(this.retryTimer);
     this.clicks.shift();
     if (this.request === click) this.request = null;
-    click.finish(result);
+    if (result === "await-answer") click.awaitingAnswer = true;
+    else click.finish(result);
     this.clearFeedbackIfIdle();
     this.port.changed();
     const next = this.clicks[0];
