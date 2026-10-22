@@ -1,11 +1,11 @@
 /**
- * The model's moves and deletes in a document's edit history: the row its call records in the
- * tree mutation's own transaction (a handle on the per-document, per-chat counter, D76), the
+ * The model's moves and deletes in a document's edit history, live or drafted: the row its call
+ * records in the tree mutation's own transaction (a handle on the per-document, per-chat counter, D76), the
  * Works whose drafts outlive a delete (D79), and the document a chat's own tree entry moved or
  * deleted away from a path, so `undo`, `redo` and `revert` can still name it there.
  */
 import { editHandle, type UpdateJournal } from "@meridian/agent-edit/integration";
-import { matchDocumentPath } from "@meridian/contracts";
+import { type DocumentId, matchDocumentPath, type TreeTransition } from "@meridian/contracts";
 import { type Database, documentEdits } from "@meridian/database";
 import { branches, documentDrafts, works } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
@@ -19,14 +19,26 @@ export function createDrizzleTreeHistory(
   journal: Pick<UpdateJournal, "reserveWriteOrdinal">,
 ): AgentTreeHistory {
   const tx = () => currentDrizzleDb(db);
+  async function liveAfter(input: { documentId: DocumentId; op: string }) {
+    const after = (await readLiveTreeStates(tx(), [input.documentId])).get(input.documentId);
+    if (!after) throw new Error(`A ${input.op} left ${input.documentId} hidden`);
+    return after;
+  }
   return {
     async liveState(documentId) {
       return (await readLiveTreeStates(tx(), [documentId])).get(documentId) ?? null;
     },
 
     async recordAgentTreeChange(input) {
-      const after = (await readLiveTreeStates(tx(), [input.documentId])).get(input.documentId);
-      if (!after) throw new Error(`A ${input.op} left ${input.documentId} hidden`);
+      const { change } = input;
+      const transition: TreeTransition =
+        change.destination === "draft"
+          ? {
+              destination: { kind: "draft", branchId: change.branchId },
+              before: change.before,
+              after: change.after,
+            }
+          : { destination: { kind: "live" }, before: change.before, after: await liveAfter(input) };
       const wId = await journal.reserveWriteOrdinal(input.documentId, input.threadId);
       await recordDocumentEdit(tx(), {
         documentId: input.documentId,
@@ -40,9 +52,7 @@ export function createDrizzleTreeHistory(
         receipts: [],
         treeChange: {
           op: input.op,
-          destination: { kind: "live" },
-          before: input.before,
-          after,
+          ...transition,
           shownAt: input.shownAt,
           seq: await nextEditSeq(tx()),
           targets: [],

@@ -2,8 +2,9 @@
  * Where a ContextFS adapter's creates land, as a strategy (contract §2.3, §6.1). The port
  * factory decides the placement once (`placementFor`); ContextFS delegates the commands
  * whose meaning differs: reads' tree view, `ensureTrackedDocument`, `writeBinary`,
- * `retractCreate`, and the refusals a draft placement makes (a draft never seeds live
- * Yjs, and an empty hidden folder would have no use).
+ * `retractCreate`, the refusals a draft placement makes (a draft never seeds live
+ * Yjs, and an empty hidden folder would have no use), and a draft placement's moves and
+ * deletes, which are facts in the Work's branch (D26).
  */
 
 import type { DocumentId, ThreadId, UserId, WorkId } from "@meridian/contracts";
@@ -12,10 +13,16 @@ import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { Branches } from "../../../collab/domain/branches.js";
 import type { MarkdownDocumentStore } from "../../../collab/index.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
-import type { BranchCreatePort, EnsuredBranch } from "../../ports/branch-create.js";
+import type {
+  BranchChangeAuthor,
+  BranchTreePort,
+  EnsuredBranch,
+  RecordedBranchTreeChange,
+} from "../../ports/branch-tree.js";
 import type { AdapterFault, ContextEnsureTrackedOptions } from "../../ports/context-adapter.js";
 import type { ContextDocumentStore } from "../../ports/context-document-store.js";
 import type { ContextWriteBinaryOptions } from "../../ports/context-port.js";
+import type { BranchTreeChange, BranchTreeFault } from "../../tree/branch-tree-changes.js";
 import type { CreateFault } from "../../tree/hidden-node-types.js";
 import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { binaryTrackedWriteFault } from "./bound-writes.js";
@@ -35,7 +42,7 @@ export type ContextPlacement =
       threadId: ThreadId;
       userId: UserId;
       branches: Pick<Branches, "viewForWork">;
-      creates: BranchCreatePort;
+      tree: BranchTreePort;
     };
 
 /** Commands only a live placement runs. */
@@ -65,6 +72,27 @@ export interface CreatePlacement {
     documentId: string,
     cause: RetractionCause,
   ): Promise<Result<{ placement: ContextPlacement["kind"] }, AdapterFault>>;
+  /** A draft placement's moves and deletes; null for a live one, whose go through the mover. */
+  readonly branchTree: BranchTreeCommands | null;
+}
+
+/** A drafted move or delete, recorded by the caller in the same transaction. */
+type BranchTreeCommand = {
+  documentId: DocumentId;
+  changedBy: BranchChangeAuthor;
+  record(change: RecordedBranchTreeChange): Promise<void>;
+};
+
+export interface BranchTreeCommands {
+  /** `moved: false` when the branch already has it there. */
+  move(
+    target: { dir: readonly string[]; name: string; extension: string },
+    command: BranchTreeCommand & {
+      /** The source the branch has it in now, whose namespace the command also takes. */
+      fromSourceId: string;
+    },
+  ): Promise<Result<{ moved: boolean }, AdapterFault>>;
+  delete(command: BranchTreeCommand): Promise<Result<void, AdapterFault>>;
 }
 
 export interface CreatePlacementDeps {
@@ -132,6 +160,7 @@ function livePlacement(deps: CreatePlacementDeps): CreatePlacement {
       });
     },
     retract: async () => Ok({ placement: "live" as const }),
+    branchTree: null,
   };
 }
 
@@ -161,7 +190,7 @@ function draftPlacement(
         const target = resolveCreateTarget(path, options);
         if (!target.ok) return target;
         const { dir, name, extension, filetype } = target.value;
-        const created = await placement.creates.createInBranch({
+        const created = await placement.tree.createInBranch({
           branch,
           dir,
           name,
@@ -188,7 +217,7 @@ function draftPlacement(
         const target = resolveBinaryTarget(path, options);
         if (!target.ok) return target;
         const { dir, name, extension } = target.value;
-        const created = await placement.creates.createInBranch({
+        const created = await placement.tree.createInBranch({
           branch,
           dir,
           name,
@@ -208,12 +237,47 @@ function draftPlacement(
         return Ok({ documentId: created.value.documentId, placement: "draft" as const });
       });
     },
+    branchTree: {
+      move(target, command) {
+        return executor.runInBranch(
+          { ...work, mode: "ensure" },
+          async (active): Promise<Result<{ moved: boolean }, AdapterFault>> => {
+            const branch = { id: active.id, workId: placement.workId };
+            const moved = await placement.tree.moveInBranch({
+              branch,
+              documentId: command.documentId,
+              ...target,
+              changedBy: command.changedBy,
+            });
+            if (!moved.ok)
+              return moved.error.code === "already_there"
+                ? Ok({ moved: false })
+                : Err(branchTreeFault(moved.error));
+            await command.record(recorded(branch, moved.value));
+            return Ok({ moved: true });
+          },
+          [command.fromSourceId],
+        );
+      },
+      delete(command) {
+        return inBranch(async (branch) => {
+          const deleted = await placement.tree.deleteInBranch({
+            branch,
+            documentId: command.documentId,
+            changedBy: command.changedBy,
+          });
+          if (!deleted.ok) return Err(branchTreeFault(deleted.error));
+          await command.record(recorded(branch, deleted.value));
+          return Ok(undefined);
+        });
+      },
+    },
     retract(documentId, cause) {
       return executor.run(
         async ({ branch }) => {
           // No active branch: a whole Discard already ended every use.
           if (branch) {
-            await placement.creates.retractCreate({
+            await placement.tree.retractCreate({
               branch: { id: branch.id, workId: placement.workId },
               documentId,
               cause,
@@ -242,6 +306,21 @@ export const OUTLIVED_PATH_FAULT: AdapterFault = {
   message:
     "This path names two documents in this draft: a new one in the manuscript, and the one this draft still has that was deleted from the manuscript. Ask the user to rename one.",
 };
+
+function recorded(branch: EnsuredBranch, change: BranchTreeChange): RecordedBranchTreeChange {
+  return { branchId: branch.id, ...change };
+}
+
+function branchTreeFault(fault: Exclude<BranchTreeFault, { code: "already_there" }>): AdapterFault {
+  switch (fault.code) {
+    case "not_found":
+      return { code: "stale_source" };
+    case "ambiguous":
+      return AMBIGUOUS_PATH_FAULT;
+    case "conflict":
+      return { code: "conflict", occupantKind: fault.occupantKind };
+  }
+}
 
 function createFault(fault: CreateFault): AdapterFault {
   return fault.code === "ambiguous"

@@ -7,16 +7,40 @@ predicate and the lock order are the load-bearing rules.
 ## Views and ownership
 
 `TreeView` is `LIVE_TREE` or `{ kind: "branch", branchId }`. Live views exclude
-deleted and hidden rows. A branch view includes its live rows plus the hidden
-documents and folders it created or needs as ancestors, at their row-owned
-location, plus the deleted documents it has pending changes to (D79: an active
-Work draft with `has_effect`, the pending count's predicate) with the deleted
-folders above them. The live folder arm is its own `UNION ALL` branch so live
+deleted and hidden rows. A branch's `branch_tree_changes` row has one logical
+state, delete dominant: `deleting` (a move under it is masked intent, kept for
+the delete's undo), `moving`, or `created`. A branch view's arms are disjoint
+over it: live rows it neither moved nor deleted; the hidden documents and
+folders it created or needs as ancestors, at their row-owned location; the
+documents it moved, at its effective placement (`moved_folder_id`'s current
+source, or `moved_root_source_id`, so a live rename or cross-source move of that
+folder carries them, D80); and the deleted documents it has pending changes to
+and no move or delete of (D79) with the deleted folders above them. A document
+the branch deletes is in no arm; its identity is `deleted` there. Identity,
+lineage and file facts read the effective placement, so a drafted manuscript→kb
+move takes kb's grants.
+
+`pendingIn` / `pendingDocuments` are the one reviewable-pending predicate: the
+row's logical state against live's (deleting a living document; moving one
+elsewhere, revealing a hidden creation at the branch's place, or restoring a
+deleted one there; a created row while its document lives), or an active Work
+draft with `has_effect` unless the branch is deleting the document. The
+surviving arm, `treeState`'s `pending` (review membership), the Work counts and
+the per-document branch hints all read it; write admission does not.
+`branch-tree-changes.ts` writes drafted moves and deletes (`moveInBranch`,
+`deleteInBranch`) and their inverses (`writeBackBranchFacts`) through the one
+facts writer (`writeBranchTreeFacts`: a new `revision` from its sequence per
+write, the first `base_version` kept). A drafted move's folder is a use for
+hidden-folder liveness and absorption rewrites it; a create joins a hidden
+candidate only while no branch using it moved it away. A live removal clears
+each branch's `created` fact and keeps `moved` and `deleted` (D79, D80).
+
+The live folder arm is its own `UNION ALL` branch so live
 lookups keep their partial indexes; the hidden and deleted folders share one
 non-live arm, so the branch's used-folder walk runs once per statement half, and
 its predicate is `folders_nonlive_location`'s, so a path slot reaches that index. `deletedDocument` is the one definition of a deletion a draft
 outlives (own or folder delete, reason `deleted`, no Work cascade); listing adds
-the pending effect, admission (`survivingDraftDocuments`) only an active draft.
+the pending effect, admission (`survivingDraftDocuments`) an active draft or the branch's move of it.
 The identity relations' diagnostic arms exclude a view's surviving rows, so each
 identity appears once. Availability lookups in a branch view follow the same
 listing: a surviving document (and a deleted folder the view places it under)
@@ -59,7 +83,9 @@ and prunes empty hidden ancestors. Closed draft identity rows remain.
 tree mutation whose namespaces are discovered, not known: end of use, Discard,
 hidden-node repair, Apply's reveal and restore, and the inverses of moves and
 deletes. Its `placements` lock the sources of placements no row names yet (a
-move's undo returns to its old folder), each where that folder is now.
+move's undo returns to its old folder), each where that folder is now; its
+`branches` lock where each branch has its documents (physical and effective),
+and `sourceIds` a drafted move's destination.
 `live-tree-state.ts` reads a document's live state as an edit history's tree
 entry records it, and moves a document back to a recorded placement; a deleted
 folder there is `folder_missing`, never recreated. It locks the namespaces it
