@@ -12,6 +12,7 @@ import type { DocumentRemovalCause } from "@meridian/contracts/protocol";
 import { type AiWriteMode, WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -27,6 +28,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
+import { threads } from "./agent-threads";
 import { users } from "./users";
 
 export const projects = pgTable(
@@ -288,6 +290,10 @@ export const documents = pgTable(
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "set null" }),
+    /** The chat whose model deleted it; its owner stays in `deleted_by_user_id`. */
+    deletedByThreadId: uuid("deleted_by_thread_id")
+      .$type<ThreadId>()
+      .references((): AnyPgColumn => threads.id, { onDelete: "set null" }),
     /** A branch's new document: in no live view until placed (read only through the tree view). */
     hidden: boolean("hidden").notNull().default(false),
   },
@@ -307,6 +313,9 @@ export const documents = pgTable(
     index("documents_deleted_by_work_idx")
       .on(table.deletedByWorkId)
       .where(sql`${table.deletedByWorkId} IS NOT NULL`),
+    index("documents_deleted_by_thread_idx")
+      .on(table.deletedByThreadId)
+      .where(sql`${table.deletedByThreadId} IS NOT NULL`),
     // Not limited to live rows: hidden-document matching by row location, the review's
     // tree-state query, and listing by folder.
     index("documents_context_location").on(

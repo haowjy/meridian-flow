@@ -1,6 +1,6 @@
 /** Drizzle backing-scoped atomic ContextFS tree mutations. */
 
-import type { ContextSourceId, FolderId, UserId } from "@meridian/contracts";
+import type { ContextSourceId, FolderId, ThreadId, UserId } from "@meridian/contracts";
 import {
   parseDocumentFilename,
   renderFilename as renderDocumentFilename,
@@ -385,6 +385,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           reason: command.removal?.reason ?? "deleted",
           cause: command.removal?.cause,
           userId: command.actorUserId as UserId,
+          threadId: command.actorThreadId as ThreadId | undefined,
         });
         const availabilityGeneration = await catalogMutations.refreshSources(
           [token.sourceId],

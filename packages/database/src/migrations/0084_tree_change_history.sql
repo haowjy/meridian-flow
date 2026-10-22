@@ -1,5 +1,5 @@
 -- Moves and deletes join the edit history as tree entries (PR 3): a nullable column and its
--- CHECK, validated by 0085, and the change trail following a tree entry's targets and the
+-- CHECK, validated by 0086, and the change trail following a tree entry's targets and the
 -- entries a settlement names, since a tree entry has no parts.
 SET LOCAL lock_timeout = '2s';
 --> statement-breakpoint

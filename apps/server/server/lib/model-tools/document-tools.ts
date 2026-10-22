@@ -27,6 +27,7 @@ import type { DocumentCreationMetadata } from "../../domains/context/document-me
 import {
   type FileDestination,
   FileEditRefusedError,
+  type FileGrant,
   type Principal,
 } from "../../domains/file-policy/index.js";
 import {
@@ -56,6 +57,8 @@ import {
   keptDraftReader,
   removalBehind,
 } from "./file-access.js";
+import { displacedRefusal, resolveInverseTarget } from "./inverse-address.js";
+import { runNamespaceCommand } from "./namespace-commands.js";
 import { readDocument } from "./read-document.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import { evidenceOf, threadShownLinks } from "./shown-link-capture.js";
@@ -213,11 +216,12 @@ async function writeUnderGrant(
   copied: CopiedSource | undefined,
   ctx: ToolHandlerContext,
   uploadsChat: string | null | undefined,
+  given?: FileGrant<"edit">,
 ): Promise<
   | (WriteOutcome & { isError: false; evidence: ResultEvidence })
   | (WriteToolErrorOutput & { evidence?: ResultEvidence })
 > {
-  const grant = await documentGrant(deps, principal, parsed.command, address, "edit");
+  const grant = given ?? (await documentGrant(deps, principal, parsed.command, address, "edit"));
   if (isToolError(grant)) return grant;
   let written: WriteOutcome;
   try {
@@ -351,12 +355,16 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     const parsed = input as WriteToolInput;
     const skillRefusal = refuseSkillWrite(parsed);
     if (skillRefusal) return skillRefusal;
-    // Unpublished until phase C runs them (D66): the model is never shown either command.
-    if (parsed.command === "move" || parsed.command === "delete")
-      return writeToolError(parsed.command, "This command isn't available.", "internal_error");
     const call = await resolveToolCall(deps, ctx);
     if (isToolError(call)) return writeToolError(parsed.command, call.output.message);
+    if (parsed.command === "move" || parsed.command === "delete")
+      return runNamespaceCommand(deps, call, parsed, ctx);
     const { context, principal } = call;
+    const inverse =
+      parsed.command === "undo" || parsed.command === "redo" || parsed.command === "revert"
+        ? await resolveInverseTarget(deps, call, parsed.command, parsed.path, ctx.threadId)
+        : null;
+    if (isToolError(inverse)) return inverse;
     const creates = parsed.command === "create" || parsed.command === "copy";
     // A create or copy needs edit on the folder it makes the file in, at the
     // destination the file lands in; the namespace transaction confirms that
@@ -411,22 +419,24 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       copied = read;
     }
 
-    const address = await inContainer(deps, principal, parsed.command, target, () =>
-      resolveDocumentAddress(context, parsed.command, parsed.path, {
-        origin: {
-          type: "agent",
-          agentSlug: ctx.agentSlug,
-          threadId: ctx.threadId,
-          turnId: ctx.turnId,
-        },
-        ...(parsed.command === "copy" && copied
-          ? {
-              metadata: { copiedFrom: copied.copiedFrom },
-              sourceExtension: sourceExtension(copied.copiedFrom.uri),
-            }
-          : {}),
-      }),
-    );
+    const address = inverse
+      ? inverse.address
+      : await inContainer(deps, principal, parsed.command, target, () =>
+          resolveDocumentAddress(context, parsed.command, parsed.path, {
+            origin: {
+              type: "agent",
+              agentSlug: ctx.agentSlug,
+              threadId: ctx.threadId,
+              turnId: ctx.turnId,
+            },
+            ...(parsed.command === "copy" && copied
+              ? {
+                  metadata: { copiedFrom: copied.copiedFrom },
+                  sourceExtension: sourceExtension(copied.copiedFrom.uri),
+                }
+              : {}),
+          }),
+        );
     if (isToolError(address)) return address;
 
     const outcome = await writeUnderGrant(
@@ -437,7 +447,19 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       copied,
       ctx,
       context.resolution.uploadsOwner?.chatRef,
+      inverse?.grant,
     );
+    // Nothing of this chat's to reverse here, where it moved or deleted another document away.
+    if (
+      inverse &&
+      (parsed.command === "undo" || parsed.command === "redo" || parsed.command === "revert") &&
+      ["nothing_to_undo", "nothing_to_redo", "invalid_write"].includes(
+        outcome.isError ? outcome.output.status : outcome.result.status,
+      )
+    ) {
+      const displaced = await displacedRefusal(deps, call, parsed.command, address, ctx.threadId);
+      if (displaced) return displaced;
+    }
     const stagedCreate =
       creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;
     if (outcome.isError) {

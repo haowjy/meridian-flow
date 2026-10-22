@@ -11,6 +11,7 @@ import {
   contextSources,
   documents,
   projects,
+  threads,
   users,
   works,
 } from "@meridian/database/schema";
@@ -58,14 +59,22 @@ export function createDocumentRemoval(
       if (!removed.length) return [];
       const affected = await usingWorks(tx, removed);
       const now = input.at ?? new Date();
+      // A model's delete keeps its chat's owner too, who stands in once the chat is gone.
+      const [chat] = input.threadId
+        ? await tx
+            .select({ ownerId: threads.createdByUserId })
+            .from(threads)
+            .where(eq(threads.id, input.threadId))
+        : [];
       await tx
         .update(documents)
         .set({
           deletedAt: now,
           updatedAt: now,
           deletionReason: input.reason,
-          deletedByUserId: input.userId ?? null,
+          deletedByUserId: input.userId ?? chat?.ownerId ?? null,
           deletedByWorkId: input.workId ?? null,
+          deletedByThreadId: input.threadId ?? null,
           deletionCause: input.cause ?? null,
         })
         .where(inArray(documents.id, removed));
@@ -113,6 +122,7 @@ export async function restoreWorkDocuments(db: Database, workId: WorkId): Promis
       deletedByUserId: null,
       deletionCause: null,
       deletedByWorkId: null,
+      deletedByThreadId: null,
       locationVersion: sql`${documents.locationVersion} + 1`,
     })
     .where(eq(documents.deletedByWorkId, workId))
@@ -225,6 +235,7 @@ export async function restoreDocument(
               deletedAt: null,
               deletionReason: null,
               deletedByUserId: null,
+              deletedByThreadId: null,
               deletionCause: null,
               updatedAt: new Date(),
             })
@@ -280,11 +291,14 @@ export async function readRemovalRecords(
       userId: documents.deletedByUserId,
       displayName: users.name,
       workName: works.name,
+      chatId: threads.id,
+      chatTitle: threads.title,
       cause: documents.deletionCause,
     })
     .from(documents)
     .leftJoin(users, eq(users.id, documents.deletedByUserId))
     .leftJoin(works, eq(works.id, documents.deletedByWorkId))
+    .leftJoin(threads, eq(threads.id, documents.deletedByThreadId))
     .where(and(inArray(documents.id, [...documentIds]), isNotNull(documents.deletedAt)));
   for (const row of rows) {
     records.set(row.id as DocumentId, {
@@ -293,11 +307,13 @@ export async function readRemovalRecords(
       actor:
         row.workName !== null
           ? { kind: "work", name: row.workName }
-          : row.userId
-            ? { kind: "user", userId: row.userId, displayName: row.displayName }
-            : row.cause
-              ? { kind: "system", cause: row.cause }
-              : null,
+          : row.chatId !== null
+            ? { kind: "agent", chatTitle: row.chatTitle?.trim() || null }
+            : row.userId
+              ? { kind: "user", userId: row.userId, displayName: row.displayName }
+              : row.cause
+                ? { kind: "system", cause: row.cause }
+                : null,
     });
   }
   return records;

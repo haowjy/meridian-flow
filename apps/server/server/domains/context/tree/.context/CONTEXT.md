@@ -53,7 +53,12 @@ and prunes empty hidden ancestors. Closed draft identity rows remain.
 
 `acquireTreeScope` (`mutation-scope.ts`) is the one verified acquisition for a
 tree mutation whose namespaces are discovered, not known: end of use, Discard,
-hidden-node repair, and Apply's reveal and restore. It locks the namespaces it
+hidden-node repair, Apply's reveal and restore, and the inverses of moves and
+deletes. Its `placements` lock the sources of placements no row names yet (a
+move's undo returns to its old folder), each where that folder is now.
+`live-tree-state.ts` reads a document's live state as an edit history's tree
+entry records it, and moves a document back to a recorded placement; a deleted
+folder there is `folder_missing`, never recreated. It locks the namespaces it
 read, re-reads, then takes document locks. A moved scope throws and the caller,
 which owns the transaction, aborts and rediscovers. Hidden-node repair uses the
 same seam in its own transaction and reports after commit.
@@ -75,7 +80,9 @@ collab port, so collab need not import a context adapter. A removed document
 refuses as agent-edit's `DocumentNotFoundError` carrying its record in
 `removal`. A writer's Discard never sets the Work-cascade restore marker.
 Retractions name `reply_rolled_back` or `create_failed`; both repair paths name
-`repair` (one `DocumentRemovalCause`, from contracts).
+`repair` (one `DocumentRemovalCause`, from contracts). A model's delete names its
+chat (`deleted_by_thread_id`, actor `agent` with the chat's title) and keeps the
+chat's owner in `deleted_by_user_id`, who stands in once the chat is gone.
 
 `DocumentRemoval.remove` is the shared kernel for tree delete, overwrite, Work
 cascade and last use, and returns exactly the documents it tombstoned. It is

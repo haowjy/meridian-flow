@@ -297,6 +297,11 @@ export interface ContextLocationOptions extends ContextWriteOptions {
   authorizeDestination?: (uri: string) => Promise<boolean>;
   operationId?: string;
   expected?: MoveContextEntryRequest["expected"];
+  /**
+   * Runs inside the move's own transaction once its rows are written, so a caller's record of
+   * the move (the model's edit history) commits or rolls back with it.
+   */
+  inTransaction?: (moved: ContextMoveResult) => Promise<void>;
 }
 
 export interface ContextMoveOptions extends ContextWriteOptions {
@@ -307,6 +312,8 @@ export interface ContextDeleteOptions extends ContextWriteOptions {
   removal?: { reason: "discarded"; cause: RetractionCause };
   operationId?: string;
   expected: DeleteContextEntryRequest["expected"];
+  /** Runs inside the delete's own transaction once the removal is written (see the move's). */
+  inTransaction?: (deleted: DeleteContextEntryResult) => Promise<void>;
 }
 
 /** Input for writing a binary (storage-backed) document through {@link ContextPort.writeBinary}. */

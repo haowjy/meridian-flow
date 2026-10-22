@@ -341,7 +341,11 @@ function documentFailureRejected(tool: ToolView): string | null {
  * else reads passively.
  */
 function documentFailureRemoval(tool: ToolView): {
-  by: { kind: "person" | "work"; name: string } | { kind: "unfinished-reply" } | null;
+  by:
+    | { kind: "person" | "work"; name: string }
+    | { kind: "agent"; chat: string | null }
+    | { kind: "unfinished-reply" }
+    | null;
   reason: "deleted" | "discarded";
 } {
   const result = tool.result;
@@ -359,9 +363,11 @@ function documentFailureRemoval(tool: ToolView): {
       ? { kind: "person", name: person }
       : work
         ? { kind: "work", name: work }
-        : record?.kind === "system" && record.cause !== "repair"
-          ? { kind: "unfinished-reply" }
-          : null,
+        : record?.kind === "agent"
+          ? { kind: "agent", chat: name(record.chatTitle) }
+          : record?.kind === "system" && record.cause !== "repair"
+            ? { kind: "unfinished-reply" }
+            : null,
     reason: removal.reason === "discarded" ? "discarded" : "deleted",
   };
 }
@@ -391,6 +397,16 @@ function removedWriteCopy(
     return name
       ? t`${name} was deleted with the Work ${work} before this reply saved its change.`
       : t`This document was deleted with the Work ${work} before this reply saved its change.`;
+  }
+  if (by?.kind === "agent") {
+    const chat = by.chat;
+    return chat
+      ? name
+        ? t`The AI in ${chat} deleted ${name} before this reply saved its change.`
+        : t`The AI in ${chat} deleted this document before this reply saved its change.`
+      : name
+        ? t`The AI in a chat deleted ${name} before this reply saved its change.`
+        : t`The AI in a chat deleted this document before this reply saved its change.`;
   }
   return removal.reason === "discarded"
     ? name

@@ -4166,6 +4166,54 @@ msgstr "That Work is no longer available. Choose another Work."
 msgid "The AI asked you a question"
 msgstr "The AI asked you a question"
 
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in {chat} deleted {count} documents ({names})."
+msgstr "The AI in {chat} deleted {count} documents ({names})."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI in {chat} deleted {name} before this reply saved its change."
+msgstr "The AI in {chat} deleted {name} before this reply saved its change."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in {chat} deleted {title}."
+msgstr "The AI in {chat} deleted {title}."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI in {chat} deleted this document before this reply saved its change."
+msgstr "The AI in {chat} deleted this document before this reply saved its change."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in {chat} deleted this document, so this draft can't be applied."
+msgstr "The AI in {chat} deleted this document, so this draft can't be applied."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in {chat} deleted this document."
+msgstr "The AI in {chat} deleted this document."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in a chat deleted {count} documents ({names})."
+msgstr "The AI in a chat deleted {count} documents ({names})."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI in a chat deleted {name} before this reply saved its change."
+msgstr "The AI in a chat deleted {name} before this reply saved its change."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in a chat deleted {title}."
+msgstr "The AI in a chat deleted {title}."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI in a chat deleted this document before this reply saved its change."
+msgstr "The AI in a chat deleted this document before this reply saved its change."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in a chat deleted this document, so this draft can't be applied."
+msgstr "The AI in a chat deleted this document, so this draft can't be applied."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in a chat deleted this document."
+msgstr "The AI in a chat deleted this document."
+
 #: src/features/chat/chat-card-copy.ts
 msgid "The AI provider turned this request down."
 msgstr "The AI provider turned this request down."

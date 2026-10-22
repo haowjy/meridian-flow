@@ -11,7 +11,7 @@ export function createModelDocumentEdits(input: {
   drafts: ApplicationDraftStore;
   coordinator: Pick<LiveDocumentCoordinator, "withDocument">;
 }): DocumentEdits {
-  async function query(request: DocumentEditRequest) {
+  async function query(request: DocumentEditRequest & { command: { file: string } }) {
     const documentId = request.documentId as DocumentId;
     const view = request.context.linkView;
     let draftId: string | null = null;
@@ -26,6 +26,8 @@ export function createModelDocumentEdits(input: {
       draftId,
       documentIds: [documentId],
       threadId: request.threadId as ThreadId,
+      // A deleted document has no address of its own: results name it by the model's path.
+      path: request.command.file,
       turnId: request.context.turnId as TurnId | undefined,
       responseIdentity: request.context.responseIdentity,
     };

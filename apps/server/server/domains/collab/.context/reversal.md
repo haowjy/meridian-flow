@@ -63,6 +63,31 @@ in their active origin draft, leaving live untouched and making a pending change
 Closed drafts are never writable. Runtime context reports a card action by turn
 and document, not model handle. There are no inverse holds or blocking flags.
 
+## Tree entries (moves and deletes)
+
+A model's `move` or `delete` is a `document_edits` row with a `tree_change` and no parts
+(`domain/tree-inverse.ts`, PR 3). It keys as `editId:tree` in the same action index and takes
+its `seq` from the parts' id sequence, so one chronology orders text and tree across turns and
+writers. Its handle is on the same per-document, per-chat counter. It records the exact state
+transition in its destination (live placement or removal; a branch row's facts), and every
+inverse row records the transition it made (`targets` names the entry).
+
+Tree entries are judged by state, never by row presence: an entry stands while its
+destination still holds the `after` of its latest transition (the entry itself, or the latest
+redo or undo naming it, since a redone delete writes a new removal); an undo restores the
+`before`. A later own entry that was undone does not block, so A→B, B→C, undo, undo returns to
+A. Applied or discarded comes only from a later settlement row naming the entry. The card and
+rollback plan tree entries newest first per document on simulated states, run them before
+text (text lands in a document its restore brought back), across documents newest first, each
+in its own savepoint: a fault (`location_taken`, `folder_missing`, `superseded`) is a reported
+skip and the rest still run. A model inverse is all or nothing (`TreeInverseRefused`). Every
+tree inverse commits under `acquireTreeScope` over the attempt's documents and the placements
+it returns to, then re-reads the captured tree states (a mismatch is an attempt miss). Live
+moves back go through `moveToPlacement`, deletes back through `restoreDocument` naming the
+removal, redone deletes through `DocumentRemoval.remove`. A tree-only inverse has no text cuts,
+so the engine echoes no blocks. Turn targets include every document a turn moved or deleted,
+deleted or not. Drafted tree entries (phase E) are not written yet; their inverse throws.
+
 ## Effects and failures
 
 `hasEffect` compares the committed draft's `review_base` and `prosemirror` blocks.
