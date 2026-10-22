@@ -56,7 +56,11 @@ and lets a reply save the rest. Read agent-chain state fresh on every tool call;
 a Work switch or rebind must affect the next call.
 
 Targets are explicit: `document` for ordinary file access, `draft` for a
-Work-branch view, and `container` for creates. A create in a folder needs both
+Work-branch view, `container` for creates, and `restore` for a deleted document
+an inverse brings back: its facts are its own folder and source, live, without
+its own delete (a deleted folder or source above it still hides it), so a turn
+card's Undo or a model's undo by an old path is authorized where the document
+actually returns, not at the path it was shown at. A create in a folder needs both
 the container grant and the document grant it will write. Denials preserve a
 wire reason and the facts needed for allowed recovery; deleted reads are
 `not_found` (HTTP 404) and archived Work writes are `work_archived` (HTTP 403).
