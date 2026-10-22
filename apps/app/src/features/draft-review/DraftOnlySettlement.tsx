@@ -129,15 +129,20 @@ function WorkSettlement({
   const openReview = useOptionalOpenEditorReview();
   // Draft-only means "hidden live". The replica showing the document (by its
   // current id or an alias: a join, New file, a link's Create) makes it live at
-  // once for every Work. A tab the writer was looking at keeps the review it
-  // showed, opened over the live document: the view the chip's Draft choice gives.
+  // once for every Work. Showing means placed: the replica keeps a deleted
+  // document's record, and its draft stays draft-only until Apply brings it
+  // back. A tab the writer was looking at keeps the review it showed, opened
+  // over the live document: the view the chip's Draft choice gives.
   useEffect(() => {
     if (drafts.status !== "ready") return;
     const identities = resourceIdentityIndex(projection.records);
     const promoting = new Set<string>();
     for (const draft of lifecycle.presentations(projectId)) {
       const row = drafts.drafts?.find((candidate) => candidate.itemKey === draft.itemKey);
-      if (draft.workId !== workId || !row || !identities.byDocumentId(draft.documentId)) continue;
+      const record = identities.byDocumentId(draft.documentId);
+      if (draft.workId !== workId || !row || !record) continue;
+      if (record.resource.lifecycle.kind === "terminal") continue;
+      if (!projection.placement.resourceLocation(record)) continue;
       if (promoting.has(draft.documentId)) continue;
       promoting.add(draft.documentId);
       // The review the Editor shows, captured before promotion clears the entries: its
@@ -179,6 +184,7 @@ function WorkSettlement({
     drafts.drafts,
     drafts.status,
     projection.records,
+    projection.placement,
     projectId,
     workId,
     editorWorkId,
