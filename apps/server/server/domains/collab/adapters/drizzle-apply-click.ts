@@ -39,7 +39,11 @@ import { testHook } from "../../../shared/test-hooks.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
-import { dropDocumentRows, readBranchTreeFacts } from "../../context/tree/branch-tree-store.js";
+import {
+  dropDocumentRows,
+  endCreatedFact,
+  readBranchTreeFacts,
+} from "../../context/tree/branch-tree-store.js";
 import { tombstoneUnused } from "../../context/tree/end-use.js";
 import { moveToPlacement } from "../../context/tree/live-tree-state.js";
 import { acquireTreeScope, TreeScopeChangedError } from "../../context/tree/mutation-scope.js";
@@ -113,17 +117,20 @@ export function createDrizzleApplyClick(
     status: "closed",
     commandId: command.envelope.commandId,
   });
-  /** Places a hidden creation where the branch has it; false when another node holds that path. */
-  async function reveal(node: TreeStateNode): Promise<boolean> {
+  /** Places a hidden creation at `at`; false when another node holds that path. */
+  async function reveal(
+    node: TreeStateNode,
+    at: Pick<TreeStateNode["target"], "contextSourceId" | "parentFolderId" | "name" | "extension">,
+  ): Promise<boolean> {
     const placed = await place(db, {
       targets: [
         {
           node: { kind: "document", id: node.nodeId },
           at: {
-            contextSourceId: node.target.contextSourceId,
-            parentFolderId: node.target.parentFolderId,
-            name: node.target.name,
-            extension: node.target.extension,
+            contextSourceId: at.contextSourceId,
+            parentFolderId: at.parentFolderId,
+            name: at.name,
+            extension: at.extension,
           },
         },
       ],
@@ -376,16 +383,28 @@ export function createDrizzleApplyClick(
                       if (moved.kind !== "moved") throw new ApplyClickRefused("forbidden");
                       replaced = node.from?.uri ?? node.from?.path;
                     }
-                    // A creation (moved or not) is revealed where the branch has it.
+                    // A creation is revealed: by a tree cut where the branch has it (moved or
+                    // not); by a text-only click at its own row, since text can't land in a
+                    // document live lacks, and a pending move or delete stays pending (§4).
                     if (node?.hidden && node.origin === "created" && (cut || base)) {
-                      if (!(await reveal(node))) return held();
+                      const at = cut
+                        ? node.target
+                        : {
+                            contextSourceId: locked.contextSourceId,
+                            parentFolderId: locked.folderId,
+                            name: locked.name,
+                            extension: locked.extension,
+                          };
+                      if (!(await reveal(node, at))) return held();
                     }
-                    if (cut || node?.origin === "created")
+                    if (cut)
                       await dropDocumentRows(db, {
                         branchId,
                         documentIds: [command.documentId],
                         settle: { as: "applied", userId },
                       });
+                    else if (node?.origin === "created")
+                      await endCreatedFact(db, { branchId, documentId: command.documentId });
                     if (!base || !click) {
                       deferUntilDrizzleCommit(() => deps.onCommitted(command.documentId));
                       return finish({

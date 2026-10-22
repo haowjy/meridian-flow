@@ -51,6 +51,36 @@ export async function recordCreated(
     });
 }
 
+/**
+ * A text-only Apply revealed the branch's creation: the branch no longer creates it, while a
+ * move or delete it drafted stays pending on the now-live document (design-v2 §4), with a new
+ * revision so a tree cut frozen before answers `changed`. A row that said nothing more goes.
+ */
+export async function endCreatedFact(
+  db: Database,
+  input: { branchId: BranchId; documentId: DocumentId },
+): Promise<void> {
+  const tx = currentDrizzleDb(db);
+  const key = and(
+    eq(branchTreeChanges.branchId, input.branchId),
+    eq(branchTreeChanges.nodeKind, "document"),
+    eq(branchTreeChanges.nodeId, input.documentId),
+  );
+  await tx
+    .delete(branchTreeChanges)
+    .where(and(key, eq(branchTreeChanges.moved, false), eq(branchTreeChanges.deleted, false)));
+  await tx
+    .update(branchTreeChanges)
+    .set({
+      created: false,
+      createdThreadId: null,
+      createdTurnId: null,
+      revision: sql`nextval('branch_tree_change_revision')`,
+      updatedAt: new Date(),
+    })
+    .where(key);
+}
+
 /** Who ended a branch's drafted entries, and how: the writer's Apply or Discard, or a cleanup. */
 export type BranchSettlement = { as: "applied" | "discarded"; userId?: UserId | null };
 
