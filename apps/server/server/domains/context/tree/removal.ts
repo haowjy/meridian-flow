@@ -127,7 +127,6 @@ export async function restoreWorkDocuments(
   workId: WorkId,
 ): Promise<{
   workIds: WorkId[];
-  restored: readonly { documentId: DocumentId; at: PlaceTarget["at"] }[];
 }> {
   const tx = currentDrizzleDb(db);
   const rows = await tx
@@ -150,22 +149,12 @@ export async function restoreWorkDocuments(
     deletedByWorkId: null,
     deletedByThreadId: null,
   } as const;
-  const restored: { documentId: DocumentId; at: PlaceTarget["at"] }[] = [];
   for (const row of rows) {
     if (row.hidden) {
       await tx
         .update(documents)
         .set({ ...clear, locationVersion: sql`${documents.locationVersion} + 1` })
         .where(eq(documents.id, row.id));
-      restored.push({
-        documentId: row.id as DocumentId,
-        at: {
-          contextSourceId: row.sourceId as ContextSourceId,
-          parentFolderId: row.folderId as FolderId | null,
-          name: row.name,
-          extension: row.extension,
-        },
-      });
       continue;
     }
     const node: NodeRef = { kind: "document", id: row.id as DocumentId };
@@ -195,14 +184,12 @@ export async function restoreWorkDocuments(
       },
     );
     if (!placed.ok) throw new Error(`Work restore could not place ${row.id}: ${placed.error.code}`);
-    restored.push({ documentId: row.id as DocumentId, at: placed.value.at });
   }
   return {
     workIds: await usingWorks(
       tx,
       rows.map(({ id }) => id as DocumentId),
     ),
-    restored,
   };
 }
 

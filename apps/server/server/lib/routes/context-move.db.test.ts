@@ -1,5 +1,6 @@
 /** Postgres-backed coverage for promoting work-scoped scratch documents. */
 
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -618,6 +619,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: folderId,
         contextSourceId: otherSourceId,
         name: "Destination",
+        documentAlias: folderDocumentName("Destination"),
       });
       await expect(
         port.commitWriterLocation("scratch://@w1/Untitled 1", "manuscript://Act 1/Untitled 1", {

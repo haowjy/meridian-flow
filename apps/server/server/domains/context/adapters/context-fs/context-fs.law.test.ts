@@ -203,7 +203,7 @@ describe("ContextFS createUntitledDocument", () => {
     ).toEqual(["Untitled 1", "Untitled 2"]);
   });
 
-  it("returns a conflict after bounded allocation collisions", async () => {
+  it("returns a conflict after an identity claim collision", async () => {
     const { fs, store } = createUntitledFs({});
     vi.spyOn(store, "createDocumentRecordIfAbsent").mockResolvedValue(null);
 
@@ -211,7 +211,7 @@ describe("ContextFS createUntitledDocument", () => {
       ok: false,
       error: { code: "conflict" },
     });
-    expect(store.createDocumentRecordIfAbsent).toHaveBeenCalledTimes(32);
+    expect(store.createDocumentRecordIfAbsent).toHaveBeenCalledOnce();
   });
 });
 

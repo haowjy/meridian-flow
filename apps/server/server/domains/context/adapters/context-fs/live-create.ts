@@ -15,6 +15,7 @@ import {
   allocateFilename,
   type Filetype,
   type NamespaceNameClaim,
+  namespaceName,
   sameNamespaceName,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
@@ -121,7 +122,6 @@ export type OptimisticOutcome = {
   name?: string;
 };
 
-const OPTIMISTIC_NAME_ATTEMPTS = 32;
 const UNTITLED_NAME_PATTERN = /^Untitled (\d+)$/;
 
 function highestUntitled(filenames: ReadonlySet<string>): number {
@@ -196,20 +196,31 @@ export class LiveCreate {
   ): Promise<Result<{ documentId: string; path: string }, AdapterFault>> {
     const target = resolveCreateTarget(path);
     if (!target.ok) return target;
-    const unavailable = [...reserved];
+    let startSuffix = 1;
     for (;;) {
+      let found: Exclude<Discovery, { kind: "conflict" }> | null = null;
+      let checks = 0;
       const filename = await allocateFilename(
         { kind: "document", name: target.value.name, extension: target.value.extension },
-        (candidate) => unavailable.some((claim) => sameNamespaceName(candidate, claim)),
+        async (candidate) => {
+          checks += 1;
+          if (reserved.some((claim) => sameNamespaceName(candidate, claim))) return true;
+          const candidatePath = joinPath(target.value.dir.join("/"), candidate.filename);
+          const candidateTarget = resolveCreateTarget(candidatePath);
+          if (!candidateTarget.ok) {
+            throw new Error(`Allocator produced an invalid context path: ${candidatePath}`);
+          }
+          const discovery = await this.deps.executor.exclusive(() =>
+            this.discover(candidateTarget.value),
+          );
+          if (discovery.kind === "conflict") return true;
+          found = discovery;
+          return false;
+        },
+        startSuffix,
       );
       const candidatePath = joinPath(target.value.dir.join("/"), filename);
-      const candidate = resolveCreateTarget(candidatePath);
-      if (!candidate.ok) return candidate;
-      const found = await this.deps.executor.exclusive(() => this.discover(candidate.value));
-      if (found.kind === "conflict") {
-        unavailable.push({ kind: "document", filename });
-        continue;
-      }
+      if (!found) throw new Error(`Free-name allocation did not inspect ${candidatePath}`);
       const binding =
         markdown.length > 0
           ? await this.deps.boundWrites.bind(candidatePath, null, markdown)
@@ -225,7 +236,9 @@ export class LiveCreate {
       if (attempted.value.kind === "created") {
         return Ok({ documentId: attempted.value.documentId, path: candidatePath });
       }
-      unavailable.push({ kind: "document", filename });
+      // Only admission can invalidate the accepted candidate. Continue after it rather than
+      // replaying every occupied prefix through discovery.
+      startSuffix += checks;
     }
   }
 
@@ -405,72 +418,68 @@ export class LiveCreate {
       return Err({ code: "stale_target" });
     }
     const extra = { options: input.options };
-    const hiddenNames = new Set(await store.listHiddenNames(folderId));
-    let lastNumber = 0;
-    for (let attempt = 0; attempt < OPTIMISTIC_NAME_ATTEMPTS; attempt += 1) {
-      const live = [
-        ...(await store.listDocuments(LIVE_TREE, folderId)).map(
-          (document) =>
-            ({
-              kind: "document",
-              filename: renderFilename(document.name, document.extension),
-            }) as const,
-        ),
-        ...(await store.listFolders(LIVE_TREE, folderId)).map(
-          (folder) => ({ kind: "folder", filename: folder.name }) as const,
-        ),
-      ];
-      let target: { name: string; extension: string; filetype: Filetype };
-      let plan: LiveCreatePlan;
-      let joinFrom: DocumentId | undefined;
-      if (input.leaf === null) {
-        // Untitled names skip what hidden documents hold: a scratch never joins an AI document.
-        const taken = new Set([...live.map((claim) => claim.filename), ...hiddenNames]);
-        lastNumber = Math.max(lastNumber, highestUntitled(taken)) + 1;
-        target = {
-          name: `Untitled ${lastNumber}`,
-          extension: "",
-          filetype: DEFAULT_EDITABLE_FILETYPE,
+    const live = [
+      ...(await store.listDocuments(LIVE_TREE, folderId)).map(
+        (document) =>
+          ({
+            kind: "document",
+            filename: renderFilename(document.name, document.extension),
+          }) as const,
+      ),
+      ...(await store.listFolders(LIVE_TREE, folderId)).map(
+        (folder) => ({ kind: "folder", filename: folder.name }) as const,
+      ),
+    ];
+    let target: { name: string; extension: string; filetype: Filetype };
+    let plan: LiveCreatePlan;
+    let joinFrom: DocumentId | undefined;
+    if (input.leaf === null) {
+      // Untitled names skip what hidden documents hold: a scratch never joins an AI document.
+      const hiddenNames = await store.listHiddenNames(folderId);
+      const taken = new Set([...live.map(namespaceName), ...hiddenNames]);
+      target = {
+        name: `Untitled ${highestUntitled(taken) + 1}`,
+        extension: "",
+        filetype: DEFAULT_EDITABLE_FILETYPE,
+      };
+      plan = { kind: "mint", id: input.documentId };
+    } else {
+      const free = await allocateFilename({ kind: "document", ...input.leaf }, (candidate) =>
+        live.some((claim) => sameNamespaceName(candidate, claim)),
+      );
+      const parsedFree = input.leaf.extension
+        ? free.slice(0, -(input.leaf.extension.length + 1))
+        : free;
+      target = { ...input.leaf, name: parsedFree };
+      const atTypedName = parsedFree === input.leaf.name;
+      if (atTypedName && found.kind === "candidate") {
+        plan = {
+          kind: "reveal",
+          reveal: { documentId: found.documentId, sourceId: found.sourceId },
         };
-        plan = { kind: "mint", id: input.documentId };
-      } else {
-        const free = await allocateFilename({ kind: "document", ...input.leaf }, (candidate) =>
-          live.some((claim) => sameNamespaceName(candidate, claim)),
-        );
-        const parsedFree = input.leaf.extension
-          ? free.slice(0, -(input.leaf.extension.length + 1))
-          : free;
-        target = { ...input.leaf, name: parsedFree };
-        const atTypedName = parsedFree === input.leaf.name;
-        if (atTypedName && found.kind === "candidate") {
-          plan = {
-            kind: "reveal",
-            reveal: { documentId: found.documentId, sourceId: found.sourceId },
-          };
-          joinFrom = input.documentId;
-        } else plan = { kind: "mint", id: input.documentId };
-      }
-      const created = await this.atomically({ ...target, folderId }, plan, {
-        ...extra,
-        provisionalName: input.leaf === null,
-        ...(joinFrom ? { joinFrom } : {}),
-      });
-      if (created.ok) {
-        const { document, revealed } = created.value;
-        return Ok({
-          status: revealed ? "joined" : "created",
-          documentId: document.id as DocumentId,
-          name: renderFilename(document.name, document.extension),
-        });
-      }
-      if (created.error.code !== "conflict") return created;
-      // The name was taken since we listed it: look again, unless the id itself landed.
-      const landed = await alreadyHere();
-      if (landed) return Ok(landed);
-      const raced = await store.findForward(input.documentId, projectId);
-      if (raced) return Ok({ status: "joined", documentId: raced as DocumentId });
+        joinFrom = input.documentId;
+      } else plan = { kind: "mint", id: input.documentId };
     }
-    return Err({ code: "conflict" });
+    const created = await this.atomically({ ...target, folderId }, plan, {
+      ...extra,
+      provisionalName: input.leaf === null,
+      ...(joinFrom ? { joinFrom } : {}),
+    });
+    if (created.ok) {
+      const { document, revealed } = created.value;
+      return Ok({
+        status: revealed ? "joined" : "created",
+        documentId: document.id as DocumentId,
+        name: renderFilename(document.name, document.extension),
+      });
+    }
+    if (created.error.code !== "conflict") return created;
+    const landed = await alreadyHere();
+    if (landed) return Ok(landed);
+    const raced = await store.findForward(input.documentId, projectId);
+    return raced
+      ? Ok({ status: "joined", documentId: raced as DocumentId })
+      : Err({ code: "conflict" });
   }
 
   /**

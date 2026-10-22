@@ -6,6 +6,7 @@
  * write becomes durable (file-access §5, §5.2).
  */
 
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -464,8 +465,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         isPrimary: true,
       });
       await db.insert(schema.folders).values([
-        { id: ASSETS_ID, contextSourceId: MANUSCRIPT_ID, name: "assets" },
-        { id: ART_ID, contextSourceId: MANUSCRIPT_ID, name: "art" },
+        {
+          id: ASSETS_ID,
+          contextSourceId: MANUSCRIPT_ID,
+          name: "assets",
+          documentAlias: folderDocumentName("assets"),
+        },
+        {
+          id: ART_ID,
+          contextSourceId: MANUSCRIPT_ID,
+          name: "art",
+          documentAlias: folderDocumentName("art"),
+        },
       ]);
       await db.insert(schema.documents).values({
         id: MAP_ID,
