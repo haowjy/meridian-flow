@@ -532,8 +532,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     drafts: (branchId, documentIds) =>
       durableWorkBranchPendingStore.listBranchDraftMetadata(branchId, documentIds),
     pendingThreadIds: durableWorkBranchPendingStore.pendingThreadIds,
-    creators: (branchId, documentIds) =>
-      durableWorkBranchPendingStore.listCreators(branchId, documentIds),
+    treeActors: (branchId, documentIds) =>
+      durableWorkBranchPendingStore.listTreeActors(branchId, documentIds),
   });
   // The harness keeps no draft rooms but the fake hocuspocus's: retirement closes those and
   // the pooled cores' thread state.

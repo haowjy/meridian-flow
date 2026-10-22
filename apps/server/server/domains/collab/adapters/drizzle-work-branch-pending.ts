@@ -1,7 +1,7 @@
-/** Drizzle store for what is pending review in a Work: counts, the branches changing a document, creators and evidence. */
+/** Drizzle store for what is pending review in a Work: counts, the branches changing a document, the chats behind its tree rows and evidence. */
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branches, documentDrafts, works } from "@meridian/database/schema";
+import { branches, branchTreeChanges, documentDrafts, works } from "@meridian/database/schema";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { livingDocumentUses, pendingDocuments } from "../../context/tree/tree-view.js";
@@ -65,27 +65,37 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
         originWorkName: row.isNoWork ? null : row.name,
       }));
     },
-    async listCreators(branchId, documentIds) {
-      const branchTreeChanges = livingDocumentUses(currentDrizzleDb(db));
-      const rows = await currentDrizzleDb(db)
-        .select({
-          documentId: branchTreeChanges.nodeId,
-          threadId: branchTreeChanges.createdThreadId,
-        })
-        .from(branchTreeChanges)
-        .where(
-          and(
-            eq(branchTreeChanges.branchId, branchId),
-            eq(branchTreeChanges.nodeKind, "document"),
-            isNotNull(branchTreeChanges.createdThreadId),
-            documentIds ? inArray(branchTreeChanges.nodeId, [...documentIds]) : undefined,
-          ),
+    async listTreeActors(branchId, documentIds) {
+      // A creation counts only while its document lives; a move or delete stays the chat's
+      // while the row holds it, whatever live did to the document since (D79).
+      const uses = livingDocumentUses(currentDrizzleDb(db));
+      const scope = (table: typeof uses | typeof branchTreeChanges) =>
+        and(
+          eq(table.branchId, branchId),
+          eq(table.nodeKind, "document"),
+          documentIds ? inArray(table.nodeId, [...documentIds]) : undefined,
         );
-      return new Map(
-        rows.flatMap((row) =>
-          row.threadId ? [[row.documentId as DocumentId, row.threadId as string] as const] : [],
-        ),
-      );
+      const [created, changed] = await Promise.all([
+        currentDrizzleDb(db)
+          .select({ documentId: uses.nodeId, threadId: uses.createdThreadId })
+          .from(uses)
+          .where(and(scope(uses), isNotNull(uses.createdThreadId))),
+        currentDrizzleDb(db)
+          .select({
+            documentId: branchTreeChanges.nodeId,
+            threadId: branchTreeChanges.changedThreadId,
+          })
+          .from(branchTreeChanges)
+          .where(and(scope(branchTreeChanges), isNotNull(branchTreeChanges.changedThreadId))),
+      ]);
+      const actors = new Map<DocumentId, string[]>();
+      for (const row of [...changed, ...created]) {
+        if (!row.threadId) continue;
+        const list = actors.get(row.documentId as DocumentId) ?? [];
+        if (!list.includes(row.threadId)) list.push(row.threadId);
+        actors.set(row.documentId as DocumentId, list);
+      }
+      return actors;
     },
     async listBranchDraftMetadata(branchId, documentIds) {
       const rows = await currentDrizzleDb(db)

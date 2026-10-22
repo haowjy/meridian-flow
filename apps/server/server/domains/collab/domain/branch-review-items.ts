@@ -48,7 +48,7 @@ export type DraftReviewItem = {
    * `movedFrom` is where live has a moving document now (`path` is where the branch puts it).
    */
   tree: { revision: string | null; movedFrom: string | null; deleted: boolean } | null;
-  /** Chats with pending writes on the draft, latest first, then the creating chat. */
+  /** Chats with pending writes on the draft, latest first, then the chats behind its tree row. */
   actorThreadIds: string[];
   updatedAt: Date;
 };
@@ -78,11 +78,11 @@ export function createBranchReviewItems(deps: {
   ): Promise<readonly WorkBranchDraftMetadata[]>;
   /** Expensive receipt membership, read only for listed items. */
   pendingThreadIds(draftId: string): Promise<string[]>;
-  /** The chat that created each document the branch created; absent for a writer's create. */
-  creators(
+  /** The chats behind each document's branch row (moved or deleted it, created it). */
+  treeActors(
     branchId: BranchId,
     documentIds?: readonly DocumentId[],
-  ): Promise<ReadonlyMap<DocumentId, string>>;
+  ): Promise<ReadonlyMap<DocumentId, readonly string[]>>;
 }): BranchReviewItems {
   async function items(
     branchId: BranchId,
@@ -95,11 +95,11 @@ export function createBranchReviewItems(deps: {
       drafts.map((evidence) => evidence.documentId),
       documentIds,
     );
-    const creators = await deps.creators(branchId, documentIds);
+    const treeActors = await deps.treeActors(branchId, documentIds);
     const resolved = await Promise.all(
       nodes.map(async (node) => {
         const evidence = draftOf.get(node.nodeId);
-        const item = toItem(branchId, node, evidence, creators.get(node.nodeId));
+        const item = toItem(branchId, node, evidence, treeActors.get(node.nodeId) ?? []);
         item.conflict ??= await waitsFor(branchId, node);
         return { item, listed: node.pending };
       }),
@@ -155,7 +155,7 @@ function toItem(
   branchId: BranchId,
   node: TreeStateNode,
   evidence: WorkBranchDraftMetadata | undefined,
-  creatorThreadId: string | undefined,
+  treeActorThreadIds: readonly string[],
 ): DraftReviewItem {
   const deletedLive = !node.hidden && node.deleted;
   const isNew = node.origin === "created" && node.hidden;
@@ -182,7 +182,7 @@ function toItem(
     path,
     conflict: conflictOf(node),
     deletedLive,
-    actorThreadIds: creatorThreadId ? [creatorThreadId] : [],
+    actorThreadIds: [...treeActorThreadIds],
     updatedAt: evidence?.updatedAt ?? new Date(),
   };
 }

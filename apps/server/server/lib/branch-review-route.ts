@@ -20,6 +20,7 @@ import {
   type BranchCommandPendingResponse,
   type BranchCommandResult,
   type BranchDiscardAllRequest,
+  type DocumentDraftHint,
   type DocumentDraftHintsResponse,
   type DraftMetadataResponse,
   type ThreadDraftListItem,
@@ -37,6 +38,7 @@ import {
   commandDigest,
 } from "../domains/collab/domain/branch-commands.js";
 import type { DraftReviewItem } from "../domains/collab/domain/branch-review-items.js";
+import type { DocumentBranchOrigin } from "../domains/collab/domain/ports/work-branch-pending-store.js";
 import { reviewContextLocation } from "../domains/collab/domain/work-branch-review-service.js";
 import {
   type FileAccessDenied,
@@ -405,13 +407,32 @@ export async function handleDocumentDraftHintsRequest(
   if (!readable.has(input.documentId)) return { items: [] };
   const branches = await deps.documentSync.draftReview.branchesChangingDocument(input);
   return {
-    items: branches.map((branch) => ({
-      branchId: branch.branchId,
-      itemKey: draftItemKey(branch.branchId, input.documentId),
-      label: branch.originWorkName,
-      originWorkId: branch.originWorkId,
-    })),
+    items: await Promise.all(
+      branches.map(async (branch) => ({
+        branchId: branch.branchId,
+        itemKey: draftItemKey(branch.branchId, input.documentId),
+        label: branch.originWorkName,
+        originWorkId: branch.originWorkId,
+        tree: await pendingTreeChange(deps, branch, input.documentId),
+      })),
+    ),
   };
+}
+
+/** What the branch's row does to the document's placement, for the Work notice on live (D26). */
+async function pendingTreeChange(
+  deps: BranchRouteServices,
+  branch: DocumentBranchOrigin,
+  documentId: DocumentId,
+): Promise<DocumentDraftHint["tree"]> {
+  const resolved = await deps.documentSync.draftReview.resolveItemByDocument({
+    workId: branch.originWorkId,
+    documentId,
+  });
+  const tree = resolved?.branchId === branch.branchId ? resolved.item.tree : null;
+  if (tree?.deleted) return { deleted: true };
+  const movedTo = tree?.movedFrom ? reviewContextLocation(resolved?.item.path ?? null) : null;
+  return movedTo ? { movedTo } : null;
 }
 
 // --- Commands ----------------------------------------------------------------------------------

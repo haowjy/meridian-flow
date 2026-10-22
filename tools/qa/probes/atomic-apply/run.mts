@@ -145,7 +145,7 @@ async function fixture(
       tree: createTreeReader(h.db),
       drafts: pending.listBranchDraftMetadata,
       pendingThreadIds: pending.pendingThreadIds,
-      creators: pending.listCreators,
+      treeActors: pending.listTreeActors,
     }),
   });
   const service = createApplyClickService({
