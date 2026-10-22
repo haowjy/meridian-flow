@@ -25,7 +25,7 @@ import {
   settlementOf,
   type TransitionEntry,
   TreeInverseRefused,
-  treeChangedReason,
+  treeChangedCause,
   treeEntrySummary,
   treeFaultReason,
   treeInverseFact,
@@ -256,7 +256,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       if (planned) return planned;
       return {
         status: `cant_${verb}_changed`,
-        message: `${entry.handle} can't be ${verb === "undo" ? "undone" : "redone"}: the document was ${treeChangedReason(states, destination)} you ${verb === "undo" ? "made" : "undid"} it. ${follow}`,
+        message: `${entry.handle} can't be ${verb === "undo" ? "undone" : "redone"}: the document was ${treeChangedCause(states, destination).replace("_", " ")} you ${verb === "undo" ? "made" : "undid"} it. ${follow}`,
       };
     }
     function revertSelection(entry: Entry, inspection = inspect()) {

@@ -63,6 +63,8 @@ type TreeEntryFields = {
 export type TreeTransitionChange = TreeTransition &
   TreeEntryFields & {
     op: TreeChangeOp;
+    /** Where a model's move left it, for the turn's receipt line; the move's own row sets it. */
+    landedAt?: string;
     /** What an undo, redo, revert or rollback reverses. */
     targets: TreeChangeTarget[];
   };

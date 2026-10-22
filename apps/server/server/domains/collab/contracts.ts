@@ -193,6 +193,8 @@ export type AgentTreeHistory = {
         > & { branchId: import("@meridian/contracts").BranchId });
     /** Where the model saw the document: the path it moved or deleted it from. */
     shownAt: string;
+    /** A move's destination as a canonical URI. */
+    landedAt?: string;
   }): Promise<{ handle: string }>;
   /** The document's live state now, as a tree entry records it; null while it is hidden. */
   liveState(documentId: DocumentId): Promise<import("@meridian/contracts").LiveTreeState | null>;

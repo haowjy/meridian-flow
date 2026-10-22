@@ -6,9 +6,10 @@ import {
 } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
-  copySourcePath,
   documentToolFailed,
+  sourcePath,
   stringInput,
+  toolCommand,
   toolInputObject,
 } from "@meridian/thread-client";
 import { ChevronRight, FileText, Folder } from "lucide-react";
@@ -26,6 +27,7 @@ import {
 } from "./command-descriptor";
 import { DocumentName } from "./DocumentName";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
+import { namespaceRefusalCopy } from "./namespace-refusal-copy";
 import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
@@ -212,7 +214,8 @@ function documentFailureStatus(tool: ToolView): string | null {
 }
 
 function copySource(tool: ToolView): string | null {
-  const source = copySourcePath(inputObject(tool));
+  if (toolCommand(tool) !== "copy") return null;
+  const source = sourcePath(inputObject(tool));
   return source ? documentDisplayName(source) : null;
 }
 
@@ -221,8 +224,10 @@ function copyNotFoundCopy(tool: ToolView, source: string, destination: string | 
   return destination ? t`Couldn't find ${source} or ${destination}.` : t`Couldn't find ${source}.`;
 }
 
+/** The document a failed call acted on: a move's is its source, not where it was going. */
 function documentFailureDocumentName(tool: ToolView): string | null {
-  const path = asString(inputObject(tool).path);
+  const input = inputObject(tool);
+  const path = toolCommand(tool) === "move" ? sourcePath(input) : asString(input.path);
   if (!path) return null;
   return documentDisplayName(path);
 }
@@ -314,6 +319,8 @@ export function documentToolFailureCopy(tool: ToolView): string {
         ? t`Some changes to ${name} couldn't be completed.`
         : t`Some changes couldn't be completed.`;
     case "invalid_write": {
+      const refused = namespaceRefusalCopy(inputObject(tool), documentFailureRefusal(tool));
+      if (refused) return refused;
       const reason =
         documentFailureRejected(tool) === "removed"
           ? removedWriteCopy(name, documentFailureRemoval(tool))
@@ -326,6 +333,13 @@ export function documentToolFailureCopy(tool: ToolView): string {
         ? t`Something went wrong while changing ${name}.`
         : t`Something went wrong while making that change.`;
   }
+}
+
+/** Why a `move` or `delete` was refused, from its typed result. */
+function documentFailureRefusal(tool: ToolView): string | null {
+  const result = tool.result;
+  if (result === null || typeof result !== "object" || Array.isArray(result)) return null;
+  return asString(result.refusal) ?? null;
 }
 
 /** The host's structured reason a staged write was rejected, when it gave one. */
@@ -435,8 +449,10 @@ function rejectionCopy(rejected: string | null): string | null {
 }
 
 function DocumentToolTitle({ tool }: { tool: ToolView }) {
-  const path = asString(inputObject(tool).path);
+  const input = inputObject(tool);
+  const path = asString(input.path);
   const descriptor = descriptorFor(tool);
+  const command = toolCommand(tool);
 
   if (isCatchUpPause(tool)) {
     // True whether the passage changed or the AI hadn't seen all of it: it got the text either way.
@@ -445,7 +461,13 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
   }
   if (documentToolFailed(tool)) {
     const verb = descriptor.failureVerb();
-    return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
+    // A move that didn't run left its document where it was.
+    const subject = command === "move" ? (sourcePath(input) ?? path) : path;
+    return subject ? (
+      <CommandTitle verb={verb} parameter={<DocumentName path={subject} />} />
+    ) : (
+      verb
+    );
   }
 
   const phrase = toolActivityPhrase(tool);
@@ -453,7 +475,16 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
   // and therefore offers no door onto one.
   if (tool.status !== "complete") return <PhraseTitle phrase={phrase} />;
   if (!path) return descriptor.pathlessTitle?.() ?? <PhraseTitle phrase={phrase} />;
-  return <CommandTitle verb={phrase.verb} parameter={<DocumentName path={path} />} />;
+  // A deleted document's old address may hold another document now: no door.
+  if (command === "delete") return <PhraseTitle phrase={phrase} />;
+  return (
+    <CommandTitle
+      verb={phrase.verb}
+      parameter={
+        <DocumentName path={path} name={command === "move" ? phrase.parameter : undefined} />
+      }
+    />
+  );
 }
 
 const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | null> = {

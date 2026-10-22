@@ -103,13 +103,16 @@ re-reads the captured tree states (a mismatch is an attempt miss). Live moves ba
 `moveToPlacement`, deletes back through `restoreDocument` naming the removal, redone deletes
 through `DocumentRemoval.remove`. A tree-only inverse has no text cuts, so the engine echoes no
 blocks. Turn targets include every document a turn moved or deleted, deleted or not;
-the card authorizes them from those targets, not the display lineage (which drops documents
-with no path), and a deleted one at its restore destination (file-policy's `restore` target). A
-drafted tree entry's inverse writes back the branch row's facts its entry recorded (an undo its
-`before`, a redo its `after`; `writeBackBranchFacts`) while the row still holds the state the plan
-started from, its branch is active, a moved folder still stands and the branch's view has room;
-the attempt also locks that branch's Work and where the branch has the document. A document the
-branch deleted is authorized where its row is (file facts' branch-deleted fallback).
+the card authorizes them from those targets, and a deleted one at its restore destination
+(file-policy's `restore` target). The turn lineage gives each document the turn moved or
+deleted its net tree line per destination (live, or the Work whose branch a drafted entry names) (`TurnTreeLine`: deleted, or moved from its first `shownAt` to its last
+move's `landedAt`), leaving out entries a rollback reversed; a deleted one keeps its row at the
+address it was deleted from, read through the same `restore` target. A drafted tree entry's
+inverse writes back the branch row's facts its entry recorded (an undo its `before`, a redo its
+`after`; `writeBackBranchFacts`) while the row still holds the state the plan started from, its
+branch is active, a moved folder still stands and the branch's view has room; the attempt also
+locks that branch's Work and where the branch has the document. A document the branch deleted is
+authorized where its row is (file facts' branch-deleted fallback).
 
 ## Effects and failures
 
@@ -142,7 +145,11 @@ A card outcome reports committed destination per document. Draft Undo says that
 Apply is needed to change the manuscript. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`, `nothing_to_redo`,
 `cant_undo_dependent`, `expired`, or `partial` with HTTP 200; callers retain
-those outcomes and refresh the turn query.
+those outcomes and refresh the turn query. A reversal that reversed nothing because a move or
+delete met a taken location, a missing folder, or a document moved or deleted again answers
+`location_taken`, `folder_missing` or `superseded` (per document too), never `expired` or
+`cant_undo_dependent`. Every skipped part carries a typed `cause` (`TurnInverseSkipCause`) and the
+app words it; a tree skip names the path its entry was shown at.
 
 Failed-response rollback selects immutable parts by `editScopeId`, records
 accepted parts as terminal rollback edits, and keeps only uninvertible pending
@@ -150,5 +157,5 @@ targets in `rollback_pending`. A failed checkpoint or report cannot reject a
 durable save.
 
 A released closed draft has no bytes from which to describe a receipt's prose.
-Live has unrelated Yjs identity, so skipped inverse parts can retain their reason
+Live has unrelated Yjs identity, so skipped inverse parts can retain their cause
 without before/after snippets; never merge live to manufacture them.
