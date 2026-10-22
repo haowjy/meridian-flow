@@ -27,6 +27,8 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This change belongs with others. Select all of them and try again.`;
     case "gone":
       return msg`That change is no longer in the draft.`;
+    case "needs_restore":
+      return msg`This document was deleted from the manuscript. Apply again to bring it back.`;
     default:
       return undefined;
   }
@@ -34,7 +36,7 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
 
 /** Holds and stale answers are complete sentences; a lead line like "Couldn't apply" would misstate them. */
 function answersAlone(serverCode: string | undefined): boolean {
-  return serverCode === "path_taken" || serverCode === "stale";
+  return serverCode === "path_taken" || serverCode === "stale" || serverCode === "needs_restore";
 }
 
 /**

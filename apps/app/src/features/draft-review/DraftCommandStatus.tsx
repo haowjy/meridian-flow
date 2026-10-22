@@ -39,7 +39,10 @@ export function DraftCommandStatus({
       ) : state.applying ? (
         <Trans>Applying</Trans>
       ) : state.failure ? (
-        <span className="text-destructive">
+        // Asking to bring a deleted document back is a question, not an error.
+        <span
+          className={state.failure.serverCode === "needs_restore" ? undefined : "text-destructive"}
+        >
           <ReviewMessageText failure={state.failure} />
         </span>
       ) : isPathTaken(item) ? (
