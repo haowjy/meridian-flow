@@ -7,11 +7,12 @@
 import { editHandle, type UpdateJournal } from "@meridian/agent-edit/integration";
 import { type DocumentId, matchDocumentPath, type TreeTransition } from "@meridian/contracts";
 import { type Database, documentEdits } from "@meridian/database";
-import { branches, documentDrafts, documents, works } from "@meridian/database/schema";
+import { branches, documentDrafts, works } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { nextEditSeq } from "../../../shared/edit-history-seq.js";
 import { readLiveTreeStates } from "../../context/tree/live-tree-state.js";
+import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
 import type { AgentTreeHistory } from "../contracts.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 
@@ -89,10 +90,8 @@ export function createDrizzleTreeHistory(
         .select({
           documentId: documentEdits.documentId,
           shownAt: sql<string | null>`${documentEdits.treeChange}->>'shownAt'`,
-          removed: sql<boolean>`${documents.deletedAt} IS NOT NULL`,
         })
         .from(documentEdits)
-        .innerJoin(documents, eq(documents.id, documentEdits.documentId))
         .where(
           and(
             eq(documentEdits.threadId, threadId),
@@ -106,7 +105,14 @@ export function createDrizzleTreeHistory(
       );
       // A document still deleted wins over one only moved away: the recovery for a taken path
       // is to move the blocker aside and undo by that path again, and that move is newer.
-      return (away.find((row) => row.removed) ?? away[0])?.documentId ?? null;
+      const identities = await loadDocumentIdentityRows(tx(), [
+        ...new Set(away.map((row) => row.documentId as DocumentId)),
+      ]);
+      const deleted = new Set(identities.filter((row) => row.deleted).map((row) => row.id));
+      return (
+        (away.find((row) => deleted.has(row.documentId as DocumentId)) ?? away[0])?.documentId ??
+        null
+      );
     },
   };
 }
