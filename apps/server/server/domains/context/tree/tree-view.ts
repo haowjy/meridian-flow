@@ -13,7 +13,7 @@ import type {
   ProjectId,
   WorkId,
 } from "@meridian/contracts";
-import { folderDocumentName } from "@meridian/contracts/protocol";
+import { namespaceName } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
@@ -110,16 +110,6 @@ export type VisibleFolder = {
  * literally and never does.
  */
 export type NameClaim = "document" | "folder";
-
-/**
- * The one shared-namespace rule: the document filename a node of this kind holds under its
- * parent. A document holds its own filename; a folder holds its document alias (folder
- * `Lore.md` holds document `Lore`). A document and a folder meet when these are equal; two
- * folders, or two documents, meet only literally (`Lore` and `Lore.md` may both be folders).
- */
-export function namespaceName(kind: NameClaim, filename: string): string {
-  return kind === "folder" ? folderDocumentName(filename) : filename;
-}
 
 /** A path to resolve; `as` makes it a claim of that kind. */
 export type PathQuery = { contextSourceId: ContextSourceId; path: string; as?: NameClaim };
@@ -513,7 +503,7 @@ export function createTreeReader(
     // The document at a claimed folder name's alias.
     const documentAsks = positions(
       asks.flatMap((ask, owner) => {
-        const alias = namespaceName("folder", ask.filename);
+        const alias = namespaceName({ kind: "folder", filename: ask.filename });
         return ask.as === "folder" && alias !== ask.filename
           ? ask.parents.map((parentId) => ({
               owner,
@@ -542,8 +532,8 @@ export function createTreeReader(
                   (folder) =>
                     parents.has(parentKey(folder.contextSourceId, folder.parentId)) &&
                     folder.name !== ask.filename &&
-                    namespaceName("folder", folder.name) ===
-                      namespaceName("document", ask.filename),
+                    namespaceName({ kind: "folder", filename: folder.name }) ===
+                      namespaceName({ kind: "document", filename: ask.filename }),
                 )
                 .map((folder) => folder.id)
             : [],

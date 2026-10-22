@@ -11,7 +11,7 @@
  * moves: the writer's text goes to live, and the document's draft stays pending for review.
  */
 import type { DocumentId, ProjectId } from "@meridian/contracts";
-import { type Filetype, folderDocumentName } from "@meridian/contracts/protocol";
+import { allocateFilename, type Filetype, sameNamespaceName } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { testHook } from "../../../../shared/test-hooks.js";
 import type {
@@ -132,14 +132,6 @@ function highestUntitled(filenames: ReadonlySet<string>): number {
       max = Math.max(max, suffix);
   }
   return max;
-}
-
-/** The first of `Kael`, `Kael (2)`... whose filename no live node holds. */
-function freeName(leaf: { name: string; extension: string }, taken: ReadonlySet<string>): string {
-  for (let suffix = 1; ; suffix += 1) {
-    const name = suffix === 1 ? leaf.name : `${leaf.name} (${suffix})`;
-    if (!taken.has(renderFilename(name, leaf.extension))) return name;
-  }
 }
 
 class DocumentCreationFault extends Error {
@@ -346,11 +338,15 @@ export class LiveCreate {
     let lastNumber = 0;
     for (let attempt = 0; attempt < OPTIMISTIC_NAME_ATTEMPTS; attempt += 1) {
       const live = [
-        ...(await store.listDocuments(LIVE_TREE, folderId)).map((document) =>
-          renderFilename(document.name, document.extension),
+        ...(await store.listDocuments(LIVE_TREE, folderId)).map(
+          (document) =>
+            ({
+              kind: "document",
+              filename: renderFilename(document.name, document.extension),
+            }) as const,
         ),
-        ...(await store.listFolders(LIVE_TREE, folderId)).map((folder) =>
-          folderDocumentName(folder.name),
+        ...(await store.listFolders(LIVE_TREE, folderId)).map(
+          (folder) => ({ kind: "folder", filename: folder.name }) as const,
         ),
       ];
       let target: { name: string; extension: string; filetype: Filetype };
@@ -358,7 +354,7 @@ export class LiveCreate {
       let joinFrom: DocumentId | undefined;
       if (input.leaf === null) {
         // Untitled names skip what hidden documents hold: a scratch never joins an AI document.
-        const taken = new Set([...live, ...hiddenNames]);
+        const taken = new Set([...live.map((claim) => claim.filename), ...hiddenNames]);
         lastNumber = Math.max(lastNumber, highestUntitled(taken)) + 1;
         target = {
           name: `Untitled ${lastNumber}`,
@@ -367,9 +363,14 @@ export class LiveCreate {
         };
         plan = { kind: "mint", id: input.documentId };
       } else {
-        const free = freeName(input.leaf, new Set(live));
-        target = { ...input.leaf, name: free };
-        const atTypedName = free === input.leaf.name;
+        const free = await allocateFilename({ kind: "document", ...input.leaf }, (candidate) =>
+          live.some((claim) => sameNamespaceName(candidate, claim)),
+        );
+        const parsedFree = input.leaf.extension
+          ? free.slice(0, -(input.leaf.extension.length + 1))
+          : free;
+        target = { ...input.leaf, name: parsedFree };
+        const atTypedName = parsedFree === input.leaf.name;
         if (atTypedName && found.kind === "candidate") {
           plan = {
             kind: "reveal",
