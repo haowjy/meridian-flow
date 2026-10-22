@@ -362,7 +362,6 @@ PR bodies via `pnpm changelog`; PRs no longer edit this file.
 
 ### Fixed
 
-- A screen heading focused on navigation no longer shows a focus ring, and focus the app moves after a click stays ring-free. When Archive is refused, focus comes back to the Active tab with the Work (ring only if you used the keyboard).
 - Development: `pnpm dev --restart` failed with "port … could not be inspected" when an open connection happened to use a backend port as its source port. Backend ports now come from 20000-27999, below Linux's ephemeral range, and a port busy with no listener says so.
 - Exiting review while its address is resolving no longer reopens that review. Switching to another Work or draft keeps the new destination.
 
