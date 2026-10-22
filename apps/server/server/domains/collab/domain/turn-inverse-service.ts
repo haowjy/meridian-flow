@@ -20,12 +20,14 @@ import type { DraftSnapshot } from "./draft-store.js";
 import { effectiveActionIndex, isRolledBack, partKey } from "./inverse-actions.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import {
-  currentTreeState,
+  advanceStates,
+  isTransitionEntry,
   latestTransition,
   type PlannedTreeInverse,
   planTreeInverse,
   type StoredTreeEntry,
   settlementOf,
+  type TransitionEntry,
   type TreeStates,
   treeChangedReason,
   treeKey,
@@ -124,7 +126,9 @@ function prepare(
   actionId: string,
 ): PreparedDocumentInverse[] {
   const turnTree = (document: InverseDocument) =>
-    document.tree.filter((row) => row.tree.op !== "settle" && targetsTurn(row, query));
+    document.tree.filter(
+      (row): row is TransitionEntry => isTransitionEntry(row) && targetsTurn(row, query),
+    );
   const keys = new Set([
     ...documents.flatMap((document) =>
       document.history.filter((part) => targetsTurn(part, query)).map(partKey),
@@ -166,10 +170,7 @@ function prepare(
     // Tree entries first, newest first for an undo, each judged on the states the ones
     // before it leave (A→B, B→C undoes to A); a renumber across documents orders at commit.
     const tree: PlannedTreeInverse[] = [];
-    const states = {
-      live: document.treeStates.live,
-      branches: new Map(document.treeStates.branches),
-    };
+    let states = document.treeStates;
     const skipTree = (row: StoredTreeEntry, reason: string) =>
       skips.push({
         documentId: document.documentId,
@@ -195,22 +196,18 @@ function prepare(
         skipTree(row, direction === "undo" ? "Already undone" : "Already redone");
         continue;
       }
-      const current = currentTreeState(states, row.tree.destination);
       const planned = planTreeInverse(
         row,
         direction === "undo" ? "invert" : "reapply",
         latest.row,
-        current,
+        states,
       );
       if (!planned) {
-        skipTree(row, `It was ${treeChangedReason(current)}`);
+        skipTree(row, `It was ${treeChangedReason(states, row.tree.destination)}`);
         continue;
       }
       tree.push({ ...planned, actionId });
-      if (planned.destination.kind === "live")
-        states.live = "living" in planned.after ? planned.after : null;
-      else if (!("living" in planned.after))
-        states.branches.set(planned.destination.branchId, planned.after);
+      states = advanceStates(states, planned);
     }
     // Text in a document this undo restores lands once it stands again.
     const restored = tree.some(

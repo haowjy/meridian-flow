@@ -13,11 +13,13 @@ export type TreePlacement = {
   extension: string;
 };
 
+/** A removal as the row held it right after: its time and the `location_version` it wrote. */
+export type TreeRemoval = { time: string; locationVersion: string };
+
 /** Live has one state per document: living at a placement, or removed by one removal. */
 export type LiveTreeState =
   | { living: true; at: TreePlacement }
-  /** The removal as the row held it right after: its time and the `location_version` it wrote. */
-  | { living: false; removal: { time: string; locationVersion: string } };
+  | { living: false; removal: TreeRemoval };
 
 /**
  * A branch's facts about a document (its `branch_tree_changes` row), not its effective
@@ -34,24 +36,53 @@ export type TreeChangeDestination = { kind: "live" } | { kind: "draft"; branchId
 
 export type TreeChangeTarget = { editId: string; direction: "invert" | "reapply" };
 
-/**
- * `restore` reverses a delete; `settle` mutates nothing (its `before` and `after` are equal) and
- * exists to name the entries a writer's Apply, Discard or cleanup ended.
- */
-export type TreeChangeOp = "move" | "delete" | "restore" | "settle";
+/** A live transition joins two live states; a branch one, two sets of the branch's facts. */
+export type LiveTreeTransition = {
+  destination: { kind: "live" };
+  before: LiveTreeState;
+  after: LiveTreeState;
+};
+export type BranchTreeTransition = {
+  destination: { kind: "draft"; branchId: BranchId };
+  before: BranchTreeFacts;
+  after: BranchTreeFacts;
+};
+export type TreeTransition = LiveTreeTransition | BranchTreeTransition;
 
-export type TreeChange = {
-  op: TreeChangeOp;
-  destination: TreeChangeDestination;
-  /** `LiveTreeState` for a live destination, `BranchTreeFacts` for a draft one. */
-  before: LiveTreeState | BranchTreeFacts;
-  after: LiveTreeState | BranchTreeFacts;
+/** `restore` reverses a delete. */
+export type TreeChangeOp = "move" | "delete" | "restore";
+
+type TreeEntryFields = {
   /** The path the model or writer saw it at, for messages. */
   shownAt: string | null;
   /** `nextval` of `document_edit_parts`' id sequence: one chronology with text parts. */
   seq: number;
-  /** What an undo, redo, revert or rollback reverses. */
-  targets: TreeChangeTarget[];
-  /** The drafted entries a writer's Apply or Discard, or a cleanup, ended. */
-  settles?: { editIds: string[]; as: "applied" | "discarded" };
 };
+
+/** A row that changed where a document is, or whether it is. */
+export type TreeTransitionChange = TreeTransition &
+  TreeEntryFields & {
+    op: TreeChangeOp;
+    /** What an undo, redo, revert or rollback reverses. */
+    targets: TreeChangeTarget[];
+  };
+
+/**
+ * A row that mutates nothing: it names the drafted entries a writer's Apply or Discard, or a
+ * cleanup, ended.
+ */
+export type TreeSettlement = TreeEntryFields & {
+  op: "settle";
+  destination: TreeChangeDestination;
+  targets: [];
+  settles: { editIds: string[]; as: "applied" | "discarded" };
+};
+
+export type TreeChange = TreeTransitionChange | TreeSettlement;
+
+/** Narrows a transition by its destination: the one place a live or branch shape is told apart. */
+export function isLiveTransition<T extends TreeTransition>(
+  transition: T,
+): transition is Extract<T, LiveTreeTransition> {
+  return transition.destination.kind === "live";
+}

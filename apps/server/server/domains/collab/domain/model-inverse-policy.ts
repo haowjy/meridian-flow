@@ -17,13 +17,16 @@ import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
 import { draftRoom } from "./observation-rooms.js";
 import { ReversalConflictError } from "./reversal-conflict.js";
 import {
-  currentTreeState,
+  advanceStates,
+  isTransitionEntry,
   latestTransition,
   type PlannedTreeInverse,
   planTreeInverse,
   type StoredTreeEntry,
   settlementOf,
+  type TransitionEntry,
   TreeInverseRefused,
+  transitionOf,
   treeChangedReason,
   treeEntrySummary,
   treeFaultReason,
@@ -39,7 +42,7 @@ import type {
 
 type Query = TurnInverseQuery & { model: true; draftId: string | null };
 /** One own edit on the stack: text parts, or one tree entry (a move or delete) with none. */
-type Entry = { id: string; handle: string; parts: StoredInversePart[]; tree?: StoredTreeEntry };
+type Entry = { id: string; handle: string; parts: StoredInversePart[]; tree?: TransitionEntry };
 const entryKeys = (entry: Entry) =>
   entry.tree ? [treeKey(entry.tree.editId)] : entry.parts.map(key);
 const entryRows = (entry: Entry): { id: number; key: string }[] =>
@@ -50,11 +53,11 @@ function entries(document: InverseDocument, threadId: string): Entry[] {
   const map = new Map<string, Entry>();
   for (const row of document.tree)
     if (
+      isTransitionEntry(row) &&
       row.threadId === threadId &&
       row.actor === "agent" &&
       row.wId !== null &&
-      (row.kind === "write" || row.kind === "revert") &&
-      row.tree.op !== "settle"
+      (row.kind === "write" || row.kind === "revert")
     )
       map.set(row.editId, { id: row.editId, handle: editHandle(row.wId), parts: [], tree: row });
   for (const part of document.history) {
@@ -208,7 +211,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
      * state (D76): the planned transition, or the refusal.
      */
     function treePlan(
-      entry: Entry & { tree: StoredTreeEntry },
+      entry: Entry & { tree: TransitionEntry },
       direction: "undo" | "redo" | "revert",
       tree: readonly StoredTreeEntry[],
       states: InverseDocument["treeStates"],
@@ -241,15 +244,14 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           message: `${entry.handle} is in another version (${here ? "draft" : "live"}). You can ${verb} only in the version you write to. ${follow}`,
         };
       const latest = latestTransition(row, tree, rolledBack);
-      const current = currentTreeState(states, destination);
       const planned =
         latest.stands === (direction !== "redo")
-          ? planTreeInverse(row, direction === "redo" ? "reapply" : "invert", latest.row, current)
+          ? planTreeInverse(row, direction === "redo" ? "reapply" : "invert", latest.row, states)
           : null;
       if (planned) return planned;
       return {
         status: `cant_${verb}_changed`,
-        message: `${entry.handle} can't be ${verb === "undo" ? "undone" : "redone"}: the document was ${treeChangedReason(current)} you ${verb === "undo" ? "made" : "undid"} it. ${follow}`,
+        message: `${entry.handle} can't be ${verb === "undo" ? "undone" : "redone"}: the document was ${treeChangedReason(states, destination)} you ${verb === "undo" ? "made" : "undid"} it. ${follow}`,
       };
     }
     function revertSelection(entry: Entry, inspection = inspect()) {
@@ -315,12 +317,12 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       handles: string[] = [],
       skipped: string[] = [],
       tree = [...document.tree],
-      states = { live: document.treeStates.live, branches: new Map(document.treeStates.branches) },
       plannedTree: PlannedTreeInverse[] = [],
       treeFacts: string[] = [];
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(policy.view));
     // Until its first advance, scratch is identical to the locked view.
     let inspection: Inspection | undefined = policy.inspect();
+    let states = document.treeStates;
     const currentInspection = () => {
       if (!inspection)
         inspection = inspectionContext(
@@ -402,21 +404,18 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           wId: null,
           targets: [target],
           tree: {
-            ...planned.entry.tree,
+            ...transitionOf(planned),
             op: planned.op,
-            before: planned.before,
-            after: planned.after,
+            shownAt: planned.entry.tree.shownAt,
+            seq: planned.entry.tree.seq,
             targets: [target],
           },
         });
-        if (planned.destination.kind === "live")
-          states.live = "living" in planned.after ? planned.after : null;
-        else if (!("living" in planned.after))
-          states.branches.set(planned.destination.branchId, planned.after);
+        states = advanceStates(states, planned);
         inspection = undefined;
       };
       const treePlan = (
-        entry: Entry & { tree: StoredTreeEntry },
+        entry: Entry & { tree: TransitionEntry },
         direction: "undo" | "redo" | "revert",
       ) => policy.treePlan(entry, direction, tree, states, currentInspection().actions.rolledBack);
       if (command.command === "revert") {
@@ -672,7 +671,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         const index = inspection.actions;
         const turn = (turnId: string | null) =>
           turnId === query.turnId ? "this turn" : "earlier turn";
-        const treeLine = (entry: Entry & { tree: StoredTreeEntry }) => {
+        const treeLine = (entry: Entry & { tree: TransitionEntry }) => {
           const k = treeKey(entry.tree.editId);
           const latest = latestTransition(entry.tree, document.tree, index.rolledBack);
           const settled = settlementOf(entry.tree, document.tree);
@@ -683,12 +682,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               : (settled ??
                 (!latest.stands
                   ? "undone"
-                  : planTreeInverse(
-                        entry.tree,
-                        "invert",
-                        latest.row,
-                        currentTreeState(document.treeStates, entry.tree.tree.destination),
-                      )
+                  : planTreeInverse(entry.tree, "invert", latest.row, document.treeStates)
                     ? entry.tree.tree.destination.kind === "draft"
                       ? "pending"
                       : "live"
