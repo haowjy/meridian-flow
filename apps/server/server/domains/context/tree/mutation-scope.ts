@@ -1,16 +1,18 @@
 /**
  * The one verified scope acquisition for tree mutations whose namespaces are not known up
- * front: end of use, Discard, hidden-node repair, and Apply's reveal and restore. It reads
+ * front: end of use, Discard, hidden-node repair, Apply's reveal and restore, and the
+ * inverses of moves and deletes (a reply's rollback, the turn card, the model's undo). It reads
  * which sources the documents sit in (and, for a branch's creates, where the branch placed
  * them), locks those namespaces, reads again, and only then takes the document locks. The
  * caller owns its transaction and its retry: a scope that moved throws
  * `TreeScopeChangedError`, and the caller aborts and starts over, so no namespace is ever
  * taken while a document lock is held.
  */
-import type { BranchId, ContextSourceId, DocumentId } from "@meridian/contracts";
+import type { BranchId, ContextSourceId, DocumentId, TreePlacement } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { lockDocumentNamespaces } from "../adapters/context-fs/document-locations.js";
+import { placementSources } from "./live-tree-state.js";
 import { lockDocuments } from "./node-rows.js";
 import { loadBranchCreatedDocuments, loadDocumentIdentityRows } from "./tree-view-sql.js";
 
@@ -28,6 +30,12 @@ export type TreeScope = {
 export type TreeScopeRequest = {
   branches?: readonly { branchId: BranchId; documentIds?: readonly DocumentId[] }[];
   documentIds?: readonly DocumentId[];
+  /**
+   * Placements the mutation will write that no row names yet (a move's undo returns to its
+   * old folder): each locks its folder's source as it is now, so a folder moved since is
+   * locked where it went.
+   */
+  placements?: readonly TreePlacement[];
 };
 
 /** The scope moved (a document changed source) between reading and locking it: start over. */
@@ -55,6 +63,7 @@ export async function readTreeScope(db: Database, request: TreeScopeRequest): Pr
     documentIds.add(row.id);
     sourceIds.add(row.contextSourceId);
   }
+  for (const id of await placementSources(db, request.placements ?? [])) sourceIds.add(id);
   return { documentIds: [...documentIds].sort(), sourceIds: [...sourceIds].sort() };
 }
 

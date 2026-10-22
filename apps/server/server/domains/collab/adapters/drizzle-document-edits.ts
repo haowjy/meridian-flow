@@ -5,7 +5,7 @@ import {
   captureEditParts,
   type EditTarget,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type { DocumentId, ThreadId, TreeChange, TurnId, UserId } from "@meridian/contracts";
 import {
   type Database,
   documentEditParts,
@@ -32,6 +32,21 @@ export interface ReceiptWrite {
   actionId?: string;
   consumes?: string[];
   receipts: (CapturedPart & { origin: EditOrigin; targets?: EditTarget[] })[];
+  /** A tree entry: a move, delete, restore or settlement, recorded with no parts. */
+  treeChange?: TreeChange;
+}
+
+/**
+ * A tree entry's place in the history: the next value of the parts' id sequence, so one
+ * chronology orders tree entries and text parts across turns and writers.
+ */
+export async function nextEditSeq(db: Pick<Database, "execute">): Promise<number> {
+  const rows = await db.execute(
+    sql`select nextval(pg_get_serial_sequence('document_edit_parts', 'id'))::text as seq`,
+  );
+  const seq = Array.from(rows as unknown as Iterable<{ seq: string }>)[0]?.seq;
+  if (seq === undefined) throw new Error("The edit history sequence returned nothing");
+  return Number(seq);
 }
 /** Caller holds the authoritative document/draft mutation lock and its event transaction. */
 export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<string> {
@@ -52,9 +67,14 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       wId,
       actionId: input.actionId,
       consumes: input.consumes,
+      treeChange: input.treeChange,
     })
     .returning({ id: documentEdits.id });
   if (!edit) throw new Error("Edit receipt was not inserted");
+  if (!input.receipts.length) {
+    if (!input.treeChange) throw new Error("An edit with no parts must be a tree entry");
+    return edit.id;
+  }
   await db.insert(documentEditParts).values(
     input.receipts.map((p, ordinal) => ({
       editId: edit.id,
@@ -65,7 +85,6 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       aliases: p.aliases,
       targets: p.targets ?? [],
       origin: p.origin,
-      // Required by the legacy NOT NULL column until the migrations lane drops it.
     })),
   );
   for (const [ordinal, p] of input.receipts.entries()) {

@@ -416,6 +416,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         })
       : SILENT_TURN_INVERSE_NOTICES,
     workProjection: deps.workProjectionMutation,
+    removal: deps.documentRemoval,
+    arrivals: deps.arrivals,
+    catalog: deps.catalogMutations,
   });
   const responseFinalizer = scopeResponseFinalizer(
     createResponseWriteFinalizer({

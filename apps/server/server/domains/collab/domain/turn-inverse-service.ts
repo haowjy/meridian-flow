@@ -19,6 +19,17 @@ import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
 import { effectiveActionIndex, isRolledBack, partKey } from "./inverse-actions.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
+import {
+  currentTreeState,
+  latestTransition,
+  type PlannedTreeInverse,
+  planTreeInverse,
+  type StoredTreeEntry,
+  settlementOf,
+  type TreeStates,
+  treeChangedReason,
+  treeKey,
+} from "./tree-inverse.js";
 
 export type StoredInversePart = InversePart & {
   documentId: DocumentId;
@@ -39,6 +50,8 @@ export type TurnInverseQuery = {
   model?: boolean;
   draftId?: string | null;
   documentIds?: DocumentId[];
+  /** The path the model named, for a document no visible path holds (a deleted one). */
+  path?: string;
 };
 export type InverseDocument = {
   documentId: DocumentId;
@@ -49,6 +62,10 @@ export type InverseDocument = {
   /** Removed documents are skipped with the record, never planned against. */
   removal: DocumentRemovalRecord | null;
   history: StoredInversePart[];
+  /** Its tree entries (moves, deletes, restores, settlements), ordered by `seq`. */
+  tree: StoredTreeEntry[];
+  /** What each destination holds now, for judging tree entries by state. */
+  treeStates: TreeStates;
   drafts: ReadonlyMap<
     string,
     { documentDraft: DraftSnapshot; doc: Y.Doc; name: string; frozen: boolean }
@@ -58,6 +75,8 @@ export type PreparedDocumentInverse = {
   document: InverseDocument;
   draftId: string | null;
   computed: ComputedInverse;
+  /** Tree inverses, in the order they run. */
+  tree: PlannedTreeInverse[];
   consumes: string[];
   skips: TurnInverseSkip[];
 };
@@ -76,13 +95,19 @@ export interface TurnInverseStore {
     kind: "undo" | "redo" | "revert" | "rollback";
     userId?: UserId;
     query: TurnInverseQuery;
-  }): Promise<{ handles: string[]; updates: Uint8Array[] }>;
+  }): Promise<{
+    handles: string[];
+    updates: Uint8Array[];
+    /** Tree inverses that couldn't run (a taken location, a missing folder); the rest ran. */
+    treeSkips: TurnInverseSkip[];
+  }>;
   describePart(
     document: InverseDocument,
     part: StoredInversePart,
   ): { before: string; after: string };
 }
-const targetsTurn = (part: StoredInversePart, query: TurnInverseQuery) =>
+type TurnRow = Pick<StoredInversePart, "actor" | "kind" | "threadId" | "turnId" | "editScopeId">;
+const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
   (query.responseIdentity
     ? part.actor === "agent" && part.kind !== "rollback"
     : part.kind === "write" || part.kind === "revert") &&
@@ -98,12 +123,22 @@ function prepare(
   direction: "undo" | "redo",
   actionId: string,
 ): PreparedDocumentInverse[] {
-  const originals = documents.flatMap((document) =>
-    document.history.filter((part) => targetsTurn(part, query)),
-  );
-  const keys = new Set(originals.map(partKey));
-  const all = documents.flatMap((document) => document.history).sort((a, b) => a.id - b.id);
-  const selected = direction === "redo" ? effectiveActionIndex(all, keys).actions[0] : undefined;
+  const turnTree = (document: InverseDocument) =>
+    document.tree.filter((row) => row.tree.op !== "settle" && targetsTurn(row, query));
+  const keys = new Set([
+    ...documents.flatMap((document) =>
+      document.history.filter((part) => targetsTurn(part, query)).map(partKey),
+    ),
+    ...documents.flatMap((document) => turnTree(document).map((row) => treeKey(row.editId))),
+  ]);
+  const all = documents
+    .flatMap((document): (StoredInversePart | StoredTreeEntry)[] => [
+      ...document.history,
+      ...document.tree,
+    ])
+    .sort((a, b) => a.id - b.id);
+  const index = effectiveActionIndex(all, keys);
+  const selected = direction === "redo" ? index.actions[0] : undefined;
   const selectedAction = selected?.id;
   const accepted = selected?.targets ?? new Set<string>();
   return documents.map((document) => {
@@ -126,8 +161,61 @@ function prepare(
     const draftId = pending?.origin.kind === "pending" ? pending.origin.draftId : null;
     const draft = draftId ? document.drafts.get(draftId) : undefined;
     const liveIndex = prepareEditRoots(document.live, document.history);
-    const index = draft ? liveIndex.forView(draft.doc) : liveIndex;
+    const textIndex = draft ? liveIndex.forView(draft.doc) : liveIndex;
     const skips: TurnInverseSkip[] = [];
+    // Tree entries first, newest first for an undo, each judged on the states the ones
+    // before it leave (A→B, B→C undoes to A); a renumber across documents orders at commit.
+    const tree: PlannedTreeInverse[] = [];
+    const states = {
+      live: document.treeStates.live,
+      branches: new Map(document.treeStates.branches),
+    };
+    const skipTree = (row: StoredTreeEntry, reason: string) =>
+      skips.push({
+        documentId: document.documentId,
+        uri: document.uri,
+        before: row.tree.shownAt ?? "",
+        after: "",
+        reason,
+      });
+    for (const row of turnTree(document)
+      .filter((row) => direction === "undo" || accepted.has(treeKey(row.editId)))
+      .sort((a, b) => (direction === "undo" ? b.id - a.id : a.id - b.id))) {
+      if (index.rolledBack.has(treeKey(row.editId))) {
+        skipTree(row, "Rolled back");
+        continue;
+      }
+      const settled = settlementOf(row, document.tree);
+      if (settled) {
+        skipTree(row, settled === "applied" ? "Applied to the manuscript" : "discarded");
+        continue;
+      }
+      const latest = latestTransition(row, document.tree, index.rolledBack);
+      if (latest.stands !== (direction === "undo")) {
+        skipTree(row, direction === "undo" ? "Already undone" : "Already redone");
+        continue;
+      }
+      const current = currentTreeState(states, row.tree.destination);
+      const planned = planTreeInverse(
+        row,
+        direction === "undo" ? "invert" : "reapply",
+        latest.row,
+        current,
+      );
+      if (!planned) {
+        skipTree(row, `It was ${treeChangedReason(current)}`);
+        continue;
+      }
+      tree.push({ ...planned, actionId });
+      if (planned.destination.kind === "live")
+        states.live = "living" in planned.after ? planned.after : null;
+      else if (!("living" in planned.after))
+        states.branches.set(planned.destination.branchId, planned.after);
+    }
+    // Text in a document this undo restores lands once it stands again.
+    const restored = tree.some(
+      (planned) => planned.op === "restore" && planned.destination.kind === "live",
+    );
     const selection: InverseSelection[] = [];
     const skip = (part: StoredInversePart, reason: string) =>
       skips.push({
@@ -143,7 +231,7 @@ function prepare(
       }
       // Parts in an active draft that outlived a live delete invert there (D79); parts that
       // landed live meet the removal, and a draft-text inverse never restores live.
-      if (document.removal && !draft) {
+      if (document.removal && !draft && !restored) {
         skip(
           part,
           `This file was ${document.removal.reason === "discarded" ? "discarded" : "deleted"}`,
@@ -166,7 +254,7 @@ function prepare(
       selection.push({ part, direction: direction === "undo" ? "invert" : "reapply" });
     }
     // Review membership does not decide inverse eligibility, including failed-scope rollback.
-    const computed = index.compute(selection, {
+    const computed = textIndex.compute(selection, {
       actionId,
       allocateClient: allocateDocumentClient,
     });
@@ -188,6 +276,7 @@ function prepare(
       document,
       draftId,
       computed,
+      tree,
       consumes: selectedAction ? [selectedAction] : [],
       skips,
     };
@@ -195,9 +284,12 @@ function prepare(
 }
 const countAccepted = (plans: PreparedDocumentInverse[]) =>
   plans.reduce(
-    (count, plan) => count + plan.computed.edits.reduce((n, edit) => n + edit.parts.length, 0),
+    (count, plan) =>
+      count + plan.tree.length + plan.computed.edits.reduce((n, edit) => n + edit.parts.length, 0),
     0,
   );
+const reversedHere = (plan: PreparedDocumentInverse) =>
+  plan.computed.edits.length > 0 || plan.tree.length > 0;
 
 export function createTurnInverseService(store: TurnInverseStore) {
   return {
@@ -235,15 +327,19 @@ export function createTurnInverseService(store: TurnInverseStore) {
     ): Promise<ReversalOutcome> {
       return store.withCapturedDocuments(query, async (documents) => {
         const plans = prepare(store, documents, query, query.direction, randomUUID());
-        const accepted = countAccepted(plans);
-        if (accepted)
-          await store.commit({
-            plans,
-            kind: query.direction,
-            query,
-            userId: query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
-          });
-        const skips = plans.flatMap((plan) => plan.skips);
+        let accepted = countAccepted(plans);
+        const treeSkips = accepted
+          ? (
+              await store.commit({
+                plans,
+                kind: query.direction,
+                query,
+                userId: query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
+              })
+            ).treeSkips
+          : [];
+        accepted -= treeSkips.length;
+        const skips = [...plans.flatMap((plan) => plan.skips), ...treeSkips];
         return {
           status: accepted
             ? skips.length
@@ -259,14 +355,14 @@ export function createTurnInverseService(store: TurnInverseStore) {
               : "expired",
           documents: plans.map((plan) => ({
             uri: plan.document.uri,
-            ...(plan.computed.edits.length
+            ...(reversedHere(plan)
               ? {
                   destination: plan.draftId
                     ? { kind: "draft" as const, draftId: plan.draftId }
                     : { kind: "live" as const },
                 }
               : {}),
-            status: plan.computed.edits.length
+            status: reversedHere(plan)
               ? "reversed"
               : plan.skips.length &&
                   plan.skips.every((skip) => skip.reason === "This draft is archived")
@@ -282,11 +378,13 @@ export function createTurnInverseService(store: TurnInverseStore) {
       query: TurnInverseQuery & {
         responseIdentity: import("@meridian/contracts").ModelResponseIdentity;
       },
-    ): Promise<void> {
-      await store.withCapturedDocuments(query, async (documents) => {
+    ): Promise<TurnInverseSkip[]> {
+      return store.withCapturedDocuments(query, async (documents) => {
         const plans = prepare(store, documents, query, "undo", randomUUID());
-        // The store also marks only this response's remaining pending target rows.
-        await store.commit({ plans, kind: "rollback", query });
+        // The store also marks only this response's remaining pending target rows. Each move
+        // or delete reverses on its own: one that can't still lets the rest run.
+        const { treeSkips } = await store.commit({ plans, kind: "rollback", query });
+        return [...plans.flatMap((plan) => plan.skips), ...treeSkips];
       });
     },
   };
