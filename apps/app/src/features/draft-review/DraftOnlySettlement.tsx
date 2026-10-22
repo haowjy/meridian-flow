@@ -169,7 +169,7 @@ function WorkSettlement({
           documentId: draft.documentId,
           itemKey: review.itemKey,
           contextLocation: draft.contextLocation,
-          isNew: false,
+          draftOnly: false,
         }).catch(() => undefined);
       });
     }

@@ -26,7 +26,7 @@ const entry = (workId: string, itemKey: string) =>
     documentId: "document-a",
     itemKey,
     contextLocation: location,
-    isNew: true,
+    draftOnly: true,
   });
 const refOf = (workId: string, itemKey: string) => ({
   projectId: "project-a",

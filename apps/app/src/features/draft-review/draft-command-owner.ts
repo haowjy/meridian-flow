@@ -203,7 +203,6 @@ export class DraftCommandOwner {
                 failure: shownRefusal({
                   code: "apply-refused",
                   serverCode: answer.status === "refused" ? answer.reason : "gone",
-                  removal: answer.status === "closed" ? answer.removal : undefined,
                 }),
               },
               address.draftId,
@@ -285,6 +284,21 @@ export class DraftCommandOwner {
     // subscribe publishes synchronously, including an already retired session.
     if (entry.binding !== binding) stopSession();
     else observe();
+  }
+
+  /**
+   * The drafts of one document that a surface holds open right now. A live delete leaves
+   * them active (D79), so their tabs stay; the review list lags, this does not.
+   */
+  boundDrafts(projectId: string, documentId: string): DraftRef[] {
+    return [...this.entries.values()].flatMap(({ ref, binding }) =>
+      binding &&
+      ref.projectId === projectId &&
+      ref.documentId === documentId &&
+      !this.state(ref.itemKey).closed
+        ? [ref]
+        : [],
+    );
   }
 
   /** Only the typed metadata `gone` answer enters here, never a failed read or list omission. */

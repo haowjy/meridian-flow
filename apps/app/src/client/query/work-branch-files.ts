@@ -13,8 +13,11 @@ export type ReviewFileTarget = {
   contextLocation: Pick<ContextUri, "scheme" | "path"> | null;
   /** The active draft the row's verbs act on. */
   draft: ThreadDraftListItem;
-  /** Absent from the live project until Apply. */
-  isNew: boolean;
+  /**
+   * Absent from the live project until Apply: a document the draft created, or one deleted
+   * from the manuscript that this draft still has (`deleted_live`, D79).
+   */
+  draftOnly: boolean;
 };
 
 /** The DB guarantees one active draft per document/Work; raw rows remain untouched. */
@@ -35,7 +38,7 @@ export function projectWorkBranchFiles(
           ? { scheme: location.scheme, path: location.path }
           : draft.contextLocation,
         draft,
-        isNew: draft.isNew === true,
+        draftOnly: draft.isNew === true || draft.conflict?.code === "deleted_live",
       };
     }),
   );
