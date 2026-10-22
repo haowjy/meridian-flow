@@ -24,6 +24,19 @@ export type FrozenApply = {
  * The room recorded the click, but neither its answer nor its stored result could be read after
  * every retry. It landed; what only the result carries (`restored`) is unknown.
  */
+/** An answer that ends a click unapplied: nothing changed, and resending can't change that. */
+function isFinalRefusal(
+  answer: ApplyClickObservation,
+): answer is Exclude<ApplyClickResult, { status: "applied" }> {
+  return (
+    answer.status === "closed" ||
+    answer.status === "refused" ||
+    answer.status === "needs_restore" ||
+    answer.status === "changed" ||
+    answer.status === "held"
+  );
+}
+
 export type ApplyClickLanded = { status: "landed"; commandId: string };
 export type ApplyClickOutcome = ApplyClickResult | ApplyClickLanded | { status: "cancelled" };
 type Click = FrozenApply & {
@@ -179,11 +192,7 @@ export class ApplyClickQueue {
       // Otherwise keep the optimistic contribution until the room's record arrives.
       return;
     }
-    if (
-      answer?.status === "closed" ||
-      answer?.status === "refused" ||
-      answer?.status === "needs_restore"
-    ) {
+    if (answer && isFinalRefusal(answer)) {
       this.port.refused(answer);
       this.settle(click, answer);
       return;
@@ -204,12 +213,7 @@ export class ApplyClickQueue {
     try {
       const result = await this.port.lookup(click.body);
       if (this.clicks[0] !== click || result.commandId !== click.body.commandId) return;
-      if (
-        result.status === "applied" ||
-        result.status === "closed" ||
-        result.status === "refused" ||
-        result.status === "needs_restore"
-      ) {
+      if (result.status === "applied" || isFinalRefusal(result)) {
         if (result.status !== "applied") this.port.refused(result);
         this.settle(click, result);
         return;

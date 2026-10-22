@@ -23,6 +23,7 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
+import { discardBranchTreeFacts } from "../../context/tree/branch-tree-changes.js";
 import { endUse, hiddenDocumentIds } from "../../context/tree/end-use.js";
 import {
   acquireTreeScope,
@@ -36,7 +37,6 @@ import {
   BranchDiscardApplicableStateChangedError,
   BranchDiscardScopeChangedError,
   type BranchDiscardStore,
-  type DiscardItem,
   type DiscardKernelInput,
   type DiscardKernelResult,
 } from "../domain/branch-discard.js";
@@ -145,17 +145,27 @@ export function createDrizzleBranchDiscard(
     // the creation after resolution. That is a changed action, never permission to reset text.
     const withRows = items.filter((item) => item.origin === "created").map((i) => i.documentId);
     const hiddenNow = await hiddenDocumentIds(db, withRows);
-    if (items.some((item) => item.origin !== "created" || !hiddenNow.has(item.documentId)))
-      throw new BranchDiscardApplicableStateChangedError();
-    const isCreated = (item: DiscardItem) => hiddenNow.has(item.documentId);
-    const created = items.filter(isCreated).map((item) => item.documentId);
+    const created = items
+      .filter((item) => item.origin === "created" && hiddenNow.has(item.documentId))
+      .map((item) => item.documentId);
+    // Any other item is the branch's move or delete of a live document: its facts go (the
+    // hidden folders they prune were never in the live catalog).
+    for (const item of items) {
+      if (created.includes(item.documentId)) continue;
+      const ended = await discardBranchTreeFacts(db, {
+        branchId,
+        documentId: item.documentId,
+        userId: input.userId ?? null,
+      });
+      if (!ended.discarded) throw new BranchDiscardApplicableStateChangedError();
+    }
     // A hidden create another branch still uses stays, but this branch's drafts on it end.
     await closeBranchDrafts(db, deps, branchId, "document_discarded", created);
     const ended = await endUseReconciled(
       db,
       deps,
       branchId,
-      { branches: [{ branchId, documentIds: withRows }] },
+      { branches: [{ branchId, documentIds: created }] },
       input.userId,
     );
     return { releasedObjects: ended.releasedObjects };
@@ -185,13 +195,7 @@ export function createDrizzleBranchDiscard(
               branches: [
                 {
                   branchId: input.branchId,
-                  ...(items
-                    ? {
-                        documentIds: items
-                          .filter((item) => item.origin === "created")
-                          .map((item) => item.documentId),
-                      }
-                    : {}),
+                  ...(itemIds ? { documentIds: itemIds } : {}),
                 },
               ],
               documentIds: itemIds ?? [],

@@ -493,6 +493,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       trail: createDrizzleChangeTrailAggregateWriter(deps.db),
       arrivals: deps.arrivals,
       catalog: deps.catalogMutations,
+      removal: deps.documentRemoval,
+      close: deps.draftClose,
+      releaseObjects: (storageUrls) => deps.objects?.storageUrls(storageUrls) ?? Promise.resolve(),
       onCommitted: (documentId) => runDocumentWriteHook({ documentId }, "collab.apply"),
       measured: (measurement) => {
         if (deps.eventSink)

@@ -10,9 +10,10 @@ import { type Database, documentEdits } from "@meridian/database";
 import { branches, documentDrafts, works } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { nextEditSeq } from "../../../shared/edit-history-seq.js";
 import { readLiveTreeStates } from "../../context/tree/live-tree-state.js";
 import type { AgentTreeHistory } from "../contracts.js";
-import { nextEditSeq, recordDocumentEdit } from "./drizzle-document-edits.js";
+import { recordDocumentEdit } from "./drizzle-document-edits.js";
 
 export function createDrizzleTreeHistory(
   db: Database,

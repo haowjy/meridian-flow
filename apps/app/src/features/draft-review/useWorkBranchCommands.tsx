@@ -114,10 +114,12 @@ export function useWorkBranchCommands({
       if (locked) return blocked();
       const item = row(draft);
       if (mode === "apply") {
-        const started =
-          item?.isNew && !item.hasDraft && target.kind === "draft"
-            ? owner.reveal(ref(draft))
-            : owner.apply(ref(draft), target, restore ?? isDeletedFromManuscript(item));
+        const started = owner.apply(
+          ref(draft),
+          target,
+          restore ?? isDeletedFromManuscript(item),
+          item?.tree ?? undefined,
+        );
         void started.outcome.then((outcome) => {
           if (outcome.kind === "done" && outcome.restored) restored(item);
           // A needs-restore answer means the row is behind: refresh so it shows the delete.
@@ -143,6 +145,17 @@ export function useWorkBranchCommands({
           return answer;
         });
         show(removed);
+        return { sent: true, outcome };
+      }
+      // A move or delete is discarded on the server; the item's text, if any, here as always.
+      if (item?.tree && target.kind === "draft") {
+        const text = item.hasDraft ? owner.discard(ref(draft), target, surface, endNotice) : null;
+        const outcome = Promise.all([owner.discardTree(ref(draft), item), text?.outcome]).then(
+          ([tree, discardedText]) => {
+            refresh();
+            return tree.kind === "done" && discardedText ? discardedText : tree;
+          },
+        );
         return { sent: true, outcome };
       }
       const discarded = owner.discard(ref(draft), target, surface, endNotice);
@@ -201,23 +214,21 @@ export function useWorkBranchCommands({
         restore: ReadonlySet<string> = new Set(),
       ) => {
         // Capture every item in the event turn, not in a promise continuation.
-        const outcomes = items.map(
-          ({ draft, target }) => start(mode, draft, target, restore.has(draft.documentId)).outcome,
-        );
-        return Promise.all(outcomes);
+        const send = ({ draft, target }: (typeof items)[number]) =>
+          start(mode, draft, target, restore.has(draft.documentId)).outcome;
+        const outcomes = Promise.all(items.map(send));
+        return mode === "apply" ? afterHolds(outcomes, items, send) : outcomes;
       },
       disposeDrafts: (
         mode: "apply" | "discard",
         drafts: readonly DraftReviewSelection[],
         restore: ReadonlySet<string> = new Set(),
       ) => {
-        if (mode === "apply")
-          return Promise.all(
-            drafts.map(
-              (draft) =>
-                start(mode, draft, { kind: "draft" }, restore.has(draft.documentId)).outcome,
-            ),
-          );
+        if (mode === "apply") {
+          const send = (draft: DraftReviewSelection) =>
+            start(mode, draft, { kind: "draft" }, restore.has(draft.documentId)).outcome;
+          return afterHolds(Promise.all(drafts.map(send)), drafts, send);
+        }
         endNotice();
         const branchId = drafts.map(row).find(Boolean)?.branchId;
         if (locked || !branchId)
@@ -229,6 +240,32 @@ export function useWorkBranchCommands({
       },
     };
   }, [owner, locked, projectId, workId, threadId, surface, queryClient, notice]);
+}
+
+/**
+ * Apply all's order for drafted moves: a move whose destination another item still holds
+ * answers `held`, so once the others ran it is sent again, until a pass frees none (a swap
+ * stays held). Every other outcome is final.
+ */
+async function afterHolds<T>(
+  first: Promise<CommandOutcome[]>,
+  items: readonly T[],
+  send: (item: T) => Promise<CommandOutcome>,
+): Promise<CommandOutcome[]> {
+  const outcomes = await first;
+  for (;;) {
+    const held = outcomes.flatMap((outcome, index) => (outcome.kind === "held" ? [index] : []));
+    if (!held.length) return outcomes;
+    let freed = false;
+    for (const index of held) {
+      const item = items[index];
+      if (item === undefined) continue;
+      const again = await send(item);
+      outcomes[index] = again;
+      freed ||= again.kind !== "held";
+    }
+    if (!freed) return outcomes;
+  }
 }
 
 const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);

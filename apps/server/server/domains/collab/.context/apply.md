@@ -83,8 +83,36 @@ It uses a scratch database and the real route core, file policy, command store,
 append door and trail writer. It does not stand in for integrated browser FIFO
 and optimistic-review verification.
 
-A still-hidden creation with no text draft uses empty `groupIds`/`baseViewDelta`
-and omits `snapshot`. The same transaction claims its command, rechecks hidden
-creation and no-room identity under the tree/live locks, reveals it and clears
-its branch rows. No room, Apply record or text lineage is fabricated. Empty
-groups on any other item are malformed.
+## The tree cut (design-v2 §4)
+
+A click may carry `tree: { revision }`, the revision of the branch's
+`branch_tree_changes` row the writer saw (`ThreadDraftListItem.tree`). A click
+applies exactly its cuts: tree alone (a move-only or delete-only item, or a
+creation with no text room: empty `groupIds`/`baseViewDelta`, no `snapshot`),
+text and tree (the whole item: tree first, then the text merge at the result),
+or text alone, which leaves a pending move or delete pending (a creation is
+still revealed where the branch has it, with its rows). A tree cut takes the
+tree scope with the branch's placement and locks the branch; under the locks a
+row at another revision answers `changed` and nothing applies.
+
+The operation is keyed on the row's logical state and live's state:
+
+| State | Live | Apply |
+|---|---|---|
+| deleting | living | `DocumentRemoval.remove` (writer actor); the branch's draft closes |
+| deleting | hidden creation | end of use (`tombstoneUnused`) |
+| deleting | deleted | settle only, no restore and no `needs_restore` |
+| moving | living | `moveToPlacement` to the effective placement; `replaced` names live's old address |
+| moving | deleted | `restoreDocument` at the effective placement (needs `restore`, D79) |
+| moving | hidden creation | reveal at the effective placement |
+| created | hidden | reveal at the row |
+
+A move whose destination live still gives a document this branch moves or
+deletes answers `held` naming that item (the review item lists the same as
+`pending_item`); any other occupant refuses `forbidden`. The client's Apply all
+re-sends held clicks after the others until a pass frees none, so a renumber
+applies and a swap stays held. Then the row goes through `dropDocumentRows`,
+which writes the settlement rows (`as: applied`) every terminal path writes, and
+prunes hidden folders only its moves used. The route authorizes a drafted
+delete of a document live deleted too through `restoreGrant` alone: the branch
+view has no draft of it to grant.
