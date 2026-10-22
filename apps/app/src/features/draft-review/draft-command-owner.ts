@@ -107,7 +107,7 @@ export class DraftCommandOwner {
   private readonly listeners = new Set<() => void>();
   private readonly closingWorks = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
-  /** Documents an Apply brought back from a delete, until the surface showing it lets go. */
+  /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
   private readonly restoredDocuments = new Set<string>();
   private active = true;
   private revision = 0;
@@ -303,6 +303,15 @@ export class DraftCommandOwner {
 
   forgetRestored(projectId: string, documentId: string): void {
     if (this.restoredDocuments.delete(JSON.stringify([projectId, documentId]))) this.publish();
+  }
+
+  /** The writer moved on to `documentId`: every other document's mark ends. */
+  keepRestoredOnly(projectId: string, documentId: string): void {
+    const kept = JSON.stringify([projectId, documentId]);
+    let changed = false;
+    for (const key of this.restoredDocuments)
+      if (key !== kept) changed = this.restoredDocuments.delete(key) || changed;
+    if (changed) this.publish();
   }
 
   /**
