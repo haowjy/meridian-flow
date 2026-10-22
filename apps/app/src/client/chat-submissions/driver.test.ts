@@ -142,7 +142,14 @@ it("classifies the write failure table identically for creation and admission", 
 
 describe("the journal driver", () => {
   it("keeps a create abort on the writer row; Retry creates and admits once", async () => {
-    const r = rig();
+    let postedAtAdmission: boolean | undefined;
+    let r!: ReturnType<typeof rig>;
+    r = rig({
+      append: async () => {
+        postedAtAdmission = r.records.get("record-1")?.posted;
+        return defaultSendResponse();
+      },
+    });
     let attempts = 0;
     try {
       const { owner } = r.mount({
@@ -158,6 +165,7 @@ describe("the journal driver", () => {
       await owner.retry("sub-1");
       expect(attempts).toBe(2);
       expect(r.scenario.appendRequests).toHaveLength(1);
+      expect(postedAtAdmission).toBe(true);
       expect(r.scenario.turns().map((turn) => turn.role)).toEqual(["user"]);
       expect(r.records.size).toBe(0);
     } finally {
