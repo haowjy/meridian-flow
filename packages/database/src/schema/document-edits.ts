@@ -1,5 +1,12 @@
 // Immutable document edit receipts, independent of compactable transport journals.
-import type { DocumentId, EditOrigin, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type {
+  DocumentId,
+  EditOrigin,
+  ThreadId,
+  TreeChange,
+  TurnId,
+  UserId,
+} from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   bigserial,
@@ -49,6 +56,8 @@ export const documentEdits = pgTable(
     kind: text("kind").$type<"write" | "undo" | "redo" | "revert" | "rollback">().notNull(),
     actionId: uuid("action_id"),
     consumes: jsonb("consumes").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    /** A move, delete, restore or settlement: a tree entry, which has no parts. */
+    treeChange: jsonb("tree_change").$type<TreeChange>(),
     createdAt: createdAt(),
   },
   (t) => [
@@ -59,6 +68,16 @@ export const documentEdits = pgTable(
     check(
       "document_edits_kind_valid",
       sql`${t.kind} IN ('write','undo','redo','revert','rollback')`,
+    ),
+    check(
+      "document_edits_tree_change_valid",
+      sql`${t.treeChange} IS NULL OR (
+        ${t.treeChange}->>'op' IN ('move','delete','restore','settle')
+        AND ${t.treeChange}->'destination'->>'kind' IN ('live','draft')
+        AND jsonb_typeof(${t.treeChange}->'seq') = 'number'
+        AND jsonb_typeof(${t.treeChange}->'targets') = 'array'
+        AND (${t.treeChange}->>'op' <> 'settle' OR ${t.treeChange} ? 'settles')
+      )`,
     ),
   ],
 );

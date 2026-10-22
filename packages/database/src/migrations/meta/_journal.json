@@ -547,6 +547,20 @@
       "when": 1792616414494,
       "tag": "0083_owner_handles_online",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1792642917354,
+      "tag": "0084_tree_change_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1792642975476,
+      "tag": "0085_tree_change_validate",
+      "breakpoints": true
     }
   ]
 }
