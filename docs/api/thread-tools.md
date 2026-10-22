@@ -84,7 +84,7 @@ In progress
 
   ```text
   read({"path":"manuscript://chapter-11.md","format":"outline"}) → 5 of 62 blocks
-  write({"command":"replace","path":"ch3.md","content":"The moon was low over the ridge…(212 words)","find":"The moon was"}) → w4, 212 words, version: draft (@rewrite)
+  write({"command":"replace","path":"ch3.md","content":"The moon was low over the ridge…(212 words)","find":"The moon was"}) → e4, 212 words, version: draft (@w3)
   read({"path":"skills://story-review/resources/pacing.md"}) → failed: document_not_found
   spawn({"agent":"critic","prompt":"Load the story-review skill…(310 words)","name":"Pacing review"}) → p8
   ```

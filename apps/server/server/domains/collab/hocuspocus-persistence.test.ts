@@ -1,27 +1,26 @@
-/** Tests for Hocuspocus room persistence: branch guards and deferred live checkpoints. */
+/** Tests for Hocuspocus room persistence: draft guards and deferred live checkpoints. */
 
 import { Hocuspocus } from "@hocuspocus/server";
-import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { RecentEventsBuffer } from "../observability/adapters/recent/recent-events-buffer.js";
 import { createInMemoryJournal } from "./adapters/in-memory/agent-edit.js";
-import type { BranchSnapshot } from "./domain/branch-coordinator.js";
-import { BranchStaleUpdateError } from "./domain/branch-coordinator.js";
 import {
   bindDocumentAuthority,
   documentAuthority,
   RetiredDocumentHandleError,
 } from "./domain/document-handle.js";
+import { type DraftSnapshot, DraftStaleUpdateError } from "./domain/draft-store.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
+import type { LiveWriterAppend, LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
 import { PROVENANCE_TARGETS_TYPE } from "./domain/provenance.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
-import { unimplementedBranchMutations } from "./test-support/unimplemented-branch-mutations.js";
+import { MemoryDraftStore, memoryDraft, testDraftRow } from "./test-support/memory-draft-store.js";
 
-const BRANCH_ID = "branch-1";
+const DRAFT_ID = "draft-1";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
 
-describe("createHocuspocusPersistenceService branch room storage", () => {
+describe("createHocuspocusPersistenceService draft room storage", () => {
   it("refuses a room whose load hooks finish after a restore and opens the current generation", async () => {
     let generation = 1n;
     let finishLoad!: () => void;
@@ -76,28 +75,30 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
     await current.disconnect();
   });
 
-  it("registers branch admission before validation so store and shutdown drains wait", async () => {
+  it("registers draft admission before validation so store and shutdown drains wait", async () => {
     let releaseAdmission: (() => void) | undefined;
     const admissionBlocked = new Promise<void>((resolve) => {
       releaseAdmission = resolve;
     });
-    const commitWriterUpdate = vi.fn(async () => admissionBlocked);
+    const commitWriterUpdate = vi.fn(async () => {
+      await admissionBlocked;
+      return { admitted: true };
+    });
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      branchCoordinator: { commitWriterUpdate } as never,
+      draftCoordinator: { commitWriterUpdate } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       emitAgentEditInvariantViolation: () => undefined,
     });
 
-    const admission = persistence.admitBranchWriterUpdate({
-      branchId: BRANCH_ID,
-      expectedGeneration: 2,
+    const admission = persistence.admitDraftWriterUpdate({
+      draftId: DRAFT_ID,
       update: writerUpdate(),
       origin: { type: "user", userId: "user-1" as never },
       document: boundDoc({ gc: false }),
     });
-    const store = persistence.storeHocuspocusBranch(BRANCH_ID, boundDoc({ gc: false }));
+    const store = persistence.storeHocuspocusDraft(DRAFT_ID, boundDoc({ gc: false }));
     const shutdownDrain = persistence.drainHocuspocusPersistence();
     let drained = false;
     void Promise.all([store, shutdownDrain]).then(() => {
@@ -193,27 +194,19 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
   });
 });
 
-describe("createHocuspocusPersistenceService branch stale gate", () => {
-  it("accepts a first writer update when the branch state carries tombstones already present in the room doc", async () => {
-    const branchDoc = tombstoneBearingDoc();
-    const snapshot = branchSnapshot(branchDoc);
-    const roomDoc = cloneDoc(branchDoc);
+describe("createHocuspocusPersistenceService draft stale gate", () => {
+  it("accepts a first writer update when the draft state carries tombstones already present in the room doc", async () => {
+    const draftDoc = tombstoneBearingDoc();
+    const snapshot = draftSnapshot(draftDoc);
+    const roomDoc = cloneDoc(draftDoc);
     const before = Y.encodeStateVector(roomDoc);
     roomDoc.getText("content").insert(roomDoc.getText("content").length, "!");
     const humanUpdate = Y.encodeStateAsUpdate(roomDoc, before);
-    const commitWriterUpdate = vi.fn(async () => undefined);
+    const commitWriterUpdate = vi.fn(async () => ({ admitted: true }));
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      branchStore: {
-        ...unimplementedBranchMutations(),
-        deferUntilCommit: (callback) => {
-          callback();
-          return true;
-        },
-        getBranch: async () => snapshot,
-        updateBranchSnapshot: async () => true,
-      },
-      branchCoordinator: {
+      draftStore: new MemoryDraftStore([memoryDraft(snapshot.documentDraft, snapshot.state)]),
+      draftCoordinator: {
         commitWriterUpdate,
       } as never,
       hocuspocus: () => null,
@@ -222,9 +215,8 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     });
 
     await expect(
-      persistence.admitBranchWriterUpdate({
-        branchId: BRANCH_ID,
-        expectedGeneration: 2,
+      persistence.admitDraftWriterUpdate({
+        draftId: DRAFT_ID,
         update: humanUpdate,
         origin: { type: "user", userId: "user-1" as never },
         document: roomDoc,
@@ -232,30 +224,22 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     ).resolves.toBeUndefined();
 
     expect(commitWriterUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ branchId: BRANCH_ID, updateData: humanUpdate }),
+      expect.objectContaining({ draftId: DRAFT_ID, updateData: humanUpdate }),
     );
   });
 
-  it("rejects a stale room doc that lacks the branch tombstone delete set", async () => {
-    const snapshot = branchSnapshot(tombstoneBearingDoc());
+  it("rejects a stale room doc that lacks the draft tombstone delete set", async () => {
+    const snapshot = draftSnapshot(tombstoneBearingDoc());
     const staleRoomDoc = docWithText("seed");
     const before = Y.encodeStateVector(staleRoomDoc);
     staleRoomDoc.getText("content").insert(4, "!");
     const staleUpdate = Y.encodeStateAsUpdate(staleRoomDoc, before);
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      branchStore: {
-        ...unimplementedBranchMutations(),
-        deferUntilCommit: (callback) => {
-          callback();
-          return true;
-        },
-        getBranch: async () => snapshot,
-        updateBranchSnapshot: async () => true,
-      },
-      branchCoordinator: {
+      draftStore: new MemoryDraftStore([memoryDraft(snapshot.documentDraft, snapshot.state)]),
+      draftCoordinator: {
         commitWriterUpdate: vi.fn(async () => {
-          throw new BranchStaleUpdateError(BRANCH_ID);
+          throw new DraftStaleUpdateError(`Draft ${DRAFT_ID}`);
         }),
       } as never,
       hocuspocus: () => null,
@@ -264,93 +248,18 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     });
 
     await expect(
-      persistence.admitBranchWriterUpdate({
-        branchId: BRANCH_ID,
-        expectedGeneration: 2,
+      persistence.admitDraftWriterUpdate({
+        draftId: DRAFT_ID,
         update: staleUpdate,
         origin: { type: "user", userId: "user-1" as never },
         document: staleRoomDoc,
       }),
-    ).rejects.toThrow(BranchStaleUpdateError);
-  });
-
-  it("fences a retained stale client at the branch SyncStep1 handshake", async () => {
-    const discardedDoc = tombstoneBearingDoc();
-    discardedDoc.getText("content").insert(discardedDoc.getText("content").length, " stale");
-    const currentDoc = docWithText("current generation");
-    const snapshot = {
-      ...branchSnapshot(currentDoc),
-      generation: 3,
-      discardedStateVector: Y.encodeStateVector(discardedDoc),
-    };
-    const persistence = createHocuspocusPersistenceService({
-      journal: fakeJournal(),
-      branchStore: {
-        ...unimplementedBranchMutations(),
-        deferUntilCommit: (callback) => {
-          callback();
-          return true;
-        },
-        getBranch: async () => snapshot,
-        updateBranchSnapshot: async () => true,
-      },
-      branchCoordinator: { commitWriterUpdate: vi.fn(async () => undefined) } as never,
-      hocuspocus: () => null,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-
-    await expect(
-      persistence.rejectStaleBranchSyncStep1({
-        branchId: BRANCH_ID,
-        generation: 3,
-        clientStateVector: Y.encodeStateVector(discardedDoc),
-      }),
-    ).resolves.toBe(true);
-  });
-});
-
-describe("createHocuspocusPersistenceService writer ingress", () => {
-  it("suppresses contained reconnect updates without advancing writer ingress", async () => {
-    const liveDocument = tombstoneBearingDoc();
-    const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
-    const onLiveUpdatePersisted = vi.fn();
-    const persistence = createHocuspocusPersistenceService({
-      journal,
-      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-      onLiveUpdatePersisted,
-    });
-    const ingressGeneration = await persistence.writerIngressBarrier.drain(DOCUMENT_ID);
-    const fullState = Y.encodeStateAsUpdate(liveDocument);
-    const containedDeleteSet = Y.diffUpdate(fullState, Y.encodeStateVector(liveDocument));
-    expect(Y.decodeUpdate(containedDeleteSet).structs).toHaveLength(0);
-
-    for (const update of [fullState, containedDeleteSet, new Uint8Array([0, 0])]) {
-      await expect(
-        persistence.admitLiveWriterUpdate({
-          documentId: DOCUMENT_ID,
-          document: liveDocument,
-          update,
-          origin: { type: "user", userId: "user-1" },
-          expectedGeneration: 1n,
-        }),
-      ).resolves.toEqual({ admitted: false, joinedSettlement: false });
-      expect(
-        persistence.writerIngressBarrier.isGenerationCurrent(DOCUMENT_ID, ingressGeneration),
-      ).toBe(true);
-    }
-
-    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
-    expect(onLiveUpdatePersisted).not.toHaveBeenCalled();
+    ).rejects.toThrow(DraftStaleUpdateError);
   });
 
   it("admits novel insertion and delete-only updates", async () => {
     const liveDocument = tombstoneBearingDoc();
     const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const onLiveUpdatePersisted = vi.fn();
     const persistence = createHocuspocusPersistenceService({
       journal,
@@ -372,7 +281,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 1n,
       }),
-    ).resolves.toEqual({ admitted: true, joinedSettlement: false });
+    ).resolves.toEqual({ admitted: true });
 
     const deletionClient = cloneDoc(liveDocument);
     const beforeDeletion = Y.encodeStateVector(deletionClient);
@@ -388,7 +297,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 1n,
       }),
-    ).resolves.toEqual({ admitted: true, joinedSettlement: false });
+    ).resolves.toEqual({ admitted: true });
 
     expect(journal.appendWriterUpdate).toHaveBeenNthCalledWith(
       1,
@@ -416,7 +325,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     const documents = new Map<string, Y.Doc>([[DOCUMENT_ID, retired]]);
     const closeConnections = vi.fn();
     const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const persistence = createHocuspocusPersistenceService({
       journal,
       hocuspocus: () => ({ documents, closeConnections }) as never,
@@ -446,7 +354,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     const staleClient = cloneDoc(retired);
     const documents = new Map<string, Y.Doc>([[DOCUMENT_ID, retired]]);
     const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const persistence = createHocuspocusPersistenceService({
       journal,
       hocuspocus: () => ({ documents, closeConnections: vi.fn() }) as never,
@@ -485,7 +392,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
   ])("rejects hostile reserved namespace %s before journaling", async (_name, mutate) => {
     const liveDocument = documentWithReservedFacts();
     const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const persistence = createHocuspocusPersistenceService({
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
@@ -512,7 +418,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     const liveDocument = documentWithReservedFacts();
     const wrongDocument = boundDoc({ gc: false });
     const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const persistence = createHocuspocusPersistenceService({
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
@@ -535,7 +440,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
   it("rejects reserved-client-ID injection before journaling", async () => {
     const liveDocument = boundDoc({ gc: false });
     const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const persistence = createHocuspocusPersistenceService({
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
@@ -564,11 +468,11 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     const journal = fakeJournal();
     journal.appendWriterUpdate = vi.fn(
       () =>
-        new Promise<{ seq: number; joinedSettlement: boolean }>((resolve) => {
+        new Promise<LiveWriterAppend>((resolve) => {
           events.push("journal:start");
           commit = () => {
             events.push("journal:commit");
-            resolve({ seq: 1, joinedSettlement: true });
+            resolve({ status: "appended", seq: 1 });
           };
         }),
     );
@@ -595,7 +499,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     await Promise.resolve();
     expect(events).toEqual(["journal:start"]);
     commit?.();
-    await expect(admission).resolves.toEqual({ admitted: true, joinedSettlement: true });
+    await expect(admission).resolves.toEqual({ admitted: true });
     expect(events).toEqual(["journal:start", "journal:commit", "apply/broadcast/ack"]);
   });
 
@@ -641,51 +545,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       expect.objectContaining({ name: "persistence_append.failed" }),
     ]);
   });
-
-  it("drains started admissions and detects a later generation", async () => {
-    const liveDocument = boundDoc({ gc: false });
-    const resolvers: Array<() => void> = [];
-    const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(
-      () =>
-        new Promise<{ seq: number; joinedSettlement: boolean }>((resolve) => {
-          resolvers.push(() => resolve({ seq: resolvers.length, joinedSettlement: false }));
-        }),
-    );
-    const persistence = createHocuspocusPersistenceService({
-      journal,
-      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-    const first = persistence.admitLiveWriterUpdate({
-      documentId: DOCUMENT_ID,
-      document: liveDocument,
-      update: writerUpdate(),
-      origin: { type: "user", userId: "user-1" },
-      expectedGeneration: 1n,
-    });
-    const drain = persistence.writerIngressBarrier.drain(DOCUMENT_ID);
-    resolvers[0]?.();
-    const generation = await drain;
-    await first;
-    expect(persistence.writerIngressBarrier.isGenerationCurrent(DOCUMENT_ID, generation)).toBe(
-      true,
-    );
-
-    const second = persistence.admitLiveWriterUpdate({
-      documentId: DOCUMENT_ID,
-      document: liveDocument,
-      update: writerUpdate(),
-      origin: { type: "user", userId: "user-1" },
-      expectedGeneration: 1n,
-    });
-    expect(persistence.writerIngressBarrier.isGenerationCurrent(DOCUMENT_ID, generation)).toBe(
-      false,
-    );
-    resolvers[1]?.();
-    await second;
-  });
 });
 
 function writerUpdate(): Uint8Array {
@@ -721,24 +580,23 @@ function cloneDoc(doc: Y.Doc, generation = 1n): Y.Doc {
   return clone;
 }
 
-function branchSnapshot(doc: Y.Doc): BranchSnapshot {
+function draftSnapshot(doc: Y.Doc): { documentDraft: DraftSnapshot; state: Uint8Array } {
   return {
-    branchId: BRANCH_ID,
-    documentId: DOCUMENT_ID,
-    kind: "work_draft",
-    upstreamBranchId: null,
-    workId: "work-1" as never,
-    threadId: null,
-    status: "active",
-    generation: 2,
+    documentDraft: testDraftRow({
+      draftId: DRAFT_ID,
+      documentId: DOCUMENT_ID,
+      workId: "work-1" as never,
+    }),
     state: Y.encodeStateAsUpdate(doc),
-    stateVector: Y.encodeStateVector(doc),
-    schemaVersion: COLLAB_SCHEMA_VERSION,
   };
 }
 
-function fakeJournal(): CheckpointJournal {
+function fakeJournal(): CheckpointJournal & LiveWriterJournal {
   return {
+    appendWriterUpdate: vi.fn(async () => ({
+      status: "appended" as const,
+      seq: 1,
+    })),
     reserveWriteOrdinal: async () => {
       throw new Error("Transport does not allocate edit ordinals");
     },

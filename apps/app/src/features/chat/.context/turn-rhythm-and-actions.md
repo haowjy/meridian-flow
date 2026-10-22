@@ -21,7 +21,7 @@ Every boundary has exactly one spacing owner. In particular, `TurnList`'s
 measured `<li>` owns space between turns using padding inside the row: 12px
 after a writer turn and 6px after the assistant's reserved action row. Only a
 finished turn gets the action row: one the model ended with nothing to pick it
-back up. `continuesResponse` (`transcript-model.ts`) marks the others, which
+back up. `continuesResponse` (`transcript-model.ts` in `@meridian/thread-client`) marks the others, which
 render no action row and pad only the 8px block gap: the next visible turn is
 another assistant turn (a subagent notification woke the model), the next turn
 is a writer turn the server stamped `metadata.delivery: "steer"` (enqueued while

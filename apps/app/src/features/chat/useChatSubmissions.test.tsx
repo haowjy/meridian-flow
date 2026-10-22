@@ -33,6 +33,7 @@ function entry(id = "one", text = "First rejected"): ChatSubmission {
     threadId: "thread_1",
     projectId: "project-1",
     createdAt: `2026-10-11T00:00:0${id === "one" ? 1 : 2}Z`,
+    seq: id === "one" ? 1 : 2,
     blocks: [...envelope.blocks],
     references: [...envelope.references],
     activatedSkillSlugs: [...envelope.activatedSkillSlugs],

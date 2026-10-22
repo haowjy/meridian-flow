@@ -13,7 +13,8 @@ export const THREAD_WORK_RACE = {
   contextId: "00000000-0000-4000-8000-000000000476",
   documentId: "00000000-0000-4000-8000-000000000477",
   noWorkId: "00000000-0000-4000-8000-000000000478",
-  branchId: "branch_work_lifecycle_race",
+  branchId: "00000000-0000-4000-8000-000000000479",
+  draftId: "draft_work_lifecycle_race",
 } as const;
 
 export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
@@ -32,7 +33,7 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
       projectId: ids.projectId,
       createdByUserId: ids.userId,
       name: "No Work",
-      slug: null,
+      handle: null,
       isNoWork: true,
     },
     {
@@ -40,14 +41,14 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
       projectId: ids.projectId,
       createdByUserId: ids.userId,
       name: "Race target",
-      slug: "race-target",
+      handle: "w2",
     },
     {
       id: ids.targetWorkId,
       projectId: ids.projectId,
       createdByUserId: ids.userId,
       name: "Rebound target",
-      slug: "rebound-target",
+      handle: "w3",
       archivedAt: new Date(),
     },
   ]);
@@ -57,6 +58,7 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
     projectId: ids.projectId,
     createdByUserId: ids.userId,
     title: "Race thread",
+    ref: "c900",
     kind: "primary",
     status: "idle",
   });
@@ -69,14 +71,20 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
   await db.insert(schema.documents).values({
     id: ids.documentId,
     contextSourceId: ids.contextId,
-    name: "Draft target",
+    name: "Branch target",
   });
-  await db.insert(schema.documentBranches).values({
+  await db.insert(schema.branches).values({
     id: ids.branchId,
+    projectId: ids.projectId,
+    originWorkId: ids.workId,
+    createdBy: ids.userId,
+  });
+  await db.insert(schema.documentDrafts).values({
+    id: ids.draftId,
     documentId: ids.documentId,
     kind: "work_draft",
-    workId: ids.workId,
-    state: Buffer.alloc(0),
-    stateVector: Buffer.alloc(0),
+    branchId: ids.branchId,
+    state: Buffer.from([0, 0]),
+    stateVector: Buffer.from([0]),
   });
 }

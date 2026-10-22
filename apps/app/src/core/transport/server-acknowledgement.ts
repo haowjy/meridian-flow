@@ -34,6 +34,8 @@ export type ServerAcknowledgementTracker = {
   beginConnection(): void;
   /** The socket closed, is reconnecting, or the transport is terminal. */
   endConnection(): void;
+  /** Refuse all captured cuts when this transport can never acknowledge them. */
+  terminate(): void;
   /** A frame was handed to the open socket (not merely queued for later). */
   noteFrameSent(frame: Uint8Array): void;
   /**
@@ -43,6 +45,8 @@ export type ServerAcknowledgementTracker = {
    */
   noteFrameQueued(frame: Uint8Array): void;
   noteFrameReceived(frame: Uint8Array): void;
+  /** Freeze the current prefix, without waiting for frames sent after this call. */
+  whenCurrentChangesAcknowledged(): Promise<void>;
   readonly acknowledged: boolean;
 };
 
@@ -58,7 +62,7 @@ function readMessageType(frame: Uint8Array): { type: number; body: decoding.Deco
 }
 
 /** The Sync sub-type of a SyncStep2 or Update frame; null for anything else. */
-function readDocumentSyncType(frame: Uint8Array): number | null {
+export function readDocumentSyncType(frame: Uint8Array): number | null {
   const message = readMessageType(frame);
   if (message?.type !== MESSAGE_SYNC) return null;
   try {
@@ -78,9 +82,22 @@ export function createServerAcknowledgementTracker(
   let sent = 0;
   let acknowledgedCount = 0;
   let published = false;
+  let terminal = false;
+  const barriers = new Set<{
+    target: number | null;
+    resolve(): void;
+    reject(error: Error): void;
+  }>();
 
   const compute = () => open && handshakeSent && !rejected && acknowledgedCount >= sent;
   const publish = () => {
+    if (open && !rejected)
+      for (const barrier of barriers) {
+        if (barrier.target !== null && acknowledgedCount >= barrier.target) {
+          barriers.delete(barrier);
+          barrier.resolve();
+        }
+      }
     const next = compute();
     if (next === published) return;
     published = next;
@@ -89,6 +106,8 @@ export function createServerAcknowledgementTracker(
 
   return {
     beginConnection() {
+      if (terminal) return;
+      for (const barrier of barriers) barrier.target = null;
       open = true;
       handshakeSent = false;
       rejected = false;
@@ -100,12 +119,21 @@ export function createServerAcknowledgementTracker(
       open = false;
       publish();
     },
+    terminate() {
+      terminal = true;
+      open = false;
+      for (const barrier of barriers) barrier.reject(new Error("Document transport ended"));
+      barriers.clear();
+      publish();
+    },
     noteFrameSent(frame) {
       if (!open) return;
       const syncType = readDocumentSyncType(frame);
       if (syncType === null) return;
       if (syncType === messageYjsSyncStep2) handshakeSent = true;
       sent += 1;
+      if (syncType === messageYjsSyncStep2)
+        for (const barrier of barriers) if (barrier.target === null) barrier.target = sent;
       publish();
     },
     noteFrameQueued(frame) {
@@ -132,6 +160,13 @@ export function createServerAcknowledgementTracker(
       if (applied) acknowledgedCount = Math.min(acknowledgedCount + 1, sent);
       else rejected = true;
       publish();
+    },
+    whenCurrentChangesAcknowledged() {
+      if (terminal) return Promise.reject(new Error("Document transport ended"));
+      if (published) return Promise.resolve();
+      return new Promise<void>((resolve, reject) => {
+        barriers.add({ target: open && handshakeSent ? sent : null, resolve, reject });
+      });
     },
     get acknowledged() {
       return published;

@@ -21,7 +21,7 @@ import { CONTEXT_URI_SCHEMES, splitDocumentHrefSuffix } from "@meridian/contract
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 
 export type LinkTarget =
-  /** `manuscript://appendix/vault-charter.md`, `scratch://@revision-pass/notes.md`. */
+  /** `manuscript://appendix/vault-charter.md`, `scratch://@w3/notes.md`. */
   | { kind: "scheme"; uri: string }
   /** `chapter-213.md`, `../notes/kael.md` — resolved against the holder's URI. */
   | { kind: "relative"; path: string }

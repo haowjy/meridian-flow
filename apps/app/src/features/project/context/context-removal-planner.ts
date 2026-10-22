@@ -1,10 +1,16 @@
 /** Pure eligibility and continuity planning for one exact context-removal intent. */
 
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import type { WorkingSetRoute } from "@meridian/contracts/protocol";
 import {
-  isWorkScopedProjectContextScheme,
-  type WorkingSetRoute,
-} from "@meridian/contracts/protocol";
-import { type ContextTab, editorTabsForWork, matchesTabInstance } from "@/client/stores";
+  type ContextTab,
+  editorTabsForWork,
+  isDraftOnly,
+  matchesTabInstance,
+  reviewEntriesOf,
+  reviewEntryOf,
+  withoutReviewEntry,
+} from "@/client/stores";
 import {
   buildWorkingSetRoute,
   type ReconcileContextRoutesInput,
@@ -27,6 +33,8 @@ export type ContextRemovalIntent = {
   documentIds: readonly string[];
   /** Writer close and draft settlement address a mounted tab, not every document representation. */
   tabInstanceId?: string;
+  /** Discard and a writer's close of a draft-only tab are one Work's: the tab stays while another Work still reviews the document. */
+  reviewWorkId?: string;
 };
 
 export type ContextRouteIdentity = { kind: "server" | "local"; documentId: string };
@@ -102,11 +110,6 @@ export type ContextRemovalPlannerInput = {
     current: RouteContinuityVerdict;
   };
   intent: ContextRemovalIntent;
-  /** Exact transient representation already consumed, with its authoritative survivors. */
-  consumed?: {
-    removed: readonly ContextTab[];
-    survivors: readonly ContextTab[];
-  };
 };
 
 export type ExactRouteCleanup = {
@@ -184,28 +187,22 @@ export function contextTabEligibleForRemoval(
       return true;
     case "catalog-unavailable":
     case "authority-unavailable":
-      return tab.kind !== "new" && !tab.draftOnly;
+      return tab.kind !== "new" && !isDraftOnly(tab);
     case "work-prune":
       return (
         tab.kind !== "new" &&
         (tab.kind !== "tracked" || tab.origin !== "local-resource") &&
-        isWorkScopedProjectContextScheme(tab.scheme)
+        isWorkScopedScheme(tab.scheme)
       );
     case "draft-discard":
-      return tab.kind !== "new" && tab.draftOnly === true;
+      return tab.kind !== "new" && isDraftOnly(tab);
   }
 }
 
 export function workingSetRouteForTab(tab: ContextTab) {
   return tab.kind === "new"
     ? null
-    : buildWorkingSetRoute(
-        tab.documentId,
-        tab.scheme,
-        tab.path,
-        isWorkScopedProjectContextScheme(tab.scheme) ? tab.workId : undefined,
-        tab.rootThreadId,
-      );
+    : buildWorkingSetRoute(tab.documentId, tab.scheme, tab.path, tab);
 }
 
 export function routeTargetForTab(tab: ContextTab, activeWorkId: string): ContextRouteTarget {
@@ -218,8 +215,9 @@ export function routeTargetForTab(tab: ContextTab, activeWorkId: string): Contex
       workId: activeWorkId,
       rootThreadId: tab.rootThreadId,
     };
-  let workId = tab.draftOnly ? (tab.reviewWorkId ?? activeWorkId) : activeWorkId;
-  if (isWorkScopedProjectContextScheme(tab.scheme)) {
+  const reviewers = Object.keys(reviewEntriesOf(tab));
+  let workId = reviewEntryOf(tab, activeWorkId) ? activeWorkId : (reviewers[0] ?? activeWorkId);
+  if (isWorkScopedScheme(tab.scheme)) {
     if (!tab.workId) throw new Error("Work-scoped tab has no Work owner");
     workId = tab.workId;
   }
@@ -249,12 +247,15 @@ function adjacentSurvivor(
 /** Query/cache state is deliberately absent: exact commands are the only removal evidence. */
 export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRemovalPlan {
   const requested = new Set(input.intent.documentIds);
-  const removed =
-    input.consumed?.removed ??
-    input.tabs.filter((tab) => contextTabEligibleForRemoval(tab, input.intent));
+  const removed = input.tabs.filter((tab) => contextTabEligibleForRemoval(tab, input.intent));
   const removedIds = new Set(removed.map((tab) => tab.documentId));
-  const remaining =
-    input.consumed?.survivors ?? input.tabs.filter((tab) => !removedIds.has(tab.documentId));
+  // The membership after the removal, decided once: a review removal can leave
+  // the tab in place for the Works that still present it.
+  const reviewWorkId = input.intent.reviewWorkId;
+  const remaining = input.tabs.flatMap((tab) => {
+    if (!removedIds.has(tab.documentId)) return [tab];
+    return (reviewWorkId && withoutReviewEntry(tab, reviewWorkId)) || [];
+  });
   if (input.activeWorkId === null) {
     // Before any route port registers there is no Editor locator to repair.
     return {
@@ -323,7 +324,6 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     .filter((route) => !survivingRoutes.some((survivor) => workingSetRouteEquals(survivor, route)));
   const admittedWasRemoved =
     input.admitted !== null &&
-    (input.consumed === undefined || admittedTab === null) &&
     ((provenRemoved !== null && sameTarget(provenRemoved.locator, input.admitted)) ||
       (input.route.cleanup !== null &&
         sameTarget(input.route.cleanup.locator, input.admitted) &&
@@ -469,7 +469,7 @@ function workingSetRouteMatchesTarget(route: WorkingSetRoute, target: ContextRou
     route.scheme === target.scheme &&
     route.path === target.path &&
     route.rootThreadId === target.rootThreadId &&
-    (!isWorkScopedProjectContextScheme(route.scheme) ||
+    (!isWorkScopedScheme(route.scheme) ||
       route.rootThreadId !== undefined ||
       route.workId === target.workId)
   );
@@ -479,13 +479,7 @@ export function workingSetRouteForTarget(
   documentId: string,
   locator: ContextRouteTarget,
 ): WorkingSetRoute | null {
-  return buildWorkingSetRoute(
-    documentId,
-    locator.scheme,
-    locator.path,
-    locator.workId,
-    locator.rootThreadId,
-  );
+  return buildWorkingSetRoute(documentId, locator.scheme, locator.path, locator);
 }
 
 export function chooseAdmittedFallback(input: {
@@ -502,9 +496,7 @@ export function chooseAdmittedFallback(input: {
     targetInEditorOf(target, input.activeWorkId) &&
     (!input.excluded || !sameContinuityLocator(target, input.excluded));
   const activeTab =
-    input.tabs.find(
-      (tab) => tab.documentId === input.selectedTabId && (tab.kind === "new" || !tab.draftOnly),
-    ) ?? null;
+    input.tabs.find((tab) => tab.documentId === input.selectedTabId && !isDraftOnly(tab)) ?? null;
   const activeTarget = activeTab ? routeTargetForTab(activeTab, input.activeWorkId) : null;
   if (eligible(activeTarget)) return activeTarget;
   if (eligible(input.admitted))
@@ -515,7 +507,7 @@ export function chooseAdmittedFallback(input: {
   }
   if (input.allowWorkspaceFallback !== false) {
     for (const tab of input.tabs) {
-      if (tab.kind !== "new" && tab.draftOnly) continue;
+      if (isDraftOnly(tab)) continue;
       const target = routeTargetForTab(tab, input.activeWorkId);
       if (eligible(target)) return target;
     }
@@ -527,6 +519,8 @@ function contextualizeWorkingSetRoute(
   route: WorkingSetRoute,
   activeWorkId: string,
 ): ContextRouteTarget | null {
+  // A chat's upload has no Editor route; its recency entry only carries its chat.
+  if (route.scheme === "uploads") return null;
   if (route.rootThreadId)
     return {
       scheme: route.scheme,
@@ -535,7 +529,7 @@ function contextualizeWorkingSetRoute(
       rootThreadId: route.rootThreadId,
     };
   let workId = activeWorkId;
-  if (isWorkScopedProjectContextScheme(route.scheme)) {
+  if (isWorkScopedScheme(route.scheme)) {
     if (!route.workId) return null;
     workId = route.workId;
   }
@@ -546,9 +540,7 @@ function contextualizeProjectRoute(
   route: ContextRouteTarget,
   activeWorkId: string,
 ): ContextRouteTarget {
-  return isWorkScopedProjectContextScheme(route.scheme)
-    ? route
-    : { ...route, workId: activeWorkId };
+  return isWorkScopedScheme(route.scheme) ? route : { ...route, workId: activeWorkId };
 }
 
 function sameContinuityLocator(a: ContextRouteTarget, b: ContextRouteTarget): boolean {
@@ -556,8 +548,6 @@ function sameContinuityLocator(a: ContextRouteTarget, b: ContextRouteTarget): bo
     a.scheme === b.scheme &&
     a.path === b.path &&
     a.rootThreadId === b.rootThreadId &&
-    (!isWorkScopedProjectContextScheme(a.scheme) ||
-      a.rootThreadId !== undefined ||
-      a.workId === b.workId)
+    (!isWorkScopedScheme(a.scheme) || a.rootThreadId !== undefined || a.workId === b.workId)
   );
 }

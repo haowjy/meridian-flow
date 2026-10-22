@@ -2,9 +2,9 @@
 
 import { parseInvocationCard } from "@meridian/contracts/components";
 import type { Thread, Turn } from "@meridian/contracts/protocol";
+import { parseSubagentUpdateMetadata } from "@meridian/contracts/spawn";
 import type { ThreadActivityNode } from "@meridian/contracts/threads";
 import { subagentCurrentToolLabel } from "./display";
-import { readSubagentUpdateMetadata } from "./update";
 
 export type SubagentRunStatus = "running" | "done" | "stopped" | "unknown";
 export type SubagentRun = {
@@ -151,7 +151,7 @@ export function buildSubagentRuns(
         if (run.ref) runs.set(`ref:${run.ref}`, run);
       }
     }
-    const update = readSubagentUpdateMetadata(turn.metadata);
+    const update = parseSubagentUpdateMetadata(turn.metadata);
     if (update) {
       const live = byThread.get(update.childThreadId);
       // The launch card came first; it keeps identity when activity is empty.

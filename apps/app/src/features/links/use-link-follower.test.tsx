@@ -113,7 +113,7 @@ beforeEach(() => {
                 ? {
                     state: "document",
                     document: { ...document, id: document.documentId },
-                    inDraft: false,
+                    inBranch: false,
                   }
                 : { state: "missing", uri: href },
             ],
@@ -155,5 +155,15 @@ describe("useLinkFollower", () => {
     await answer("Pane", doc("pane"));
 
     expect(events).toEqual(["report:checking", "clear"]);
+  });
+
+  it("keeps the shared missing outcome for a policy that supplies only open", async () => {
+    // A resource door (an upload) has no route to say "missing" in place.
+    render({ scope, index: catalog("a") });
+    act(() => follower.follow(address("First"), "current", null, { open }));
+
+    await answer("First", null);
+
+    expect(events).toEqual(["report:missing"]);
   });
 });

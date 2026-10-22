@@ -1,5 +1,6 @@
 /** Characterize the original clipboard pipeline before its renderer migration. */
 import type { Block } from "@meridian/contracts/protocol";
+import type { AssistantView } from "@meridian/thread-client";
 import { describe, expect, it } from "vitest";
 import { assistantTurnCopyHtml, assistantTurnCopyMarkdown } from "./assistant-turn-copy";
 
@@ -18,7 +19,14 @@ describe("assistant clipboard contract", () => {
   for (const [name, markdown] of Object.entries(samples)) {
     it(name, () => {
       const block = { textContent: markdown } as Block;
-      expect(assistantTurnCopyMarkdown([{ kind: "text", block }])).toBe(markdown);
+      const view: AssistantView = {
+        blocks: [block],
+        items: [{ kind: "text", block, text: markdown }],
+        finalFrom: 0,
+        hiddenToolCallIds: [],
+        workReceipts: [],
+      };
+      expect(assistantTurnCopyMarkdown(view)).toBe(markdown);
       expect(assistantTurnCopyHtml(markdown)).toMatchSnapshot();
     });
   }

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type postgres from "postgres";
+import { migrationCompanion } from "./migration-sql";
 
 export interface MigrationJournalEntry {
   idx: number;
@@ -96,7 +97,27 @@ export function readMigrationHistory(migrationsDirectory: string): MigrationHist
   for (const file of readdirSync(migrationsDirectory).filter((name) => name.endsWith(".sql"))) {
     sqlFiles.set(file, readFileSync(path.join(migrationsDirectory, file)));
   }
-  return buildMigrationHistory({ journalText: readFileSync(journalPath, "utf8"), sqlFiles });
+  const history = buildMigrationHistory({
+    journalText: readFileSync(journalPath, "utf8"),
+    sqlFiles,
+  });
+  for (const entry of history.entries) {
+    try {
+      const companion = migrationCompanion(entry.sql.toString("utf8"));
+      if (
+        companion &&
+        sha256(readFileSync(path.join(migrationsDirectory, companion.file))) !== companion.hash
+      )
+        history.issues.push(
+          `${entry.tag}: code companion ${companion.file} does not match its frozen digest`,
+        );
+    } catch (error) {
+      history.issues.push(
+        `${entry.tag}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  return history;
 }
 
 export function compareRepositoryMigrationHistory(

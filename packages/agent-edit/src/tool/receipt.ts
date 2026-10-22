@@ -1,13 +1,16 @@
 // Receipts project accepted evidence. Reporting failure never changes acceptance.
 
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { type BlockSnapshot, computeEcho, truncateSerializedBlock } from "../apply/echo.js";
 import { renderedItems, shownEvidence } from "../links/shown.js";
+import type { BlockItemId } from "../model/block-hash.js";
 import type { StagedWriteRejectionReason } from "../ports/document-coordinator.js";
 import type { CommandLinks } from "./command-links.js";
+import type { DestructiveSweepReport } from "./commit-detection.js";
 import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import { modelResult } from "./model-result.js";
-import type { DestructiveSweepReport } from "./mutation-commit.js";
+import { modelResult, type WriteRejection } from "./model-result.js";
+import { removalPhrase, removedWriteMessage } from "./removal-copy.js";
 import { type ApplySuccessResponseInput, formatApplySuccess } from "./response-format.js";
 import type { DocumentCommandName, ResponseCommitDocumentResult } from "./types.js";
 
@@ -18,8 +21,8 @@ interface ReceiptIdentity {
   rejectionReason?: StagedWriteRejectionReason;
 }
 interface AcceptedEdit extends ReceiptIdentity {
-  touchedHashes: ReadonlySet<string>;
-  deletedHashes: ReadonlySet<string>;
+  touchedBlocks: readonly BlockItemId[];
+  deletedBlocks: readonly BlockItemId[];
   copied?: CopySummary;
 }
 interface ReceiptCut {
@@ -56,11 +59,12 @@ export function renderReceipt(
   after: readonly BlockSnapshot[],
   outcome: Omit<ApplySuccessResponseInput, "echo" | "deletedBlocks" | "copied">,
 ): InternalWriteResult {
+  const deletedIds = new Set(edit.deletedBlocks.map((id) => `${id.clientID}:${id.clock}`));
   const echo = computeEcho({
     before,
     after,
-    agentTouchedHashes: edit.touchedHashes,
-    agentDeletedHashes: edit.deletedHashes,
+    agentTouchedBlocks: edit.touchedBlocks,
+    agentDeletedBlocks: edit.deletedBlocks,
   });
   return formatApplySuccess({
     ...outcome,
@@ -73,7 +77,9 @@ export function renderReceipt(
               blocks: after.map((block) => truncateSerializedBlock(block.serialized)),
             },
           ],
-    deletedBlocks: [...edit.deletedHashes],
+    deletedBlocks: before
+      .filter((block) => deletedIds.has(`${block.clientID}:${block.clock}`))
+      .map((block) => block.hash),
     ...(after.length <= 1 && after.every((block) => !block.body.trim())
       ? { documentEmpty: true }
       : {}),
@@ -111,12 +117,7 @@ export function renderSettledReceipts(
   return [
     ...receipts,
     ...rejected.map((edit) =>
-      settledReceipt(edit, null, {
-        status: "invalid_write",
-        model: {
-          message: `Write did not land: ${rejectedWriteExplanation(edit.rejectionReason)}. Re-read and retry.`,
-        },
-      }),
+      settledReceipt(edit, null, rejectedWriteResult(edit.rejectionReason)),
     ),
   ];
 }
@@ -136,10 +137,64 @@ function degradedReceipts(accepted: readonly ReceiptIdentity[], revision: string
   );
 }
 
+/**
+ * A staged write the host refused, as its settled receipt says it. A removal names who removed
+ * the file and asks for no retry.
+ */
+export function rejectedWriteResult(reason?: StagedWriteRejectionReason): InternalWriteResult {
+  if (typeof reason === "object")
+    return { status: "invalid_write", model: removedWriteRefusal(reason.removed) };
+  return {
+    status: "invalid_write",
+    model: {
+      message: `Write did not land: ${rejectedWriteExplanation(reason)}. Re-read and retry.`,
+      rejected: writeRejection(reason),
+    },
+  };
+}
+
+/**
+ * A write the document's removal stopped before the reply saved it, whether the removal refused
+ * the staged write or the save found the document gone. Null: no record (the file went with its
+ * source or Work, or stands again).
+ */
+export function removedWriteRefusal(removal: DocumentRemovalRecord | null): {
+  message: string;
+  rejected: "removed";
+  removal?: DocumentRemovalRecord;
+} {
+  return {
+    message: removedWriteMessage(removal),
+    rejected: "removed",
+    ...(removal ? { removal } : {}),
+  };
+}
+
 /** A refusal explains host evidence, not a guess from item visibility. */
-export function rejectedWriteExplanation(reason?: StagedWriteRejectionReason): string {
+function writeRejection(reason?: Exclude<StagedWriteRejectionReason, object>): WriteRejection {
   switch (reason) {
     case "discard":
+      return "discarded_edit";
+    case "discarded_draft":
+    case "discarded_document":
+    case "discarded_edit":
+    case "inverse":
+      return reason;
+    default:
+      return "integration";
+  }
+}
+
+export function rejectedWriteExplanation(reason?: StagedWriteRejectionReason): string {
+  if (typeof reason === "object") return `this file was ${removalPhrase(reason.removed)}`;
+  switch (reason) {
+    case "discard":
+      return "the user discarded the text it edited";
+    case "discarded_draft":
+      return "the user discarded this draft";
+    case "discarded_document":
+      return "the user discarded this new document";
+    case "discarded_edit":
       return "the user discarded the text it edited";
     case "inverse":
       return "an inverse removed the text it edited";

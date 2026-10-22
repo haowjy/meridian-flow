@@ -34,15 +34,16 @@ import type {
   PriceSource,
   ProjectChatItem,
   PromptBake,
+  RunState,
   SpawnStatus,
   Thread,
   ThreadKind,
   ThreadLeaseState,
   ThreadLifecycleStatus,
   ThreadListItem,
-  ThreadPendingInbox,
   ThreadStatus,
   Turn,
+  TurnDelivery,
   TurnOrigin,
   TurnRole,
   TurnStatus,
@@ -51,6 +52,7 @@ import type {
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { CreateDerivedPrimaryThreadInput } from "../domain/thread-create-derived-primary.js";
 import type { CreateSubagentThreadInput } from "../domain/thread-create-subagent.js";
+import { TURN_GRAPH, type TurnGraph } from "./turn-graph.js";
 
 export interface CreateBlockInput {
   id?: string;
@@ -71,6 +73,10 @@ export interface UpsertBlockInput extends CreateBlockInput {
   id: string;
 }
 
+/**
+ * Every read returns the conversation: the blocks of a writer message a hand-back took out of the chat
+ * are not in it. They stay stored for diagnostics and are reachable by no port method.
+ */
 export interface BlockRepository {
   create(input: CreateBlockInput): Promise<Block>;
   upsert(input: UpsertBlockInput): Promise<Block>;
@@ -78,9 +84,11 @@ export interface BlockRepository {
   replaceExisting(input: UpsertBlockInput): Promise<Block | null>;
   findById(id: string): Promise<Block | null>;
   listByTurn(turnId: TurnId): Promise<Block[]>;
+  /** The blocks of the named turns in one bounded read, ordered by turn then sequence; a turn with none is absent. */
+  listByTurnIds(turnIds: readonly TurnId[]): Promise<Block[]>;
   /** Both sides of the requested tool calls, bounded by a transcript page's keys. */
   listToolBlocks(keys: readonly { turnId: TurnId; toolCallId: string }[]): Promise<Block[]>;
-  /** All blocks across all turns for a thread, ordered by turn creation then block sequence. */
+  /** All conversation blocks of a thread, ordered by turn position then block sequence. */
   listByThread(threadId: ThreadId): Promise<Block[]>;
 }
 
@@ -236,6 +244,8 @@ export interface CreateThreadInput {
   userId: UserId;
   projectId: ProjectId;
   workId?: WorkId | null;
+  /** No default: every creation path chooses the chat's mode. */
+  aiWriteMode: AiWriteMode;
   kind?: ThreadKind;
   title?: string | null;
   parentThreadId?: ThreadId | null;
@@ -302,6 +312,8 @@ export interface ThreadRepository {
   updateStatus(id: ThreadId, status: ThreadLifecycleStatus): Promise<Thread>;
   /** Persists a writer-authored title and refreshes `updatedAt`; returns the authoritative row. */
   updateTitle(id: ThreadId, title: string): Promise<Thread>;
+  /** Sets the chat's AI write mode; only an applied write-mode switch calls it, under the run claim. */
+  setAiWriteMode(id: ThreadId, mode: AiWriteMode): Promise<void>;
   /** Locks, inserts, and points at the first bake; contenders receive the winner. */
   bakeInitialPrompt(
     id: ThreadId,
@@ -350,13 +362,12 @@ export interface ThreadStatusReader {
 }
 
 /**
- * Read seam for a thread's undelivered inbox rows as the writer-facing
- * `ThreadPendingInbox`. The runtime composition supplies a projection over the
- * raw `InboxReader`; the threads domain depends on this narrow port, not the runtime
- * domain, so pending stays a pure read.
+ * Read seam for the chat's run-state record at the journal head. Inside the snapshot's
+ * repeatable-read transaction it is coherent with the snapshot's turns; the runtime composition
+ * supplies it so the threads domain never imports the runtime's adapters.
  */
-export interface ThreadPendingInboxReader {
-  readPending(threadId: ThreadId): Promise<ThreadPendingInbox>;
+export interface ThreadRunStateReader {
+  readRunState(threadId: ThreadId): Promise<RunState>;
 }
 
 export interface ProjectChatCursorKey {
@@ -414,6 +425,10 @@ export interface CreateTurnInput {
   origin: TurnOrigin;
   writeMode?: AiWriteMode | null;
   status?: TurnStatus;
+  /** The execution reserving this turn; write-once, null for turns no execution reserves. */
+  executionId?: string | null;
+  /** The messages the reservation is for; write-once. */
+  reservedForUserTurnIds?: readonly string[] | null;
   requestParams?: JsonValue | null;
   metadata?: JsonValue | null;
 }
@@ -455,13 +470,24 @@ export interface ReadTranscriptItemsInput {
   through?: TranscriptKey;
 }
 
+/**
+ * Reads return the conversation: a writer message a hand-back took out of the chat is not returned by
+ * `findById` or `listByThread`, and its blocks are not in `BlockRepository`. A forgotten turn (a failed
+ * attempt the writer retried or the chat moved past) is not in `listByThread` or the transcript spans, but
+ * `findById` still returns it with its `forgottenBy`: it is an identity read. Positions, `prevTurnId`,
+ * the leaf and fork cutoffs read the graph, `turnGraph(turns)` from `./turn-graph.js`, which only the
+ * modules that own that logic may import.
+ */
 export interface TurnRepository {
+  readonly [TURN_GRAPH]: TurnGraph;
   /** Inserts a turn row, or returns the existing row when replaying the same turn id. */
   create(input: CreateTurnInput): Promise<Turn>;
+  /** A conversation turn by id; null for a handed-back writer message. */
   findById(id: TurnId): Promise<Turn | null>;
   /** Latest execution or automatic satisfaction of one inbox control. */
   findByControlId(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   findLatestHandoffSeed(threadId: ThreadId): Promise<Turn | null>;
+  /** The conversation turns in position order. */
   listByThread(threadId: ThreadId): Promise<Turn[]>;
   /** Latest local requester text per thread, without walking inherited transcript spans. */
   listLatestLocalRequesterText(threadIds: readonly ThreadId[]): Promise<Map<ThreadId, string>>;
@@ -483,6 +509,22 @@ export interface TurnRepository {
   findFirstUnsettledTranscriptTurn(spans: readonly TranscriptSpan[]): Promise<Turn | null>;
   /** Unsettled turns in one claimed thread, ordered by transcript position. */
   listUnsettledForThread(threadId: ThreadId): Promise<Turn[]>;
+  /**
+   * Every turn an execution reserved, ordered by position. Empty for an
+   * execution that reserved nothing, and for ids that are not UUIDs.
+   */
+  listByExecution(threadId: ThreadId, executionId: string): Promise<Turn[]>;
+  /** The first turn the Retry request `replyTurnId` reserved (`metadata.retryReplyId`), or null. */
+  findRetryReservation(threadId: ThreadId, replyTurnId: TurnId): Promise<Turn | null>;
+  /** User turns of writer messages a hand-back took out of the chat. Their rows and blocks stay for diagnostics. */
+  listHandedBackIds(threadId: ThreadId): Promise<ReadonlySet<string>>;
+  /**
+   * Stamps `forgotten_by_turn_id` on the named turns of the forgetting turn's thread (write-once: a turn
+   * already forgotten keeps its stamp). Returns the ids it stamped.
+   */
+  forgetTurns(turnIds: readonly TurnId[], byTurnId: TurnId): Promise<TurnId[]>;
+  /** Each delivered inbox message of the thread with its deliverer (null when unknown). */
+  listMessageDeliveries(threadId: ThreadId): Promise<Map<string, TurnDelivery>>;
   /** Complete epoch boundaries in the supplied transcript spans. */
   listTranscriptBoundaries(spans: readonly TranscriptSpan[]): Promise<Turn[]>;
   /** Bounded global discovery for startup orphan repair, ordered by owner and position. */
@@ -490,7 +532,6 @@ export interface TurnRepository {
     limit: number,
     after?: { threadId: ThreadId; position: number },
   ): Promise<Array<Pick<Turn, "id" | "threadId" | "position" | "role" | "status">>>;
-  getLatestByThread(threadId: ThreadId): Promise<Turn | null>;
   /**
    * The assistant container of a run that the caller has already proven live
    * (via the runner map), or null. Durable status is not a liveness authority:

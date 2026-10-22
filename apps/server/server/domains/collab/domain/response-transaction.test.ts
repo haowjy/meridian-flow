@@ -31,7 +31,7 @@ describe("ResponseTransaction", () => {
             enlistResponseParticipant({
               commit() {
                 events.push("failed");
-                throw new Error("publish failed");
+                throw new Error("commit failed");
               },
               abort: vi.fn(),
             });

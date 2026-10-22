@@ -1,6 +1,7 @@
 /** PostgreSQL coverage for No Work and concurrent thread Work rebinds. */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
@@ -26,6 +27,7 @@ else
     const db = createDb(DATABASE_URL, { max: 4 });
     const repos = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
+      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),
@@ -69,7 +71,7 @@ else
         .set({ archivedAt: new Date() })
         .where(eq(schema.works.id, ids.workId));
       await expect(rebind(ids.noWorkId)).resolves.toMatchObject({
-        after: { workId: ids.noWorkId, name: "No Work", slug: null },
+        after: { workId: ids.noWorkId, name: "No Work", handle: null },
         changed: true,
       });
       await expect(rebind(ids.workId)).rejects.toMatchObject({
@@ -82,18 +84,18 @@ else
 
     it("supports No Work to named Work to No Work while retaining historical membership", async () => {
       await expect(rebind(ids.noWorkId)).resolves.toMatchObject({
-        before: { workId: ids.noWorkId, name: "No Work", slug: null },
-        after: { workId: ids.noWorkId, name: "No Work", slug: null },
+        before: { workId: ids.noWorkId, name: "No Work", handle: null },
+        after: { workId: ids.noWorkId, name: "No Work", handle: null },
         changed: true,
       });
       await expect(rebind(ids.workId)).resolves.toMatchObject({
-        before: { workId: ids.noWorkId, name: "No Work", slug: null },
+        before: { workId: ids.noWorkId, name: "No Work", handle: null },
         after: { workId: ids.workId },
         changed: true,
       });
       await expect(rebind(ids.noWorkId)).resolves.toMatchObject({
         before: { workId: ids.workId },
-        after: { workId: ids.noWorkId, name: "No Work", slug: null },
+        after: { workId: ids.noWorkId, name: "No Work", handle: null },
         changed: true,
       });
       await expect(repos.threadWorks.findPrimary(ids.threadId)).resolves.toEqual({
@@ -116,11 +118,13 @@ else
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
+        aiWriteMode: "direct",
         source: { parentThreadId: null, rootThreadId: ids.threadId, spawnDepth: 0 },
         originType: "handoff",
         originTurnId: originTurnId as never,
       } as never);
       const subagent = await repos.threads.createSubagent({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
@@ -153,6 +157,7 @@ else
       await expect(
         repos.transaction(async () => {
           const child = await repos.threads.createSubagent({
+            aiWriteMode: "direct",
             userId: ids.userId,
             projectId: ids.projectId,
             parentThreadId: ids.threadId,

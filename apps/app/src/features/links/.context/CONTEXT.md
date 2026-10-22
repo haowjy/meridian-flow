@@ -19,14 +19,15 @@ resolution.registerResolver(
 //   malformed ref                          -> gone (never the address)
 //   doc:<id> the complete index holds      -> that document, wherever it lives now
 //   no ref, address the complete index has -> that document (matchDocumentPath)
-//   relative with no base, or a holder before its own address -> not asked
+//   relative with no base                    -> not asked
 //   ahead ref the memo knows settled on D  -> exactly a doc ref to D
 //   ahead ref settled, identity unknown    -> ask, never the address
 //   other ahead ref, complete index holds exactly its stored address
 //                                          -> that document now (design rule 4), and ask
 //   everything else                        -> ask
 // remote, per batch of asked questions (at most 200):
-//   one POST of { workId, baseUri, links: [{ ref, href }] }; answers in request order:
+//   one POST of { workId, baseUri, holderDocumentId, links: [{ ref, href }] };
+//     answers in request order:
 //   document -> document;  gone -> gone;  missing -> missing;  unresolvable -> no answer
 //   `settled: true` (rule 3) on an ahead ref's document or gone -> the memo learns it
 //   a provisional local answer stands unless the server says gone or another document
@@ -60,25 +61,25 @@ flash on catalog changes.
 `baseUri` is the URI of the document holding the link. Only a `relative` target
 needs it, and without one the question is not asked (a null answer, cached as
 a failure) rather than answered: an unasked question must not render as a
-missing document. A holder scope (`holderDocumentId`) asks the server nothing
-until its own address arrives, because a request with a null `baseUri` is
-chat's, which alone may fall back to a document's previous locations.
+missing document. A document holder also sends `holderDocumentId`, so the
+server pins that identity and its current address rather than treating a null
+or stale `baseUri` like a chat's location.
 
 `workId` is the Work row id, including No Work. In the Editor it is the
 holder's projected resource location `workId` for Scratch/Uploads, and the
 project's No Work row for manuscript/kb/user/unfiled. Editor route or remembered
 Work never supplies link scope; `baseUri` is not parsed to infer it. Chat
 continues to use the thread's Work. Unresolved surfaces have
-no scope. Contextual `uploads://` links use that Work, and so does
-`scratch://` unless the scope also names a `rootThreadId`.
-`@/` names the locked No Work row and canonical `@<slug>` names a Work
-through Project Work authority.
+no scope. `scratch://` uses that Work unless the scope also names a
+`rootThreadId`. A bare `uploads://` uses the scope's `chatId` (the chat's top
+primary), and a holder with no chat has none, so only a qualified
+`uploads://@c15/x` resolves there. Canonical `@w3` names a Work by its
+handle through Project Work authority.
 
 `rootThreadId` is the lineage (the first chat's id) a bare `scratch://` means:
 a No Work chat's own, or the lineage a note in a chat's Scratch belongs to
-(its replica location's `rootThreadId`, with `workId` the No Work row for
-`uploads://`). The resolver sends it in place of `workId`, which the server
-refuses beside it. A canonical `scratch://@/c12/x` resolves by its own handle in
+(its replica location's `rootThreadId`). The resolver sends it in place of `workId`, which the server
+refuses beside it. A canonical `scratch://@c12/x` resolves by its own handle in
 any scope, from the local index when the scope's lineage holds it, else the
 server. The follow dialog names a lineage by its first chat's title
 (`useLineageTitle`, which falls back to `GET .../context/lineages/:rootThreadId`
@@ -88,11 +89,11 @@ Scratch.
 
 ## Resolution scope: what an answer is true of
 
-`{ projectId, workId, rootThreadId, baseUri }` plus the index's `revision` is the complete
-semantic input to every question the resolver asks. The registration effect is
-keyed on exactly those, and reads none of them through a ref. The index object
-keeps its identity while its revision and completeness hold, so the index
-stands in for the revision.
+`{ projectId, workId, rootThreadId, baseUri, holderDocumentId }` plus the index's
+`revision` is the complete semantic input to every question the resolver asks.
+The registration effect is keyed on exactly those, and reads none of them through
+a ref. The index object keeps its identity while its revision and completeness
+hold, so the index stands in for the revision.
 
 The effect's cleanup unregisters in a microtask. React runs the cleanup and the
 next registration in one commit, and an immediate unregister would leave no live
@@ -134,6 +135,9 @@ fragment and query dropped), or null when it names none. The dialog never shows
 it as text. Every state draws one location line: the area's icon and the
 folder, worded by `documentLocation` as the `@` menu words a row's location
 (nothing for a manuscript document at the root), with the address as a tooltip.
+A creatable missing target has no description sentence, so this location line is
+the dialog's accessible description; when a manuscript document sits at the root
+and the line draws nothing, the description uses the area's label instead.
 A link that names no area shows its plain label instead. `{name}` is
 `addressDocumentName(address)` (the filename without `.md`), falling back to
 the link's label; Create uses the address.
@@ -185,6 +189,14 @@ registers. A dismissal is never
 inferred from the store clearing, because the procedure clears right before it
 opens.
 
+A follow may carry a `FollowPolicy`. Its `open` replaces the surface's default
+destination for that follow, and its `missing` runs instead of reporting a
+missing answer (the follow clears any outcome it owns first). Everything else
+stays the surface's: the scope, the cancellation rules above, outcome ownership,
+and the checking and failure dialogs. Retry keeps the policy. Chat's doors use
+this to open on their shell's placement rules and route a missing address to the
+destination, which says so in place ([link-following decision][link-following]).
+
 `gesture` comes from the click: `current` or `new-tab` (middle click,
 Ctrl/Cmd+click). The Editor maps `new-tab` to a background tab on its strip;
 chat only ever follows `current`. There is no browser-tab disposition: the
@@ -224,20 +236,20 @@ document is at an address the index holds, and whether the Editor's `@`
 link-ahead address is already taken.
 
 `linkableCatalogScopes` names the catalogs: the project catalog (manuscript,
-kb, and Unfiled, whatever the Work), the user catalog, the current Work's
-Uploads by row id (including No Work) and its Scratch, which is the scope's
+kb, and Unfiled, whatever the Work), the user catalog, the current chat's
+Uploads by `chatId` and the Work's Scratch, which is the scope's
 lineage's instead when it names one.
 These are the catalogs a contextual address resolves in on the server.
 A lineage scope has two owners in one index: Scratch reads with the lineage and
-Uploads with the Work row (`aggregateCatalogScope`, `uploadsWorkId`). Never
+Uploads with the chat (`aggregateCatalogScope`). Never
 narrow the index to one exclusive `ContextOwner`: Uploads then has no catalog,
 the index never completes, and the resolver refuses every local answer.
 An unresolved surface has no catalog scope; the follower waits for its Work
 rather than resolving against a guessed authority.
 
-A Work-qualified URI outside the selected Work (`scratch://@other-work/…`), or
-another lineage's (`scratch://@/c40/…`), is outside the index: it has no local match and always asks the server, which
-resolves the slug itself.
+A Work-qualified URI outside the selected Work (`scratch://@w9/…`), or
+another lineage's (`scratch://@c40/…`), is outside the index: it has no local match and always asks the server, which
+resolves the handle itself.
 
 `revision` is content, not an object identity and not a counter: each
 document's id and URI. A refetch that found the
@@ -248,3 +260,5 @@ on remount and claim a change that never happened.
 
 Catalog URIs remain canonical. Nothing here rewrites schemes or derives identity
 from a path or label.
+
+[link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-following.md

@@ -1,0 +1,309 @@
+// @vitest-environment jsdom
+/** `/compact` dispatch: optimistic at once, retried with the same id, withdrawn at once on both sides. */
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@lingui/core/macro", () => ({
+  t: (strings: TemplateStringsArray) => strings[0],
+}));
+const api = vi.hoisted(() => ({
+  enqueueThreadControl: vi.fn(),
+  withdrawThreadControl: vi.fn(),
+}));
+vi.mock("@/client/api/threads-api", () => api);
+const transport = vi.hoisted(() => ({ cancel: vi.fn() }));
+vi.mock("@/client/providers/TransportProvider", () => ({ useThreadTransport: () => transport }));
+const invalidateQueries = vi.hoisted(() => vi.fn());
+vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQueries }) }));
+const announcements = vi.hoisted(() => ({ announce: vi.fn(), announceError: vi.fn() }));
+const store = vi.hoisted(() => ({ dispatchRunState: vi.fn() }));
+vi.mock("@/client/stores", () => ({ ...announcements, useThreadActions: () => store }));
+
+import type { PendingInboxItem, RunState } from "@meridian/contracts/threads";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { HttpResponseError } from "@/client/api/http-client";
+import type { SwitchView } from "./useSwitchView";
+import { type ThreadControls, useThreadControls } from "./useThreadControls";
+
+const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+const previousActEnvironment = actGlobal.IS_REACT_ACT_ENVIRONMENT;
+beforeAll(() => {
+  actGlobal.IS_REACT_ACT_ENVIRONMENT = true;
+});
+afterAll(() => {
+  actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+});
+
+const EMPTY: readonly PendingInboxItem[] = [];
+const recordOf = (items: PendingInboxItem[] = []): RunState => ({
+  version: "1",
+  items,
+  sentThrough: 0,
+  execution: null,
+  mode: "direct",
+  blocked: null,
+});
+const NO_SWITCHES: SwitchView = {
+  rows: [],
+  writeMode: "direct",
+  switchWriteMode: () => undefined,
+  retry: () => undefined,
+  withdraw: () => undefined,
+};
+const NONE: ReadonlySet<string> = new Set();
+
+let root: Root;
+let latest: ThreadControls;
+function Probe(props: {
+  items?: readonly PendingInboxItem[];
+  version?: string;
+  history?: string;
+  answered?: ReadonlySet<string>;
+}) {
+  latest = useThreadControls({
+    threadId: "thread-1",
+    items: props.items ?? EMPTY,
+    version: props.version ?? "1",
+    history: props.history ?? null,
+    answeredControlIds: props.answered ?? NONE,
+    switches: NO_SWITCHES,
+  });
+  return null;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+beforeEach(async () => {
+  vi.clearAllMocks();
+  root = createRoot(document.createElement("div"));
+  await act(async () => root.render(<Probe />));
+});
+afterEach(async () => {
+  await act(async () => root.unmount());
+});
+
+describe("useThreadControls", () => {
+  it("shows /compact as queued before the server answers, with a client-minted id", async () => {
+    const response = deferred<unknown>();
+    api.enqueueThreadControl.mockReturnValue(response.promise);
+    let id = "";
+    await act(async () => {
+      id = latest.enqueue({ kind: "compact" });
+    });
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(api.enqueueThreadControl).toHaveBeenCalledWith("thread-1", {
+      id,
+      control: { kind: "compact" },
+    });
+    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "sending" }]);
+    expect(announcements.announce).toHaveBeenCalledWith("Compaction queued");
+    // A reply is running, so the answer's record lists the command before the inbox frame does.
+    const listed = {
+      id,
+      intent: "control",
+      seq: 1,
+      control: { kind: "compact" },
+      provenance: { kind: "writer" },
+      deliveryState: "waiting",
+    } as PendingInboxItem;
+    await act(async () => response.resolve({ id, turnId: "c", runState: recordOf([listed]) }));
+    // Answer to record: the row holds, never vanishing in between.
+    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
+    await act(async () => root.render(<Probe items={[listed]} />));
+    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
+    expect(invalidateQueries).toHaveBeenCalled();
+    // The record drops the item as the compaction starts, before its divider reaches the
+    // transcript: the row holds (no frame with neither), and asks for the snapshot that proves it.
+    invalidateQueries.mockClear();
+    await act(async () => root.render(<Probe version="2" />));
+    expect(latest.queued.map((row) => row.id)).toEqual([id]);
+    expect(invalidateQueries).toHaveBeenCalledTimes(1);
+    // A snapshot older than the drop proves nothing; the divider's control id retires the row.
+    await act(async () => root.render(<Probe version="2" history="1" />));
+    expect(latest.queued.map((row) => row.id)).toEqual([id]);
+    await act(async () => root.render(<Probe version="2" history="2" answered={new Set([id])} />));
+    expect(latest.queued).toEqual([]);
+    // Another tab's Withdraw drops an item and no turn ever comes: a snapshot at the drop proves it.
+    const other = {
+      id: "c9",
+      intent: "control",
+      seq: 1,
+      control: { kind: "compact" },
+      provenance: { kind: "writer" },
+      deliveryState: "waiting",
+    } as PendingInboxItem;
+    await act(async () => root.render(<Probe version="3" items={[other]} />));
+    expect(latest.queued.map((row) => row.id)).toEqual(["c9"]);
+    await act(async () => root.render(<Probe version="4" />));
+    expect(latest.queued.map((row) => row.id)).toEqual(["c9"]);
+    await act(async () => root.render(<Probe version="4" history="4" />));
+    expect(latest.queued).toEqual([]);
+  });
+
+  it("removes the row at once, and withdraws once the in-flight enqueue lands", async () => {
+    const enqueued = deferred<unknown>();
+    api.enqueueThreadControl.mockReturnValue(enqueued.promise);
+    api.withdrawThreadControl.mockResolvedValue({ outcome: "withdrawn", runState: recordOf() });
+    let id = "";
+    await act(async () => {
+      id = latest.enqueue({ kind: "compact" });
+    });
+    const [queued] = latest.queued;
+    if (!queued) throw new Error("expected a queued control");
+    await act(async () => latest.withdraw(queued));
+    expect(api.withdrawThreadControl).not.toHaveBeenCalled();
+    expect(latest.queued).toEqual([]);
+    expect(announcements.announce).toHaveBeenLastCalledWith("Compaction stopped");
+    await act(async () =>
+      enqueued.resolve({
+        id,
+        turnId: null,
+        runState: recordOf([
+          {
+            id,
+            seq: 1,
+            intent: "control",
+            control: { kind: "compact" },
+            provenance: { kind: "writer", actorId: "w" },
+            deliveryState: "awaiting_run",
+            summary: "Compact conversation",
+            enqueuedAt: "2026-09-28T00:00:00.000Z",
+          },
+        ]),
+      }),
+    );
+    expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", id);
+    expect(latest.queued).toEqual([]);
+  });
+
+  it("withdraws on the server when the enqueue response was lost but the server has the row", async () => {
+    // The request reached the server; only its response was lost.
+    api.enqueueThreadControl.mockRejectedValue(new TypeError("Failed to fetch"));
+    api.withdrawThreadControl.mockResolvedValue({ outcome: "withdrawn", runState: recordOf() });
+    let id = "";
+    await act(async () => {
+      id = latest.enqueue({ kind: "compact" });
+    });
+    expect(latest.queued).toEqual([
+      {
+        id,
+        control: { kind: "compact" },
+        status: "failed",
+        failure: { requestId: id, attempt: 1, kind: "lost" },
+      },
+    ]);
+    await act(async () => latest.retry(id));
+    expect(latest.queued[0]?.failure).toEqual({ requestId: id, attempt: 2, kind: "lost" });
+    const serverRow: PendingInboxItem[] = [
+      {
+        id,
+        seq: 1,
+        intent: "control",
+        control: { kind: "compact" },
+        provenance: { kind: "writer", actorId: "w" },
+        deliveryState: "awaiting_run",
+        summary: "Compact conversation",
+        enqueuedAt: "2026-09-28T00:00:00.000Z",
+      },
+    ];
+    const [failed] = latest.queued;
+    if (!failed) throw new Error("expected a failed control");
+    api.withdrawThreadControl.mockRejectedValueOnce(new TypeError("lost withdrawal"));
+    await act(async () => latest.withdraw(failed));
+    expect(latest.queued[0]?.failure).toEqual({
+      requestId: expect.any(String),
+      attempt: 1,
+      kind: "lost",
+    });
+    api.withdrawThreadControl.mockRejectedValueOnce(new TypeError("lost withdrawal again"));
+    await act(async () => latest.withdraw(failed));
+    expect(latest.queued[0]?.failure).toEqual({
+      requestId: expect.any(String),
+      attempt: 2,
+      kind: "lost",
+    });
+    await act(async () => latest.withdraw(failed));
+    expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", id);
+    expect(latest.queued).toEqual([]);
+    // A lagging inbox frame still lists it, then the server drops it.
+    await act(async () => root.render(<Probe items={serverRow} />));
+    expect(latest.queued).toEqual([]);
+    await act(async () => root.render(<Probe />));
+    expect(latest.queued).toEqual([]);
+    expect(announcements.announceError).not.toHaveBeenCalledWith("Couldn't withdraw. Try again.");
+  });
+
+  it("withdraws on the server once a failed in-flight enqueue settles, and a 404 drops the row", async () => {
+    const enqueued = deferred<unknown>();
+    api.enqueueThreadControl.mockReturnValue(enqueued.promise);
+    api.withdrawThreadControl.mockRejectedValue(
+      new HttpResponseError("control_not_found", 404, null),
+    );
+    let id = "";
+    await act(async () => {
+      id = latest.enqueue({ kind: "compact" });
+    });
+    const [queued] = latest.queued;
+    if (!queued) throw new Error("expected a queued control");
+    await act(async () => latest.withdraw(queued));
+    expect(api.withdrawThreadControl).not.toHaveBeenCalled();
+    await act(async () => enqueued.reject(new TypeError("Failed to fetch")));
+    expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", id);
+    expect(latest.queued).toEqual([]);
+    expect(announcements.announceError).not.toHaveBeenCalled();
+  });
+
+  it("shows the row again, queued, when the server lists a command its withdrawal 404ed", async () => {
+    // The enqueue was still being committed when Withdraw reached the server.
+    api.enqueueThreadControl.mockRejectedValue(new TypeError("Failed to fetch"));
+    api.withdrawThreadControl.mockRejectedValue(
+      new HttpResponseError("control_not_found", 404, null),
+    );
+    let id = "";
+    await act(async () => {
+      id = latest.enqueue({ kind: "compact" });
+    });
+    const [failed] = latest.queued;
+    if (!failed) throw new Error("expected a failed control");
+    await act(async () => latest.withdraw(failed));
+    expect(latest.queued).toEqual([]);
+    const committed: PendingInboxItem[] = [
+      {
+        id,
+        seq: 1,
+        intent: "control",
+        control: { kind: "compact" },
+        provenance: { kind: "writer", actorId: "w" },
+        deliveryState: "awaiting_run",
+        summary: "Compact conversation",
+        enqueuedAt: "2026-09-28T00:00:00.000Z",
+      },
+    ];
+    await act(async () => root.render(<Probe items={committed} />));
+    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
+  });
+
+  it("drops the row and says so when Withdraw comes after the compaction started", async () => {
+    api.withdrawThreadControl.mockResolvedValue({
+      outcome: "already_started",
+      runState: recordOf(),
+    });
+    await act(async () =>
+      latest.withdraw({
+        id: "k",
+        control: { kind: "compact" },
+        status: "queued",
+      }),
+    );
+    expect(announcements.announce).toHaveBeenLastCalledWith("This compaction already started.");
+    expect(latest.queued).toEqual([]);
+  });
+});

@@ -17,52 +17,32 @@
 import { t } from "@lingui/core/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
+import { Folder } from "lucide-react";
 import { type CSSProperties, useMemo, useRef } from "react";
+import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabs } from "@/client/stores";
-import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import {
   DeleteConfirmationDialog,
   type DeleteTarget,
   useDeleteConfirmation,
 } from "../context/ContextEntryActions";
-import { ContextTreeEntry, TreeEnvProvider } from "../context/ContextTreeRows";
-import { fileKindIcon as nodeIcon } from "../context/context-file-icon";
+import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
+import { serverTabFromFile } from "../context/context-tab-from-file";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { treeFolderIds } from "../context/tree-expansion-state";
-import { type CatalogMenuSource, useCatalogMenuSource } from "../context/use-catalog-menu-source";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
+import { useScratchCatalogs } from "../context/use-scratch-catalogs";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useOpenScratchNote } from "../dock/use-open-scratch-note";
 import { ResizeHandle } from "../layout/ResizeHandle";
 import { useProjectSurfacePrefsStore } from "../layout/surface-prefs-store";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
-import { RailEmptyHint, RailFileRow, RailFolderRow } from "../shell/RailSection";
+import { RailEmptyHint, RailFolderRow } from "../shell/RailSection";
 import { useChatScratchSource } from "./use-chat-scratch-source";
-
-function useChatScratch(projectId: string, threadId: string | null) {
-  const scratch = useChatScratchSource(projectId, threadId);
-  const source = useCatalogMenuSource({
-    projectId,
-    owner: scratch?.owner ?? {},
-    earlierRootThreadId: scratch?.earlierRootThreadId,
-    heading: scratch?.heading ?? schemeLabel("scratch"),
-  });
-  const openNote = useOpenScratchNote();
-  if (!scratch) return null;
-  return {
-    source,
-    scope: JSON.stringify([scratch.owner, scratch.earlierRootThreadId]),
-    pick: (node: DrillNode) => {
-      const tab = source.tabFor(node.id);
-      if (!tab) return false;
-      openNote(tab);
-      return true;
-    },
-  };
-}
 
 /** The document open beside the writer, if any: the dock's on the Chat screen, the selected tab in the Editor. */
 function useOpenDocumentId(projectId: string, editorWorkId: string | null): string | undefined {
@@ -94,46 +74,13 @@ export function RailScratchSection({
   /** Desktop only: a handle on the divider above the expanded section resizes it. */
   resizable?: boolean;
 }) {
-  const scratch = useChatScratch(projectId, threadId);
-  const openId = useOpenDocumentId(projectId, editorWorkId);
+  const scratch = useChatScratchSource(projectId, threadId);
   const expanded = useProjectSurfacePrefsStore((state) => state.railPrefs.scratchExpanded);
   const height = useProjectSurfacePrefsStore((state) => state.railPrefs.scratchHeight);
   const setExpanded = useProjectSurfacePrefsStore((state) => state.setRailExpanded);
   const setHeight = useProjectSurfacePrefsStore((state) => state.setScratchHeight);
   const sectionRef = useRef<HTMLElement | null>(null);
-  const deletion = useDeleteConfirmation({ projectId });
-  const { works, noWork } = useWorks(projectId);
-  const capabilitiesByOwner = new Map<string, EntryCapabilities>();
-  const capabilitiesFor = (owner: ContextOwner): EntryCapabilities => {
-    const key = owner.rootThreadId ? `lineage:${owner.rootThreadId}` : `work:${owner.workId ?? ""}`;
-    const cached = capabilitiesByOwner.get(key);
-    if (cached) return cached;
-    const work =
-      owner.workId === noWork?.id ? noWork : works?.find((work) => work.id === owner.workId);
-    const actions: EntryCapabilities =
-      !owner.workId || (work && !isWorkArchived(work)) ? ["rename", "move", "delete"] : [];
-    capabilitiesByOwner.set(key, actions);
-    return actions;
-  };
-  const folderIds = useMemo(
-    () =>
-      scratch?.source.ready
-        ? treeFolderIds((parent) =>
-            scratch.source.tree
-              .children(parent)
-              .filter((node) => node.folder)
-              .map((node) => node.id),
-          )
-        : null,
-    [scratch?.source.ready, scratch?.source.tree],
-  );
-  const { isExpanded, toggleEntry } = useTreeExpansion(
-    projectId,
-    `chat-scratch:${scratch?.scope ?? "none"}`,
-    folderIds,
-  );
   if (!scratch) return null;
-  const { tree } = scratch.source;
   const changeExpanded = (next: boolean) => {
     setExpanded("scratch", next);
   };
@@ -182,179 +129,203 @@ export function RailScratchSection({
       <RailPaneHeader
         label={schemeLabel("scratch")}
         icon={schemeIcon("scratch")}
-        title={tree.heading}
-        ariaLabel={tree.heading}
+        title={scratch.heading}
+        ariaLabel={scratch.heading}
         expanded={expanded}
         onExpandedChange={changeExpanded}
       />
       {expanded ? (
         <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
-          <ScratchRows
+          <ChatScratchTree
             projectId={projectId}
-            onRequestDelete={deletion.requestDelete}
-            capabilitiesFor={capabilitiesFor}
-            source={scratch.source}
-            tree={tree}
-            folderId={null}
-            depth={1}
-            openId={openId}
-            isExpanded={isExpanded}
-            onToggle={toggleEntry}
-            onPick={(node) => {
-              if (scratch.pick(node)) onPicked?.();
-            }}
+            threadId={threadId}
+            editorWorkId={editorWorkId}
+            onPicked={onPicked}
           />
         </div>
       ) : null}
+    </section>
+  );
+}
+
+/** Shared Scratch browser for the rail, phone drawer and chat Files menu. */
+export function ChatScratchTree({
+  projectId,
+  threadId,
+  editorWorkId = null,
+  onPicked,
+}: {
+  projectId: string;
+  threadId: string | null;
+  editorWorkId?: string | null;
+  onPicked?: () => void;
+}) {
+  const scratch = useChatScratchSource(projectId, threadId);
+  const { primary, earlier } = useScratchCatalogs(projectId, scratch);
+  const openId = useOpenDocumentId(projectId, editorWorkId);
+  const deletion = useDeleteConfirmation({ projectId });
+  const { works, noWork } = useWorks(projectId);
+  const work =
+    scratch?.owner.workId === noWork?.id
+      ? noWork
+      : works?.find((work) => work.id === scratch?.owner.workId);
+  const editable = !scratch?.owner.workId || Boolean(work && !isWorkArchived(work));
+  const hasEarlier = Boolean(scratch?.earlierRootThreadId && earlier.catalog?.files().length);
+  const ready = primary.isComplete && (!scratch?.earlierRootThreadId || earlier.isComplete);
+  const isError = primary.isError || (Boolean(scratch?.earlierRootThreadId) && earlier.isError);
+  const folderIds = useMemo(() => {
+    if (!ready) return null;
+    const folders = (catalog: CatalogContextView | null) =>
+      catalog
+        ? treeFolderIds((parent) =>
+            catalog
+              .children(parent ?? catalog.root.entryId)
+              .filter((node) => node.kind === "dir")
+              .map((node) => node.entryId),
+          )
+        : [];
+    return [
+      ...folders(primary.catalog),
+      ...(hasEarlier ? [EARLIER_NOTES_ID, ...folders(earlier.catalog)] : []),
+    ];
+  }, [ready, primary.catalog, earlier.catalog, hasEarlier]);
+  const expansion = useTreeExpansion(
+    projectId,
+    `chat-scratch:${scratch ? JSON.stringify([scratch.owner, scratch.earlierRootThreadId]) : "none"}`,
+    folderIds,
+  );
+  if (!scratch) return <div aria-busy className="min-h-8" />;
+  const hasRows =
+    Boolean(primary.catalog?.children(primary.catalog.root.entryId).length) || hasEarlier;
+  return (
+    <>
+      <TreeGroup depth={1}>
+        {hasEarlier && earlier.catalog && scratch.earlierRootThreadId ? (
+          <div>
+            <RailFolderRow
+              icon={Folder}
+              name={t`Earlier notes`}
+              depth={1}
+              expanded={expansion.isExpanded(EARLIER_NOTES_ID)}
+              onToggle={() => expansion.toggleEntry(EARLIER_NOTES_ID)}
+            />
+            {expansion.isExpanded(EARLIER_NOTES_ID) ? (
+              <TreeGroup depth={2}>
+                <ScratchCatalog
+                  projectId={projectId}
+                  catalog={earlier.catalog}
+                  owner={{ rootThreadId: scratch.earlierRootThreadId }}
+                  editable
+                  depth={2}
+                  openId={openId}
+                  expansion={expansion}
+                  onPicked={onPicked}
+                  onRequestDelete={deletion.requestDelete}
+                />
+              </TreeGroup>
+            ) : null}
+          </div>
+        ) : null}
+        {primary.catalog ? (
+          <ScratchCatalog
+            projectId={projectId}
+            catalog={primary.catalog}
+            owner={scratch.owner}
+            editable={editable}
+            depth={1}
+            openId={openId}
+            expansion={expansion}
+            onPicked={onPicked}
+            onRequestDelete={deletion.requestDelete}
+          />
+        ) : null}
+      </TreeGroup>
+      {!hasRows && ready ? <RailEmptyHint>{t`No scratch notes yet.`}</RailEmptyHint> : null}
+      {!hasRows && !ready && !isError ? <div aria-busy className="min-h-8" /> : null}
+      {isError ? (
+        <InlineErrorRow
+          message={t`Scratch couldn’t load`}
+          onRetry={() => {
+            void primary.refetch();
+            if (scratch.earlierRootThreadId) void earlier.refetch();
+          }}
+        />
+      ) : null}
       <DeleteConfirmationDialog
+        projectId={projectId}
         target={deletion.target}
         isPending={deletion.isPending}
         error={deletion.error}
         onCancel={deletion.cancel}
         onConfirm={() => void deletion.confirm()}
       />
-    </section>
+    </>
   );
 }
 
-function ScratchRows({
-  projectId,
-  source,
-  tree,
-  folderId,
-  depth,
-  openId,
-  isExpanded,
-  onToggle,
-  onPick,
-  onRequestDelete,
-  capabilitiesFor,
-}: {
-  onRequestDelete: (target: DeleteTarget) => void;
-  capabilitiesFor: (owner: ContextOwner) => EntryCapabilities;
-  projectId: string;
-  source: CatalogMenuSource;
-  tree: DrillTree;
-  folderId: string | null;
-  depth: number;
-  openId: string | undefined;
-  isExpanded: (id: string) => boolean;
-  onToggle: (id: string) => void;
-  onPick: (node: DrillNode) => void;
-}) {
-  const entries = tree.children(folderId);
-  if (entries.length === 0)
-    return folderId === null ? <RailEmptyHint>{tree.empty}</RailEmptyHint> : null;
-  return entries.map((node) => {
-    const entry = source.entryFor(node.id);
-    if (entry)
-      return (
-        <ScratchEntry
-          key={node.id}
-          projectId={projectId}
-          capabilities={capabilitiesFor(entry.owner)}
-          onRequestDelete={onRequestDelete}
-          entry={entry}
-          depth={depth}
-          openId={openId}
-          isExpanded={isExpanded}
-          onToggle={onToggle}
-          onPick={onPick}
-        />
-      );
-    if (!node.folder)
-      return (
-        <RailFileRow
-          key={node.id}
-          icon={node.icon}
-          name={node.name}
-          depth={depth}
-          active={openId !== undefined && (node.documentId ?? node.id) === openId}
-          onOpen={() => onPick(node)}
-        />
-      );
-    const open = isExpanded(node.id);
-    return (
-      <div key={node.id}>
-        <RailFolderRow
-          icon={node.icon}
-          name={node.name}
-          depth={depth}
-          expanded={open}
-          onToggle={() => onToggle(node.id)}
-        />
-        {open ? (
-          <ScratchRows
-            projectId={projectId}
-            onRequestDelete={onRequestDelete}
-            capabilitiesFor={capabilitiesFor}
-            source={source}
-            tree={tree}
-            folderId={node.id}
-            depth={depth + 1}
-            openId={openId}
-            isExpanded={isExpanded}
-            onToggle={onToggle}
-            onPick={onPick}
-          />
-        ) : null}
-      </div>
-    );
-  });
-}
+const EARLIER_NOTES_ID = "earlier:scratch";
+const SCRATCH_ACTIONS: EntryCapabilities = ["rename", "move", "delete"];
+const READ_ONLY: EntryCapabilities = [];
 
-/** Actual Scratch entries share the Files row forms, actions and optimistic namespace owner. */
-function ScratchEntry({
+/** One real owner per tree; the Earlier notes disclosure is outside both catalogs. */
+function ScratchCatalog({
   projectId,
-  entry,
+  catalog,
+  owner,
+  editable,
   depth,
   openId,
-  isExpanded,
-  onToggle,
-  onPick,
-  capabilities,
+  expansion,
+  onPicked,
   onRequestDelete,
 }: {
-  capabilities: EntryCapabilities;
-  onRequestDelete: (target: DeleteTarget) => void;
   projectId: string;
-  entry: NonNullable<ReturnType<CatalogMenuSource["entryFor"]>>;
+  catalog: CatalogContextView;
+  owner: ContextOwner;
+  editable: boolean;
   depth: number;
   openId: string | undefined;
-  isExpanded: (id: string) => boolean;
-  onToggle: (id: string) => void;
-  onPick: (node: DrillNode) => void;
+  expansion: Pick<ReturnType<typeof useTreeExpansion>, "isExpanded" | "toggleEntry">;
+  onPicked?: () => void;
+  onRequestDelete: (target: DeleteTarget) => void;
 }) {
+  const openNote = useOpenScratchNote();
+  const { isExpanded, toggleEntry } = expansion;
+  const env = useMemo(
+    () => ({
+      projectId,
+      scheme: "scratch" as const,
+      owner,
+      capabilities: editable ? SCRATCH_ACTIONS : READ_ONLY,
+      catalog,
+      activeScheme: "scratch" as const,
+      activePath: catalog.findDocument(openId ?? "")?.path ?? null,
+      onSelectFile: (_scheme: string, file: Parameters<typeof serverTabFromFile>[1]) => {
+        const tab = serverTabFromFile("scratch", file, owner);
+        if (!tab) return;
+        openNote(tab);
+        onPicked?.();
+      },
+      onRequestDelete,
+      isExpanded,
+      toggleEntry,
+    }),
+    [
+      projectId,
+      owner,
+      editable,
+      catalog,
+      openId,
+      openNote,
+      onPicked,
+      onRequestDelete,
+      isExpanded,
+      toggleEntry,
+    ],
+  );
   return (
-    <TreeEnvProvider
-      value={{
-        projectId,
-        scheme: "scratch",
-        owner: entry.owner,
-        capabilities,
-        catalog: entry.catalog,
-        activeScheme: "scratch",
-        activePath: entry.catalog.findDocument(openId ?? "")?.path ?? null,
-        onSelectFile: (_scheme, file) => {
-          // Descendant rows resolve their own node through the rail's canonical opener.
-          onPick({
-            id: file.entryId,
-            documentId: file.documentId,
-            name: file.name,
-            icon: nodeIcon(file),
-            folder: false,
-          });
-        },
-        onRequestDelete,
-        isExpanded,
-        toggleEntry: onToggle,
-      }}
-    >
-      <ContextTreeEntry
-        node={entry.node}
-        depth={depth}
-        siblings={entry.catalog.children(entry.node.parentId ?? entry.catalog.root.entryId)}
-      />
+    <TreeEnvProvider value={env}>
+      <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={depth} />
     </TreeEnvProvider>
   );
 }

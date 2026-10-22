@@ -40,7 +40,11 @@ export function createContextImageAssetPort(deps: {
           throw new ImageAssetResolutionError(
             `Image asset resolution is indeterminate: ${reference.uri}`,
           );
-        if (available?.kind !== "available" || available.entry.uri !== reference.uri) return null;
+        if (available?.kind !== "available") return null;
+        // A chat's upload is its document: the spelling moves from the bare form to the handle
+        // once the chat has a row, so only its identity and the read grant below decide.
+        if (available.entry.scope?.kind !== "chat" && available.entry.uri !== reference.uri)
+          return null;
         const grant = await deps.fileAccess.authorize(
           { accountId: context.actorUserId as UserId },
           { kind: "document", documentId: reference.documentId as DocumentId },

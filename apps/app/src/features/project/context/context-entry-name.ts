@@ -38,7 +38,7 @@ function validationReason(error: ContextEntryValidationError): string {
     case "name/reserved":
       return t`'.' and '..' cannot be used as names`;
     case "name/reserved-authority-qualifier":
-      return t`Names cannot begin with '@'. That prefix is reserved for authority qualifiers`;
+      return t`Names cannot begin with '@' or '~'. Those prefixes are reserved for authority qualifiers`;
     case "name/invalid-character":
       return t`Names cannot contain “${error.character ?? ""}”`;
     case "path/empty-segment":

@@ -2,11 +2,8 @@
 import type { CatalogScope } from "@meridian/contracts/protocol";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import {
-  acknowledgeLocalResourceCleanup,
   acknowledgeResourceTerminalCleanup,
-  type FolderNamespaceRecord,
   type FolderNamespaceWrite,
-  folderNeedsBackgroundReconciliation,
   installedFolderObservation,
   markResourceCreateEligible,
   ownerOf,
@@ -23,12 +20,8 @@ import {
   type ResourceLocation,
   type ResourceProjectionSnapshot,
   type ResourceRecord,
-  reconcileFolderNamespace,
-  reconcileResourceNamespace,
   recordAcquiredResourceContent,
-  remintCreateConflict,
   reserveResourceDocument,
-  resourceNeedsBackgroundReconciliation,
   resourcePlacementForSnapshot,
   resourceVisibleInProject,
   sameOwner,
@@ -43,10 +36,12 @@ import type {
   LocalLineageTerminalPort,
 } from "@/core/editor/document-session-coordination-contract";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
+import { AccountResourceReconciler } from "./account-resource-reconciler";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 import { createResourceCatalogTransport } from "./resource-catalog-transport";
 import type { ResourceContentOpenResult } from "./resource-content-access";
 import { ResourceContentAccess } from "./resource-content-access";
+import { type ResourceIdentityChange, ResourceIdentityFeed } from "./resource-identity-feed";
 import { createResourceNamespaceLock } from "./resource-namespace-lock";
 import { createResourceNamespaceTransport } from "./resource-namespace-transport";
 import { ResourceSessionAdoptionCoordinator } from "./resource-session-adoption";
@@ -136,8 +131,8 @@ export class AccountResourceReplica {
   private readonly lockLifetime = new AbortController();
   private readonly namespace;
   private readonly adoption;
-  private readonly runners = new Map<string, Promise<void>>();
-  private readonly reruns = new Map<string, () => void>();
+  private readonly reconciler: AccountResourceReconciler;
+  private readonly identities = new ResourceIdentityFeed();
   private readonly projectionStreams = new Map<
     string,
     {
@@ -146,29 +141,12 @@ export class AccountResourceReplica {
       snapshot: ResourceProjectionSnapshot | null;
     }
   >();
-  private readonly observedResourceRevisions = new Map<string, number>();
-  private readonly observedFolderRevisions = new Map<string, number>();
   private readonly serverSessionCaptures = new Map<string, Promise<void>>();
   private reservationTail: Promise<void> = Promise.resolve();
   private readonly reservationLocks = nativeLocks();
   private readonly locationOperations = new ResourceLocationOperationQueue();
-  private stopHints: (() => void) | null = null;
-  private retryTimer: number | null = null;
   private started = false;
   private stopReconciliation: (() => void) | null = null;
-  private readonly retryAll = () => {
-    void this.metadata
-      .readProjection("")
-      .then(({ records, folders }) => {
-        for (const record of records) {
-          if (resourceNeedsBackgroundReconciliation(record)) this.schedule(record.resource);
-        }
-        for (const folder of folders) {
-          if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
-        }
-      })
-      .catch(() => undefined);
-  };
   private closing = false;
 
   constructor(
@@ -221,14 +199,31 @@ export class AccountResourceReplica {
         },
       },
     );
+    this.reconciler = new AccountResourceReconciler({
+      metadata: this.metadata,
+      content: this.content,
+      adoption: this.adoption,
+      namespace: this.namespace,
+      lock: this.lock,
+      commitPlan: (key, plan) => this.commitPlan(key, plan),
+      capturesSettled: (handle) => this.waitForServerSessionCaptures(encodeURIComponent(handle)),
+      isClosing: () => this.closing,
+    });
     this.terminal = {
       continueTerminal: (input, run) => this.continueTerminal(input, run),
     };
   }
 
+  /**
+   * Reserve a document under a client-minted id. `destination` is where the writer put it (the
+   * sidebar's New file, a link's Create): it goes out with the create so the server can join a
+   * branch's new document waiting there, and the replica shows it there at once. Without one the
+   * create is nameless.
+   */
   async reserveDocument(
     projectId: string,
     folderPath = "",
+    destination?: ResourceDestination,
   ): Promise<{
     key: ResourceKey;
     name: string;
@@ -242,7 +237,7 @@ export class AccountResourceReplica {
         async (lock) => {
           if (!lock) throw new Error("Resource reservation lock is unavailable");
           this.requireOpen();
-          return this.reserveDocumentSerial(projectId, folderPath);
+          return this.reserveDocumentSerial(projectId, folderPath, destination);
         },
       );
     }
@@ -253,7 +248,7 @@ export class AccountResourceReplica {
     });
     await before;
     try {
-      return await this.reserveDocumentSerial(projectId, folderPath);
+      return await this.reserveDocumentSerial(projectId, folderPath, destination);
     } finally {
       release();
     }
@@ -262,6 +257,7 @@ export class AccountResourceReplica {
   private async reserveDocumentSerial(
     projectId: string,
     folderPath: string,
+    destination?: ResourceDestination,
   ): Promise<{
     key: ResourceKey;
     name: string;
@@ -292,30 +288,27 @@ export class AccountResourceReplica {
       schema: collabSchemaKeyTag(),
       intentId: crypto.randomUUID(),
       folderPath,
-      provisionalName: name,
+      provisionalName: destination?.name ?? name,
+      ...(destination ? { destination: { value: destination, eligibleAt: Date.now() } } : {}),
     });
     if ((await this.metadata.commitResource(write)) !== "committed")
       throw new Error("Resource identity reservation collided");
     const content = await this.content.open(projectId, key, `reservation:${key.handle}`);
-    return { key, name, content };
+    return { key, name: destination?.name ?? name, content };
   }
 
   start(): void {
     this.requireOpen();
     if (this.started) return;
     this.started = true;
-    this.stopHints =
-      this.connectivityHints?.subscribe(this, (hint) => {
-        if (hint === "retry-now") this.retryAll();
-      }) ?? null;
-    this.retryTimer = window.setInterval(this.retryAll, 30_000);
+    this.reconciler.start(this.connectivityHints);
     // Reconciliation belongs to the account lifetime, not mounted catalog consumers.
     this.stopReconciliation = this.metadata.observeProjection(
       "",
       ({ records, folders }) => {
         if (this.closing) return;
-        this.reconcileProjectionRecords(records);
-        this.reconcileProjectionFolders(folders);
+        this.identities.observe(records);
+        this.reconciler.reconcileProjection(records, folders);
       },
       () => undefined,
     );
@@ -324,7 +317,7 @@ export class AccountResourceReplica {
   async markCreateEligible(key: ResourceKey): Promise<void> {
     this.requireOpen();
     await this.commitPlan(key, (record) => markResourceCreateEligible(record, Date.now()));
-    this.schedule(key);
+    this.reconciler.schedule(key);
   }
 
   async openDocument(
@@ -356,9 +349,9 @@ export class AccountResourceReplica {
       await this.commitPlan(key, (record) =>
         planCachedSessionAdoption({ record, projectId, transitionId: crypto.randomUUID() }),
       );
-      this.schedule(key);
+      this.reconciler.schedule(key);
     }
-    const runner = this.runners.get(encodeURIComponent(key.handle));
+    const runner = this.reconciler.runnerFor(key);
     if (runner) await runner;
     if (this.closing) return;
     ownership = this.content.ownershipFor(key, projectId);
@@ -366,7 +359,15 @@ export class AccountResourceReplica {
     const resolved = await lookupProjectContextAvailability(projectId, [session.documentId]);
     const available = resolved.resolutions[0];
     if (available?.kind !== "available" || available.documentId !== session.documentId) return;
-    await this.installProjectRegistryOwnership(projectId, key, available.generation, session);
+    const incarnation = this.runtime.liveIncarnation.incarnationOf(session);
+    if (!incarnation) return;
+    await this.installProjectRegistryOwnership(
+      projectId,
+      key,
+      available.generation,
+      incarnation,
+      session,
+    );
   }
 
   async keyForDocument(projectId: string, documentId: string): Promise<ResourceKey | null> {
@@ -423,6 +424,9 @@ export class AccountResourceReplica {
     const databaseName = session.persistenceName;
     if (!key || !databaseName || session.documentId !== documentId) return;
     this.requireOpen();
+    // The cache belongs to the room's incarnation, which can be older than `generation`.
+    const incarnation = this.runtime.liveIncarnation.incarnationOf(session);
+    if (!incarnation) return;
     const captureId = encodeURIComponent(key.handle);
     const priorCapture = this.serverSessionCaptures.get(captureId);
     let finishCapture!: () => void;
@@ -449,7 +453,7 @@ export class AccountResourceReplica {
           documentId,
           databaseName,
           schema: collabSchemaKeyTag(),
-          generation,
+          generation: incarnation,
           transitionId: crypto.randomUUID(),
         }),
       );
@@ -458,13 +462,13 @@ export class AccountResourceReplica {
         !captured ||
         captured.resource.identity.documentId !== documentId ||
         captured.resource.lifecycle.kind !== "acknowledged" ||
-        captured.resource.lifecycle.availabilityGeneration !== generation ||
+        captured.resource.lifecycle.availabilityGeneration !== incarnation ||
         captured.resource.content.kind !== "exact" ||
         captured.resource.content.databaseName !== databaseName
       )
         return;
-      this.schedule(key);
-      await this.installProjectRegistryOwnership(projectId, key, generation, session);
+      this.reconciler.schedule(key);
+      await this.installProjectRegistryOwnership(projectId, key, generation, incarnation, session);
     } finally {
       if (this.serverSessionCaptures.get(captureId) === captureTail)
         this.serverSessionCaptures.delete(captureId);
@@ -475,23 +479,28 @@ export class AccountResourceReplica {
   private async installProjectRegistryOwnership(
     projectId: string,
     key: ResourceKey,
-    generation: string,
+    admission: string,
+    incarnation: string,
     session: DocumentSession,
   ): Promise<void> {
     const databaseName = session.persistenceName;
     if (!databaseName) throw new Error("Registry session has no exact persistence");
-    const lease = await this.runtime.registry.admit(projectId, session.documentId, generation);
+    const lease = await this.runtime.registry.admit(projectId, session.documentId, admission);
     const owner = `resource-acquisition:${key.handle}:${crypto.randomUUID()}`;
     this.runtime.registry.retain(owner, [lease]);
     const retained = this.runtime.registry.get(lease);
-    if (retained !== session || retained.persistenceName !== databaseName) {
+    if (
+      retained !== session ||
+      retained.persistenceName !== databaseName ||
+      this.runtime.liveIncarnation.incarnationOf(retained) !== incarnation
+    ) {
       this.runtime.registry.release(owner);
       throw new Error("Resource ownership did not retain the opened server session");
     }
     let released = false;
     const ownership = {
       lease,
-      persistenceGeneration: generation,
+      persistenceGeneration: incarnation,
       exactDatabaseName: databaseName,
       release: () => {
         if (released) return;
@@ -624,7 +633,7 @@ export class AccountResourceReplica {
             destination,
           }),
         )) === "committed";
-      this.schedule(key);
+      this.reconciler.schedule(key);
     });
     return { isLatest, ...(admitted ? { operationId } : {}) };
   }
@@ -676,7 +685,7 @@ export class AccountResourceReplica {
       });
       if (!write) return {};
       if ((await this.metadata.commitFolder(write)) !== "committed") continue;
-      this.scheduleFolder(key);
+      this.reconciler.scheduleFolder(key);
       return { operationId };
     }
   }
@@ -685,7 +694,7 @@ export class AccountResourceReplica {
     await this.commitPlan(key, (record) =>
       planResourceDeletion(record, projectId, crypto.randomUUID()),
     );
-    this.schedule(key);
+    this.reconciler.schedule(key);
   }
 
   private async commitPlan(
@@ -719,157 +728,19 @@ export class AccountResourceReplica {
     }
   }
 
-  private reconcileProjectionRecords(records: readonly ResourceRecord[]): void {
-    for (const record of records) {
-      const { handle, revision } = record.resource;
-      if (this.observedResourceRevisions.get(handle) === revision) continue;
-      this.observedResourceRevisions.set(handle, revision);
-      this.content.reconcileMetadata(record);
-      this.schedule(record.resource);
-    }
+  /**
+   * A stored document id that now answers to another current id: a join followed (this or
+   * another tab, from the answer or the catalog entry) or a create reminted. Live changes only.
+   * What the server knows about the document, such as a draft over it, may have been out of
+   * reach until now.
+   */
+  onIdentityChanged(listener: (change: ResourceIdentityChange) => void): () => void {
+    return this.identities.subscribe(listener);
   }
 
-  private reconcileProjectionFolders(folders: readonly FolderNamespaceRecord[]): void {
-    for (const folder of folders) {
-      if (this.observedFolderRevisions.get(folder.handle) === folder.revision) continue;
-      this.observedFolderRevisions.set(folder.handle, folder.revision);
-      if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
-    }
-  }
-
-  private schedule(key: ResourceKey): void {
-    this.scheduleOnce(
-      key,
-      () => this.run(key),
-      () => this.schedule(key),
-    );
-  }
-
-  private scheduleFolder(key: ResourceKey): void {
-    this.scheduleOnce(
-      key,
-      () => this.runFolder(key),
-      () => this.scheduleFolder(key),
-    );
-  }
-
-  /** One runner per handle; a request that arrives mid-run reruns once when it finishes. */
-  private scheduleOnce(key: ResourceKey, start: () => Promise<void>, rerun: () => void): void {
-    if (this.closing) return;
-    const id = encodeURIComponent(key.handle);
-    if (this.runners.has(id)) {
-      this.reruns.set(id, rerun);
-      return;
-    }
-    const runner = start()
-      .catch(() => undefined)
-      .finally(() => {
-        if (this.runners.get(id) !== runner) return;
-        this.runners.delete(id);
-        const again = this.reruns.get(id);
-        this.reruns.delete(id);
-        again?.();
-      });
-    this.runners.set(id, runner);
-  }
-
-  private async runFolder(key: ResourceKey): Promise<void> {
-    for (let step = 0; step < 100 && !this.closing; step += 1) {
-      const result = await reconcileFolderNamespace({
-        key,
-        metadata: this.metadata,
-        transport: this.namespace,
-        lock: this.lock,
-        newAttemptIds: () => ({ attemptId: crypto.randomUUID(), operationId: crypto.randomUUID() }),
-      });
-      if (result !== "progressed") return;
-    }
-  }
-
-  private async run(key: ResourceKey): Promise<void> {
-    for (let step = 0; step < 100 && !this.closing; step += 1) {
-      const namespace = await reconcileResourceNamespace({
-        key,
-        metadata: this.metadata,
-        transport: this.namespace,
-        lock: this.lock,
-        newAttemptIds: () => ({ attemptId: crypto.randomUUID(), operationId: crypto.randomUUID() }),
-      });
-      if (namespace === "needs-repair") {
-        if (await this.remintCreateConflict(key)) continue;
-      }
-      await this.waitForServerSessionCaptures(encodeURIComponent(key.handle));
-      const adoption = await this.adoption.reconcile(key);
-      const cleanup = await this.reconcileLocalCleanup(key);
-      if (namespace !== "progressed" && adoption !== "adopted" && !cleanup) return;
-    }
-  }
-
-  private async reconcileLocalCleanup(key: ResourceKey): Promise<boolean> {
-    const result = await this.lock.run(key, async () => {
-      const record = await this.metadata.readResource(key);
-      const cleanup = record?.resource.obligations.cleanup;
-      const deletion = record?.intents.find(
-        (intent) =>
-          intent.desired.kind === "delete" &&
-          intent.state === "settled-locally" &&
-          intent.intentId === cleanup?.obligationId,
-      );
-      if (!record || !cleanup || !deletion) return false;
-      await this.content.clearExactContent({
-        projectId: deletion.projectId,
-        key,
-        documentId: record.resource.identity.documentId,
-        databaseName: cleanup.exactDatabaseName,
-      });
-      await this.commitPlan(key, (current) =>
-        acknowledgeLocalResourceCleanup({
-          record: current,
-          transitionId: deletion.intentId,
-          exactDatabaseName: cleanup.exactDatabaseName,
-        }),
-      );
-      return true;
-    });
-    return result.kind === "acquired" && result.value;
-  }
-
-  private async remintCreateConflict(key: ResourceKey): Promise<boolean> {
-    const current = await this.metadata.readResource(key);
-    if (!current) return false;
-    const nextDocumentId = crypto.randomUUID();
-    const rebasedIntentIds = Object.fromEntries(
-      current.intents
-        .filter(
-          (intent) =>
-            intent.state === "pending" &&
-            intent.attempts.length === 0 &&
-            intent.identityRevision === current.resource.identity.revision,
-        )
-        .map((intent) => [intent.intentId, crypto.randomUUID()]),
-    );
-    const write = remintCreateConflict({
-      record: current,
-      documentId: nextDocumentId,
-      retryIntentId: crypto.randomUUID(),
-      rebasedIntentIds,
-    });
-    if (!write) return false;
-    const prepared = this.content.prepareReidentity(
-      key,
-      current.resource.identity.documentId,
-      nextDocumentId,
-      write.next.resource.identity.revision,
-    );
-    const committed = await this.metadata.commitResource(write);
-    if (committed === "stale") {
-      prepared?.abort();
-      const winner = await this.metadata.readResource(key);
-      if (winner) this.content.reconcileMetadata(winner);
-      return true;
-    }
-    prepared?.commit();
-    return true;
+  /** Every account projection, current at subscription and again on each change. */
+  onProjection(listener: (records: readonly ResourceRecord[]) => void): () => void {
+    return this.identities.subscribeProjection(listener);
   }
 
   private async continueTerminal(
@@ -914,12 +785,7 @@ export class AccountResourceReplica {
   beginClose(): void {
     if (this.closing) return;
     this.closing = true;
-    if (this.started) {
-      this.stopHints?.();
-      this.stopHints = null;
-      if (this.retryTimer !== null) window.clearInterval(this.retryTimer);
-      this.retryTimer = null;
-    }
+    if (this.started) this.reconciler.beginClose();
     this.stopReconciliation?.();
     this.stopReconciliation = null;
     this.adoption.beginClose();
@@ -934,7 +800,7 @@ export class AccountResourceReplica {
     await Promise.allSettled([
       this.adoption.finishClose(),
       this.catalogs.finishClose(),
-      ...this.runners.values(),
+      ...this.reconciler.pending(),
       ...this.serverSessionCaptures.values(),
     ]);
     await this.content.finishClose();

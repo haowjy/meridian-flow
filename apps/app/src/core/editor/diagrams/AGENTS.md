@@ -1,71 +1,37 @@
-# core/editor/diagrams — which fences draw, and who draws them
+# core/editor/diagrams — provider catalog and safe rendering
 
-A fenced diagram is a `code_block` the page renders instead of showing (§5.2:
-the page never shows a diagram's syntax). This directory owns the catalog that
-says which languages those are, the render state every one of them shares, the
-boundary their markup crosses, and the faces they wear. It owns no node view and no verb: the fence's node view is
-[`../CodeBlockNodeView.tsx`](../CodeBlockNodeView.tsx), and the writer's verbs
-belong to `features/editor/surfaces/objects`.
+This directory owns the catalog of diagram languages, provider render state,
+and the sanitized SVG boundary. The code-block node view renders the result;
+feature surfaces own diagram verbs.
 
 ## Mental model
 
-**A new diagram kind is one row plus its renderer.** The row in
-`diagram-providers.ts` names the fence language, the name the writer's verbs use,
-the starter source a fresh diagram opens on, and one async `render(id, source)`.
-Everything downstream is generated or provider-neutral:
+A diagram provider is one catalog row plus one renderer: language, display name,
+starter source, and async `render(id, source)`. Object registration, slash
+catalog entries, the node-view faces, and surface verbs project from that row.
+No consumer may maintain a second language list or branch on a language string.
 
-| Reads the catalog | Gets, for free |
-|---|---|
-| `../objects/object-types.ts` | one object registration per row: selection, arrow-walk, Esc, block drag, the greying context |
-| `../CodeBlockNodeView.tsx` | render-or-source face, the three faces, the error card's door |
-| `surfaces/objects` | the row's copy chip, the ⋮, Edit source, export, the lightbox |
-| `surfaces/objects/fence-menu-items.tsx` | a language-menu entry, so a writer can turn a fence into one |
-| `extensions/slash` | the Diagram entry, from the first row |
+## Rules
 
-## Key rules
+- Renderers return raw SVG or a writer-readable error. `useDiagramRender` owns
+  ordering, provider-keyed state, palette redraw, and sanitization.
+- Only branded `SanitizedSvg` reaches the page. The SVG allow-list excludes
+  HTML `foreignObject`; provider strictness is not a substitute for app
+  sanitization.
+- The render layer is keyed by provider so a language change cannot reuse old
+  state. Source is visible only when the node view's selection requires it.
+- Transcript fences reuse this boundary. An open fence stays code; a closed
+  fence draws. The Editor owns source-edit actions; the transcript only shows it.
+- Nothing outside the catalog names a diagram language. A
+  `language === "mermaid"` predicate elsewhere is the parallel hierarchy this
+  module replaced; ask `diagramProviderFor(node)` or the object registration.
+  Likewise no per-provider render-state hook, debounce, face model, or preview
+  selector: the render hook, faces, and `DIAGRAM_PREVIEW_SELECTOR` are shared.
+- A renderer's error message is shown verbatim on the stale and unrendered
+  faces, so it names the problem, not the stack.
+- This module stays independent of object physics. Error-face actions are
+  callbacks supplied by the node view.
 
-- **Nothing outside the catalog names a diagram language.** A predicate on
-  `language === "mermaid"` anywhere else is the parallel hierarchy this module
-  replaced. Ask `diagramProviderFor(node)` or read the object registration.
-- **A renderer returns raw SVG markup or throws a message the writer can read.**
-  The message is shown verbatim on the stale and unrendered faces, so it has to
-  name the problem, not the stack.
-- **A renderer draws in the manuscript's ink.** Read the design tokens at render
-  time (`mermaid-theme.ts` is the worked example) rather than copying colors,
-  or a theme switch leaves the diagram behind. `useDiagramRender` redraws on the
-  palette; the markup is the renderer's to repaint.
-- **Markup reaches the page as a `SanitizedSvg`, never as a string.**
-  `useDiagramRender` sanitizes every provider's output on the way into state
-  (`sanitized-svg.ts`), and the faces take the branded type, so a provider's raw
-  string does not compile where markup is inserted. A renderer is therefore not
-  trusted for sanitization and must not be relied on for it — mermaid's strict
-  mode is a second lock, not this one. The allow-list is SVG: a label drawn as
-  HTML inside `<foreignObject>` is dropped, which is why the mermaid config asks
-  for SVG text labels (and why a raster export keeps its labels at all).
-- **Transcript fences reuse this render boundary.** Their open fence stays code;
-  a closed fence draws. The error-card action label is host-owned: the Editor
-  edits source, while the transcript only shows it.
-- **The render layer is keyed by provider** wherever it is mounted. Render state
-  belongs to one provider, and a language change would otherwise hand the new
-  one the old one's state. A language change is a document change, so remounting
-  there is allowed where a selection-driven remount would break the fence's
-  invariant.
-- **This module never imports object physics.** The door out of the error card
-  is a callback the node view supplies, which is what keeps the dependency one
-  way: objects read the catalog, the catalog reads nothing of theirs.
-
-## Anti-patterns
-
-- A second render-state hook, debounce, or face model per provider. The pause,
-  the out-of-order guard, the palette redraw, and the three faces are one
-  answer for every diagram language.
-- A per-provider preview selector. Exports find the rendered markup through
-  `DIAGRAM_PREVIEW_SELECTOR`, which `DiagramBody` is the only writer of.
-- Rendering source in the page. The one exception (a caret inside the fence)
-  belongs to the node view.
-
-→ [`.context/CONTEXT.md`](.context/CONTEXT.md) — mermaid token measurement
-→ [`../objects/AGENTS.md`](../objects/AGENTS.md) — the physics a row generates
-→ [`../../../features/editor/surfaces/objects/AGENTS.md`](../../../features/editor/surfaces/objects/AGENTS.md)
-  — the verbs a row is read for
-→ design of record: `editor-toolbar-split/interaction-model.md` §5.2
+→ [`.context/CONTEXT.md`](.context/CONTEXT.md) — render/error-face details
+→ [`../objects/AGENTS.md`](../objects/AGENTS.md) — generated object physics
+→ [`../../../features/editor/surfaces/objects/AGENTS.md`](../../../features/editor/surfaces/objects/AGENTS.md) — diagram verbs

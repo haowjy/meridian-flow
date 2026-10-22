@@ -32,14 +32,6 @@ The `optimistic-updates` work item owns the profiles and verification specificat
   exclusion the inline image does. `core/editor/FigureNodeView.tsx`,
   `packages/prosemirror-schema`.
 
-- **Unify rendered-markdown (Streamdown) styling with the editor.**
-  ([#93](https://github.com/haowjy/meridian-flow/issues/93))
-  The `.prose-tokens` Streamdown surface (chat answers, helper results) and the
-  `.meridian-editor .ProseMirror` editor surface have drifted (code-block chrome
-  + syntax colors, inline code, tables, blockquote). Streamdown's Shiki
-  highlighting is currently inert. Read-only *documents* already match the editor
-  (they reuse it). `Markdown.tsx`, `globals.css`, `editor.css`,
-  `design-tokens/ink-jade.css`.
 
 ## E2E harness drift
 
@@ -53,3 +45,8 @@ The `optimistic-updates` work item owns the profiles and verification specificat
   documents, `phase5.spec.ts` fails on
   `document_yjs_updates_authoring_response_id_model_responses_id_f` during setup.
   Reconcile reset ordering with the current document/response FK graph.
+
+- Primary buttons (for example New Work) show their own drop shadow under
+  keyboard focus instead of the `focus-ring` box-shadow, so focus looks absent.
+  The variant's `shadow-*` class overrides the utility's `box-shadow`
+  (`components/ui/button.tsx`). Make the focus ring win for every variant.
