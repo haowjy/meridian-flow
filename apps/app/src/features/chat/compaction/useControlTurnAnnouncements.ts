@@ -6,15 +6,14 @@
  *
  * Those rows are virtualized and may be off-screen, so the announcement is
  * driven from the turns, not from a mounted row. History present at mount is
- * seeded silently; only changes the writer can witness are announced. An
- * autocompaction's failure stays silent (R3): the failed reply announces it.
+ * seeded silently; only changes the writer can witness are announced. A failure
+ * is not announced here: it is a card (`chatCards`), spoken once by the card announcer.
  */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
+import { isHandoffSeed } from "@meridian/contracts/threads";
 import { useEffect, useRef } from "react";
 import { announce } from "@/client/stores";
-import { isHandoffSeed } from "../derivation/handoff-seed";
-import { compactionFailureCopy, readCompactionFacts } from "./compaction-model";
 
 function announcementFor(turn: Turn): string | null {
   if (turn.role === "compaction") {
@@ -26,8 +25,6 @@ function announcementFor(turn: Turn): string | null {
         return t`Conversation compacted`;
       case "cancelled":
         return t`Compaction stopped`;
-      case "error":
-        return readCompactionFacts(turn).trigger === "manual" ? compactionFailureCopy(turn) : null;
       default:
         return null;
     }
@@ -41,8 +38,6 @@ function announcementFor(turn: Turn): string | null {
         return t`Handoff brief ready`;
       case "cancelled":
         return t`Handoff brief stopped`;
-      case "error":
-        return turn.error ?? t`Handoff brief unavailable`;
       default:
         return null;
     }

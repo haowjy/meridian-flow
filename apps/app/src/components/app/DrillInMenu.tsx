@@ -4,9 +4,8 @@
  * step back out; there are no flyouts or root heading. A divider separates
  * the tree from the actions.
  *
- * The component takes a tree source and an action list, so the dock's
- * document title and any other tree source can share it (the rail's Scratch
- * section draws the same tree data as rows). It owns only the drill state; picking an entry and running an action belong to the caller.
+ * Document paths and placement menus supply a tree and actions. This component
+ * owns only drill state; picking an entry and running an action belong to the caller.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -37,8 +36,6 @@ export type DrillNode = {
 export type DrillTree = {
   /** Names the tree's source at the top level. */
   heading: string;
-  /** What an empty top level says; a folder with nothing in it keeps the generic line. */
-  empty?: string;
   /** A folder's entries in display order; `null` is the top level. */
   children: (folderId: string | null) => readonly DrillNode[];
 };
@@ -168,11 +165,7 @@ export function DrillInMenuBody({
       ) : null}
       {entries.length === 0 ? (
         <p className="px-2 py-1.5 text-sm text-muted-foreground">
-          {folder ? (
-            <Trans>Nothing here yet.</Trans>
-          ) : (
-            (tree.empty ?? <Trans>Nothing here yet.</Trans>)
-          )}
+          <Trans>Nothing here yet.</Trans>
         </p>
       ) : (
         entries.map((node) => (

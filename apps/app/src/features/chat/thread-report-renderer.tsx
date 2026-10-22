@@ -9,13 +9,13 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { JsonValue } from "@meridian/contracts/protocol";
 import { parseThreadReportResult, toReportContentValue } from "@meridian/contracts/spawn";
+import type { ToolView } from "@meridian/thread-client";
+import { stringInput, toolInputObject } from "@meridian/thread-client";
 import { requestConversationReveal } from "./conversation-reveal";
-import type { ToolView } from "./group-delivery-segments";
 import { ReportContent, type ReportContentValue } from "./ReportContent";
 import { useSubagentRun } from "./subagent/ActivityContext";
 import type { SubagentRun } from "./subagent/run-model";
 import { SubagentIdentityName } from "./subagent/SubagentRow";
-import { stringInput, toolInputObject } from "./tool-command";
 import type { ToolExpand, ToolRenderer } from "./tool-renderers";
 
 /**

@@ -1,7 +1,8 @@
 /**
  * Drizzle persistence for ahead-link identities (contract §9): durable rows minted
  * for addresses with no document yet, settled by the first live document that
- * arrives at the exact address (or at registration, if one is already there).
+ * arrives at the exact address (or at registration, if one is already there). Binding
+ * is global and once; branches store nothing about ahead refs.
  */
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { parseRequestId } from "@meridian/contracts/request-id";
@@ -10,7 +11,6 @@ import type { Database } from "@meridian/database";
 import {
   contextSources,
   documentLinks,
-  documents,
   linkAheadRefs,
   projects,
   works,
@@ -35,29 +35,51 @@ import {
   type AheadRegistration,
   type LinkAheadRegistry,
   RegistrationInsideTransactionError,
+  UnregistrableAheadRefError,
 } from "../ports/link-ahead-registry.js";
+import type { DocumentCoordinates } from "../tree/tree-addresses.js";
+import { createTreeReader, LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import { lockNamespaceKeys } from "./context-fs/document-locations.js";
 import {
   currentDocumentAddress,
-  type DocumentCoordinates,
-  documentAt,
-  listsThroughLiveManifest,
   resolveCanonicalAddress,
   sameCoordinates,
+  UnresolvableAddressError,
 } from "./document-address.js";
-
-/** Membership of the live manifest; `userId`-owned `user://` and non-drafted schemes never consult it. */
-type MembershipResolver = (input: { projectId: ProjectId }) => Promise<{ members: string[] }>;
 
 /** The registry key: a decoded canonical address resolved to storage coordinates. */
 type Address = DocumentCoordinates;
+export type LinkAheadRegistryDeps = { eventSink?: EventSink };
+
+/** Registry rows at exactly this address. */
+function atAddress(address: Address) {
+  return and(
+    eq(linkAheadRefs.projectId, address.projectId),
+    eq(linkAheadRefs.scheme, address.scheme),
+    address.workId === null
+      ? isNull(linkAheadRefs.workId)
+      : eq(linkAheadRefs.workId, address.workId),
+    address.rootThreadId
+      ? eq(linkAheadRefs.rootThreadId, address.rootThreadId)
+      : isNull(linkAheadRefs.rootThreadId),
+    address.chatThreadId
+      ? eq(linkAheadRefs.chatThreadId, address.chatThreadId)
+      : isNull(linkAheadRefs.chatThreadId),
+    // The index keys the path's md5 (unbounded paths overflow a B-tree tuple); exact recheck.
+    sql`md5(${linkAheadRefs.path}) = md5(${address.path})`,
+    eq(linkAheadRefs.path, address.path),
+  );
+}
 
 export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
+  private readonly eventSink: EventSink;
+
   constructor(
     private readonly db: Database,
-    private readonly resolveManifestMembership: MembershipResolver,
-    private readonly eventSink: EventSink = createNoopEventSink(),
-  ) {}
+    readonly deps: LinkAheadRegistryDeps,
+  ) {
+    this.eventSink = deps.eventSink ?? createNoopEventSink();
+  }
 
   async register(registrations: readonly AheadRegistration[]): Promise<void> {
     if (isInDrizzleTransaction()) throw new RegistrationInsideTransactionError();
@@ -68,10 +90,24 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
         const resolved = [];
         for (const registration of registrations) {
           const aheadId = parseRequestId(registration.aheadId);
-          if (!aheadId) throw new RangeError(`Invalid ahead id: ${registration.aheadId}`);
+          if (!aheadId) {
+            throw new UnregistrableAheadRefError(
+              registration.aheadId,
+              registration.address,
+              `Invalid ahead id: ${registration.aheadId}`,
+            );
+          }
           resolved.push({
             aheadId,
-            address: await resolveCanonicalAddress(this.db, registration),
+            requested: registration.address,
+            address: await resolveCanonicalAddress(this.db, registration).catch(
+              (cause: unknown) => {
+                if (!(cause instanceof UnresolvableAddressError)) throw cause;
+                throw new UnregistrableAheadRefError(aheadId, registration.address, cause.message, {
+                  cause,
+                });
+              },
+            ),
           });
         }
         // Namespace keys only: registration is not an authored write (archived Work
@@ -90,24 +126,28 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
               projectId: address.projectId,
               scheme: address.scheme,
               workId: address.workId,
-              rootThreadId: address.rootThreadId ?? null,
+              rootThreadId: address.rootThreadId,
+              chatThreadId: address.chatThreadId,
               path: address.path,
             })),
           )
           .onConflictDoNothing({ target: linkAheadRefs.aheadId });
-        // After the insert: whichever registration owns an id, a different address is a bug.
+        // After the insert: whichever registration owns an id, it keeps its first address
+        // for good, so another address is refused permanently.
         const stored = new Map(
           (await tx.select().from(linkAheadRefs).where(inArray(linkAheadRefs.aheadId, ids))).map(
             (row) => [row.aheadId, row],
           ),
         );
-        for (const { aheadId, address } of resolved) {
+        for (const { aheadId, address, requested } of resolved) {
           const row = stored.get(aheadId);
-          if (
-            !row ||
-            !sameCoordinates(address, { ...row, scheme: row.scheme as ContextUriScheme })
-          ) {
-            throw new Error(`Ahead ref ${aheadId} was registered for another address`);
+          if (!row) throw new Error(`Ahead ref ${aheadId} has no row after its insert`);
+          if (!sameCoordinates(address, { ...row, scheme: row.scheme as ContextUriScheme })) {
+            throw new UnregistrableAheadRefError(
+              aheadId,
+              requested,
+              `Ahead ref ${aheadId} was registered for another address`,
+            );
           }
         }
 
@@ -123,7 +163,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     let settled = 0;
     for (const documentId of new Set(documentIds)) {
       const address = await currentDocumentAddress(this.db, documentId);
-      // Every arrival calls this; the manifest read is paid only when a ref waits here.
+      // Every arrival calls this; the visibility read is paid only when a ref waits here.
       if (
         address &&
         (await this.hasUnsettled(address)) &&
@@ -140,6 +180,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     page: AheadRecoveryPage,
   ): Promise<AheadRecoveryProgress> {
     if (isInDrizzleTransaction()) throw new RegistrationInsideTransactionError();
+    const documents = visibleDocuments(LIVE_TREE);
     const holderProject = sql`coalesce(${contextSources.projectId}, ${works.projectId})`;
     const pending = await this.db
       .selectDistinctOn([documentLinks.aheadId], {
@@ -158,7 +199,6 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           isNotNull(documentLinks.aheadId),
           isNotNull(documentLinks.address),
           isNull(linkAheadRefs.aheadId),
-          isNull(documents.deletedAt),
           scope === undefined
             ? undefined
             : "documentId" in scope
@@ -193,41 +233,26 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     return { registered, next: pending.length === page.limit && last ? last : null };
   }
 
-  /** A SQL row is not a live arrival while only a Work draft's manifest holds it (e4 §1). */
-  private async isLive(address: Address, documentId: string): Promise<boolean> {
-    if (!listsThroughLiveManifest(address.scheme)) return true;
-    const { members } = await this.resolveManifestMembership({ projectId: address.projectId });
-    return members.includes(documentId);
+  private async isLive(_address: Address, documentId: string): Promise<boolean> {
+    return (
+      (await createTreeReader(this.db).findById(LIVE_TREE, documentId as DocumentId)).kind ===
+      "found"
+    );
   }
 
   private async liveDocumentAt(address: Address): Promise<DocumentId | null> {
-    const documentId = await documentAt(this.db, address);
-    return documentId && (await this.isLive(address, documentId)) ? documentId : null;
+    const occupants = await createTreeReader(this.db).occupantsAt(LIVE_TREE, [address]);
+    const ids = [...occupants.values()][0] ?? [];
+    return ids.length === 1 ? (ids[0] ?? null) : null;
   }
 
   private async hasUnsettled(address: Address): Promise<boolean> {
     const [row] = await currentDrizzleDb(this.db)
       .select({ id: linkAheadRefs.aheadId })
       .from(linkAheadRefs)
-      .where(and(this.atAddress(address), isNull(linkAheadRefs.settledDocumentId)))
+      .where(and(atAddress(address), isNull(linkAheadRefs.settledDocumentId)))
       .limit(1);
     return Boolean(row);
-  }
-
-  private atAddress(address: Address) {
-    return and(
-      eq(linkAheadRefs.projectId, address.projectId),
-      eq(linkAheadRefs.scheme, address.scheme),
-      address.workId === null
-        ? isNull(linkAheadRefs.workId)
-        : eq(linkAheadRefs.workId, address.workId),
-      address.rootThreadId
-        ? eq(linkAheadRefs.rootThreadId, address.rootThreadId)
-        : isNull(linkAheadRefs.rootThreadId),
-      // The index keys the path's md5 (unbounded paths overflow a B-tree tuple); exact recheck.
-      sql`md5(${linkAheadRefs.path}) = md5(${address.path})`,
-      eq(linkAheadRefs.path, address.path),
-    );
   }
 
   /** Compare-and-set on `settled_document_id IS NULL`; at most one settler wins a row. */
@@ -237,7 +262,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
       .set({ settledDocumentId: documentId, settledAt: new Date() })
       .where(
         and(
-          this.atAddress(address),
+          atAddress(address),
           isNull(linkAheadRefs.settledDocumentId),
           aheadId ? eq(linkAheadRefs.aheadId, aheadId) : undefined,
         ),
@@ -249,8 +274,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
 
 export function createDrizzleLinkAheadRegistry(
   db: Database,
-  resolveManifestMembership: MembershipResolver,
-  eventSink?: EventSink,
+  deps: LinkAheadRegistryDeps,
 ): LinkAheadRegistry {
-  return new DrizzleLinkAheadRegistry(db, resolveManifestMembership, eventSink);
+  return new DrizzleLinkAheadRegistry(db, deps);
 }

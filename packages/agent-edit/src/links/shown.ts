@@ -17,9 +17,7 @@
 import type { LinkView } from "@meridian/contracts";
 import type { DocumentLinkScope, ParsedContentWithSpans, PMNode } from "@meridian/markup";
 import { type SpelledLinkFact, spelledFact, walkLinkOccurrences } from "@meridian/markup/links";
-import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { AgentEditBlockItem, AgentEditModelPayload } from "../tool/model-result.js";
-import { modelBlockItem } from "../tool/model-result.js";
 
 export type { SpelledLinkFact };
 
@@ -148,29 +146,11 @@ export function shownEvidence(
   return shown.length > 0 ? { showing: { holderUri: uri, view, links: shown } } : {};
 }
 
-/** Every block item a model payload renders: block groups and concurrent runs. */
+/** Every block item a model payload renders: block groups and the concurrent listing. */
 export function renderedItems(payload: AgentEditModelPayload | undefined): AgentEditBlockItem[] {
   if (!payload) return [];
   return [
     ...(payload.blocks ?? []).flatMap((group) => group.items),
-    ...(payload.concurrent?.runs ?? []).flatMap((run) => run.blocks),
+    ...(payload.concurrent?.blocks ?? []),
   ];
-}
-
-/**
- * Each concurrent run carries its own facts: the request assembler may drop
- * runs to fit its budget, and a dropped run was never shown.
- */
-export function withRunShownLinks(
-  info: ConcurrentEditInfo | undefined,
-  links: ShownCommandLinks,
-): ConcurrentEditInfo | undefined {
-  if (!info) return info;
-  return {
-    ...info,
-    runs: info.runs.map((run) => ({
-      ...run,
-      ...shownEvidence(run.blocks.map(modelBlockItem), links),
-    })),
-  };
 }

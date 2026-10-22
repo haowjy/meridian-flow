@@ -1,10 +1,13 @@
 /** The current container's address, independent of collapse and retained Editor paint. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createContext, useContext } from "react";
+import { isDraftOnly } from "@/client/stores";
 import type { DockDocument } from "./dock/dock-document-store";
 import type { ScreenKey } from "./shell/screens";
 
-export type ReviewAddress = { workId: string; draftId: string; changeId?: string };
+/** The route's verdict on an explicit review selector, asked of the server by `{ workId, itemKey }`. */
+export type ReviewAddressAdmission = "pending" | "admitted" | "unavailable" | "failed";
+export type ReviewAddress = { workId: string; itemKey: string; changeId?: string };
 export type PresentedDocument = {
   container: "editor" | "dock";
   documentId: string | null;
@@ -22,7 +25,7 @@ export function resolvePresentedDocument(input: {
     scheme: ProjectContextTreeScheme | null;
     path: string | null;
     documentId?: string | null;
-    draftId?: string;
+    itemKey?: string;
     changeId?: string;
     draftOnly: boolean;
   };
@@ -37,8 +40,8 @@ export function resolvePresentedDocument(input: {
       path: editor.path,
       draftOnly: editor.draftOnly,
       review:
-        editor.workId && editor.draftId
-          ? { workId: editor.workId, draftId: editor.draftId, changeId: editor.changeId }
+        editor.workId && editor.itemKey
+          ? { workId: editor.workId, itemKey: editor.itemKey, changeId: editor.changeId }
           : null,
     };
   }
@@ -50,7 +53,7 @@ export function resolvePresentedDocument(input: {
     scheme: tab.kind === "new" ? null : tab.scheme,
     path: tab.kind === "new" ? null : tab.path,
     review,
-    draftOnly: tab.kind === "tracked" && tab.draftOnly === true,
+    draftOnly: isDraftOnly(tab),
   };
 }
 

@@ -3,7 +3,7 @@ import { Folder } from "lucide-react";
 import { expect, it } from "vitest";
 import type { DrillNode } from "@/components/app/DrillInMenu";
 import { moveRepairTrail } from "./move-repair-trail";
-import type { ProjectMenuSource } from "./use-catalog-menu-source";
+import type { ProjectMenuSource } from "./use-project-menu-source";
 
 const node = (id: string): DrillNode => ({ id, name: "Notes", folder: true, icon: Folder });
 function source(): Pick<ProjectMenuSource, "tree" | "folderFor"> {

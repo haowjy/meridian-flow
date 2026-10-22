@@ -28,6 +28,7 @@ import {
   type HolderLinkScope,
   type LinkOccurrence,
   occurrenceIdentity,
+  qualifyWrittenHref,
   type WrittenGrammar,
   walkLinkOccurrences,
   writtenSourceUri,
@@ -50,6 +51,8 @@ export interface AssignInput {
   shown: readonly ShownLink[];
   /** Default `mintAheadRef`; injected only by tests. */
   mint?: () => AheadRef;
+  /** The writing thread's top chat; a freshly written bare `uploads://` link is stored qualified to it. */
+  uploadsChat?: string;
 }
 
 export interface AssignResult {
@@ -70,6 +73,7 @@ export interface AssignOccurrencesInput {
   scope: HolderLinkScope;
   shown: readonly ShownLink[];
   mint?: () => AheadRef;
+  uploadsChat?: string;
 }
 
 /**
@@ -101,6 +105,7 @@ export function assignOccurrences(input: AssignOccurrencesInput): {
       shown: input.shown,
       mint,
       minted,
+      ...(input.uploadsChat ? { uploadsChat: input.uploadsChat } : {}),
     });
     writtenIndexes.forEach(({ index }, position) => {
       attrs[index] = assigned[position] as OccurrenceAttrs;
@@ -159,6 +164,7 @@ function assignKind(input: {
   shown: readonly ShownLink[];
   mint: () => AheadRef;
   minted: AheadMint[];
+  uploadsChat?: string;
 }): OccurrenceAttrs[] {
   const { grammar, scope } = input;
   const holderUri = scope.holder.uri;
@@ -303,11 +309,13 @@ function fresh(
     scope: HolderLinkScope;
     mint: () => AheadRef;
     minted: AheadMint[];
+    uploadsChat?: string;
   },
   occurrence: LinkOccurrence,
 ): OccurrenceAttrs {
   const { grammar, scope } = input;
-  const { href, title } = occurrence.attrs;
+  const { title } = occurrence.attrs;
+  const href = qualifyWrittenHref(occurrence.attrs.href, input.uploadsChat);
   if (grammar.kind === "source") {
     const asset = assetFor(scope, href);
     if (asset) return { ref: null, href: `asset:${asset}`, title };
@@ -325,6 +333,7 @@ function fresh(
       ref: assigned.ref,
       address: assigned.address,
       holderProjectId: scope.holder.projectId,
+      view: scope.holder.view,
     });
   return { ref: assigned.ref, title, href: assigned.href };
 }
@@ -385,6 +394,7 @@ export function createWriteLinkAssigner(input: {
   scope: HolderLinkScope;
   shown: readonly ShownLink[];
   mint?: () => AheadRef;
+  uploadsChat?: string;
   /** Hears each splice that fell back to whole-group assignment (possible format churn there). */
   onSpliceFallback?: (reason: SpliceFallback) => void;
 }): WriteLinkAssigner {
@@ -393,6 +403,7 @@ export function createWriteLinkAssigner(input: {
     scope: input.scope,
     shown: input.shown,
     ...(input.mint ? { mint: input.mint } : {}),
+    ...(input.uploadsChat ? { uploadsChat: input.uploadsChat } : {}),
   };
   const assignSpan = (old: readonly PMNode[], written: readonly PMNode[]) => {
     const result = assignLinkRefs({ ...common, old: walkLinkOccurrences(old), written });

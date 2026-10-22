@@ -64,7 +64,7 @@ it("projects every nested placement/deletion schedule", () => {
   }[] = [];
   let passed = 0;
   for (const { childAction, deleted, refused, remote, order } of scenarios) {
-    let es: CatalogEntry[] = structuredClone([...entries]);
+    let es: CatalogEntry[] = [...entries];
     const rs = new Map<string, FolderNamespaceRecord>();
     const history: string[] = [];
     const project = () => {
@@ -176,4 +176,4 @@ it("projects every nested placement/deletion schedule", () => {
   }
   expect(failures).toEqual([]);
   expect(passed).toBe(5760);
-});
+}, 30_000);

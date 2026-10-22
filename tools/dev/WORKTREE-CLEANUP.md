@@ -1,18 +1,21 @@
 # Manual worktree cleanup
 
 For when `pnpm dev:prune-worktrees -- --target <x> --dry-run` refuses a
-branch you believe is safe to remove. The tool only acts on proof: an exact
-merged-PR match, or the commit's ancestry of the base branch
-([`tools/dev/AGENTS.md`](AGENTS.md)). When neither holds, it refuses — correctly,
+branch you believe is safe to remove. The tool only acts on proof: the commit
+contained in another surviving ref (the branch's own local and remote-tracking
+refs never count), or an exact merged-PR match, whichever base branch it merged
+into ([`tools/dev/AGENTS.md`](AGENTS.md)). When neither holds, it refuses — correctly,
 on the evidence it has. This guide is for building better evidence by hand and
 recording that evidence in a manually verified cleanup plan, not for using a
 bare force override.
 
 ## When this applies
 
-- The branch merged into another working branch (no PR of its own), and that
-  branch was later squash-merged into `main` or `staging`. Squashing
-  discards the ancestor relationship entirely, for every branch that fed it.
+- The branch merged into another working branch that no longer exists: its
+  integration branch was squash-merged into `main` or `staging` and deleted,
+  nothing left contains the commit, and the branch had no PR of its own.
+  Squashing discards the ancestor relationship entirely, for every branch that
+  fed it.
 - The branch merged before this repo's migration-history guard or some other
   check existed, leaving no CI record.
 - Any other case where you can reconstruct the merge from history, but the
@@ -70,9 +73,84 @@ pnpm dev:prune-worktrees -- --target <branch> \
   --manually-verified "<reason citing the evidence and commits above>"
 ```
 
-Manual verification replaces only the automatic ancestry or PR proof; the tool
-still refuses primary, current, base, locked, dirty, or live worktrees and
+Manual verification replaces only the automatic containment or PR proof; the
+tool still refuses primary, current, base, locked, dirty, or (by default) live worktrees and
 still revalidates the branch OID and readiness before destructive actions.
+
+### Verify stacked-lane acceptance
+
+Exercise both automatic proof paths on disposable refs. Only the first can be
+synthesized; the stacked-PR path needs a real merged PR, so use one whose base
+was a working branch.
+
+1. Containment: a lane whose tip is an ancestor of an integration ref. Give
+   both branches worktrees, so each is a cleanup target.
+
+   ```bash
+   tree=$(git rev-parse origin/main^{tree})
+   lane=$(git commit-tree $tree -p origin/main -m "fixture: prune lane")
+   integration=$(git commit-tree $tree -p $lane -m "fixture: prune integration")
+   git branch fixture/prune-lane $lane
+   git branch fixture/prune-integration $integration
+   git worktree add ../meridian-flow.worktrees/prune-fixture-lane fixture/prune-lane
+   git worktree add ../meridian-flow.worktrees/prune-fixture-integration fixture/prune-integration
+   ```
+
+2. A dry run on `fixture/prune-lane` plans with evidence
+   `contained in fixture/prune-integration`; a dry run on
+   `fixture/prune-integration` refuses (only its own refs contain it).
+3. Stacked PR: pick a merged PR whose base is a working branch and whose head
+   commit no other ref contains, then create a worktree at that head commit.
+
+   ```bash
+   gh pr list --state merged --limit 500 \
+     --json number,baseRefName,headRefName,headRefOid
+   git for-each-ref --contains=<headRefOid> refs/heads refs/remotes
+   git worktree add -b <headRefName> \
+     ../meridian-flow.worktrees/prune-fixture-pr <headRefOid>
+   ```
+
+   The dry run on `<headRefName>` plans with evidence `merged PR #N into
+   <base>`; a surviving carrier would be named instead, because containment is
+   checked first.
+4. A branch at a commit no other ref contains and no merged PR matches still
+   refuses.
+5. Remove the fixture worktrees and branches: `git worktree remove <path>` and
+   `git update-ref -d <ref>` for each.
+
+## Shells parked in a merged worktree
+
+Use target-only `--force` when a shell or tmux pane still has its cwd inside
+the merged checkout:
+
+```bash
+pnpm dev:prune-worktrees -- --target <branch> --force --dry-run
+pnpm dev:prune-worktrees -- --target <branch> --force
+```
+
+The tool stops only the target's managed dev stack and Nx daemon, then
+rechecks occupants before dropping its database and removing the worktree.
+Known shells/tmux may remain alive; the tool prints their PIDs and pane IDs.
+Their owners should `cd` to an existing directory after cleanup. It never
+kills user shells or their tmux sessions. Other processes, active work items,
+dirty state and inspection failures still block. Merge proof (or concrete
+`--manually-verified` evidence), primary/current/base/locked protections and
+commit revalidation all still apply. Force is not available for batch cleanup,
+and does not pass Git's destructive `worktree remove --force` flag.
+
+### Verify shell preservation
+
+Use an owned disposable worktree with merged-commit proof. Park a shell and a
+tmux pane in it and record their PIDs/pane IDs. Without `--force`, targeted
+cleanup must refuse. A forced dry run must list dev/Nx shutdown without doing
+anything. Actual forced cleanup must stop managed services, remove the checkout
+and its database, leave both shells and the user tmux session alive, and print
+the surviving PIDs/pane IDs. Have those shells `cd` out afterwards.
+
+Repeat with an uncommitted file or an unmerged commit: force must refuse before
+shutdown. With an unrelated non-shell process in the target, force may shut down
+managed services but must refuse before dropping the database. Terminate only
+your fixture process and retry. `--auto --force` must be rejected.
 
 ## Don't
 

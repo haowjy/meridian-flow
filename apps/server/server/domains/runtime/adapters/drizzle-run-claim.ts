@@ -9,7 +9,7 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type { CurrentToolCall, ThreadLeaseState, ThreadStatus } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
-import { and, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -17,10 +17,11 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import {
   DEFAULT_LEASE_TTL_MS,
+  type ExecutionId,
   type RunClaim,
-  type RunId,
   type ThreadPhase,
 } from "../loop/ports.js";
+import { markRunStateChanged } from "./drizzle-run-state.js";
 import { createDrizzleSessionLock, type SessionLockClaim } from "./drizzle-session-lock.js";
 
 export interface DrizzleRunClaimOptions {
@@ -36,16 +37,45 @@ export function createDrizzleRunClaim(
   const lock = createDrizzleSessionLock(db, 81n);
   const holderId = options.holderId ?? crypto.randomUUID();
   const leaseTtlMs = options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;
-  const held = new Map<ThreadId, { runId: RunId; holderId: string; claim: SessionLockClaim }>();
+  const held = new Map<
+    ThreadId,
+    { executionId: ExecutionId; holderId: string; claim: SessionLockClaim }
+  >();
 
   const nextExpiry = () => new Date(Date.now() + leaseTtlMs);
   const db_ = () => currentDrizzleDb(db);
+
+  /** Whether the record showed the row: it bound a turn or receipt, or a turn carries its execution. */
+  const leaseWasVisible = async (
+    released: { threadId: ThreadId; executionId: string },
+    row: { turnId: string | null; adoptedMessageIds: string[] },
+  ) => {
+    if (row.turnId !== null || row.adoptedMessageIds.length > 0) return true;
+    const [carrier] = await db_()
+      .select({ id: schema.turns.id })
+      .from(schema.turns)
+      .where(
+        and(
+          eq(schema.turns.threadId, released.threadId),
+          sql`${schema.turns.executionId}::text = ${released.executionId}`,
+        ),
+      )
+      .limit(1);
+    return carrier !== undefined;
+  };
 
   // The one "live lease" predicate; every read and cancel derives from it.
   const liveLeaseWhere = (threadId: ThreadId) =>
     and(
       eq(schema.threadRunLeases.threadId, threadId),
       gt(schema.threadRunLeases.expiresAt, new Date()),
+    );
+
+  const ownedRow = (lease: { threadId: ThreadId; executionId: string; holderId: string }) =>
+    and(
+      eq(schema.threadRunLeases.threadId, lease.threadId),
+      eq(schema.threadRunLeases.executionId, lease.executionId),
+      eq(schema.threadRunLeases.holderId, lease.holderId),
     );
 
   const hold = (threadId: ThreadId) => lock.tryAcquire(`meridian:thread-run:${threadId}`);
@@ -78,46 +108,34 @@ export function createDrizzleRunClaim(
         await claim.release();
       }
     },
-    async startExecution(threadId, runId) {
+    async startExecution(threadId, executionId, settle) {
       const claim = await hold(threadId);
       if (!claim) return null;
       const acquiredAt = new Date();
       try {
-        await db_()
-          .insert(schema.threadRunLeases)
-          .values({
-            threadId,
-            runId,
-            turnId: null,
-            boundTurnIds: [],
-            adoptedMessageIds: [],
-            holderId,
-            phase: "generating",
-            cancelRequested: false,
-            currentTool: null,
-            acquiredAt,
-            renewedAt: acquiredAt,
-            expiresAt: nextExpiry(),
-          })
-          .onConflictDoUpdate({
-            target: schema.threadRunLeases.threadId,
-            set: {
-              runId,
-              holderId,
-              phase: "generating",
-              cancelRequested: false,
-              currentTool: null,
-              acquiredAt,
-              renewedAt: acquiredAt,
-              expiresAt: nextExpiry(),
-            },
-          });
+        // The claim proves the previous holder is gone: settle its row before
+        // a new execution is visible beside its turns.
+        await settle();
+        await db_().insert(schema.threadRunLeases).values({
+          threadId,
+          executionId,
+          turnId: null,
+          boundTurnIds: [],
+          adoptedMessageIds: [],
+          holderId,
+          phase: "generating",
+          cancelRequested: false,
+          currentTool: null,
+          acquiredAt,
+          renewedAt: acquiredAt,
+          expiresAt: nextExpiry(),
+        });
       } catch (cause) {
         await claim.release();
         throw cause;
       }
-      held.set(threadId, { runId, holderId, claim });
-      return { threadId, runId, holderId };
+      held.set(threadId, { executionId, holderId, claim });
+      return { threadId, executionId, holderId };
     },
 
     async renew(lease) {
@@ -127,7 +145,7 @@ export function createDrizzleRunClaim(
         .where(
           and(
             eq(schema.threadRunLeases.threadId, lease.threadId),
-            eq(schema.threadRunLeases.runId, lease.runId),
+            eq(schema.threadRunLeases.executionId, lease.executionId),
             eq(schema.threadRunLeases.holderId, lease.holderId),
           ),
         )
@@ -137,11 +155,11 @@ export function createDrizzleRunClaim(
 
     async holder(threadId) {
       const [row] = await db_()
-        .select({ runId: schema.threadRunLeases.runId })
+        .select({ executionId: schema.threadRunLeases.executionId })
         .from(schema.threadRunLeases)
         .where(liveLeaseWhere(threadId))
         .limit(1);
-      return row?.runId ?? null;
+      return row?.executionId ?? null;
     },
 
     async publish(lease, phase) {
@@ -151,7 +169,7 @@ export function createDrizzleRunClaim(
         .where(
           and(
             eq(schema.threadRunLeases.threadId, lease.threadId),
-            eq(schema.threadRunLeases.runId, lease.runId),
+            eq(schema.threadRunLeases.executionId, lease.executionId),
             eq(schema.threadRunLeases.holderId, lease.holderId),
           ),
         );
@@ -164,7 +182,7 @@ export function createDrizzleRunClaim(
         .where(
           and(
             eq(schema.threadRunLeases.threadId, lease.threadId),
-            eq(schema.threadRunLeases.runId, lease.runId),
+            eq(schema.threadRunLeases.executionId, lease.executionId),
             eq(schema.threadRunLeases.holderId, lease.holderId),
             gt(schema.threadRunLeases.expiresAt, new Date()),
             sql`${schema.threadRunLeases.currentTool} IS DISTINCT FROM ${JSON.stringify(currentTool)}::jsonb`,
@@ -178,6 +196,11 @@ export function createDrizzleRunClaim(
       const [row] = await selectLiveLease().where(liveLeaseWhere(threadId)).limit(1);
       if (!row) return { kind: "asleep" };
       return toThreadStatus(row);
+    },
+
+    async readOwned(lease) {
+      const [row] = await selectLiveLease().where(ownedRow(lease)).limit(1);
+      return row ? { cancelRequested: row.cancelRequested } : null;
     },
 
     async readMany(threadIds) {
@@ -194,6 +217,22 @@ export function createDrizzleRunClaim(
           { status: toThreadStatus(row), runningTurnId: row.turnId, currentTool: row.currentTool },
         ]),
       );
+    },
+
+    async readOpenExecutionId(threadId) {
+      const [row] = await db_()
+        .select({ executionId: schema.threadRunLeases.executionId })
+        .from(schema.threadRunLeases)
+        .where(
+          and(
+            eq(schema.threadRunLeases.threadId, threadId),
+            sql`EXISTS (SELECT 1 FROM ${schema.turns} WHERE ${schema.turns.threadId} = ${schema.threadRunLeases.threadId}
+                AND ${schema.turns.executionId} IS NOT NULL
+                AND ${schema.turns.executionId}::text = ${schema.threadRunLeases.executionId})`,
+          ),
+        )
+        .limit(1);
+      return row?.executionId ?? null;
     },
 
     async readRunningTurnId(threadId) {
@@ -223,18 +262,48 @@ export function createDrizzleRunClaim(
       });
     },
 
-    async release(lease) {
-      const entry = held.get(lease.threadId);
-      await db_()
-        .delete(schema.threadRunLeases)
+    async listExpiredExecutions(limit, afterThreadId) {
+      const rows = await db_()
+        .select({ threadId: schema.threadRunLeases.threadId })
+        .from(schema.threadRunLeases)
         .where(
           and(
-            eq(schema.threadRunLeases.threadId, lease.threadId),
-            eq(schema.threadRunLeases.runId, lease.runId),
-            eq(schema.threadRunLeases.holderId, lease.holderId),
+            lte(schema.threadRunLeases.expiresAt, new Date()),
+            afterThreadId ? gt(schema.threadRunLeases.threadId, afterThreadId) : undefined,
           ),
-        );
-      if (entry?.runId !== lease.runId || entry.holderId !== lease.holderId) return;
+        )
+        .orderBy(asc(schema.threadRunLeases.threadId))
+        .limit(limit);
+      return rows.map((row) => row.threadId as ThreadId);
+    },
+
+    async abandon(lease) {
+      const entry = held.get(lease.threadId);
+      try {
+        await db_()
+          .update(schema.threadRunLeases)
+          .set({ expiresAt: new Date() })
+          .where(ownedRow(lease));
+      } finally {
+        if (entry?.executionId === lease.executionId && entry.holderId === lease.holderId) {
+          await entry.claim.release();
+          if (held.get(lease.threadId) === entry) held.delete(lease.threadId);
+        }
+      }
+    },
+
+    async release(lease) {
+      const entry = held.get(lease.threadId);
+      const deleted = await db_().delete(schema.threadRunLeases).where(ownedRow(lease)).returning({
+        turnId: schema.threadRunLeases.turnId,
+        adoptedMessageIds: schema.threadRunLeases.adoptedMessageIds,
+      });
+      // A row no turn carries and that bound nothing was never in the record, so deleting it changes
+      // nothing; a bare claim cycle needs no thread lock.
+      const [gone] = deleted;
+      if (gone && (await leaseWasVisible(lease, gone))) markRunStateChanged(lease.threadId);
+      if (entry?.executionId !== lease.executionId || entry.holderId !== lease.holderId)
+        return deleted.length > 0;
 
       const unlock = async () => {
         // A stale callback must not release a newer run. Keep the entry on
@@ -247,6 +316,7 @@ export function createDrizzleRunClaim(
       // terminal write. Its physical session lock remains held until the outer
       // commit; rollback leaves both the lease and the claim in place.
       if (!deferUntilDrizzleCommit(unlock)) await unlock();
+      return deleted.length > 0;
     },
   };
 }

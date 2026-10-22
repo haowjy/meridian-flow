@@ -1,10 +1,14 @@
 /** Request preparation stages references and image decisions without writes, then measures compaction. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Thread, Turn } from "@meridian/contracts/threads";
-import { encodeImageInclusionMetadata, type ImageContextBreak } from "../../threads/index.js";
+import {
+  activeCompaction,
+  encodeImageInclusionMetadata,
+  type ImageContextBreak,
+  isCompactionNotesTurn,
+} from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import type { Tool } from "../gateway/index.js";
-import type { ShownLinkShowing } from "../ports/shown-links.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
   type CompactionDecision,
@@ -13,15 +17,34 @@ import {
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
 import { estimateRequestTokens } from "./compaction/estimate.js";
+import { projectActiveHistoryWithBakes } from "./compaction/index.js";
+import {
+  MAX_SCRATCH_CALLS,
+  type NotesContinuation,
+  prepareCompactionNotes,
+} from "./compaction/notes-step.js";
+import { frontierLookup } from "./frontier-recording.js";
 import type { CompactionImageProjectionMode, ImageInclusionDecision } from "./image-context.js";
 import { createLocalTurn } from "./local-turn.js";
 import type { ControlMessage } from "./next-inbox-work.js";
 import type { OrchestratorDeps, OrchestratorRepositories } from "./orchestrator.js";
 import { createPrefixCacheStateService } from "./prefix-cache-state.js";
-import { type LoadedReferenceReads, loadReferenceReads } from "./reference-context.js";
-import { type AssembledNextTurnContext, assembleNextTurnContext } from "./turn-context-assembly.js";
+import {
+  type LoadedReferenceReads,
+  loadReferenceReads,
+  NO_REFERENCE_EVIDENCE,
+  type ReferenceEvidence,
+} from "./reference-context.js";
+import {
+  type AssembledNextTurnContext,
+  type AssembleNextTurnContextInput,
+  prepareNextTurnContext,
+  renderPreparedTurnContext,
+} from "./turn-context-assembly.js";
 
 export type PrepareRequestInput = {
+  continuation?: NotesContinuation;
+  remainingIterations?: number;
   deps: OrchestratorDeps;
   thread: Thread;
   threadId: ThreadId;
@@ -42,36 +65,44 @@ export type PrepareRequestInput = {
   promptBakes?: OrchestratorRepositories["promptBakes"];
   signal?: AbortSignal;
 };
+export type PreparedContinuation = {
+  assembled: AssembledNextTurnContext;
+  continuation: NotesContinuation;
+};
 export type PreparedRequest = {
+  continuation: NotesContinuation;
   turns: Turn[];
   blocks: Block[];
   assembled: AssembledNextTurnContext;
   events: OrchestratorEvent[];
   compaction: CompactionDecision;
-  /** Host-only reference-read candidates; the commit persisting `events` records them. */
-  shown: ShownLinkShowing[];
+  /** Host-only reference-read evidence; the commit persisting `events` records it. */
+  evidence: ReferenceEvidence;
 };
 
 export async function prepareRequestContext(input: PrepareRequestInput): Promise<PreparedRequest> {
-  const compact = input.control?.body.kind === "compact" ? input.control : null;
-  const prepared = await prepareBaseRequest({
+  const control = input.control;
+  const compact = control?.body.kind === "compact" ? { id: control.id, body: control.body } : null;
+  return prepareBaseRequest({
     ...input,
     controlMessageId: compact?.id ?? input.controlMessageId,
     instructions: compact?.body.instructions ?? input.instructions,
   });
-  return {
-    ...prepared,
-    turns: prepared.assembled.imageContextUpdates.turns,
-    blocks: prepared.assembled.imageContextUpdates.blocks,
-  };
 }
 
-async function prepareBaseRequest(
-  input: PrepareRequestInput,
-): Promise<Omit<PreparedRequest, "turns" | "blocks">> {
+async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedRequest> {
+  // Projected on first use and shared by every lookup: most runs read no reference at all.
+  let creditedIds: Promise<string[]> | undefined;
+  const requestCreditedIds = () =>
+    (creditedIds ??= projectActiveHistoryWithBakes(
+      input.turns,
+      input.blocks,
+      input.thread.ref,
+      input.promptBakes ?? input.deps.repos.promptBakes,
+    ).then((projection) => [...projection.creditedBlockIds]));
   const references: LoadedReferenceReads =
     input.readReferences === false
-      ? { blocks: [], shown: [] }
+      ? { blocks: [], evidence: NO_REFERENCE_EVIDENCE }
       : await loadReferenceReads({
           blocks: input.blocks,
           userTurnId: input.referenceTurnId,
@@ -79,6 +110,11 @@ async function prepareBaseRequest(
           assistantTurnId: input.currentTurnId,
           reader: input.deps.referenceReader,
           signal: input.signal,
+          // The read is shown beside what this request carries, so only that credits it (C10).
+          recordingFrontier: frontierLookup(input.deps, requestCreditedIds, {
+            threadId: input.threadId,
+            turnId: input.currentTurnId,
+          }),
         });
   const referenceUpdates = references.blocks;
   const referencesById = new Map(referenceUpdates.map((block) => [block.id, block]));
@@ -95,7 +131,7 @@ async function prepareBaseRequest(
       status: "complete",
     }),
   }));
-  const assembled = await assembleNextTurnContext({
+  const assemblyInput: AssembleNextTurnContextInput = {
     thread: input.thread,
     turns: input.turns,
     blocks,
@@ -125,7 +161,9 @@ async function prepareBaseRequest(
       events.push(...updates.events);
       return { turns: updates.turns, blocks: updates.blocks };
     },
-  });
+  };
+  const prepared = await prepareNextTurnContext(assemblyInput);
+  let assembled = renderPreparedTurnContext(prepared);
   const baseline =
     assembled.compactionTriggerTokens === null || input.skipCompaction
       ? null
@@ -134,10 +172,38 @@ async function prepareBaseRequest(
           model: assembled.resolvedModel,
           knownLocalTurns: input.turns,
         });
+  const current = input.continuation ?? { kind: "ordinary" };
+  const usable = assembled.compactionUsableWindowTokens;
+  const tokenizer = assembled.resolvedModel?.tokenizer;
+  const measure = (context: AssembledNextTurnContext) => {
+    if (!tokenizer) throw new Error("Scratch update requires the thread tokenizer");
+    return estimateRequestTokens({ request: context.generateRequest, baseline: null, tokenizer });
+  };
+  // Keep one output's room for tool results and the summary instruction. Oversized results
+  // still take the existing overflow/rolling-summary path, never another optional call.
+  const updateLimit =
+    usable === null ? null : usable - (assembled.resolvedModel?.maxOutputTokens ?? 0);
+  const continuing =
+    current.kind === "notes" &&
+    current.remaining > 0 &&
+    (input.remainingIterations ?? 0) >= 2 &&
+    updateLimit !== null &&
+    measure(assembled) <= updateLimit;
+  const pendingSummary = current.kind !== "ordinary" && !continuing;
+  const forcedDecision =
+    input.forcedDecision ??
+    (pendingSummary && usable !== null
+      ? {
+          kind: "compact" as const,
+          trigger: "auto" as const,
+          fitLimitTokens: usable,
+          knownTooLarge: measure(assembled) >= usable,
+        }
+      : undefined);
   const compactionNeeded =
     !input.skipCompaction &&
     (input.controlMessageId !== undefined ||
-      input.forcedDecision !== undefined ||
+      forcedDecision !== undefined ||
       assembled.compactionTriggerTokens !== null);
   let compaction: CompactionDecision;
   if (!compactionNeeded) {
@@ -151,8 +217,8 @@ async function prepareBaseRequest(
     compaction = decideCompaction({
       request: assembled.generateRequest,
       activeHistory: assembled.activeHistory,
-      turns: [...input.turns, ...assembled.imageContextUpdates.turns],
-      blocks: [...blocks, ...assembled.imageContextUpdates.blocks],
+      turns: [...input.turns, ...assembled.preparationUpdates.turns],
+      blocks: [...blocks, ...assembled.preparationUpdates.blocks],
       thresholdTokens: assembled.compactionTriggerTokens,
       forcedDecision: input.controlMessageId
         ? {
@@ -160,7 +226,7 @@ async function prepareBaseRequest(
             trigger: "manual",
             fitLimitTokens: assembled.compactionUsableWindowTokens as number,
           }
-        : input.forcedDecision,
+        : forcedDecision,
       controlMessageId: input.controlMessageId,
       instructions: input.instructions,
       pinnedRequestTurnIds: input.pinnedRequestTurnIds,
@@ -182,7 +248,7 @@ async function prepareBaseRequest(
     });
     if (
       input.controlMessageId !== undefined ||
-      input.forcedDecision !== undefined ||
+      forcedDecision !== undefined ||
       usableWindowTokens === null ||
       requestTokens >= usableWindowTokens
     ) {
@@ -190,7 +256,61 @@ async function prepareBaseRequest(
     }
     compaction = { kind: "generate" };
   }
-  return { assembled, events, compaction, shown: references.shown };
+  let continuation: NotesContinuation = { kind: "ordinary" };
+  if (continuing && !input.forcedDecision && !input.controlMessageId) {
+    continuation = current;
+    compaction = { kind: "generate" };
+  } else if (
+    current.kind === "ordinary" &&
+    compaction.kind === "compact" &&
+    compaction.trigger === "auto" &&
+    !compaction.knownTooLarge &&
+    !input.forcedDecision &&
+    !input.controlMessageId &&
+    !input.skipCompaction &&
+    (input.remainingIterations ?? 0) >= 2 &&
+    updateLimit !== null
+  ) {
+    const latest = activeCompaction(input.turns);
+    const since = input.turns.filter((turn) => !latest || turn.position > latest.position);
+    const responseTurns = since.filter((turn) => turn.role === "assistant").map((turn) => turn.id);
+    if (
+      !since.some(isCompactionNotesTurn) &&
+      responseTurns.length > 0 &&
+      (await input.deps.repos.modelResponses.findLatestForTurns(responseTurns))
+    ) {
+      const marker = prepareCompactionNotes({
+        threadId: input.threadId,
+        turns: [...input.turns, ...assembled.preparationUpdates.turns],
+      });
+      const candidate = renderPreparedTurnContext({
+        ...prepared,
+        activeHistory: {
+          turns: [...prepared.activeHistory.turns, ...marker.turns],
+          blocks: [...prepared.activeHistory.blocks, ...marker.blocks],
+        },
+        preparationUpdates: {
+          turns: [...assembled.preparationUpdates.turns, ...marker.turns],
+          blocks: [...assembled.preparationUpdates.blocks, ...marker.blocks],
+        },
+      });
+      if (measure(candidate) <= updateLimit) {
+        assembled = candidate;
+        events.push(...marker.events);
+        continuation = { kind: "notes", remaining: MAX_SCRATCH_CALLS };
+        compaction = { kind: "generate" };
+      }
+    }
+  }
+
+  return {
+    ...assembled.preparationUpdates,
+    assembled,
+    continuation,
+    events,
+    compaction,
+    evidence: references.evidence,
+  };
 }
 
 function buildImageProjectionEvents(input: {

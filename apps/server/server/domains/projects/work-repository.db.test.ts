@@ -5,6 +5,9 @@ import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
+import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
+import { createPostgresWorkBranchDisposal } from "../collab/test-support/work-branch-disposal.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges, type FileAccessChange } from "../file-policy/index.js";
 import { createTestDrizzleDelivery } from "../runtime/loop/__tests__/test-drizzle-delivery.js";
@@ -59,11 +62,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const projectionMutation = createWorkProjectionMutation({
       db,
+      pendingCounts: createDrizzleWorkBranchPendingStore(db),
       availability,
       catalog,
     });
     const fileAccessChanges = createLocalFileAccessChanges();
     const works = createDrizzleProjectWorkRepository({
+      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges,
@@ -179,25 +184,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toEqual({ status: 404, code: "work_not_found" });
     });
 
-    it("keeps UUID-shaped slugs and resolves ambiguous strings by exact field role", async () => {
-      const ambiguous = "123e4567-e89b-12d3-a456-426614174000";
-      const byIdWork = await works.create({ id: ambiguous, projectId: PROJECT_ID, name: "Alpha" });
-      const bySlugWork = await works.create({ projectId: PROJECT_ID, name: ambiguous });
-      const collision = await works.create({ projectId: PROJECT_ID, name: `${ambiguous}!` });
+    it("mints w<n> in creation order, never reuses a handle, and resolves it to its address", async () => {
+      const first = await works.create({ projectId: PROJECT_ID, name: "Alpha" });
+      const second = await works.create({ projectId: PROJECT_ID, name: "Beta" });
+      expect([first.handle, second.handle]).toEqual(["w1", "w2"]);
+      await works.softDelete(second.id);
+      const third = await works.create({ projectId: PROJECT_ID, name: "Beta" });
+      expect(third.handle).toBe("w3");
 
-      expect([bySlugWork.slug, collision.slug]).toEqual([ambiguous, `${ambiguous}-2`]);
-      const idAuthority = await authorities.byId(PROJECT_ID, byIdWork.id);
-      if (!bySlugWork.slug) throw new Error("named Work missing slug");
-      const slugAuthority = await authorities.bySlug(PROJECT_ID, bySlugWork.slug);
-      expect(idAuthority).toMatchObject({ workId: byIdWork.id, workSlug: "alpha" });
-      expect(slugAuthority).toMatchObject({ workId: bySlugWork.id, workSlug: ambiguous });
-      if (!idAuthority || !slugAuthority) throw new Error("missing resolved authority");
-      expect(canonicalContextUri("scratch", "notes.md", idAuthority)).toBe(
-        "scratch://@alpha/notes.md",
-      );
-      expect(canonicalContextUri("scratch", "notes.md", slugAuthority)).toBe(
-        `scratch://@${ambiguous}/notes.md`,
-      );
+      const authority = await authorities.byHandle(PROJECT_ID, third.handle as never);
+      expect(authority).toMatchObject({ workId: third.id, workHandle: "w3" });
+      if (!authority) throw new Error("missing resolved authority");
+      expect(canonicalContextUri("scratch", "notes.md", authority)).toBe("scratch://@w3/notes.md");
     });
 
     it("captures update and delete receipts from the locked committing transition", async () => {
@@ -445,11 +443,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("reserves deleted Work slugs but refuses a reclaimed name", async () => {
+    it("frees a deleted Work's name, keeps its handle, and refuses a restore into a reclaimed name", async () => {
       const available = await works.create({ projectId: PROJECT_ID, name: "Available" });
       await works.softDelete(available.id);
       await expect(works.restore(available.id)).resolves.toMatchObject({
-        after: { deletedAt: null },
+        after: { deletedAt: null, handle: available.handle },
         changed: true,
       });
 
@@ -459,19 +457,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(works.restore(nameOwner.id)).rejects.toEqual(
         new WorkRestoreConflictError("name"),
       );
-
-      const slugOwner = await works.create({ projectId: PROJECT_ID, name: "Same slug!" });
-      await works.softDelete(slugOwner.id);
-      expect((await works.create({ projectId: PROJECT_ID, name: "Same slug?" })).slug).toBe(
-        "same-slug-2",
-      );
-      await expect(works.restore(slugOwner.id)).resolves.toMatchObject({
-        after: { slug: "same-slug" },
-        changed: true,
-      });
     });
 
-    it("deletes content and restores only rows hidden by the Work deletion", async () => {
+    it("deletes content and restores only rows cascade-deleted by the Work deletion", async () => {
       const empty = await works.create({ projectId: PROJECT_ID, name: "Empty source" });
       await db.insert(schema.contextSources).values({
         workId: empty.id,
@@ -486,10 +474,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const withFile = await works.create({ projectId: PROJECT_ID, name: "With file" });
       const [source] = await db
         .insert(schema.contextSources)
-        .values({ workId: withFile.id, name: "Uploads", slug: "uploads", scope: "work" })
+        .values({ workId: withFile.id, name: "Scratch", slug: "scratch", scope: "work" })
         .returning();
       if (!source) throw new Error("Expected context source");
-      await db
+      const [document] = await db
         .insert(schema.documents)
         .values({
           contextSourceId: source.id,
@@ -501,6 +489,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({
           contextSourceId: source.id,
           name: "separately-deleted",
+          deletionReason: "deleted",
           deletedAt: new Date("2025-01-01T00:00:00.000Z"),
         })
         .returning();
@@ -516,11 +505,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           deletedAt: new Date("2025-01-01T00:00:00.000Z"),
         })
         .returning();
-      if (!folder || !alreadyDeletedFolder || !alreadyDeletedDocument) {
+      if (!document || !folder || !alreadyDeletedFolder || !alreadyDeletedDocument) {
         throw new Error("Expected context children");
       }
 
+      async function versions() {
+        const documentRows = await db
+          .select({ id: schema.documents.id, version: schema.documents.locationVersion })
+          .from(schema.documents)
+          .where(eq(schema.documents.contextSourceId, source.id));
+        const folderRows = await db
+          .select({ id: schema.folders.id, version: schema.folders.locationVersion })
+          .from(schema.folders)
+          .where(eq(schema.folders.contextSourceId, source.id));
+        return Object.fromEntries(
+          [...documentRows, ...folderRows].map((row) => [row.id, row.version]),
+        );
+      }
+      const expectedVersions = (changed: bigint) => ({
+        [document.id]: changed,
+        [folder.id]: changed,
+        [alreadyDeletedDocument.id]: 0n,
+        [alreadyDeletedFolder.id]: 0n,
+      });
+      expect(await versions()).toEqual(expectedVersions(0n));
       const deletion = await works.softDelete(withFile.id);
+      expect(await versions()).toEqual(expectedVersions(1n));
+      await works.softDelete(withFile.id);
+      expect(await versions()).toEqual(expectedVersions(1n));
       expect(deletion.after?.deletedAt).toBeTruthy();
       await expect(
         db
@@ -534,6 +546,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         after: { deletedAt: null },
         changed: true,
       });
+      expect(await versions()).toEqual(expectedVersions(2n));
+      await works.restore(withFile.id);
+      expect(await versions()).toEqual(expectedVersions(2n));
       await expect(
         db.select().from(schema.contextSources).where(eq(schema.contextSources.id, source.id)),
       ).resolves.toMatchObject([{ deletedAt: null, deletedByWorkId: null }]);
@@ -586,7 +601,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("hides Work chats, drafts, and context from their read surfaces, then restores them", async () => {
+    it("cascade-deletes Work chats, branches, and context from their read surfaces, then restores them", async () => {
       await works.ensureNoWork(PROJECT_ID);
       const work = await works.create({ projectId: PROJECT_ID, name: "Hidden Work" });
       const [source] = await db
@@ -599,11 +614,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({ contextSourceId: source.id, name: "outline" })
         .returning();
       if (!document) throw new Error("Expected Work document");
-      await db.insert(schema.documentBranches).values({
+      const [branch] = await db
+        .insert(schema.branches)
+        .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
+        .returning({ id: schema.branches.id });
+      if (!branch) throw new Error("Expected the Work's branch");
+      await db.insert(schema.documentDrafts).values({
         id: "work-delete-draft",
         documentId: document.id,
         kind: "work_draft",
-        workId: work.id,
+        branchId: branch.id,
         state: Buffer.from([]),
         stateVector: Buffer.from([]),
       });
@@ -788,9 +808,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         db
           .select()
-          .from(schema.documentBranches)
-          .where(eq(schema.documentBranches.id, "work-delete-draft")),
-      ).resolves.toMatchObject([{ status: "closed", deletedByWorkId: work.id }]);
+          .from(schema.documentDrafts)
+          .where(eq(schema.documentDrafts.id, "work-delete-draft")),
+        "a cascade deletion leaves its documents' drafts open for the Work's Restore",
+      ).resolves.toMatchObject([{ status: "active", closedCause: null }]);
 
       await works.restore(work.id);
       await expect(
@@ -812,9 +833,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         db
           .select()
-          .from(schema.documentBranches)
-          .where(eq(schema.documentBranches.id, "work-delete-draft")),
-      ).resolves.toMatchObject([{ status: "active", deletedByWorkId: null }]);
+          .from(schema.documentDrafts)
+          .where(eq(schema.documentDrafts.id, "work-delete-draft")),
+      ).resolves.toMatchObject([{ status: "active", closedCause: null }]);
       expect((await catalog.snapshot(scope)).entries.map((entry) => entry.entryId)).toContain(
         document.id,
       );
@@ -935,7 +956,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const sourceWork = await works.create({ projectId: PROJECT_ID, name: "Source" });
       const destinationWork = await works.create({ projectId: PROJECT_ID, name: "Destination" });
       const unrelatedWork = await works.create({ projectId: PROJECT_ID, name: "Unrelated" });
-      const source = await threadRepos.threads.create({ projectId: PROJECT_ID, userId: USER_ID });
+      const source = await threadRepos.threads.create({
+        aiWriteMode: "direct",
+        projectId: PROJECT_ID,
+        userId: USER_ID,
+      });
       const turn = await threadRepos.turns.create({
         threadId: source.id,
         role: "assistant",
@@ -977,7 +1002,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: row.name,
-          slug: row.name.toLowerCase().replaceAll(" ", "-"),
+          handle: `w${retained.indexOf(row) + 100}`,
           deletedAt: expiredAt,
         })),
       );
@@ -1030,6 +1055,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         objectStore: createInMemoryObjectStore(),
         eventSink: createInMemoryEventSink(),
+        branches: createPostgresWorkBranchDisposal(db),
       });
       await expect(purger.sweep()).resolves.toBe(1);
       await expect(works.findById(unrelatedWork.id)).resolves.toBeNull();
@@ -1060,7 +1086,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       };
       const eventSink = createInMemoryEventSink();
-      const purger = createDrizzleWorkPurger({ db, objectStore, eventSink });
+      const purger = createDrizzleWorkPurger({
+        db,
+        objectStore,
+        eventSink,
+        branches: createPostgresWorkBranchDisposal(db),
+      });
       const other = await works.create({ projectId: PROJECT_ID, name: "Keep me" });
       const expiredTrashThreadId = "00000000-0000-4000-8000-000000000847";
       await db.insert(schema.threads).values({
@@ -1184,9 +1215,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await threadRepos.threads.setTrashState(expiredTrashThreadId as never, "deleted");
       const [source] = await db
         .insert(schema.contextSources)
-        .values({ workId: work.id, name: "Uploads", slug: "uploads", scope: "work" })
+        .values({
+          projectId: PROJECT_ID,
+          chatThreadId: THREAD_ID,
+          name: "Uploads",
+          slug: "uploads",
+          scope: "chat",
+        })
         .returning();
-      if (!source) throw new Error("Expected Work Uploads source");
+      if (!source) throw new Error("Expected the chat's Uploads source");
       const [document] = await db
         .insert(schema.documents)
         .values({
@@ -1197,11 +1234,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         })
         .returning();
       if (!document) throw new Error("Expected uploaded document");
-      await db.insert(schema.documentBranches).values({
+      const [branch] = await db
+        .insert(schema.branches)
+        .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
+        .returning({ id: schema.branches.id });
+      if (!branch) throw new Error("Expected the Work's branch");
+      await db.insert(schema.documentDrafts).values({
         id: "purged-work-draft",
         documentId: document.id,
         kind: "work_draft",
-        workId: work.id,
+        branchId: branch.id,
         state: Buffer.from([]),
         stateVector: Buffer.from([]),
       });
@@ -1209,7 +1251,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: "00000000-0000-4000-8000-000000000849",
         projectId: PROJECT_ID,
         sourcePath: "reports/purge.txt",
-        resultsUri: `results://@${work.slug}/threads/root/reports/purge.txt`,
+        resultsUri: `results://@${work.handle}/threads/root/reports/purge.txt`,
         storageUrl: "memory://purged-result",
         mimeType: "text/plain",
         sizeBytes: 4,
@@ -1224,7 +1266,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         intakeId: "purge-intake",
         actorUserId: USER_ID,
-        workId: work.id,
+        ownerThreadId: THREAD_ID,
         contextSourceId: source.id,
         documentId: document.id,
         fingerprint: "fingerprint",
@@ -1234,7 +1276,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         finalPath: "reference.png",
         objectKey,
         fileType: "png",
-        canonicalUri: `uploads://@${work.slug}/reference.png`,
         locationRevision: crypto.randomUUID(),
         state: "finalized",
         storageUrl: stored.value.storageUrl,
@@ -1292,7 +1333,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ),
       ).resolves.toEqual([]);
       await expect(
-        db.select().from(schema.uploadIntakes).where(eq(schema.uploadIntakes.workId, work.id)),
+        db
+          .select()
+          .from(schema.uploadIntakes)
+          .where(eq(schema.uploadIntakes.ownerThreadId, THREAD_ID as never)),
       ).resolves.toEqual([]);
       await expect(
         db
@@ -1303,8 +1347,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         db
           .select()
-          .from(schema.documentBranches)
-          .where(eq(schema.documentBranches.id, "purged-work-draft")),
+          .from(schema.documentDrafts)
+          .where(eq(schema.documentDrafts.id, "purged-work-draft")),
       ).resolves.toEqual([]);
       await expect(
         db.select().from(schema.threads).where(inArray(schema.threads.id, derivedIds)),
@@ -1336,7 +1380,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const insertBarrier = 748_210_843;
       const work = await works.create({ projectId: PROJECT_ID, name: "Creation race" });
       const { createWorkContextDocumentStore } = await import("../context/index.js");
-      const store = createWorkContextDocumentStore(db, work.id, "uploads");
+      const store = createWorkContextDocumentStore(db, work.id, "scratch");
       await control.unsafe(`
         CREATE FUNCTION test_block_work_document_insert() RETURNS trigger
         LANGUAGE plpgsql AS $$

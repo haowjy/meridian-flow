@@ -12,25 +12,32 @@ const SENSITIVE_EXACT_KEYS = new Set(["body", "message", "messages", "response"]
 const SECRET_TEXT_PATTERN = /\b(sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+/-]+=*)\b/g;
 const MAX_STRING_LENGTH = 1_000;
 const MAX_IDENTIFIER_LENGTH = 128;
+/** `errorMessage` is the one free-text payload key, already scrubbed by `errorMessageOf`. */
+const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_ARRAY_ITEMS = 20;
 const MAX_OBJECT_KEYS = 50;
 export const MAX_EVENT_RECORD_BYTES = 8 * 1_024;
 /** Metric keys whose names collide with the sensitive pattern may carry only finite numbers. */
 const SAFE_METRIC_KEYS = new Set(["inputTokens", "outputTokens", "providerFirstOutputMs"]);
 const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
+  "byTurnId",
   "callbackKind",
+  "failureCode",
+  "failureReason",
   "commandId",
   "cutoffTurnId",
   "deletedNodeTypes",
   "documentId",
   "documentIds",
   "errorCode",
+  "executionId",
   "field",
   "fields",
   "gatewayCallId",
   "logPrefix",
   "method",
   "model",
+  "occurrenceId",
   "projectId",
   "provider",
   "requestId",
@@ -49,8 +56,22 @@ const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
   "workId",
   "yjsSpans",
 ]);
+/**
+ * Finite diagnostic codes, allowed by key and by exactly these values (the
+ * settlement, reply-pin and hidden-node repair events). Default-deny stays: any
+ * other value under these keys is redacted.
+ */
+const DIAGNOSTIC_CODE_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
+  code: new Set(["corrupt_settlement_authority", "corrupt_state"]),
+  effect: new Set(["warm_rooms", "apply_step"]),
+  refusal: new Set(["integration"]),
+  stage: new Set(["claim", "execute"]),
+  trigger: new Set(["create", "read"]),
+};
 const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {
   action: new Set(["flush_then_exit", "logged_continue"]),
+  category: new Set(["command", "reply", "unavailable", "usage"]),
+  end: new Set(["dismissed", "forgotten", "moot", "moved_on", "resolved", "retried"]),
   command: new Set(["copy", "create", "insert", "read", "redo", "remove", "replace", "undo"]),
   direction: new Set(["redo", "undo"]),
   finishReason: new Set(["end_turn", "error", "max_tokens", "stop_sequence", "tool_use"]),
@@ -75,7 +96,23 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
   outcome: new Set(["cancelled", "error", "ok"]),
   phase: new Set(["committed", "skeleton", "staged"]),
   reason: new Set(["client-schema-superseded", "document-schema-stale", "record_byte_limit"]),
-  source: new Set(["agent", "connection", "local", "redis", "system", "unknown", "writer"]),
+  rewrite: new Set(["checkpoint", "compact", "pull", "reset"]),
+  ...DIAGNOSTIC_CODE_ENUMS,
+  source: new Set([
+    "agent",
+    "bug",
+    "connection",
+    "local",
+    "provider",
+    "redis",
+    "refusal",
+    "system",
+    "transport",
+    "unknown",
+    "usage",
+    "validation",
+    "writer",
+  ]),
   status: new Set([
     "active",
     "binary_file",
@@ -332,6 +369,7 @@ function sanitizeValue(key: string, value: unknown, depth: number): unknown {
     return "[redacted]";
   if (value == null) return value;
   if (typeof value === "string") {
+    if (key === "errorMessage") return redactString(value.slice(0, MAX_ERROR_MESSAGE_LENGTH));
     return payloadStringIsApproved(key, value) ? redactString(value) : "[redacted]";
   }
   if (typeof value === "number" || typeof value === "boolean") return value;
@@ -442,9 +480,4 @@ export function sanitizeEventRecord(event: EventRecord): EventRecord {
 
 export function serializedEventBytes(event: EventRecord): number {
   return Buffer.byteLength(JSON.stringify(event), "utf8");
-}
-
-export function safeSnippet(value: string, maxLength = 160): string {
-  const redacted = redactString(value);
-  return redacted.length <= maxLength ? redacted : `${redacted.slice(0, maxLength)}…`;
 }

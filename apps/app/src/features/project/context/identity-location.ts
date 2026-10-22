@@ -1,6 +1,7 @@
 /** Writer-facing location of an open tab, shared by the identity bar's surfaces. */
+
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import {
   type ParentRef,
   type ResourceOwner,
@@ -51,7 +52,7 @@ export function identityDestination(
       ...(choice?.parent ? { parent: choice.parent } : {}),
       ...replaceOwner(location),
     };
-  const workId = isWorkScopedProjectContextScheme(scheme)
+  const workId = isWorkScopedScheme(scheme)
     ? ((scheme === location.scheme ? location.workId : undefined) ?? editorWorkId ?? undefined)
     : undefined;
   return {
@@ -68,7 +69,7 @@ export function identityDestination(
  */
 export function destinationOwner(
   destination: { scheme: ProjectContextTreeScheme } & TabOwner,
-  works: readonly { id: string; slug: string | null }[] | null | undefined,
+  works: readonly { id: string; handle: string | null }[] | null | undefined,
   noWork: { id: string } | null | undefined,
 ): ResourceOwner | null {
   if (destination.rootThreadId !== undefined)

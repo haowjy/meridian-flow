@@ -9,7 +9,7 @@ export function createDrizzleDocumentArrivals(
   registry: Pick<LinkAheadRegistry, "settleArrivals">,
 ): DocumentArrivals {
   return {
-    lockNamespaces: (documentIds) => lockDocumentNamespaces(db, documentIds),
+    lockNamespaces: (documentIds, sourceIds) => lockDocumentNamespaces(db, documentIds, sourceIds),
     settle: (documentIds) => registry.settleArrivals(documentIds),
   };
 }

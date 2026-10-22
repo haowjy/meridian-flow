@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** A draft-only document under review is hosted by its branch room alone; a live document requests review while its review room resolves. */
+/** A draft-only document under review is hosted by its draft room alone; a live document requests review while its review room resolves. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ComponentProps, useState } from "react";
@@ -16,12 +16,13 @@ const resourceReplica = vi.hoisted(() => ({
 }));
 
 vi.mock("./account-feature-context", () => ({
+  useOptionalProjectContextAvailabilityCoordinator: () => null,
   useContextRemovalCoordinator: () => ({ writerClose: vi.fn() }),
   useAccountResourceReplica: () => resourceReplica,
   useAccountResourceProjection: () => ({ records: [], snapshot: null, error: null }),
   useLiveDocumentSessionRegistry: () => ({
     whenRefusedRoomDropped: () => null,
-    observeBranchRoom: () => () => undefined,
+    observeDraftRoom: () => () => undefined,
   }),
 }));
 const review = vi.hoisted(() => ({
@@ -33,8 +34,7 @@ vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller: {
       workId: "work-a",
-      inlineReview: review.reviewing ? { documentId: "document-a", draftId: "draft-a" } : null,
-      reviewRoomError: false,
+      inlineReview: review.reviewing ? { documentId: "document-a", itemKey: "draft-a" } : null,
     },
     reviewRoomNameForDraft: () => review.room,
     setActiveEditorDocumentId: review.publish,
@@ -43,14 +43,14 @@ vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
 vi.mock("@/features/editor/EditorView", () => ({
   EditorView: (props: {
     session?: unknown;
-    reviewDraftId?: string | null;
+    reviewItemKey?: string | null;
     draftOnly?: boolean;
   }) => (
     <div
       data-editor
       data-retains-draft-on-error={String(props.draftOnly === true)}
       data-live-session={String(props.session !== undefined)}
-      data-review-draft={props.reviewDraftId ?? ""}
+      data-review-draft={props.reviewItemKey ?? ""}
     />
   ),
 }));
@@ -123,7 +123,10 @@ describe("ContextEditorMountHost draft-only review", () => {
       const hostedTab = (
         promoted
           ? tab
-          : { ...tab, draftOnly: true, reviewWorkId: "work-a", reviewDraftId: "draft-a" }
+          : {
+              ...tab,
+              reviews: { "work-a": { itemKey: "draft-a", tabInstanceToken: "token" } },
+            }
       ) as ComponentProps<typeof ContextEditorMountHost>["trackedTabs"][number];
       return (
         <PresentedDocumentContext.Provider value={presented}>

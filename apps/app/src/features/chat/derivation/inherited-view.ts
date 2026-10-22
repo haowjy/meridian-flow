@@ -8,11 +8,12 @@
  * a fork) and whether that thread is in the trash.
  */
 import type { Thread, TranscriptPageResponse, Turn } from "@meridian/contracts/protocol";
+import { inConversation } from "@meridian/contracts/threads";
+import type { InheritedTranscript } from "@meridian/thread-client";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { readThreadTranscript } from "@/client/api/threads-api";
 import { useIsThreadPendingCreation } from "@/client/stores";
-import type { InheritedTranscript } from "../transcript-model";
 
 export type SourceOwner = {
   threadId: string;
@@ -134,7 +135,9 @@ export function optimisticForkPrefix(input: {
 }): InheritedView | null {
   const { source, sourceInherited, localTurns, cutoffTurnId } = input;
   const inheritedTurns = sourceInherited?.transcript.turns ?? [];
-  const all = [...inheritedTurns, ...localTurns];
+  // The source's inherited prefix is already server-filtered. Its own held turns are a diagnostic graph:
+  // apply membership before they become inherited, or a fork would show forgotten words until its pages land.
+  const all = [...inheritedTurns, ...localTurns.filter(inConversation)];
   const cutoff = all.findIndex((turn) => turn.id === cutoffTurnId);
   if (cutoff < 0) return null;
   const turns = all

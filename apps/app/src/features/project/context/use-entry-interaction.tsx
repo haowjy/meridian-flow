@@ -78,8 +78,15 @@ export function useEntryInteraction({
     else if (action === "delete")
       onRequestDelete(
         node.kind === "file"
-          ? { name: node.name, path: node.path, kind: "file", documentId: node.documentId, owner }
-          : { name: node.name, path: node.path, kind: "dir", entryId: node.entryId, owner },
+          ? {
+              name: node.name,
+              path: node.path,
+              kind: "file",
+              documentId: node.documentId,
+              owner,
+              scheme,
+            }
+          : { name: node.name, path: node.path, kind: "dir", entryId: node.entryId, owner, scheme },
       );
   };
   const rename: UseRenameEntryFormOptions = {

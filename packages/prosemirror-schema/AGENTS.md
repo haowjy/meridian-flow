@@ -1,48 +1,44 @@
 # @meridian/prosemirror-schema
 
-Shared ProseMirror structural contract used by TipTap/Yjs editor code.
+Shared ProseMirror structural contract used by the TipTap/Yjs editor and server
+collab code. It owns node and mark specs, schema versioning, the Yjs fragment
+name, client-ID policy and the Y.Doc factory; DOM and
+editor runtime behavior stay outside this package.
 
-- Preserve structural compatibility between server document logic and the app's
-  separately built TipTap editor. Every attr or node added here is mirrored by
-  hand in `apps/app/src/core/editor/extensions/meridian-extensions.ts`. No test
-  guards that mirror mechanically, so a schema change updates both files in
-  the same commit.
-- Export structural node/mark specs, `buildDocumentSchema()`, schema versioning,
-  the shared fragment name, reserved client-ID policy, and the Y.Doc factory.
-  DOM parsing/rendering belongs to TipTap extensions and markdown serializers,
-  not this package.
-- Keep `PROSEMIRROR_FRAGMENT_NAME` as the shared Y.XmlFragment name used by the
-  frontend editor and server Yjs mirror.
-- Treat `createCollabYDoc()` and the reserved clientID band constants as shared
-  collab protocol: random-authoring docs use the factory so they never draw the
-  server-owned clientID band `[0, RESERVED_CLIENT_ID_MAX]`.
-- `restoration-claims.ts` defines the untrusted draft Undo claim protocol and
-  captures local Yjs redone links. Certification belongs to server collab; no
-  consumer may treat the claims map itself as authorship authority.
-- Keep this package independent from React components, TipTap runtime objects,
-  database adapters, and server domain code.
+## Rules
+
+- Keep the app's separately built TipTap schema structurally aligned with this
+  package. Any node, mark, or attr change updates
+  `apps/app/src/core/editor/extensions/meridian-extensions.ts` in the same
+  commit; no test mechanically guarantees that mirror.
+- `PROSEMIRROR_FRAGMENT_NAME` is the shared Y.XmlFragment name. Import it from
+  the protocol subpath when a consumer only needs the name.
+- Random authoring docs use `createCollabYDoc()` so they avoid the reserved
+  server-authored client-ID band. Review restoration belongs to the diff kernel,
+  not this schema package.
+- A schema version change follows the append-only history and compatibility
+  rules in [`.context/CONTEXT.md`](.context/CONTEXT.md).
+
+Keep this package independent from React, TipTap runtime objects, database
+adapters, and server domains.
 
 ## Schema version bump policy
 
 `src/schema-shape.history.json` is the append-only record of collab schema
-versions and surfaces protected by `src/schema-shape.test.ts`. Never modify or
-remove an existing entry. Append the new version and surface so the test can
-classify the transition from its immutable predecessor.
+versions and surfaces protected by `src/schema-shape.test.ts` (which points
+here). Never modify or remove an existing entry; append the new version and
+surface so the test can classify the transition from its predecessor.
 
 | Change | Version class |
 |---|---|
 | Surface identical | No bump required; patch allowed |
 | New node/mark, or new attribute with a default | Minor `x.(y+1).0` |
-| Content expression or attribute default changed | Next minor `x.(y+1).0` or next major `(x+1).0.0`; review must confirm the minor path only loosens the schema |
+| Content expression or attribute default changed | Next minor or next major; review must confirm the minor path only loosens the schema |
 | Node/mark/attribute removed or renamed, fragment renamed, or Yjs encoding changed | Major `(x+1).0.0`, human ruling, and migration plan |
-| Any change a human ruling declares major (an added attr that changes what stored content means) | Major `(x+1).0.0`; the entry's `compatibilityNote` cites the ruling and the reset or migration |
+| Any change a human ruling declares major (an added attr that changes what stored content means) | Major; the entry's `compatibilityNote` cites the ruling and the reset or migration |
 
-Minor is additive even for `0.x`. Patch changes must keep the surface
-identical. A major is expected never; do not append an entry around a
-removal or encoding change without the required ruling and migration plan.
-Schema changes must still update TipTap extensions and markdown adapters
-together. `1.0.0` added `ref` to `link`, `image` and `figure` by ruling (#729/#730):
-old heads are unreadable and collab state is reset, not migrated.
-
-See [`.context/CONTEXT.md`](.context/CONTEXT.md) for the schema surface and
-compatibility rules.
+Minor is additive even in `0.x`, and a patch must keep the surface identical.
+A major is expected never: do not append an entry around a removal or encoding
+change without the ruling and migration plan. `1.0.0` added `ref` to `link`,
+`image` and `figure` by ruling (#729/#730): old heads are unreadable and collab
+state is reset, not migrated.

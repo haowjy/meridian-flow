@@ -12,7 +12,7 @@ import {
   userMessageTurnBlock,
 } from "@meridian/contracts/protocol";
 
-import { baseTurnFields } from "@/core/session/state-helpers";
+import { baseTurnFields } from "@meridian/thread-client";
 
 export function buildOptimisticUserTurn(input: {
   id: string;
@@ -59,6 +59,10 @@ export function buildOptimisticUserTurn(input: {
         createdAt: timestamp,
       };
     }),
+    executionId: null,
+    reservedForUserTurnIds: [],
+    delivery: null,
+    forgottenBy: null,
     siblingIds: [],
     responses: [],
   };

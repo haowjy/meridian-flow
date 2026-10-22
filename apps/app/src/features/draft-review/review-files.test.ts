@@ -1,8 +1,8 @@
 /** One file order for every list of draft files, and "Next draft" that follows it. */
 import { describe, expect, it } from "vitest";
 
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
-import { sortDraftFiles } from "@/client/query/work-draft-files";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import { sortDraftFiles } from "@/client/query/work-branch-files";
 import { nextReviewFile } from "./review-files";
 
 const group = (documentId: string, documentName: string | null) =>
@@ -11,7 +11,7 @@ const group = (documentId: string, documentName: string | null) =>
     documentName,
     contextLocation: { scheme: "manuscript", path: `/${documentName ?? documentId}.md` },
     draft: {
-      draftId: `draft-${documentId}`,
+      itemKey: `draft-${documentId}`,
       documentId,
       documentName,
       contextLocation: null,

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The review's one refresh owner: what makes the open review read its draft
- * again, and how often. Real Yjs documents and a real query client; the clock
+ * again, and how often. Independent live Yjs documents and a real query client; the clock
  * is the only fake.
  */
 
@@ -21,16 +21,17 @@ afterEach(async () => {
   await sessions.dispose();
 });
 
-const review = { documentId: "document-a", draftId: "draft-a" };
-const previewKey = projectQueryKeys.workDraftPreview("p", "w", "document-a", "draft-a");
+const review = { documentId: "document-a", itemKey: "draft-a" };
+const metadataKey = projectQueryKeys.workDraftMetadata("p", "w", "document-a", "draft-a");
 
 function Owner() {
   useReviewRefresh({
     projectId: "p",
     workId: "w",
     review,
-    session: sessions.get("room-a"),
-    liveSession: null,
+    runtime: null,
+    session: null,
+    liveSession: sessions.get("room-a"),
   });
   return null;
 }
@@ -40,7 +41,7 @@ async function mountOwner(run: (invalidated: () => string[]) => Promise<void>) {
   const invalidated: string[] = [];
   vi.spyOn(client, "invalidateQueries").mockImplementation(async (filters) => {
     invalidated.push(
-      JSON.stringify(filters?.queryKey) === JSON.stringify(previewKey) ? "preview" : "list",
+      JSON.stringify(filters?.queryKey) === JSON.stringify(metadataKey) ? "metadata" : "list",
     );
   });
   await withReactRoot(
@@ -74,7 +75,7 @@ describe("useReviewRefresh", () => {
       await wait(499);
       expect(invalidated()).toEqual([]);
       await wait(2);
-      expect(invalidated().sort()).toEqual(["list", "preview"]);
+      expect(invalidated().sort()).toEqual(["list", "metadata"]);
     });
   });
 
@@ -85,7 +86,7 @@ describe("useReviewRefresh", () => {
         await wait(200);
       }
       // 6s of writing with no pause longer than 200ms: it read along the way.
-      expect(invalidated().filter((kind) => kind === "preview").length).toBeGreaterThanOrEqual(2);
+      expect(invalidated().filter((kind) => kind === "metadata").length).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -93,11 +94,11 @@ describe("useReviewRefresh", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const answers: Array<(room: string) => void> = [];
     const options = {
-      queryKey: previewKey,
+      queryKey: metadataKey,
       queryFn: () => new Promise<string>((resolve) => answers.push(resolve)),
       staleTime: 0,
     };
-    client.setQueryData(previewKey, "old-room");
+    client.setQueryData(metadataKey, "old-room");
     const observer = new QueryObserver(client, options);
     const unsubscribe = observer.subscribe(() => {});
     let acquired: string | undefined;
@@ -122,13 +123,50 @@ describe("useReviewRefresh", () => {
           // Edits arrived while discovery was held: they need a fresh read too.
           expect(answers).toHaveLength(2);
           await act(async () => answers[1]?.("latest"));
-          expect(client.getQueryData(previewKey)).toBe("latest");
+          expect(client.getQueryData(metadataKey)).toBe("latest");
         },
       );
     } finally {
       unsubscribe();
       client.clear();
     }
+  });
+
+  it("still reads a room change seen just before the live room re-binds", async () => {
+    // A pull reaches the draft room; the Works catalog wake it raises re-renders the
+    // editor, which briefly drops and re-binds its live room.
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries").mockResolvedValue();
+    let rebind!: (bound: boolean) => void;
+    function Host() {
+      const [bound, setBound] = useState(true);
+      rebind = setBound;
+      useReviewRefresh({
+        projectId: "p",
+        workId: "w",
+        review,
+        runtime: null,
+        session: null,
+        liveSession: bound ? sessions.get("room-a") : null,
+      });
+      return null;
+    }
+    await withReactRoot(
+      <QueryClientProvider client={client}>
+        <Host />
+      </QueryClientProvider>,
+      async () => {
+        await act(async () => edit("room-a"));
+        await wait(200);
+        await act(async () => rebind(false));
+        await act(async () => rebind(true));
+        await wait(400);
+        expect(invalidate).toHaveBeenCalledWith(
+          expect.objectContaining({ queryKey: metadataKey }),
+          expect.anything(),
+        );
+      },
+    );
   });
 
   it("reads nothing once the review is gone", async () => {

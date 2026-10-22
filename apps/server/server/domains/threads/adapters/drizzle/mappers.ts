@@ -3,6 +3,7 @@
  * into their @meridian/contracts shapes (decimal/date/seq coercions). Shared by
  * the drizzle repositories so row translation lives in one place.
  */
+
 import type {
   Block,
   ModelResponse,
@@ -11,6 +12,7 @@ import type {
   Turn,
   TurnUsage,
 } from "@meridian/contracts/threads";
+import { type AiWriteMode, effectiveAiWriteMode } from "@meridian/contracts/works";
 import type * as schema from "@meridian/database/schema";
 import { toIsoString } from "../../domain/contract-serialization.js";
 
@@ -37,12 +39,15 @@ export function mapThread(
     workId?: string | null;
     agentDefinitionRevisionId?: string | null;
     agentName?: string | null;
+    pendingWriteMode?: AiWriteMode | null;
   },
 ): Thread {
   return {
     id: row.id,
     projectId: row.projectId,
     workId: row.workId ?? null,
+    aiWriteMode: row.aiWriteMode,
+    effectiveAiWriteMode: effectiveAiWriteMode(row.aiWriteMode, row.pendingWriteMode ?? null),
     userId: row.createdByUserId,
     kind: row.kind as Thread["kind"],
     status: row.status as Thread["status"],
@@ -79,6 +84,11 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
     origin: row.origin as Turn["origin"],
     writeMode: row.aiWriteMode as Turn["writeMode"],
     status: row.status as Turn["status"],
+    executionId: row.executionId,
+    reservedForUserTurnIds: row.reservedForUserTurnIds ?? [],
+    // Delivery is joined from the inbox by the reads that expose it (the snapshot).
+    delivery: null,
+    forgottenBy: row.forgottenByTurnId,
     promptBakeId: row.promptBakeId,
     compactionModel: row.compactionModel,
     finishReason: row.finishReason as Turn["finishReason"],

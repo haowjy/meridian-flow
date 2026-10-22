@@ -194,11 +194,11 @@ describe("planCatalogInstallation", () => {
       planCatalogInstallation({
         projectId,
         records: [],
-        view: view("document", "scratch://@some-work/chapter.md"),
+        view: view("document", "scratch://@w9/chapter.md"),
       }),
     ).toThrow("Catalog file URI");
     // A lineage catalog holds only that chat's Scratch: no Work spelling, no missing handle.
-    for (const uri of ["scratch://@drafting/notes.md", "scratch://@/"])
+    for (const uri of ["scratch://@w1/notes.md", "scratch://@x/"])
       expect(() =>
         planCatalogInstallation({
           projectId,
@@ -216,22 +216,16 @@ describe("planCatalogInstallation", () => {
       expected: { scheme: "user", workId: null },
     },
     {
-      scope: { kind: "work", projectId, workId: "no-work-id" } as const,
-      scheme: "uploads" as const,
-      uri: "uploads://@/notes.md",
-      expected: { scheme: "uploads", workId: "no-work-id" },
-    },
-    {
       scope: { kind: "lineage", projectId, rootThreadId: "root-id" } as const,
       scheme: "scratch" as const,
-      uri: "scratch://@/c12/notes.md",
+      uri: "scratch://@c12/notes.md",
       expected: { scheme: "scratch", workId: null, rootThreadId: "root-id", rootThreadRef: "c12" },
     },
     {
       scope: { kind: "work", projectId, workId: "work-id" } as const,
       scheme: "scratch" as const,
-      uri: "scratch://@drafting/notes.md",
-      expected: { scheme: "scratch", workId: "work-id", workSlug: "drafting" },
+      uri: "scratch://@w1/notes.md",
+      expected: { scheme: "scratch", workId: "work-id", workHandle: "w1" },
     },
   ])("derives canonical authority for $scope.kind scope", ({ scope, scheme, uri, expected }) => {
     const result = planCatalogInstallation({

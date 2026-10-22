@@ -5,7 +5,7 @@ import {
   isRecord,
   type RecordStorage,
 } from "@/client/storage/browser-record";
-import { durableContextTab, parseContextTab } from "@/client/stores";
+import { type ContextTab, durableContextTab, parseContextTab } from "@/client/stores";
 import type { DockDocument } from "./dock-document-store";
 
 export const DOCK_STORAGE_KEY = "meridian:dock:v1";
@@ -45,8 +45,8 @@ export function readDockSnapshot(
           (!isRecord(review) ||
             typeof review.workId !== "string" ||
             !review.workId ||
-            typeof review.draftId !== "string" ||
-            !review.draftId ||
+            typeof review.itemKey !== "string" ||
+            !review.itemKey ||
             (review.changeId !== undefined &&
               (typeof review.changeId !== "string" || !review.changeId)))
         )
@@ -65,7 +65,7 @@ export function readDockSnapshot(
                     ? null
                     : {
                         workId: review.workId as string,
-                        draftId: review.draftId as string,
+                        itemKey: review.itemKey as string,
                         ...(typeof review.changeId === "string"
                           ? { changeId: review.changeId }
                           : {}),
@@ -78,6 +78,19 @@ export function readDockSnapshot(
   );
 }
 
+/**
+ * The Editor workspace drops `reviews` because it re-derives them from the Work's drafts list. Dock
+ * restore admission never consults that list (a hidden draft is addressable only by its saved selector), and
+ * nothing else says a restored tab is draft-only rather than a live document under review, so the
+ * dock's one entry is durable.
+ */
+function durableDockTab(tab: ContextTab): ContextTab {
+  const durable = durableContextTab(tab);
+  return tab.kind === "tracked" && tab.reviews && durable.kind === "tracked"
+    ? { ...durable, reviews: tab.reviews }
+    : durable;
+}
+
 export function writeDockSnapshot(storage: () => DockStorage | null, snapshot: DockSnapshot): void {
   browserRecord<Omit<DockSnapshot, "accountId">>(
     storage,
@@ -85,7 +98,13 @@ export function writeDockSnapshot(storage: () => DockStorage | null, snapshot: D
     () => undefined,
   ).write({
     occupant: snapshot.occupant
-      ? { ...snapshot.occupant, tab: durableContextTab(snapshot.occupant.tab) }
+      ? {
+          projectId: snapshot.occupant.projectId,
+          screen: snapshot.occupant.screen,
+          screenWorkId: snapshot.occupant.screenWorkId,
+          review: snapshot.occupant.review,
+          tab: durableDockTab(snapshot.occupant.tab),
+        }
       : null,
   });
 }

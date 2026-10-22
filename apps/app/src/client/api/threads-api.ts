@@ -30,6 +30,7 @@ import {
   apiThreadUserStatePath,
   apiThreadWorkPath,
   type CancelTurnResponse,
+  deserializeTransport,
   type ForkThreadRequest,
   type HandoffBriefRetryRequest,
   type HandoffThreadRequest,
@@ -39,6 +40,7 @@ import {
   type RenameThreadRequest,
   type RenameThreadResponse,
   type ReplyRetryRequest,
+  type ReplyRetryResponse,
   type RetireAdmissionResult,
   type SendMessageResponse,
   type Thread,
@@ -49,6 +51,7 @@ import {
   type TranscriptPageResponse,
   type Turn,
   type TurnContextPreview,
+  threadSnapshotSchema,
   type UpdateThreadUserStateRequest,
   type UpdateThreadUserStateResponse,
 } from "@meridian/contracts/protocol";
@@ -59,7 +62,16 @@ import type {
 } from "@meridian/contracts/threads";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
 
-import { deleteJson, deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
+import type { HttpResult } from "@meridian/thread-client";
+import {
+  deleteJson,
+  deleteRequest,
+  getJson,
+  patchJson,
+  postJson,
+  putJson,
+  readResponsePayload,
+} from "./http-client";
 
 export type AppendUserMessageInput = {
   threadId: string;
@@ -122,7 +134,7 @@ export function retryReply(
   threadId: string,
   failedTurnId: string,
   request: ReplyRetryRequest,
-): Promise<Turn> {
+): Promise<ReplyRetryResponse> {
   return postJson(apiThreadTurnRetryPath(threadId, failedTurnId), request);
 }
 
@@ -186,14 +198,35 @@ export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelT
 }
 
 /**
+ * A hand-back command's POST (Stop, the x, Cancel queue, Send now) for the shared operation: the
+ * status and decoded body, never a typed error. A transport failure is `status: null`.
+ */
+export async function postCommand(path: string, body: unknown): Promise<HttpResult> {
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const payload = await readResponsePayload(response);
+    return {
+      status: response.status,
+      body: response.ok ? deserializeTransport(payload) : payload,
+    };
+  } catch {
+    return { status: null };
+  }
+}
+/**
  * Queue a writer control. The id is client-minted, so a retry with the same id
  * is a no-op on the server (201 new, 200 existing).
  */
 export function enqueueThreadControl(
   threadId: string,
   request: EnqueueThreadControlRequest,
+  options?: { signal?: AbortSignal },
 ): Promise<EnqueueThreadControlResponse> {
-  return postJson(apiThreadControlsPath(threadId), request);
+  return postJson(apiThreadControlsPath(threadId), request, options);
 }
 
 /** Withdraw a queued control; one that already started answers `already_started`. */
@@ -208,14 +241,16 @@ export function deleteThread({ data }: { data: { threadId: string } }): Promise<
   return deleteRequest(apiThreadPath(data.threadId));
 }
 
-export function getThreadSnapshot({
+export async function getThreadSnapshot({
   data,
   signal,
 }: {
   data: GetThreadSnapshotInput;
   signal?: AbortSignal;
 }): Promise<ThreadSnapshotResponse> {
-  return getJson(apiThreadSnapshotPath(data.threadId, { after: data.after }), { signal });
+  return threadSnapshotSchema.parse(
+    await getJson<unknown>(apiThreadSnapshotPath(data.threadId, { after: data.after }), { signal }),
+  );
 }
 
 export function updateThreadUserState(
@@ -257,17 +292,6 @@ export function deserializeThreadSnapshot(
       typeof value === "bigint" ? value.toString() : value,
     ),
   ) as ThreadSnapshotResponse;
-}
-
-/** Canonical projection from the wire snapshot to the store apply boundary. */
-export function toThreadSnapshotApplyOptions(snapshot: ThreadSnapshotResponse) {
-  return {
-    lifecycle: {
-      actionRequired: snapshot.actionRequired,
-      runningTurnId: snapshot.liveState.runningTurnId,
-    },
-    nextSeq: snapshot.nextSeq,
-  };
 }
 
 /**

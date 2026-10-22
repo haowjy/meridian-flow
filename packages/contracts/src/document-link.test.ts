@@ -49,7 +49,7 @@ const doc = (documentId: string, uri: string, extra: Partial<CatalogDocument> = 
 const documents: Record<string, CatalogDocument | null> = {
   [U.sibling]: doc(U.sibling, "manuscript://book/ch2"),
   [U.cast]: doc(U.cast, "kb://cast/Lin Feng"),
-  [U.drafted]: doc(U.drafted, "manuscript://book/new", { presence: "draft" }),
+  [U.drafted]: doc(U.drafted, "manuscript://book/new", { presence: "branch" }),
   [U.deleted]: doc(U.deleted, "manuscript://book/old", { presence: "deleted" }),
   [U.secret]: doc(U.secret, "manuscript://book/secret", { readable: false }),
   [U.foreign]: doc(U.foreign, "manuscript://theirs", { projectId: "p2", nameable: false }),
@@ -86,7 +86,7 @@ it("resolves and spells stored links by rule", () => {
     grammar?: "holder" | "manuscript-root";
     holderUri?: string | null;
     kind: string;
-    inDraft?: boolean;
+    inBranch?: boolean;
     /** Rule 3: answered through the ahead ref's settlement. */
     settled?: true;
     spelled: string;
@@ -97,7 +97,7 @@ it("resolves and spells stored links by rule", () => {
       ref: `doc:${U.sibling}`,
       href: "manuscript://book/before-move#scene-2",
       kind: "document",
-      inDraft: false,
+      inBranch: false,
       spelled: "ch2#scene-2",
       address: "manuscript://book/ch2",
     },
@@ -119,11 +119,11 @@ it("resolves and spells stored links by rule", () => {
       address: "manuscript://book/ch2",
     },
     {
-      name: "a document only in a draft resolves in the draft",
+      name: "a document only in a branch resolves in the branch",
       ref: `doc:${U.drafted}`,
       href: "manuscript://book/new",
       kind: "document",
-      inDraft: true,
+      inBranch: true,
       spelled: "new",
       address: "manuscript://book/new",
     },
@@ -273,8 +273,8 @@ it("resolves and spells stored links by rule", () => {
     const at = row.holderUri === undefined ? holder : { ...holder, uri: row.holderUri };
     const resolution = resolveStoredLink(link, catalog);
     expect.soft(resolution.kind, row.name).toBe(row.kind);
-    if (row.inDraft !== undefined && resolution.kind === "document")
-      expect.soft(resolution.inDraft, row.name).toBe(row.inDraft);
+    if (row.inBranch !== undefined && resolution.kind === "document")
+      expect.soft(resolution.inBranch, row.name).toBe(row.inBranch);
     expect.soft("settled" in resolution && resolution.settled, row.name).toBe(row.settled ?? false);
     expect
       .soft(spellStoredLink(link, at, resolution, row.grammar ?? "holder"), row.name)
@@ -464,24 +464,19 @@ function internal(uri: string, suffix: string) {
 }
 
 it("spells lineage links through their holder, without a chat-only spelling channel", () => {
-  const target = doc(U.cast, "scratch://@/c12/x");
-  const resolution = { kind: "document", document: target, inDraft: false } as const;
-  const link = { ref: `doc:${U.cast}`, href: "scratch://@/c12/old#gate" };
-  const ownScratch = { ...holder, uri: "scratch://@/c12/holder" };
+  const target = doc(U.cast, "scratch://@c12/x");
+  const resolution = { kind: "document", document: target, inBranch: false } as const;
+  const link = { ref: `doc:${U.cast}`, href: "scratch://@c12/old#gate" };
+  const ownScratch = { ...holder, uri: "scratch://@c12/holder" };
   expect(spellStoredLink(link, ownScratch, resolution, "holder").href).toBe("x#gate");
   // Contextual spelling already in the chat's own Scratch stays contextual.
   expect(
     spellStoredLink({ ref: null, href: "scratch://x" }, ownScratch, { kind: "address" }, "holder")
       .href,
   ).toBe("scratch://x");
-  for (const uri of [
-    null,
-    "scratch://@/c13/holder",
-    "scratch://@arc/holder",
-    "manuscript://holder",
-  ])
+  for (const uri of [null, "scratch://@c13/holder", "scratch://@w1/holder", "manuscript://holder"])
     expect(spellStoredLink(link, { ...holder, uri }, resolution, "holder").href).toBe(
-      "scratch://@/c12/x#gate",
+      "scratch://@c12/x#gate",
     );
 });
 

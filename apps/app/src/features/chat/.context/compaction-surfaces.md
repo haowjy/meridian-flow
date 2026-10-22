@@ -30,9 +30,9 @@ A divider does not end a reply. `continuesResponse` and response grouping look
 past compaction rows, so a mid-response autocompaction keeps one action row and
 one Info scope across A, C, B. Delivery rows never attach across a divider.
 
-## `endsTranscript`
+## A divider closes the chat
 
-A divider **is** a row for the failed-reply rule: a failed reply followed by a
+A divider is a closing turn for the failed-reply rule (`chatMovedPast`): a failed reply followed by a
 divider is history, because the writer (or the run) moved on, and it no
 longer offers Retry ([failed-reply Retry](failed-reply-retry.md)). A queued
 command is not a transcript row and never counts. R3 is untouched: an
@@ -47,7 +47,7 @@ complete (the icon and state label are one button, named by the full label plus
 ", summary", that opens and closes the summary; there is no separate Summary
 control; the section itself is unnamed so the state words are read once; the
 summary is the model's text alone, with no token sentence), failed, cancelled. Only a complete
-divider is a toggle: pending, stopped and failed ones have no summary. A manual failure speaks on the divider with the server's
+divider is a toggle: pending, stopped and failed ones have no summary. A manual failure is a card on the divider (`chatCards`, Try again sends `/compact` again with the same instructions) with the server's
 generic `turn.error`, or "This conversation couldn't be compacted." when it is
 null; the client owns no reason-specific copy (A10). There is no "nothing to
 compact" state: a manual `/compact` always compacts (A12). An autocompaction's
@@ -68,23 +68,27 @@ reply's, stay shown while Info's popover is open, and stay visible on touch. The
 read defensively), in every state.
 
 The divider is one line at every width, at one text size: the state label,
-Stop, Withdraw, Retry, any status words in the row (queued rows too), and the
-instructions and failure copy under the line all use the small action size
-(`text-meta`). Only the opened summary reads at chat body size. Its section is a container: below
+Stop (a queued row's too), the anchored card's Try again, any status words in the row
+(queued rows too), and the instructions and card copy under the line all use the small action
+size (`text-meta`). Only the opened summary reads at chat body size. Its section is a container: below
 `@lg` the state label switches to a short form ("Compacted") and truncates
 last. Without a summary, the section's accessible name keeps the full label.
 With one, the toggle is named `` `${full}, summary` `` and the section drops
 its own name, so the state words are read once.
+
+A failed divider keeps the neutral “Compaction” label and fold icon. Only its
+anchored `chatCards` card reports failure; when a replacement is queued, no
+failure label or styling survives independently on the divider.
 
 ## Composer during a run
 
 `composerRun(turns)` decides what the composer's Stop acts on. Work is active
 while a reply streams and while a placeholder with no stream is pending: a
 compaction divider, or a handoff brief being written (a pending seed, with no
-lease or phase). Stop on a divider goes through `useThreadControls.stop`, and
-on a seed through `useHandoffBrief.stop`; both share `useTurnStop`, the same
-path as the divider's and the card's own Stop, so each shows Stopping and
-announces in its own words. A send meanwhile queues like any send during a
+lease or phase). Stop on a divider goes through `useChatStop`, the same
+hand-back operation as the composer's Stop. A seed goes through
+`useHandoffBrief.stop`. Failed Stops are facts for `chatCards`; the one card
+announcer speaks and clears their failures. A send meanwhile queues like any send during a
 run. Turns, not the snapshot's status, carry this: the status can trail the
 turn.
 
@@ -100,45 +104,56 @@ runs it with the rest of the draft, trimmed, as `instructions`; choosing it
 from the `/` menu runs it with none. Commands wait at the end of the queue: a
 running reply adopts queued messages at each tool boundary, and a new run takes
 waiting messages first; a command runs only when no message waits, oldest
-first, one per run. Stop (the Stop button, or Esc in an empty composer; with a
-draft, Esc leaves the run alone) only ends the turn; the same rule picks what
+first, one per run. Stop (the composer's Stop button, shown when the box is empty, or Esc then; with a
+draft the button is Send and Esc leaves the run alone) only ends the turn; the same rule picks what
 runs next. The client special-cases none of it and just shows the server's
 state.
 
-`useThreadControls` is the shell over `compaction/thread-controls.ts`. It mints
+`useThreadControls` is the shell over `thread-controls/thread-controls.ts` (kind-aware: `/compact` and write-mode switches). It mints
 the id, shows the item as queued before the network answers, and keeps a
 failed enqueue on the item with Retry under the same id (the server treats a
-repeat as the original) and Withdraw beside it. A queued command is a dashed
-rule, "Compaction queued" with Withdraw, and its instructions verbatim under
-it, at once. Queued
+repeat as the original) and Stop beside it. A queued compaction is a dashed
+rule, "Compaction queued" with Stop, and its instructions verbatim under
+it, at once. A pending write-mode switch is not a compaction: it renders as the
+quiet write-mode notice (`WriteModeNotice`), with Stop too. Queued
 commands render at the transcript tail, after every queued message whatever
 order they were sent in, oldest first; they take no transcript position until
-they run. Queued rows have no Stop.
+they run. A queued row's Stop cancels the command before it runs; it is not the Stop of a running
+compaction divider.
 
-The local state is two small pieces: sends the inbox has not listed yet
+The local state is two small pieces: sends the record has not listed yet
 (dropped once it lists the id, since the server owns it then) and withdrawals.
-Withdraw removes the row at once (focus stays in the transcript when it was
+Stop on a queued row removes it at once (focus stays in the transcript when it was
 the last) and, once any in-flight enqueue settles, always calls the server,
 even for a row whose enqueue looked failed: only the response may have been
 lost, and a command the client hid must not run unseen. The server answers
 `withdrawn`, `already_started` once a divider carries the command's id, or 404
 when it does not have the command. A confirmed answer (`withdrawn` or
-`already_started`) keeps the id hidden against stale inbox frames. On
+`already_started`) keeps the id hidden against stale run-state records. On
 `already_started` the row still goes and the pending divider carries the
 state; the announcer says "This compaction already started." A 404 only drops
-the local send: the enqueue may still have been committing, so if the inbox
-lists the id later the row shows again, queued, with Withdraw. A failed
-withdrawal brings the row back with "Couldn't withdraw. Try again." A command
-a divider already names (`controlMessageId`) is no longer queued.
+the local send: the enqueue may still have been committing, so if the record
+lists the id later the row shows again, queued, with Stop. A failed
+withdrawal keeps the row and shows a card in it, "Couldn't stop the
+compaction." (or "Couldn't stop the switch." for a write-mode row), with Try
+again in place of Stop (`QueuedControlRows.tsx`, `control-copy.ts`). A queued
+command's row, compaction or write-mode switch, leaves by one rule
+(`retainControls` in `thread-controls.ts`, applied in `useThreadControls` to both row
+sources): it stays until a transcript turn carries its control id
+(`answeredControlIds`), because the record drops the item as the command starts,
+before its divider reaches the transcript. Otherwise it leaves on proof that it
+won't run: this device's Stop, or an accepted snapshot at or after the record that
+dropped it (`history` in the run-state slice) whose turns lack the id (a Withdraw
+from another tab). A dropped row asks for that snapshot.
 
 One announcer. Rows and dividers carry no live region; `useThreadControls`
 announces each writer-caused change and `useControlTurnAnnouncements` each
-turn-driven one (dividers and brief seeds), through the global
+turn-driven one (dividers, including write-mode, and brief seeds), through the global
 polite announcer, which reaches rows the virtualized list has scrolled away.
-Status words come from `compaction/control-copy.ts`, so the announcement and
+Status words come from `thread-controls/control-copy.ts`, so the announcement and
 the row say the same thing.
 
 Compaction turns have no AG-UI stream, and a cancelled one ends without
-`RUN_FINISHED`. The snapshot revalidates on run end and on every inbox frame
-(the server sends one after every lease release); see
+`RUN_FINISHED`. The snapshot revalidates on run end and on every run-state
+record whose open execution changed (a lease release publishes one); see
 [thread live updates](thread-live-updates.md).

@@ -4,11 +4,15 @@
  */
 import type { Turn } from "../index.js";
 
+/** The execution that reserves every golden reply. */
+export const GOLDEN_EXECUTION_ID = "execution_golden";
+
 /** Minimal JSON-natural assistant turn for golden orchestrator fixtures. */
 export function goldenAssistantTurn(
   id: string,
   threadId: string,
   status: Turn["status"] = "streaming",
+  reservedForUserTurnIds: string[] = [],
 ): Turn {
   return {
     id,
@@ -19,6 +23,10 @@ export function goldenAssistantTurn(
     origin: "assistant",
     writeMode: null,
     status,
+    executionId: GOLDEN_EXECUTION_ID,
+    reservedForUserTurnIds,
+    delivery: null,
+    forgottenBy: null,
     promptBakeId: null,
     finishReason: null,
     inputTokens: 0,

@@ -1,4 +1,3 @@
-import type { ModelResponseIdentity } from "@meridian/contracts";
 /**
  * Canonical tool-execution types: tool call inputs, handler/context shapes,
  * registry and executor interfaces. The vocabulary the registry, executor,
@@ -11,6 +10,8 @@ import type { ModelResponseIdentity } from "@meridian/contracts";
  * The only streaming seam is the optional output-delta sink, which the
  * orchestrator injects for tools that stream live process output.
  */
+import type { ObservationFrontier } from "@meridian/agent-edit/integration";
+import type { ModelResponseIdentity } from "@meridian/contracts";
 import type { InterruptAnswerEnvelope } from "@meridian/contracts/components";
 import type { AskRequest } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -22,6 +23,7 @@ import type {
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type { z } from "zod";
 import type { FunctionTool } from "../gateway/index.js";
+import type { FrontierLookups } from "../ports/observation-frontiers.js";
 import type { ShownLinkShowing } from "../ports/shown-links.js";
 import type { DocumentTextPolicy } from "./document-text.js";
 import type { InvalidArgumentsResult } from "./invalid-arguments.js";
@@ -81,6 +83,8 @@ export interface ToolExecutionContext {
   threadMessage?: ThreadMessageToolHandlerContext["threadMessage"];
   threadReport?: ThreadReportToolHandlerContext["threadReport"];
   returnResult?: ReturnResultToolHandlerContext["returnResult"];
+  /** The run's observation-frontier lookups, for tools that show documents. */
+  frontiers?: FrontierLookups;
 }
 
 /**
@@ -115,12 +119,22 @@ export interface ToolExecutionResult {
    */
   result: JsonValue;
   /**
-   * Host-only shown-link candidates the handler returned beside its result
-   * (`{ output, shown }` or `{ isError: true, output, shown }`). Dispatch
-   * records them only when it persists this result; an aborted, timed-out or
+   * Host-only evidence the handler returned beside its result
+   * (`{ output, evidence }` or `{ isError: true, output, evidence }`). Dispatch
+   * records it only when it persists this result; an aborted, timed-out or
    * thrown call carries none. Never part of `output`, `result` or `metadata`.
    */
-  shown?: readonly ShownLinkShowing[];
+  evidence?: ResultEvidence;
+}
+
+/**
+ * Host-only: what one result showed the model. Shown-link candidates record
+ * under the turn, the frontier on the block that persists the result
+ * (contract §7.1).
+ */
+export interface ResultEvidence {
+  shown: readonly ShownLinkShowing[];
+  frontier?: ObservationFrontier;
 }
 
 /**
@@ -163,6 +177,11 @@ export interface ToolHandlerContext {
    * that stream. Undefined for non-streaming handlers.
    */
   emitOutputDelta?: (chunk: { stream: "stdout" | "stderr"; text: string }) => void;
+  /**
+   * Observation-frontier lookups for a tool that shows documents: the frontier
+   * a result chains from (`recording`) and the request's view (`planning`).
+   */
+  frontiers?: FrontierLookups;
 }
 
 export type InterruptResponse = InterruptAnswerEnvelope;

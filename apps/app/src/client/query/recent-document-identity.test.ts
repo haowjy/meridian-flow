@@ -84,11 +84,12 @@ it("hides descendants of pending deletes and restores them after refusal", () =>
     ],
   };
   expect(recentDocumentIdentityIndex("project", snapshot).get("doc")).toBeNull();
-  expect(recentDocumentIdentityIndex("other", snapshot).has("doc")).toBe(false);
-  expect(recentDocumentIdentityIndex("project", snapshot).has("unloaded")).toBe(false);
+  expect(recentDocumentIdentityIndex("other", snapshot).get("doc")).toBeUndefined();
+  expect(recentDocumentIdentityIndex("project", snapshot).get("unloaded")).toBeUndefined();
   const restored = structuredClone(snapshot);
   restored.folders[0].intents[0].state = "needs-repair";
   expect(recentDocumentIdentityIndex("project", restored).get("doc")).toEqual({
+    documentId: "doc",
     name: "doc.md",
     path: "kb://A/doc.md",
   });
@@ -108,16 +109,19 @@ it("marks a pending file delete suppressed even without a loaded catalog", () =>
   record.intents = [];
   const deletion = planResourceDeletion(record, "project", "delete");
   if (!deletion) throw new Error("Missing deletion");
+  // A joined document's old id answers with its resource's suppression too.
+  deletion.next.resource.aliases = { "old-doc": { introducedAtIdentityRevision: 2 } };
   const snapshot: ResourceProjectionSnapshot = {
     records: [deletion.next],
     folders: [],
     catalogs: [],
   };
   expect(recentDocumentIdentityIndex("project", snapshot).get("doc")).toBeNull();
-  expect(recentDocumentIdentityIndex("other", snapshot).has("doc")).toBe(false);
+  expect(recentDocumentIdentityIndex("project", snapshot).get("old-doc")).toBeNull();
+  expect(recentDocumentIdentityIndex("other", snapshot).get("doc")).toBeUndefined();
   const restored = structuredClone(snapshot);
   restored.records[0].intents[0].state = "needs-repair";
-  expect(recentDocumentIdentityIndex("project", restored).has("doc")).toBe(false);
+  expect(recentDocumentIdentityIndex("project", restored).get("doc")).toBeUndefined();
 });
 
 it.each([
@@ -185,5 +189,5 @@ it.each([
       : [],
   };
   expect(recentDocumentIdentityIndex("project", snapshot).get("doc")).toBeNull();
-  expect(recentDocumentIdentityIndex("project", snapshot).has("unknown")).toBe(false);
+  expect(recentDocumentIdentityIndex("project", snapshot).get("unknown")).toBeUndefined();
 });

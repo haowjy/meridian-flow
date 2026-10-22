@@ -11,6 +11,7 @@ import {
   resourcePlacementForSnapshot,
 } from "@meridian/resource-replica";
 import type { DocumentSession } from "@/core/editor/document-session";
+import { DocumentSessionAuthorityError } from "@/core/editor/document-session-coordination-contract";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 /**
  * Opening a project document by id — the app's one answer to "take me there".
@@ -29,7 +30,9 @@ import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session
  * that was already one tab away.
  */
 
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import {
+  type ContextOwner,
   isProjectContextTreeScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
@@ -45,14 +48,14 @@ import {
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import {
   accessibleResourceCatalogView,
-  contextCatalogScope,
+  aggregateCatalogScope,
   projectCatalogFile,
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
 import { isEditorScheme, type ServerContextTab, useContextTabsActions } from "@/client/stores";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
-import { contextOwnerOf, contextTabFromFile, serverTabFromFile } from "./context-tab-from-file";
+import { contextTabFromFile, serverTabFromFile } from "./context-tab-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
 export interface LiveDocumentBinding {
@@ -77,7 +80,14 @@ export type ProjectDocumentLiveOpenResult =
   | { kind: "not-editable"; document: CatalogFileEntry }
   | {
       kind: "unavailable";
-      reason: "deleted" | "authority-unavailable" | "not-visible" | "indeterminate" | "failed";
+      reason:
+        | "deleted"
+        | "authority-unavailable"
+        | "not-visible"
+        | "indeterminate"
+        | "failed"
+        // The registry's own refusal, kept so the cause is not folded into "failed".
+        | DocumentSessionAuthorityError["kind"];
     };
 
 export type ProjectDocumentLiveOpenRequest = {
@@ -140,10 +150,13 @@ export class ProjectDocumentLiveOpener {
         input.documentId,
         resolution.generation,
       );
-    } catch {
+    } catch (error) {
       if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
         return { kind: "cancelled" };
-      return { kind: "unavailable", reason: "failed" };
+      return {
+        kind: "unavailable",
+        reason: error instanceof DocumentSessionAuthorityError ? error.kind : "failed",
+      };
     }
     if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
       return { kind: "cancelled" };
@@ -168,7 +181,8 @@ export class ProjectDocumentLiveOpener {
           if (
             snapshot.status === "access-lost" ||
             snapshot.connectionState?.kind === "unauthorized" ||
-            snapshot.connectionState?.kind === "terminal"
+            snapshot.connectionState?.kind === "terminal" ||
+            session.resetDisposition === "removed"
           ) {
             await registry.restartUnavailableRoom(lease);
             session = registry.get(lease);
@@ -204,7 +218,9 @@ export type OpenProjectDocumentRequest = {
    * documents beside the writer's place (the Chat screen's dock) takes it, so
    * the open finishes without leaving. `cancelled` means a newer intent won.
    */
-  beside?: (tab: ServerContextTab) => "opened" | "cancelled";
+  beside?: (tab: ServerContextTab, focus?: true) => "opened" | "cancelled";
+  /** A document the writer just made: its editor takes the caret once live. */
+  focus?: true;
   /** Abandons the open when the caller that asked for it is gone. */
   signal?: AbortSignal;
 };
@@ -245,13 +261,14 @@ function localFileForRecord(
   scheme: ProjectContextTreeScheme;
   workId: string | null;
   rootThreadId?: string;
+  chatId?: string;
   file: CatalogFile;
   entry: CatalogFileEntry;
 } | null {
   if (record.resource.content.kind !== "exact") return null;
   const location = placement.resourceLocation(record);
   if (!location) return null;
-  const scope = contextCatalogScope(projectId, location.scheme, contextOwnerOf(location));
+  const scope = aggregateCatalogScope(projectId, location.scheme, location);
   if (!scope) return null;
   const projected = accessibleResourceCatalogView(projectId, scope, record, placement);
   const file = projectCatalogView(projectId, location.scheme, projected, placement, [
@@ -263,6 +280,7 @@ function localFileForRecord(
     scheme: location.scheme,
     workId: location.workId,
     rootThreadId: location.rootThreadId,
+    chatId: location.chatId,
     file,
     entry,
   };
@@ -285,7 +303,14 @@ export class ProjectDocumentNavigationAdapter {
 
   async open(
     projectId: string,
-    { documentId, workId, disposition = "current", beside, signal }: OpenProjectDocumentRequest,
+    {
+      documentId,
+      workId,
+      disposition = "current",
+      beside,
+      focus,
+      signal,
+    }: OpenProjectDocumentRequest,
   ): Promise<ProjectDocumentLiveOpenResult> {
     const navigationIsCurrent =
       disposition === "current" ? this.dependencies.captureNavigation?.() : undefined;
@@ -312,7 +337,7 @@ export class ProjectDocumentNavigationAdapter {
           )
         : ({ kind: "missing" } as const);
       if (local.kind === "cancelled") return { kind: "cancelled" };
-      if (local.kind === "opened") {
+      localOpen: if (local.kind === "opened") {
         const prepared = local.handle;
         try {
           const placement = resourcePlacementForSnapshot(
@@ -321,6 +346,12 @@ export class ProjectDocumentNavigationAdapter {
           );
           const resolved = localFileForRecord(projectId, local.record, placement);
           if (!resolved) return { kind: "unavailable", reason: "deleted" };
+          // A chat's upload cached before its chat existed spells no handle, which a tab needs:
+          // the server's entry names it.
+          if (resolved.chatId !== undefined) {
+            const spelled = parseContextUri(resolved.file.uri);
+            if (!spelled.ok || spelled.value.authority.kind !== "chat") break localOpen;
+          }
           if (!isCurrent()) return { kind: "cancelled" };
           const committed = await this.commitFile({
             projectId,
@@ -328,8 +359,10 @@ export class ProjectDocumentNavigationAdapter {
             file: resolved.file,
             routeWorkId: resolved.workId ?? workId,
             rootThreadId: resolved.rootThreadId,
+            chatId: resolved.chatId,
             disposition,
             beside,
+            focus,
             isCurrent,
             canCommit,
           });
@@ -393,6 +426,8 @@ export class ProjectDocumentNavigationAdapter {
         result.document.scope.kind === "work" ? result.document.scope.workId : workId;
       const rootThreadId =
         result.document.scope.kind === "lineage" ? result.document.scope.rootThreadId : undefined;
+      const chatId =
+        result.document.scope.kind === "chat" ? result.document.scope.chatId : undefined;
       const file = projectCatalogFile(result.document);
       if (disposition === "current" && !this.dependencies.openRoute) {
         throw new Error("Opening a project document requires the project route owner");
@@ -403,8 +438,10 @@ export class ProjectDocumentNavigationAdapter {
         file,
         routeWorkId,
         rootThreadId,
+        chatId,
         disposition,
         beside,
+        focus,
         isCurrent,
         canCommit,
       });
@@ -424,42 +461,43 @@ export class ProjectDocumentNavigationAdapter {
     routeWorkId: string | undefined;
     /** A chat's Scratch is held by its lineage; the route keeps the Editor's own Work. */
     rootThreadId?: string;
+    /** An upload is held by the chat it was attached in. */
+    chatId?: string;
     disposition: "current" | "background";
-    beside?: (tab: ServerContextTab) => "opened" | "cancelled";
+    beside?: (tab: ServerContextTab, focus?: true) => "opened" | "cancelled";
+    focus?: true;
     isCurrent: () => boolean;
     canCommit: () => boolean;
   }): Promise<"applied" | "cancelled" | "failed"> {
+    const owner: ContextOwner = input.chatId
+      ? { chatThreadId: input.chatId }
+      : input.rootThreadId
+        ? { rootThreadId: input.rootThreadId }
+        : { workId: input.routeWorkId ?? null };
     const tab = isEditorScheme(input.scheme)
-      ? contextTabFromFile(
-          input.scheme,
-          input.file,
-          input.rootThreadId
-            ? { rootThreadId: input.rootThreadId }
-            : { workId: input.routeWorkId ?? null },
-        )
+      ? contextTabFromFile(input.scheme, input.file, owner)
       : undefined;
     if (!input.isCurrent()) return "cancelled";
     if (input.disposition === "current" && input.beside) {
       // A document with no owner row to name (never a dock candidate) is left to the route.
       let besideTab: ServerContextTab | null = null;
       try {
-        besideTab = serverTabFromFile(
-          input.scheme,
-          input.file,
-          input.rootThreadId
-            ? { rootThreadId: input.rootThreadId }
-            : { workId: input.routeWorkId ?? null },
-        );
+        besideTab = serverTabFromFile(input.scheme, input.file, owner);
       } catch {
         besideTab = null;
       }
       if (besideTab) {
-        const placed = input.beside(besideTab);
+        const placed = input.beside(besideTab, input.focus);
         this.current = null;
         return placed === "opened" ? "applied" : "cancelled";
       }
     }
     if (input.disposition === "current") {
+      // An upload has no Editor route: with no dock to hold it, the open goes nowhere.
+      if (input.scheme === "uploads") {
+        this.current = null;
+        return "cancelled";
+      }
       if (!this.dependencies.openRoute)
         throw new Error("Opening a project document requires the project route owner");
       this.current = null;
@@ -471,7 +509,12 @@ export class ProjectDocumentNavigationAdapter {
           ...(input.rootThreadId ? { rootThreadId: input.rootThreadId } : {}),
           documentId: input.file.documentId,
         },
-        { tab, isCurrent: input.isCurrent, canCommit: input.canCommit },
+        {
+          tab,
+          ...(input.focus ? { focus: true as const } : {}),
+          isCurrent: input.isCurrent,
+          canCommit: input.canCommit,
+        },
       );
       return settlement.kind === "failed"
         ? "failed"

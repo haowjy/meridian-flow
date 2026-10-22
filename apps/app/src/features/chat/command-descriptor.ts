@@ -1,10 +1,22 @@
 /** Maps tool commands to their transcript labels and metadata. */
 import { t } from "@lingui/core/macro";
 import type { JsonValue } from "@meridian/contracts/protocol";
+import type { ToolView } from "@meridian/thread-client";
+import {
+  documentToolFailed,
+  humanizeSkillSlug,
+  sourcePath,
+  stringInput,
+  type ToolCommand,
+  toolCommand,
+  toolInputObject,
+  workReceipt,
+} from "@meridian/thread-client";
 import {
   BookOpen,
   Copy,
   FilePlus2,
+  FolderInput,
   FolderTree,
   Layers,
   List,
@@ -13,22 +25,16 @@ import {
   Redo2,
   Search,
   Sparkles,
+  Trash2,
   Undo2,
   Wrench,
 } from "lucide-react";
-
-import { documentDisplayName, folderDisplayName } from "./document-display-name";
-import type { ToolView } from "./group-delivery-segments";
 import {
-  copySourcePath,
-  documentToolFailed,
-  humanizeSkillSlug,
-  stringInput,
-  type ToolCommand,
-  toolCommand,
-  toolInputObject,
-  workReceipt,
-} from "./tool-command";
+  documentDisplayName,
+  folderDisplayName,
+  moveDestinationName,
+  type OwnerNames,
+} from "./document-display-name";
 import { workReceiptLine } from "./work-receipt-copy";
 
 export type ToolActivityPhrase = {
@@ -63,7 +69,8 @@ export type CommandExpand =
 export type CommandDescriptor = {
   /** One glyph per command. Read down the icon column and the turn has a shape. */
   Icon: LucideIcon;
-  phrases: (tool: ToolView) => ToolActivityVocabulary;
+  /** `names` names the owners in Scratch addresses; a move's destination may need one. */
+  phrases: (tool: ToolView, names?: OwnerNames) => ToolActivityVocabulary;
   /** A failure is its own claim, so it never reuses the success verb. */
   failureVerb: () => string;
   /** The complete-tense title when the command named no document. */
@@ -119,6 +126,22 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     phrases: copyTenses,
     failureVerb: () => t`Couldn't copy`,
     pathlessTitle: () => t`Copied file`,
+    expand: "none",
+  },
+  // A move names the document in the verb and where it went as the parameter,
+  // like a whole-document copy; the destination's door opens the document.
+  move: {
+    Icon: FolderInput,
+    phrases: moveTenses,
+    failureVerb: () => t`Couldn't move`,
+    pathlessTitle: () => t`Moved a document`,
+    expand: "none",
+  },
+  delete: {
+    Icon: Trash2,
+    phrases: (tool) => documentTenses(tool, t`Deleting`, t`Deleted`),
+    failureVerb: () => t`Couldn't delete`,
+    pathlessTitle: () => t`Deleted a document`,
     expand: "none",
   },
   edit: {
@@ -262,10 +285,10 @@ function documentTenses(
 /** A copy's phrases: the source in the verb, the destination as the parameter. */
 function copyTenses(tool: ToolView): ToolActivityVocabulary {
   const input = toolInputObject(tool);
-  const sourcePath = copySourcePath(input);
+  const from = sourcePath(input);
   const destination = documentTarget(input);
-  if (!sourcePath) return documentTenses(tool, t`Copying`, t`Copied`);
-  const source = documentDisplayName(sourcePath);
+  if (!from) return documentTenses(tool, t`Copying`, t`Copied`);
+  const source = documentDisplayName(from);
   const wholeDocument = stringInput(input, "command") === "copy";
   const active = wholeDocument ? t`Copying ${source} to` : t`Copying from ${source} into`;
   const complete = wholeDocument ? t`Copied ${source} to` : t`Copied from ${source} into`;
@@ -274,6 +297,23 @@ function copyTenses(tool: ToolView): ToolActivityVocabulary {
   return {
     active: { verb: active, parameter: `${name}…` },
     complete: { verb: complete, parameter: name },
+  };
+}
+
+/** A move's phrases: the document in the verb, where it went (as little as tells it apart) as the parameter. */
+function moveTenses(tool: ToolView, names?: OwnerNames): ToolActivityVocabulary {
+  const input = toolInputObject(tool);
+  const from = sourcePath(input);
+  const destination = documentTarget(input);
+  if (!from) return documentTenses(tool, t`Moving`, t`Moved`);
+  const source = documentDisplayName(from);
+  const active = t`Moving ${source} to`;
+  const complete = t`Moved ${source} to`;
+  if (!destination) return tenses(`${active}…`, complete);
+  const place = moveDestinationName(from, destination, names);
+  return {
+    active: { verb: active, parameter: `${place}…` },
+    complete: { verb: complete, parameter: place },
   };
 }
 
@@ -292,10 +332,10 @@ export function humanizeToolName(toolName: string): string {
 }
 
 /** The phrase for the tool's current protocol state, never guessed from timing. */
-export function toolActivityPhrase(tool: ToolView): ToolActivityPhrase {
+export function toolActivityPhrase(tool: ToolView, names?: OwnerNames): ToolActivityPhrase {
   const descriptor = descriptorFor(tool);
   if (documentToolFailed(tool)) return { verb: descriptor.failureVerb() };
-  const vocabulary = descriptor.phrases(tool);
+  const vocabulary = descriptor.phrases(tool, names);
   return tool.status === "complete" ? vocabulary.complete : vocabulary.active;
 }
 

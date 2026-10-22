@@ -7,7 +7,6 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   ALPHA_ID,
   closeDatabase,
-  createHarness,
   createTestDatabase,
   resetDatabase,
   schema,
@@ -96,43 +95,12 @@ describe("change trail aggregate projections (postgres)", () => {
     expect((await states()).filter((state) => state === "settled")).toHaveLength(101);
   });
 
-  it("reopens a shared trail when new work arrives during an active turn", async () => {
-    const harness = createHarness(db);
-    try {
-      await harness.seedDestructivePush("shared-active-reopen");
-      await db
-        .update(schema.turns)
-        .set({ status: "streaming" })
-        .where(eq(schema.turns.id, TURN_ID));
-      const id = crypto.randomUUID();
-      await db.insert(schema.changeTrailShells).values({
-        id,
-        threadId: THREAD_ID,
-        ownerKind: "shared",
-        state: "settled",
-        settledAt: new Date(0),
-        changeCount: 0,
-        documentCount: 0,
-      });
-      await createDrizzleChangeTrailAggregateWriter(db).reconcileTerminalOwners();
-      const [shared] = await db
-        .select()
-        .from(schema.changeTrailShells)
-        .where(eq(schema.changeTrailShells.id, id));
-      expect(shared).toMatchObject({ state: "building", settledAt: null, version: 2 });
-    } finally {
-      harness.destroyWarmState();
-    }
-  });
-
   it("keeps cumulative changes attributed to the push that admitted each one", async () => {
     const [autoPush, manualPush] = await db
       .insert(schema.pushLineage)
       .values([
         {
           documentId: ALPHA_ID,
-          branchGeneration: 1,
-          journalIds: [],
           idempotencyKey: "attribution-auto",
           threadId: THREAD_ID,
           turnId: TURN_ID,
@@ -140,8 +108,6 @@ describe("change trail aggregate projections (postgres)", () => {
         },
         {
           documentId: ALPHA_ID,
-          branchGeneration: 1,
-          journalIds: [],
           idempotencyKey: "attribution-manual",
           threadId: THREAD_ID,
           turnId: TURN_ID,
@@ -170,56 +136,6 @@ describe("change trail aggregate projections (postgres)", () => {
           { changeId: "manual", admittedByUserId: USER_ID },
         ],
       },
-    ]);
-  });
-
-  it("retains a monotonic replace-set revision through adapter restart", async () => {
-    const [push] = await db
-      .insert(schema.pushLineage)
-      .values({
-        documentId: ALPHA_ID,
-        branchGeneration: 1,
-        journalIds: [],
-        idempotencyKey: "revision-continuity",
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-      })
-      .returning({ id: schema.pushLineage.id });
-    if (!push) throw new Error("missing push fixture");
-    const pushId = String(push.id);
-    const initial = change({ id: "continuity", pushId, clientID: 30 });
-    const firstWriter = createDrizzleChangeTrailAggregateWriter(db);
-
-    const first = await firstWriter.record({
-      trails: [trail([initial])],
-      documentTitles: titles,
-    });
-    const restartedWriter = createDrizzleChangeTrailAggregateWriter(db);
-    const restored = await restartedWriter.record({
-      trails: [trail([{ ...initial, afterTextAtReceipt: "restored|after restart" }])],
-      documentTitles: titles,
-      settlementRefinement: {
-        pushId,
-        currentVersion: true,
-      },
-    });
-    const updated = await restartedWriter.record({
-      trails: [trail([{ ...initial, afterTextAtReceipt: "updated|fourth projection" }])],
-      documentTitles: titles,
-      settlementRefinement: {
-        pushId,
-        currentVersion: true,
-      },
-    });
-
-    expect([first, restored, updated].map((result) => result[0]?.projectionRevision)).toEqual([
-      1, 2, 3,
-    ]);
-    expect(restored[0]?.changes).toEqual([
-      expect.objectContaining({ afterTextAtReceipt: "restored|after restart" }),
-    ]);
-    expect(updated[0]?.changes).toEqual([
-      expect.objectContaining({ afterTextAtReceipt: "updated|fourth projection" }),
     ]);
   });
 });

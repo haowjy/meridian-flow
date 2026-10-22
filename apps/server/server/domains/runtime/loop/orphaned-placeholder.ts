@@ -37,10 +37,20 @@ async function finalizeHandoffSeed(deps: OrphanRepairDeps, seed: Turn): Promise<
   await deps.publishStatus?.(seed.threadId as ThreadId);
 }
 
+const isExecutionTurn = (turn: Turn) => turn.role === "assistant" || turn.role === "compaction";
+
+/**
+ * What a repair may take. `sweep` is the primary lane: seeds, compaction placeholders and the
+ * chat's own assistants, never a subagent's. `claimed` is for a caller that has just taken a
+ * stale execution's claim, which proves every unsettled assistant or compaction turn is an
+ * orphan: it adds a subagent's assistant and a compaction that is no longer a placeholder.
+ */
+export type OrphanRepairScope = "sweep" | "claimed";
+
 /** Call under the thread lock and the caller's already-held session claim. */
 export async function finalizeOrphanedTurns(
   deps: OrphanRepairDeps,
-  input: { threadId: ThreadId; roles?: readonly Turn["role"][] },
+  input: { threadId: ThreadId; roles?: readonly Turn["role"][]; scope?: OrphanRepairScope },
 ): Promise<SavedExecutionReport[]> {
   const reports: SavedExecutionReport[] = [];
   const unsettled = await deps.repos.turns.listUnsettledForThread(input.threadId);
@@ -54,8 +64,11 @@ export async function finalizeOrphanedTurns(
       await deps.clearOrphanedTurn?.(input.threadId, turn.id);
       continue;
     }
-    const compaction = placeholder && turn.role === "compaction";
-    if (!compaction && (turn.role !== "assistant" || thread?.kind === "subagent")) continue;
+    const sweeps =
+      (placeholder && turn.role === "compaction") ||
+      (turn.role === "assistant" && thread?.kind !== "subagent");
+    if (!sweeps && (input.scope !== "claimed" || !isExecutionTurn(turn))) continue;
+    const compaction = turn.role === "compaction";
     const completion = await finalizeExecution(deps, {
       threadId: input.threadId,
       turnId: turn.id,
@@ -63,7 +76,9 @@ export async function finalizeOrphanedTurns(
       cause: {
         kind: "failed",
         reason: "orphaned",
-        error: "Run stopped before terminal completion",
+        error: sweeps
+          ? "Run stopped before terminal completion"
+          : "Child execution stopped before terminal completion",
       },
     });
     if (compaction) await deps.clearOrphanedTurn?.(input.threadId, turn.id);

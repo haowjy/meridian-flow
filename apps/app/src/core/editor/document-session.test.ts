@@ -18,6 +18,7 @@ import {
   type DocumentSessionConnectionState,
   type DocumentSessionSnapshot,
   type DocumentSessionTransportProvider,
+  DRAFT_UPDATES_REFUSED,
 } from "./document-session";
 import { clientSchemaReloadGuardKey } from "./schema-fence";
 
@@ -287,9 +288,9 @@ describe("DocumentSession status derivation", () => {
 
     current().emit({
       kind: "reset",
-      reason: WS_CLOSE.BRANCH_STALE.reason,
+      reason: WS_CLOSE.DRAFT_CLOSED.reason,
       disposition: "rebuild",
-      code: WS_CLOSE.BRANCH_STALE.code,
+      code: WS_CLOSE.DRAFT_CLOSED.code,
     });
 
     expect(session.getSnapshot()).toMatchObject({
@@ -297,6 +298,31 @@ describe("DocumentSession status derivation", () => {
       connectionState: { kind: "reset", code: 4205 },
     });
     void session.destroy();
+  });
+
+  // #940: an offline room that ends refused keeps `offline`; its pill must still learn the new state.
+  it("emits a terminal close that arrives while already offline", async () => {
+    const { factory, current } = makeFakeTransport();
+    const session = new DocumentSession({
+      roomKey: "draft:draft-1",
+      persistence: { kind: "none" },
+      transportFactory: factory,
+    });
+    await flushMicrotasks();
+    current().emit({ kind: "connected" });
+    current().resolveFirstSync();
+    await session.whenSynced();
+    current().emit({ kind: "disconnected" });
+    const { snapshots, unsubscribe } = track(session);
+
+    current().emit({ kind: "terminal", reason: DRAFT_UPDATES_REFUSED, code: 1008 });
+
+    expect(snapshots.at(-1)).toMatchObject({
+      status: "offline",
+      connectionState: { kind: "terminal", reason: DRAFT_UPDATES_REFUSED },
+    });
+    unsubscribe();
+    await session.destroy();
   });
 
   it("holds field writes off the wire until the last nested suspension resumes, including an emptied field", () => {
