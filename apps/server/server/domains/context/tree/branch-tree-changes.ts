@@ -251,6 +251,7 @@ export async function writeBackBranchFacts(
     facts,
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: input.changedBy,
+    ...(!current.row && facts.created ? { createdBy: input.changedBy } : {}),
   });
   return Ok(facts);
 }

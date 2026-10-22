@@ -81,8 +81,8 @@ async function filterAccessibleLiveLineageDocuments(
   const principal = { accountId: input.userId };
   const readable = await Promise.all(
     input.documents.map(async (document) => {
-      const grant =
-        document.tree?.op === "delete"
+      let grant =
+        document.tree?.op === "delete" || document.removed
           ? await deps.fileAccess.authorize(
               principal,
               { kind: "restore", documentId: document.documentId },
@@ -94,6 +94,14 @@ async function filterAccessibleLiveLineageDocuments(
               turnEditDestination(document),
               "read",
             );
+      // An undone draft create has no draft row left. Its immutable receipt still names the
+      // identity, so authorize the row at the same restore seam Redo uses.
+      if (isFileAccessDenied(grant) && document.tree?.op !== "delete")
+        grant = await deps.fileAccess.authorize(
+          principal,
+          { kind: "restore", documentId: document.documentId },
+          "read",
+        );
       return !isFileAccessDenied(grant);
     }),
   );

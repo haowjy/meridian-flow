@@ -500,11 +500,15 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         );
       }
     }
-    // A reversed move left the document somewhere else: the result names where it is now.
+    // A reversed move left the document somewhere else: the result names where it is now. A
+    // reversed creation removed the document, so its text half must not claim an empty document
+    // survived the tree half of the same inverse.
     if (inverse && !outcome.isError && outcome.result.status === "success") {
       const now = await currentUri(call, address.documentId);
       if (now && now !== outcome.result.path)
         outcome = { ...outcome, result: { ...outcome.result, path: now } };
+      else if (!now && outcome.result.documentEmpty)
+        outcome = { ...outcome, result: { ...outcome.result, documentEmpty: false } };
     }
     const stagedCreate =
       creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;

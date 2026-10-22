@@ -368,6 +368,8 @@ export async function writeBranchTreeFacts(
     /** `documents.location_version` now: the base a first move or delete records. */
     locationVersion: bigint;
     changedBy: { threadId: ThreadId; turnId?: TurnId } | null;
+    /** Reinstates attribution when a creation inverse recreates its deleted facts row. */
+    createdBy?: { threadId: ThreadId; turnId?: TurnId } | null;
   },
 ): Promise<void> {
   const tx = currentDrizzleDb(db);
@@ -390,6 +392,12 @@ export async function writeBranchTreeFacts(
   const moved: TreePlacement | null = facts.moved;
   const values = {
     created: facts.created,
+    ...(input.createdBy
+      ? {
+          createdThreadId: input.createdBy.threadId,
+          createdTurnId: input.createdBy.turnId ?? null,
+        }
+      : {}),
     moved: moved !== null,
     movedFolderId: moved?.folderId ?? null,
     movedRootSourceId: moved?.folderId ? null : (moved?.rootSourceId ?? null),

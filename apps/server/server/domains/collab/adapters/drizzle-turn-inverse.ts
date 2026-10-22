@@ -469,7 +469,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       // Off every lock: each plan's parts with provenance on its attempt-local view.
       const planned = new Map(plans.map((plan) => [plan, planDocument(plan, query)]));
       const documents = [...planned.values()];
-      const liveIds = documents.filter((entry) => entry.live).map((entry) => entry.documentId);
+      // A restore step owns the removed document through tree scope until it recreates live
+      // authority. Its later text step and post-commit delivery use that new authority.
+      const liveIds = documents
+        .filter((entry) => entry.live && entry.living)
+        .map((entry) => entry.documentId);
       const handles: string[] = [];
       const deliveries: (() => Promise<void>)[] = [];
       const skips: TurnInverseSkip[] = [];
