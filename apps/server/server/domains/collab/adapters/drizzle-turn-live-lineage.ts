@@ -32,6 +32,15 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
             isNotNull(documentEdits.treeChange),
             sql`${documentEdits.treeChange}->'destination'->>'kind' = 'live'`,
             sql`${documentEdits.treeChange}->>'op' <> 'settle'`,
+            // A stopped reply's rollback reversed it: the turn didn't leave it moved or deleted.
+            sql`NOT EXISTS (
+              SELECT 1 FROM ${documentEdits} AS undone
+              WHERE undone.document_id = ${documentEdits.documentId}
+                AND undone.kind = 'rollback'
+                AND undone.tree_change->'targets' @> jsonb_build_array(
+                  jsonb_build_object('editId', ${documentEdits.id}::text)
+                )
+            )`,
           ),
         )
         .orderBy(sql`(${documentEdits.treeChange}->>'seq')::bigint`);

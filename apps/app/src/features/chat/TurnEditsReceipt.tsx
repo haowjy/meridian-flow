@@ -97,6 +97,11 @@ export function TurnEditsReceipt({
   const turnMutation = useReverseTurnMutation(threadId);
 
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
+  // A part the refusal line already names (a move or delete that met a taken location, a
+  // missing folder, or a document gone again) isn't listed a second time.
+  const skips = (actionSkips ?? receipt?.skips ?? []).filter(
+    (skip) => !(skip.kind === "tree" && commandRefusal?.status === skip.cause),
+  );
   const guardCopy = commandRefusal ? reversalRefusalCopy(commandRefusal) : undoGuardCopy(receipt);
   const trailDocuments = changeTrail?.documents ?? [];
   const hasEditedDocuments = hasTurnEditsReceiptDocuments(documents, changeTrail);
@@ -288,20 +293,20 @@ export function TurnEditsReceipt({
               <Trans>Undone in your drafts. Apply them to change your manuscript.</Trans>
             </p>
           ) : null}
-          {(actionSkips ?? receipt?.skips ?? []).length > 0 ? (
+          {skips.length > 0 ? (
             <div
               className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
               data-turn-skips
               role="status"
             >
               <p>
-                {plural((actionSkips ?? receipt?.skips ?? []).length, {
+                {plural(skips.length, {
                   one: "# part stayed",
                   other: "# parts stayed",
                 })}
               </p>
               <ul>
-                {(actionSkips ?? receipt?.skips ?? []).map((skip, index) => (
+                {skips.map((skip, index) => (
                   <li key={`${skip.documentId}:${index}`}>
                     <SkipSubject skip={skip} />
                     <span className="ml-1">{skipCauseCopy(skip.cause)}</span>
