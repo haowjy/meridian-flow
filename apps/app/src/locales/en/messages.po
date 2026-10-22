@@ -397,6 +397,18 @@ msgstr "{remainingPercent}% remaining"
 msgid "{shown} of {total}"
 msgstr "{shown} of {total}"
 
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "{source} is a folder. Only documents can be moved or deleted."
+msgstr "{source} is a folder. Only documents can be moved or deleted."
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "{source} is already at {place}."
+msgstr "{source} is already at {place}."
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "{source} is already there."
+msgstr "{source} is already there."
+
 #: src/features/chat/thinking-digest.ts
 msgid "{steps, plural, one {# step} other {# steps}}"
 msgstr "{steps, plural, one {# step} other {# steps}}"
@@ -900,6 +912,50 @@ msgstr "Cache resets"
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Calls"
 msgstr "Calls"
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't delete {source} here."
+msgstr "Can't delete {source} here."
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't delete {source}: it changed at the same time."
+msgstr "Can't delete {source}: it changed at the same time."
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source} there."
+msgstr "Can't move {source} there."
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: another document is already there."
+msgstr "Can't move {source}: another document is already there."
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: another document is at {place}."
+msgstr "Can't move {source}: another document is at {place}."
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: it or its destination changed at the same time."
+msgstr "Can't move {source}: it or its destination changed at the same time."
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: that folder doesn't exist."
+msgstr "Can't move {source}: that folder doesn't exist."
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: the folder for {place} doesn't exist."
+msgstr "Can't move {source}: the folder for {place} doesn't exist."
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: the new name needs a different kind of document."
+msgstr "Can't move {source}: the new name needs a different kind of document."
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: the new name would change its file type."
+msgstr "Can't move {source}: the new name would change its file type."
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: this chat is in draft mode, so this move would be half drafted and half live."
+msgstr "Can't move {source}: this chat is in draft mode, so this move would be half drafted and half live."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: {place} was moved or deleted again since."
@@ -1430,6 +1486,10 @@ msgstr "Couldn't create this fork."
 msgid "Couldn’t create this Work."
 msgstr "Couldn’t create this Work."
 
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't delete"
+msgstr "Couldn't delete"
+
 #: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "Couldn't delete {title}"
 msgstr "Couldn't delete {title}"
@@ -1478,6 +1538,7 @@ msgstr "Couldn't find {name}."
 msgid "Couldn't find {source} or {destination}."
 msgstr "Couldn't find {source} or {destination}."
 
+#: src/features/chat/namespace-refusal-copy.ts
 #: src/features/chat/tool-renderers.tsx
 msgid "Couldn't find {source}."
 msgstr "Couldn't find {source}."
@@ -1528,6 +1589,10 @@ msgstr "Couldn't load Work."
 #: src/components/app/QueryErrorRow.tsx
 msgid "Couldn't load. Check your connection."
 msgstr "Couldn't load. Check your connection."
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't move"
+msgstr "Couldn't move"
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't move this entry. Try again."
@@ -1847,6 +1912,7 @@ msgstr "Delete table"
 msgid "Delete Work"
 msgstr "Delete Work"
 
+#: src/features/chat/command-descriptor.ts
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted"
 msgstr "Deleted"
@@ -1855,6 +1921,10 @@ msgstr "Deleted"
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted {name}"
 msgstr "Deleted {name}"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Deleted a document"
+msgstr "Deleted a document"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Deleted a Work"
@@ -1876,6 +1946,10 @@ msgstr "Deleted Work {name}"
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
 msgstr "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
+
+#: src/features/chat/command-descriptor.ts
+msgid "Deleting"
+msgstr "Deleting"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Deleting a Work…"
@@ -2811,9 +2885,21 @@ msgstr "Move up"
 msgid "Move…"
 msgstr "Move…"
 
+#: src/features/chat/command-descriptor.ts
+msgid "Moved"
+msgstr "Moved"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moved {source} to"
+msgstr "Moved {source} to"
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Moved {source} to {destination}"
 msgstr "Moved {source} to {destination}"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moved a document"
+msgstr "Moved a document"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Moved or deleted again since"
@@ -2835,6 +2921,14 @@ msgstr "Moved to the message box"
 #: src/features/chat/UserTurn.tsx
 msgid "Moved to the message box."
 msgstr "Moved to the message box."
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moving"
+msgstr "Moving"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moving {source} to"
+msgstr "Moving {source} to"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
