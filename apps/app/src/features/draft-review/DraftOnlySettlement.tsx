@@ -10,6 +10,7 @@ import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import {
   useObservedResourceProjection,
   useOptionalAccountResourceReplica,
+  useOptionalProjectContextAvailabilityCoordinator,
 } from "@/features/project/context/account-feature-context";
 import { useOptionalOpenEditorReview } from "@/features/project/dock/editor-review-handoff";
 import { usePresentedDocument } from "@/features/project/presented-document";
@@ -64,6 +65,7 @@ function WorkSettlement({
 }) {
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
+  const availability = useOptionalProjectContextAvailabilityCoordinator();
   const drafts = useWorkBranchDrafts(projectId, workId);
   const projection = useObservedResourceProjection(resources, projectId);
   // A draft-only tab whose draft left the active list was disposed of
@@ -133,6 +135,9 @@ function WorkSettlement({
   // document's record, and its draft stays draft-only until Apply brings it
   // back. A tab the writer was looking at keeps the review it showed, opened
   // over the live document: the view the chip's Draft choice gives.
+  // Availability can apply a live delete before the replica hears of it: while
+  // it says the document is removed, a still-placed record is stale and must
+  // not undo the hold that just made the tab draft-only (D79).
   useEffect(() => {
     if (drafts.status !== "ready") return;
     const identities = resourceIdentityIndex(projection.records);
@@ -143,6 +148,8 @@ function WorkSettlement({
       if (draft.workId !== workId || !row || !record) continue;
       if (record.resource.lifecycle.kind === "terminal") continue;
       if (!projection.placement.resourceLocation(record)) continue;
+      if (availability?.removalRecord(projectId, draft.documentId).get()?.kind === "removed")
+        continue;
       if (promoting.has(draft.documentId)) continue;
       promoting.add(draft.documentId);
       // The review the Editor shows, captured before promotion clears the entries: its
@@ -189,6 +196,7 @@ function WorkSettlement({
     workId,
     editorWorkId,
     openReview,
+    availability,
   ]);
 
   return null;
