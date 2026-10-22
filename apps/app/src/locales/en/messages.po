@@ -377,6 +377,20 @@ msgstr "{name} was discarded from the draft before this reply saved its change."
 msgid "{name} was removed when the reply that created it didn't finish, so this change wasn't made."
 msgstr "{name} was removed when the reply that created it didn't finish, so this change wasn't made."
 
+#: src/features/draft-review/tree-line.ts
+msgid "{name}: deleting"
+msgstr "{name}: deleting"
+
+#. placeholder {0}: line.place
+#: src/features/draft-review/tree-line.ts
+msgid "{name}: moving to {0}"
+msgstr "{name}: moving to {0}"
+
+#. placeholder {0}: line.place
+#: src/features/draft-review/tree-line.ts
+msgid "{name}: renaming to {0}"
+msgstr "{name}: renaming to {0}"
+
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{names} are back in the manuscript."
 msgstr "{names} are back in the manuscript."
@@ -384,6 +398,10 @@ msgstr "{names} are back in the manuscript."
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{names} is back in the manuscript."
 msgstr "{names} is back in the manuscript."
+
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "{occupant} still has that name. Apply its change first."
+msgstr "{occupant} still has that name. Apply its change first."
 
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{position} of {count}"
@@ -469,6 +487,18 @@ msgstr "{who} discarded this document from the draft before this reply saved its
 msgid "{words, plural, one {# word removed} other {# words removed}}"
 msgstr "{words, plural, one {# word removed} other {# words removed}}"
 
+#: src/features/draft-review/tree-line.ts
+msgid "{work} is deleting this."
+msgstr "{work} is deleting this."
+
+#: src/features/draft-review/tree-line.ts
+msgid "{work} is moving this to {place}."
+msgstr "{work} is moving this to {place}."
+
+#: src/features/draft-review/tree-line.ts
+msgid "{work} is renaming this to {place}."
+msgstr "{work} is renaming this to {place}."
+
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "<0.1 s"
 msgstr "<0.1 s"
@@ -509,6 +539,18 @@ msgstr "1 change"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "3 by 3, header row"
 msgstr "3 by 3, header row"
+
+#: src/features/draft-review/tree-line.ts
+msgid "A chat is deleting this."
+msgstr "A chat is deleting this."
+
+#: src/features/draft-review/tree-line.ts
+msgid "A chat is moving this to {place}."
+msgstr "A chat is moving this to {place}."
+
+#: src/features/draft-review/tree-line.ts
+msgid "A chat is renaming this to {place}."
+msgstr "A chat is renaming this to {place}."
 
 #: src/features/chat/DeletedChatCard.tsx
 msgid "A chat you had open was deleted."
@@ -720,6 +762,10 @@ msgstr "Alt text"
 msgid "An entry named {name} already exists in this location."
 msgstr "An entry named {name} already exists in this location."
 
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "Another document"
+msgstr "Another document"
+
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Another document is already at this name. Rename or remove it, then apply again."
 msgstr "Another document is already at this name. Rename or remove it, then apply again."
@@ -732,6 +778,10 @@ msgstr "Another document is at its location"
 #: src/features/editor/ManuscriptStateNotice.tsx
 msgid "Another document now has this name. Rename that document to apply this draft."
 msgstr "Another document now has this name. Rename that document to apply this draft."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "Another document this Work moves or deletes still has that name. Apply that one first, or apply all changes."
+msgstr "Another document this Work moves or deletes still has that name. Apply that one first, or apply all changes."
 
 #: src/client/query/work-update-failure.ts
 msgid "Another Work already has this name. Choose a different name."
@@ -793,6 +843,10 @@ msgstr "Applying brings back {names}, which was deleted from the manuscript."
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applying brings back {names}, which were deleted from the manuscript."
 msgstr "Applying brings back {names}, which were deleted from the manuscript."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applying deletes {deletes}."
+msgstr "Applying deletes {deletes}."
 
 #: src/features/project/work/WorkActionsMenu.tsx
 msgid "Archive"
@@ -3381,9 +3435,25 @@ msgstr "Paste"
 msgid "PDF"
 msgstr "PDF"
 
+#: src/features/draft-review/tree-line.ts
+msgid "Pending delete"
+msgstr "Pending delete"
+
 #: src/features/project/work/WorkChanges.tsx
 msgid "Pending drafts couldn’t load"
 msgstr "Pending drafts couldn’t load"
+
+#: src/features/draft-review/tree-line.ts
+msgid "Pending move"
+msgstr "Pending move"
+
+#: src/features/draft-review/tree-line.ts
+msgid "Pending moves and deletes"
+msgstr "Pending moves and deletes"
+
+#: src/features/draft-review/tree-line.ts
+msgid "Pending rename"
+msgstr "Pending rename"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "photo"
@@ -4863,6 +4933,10 @@ msgstr "This project was deleted."
 msgid "This removes pending changes from every document in this Work."
 msgstr "This removes pending changes from every document in this Work."
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This rename or delete changed since you looked. Check it, then apply again."
+msgstr "This rename or delete changed since you looked. Check it, then apply again."
+
 #: src/features/chat/thread-report-renderer.tsx
 msgid "This report is from its previous run. It's running again now."
 msgstr "This report is from its previous run. It's running again now."
@@ -5081,6 +5155,7 @@ msgid "Untitled chat"
 msgstr "Untitled chat"
 
 #: src/features/chat/document-display-name.ts
+#: src/features/draft-review/tree-line.ts
 #: src/features/project/work/WorkChangeFile.tsx
 #: src/features/project/work/WorkChanges.tsx
 msgid "Untitled document"

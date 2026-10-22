@@ -1,10 +1,10 @@
 # The model's move and delete
 
-Browser checks for the model's `write` `move` and `delete` in an auto-apply chat: tool rows,
-the turn card, its Undo, and a stopped reply's rollback. Until PR 3's phase F publishes both
-commands, only the scripted mock model can call them (D66), so run the stack with
-`MODEL_PROVIDER=mock`. Steps 5 to 8 (draft mode, Apply, Discard) join this page with phases
-F and G.
+Browser checks for the model's `write` `move` and `delete`: in an auto-apply chat, tool rows,
+the turn card, its Undo, and a stopped reply's rollback (steps 1 to 4); in a draft-mode chat,
+the pending rows, the Work notice on the live document, Apply, Discard and the model's undo
+(steps 5 to 8). Run the stack with `MODEL_PROVIDER=mock` so `./mf mock script` drives the
+model.
 
 ## Setup
 
@@ -39,7 +39,37 @@ F and G.
 
 `ask_user` doesn't hold a mock step open: the reply completes.
 
+### Draft mode (steps 5 to 8)
+
+Setup: chapters `manuscript://ch1` to `ch5`; a Work "Ascension" (`w1`); a chat in it
+(`./mf thread create --work w1`) switched to draft mode, from the composer's write-mode menu or
+`./mf api POST /api/threads/<id>/controls --data '{"id":"<uuid>","control":{"kind":"write_mode","mode":"draft"}}'`.
+A `replace` in the same reply as a `read` of live ch1 answers `region_changed` once the
+draft forks; read the drafted path (`ch1-old`) in a later reply, then `replace`.
+
+5. **Pending rows and the notice.** Script `move` ch1 → ch1-old, `delete` ch3, `move` ch5 →
+   ch6, `move` ch4 → ch5, then (next reply) a `replace` in ch1-old. The live tree keeps ch1 to
+   ch5. The dock and Work page Files list "ch1: renaming to ch1-old" with the text change
+   under it, "ch3: deleting", "ch4: renaming to ch5" with "ch5 still has that name. Apply its
+   change first.", and "ch5: renaming to ch6", each with Discard and Apply. Open live ch1: the
+   identity row reads "Ascension is renaming this to ch1-old." (at 390 px, "Pending rename",
+   its popover the sentence); ch3 reads "Ascension is deleting this.". The prose doesn't move.
+6. **Apply, Discard, Apply all.** ch1's Draft view, Apply draft: the tab becomes ch1-old with
+   the text change. Work page, Apply all changes: the footer asks "Applying deletes ch3."
+   (Cancel). ch3's Discard: its row goes at once, ch3 stays live. Apply all changes: ch4 → ch5
+   and ch5 → ch6 both land (the held one is sent again after the other).
+7. **Mixed move.** Script `create` `scratch://@w1/sect-notes`, then `move` it to
+   `manuscript://sect-notes`: the row says "Couldn't move sect-notes" (the model reads D45's
+   refusal). Then `copy` it there and `delete` the scratch one: the dock lists sect-notes.
+8. **Undo after Apply.** Script `undo` of `manuscript://ch1-old`: "Couldn't undo ch1-old";
+   the model reads `cant_undo_applied`.
+
+With more than one file, the dock's Apply asks the same question in its footer
+("Applying deletes ch2.") before it sends.
+
 ## Last run
 
 - 2026-10-22, `feat/model-tool-surface-namespace-ui` after `ee4c2555c`, local stack, mock model:
   steps 1 to 4 pass. Evidence: the work directory's `impl-pr3/evidence/phase-d/`.
+- 2026-10-22, `feat/model-tool-surface-namespace` (phase G), local stack, mock model: steps 5
+  to 8 pass. Evidence: the work directory's `impl-pr3/evidence/phase-g/`.

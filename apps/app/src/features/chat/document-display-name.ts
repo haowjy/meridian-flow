@@ -11,7 +11,7 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { humanizeSkillSlug, skillFile } from "@meridian/thread-client";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 
-type ParsedContextLocation = {
+export type ParsedContextLocation = {
   scheme: ProjectContextTreeScheme | null;
   path: string;
 };
@@ -54,17 +54,27 @@ function skillFileDisplayName(uriOrPath: string): string | null {
  * Works' Scratch reads as a move within Scratch.
  */
 export function moveDestinationName(from: string, to: string): string {
-  const source = parseContextLocation(from);
-  const destination = parseContextLocation(to);
-  const name = documentDisplayName(to);
+  return describeMove(parseContextLocation(from), parseContextLocation(to), documentDisplayName(to))
+    .place;
+}
+
+/** A move between two locations: `rename` when only the name changes, and where it lands. */
+export function describeMove(
+  source: ParsedContextLocation,
+  destination: ParsedContextLocation,
+  name = documentTitleFromUri(destination.path) ?? t`Untitled document`,
+): { kind: "rename" | "move"; place: string } {
   const folder = (path: string) => {
     const trimmed = path.replace(/^\/+/, "");
     return trimmed.slice(0, trimmed.lastIndexOf("/") + 1);
   };
   const crossSection = source.scheme !== destination.scheme && destination.scheme !== null;
   const path = `${folder(destination.path)}${name}`;
-  if (crossSection && destination.scheme) return `${schemeLabel(destination.scheme)}/${path}`;
-  return folder(source.path) === folder(destination.path) ? name : path;
+  if (crossSection && destination.scheme)
+    return { kind: "move", place: `${schemeLabel(destination.scheme)}/${path}` };
+  return folder(source.path) === folder(destination.path)
+    ? { kind: "rename", place: name }
+    : { kind: "move", place: path };
 }
 
 export function folderDisplayName(uriOrPath: string): string {

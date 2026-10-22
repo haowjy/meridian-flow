@@ -34,7 +34,7 @@ import {
 import { type ApplyClickOutcome, ApplyClickQueue } from "./apply-click-queue";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
-import type { ChangeTarget, ReviewChange } from "./review-model";
+import type { ReviewChange, TextTarget } from "./review-model";
 import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
 
 export type DraftCommandState = {
@@ -490,7 +490,8 @@ export class DraftCommandOwner {
           commandId: crypto.randomUUID(),
           groupIds: [],
           baseViewDelta: [],
-          tree,
+          // The cut is the revision alone: the list item's `tree` also says what it does.
+          tree: { revision: tree.revision },
           ...(restore ? { restore: true as const } : {}),
         },
         optimistic: [],
@@ -499,6 +500,9 @@ export class DraftCommandOwner {
       })
       .then((answer) => {
         this.reveals.delete(ref.itemKey);
+        // Hidden only while in flight: the caller drops what applied from the list, and a later
+        // move of the same document comes back under the same item key.
+        this.setState(ref.itemKey, { hidden: false });
         return this.outcomeOf(ref, answer);
       });
     return { sent: true, outcome };
@@ -524,9 +528,12 @@ export class DraftCommandOwner {
    */
   apply(
     ref: DraftRef,
-    target: ChangeTarget,
+    target: TextTarget,
     restore = false,
-    /** The item's tree cut: a whole-item Apply applies its move, delete or creation too. */
+    /**
+     * The item's tree cut, when the click includes its move, delete or creation: a whole-item
+     * Apply, or text groups chosen with the tree line.
+     */
     tree?: { revision: string | null },
   ): { sent: boolean; outcome: Promise<CommandOutcome> } {
     const entry = this.byItem.get(ref.itemKey);
@@ -579,7 +586,7 @@ export class DraftCommandOwner {
         optimistic,
       ).map((patch) => ({ ...patch, blocks: patch.blocks.map((block) => block.toJSON()) })),
       ...(restore ? { restore: true as const } : {}),
-      ...(tree && target.kind === "draft" ? { tree } : {}),
+      ...(tree ? { tree: { revision: tree.revision } } : {}),
     };
     this.setState(ref.itemKey, { failure: null });
     const result = entry.queue.enqueue({
@@ -598,7 +605,7 @@ export class DraftCommandOwner {
   /** The caller selects history ownership, never whether an editor happens to be mounted. */
   discard(
     ref: DraftRef,
-    target: ChangeTarget,
+    target: TextTarget,
     surface: "editor" | "dock",
     onNoticeEnd?: () => void,
   ): { notice: DiscardNotice; outcome: Promise<CommandOutcome> } | null {
