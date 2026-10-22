@@ -63,7 +63,9 @@ transport-local lifecycle closes remain with their transport.
 The thread-events WS owns authenticated subscribe, ordered catchup/live
 handoff, and cleanup. Every client message but `pong` carries a `requestId`, and
 `subscribed`, `gap` and `error` echo it (`subscribed` also states `after`, the
-cursor the lease starts above); a message that fails to parse has none to echo.
+cursor the lease starts above). An omitted cursor resolves to the journal head
+after authorization; explicit zero still requests history. Request IDs are 1–64
+characters; a message that fails to parse has none to echo.
 Messages for different threads proceed concurrently (there is no `resume`). One
 per-thread slot admits the newest subscribe by arrival order; a failed replacement
 leaves the active lease intact. A failed read after the lease is acquired disposes

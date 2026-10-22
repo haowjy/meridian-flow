@@ -412,3 +412,47 @@ unchanged. These are lower-level checks, not a substitute for the browser run.
 (`kill "$TAIL_PID"; wait "$TAIL_PID"`), close the named browser session,
 and remove `PROBE_DIR` after copying the relevant screenshots and findings
 into the work item's evidence.
+
+## SR-03: subscribe at the head without losing durable state
+
+- **Protects:** live-only subscribers do not replay settled history, while snapshot
+  subscribers retain every event after their explicit cursor. Trail receipts and
+  Work binding cannot rely on that omitted history to become current.
+- **Setup:** owned mock stack and authenticated browser, as above. Create a chat
+  with a settled reply and a document write through `./mf`; retain its thread ID.
+- **Socket checks:** inspect `/api/threads/ws` with an authenticated client.
+  Subscribe without `lastSeq`: `subscribed.after` is the current head and an idle
+  chat's `catchup` is empty. Subscribe with `lastSeq: "0"`: historical events are
+  returned. Subscribe at a saved nonzero cursor: the returned events exactly match
+  the full replay above that cursor. An empty chat acknowledges `after: "0"`.
+  A commit between head sampling and listener acquisition must still be delivered.
+- **Shared-client ordering:** attach a cursorless handler, then a handler with an
+  explicit zero or nonzero cursor before the first acknowledgment. The second join
+  must send a replacement subscribe naming the explicit cursor. Deliver the older
+  acknowledgment before the newer one, then repeat with it arriving late: required
+  backlog and held live frames arrive once, in sequence order.
+- **Browser race:** use network interception to hold the thread subscribe message
+  while permitting the initial trail-list read to complete. In another client,
+  finish a document write and rebind the chat to a named Work. Release the subscribe
+  at the new head. Expect a post-acknowledgment trail read and Work-binding read;
+  the settled receipt and new binding appear without reload. Repeat with the
+  acknowledgment arriving while the first reads are in flight: one coalesced
+  follow-up acquires the new state. A late hook mounting onto an active lease gets
+  no new acknowledgment, so its mount reads must suffice.
+- **Activity and history:** open a chat with a background child already running.
+  Its whole live-state acknowledgment must show current child activity. Settled
+  transcript text remains present from the snapshot. Reconnect and send a further
+  browser message; expect no duplicated text/tools and ordinary streaming.
+- **Request-ID boundary:** a subscribe with a 64-character `requestId` succeeds and
+  echoes that ID. Empty or 65-character IDs produce `bad_request` with no echoed ID.
+  Check unsubscribe, catalog subscribe/unsubscribe and interrupt response too:
+  malformed messages must not mutate their target or echo the invalid ID.
+- **Lifecycle failures:** hold or reject a cursorless head read. Unsubscribe, close
+  and replacement must invalidate the old request before it acquires a listener.
+  A current read failure returns a correlated retryable error; a later request can
+  succeed. Retired requests send no error or acknowledgment.
+- **Evidence:** record the acknowledged head, catchup counts and exact suffix
+  comparison; browser network ordering, screenshots of history, receipt, binding
+  and child activity; browser errors; and the subsequent send outcome. Cold server
+  initialization still reconstructs history internally; zero historical frames on
+  the wire does not prove zero database reads.
