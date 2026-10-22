@@ -43,7 +43,7 @@ kernel; they do not certify the replacement rebase scheduler.
   guess and its lock (`apply.afterScopeGuess`) retries namespace-first and still
   restores. A delete after compilation (`apply.beforeBoundary`) of a click sent
   while the document was living answers `needs_restore`. A path a new document
-  took refuses `forbidden` and leaves it deleted. A branch that also holds an
+  took restores the draft at the next free name and returns a `renamed` note. A branch that also holds an
   unrelated hidden creation still reads the addressed document's own state and
   restores it. A hidden creation is revealed
   in the transaction without replacing its identity.

@@ -1,6 +1,6 @@
 /**
  * ManuscriptStateNotice — what live did to the document this draft holds (D79): deleted from
- * the manuscript (Apply brings it back), or its name now taken by another document. Once an
+ * the manuscript (Apply brings it back). Once an
  * Apply brings it back the same place says so, until the writer dismisses it or opens another
  * document; a host swap on promotion (the phone's) remounts it and must not end it. With none
  * of those, it says what a Work's pending move or delete will do to the document (D26), which
@@ -22,7 +22,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { restoredSentence } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { isDeletedFromManuscript, isPathTaken } from "@/features/draft-review/deleted-drafts";
+import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import {
   type PendingTreeChange,
   treeNoticeLabel,
@@ -35,7 +35,7 @@ import { useRemovalRecord } from "@/features/project/context/use-removal-record"
 import { cn } from "@/lib/utils";
 
 export type ManuscriptState = {
-  kind: "deleted" | "taken" | "restored" | "pending-tree";
+  kind: "deleted" | "restored" | "pending-tree";
   sentence: string;
   label: string;
   dismiss?: () => void;
@@ -56,21 +56,15 @@ export function useManuscriptState(projectId: string, tab: ContextTab): Manuscri
   const item = files.find((file) => file.documentId === documentId)?.draft;
   const deleted = isDeletedFromManuscript(item);
   const removal = useRemovalRecord(projectId, deleted ? documentId : null);
-  const taken = isPathTaken(item);
   const title = tab.name;
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
-  const takenSentence = t`Another document now has this name. Rename that document to apply this draft.`;
-  // Both can hold: a deleted document whose path another document then took.
   if (deleted) {
     const sentence = deletedFromManuscriptSentence(
       title,
       removal?.kind === "removed" ? removal.record : null,
     );
-    return taken
-      ? { kind: "taken", sentence: `${sentence} ${takenSentence}`, label: t`Deleted, name taken` }
-      : { kind: "deleted", sentence, label: t`Deleted from the manuscript` };
+    return { kind: "deleted", sentence, label: t`Deleted from the manuscript` };
   }
-  if (taken) return { kind: "taken", sentence: takenSentence, label: t`Name taken` };
   if (restored)
     return {
       kind: "restored",

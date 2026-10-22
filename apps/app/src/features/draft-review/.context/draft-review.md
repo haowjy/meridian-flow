@@ -140,8 +140,8 @@ the server to acknowledge every local update in that captured cut before dispatc
 retains a `readDraftRoom` lease independently of React until terminal.
 
 A deleted document (the list item's `deletedLive`, D79) is draft-only on every
-surface. Existence is its own fact, never read from `conflict`: a deleted
-document's path may also be taken (`path_taken`, which only withdraws Apply); Apply restores it, then merges. `apply(ref, target, restore)` sends
+surface. Existence is its own fact, never read from a name conflict. If another document took
+its path, Apply restores it at the next free name, then merges. `apply(ref, target, restore)` sends
 `restore` only when the writer knew: a single document's Apply whose row showed
 the delete, or an Apply all for the documents its confirmation named. Without it
 the server answers `needs_restore` (nothing changed); the outcome is
@@ -239,9 +239,9 @@ room is a lifecycle transition, not a room-opening error. The metadata GET retur
 Apply carries `tree.revision`, and with no text to send (no room, or no changes)
 it is the tree cut alone: empty `groupIds` and `baseViewDelta`, no `snapshot` or
 `draftId`, in the same item FIFO. A tree cut already queued is not sent again. A
-changed row answers `changed`; a move whose destination another of
-the branch's items still holds answers `held`, and Apply all re-sends those after
-the others. `discardItem` is the item's one Discard when it has a tree line: the
+changed row answers `changed`. The server applies a move's pending occupant chain under the
+branch lock, including a swap as one transaction, so single-row Apply and Apply all share the
+same ordering. `discardItem` is the item's one Discard when it has a tree line: the
 server drops the move or delete, and the chosen text is discarded here as always.
 Its text offers no Undo, because Undo would bring back the text without the move
 or delete the server already settled (#763): the owner ends the text notice at
