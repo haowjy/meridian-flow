@@ -35,7 +35,7 @@ import {
   type DraftRoomRegistry,
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
-import { type ApplyClickOutcome, ApplyClickQueue } from "./apply-click-queue";
+import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./apply-click-queue";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
 import type { ChangeTarget, ReviewChange, TextTarget } from "./review-model";
@@ -75,8 +75,8 @@ export type CommandOutcome =
       restored?: true;
       /** Final paths for documents that could not take their requested name. */
       renamed?: string[];
-      /** Item keys whose branch tree row this click settled. */
-      appliedTrees?: string[];
+      /** Branch tree rows this click settled, including their final allocated path. */
+      appliedTrees?: { itemKey: string; renamed?: string }[];
     }
   /** The document was deleted and the click didn't say the writer knew: nothing changed. */
   | { kind: "needs-restore" }
@@ -104,6 +104,13 @@ type Entry = {
   users: number;
   lease: DraftRoomRead | null;
   unwatchLease(): void;
+};
+export type CapturedApply = {
+  /** Enqueues the already-frozen click. A preceding click may have settled its tree cut. */
+  dispatch(options?: { omitTree?: boolean }): {
+    sent: boolean;
+    outcome: Promise<CommandOutcome>;
+  };
 };
 export type DiscardNotice = {
   itemKey?: string;
@@ -543,7 +550,16 @@ export class DraftCommandOwner {
       }
       if (answer.restored || answer.applied.some((item) => item.renamed)) this.publish();
       const renamed = answer.applied.flatMap((item) => (item.renamed ? [item.renamed.path] : []));
-      const appliedTrees = answer.applied.flatMap((item) => (item.tree ? [item.itemKey] : []));
+      const appliedTrees = answer.applied.flatMap((item) =>
+        item.tree
+          ? [
+              {
+                itemKey: item.itemKey,
+                ...(item.renamed ? { renamed: item.renamed.path } : {}),
+              },
+            ]
+          : [],
+      );
       return {
         kind: "done",
         ...(answer.restored ? { restored: true as const } : {}),
@@ -573,8 +589,20 @@ export class DraftCommandOwner {
      */
     requested?: { revision: string | null },
   ): { sent: boolean; outcome: Promise<CommandOutcome> } {
-    const blocked = { sent: false, outcome: Promise.resolve<CommandOutcome>({ kind: "blocked" }) };
-    if (!this.active || this.state(ref.itemKey).discarding) return blocked;
+    return this.captureApply(ref, target, restore, requested)?.dispatch() ?? this.blockedApply();
+  }
+
+  /**
+   * Freezes one click without sending it. Apply all calls this for every item in its event turn,
+   * then dispatches the captured clicks in server order; a single Apply uses the same path.
+   */
+  captureApply(
+    ref: DraftRef,
+    target: ChangeTarget,
+    restore = false,
+    requested?: { revision: string | null },
+  ): CapturedApply | null {
+    if (!this.active || this.state(ref.itemKey).discarding) return null;
     // A tree cut already on its way is not sent twice; the same revision would answer `changed`.
     const tree = this.items.get(ref.itemKey)?.queue.clicks.some((click) => click.body.tree)
       ? undefined
@@ -588,53 +616,72 @@ export class DraftCommandOwner {
         !(
           entry?.binding?.runtime.state().ready && entry.binding.runtime.projectNow()?.groups.length
         ));
-    if (textless) return tree ? this.applyTree(ref, tree, restore) : blocked;
-    return this.applyText(ref, target, restore, tree);
+    if (textless) return tree ? this.captureTree(ref, tree, restore) : null;
+    return this.captureText(ref, target, restore, tree);
+  }
+
+  private blockedApply() {
+    return {
+      sent: false,
+      outcome: Promise.resolve<CommandOutcome>({ kind: "blocked" }),
+    };
+  }
+
+  private capturedOutcome(outcome: CommandOutcome): CapturedApply {
+    return {
+      dispatch: () => ({ sent: false, outcome: Promise.resolve(outcome) }),
+    };
   }
 
   /** A tree cut alone (design-v2 §4): no room, no snapshot, its applied answer settles it. */
-  private applyTree(
+  private captureTree(
     ref: DraftRef,
     tree: { revision: string | null },
     restore: boolean,
-  ): { sent: boolean; outcome: Promise<CommandOutcome> } {
+  ): CapturedApply {
     const id = this.generation(ref.itemKey);
-    this.setState(ref.itemKey, { hidden: true, failure: null }, id);
-    const outcome = this.item(ref)
-      .queue.enqueue({
-        body: {
-          commandId: crypto.randomUUID(),
-          groupIds: [],
-          baseViewDelta: [],
-          // The cut is the revision alone: the list item's `tree` also says what it does.
-          tree: { revision: tree.revision },
-          ...(restore ? { restore: true as const } : {}),
-        },
-        optimistic: [],
-        patched: [],
-        acknowledged: Promise.resolve(),
-      })
-      .then((answer) => {
-        // Hidden only while in flight: the caller drops what applied from the list, and a later
-        // move of the same document comes back under the same item key.
-        this.setState(ref.itemKey, { hidden: false }, id);
-        return this.settled(ref, id, answer);
-      });
-    return { sent: true, outcome };
+    const frozen: FrozenApply = {
+      body: {
+        commandId: crypto.randomUUID(),
+        groupIds: [],
+        baseViewDelta: [],
+        // The cut is the revision alone: the list item's `tree` also says what it does.
+        tree: { revision: tree.revision },
+        ...(restore ? { restore: true as const } : {}),
+      },
+      optimistic: [],
+      patched: [],
+      acknowledged: Promise.resolve(),
+    };
+    return {
+      dispatch: ({ omitTree = false } = {}) => {
+        if (omitTree) return this.blockedApply();
+        this.setState(ref.itemKey, { hidden: true, failure: null }, id);
+        const outcome = this.item(ref)
+          .queue.enqueue(frozen)
+          .then((answer) => {
+            // Hidden only while in flight: the caller drops what applied from the list, and a later
+            // move of the same document comes back under the same item key.
+            this.setState(ref.itemKey, { hidden: false }, id);
+            return this.settled(ref, id, answer);
+          });
+        return { sent: true, outcome };
+      },
+    };
   }
 
-  private applyText(
+  private captureText(
     ref: DraftRef,
     target: TextTarget,
     restore: boolean,
     tree: { revision: string | null } | undefined,
-  ): { sent: boolean; outcome: Promise<CommandOutcome> } {
+  ): CapturedApply | null {
     const entry = this.byItem.get(ref.itemKey);
     const binding = entry?.binding;
     if (!entry || !binding?.runtime.state().ready || this.records.get(entry.draftId)?.closed)
-      return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
+      return null;
     const frame = binding.runtime.projectNow();
-    if (!frame) return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
+    if (!frame) return null;
     if (
       target.kind === "groups" &&
       (!blocksEqual(frame.diff.base.blocks, target.frame.diff.base.blocks) ||
@@ -643,14 +690,11 @@ export class DraftCommandOwner {
       this.setState(ref.itemKey, {
         failure: { code: "apply-refused", serverCode: "review_updated" },
       });
-      return {
-        sent: false,
-        outcome: Promise.resolve({ kind: "change-refused", code: "review_updated" }),
-      };
+      return this.capturedOutcome({ kind: "change-refused", code: "review_updated" });
     }
     const ids = target.kind === "draft" ? frame.groups.map((group) => group.id) : target.groupIds;
     if (!ids.length || ids.some((id) => !frame.groups.some((group) => group.id === id)))
-      return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
+      return null;
     const schema = frame.doc.type.schema;
     const optimistic = frame.diff.base.blocks;
     const patched = applySpanPatches(
@@ -671,17 +715,22 @@ export class DraftCommandOwner {
       ...(restore ? { restore: true as const } : {}),
       ...(tree ? { tree: { revision: tree.revision } } : {}),
     };
-    this.setState(ref.itemKey, { failure: null });
-    const result = entry.item.queue.enqueue({
-      body,
-      optimistic,
-      patched,
-      acknowledged: binding.session.whenCurrentChangesAcknowledged(),
-    });
-    binding.runtime.projectNow();
+    const acknowledged = binding.session.whenCurrentChangesAcknowledged();
     return {
-      sent: true,
-      outcome: result.then((answer) => this.settled(ref, entry.draftId, answer)),
+      dispatch: ({ omitTree = false } = {}) => {
+        this.setState(ref.itemKey, { failure: null });
+        const result = entry.item.queue.enqueue({
+          body: omitTree && body.tree ? { ...body, tree: undefined } : body,
+          optimistic,
+          patched,
+          acknowledged,
+        });
+        binding.runtime.projectNow();
+        return {
+          sent: true,
+          outcome: result.then((answer) => this.settled(ref, entry.draftId, answer)),
+        };
+      },
     };
   }
 

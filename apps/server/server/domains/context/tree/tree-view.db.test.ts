@@ -373,7 +373,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await loadHiddenDocumentCandidates(db, at)).toEqual([]);
     });
 
-    it("names identity per view and states a branch's tree with its conflicts (T-1b)", async () => {
+    it("names identity per view and states allocated live arrivals (T-1b)", async () => {
       const db = database.current;
       const scenario = await branchTreeScenario(db);
       const tree = createTreeReader(db);

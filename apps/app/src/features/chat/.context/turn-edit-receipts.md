@@ -62,7 +62,7 @@ hide the semantic refusal after a successful HTTP response.
 
 Every refusal is visible, and the receipt's reason line is where it shows.
 Skipped parts and refusals are worded in `turn-receipt-copy.ts` from typed
-causes (`TurnInverseSkipCause`, the `folder_blocked` / `folder_missing` /
+causes (`TurnInverseSkipCause`, the `ancestor_taken` / `folder_missing` /
 `superseded` statuses); the card never prints server prose. A move or delete
 whose folder path a document blocks names the cause, the whole place and the next
 step, and the parts list doesn't repeat what that line already says. A taken leaf

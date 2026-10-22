@@ -39,7 +39,11 @@ import {
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, eq, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  deferUntilDrizzleCommit,
+  runInDrizzleSavepoint,
+} from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
@@ -460,10 +464,24 @@ export function createDrizzleApplyClick(
 
                     if (cut && node) {
                       const plan = await dependencyPlan(branchId, command.documentId);
-                      if ([...plan.nodes.keys()].some((id) => !scopeIds.includes(id)))
+                      const scoped = new Set(scopeIds);
+                      if ([...plan.nodes.keys()].some((id) => !scoped.has(id)))
                         throw new TreeScopeChangedError();
                       const done = new Set<DocumentId>();
                       const visiting: DocumentId[] = [];
+                      const applyDependency = async (documentId: DocumentId): Promise<void> => {
+                        const doneBefore = new Set(done);
+                        const appliedBefore = applied.length;
+                        const visitingBefore = [...visiting];
+                        try {
+                          await runInDrizzleSavepoint(db, () => applyOrdered(documentId));
+                        } catch (cause) {
+                          if (!(cause instanceof ApplyClickRefused)) throw cause;
+                          for (const id of done) if (!doneBefore.has(id)) done.delete(id);
+                          applied.splice(appliedBefore);
+                          visiting.splice(0, visiting.length, ...visitingBefore);
+                        }
+                      };
                       const applyOrdered = async (documentId: DocumentId): Promise<void> => {
                         if (done.has(documentId)) return;
                         const cycleAt = visiting.indexOf(documentId);
@@ -488,7 +506,9 @@ export function createDrizzleApplyClick(
                         }
                         visiting.push(documentId);
                         const dependency = plan.next.get(documentId);
-                        if (dependency) await applyOrdered(dependency);
+                        // A dependency's impossible destination leaves its own row pending. It
+                        // cannot veto the clicked row, which can still claim a free leaf name.
+                        if (dependency) await applyDependency(dependency);
                         visiting.pop();
                         if (done.has(documentId)) return;
                         const planned = plan.nodes.get(documentId);

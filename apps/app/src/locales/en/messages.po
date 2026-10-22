@@ -101,11 +101,6 @@ msgstr "“{name}” doesn't exist yet"
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, one {# call} other {# calls}}"
 
-#. placeholder {0}: skips.length
-#: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "{0, plural, one {# part stayed} other {# parts stayed}}"
-#~ msgstr "{0, plural, one {# part stayed} other {# parts stayed}}"
-
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
@@ -576,19 +571,9 @@ msgstr "A document blocks its folder path"
 msgid "A document blocks part of this location. Move or rename it, then apply again."
 msgstr "A document blocks part of this location. Move or rename it, then apply again."
 
-#. placeholder {0}: identityNote.name
-#: src/features/project/context/IdentityPlacementField.tsx
-#~ msgid "A file named {0} already exists in this location."
-#~ msgstr "A file named {0} already exists in this location."
-
 #: src/features/project/context/context-entry-name.ts
 msgid "A file named {name} already exists in this location."
 msgstr "A file named {name} already exists in this location."
-
-#. placeholder {0}: identityNote.name
-#: src/features/project/context/IdentityPlacementField.tsx
-#~ msgid "A folder named {0} already exists in this location."
-#~ msgstr "A folder named {0} already exists in this location."
 
 #: src/features/project/context/context-entry-name.ts
 msgid "A folder named {name} already exists in this location."
@@ -786,6 +771,10 @@ msgstr "Already redone"
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Already undone"
 msgstr "Already undone"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Also applied {others}."
+msgstr "Also applied {others}."
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
@@ -988,20 +977,8 @@ msgid "Can't delete {source} from this location."
 msgstr "Can't delete {source} from this location."
 
 #: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't delete {source} here."
-#~ msgstr "Can't delete {source} here."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't delete {source}: it changed at the same time."
-#~ msgstr "Can't delete {source}: it changed at the same time."
-
-#: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't delete {source}: it changed during the delete."
 msgstr "Can't delete {source}: it changed during the delete."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source} there."
-#~ msgstr "Can't move {source} there."
 
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source} to that location."
@@ -1010,18 +987,6 @@ msgstr "Can't move {source} to that location."
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source}: {place} is already taken."
 msgstr "Can't move {source}: {place} is already taken."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source}: another document is already there."
-#~ msgstr "Can't move {source}: another document is already there."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source}: another document is at {place}."
-#~ msgstr "Can't move {source}: another document is at {place}."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source}: it or its destination changed at the same time."
-#~ msgstr "Can't move {source}: it or its destination changed at the same time."
 
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source}: it or its destination changed during the move."
@@ -1048,32 +1013,12 @@ msgid "Can't move {source}: the folder for {place} doesn't exist."
 msgstr "Can't move {source}: the folder for {place} doesn't exist."
 
 #: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source}: the new name needs a different kind of document."
-#~ msgstr "Can't move {source}: the new name needs a different kind of document."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source}: the new name would change its file type."
-#~ msgstr "Can't move {source}: the new name would change its file type."
-
-#: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source}: this chat is in draft mode, so the move would be half drafted and half live."
 msgstr "Can't move {source}: this chat is in draft mode, so the move would be half drafted and half live."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source}: this chat is in draft mode, so this move would be half drafted and half live."
-#~ msgstr "Can't move {source}: this chat is in draft mode, so this move would be half drafted and half live."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Can't redo: {place} is already taken. Move or rename what's there, then try again."
-#~ msgstr "Can't redo: {place} is already taken. Move or rename what's there, then try again."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: {place} was moved or deleted after you undid this change."
 msgstr "Can't redo: {place} was moved or deleted after you undid this change."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Can't redo: {place} was moved or deleted again since."
-#~ msgstr "Can't redo: {place} was moved or deleted again since."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: a document blocks its folder path. Move it, then try again."
@@ -1084,28 +1029,8 @@ msgid "Can't redo: a document blocks the folder path to {place}. Move it, then t
 msgstr "Can't redo: a document blocks the folder path to {place}. Move it, then try again."
 
 #: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Can't redo: another document is at {place}. Move or rename that document, then try again."
-#~ msgstr "Can't redo: another document is at {place}. Move or rename that document, then try again."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Can't redo: another document is at that location. Move or rename that document, then try again."
-#~ msgstr "Can't redo: another document is at that location. Move or rename that document, then try again."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Can't redo: its location is already taken. Move or rename what's there, then try again."
-#~ msgstr "Can't redo: its location is already taken. Move or rename what's there, then try again."
-
-#: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: the document was moved or deleted after you undid this change."
 msgstr "Can't redo: the document was moved or deleted after you undid this change."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Can't redo: the document was moved or deleted again since."
-#~ msgstr "Can't redo: the document was moved or deleted again since."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Can't redo: the document's original folder is gone."
-#~ msgstr "Can't redo: the document's original folder is gone."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: the folder it would move to is gone."
@@ -1116,16 +1041,8 @@ msgid "Can't undo"
 msgstr "Can't undo"
 
 #: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Can't undo: {place} is already taken. Move or rename what's there, then try again."
-#~ msgstr "Can't undo: {place} is already taken. Move or rename what's there, then try again."
-
-#: src/features/chat/turn-receipt-copy.ts
 msgid "Can't undo: {place} was moved or deleted after this change."
 msgstr "Can't undo: {place} was moved or deleted after this change."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Can't undo: {place} was moved or deleted again since."
-#~ msgstr "Can't undo: {place} was moved or deleted again since."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't undo: a document blocks its folder path. Move it, then try again."
@@ -1136,28 +1053,8 @@ msgid "Can't undo: a document blocks the folder path to {place}. Move it, then t
 msgstr "Can't undo: a document blocks the folder path to {place}. Move it, then try again."
 
 #: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Can't undo: another document is at {place}. Move or rename that document, then try again."
-#~ msgstr "Can't undo: another document is at {place}. Move or rename that document, then try again."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Can't undo: another document is at that location. Move or rename that document, then try again."
-#~ msgstr "Can't undo: another document is at that location. Move or rename that document, then try again."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Can't undo: its location is already taken. Move or rename what's there, then try again."
-#~ msgstr "Can't undo: its location is already taken. Move or rename what's there, then try again."
-
-#: src/features/chat/turn-receipt-copy.ts
 msgid "Can't undo: the document was moved or deleted after this change."
 msgstr "Can't undo: the document was moved or deleted after this change."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Can't undo: the document was moved or deleted again since."
-#~ msgstr "Can't undo: the document was moved or deleted again since."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Can't undo: the document's original folder is gone."
-#~ msgstr "Can't undo: the document's original folder is gone."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't undo: the folder it would return to is gone."
@@ -1581,10 +1478,6 @@ msgstr "Copy link address"
 msgid "Copy reference"
 msgstr "Copy reference"
 
-#: src/features/editor/SchemaRepairNotice.tsx
-#~ msgid "Copy removed text"
-#~ msgstr "Copy removed text"
-
 #: src/features/draft-review/ReviewToast.tsx
 msgid "Copy unsent text"
 msgstr "Copy unsent text"
@@ -1608,10 +1501,6 @@ msgstr "Could not load files."
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't apply this draft."
 msgstr "Couldn't apply this draft."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Couldn't be restored here"
-#~ msgstr "Couldn't be restored here"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Couldn't be reversed"
@@ -1976,10 +1865,6 @@ msgstr "Create a Work"
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "Create file or folder"
 msgstr "Create file or folder"
-
-#: src/features/links/FollowOutcomeContent.tsx
-#~ msgid "Create it and this link opens it."
-#~ msgstr "Create it and this link opens it."
 
 #: src/features/home/NewProjectView.tsx
 #: src/features/home/ProjectLibrary.tsx
@@ -2749,16 +2634,8 @@ msgid "Its document wasn't restored"
 msgstr "Its document wasn't restored"
 
 #: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Its file wasn't restored"
-#~ msgstr "Its file wasn't restored"
-
-#: src/features/chat/turn-receipt-copy.ts
 msgid "Its folder is gone"
 msgstr "Its folder is gone"
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Its location is taken"
-#~ msgstr "Its location is taken"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its paragraph was removed"
@@ -2806,10 +2683,6 @@ msgstr "Last name"
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Later edits build on this change, so it can't be reversed. View the change instead."
 msgstr "Later edits build on this change, so it can't be reversed. View the change instead."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Later edits build on this change. View the change instead of undoing it."
-#~ msgstr "Later edits build on this change. View the change instead of undoing it."
 
 #: src/features/project/context/context-entry-name.ts
 msgid "Leading or trailing whitespace detected in file or folder name."
@@ -2989,10 +2862,6 @@ msgstr "Merged cells stay where they are."
 msgid "Merging works on a rectangle of cells."
 msgstr "Merging works on a rectangle of cells."
 
-#: src/features/editor/SchemaRepairNotice.tsx
-#~ msgid "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
-#~ msgstr "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
-
 #: src/components/app/composer/Composer.tsx
 msgid "Message"
 msgstr "Message"
@@ -3101,10 +2970,6 @@ msgstr "Moved a document"
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Moved or deleted after this change"
 msgstr "Moved or deleted after this change"
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Moved or deleted again since"
-#~ msgstr "Moved or deleted again since"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Moved since"
@@ -3479,10 +3344,6 @@ msgstr "Open context files"
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Open conversation"
 msgstr "Open conversation"
-
-#: src/features/project/context/IdentityPlacementField.tsx
-#~ msgid "Open existing"
-#~ msgstr "Open existing"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Open full screen"
@@ -4548,10 +4409,6 @@ msgstr "That change is no longer in the draft."
 msgid "That change wasn't reverted because its text changed or is already gone."
 msgstr "That change wasn't reverted because its text changed or is already gone."
 
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "That chapter is no longer available, so this change can't be reversed."
-#~ msgstr "That chapter is no longer available, so this change can't be reversed."
-
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "That did not work."
 msgstr "That did not work."
@@ -4711,10 +4568,6 @@ msgstr "The header row stays first."
 msgid "The project could not be reached. The link itself is fine."
 msgstr "The project could not be reached. The link itself is fine."
 
-#: src/features/editor/SchemaRepairNotice.tsx
-#~ msgid "The removed text could not be recovered."
-#~ msgstr "The removed text could not be recovered."
-
 #: src/features/chat/tool-renderers.tsx
 msgid "The requested passage in {name} wasn't specific enough."
 msgstr "The requested passage in {name} wasn't specific enough."
@@ -4813,10 +4666,6 @@ msgstr "This browser will not let the page write to the clipboard. Press {shortc
 msgid "This browser will not turn that into an image."
 msgstr "This browser will not turn that into an image."
 
-#: src/features/editor/SchemaRepairNotice.tsx
-#~ msgid "This browser would not let the page write to the clipboard. The removed text is still above, so it can be selected and copied by hand."
-#~ msgstr "This browser would not let the page write to the clipboard. The removed text is still above, so it can be selected and copied by hand."
-
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This cell is not merged."
 msgstr "This cell is not merged."
@@ -4829,10 +4678,6 @@ msgstr "This change belongs with others. Select all of them and try again."
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is no longer reversible."
 msgstr "This change is no longer reversible."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "This change no longer matches the chapter text, so it can't be reversed."
-#~ msgstr "This change no longer matches the chapter text, so it can't be reversed."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This change no longer matches the document's text, so it can't be reversed."
@@ -4858,10 +4703,6 @@ msgstr "This chapter is no longer available. The saved excerpts remain below."
 #: src/features/editor/SessionEditor.tsx
 msgid "This chapter is temporarily unavailable"
 msgstr "This chapter is temporarily unavailable"
-
-#: src/features/editor/SchemaFenceNotice.tsx
-#~ msgid "This chapter was opened in a newer version of Meridian. Refresh to keep writing."
-#~ msgstr "This chapter was opened in a newer version of Meridian. Refresh to keep writing."
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "This chat continues without a brief."
@@ -5030,18 +4871,6 @@ msgstr "This file is unavailable. Refresh and try again."
 msgid "This file type ({0}) doesn't have an inline viewer yet. Download the original to inspect it."
 msgstr "This file type ({0}) doesn't have an inline viewer yet. Download the original to inspect it."
 
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "This file was deleted"
-#~ msgstr "This file was deleted"
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "This file was discarded"
-#~ msgstr "This file was discarded"
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "This file's Work is archived. Unarchive the Work to reverse this change."
-#~ msgstr "This file's Work is archived. Unarchive the Work to reverse this change."
-
 #: src/client/api/upload-intake-api.ts
 msgid "This filename contains unsupported characters. Rename the file and attach it again."
 msgstr "This filename contains unsupported characters. Rename the file and attach it again."
@@ -5094,10 +4923,6 @@ msgstr "This note is empty. Open it in the Editor to write."
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
 msgstr "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
 
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "This part is in another draft"
-#~ msgstr "This part is in another draft"
-
 #: src/features/editor/SchemaNotices.tsx
 msgid "This passage couldn't be recovered."
 msgstr "This passage couldn't be recovered."
@@ -5113,10 +4938,6 @@ msgstr "This project was deleted."
 #: src/features/project/work/WorkChanges.tsx
 msgid "This removes pending changes from every document in this Work."
 msgstr "This removes pending changes from every document in this Work."
-
-#: src/features/draft-review/ReviewMessageText.tsx
-#~ msgid "This rename or delete changed since you looked. Check it, then apply again."
-#~ msgstr "This rename or delete changed since you looked. Check it, then apply again."
 
 #: src/features/chat/thread-report-renderer.tsx
 msgid "This report is from its previous run. It's running again now."

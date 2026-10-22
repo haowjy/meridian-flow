@@ -69,7 +69,11 @@ export function CommandNotice({
         <>
           {notice?.itemKey ? <DraftCommandStatus itemKey={notice.itemKey} /> : null}
           {notice?.kind === "applied" ? (
-            <AppliedSentence restored={notice.restored} renamed={notice.renamed} />
+            <AppliedSentence
+              restored={notice.restored}
+              renamed={notice.renamed}
+              alsoApplied={notice.alsoApplied}
+            />
           ) : notice ? (
             <>
               <span>
@@ -134,12 +138,14 @@ export function restoredSentence(titles: readonly string[]): string {
 function AppliedSentence({
   restored,
   renamed,
+  alsoApplied,
 }: {
   restored: readonly string[];
   renamed: readonly string[];
+  alsoApplied: readonly string[];
 }) {
   useLingui();
-  const sentence = appliedSentence(restored, renamed);
+  const sentence = appliedSentence(restored, renamed, alsoApplied);
   return (
     <span className="min-w-0 truncate" title={sentence}>
       {sentence}
@@ -147,11 +153,19 @@ function AppliedSentence({
   );
 }
 
-export function appliedSentence(restored: readonly string[], renamed: readonly string[]): string {
+export function appliedSentence(
+  restored: readonly string[],
+  renamed: readonly string[],
+  alsoApplied: readonly string[] = [],
+): string {
+  const others = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
+    alsoApplied,
+  );
   return [
     ...(renamed.length === 1
       ? [t`Added as ${renamed[0]}.`]
       : renamed.map((name) => t`Added as ${name}.`)),
     ...(restored.length ? [restoredSentence(restored)] : []),
+    ...(alsoApplied.length ? [t`Also applied ${others}.`] : []),
   ].join(" ");
 }

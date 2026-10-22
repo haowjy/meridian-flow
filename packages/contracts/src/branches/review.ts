@@ -128,7 +128,7 @@ export interface ThreadDraftListItem {
   contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
   /**
    * Deleted from the manuscript while this draft has it: live doesn't hold the document, and
-   * Apply brings it back before merging (D79). Another document may also have taken its path.
+   * Apply brings it back at its prior or next free leaf name before merging (D79).
    */
   deletedLive: boolean;
   /**
