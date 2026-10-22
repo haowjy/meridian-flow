@@ -1,7 +1,8 @@
 /** Owns inline-review restoration and the Work/item selection on the presenting container's address. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
+import { useDraftCommandOwner } from "./context/account-feature-context";
 import {
   type AiDraftLaunchTarget,
   usePendingEditorReviewItemKey,
@@ -82,6 +83,15 @@ export function ReviewAddressOwner({
   const restoring = useRef<string | null>(null);
   const ownedReview = useRef<OwnedReview | null>(null);
   const requestedItemKey = presented?.review?.itemKey;
+  // A closed draft (Discard, here or on another device) ends its review, and the address can't
+  // always drop the request: a draft-only tab keeps it until its settlement closes the tab.
+  // Restoring it would re-open what the room owner just closed, every render.
+  const commands = useDraftCommandOwner();
+  const requestClosed = useSyncExternalStore(
+    commands.subscribe,
+    () => (requestedItemKey ? commands.state(requestedItemKey).closed : false),
+    () => false,
+  );
   const write = (address: ReviewAddress | null) => {
     if (!address && presented?.draftOnly) return;
     port.write(address);
@@ -171,7 +181,7 @@ export function ReviewAddressOwner({
       restoring.current = null;
       return;
     }
-    if (admission !== "admitted") return;
+    if (admission !== "admitted" || requestClosed) return;
     if (presented.container === "dock") {
       if (
         !presented.documentId ||
@@ -218,7 +228,7 @@ export function ReviewAddressOwner({
       restoring.current = null;
       console.error("[review] address restore failed", error);
     });
-  }, [presented, port, pendingItemKey, requestedItemKey, review, admission]);
+  }, [presented, port, pendingItemKey, requestedItemKey, review, admission, requestClosed]);
 
   return null;
 }
