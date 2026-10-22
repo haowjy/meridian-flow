@@ -1,15 +1,18 @@
-/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place. A file's refused command shows once, in its status line. */
+/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place; a command's question asks in the footer below the files. A file's refused command shows once, in its status line. */
 
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { CommandNotice } from "@/features/draft-review/CommandNotice";
+import {
+  CommandNotice,
+  type CommandQuestion,
+  RestoreQuestion,
+} from "@/features/draft-review/CommandNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
-import { RestoreQuestion } from "@/features/draft-review/RestoreQuestion";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
@@ -46,6 +49,34 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     multi && dock.deletedToApply.length > 0
       ? setRestoring(dock.deletedToApply)
       : apply(ids(dock.deletedToApply));
+  // One question at a time, in the footer below the files: opening it never moves a row.
+  const question: CommandQuestion | null = askingRestore
+    ? {
+        kind: "restore",
+        sentence: <RestoreQuestion titles={restoring.map((file) => file.name)} />,
+        keep: <Trans>Cancel</Trans>,
+        confirm: <Trans>Apply</Trans>,
+        onKeep: () => setRestoring(null),
+        onConfirm: () => {
+          setRestoring(null);
+          apply(ids(restoring));
+        },
+        disabled: !dock.canCommand,
+      }
+    : confirming
+      ? {
+          kind: "discard",
+          sentence: <Trans>Discard this chat's changes?</Trans>,
+          keep: <Trans>Keep</Trans>,
+          confirm: <Trans>Discard</Trans>,
+          onKeep: () => setConfirmingDiscard(false),
+          onConfirm: () => {
+            setConfirmingDiscard(false);
+            dock.discard();
+          },
+          disabled: !dock.canCommand,
+        }
+      : null;
   const commands = (
     // biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row.
     // biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own.
@@ -53,37 +84,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       className="ml-auto flex max-w-full shrink-0 items-center justify-end gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1"
       onClick={(event) => event.stopPropagation()}
     >
-      {askingRestore ? (
-        <>
-          <QuietButton onClick={() => setRestoring(null)}>
-            <Trans>Cancel</Trans>
-          </QuietButton>
-          <QuietButton
-            onClick={() => {
-              setRestoring(null);
-              apply(ids(restoring));
-            }}
-            disabled={!dock.canCommand}
-          >
-            <Trans>Apply</Trans>
-          </QuietButton>
-        </>
-      ) : confirming ? (
-        <>
-          <QuietButton onClick={() => setConfirmingDiscard(false)}>
-            <Trans>Keep</Trans>
-          </QuietButton>
-          <QuietButton
-            onClick={() => {
-              setConfirmingDiscard(false);
-              dock.discard();
-            }}
-            disabled={!dock.canCommand}
-          >
-            <Trans>Discard</Trans>
-          </QuietButton>
-        </>
-      ) : dock.showCommands ? (
+      {confirming || askingRestore ? null : dock.showCommands ? (
         <>
           <QuietButton
             onClick={() => (multi ? setConfirmingDiscard(true) : dock.discard())}
@@ -118,60 +119,42 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         className={cn(
           "flex min-h-7 items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-caption @max-[20rem]/dock:[font-size:12px] text-prose-foreground",
           multi && "cursor-pointer transition-colors hover:bg-muted/50",
-          askingRestore && "flex-wrap",
         )}
       >
-        {askingRestore ? (
-          <span
-            data-draft-dock-confirmation="restore"
-            className="min-w-0 basis-full text-ink-muted"
-          >
-            <RestoreQuestion titles={restoring.map((file) => file.name)} />
-          </span>
-        ) : confirming ? (
-          <span
-            data-draft-dock-confirmation
-            className="min-w-0 flex-1 truncate text-ink-muted"
-            title={t`Discard this chat's changes?`}
-          >
-            <Trans>Discard this chat's changes?</Trans>
-          </span>
-        ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1">
-            {
-              <button
-                type="button"
-                aria-expanded={expanded}
-                aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  dock.controller.dismissNotice();
-                  setExpanded((value) => !value);
-                }}
-                className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
-              >
-                <ChevronRight
-                  className={cn("size-3 transition-transform", expanded && "rotate-90")}
-                  aria-hidden
-                />
-              </button>
-            }
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
-            {multi ? (
-              <span className="min-w-[10ch] shrink truncate">
-                <Trans>{dock.files.length} documents</Trans>
+        <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1">
+          {
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
+              onClick={(event) => {
+                event.stopPropagation();
+                dock.controller.dismissNotice();
+                setExpanded((value) => !value);
+              }}
+              className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+            >
+              <ChevronRight
+                className={cn("size-3 transition-transform", expanded && "rotate-90")}
+                aria-hidden
+              />
+            </button>
+          }
+          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
+          {multi ? (
+            <span className="min-w-[10ch] shrink truncate">
+              <Trans>{dock.files.length} documents</Trans>
+            </span>
+          ) : only ? (
+            <DockFileName file={only} onReview={() => dock.review(only)} />
+          ) : null}
+          {trouble ||
+            (dock.changeCount !== null ? (
+              <span className="hidden shrink-0 whitespace-nowrap text-ink-subtle @min-[25rem]/dock:inline">
+                <ChangeCount count={dock.changeCount} />
               </span>
-            ) : only ? (
-              <DockFileName file={only} onReview={() => dock.review(only)} />
-            ) : null}
-            {trouble ||
-              (dock.changeCount !== null ? (
-                <span className="hidden shrink-0 whitespace-nowrap text-ink-subtle @min-[25rem]/dock:inline">
-                  <ChangeCount count={dock.changeCount} />
-                </span>
-              ) : null)}
-          </div>
-        )}
+            ) : null)}
+        </div>
         {commands}
       </div>
     </>
@@ -191,7 +174,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           />
         ))}
       </div>
-      <CommandNotice commands={dock.controller} />
+      <CommandNotice commands={dock.controller} question={question} />
       <DraftImagePreview target={dock.imagePreview} onClose={dock.closeImagePreview} />
     </div>
   );

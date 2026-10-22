@@ -5,9 +5,9 @@
  * all, the creation-bound whole-Work batch (`disposeDrafts`). They act on every draft of the Work whatever the
  * search box filters, new documents and formatting-only drafts included, and
  * only a change row uses the per-change selection
- * commands. Discard all asks first, inline, in the menu's place; so does an
- * Apply all that would bring back documents deleted from the manuscript (D79),
- * naming each, and again for any a newer delete held back.
+ * commands. Discard all asks first, in the group's footer below the rows; so
+ * does an Apply all that would bring back documents deleted from the manuscript
+ * (D79), naming each, and again for any a newer delete held back.
  *
  * Nothing shows until the Work has something to review: no loading flash and no
  * empty group. A list that cannot be read says so, with Retry.
@@ -27,9 +27,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { CommandNotice } from "@/features/draft-review/CommandNotice";
+import {
+  CommandNotice,
+  type CommandQuestion,
+  RestoreQuestion,
+} from "@/features/draft-review/CommandNotice";
 import { isDeletedFromManuscript, isPathTaken } from "@/features/draft-review/deleted-drafts";
-import { RestoreQuestion } from "@/features/draft-review/RestoreQuestion";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
@@ -122,6 +125,41 @@ export function WorkChanges({
     else applyAll(new Set());
   };
   const untitled = t`Untitled document`;
+  // One question at a time, in the footer below the rows: opening it never moves a row.
+  const question: CommandQuestion | null = restoring
+    ? {
+        kind: "restore",
+        sentence: (
+          <RestoreQuestion titles={restoring.map((file) => reviewFileTargetName(file, untitled))} />
+        ),
+        keep: <Trans>Cancel</Trans>,
+        confirm: <Trans>Apply all</Trans>,
+        onKeep: () => setRestoring(null),
+        onConfirm: () => {
+          setRestoring(null);
+          applyAll(ids(restoring));
+        },
+        disabled: controller.dispositionLocked,
+      }
+    : confirmingDiscard
+      ? {
+          kind: "discard",
+          sentence: (
+            <>
+              <Trans>Discard all changes?</Trans>{" "}
+              <Trans>This removes pending changes from every document in this Work.</Trans>
+            </>
+          ),
+          keep: <Trans>Keep</Trans>,
+          confirm: <Trans>Discard</Trans>,
+          onKeep: () => setConfirmingDiscard(false),
+          onConfirm: () => {
+            setConfirmingDiscard(false);
+            discardAll();
+          },
+          disabled: controller.dispositionLocked,
+        }
+      : null;
 
   return (
     <WorkFileGroup
@@ -169,66 +207,6 @@ export function WorkChanges({
         )
       }
     >
-      {restoring ? (
-        <div
-          className="flex flex-wrap items-center gap-x-1 gap-y-1 pb-2 text-xs"
-          data-work-changes-confirmation="restore"
-        >
-          <span className="min-w-0 basis-full text-muted-foreground">
-            <RestoreQuestion
-              titles={restoring.map((file) => reviewFileTargetName(file, untitled))}
-            />
-          </span>
-          <Button
-            variant="quiet"
-            size={touch ? "default" : "xs"}
-            className={touch ? "min-h-11" : undefined}
-            onClick={() => setRestoring(null)}
-          >
-            <Trans>Cancel</Trans>
-          </Button>
-          <Button
-            variant="quiet"
-            size={touch ? "default" : "xs"}
-            className={touch ? "min-h-11" : undefined}
-            disabled={controller.dispositionLocked}
-            onClick={() => {
-              setRestoring(null);
-              applyAll(ids(restoring));
-            }}
-          >
-            <Trans>Apply all</Trans>
-          </Button>
-        </div>
-      ) : null}
-      {confirmingDiscard ? (
-        <div className="flex flex-wrap items-center gap-x-1 gap-y-1 pb-2 text-xs">
-          <span className="min-w-0 basis-full text-muted-foreground">
-            <Trans>Discard all changes?</Trans>{" "}
-            <Trans>This removes pending changes from every document in this Work.</Trans>
-          </span>
-          <Button
-            variant="quiet"
-            size={touch ? "default" : "xs"}
-            className={touch ? "min-h-11" : undefined}
-            onClick={() => setConfirmingDiscard(false)}
-          >
-            <Trans>Keep</Trans>
-          </Button>
-          <Button
-            variant="quiet"
-            size={touch ? "default" : "xs"}
-            className={touch ? "min-h-11" : undefined}
-            disabled={controller.dispositionLocked}
-            onClick={() => {
-              setConfirmingDiscard(false);
-              discardAll();
-            }}
-          >
-            <Trans>Discard</Trans>
-          </Button>
-        </div>
-      ) : null}
       <RuledList
         className="-mx-2"
         rows={visible.map((file) => ({
@@ -244,7 +222,7 @@ export function WorkChanges({
           ),
         }))}
       />
-      <CommandNotice commands={controller} />
+      <CommandNotice commands={controller} question={question} />
     </WorkFileGroup>
   );
 }
