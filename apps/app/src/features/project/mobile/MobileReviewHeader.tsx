@@ -1,7 +1,6 @@
 /** Phone review chrome: version, stepper and list control in one row. Completion replaces stepping in that same row; whole commands live in the version menu. */
 import { t } from "@lingui/core/macro";
 import { List } from "lucide-react";
-
 import { changeListLabel } from "@/features/draft-review/DocumentChanges";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import {
@@ -10,12 +9,16 @@ import {
 } from "@/features/draft-review/ReviewHeaderNotices";
 import { ReviewStepper } from "@/features/draft-review/ReviewStepper";
 import type { ReviewHeaderModel } from "@/features/draft-review/useReviewHeader";
+import { type ManuscriptState, ManuscriptStateSlot } from "@/features/editor/ManuscriptStateNotice";
 
 export function MobileReviewHeader({
   header,
+  manuscriptState,
   onOpenList,
 }: {
   header: ReviewHeaderModel;
+  /** What live did to this document; it takes the row's free end. */
+  manuscriptState: ManuscriptState | null;
   onOpenList: () => void;
 }) {
   const { controller, view, finished } = header;
@@ -34,7 +37,7 @@ export function MobileReviewHeader({
           paddingRight: "calc(0.25rem + env(safe-area-inset-right))",
         }}
       >
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0">
           <DraftSwitcher
             draftOnly={header.draftOnly}
             disabled={header.locked}
@@ -53,6 +56,7 @@ export function MobileReviewHeader({
             marks={{ visible: controller.marksVisible, onChange: controller.setMarksVisible }}
           />
         </div>
+        <ManuscriptStateSlot state={manuscriptState} touch />
         <ReviewStateInline
           touch
           finished={finished}
