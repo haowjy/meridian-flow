@@ -660,9 +660,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       documentId: entry.documentId,
       expected: planned.before,
       facts: planned.after,
-      changedBy: query.model
-        ? { threadId: query.threadId, ...(query.turnId ? { turnId: query.turnId } : {}) }
-        : null,
+      // The facts stay the reversed turn's chat's whoever reverses them: the writer's card Undo
+      // or Redo, or a rollback, leaves a pending move or delete the chat's own to review.
+      changedBy: { threadId: query.threadId, ...(query.turnId ? { turnId: query.turnId } : {}) },
     });
     if (fault) throw new TreeFault(fault);
     return { destination: planned.destination, before: planned.before, after: planned.after };
