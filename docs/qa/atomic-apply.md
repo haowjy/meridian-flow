@@ -41,8 +41,9 @@ kernel; they do not certify the replacement rebase scheduler.
   result. A delete between Apply's unlocked scope guess and its lock
   (`apply.afterScopeGuess`), or after compilation (`apply.beforeBoundary`),
   still restores. A path a new document took refuses `forbidden` and leaves it
-  deleted. A hidden creation is revealed in the transaction without replacing
-  its identity.
+  deleted. A branch that also holds an unrelated hidden creation still reads the
+  addressed document's own state and restores it. A hidden creation is revealed
+  in the transaction without replacing its identity.
 - Ordinary text Apply completes while another transaction holds the source
   namespace. Only a hidden-create reveal or a restore needs that tree lock.
 - Two AI conversations applied in one click each retain only their own passage

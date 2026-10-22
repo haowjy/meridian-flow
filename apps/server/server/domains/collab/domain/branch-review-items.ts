@@ -107,7 +107,8 @@ export function createBranchReviewItems(deps: {
       );
     },
     async resolve(branchId, documentId) {
-      return (await items(branchId, [documentId]))[0] ?? null;
+      const resolved = await items(branchId, [documentId]);
+      return resolved.find(({ item }) => item.documentId === documentId) ?? null;
     },
   };
 }

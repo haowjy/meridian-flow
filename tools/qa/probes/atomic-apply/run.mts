@@ -786,6 +786,28 @@ try {
     f.close();
   });
 
+  await row(
+    "a deleted document's Apply reads its own state beside the branch's hidden creation",
+    async () => {
+      const f = await fixture(["Base."], ["Changed."]);
+      // An unrelated creation the branch holds hidden: the branch's view lists it first.
+      const created = await h.seedDocument(`apply-${client++}`, "Created.");
+      await h.raw`update documents set hidden=true where id=${created.documentId}`;
+      await recordCreated(h.db, { branchId: f.branchId, documentId: created.documentId });
+      await deleteLive(f);
+      const result = await applied(f);
+      assert.equal(result.status === "applied" && result.restored, true, JSON.stringify(result));
+      assert.equal(await living(f), true);
+      assert.deepEqual(await f.liveText(), ["Changed."]);
+      assert.equal(
+        (await h.raw`select hidden from documents where id=${created.documentId}`)[0].hidden,
+        true,
+        "the other creation stays the branch's",
+      );
+      created.live.destroy();
+      f.close();
+    },
+  );
   await row("hidden creation reveals inside Apply without replacing identity", async () => {
     const f = await fixture([""], ["Created content."]);
     await h.raw`update documents set hidden=true where id=${f.documentId}`;
