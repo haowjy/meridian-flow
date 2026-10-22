@@ -123,7 +123,7 @@ function ReviewBottom({
   const { controller, view } = header;
   return (
     <>
-      <MobileChangeBar view={view} />
+      <MobileChangeBar view={view} canApply={header.canApply} />
       <MobileChangeSheet
         open={listOpen}
         onOpenChange={onListOpenChange}
