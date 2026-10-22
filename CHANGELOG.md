@@ -5,8 +5,6 @@ PR bodies via `pnpm changelog`; PRs no longer edit this file.
 
 ## [Unreleased]
 
-- Fetch changelog pull requests in 50-item pages; ranged builds stop at their cutoff and `--all` has no 1,000-PR cap.
-
 - Start cursorless chat subscriptions at the head; reconcile trails and Work binding without replaying history.
 - Reject thread socket request IDs longer than 64 characters.
 
