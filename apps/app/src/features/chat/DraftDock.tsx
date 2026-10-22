@@ -118,10 +118,14 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         className={cn(
           "flex min-h-7 items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-caption @max-[20rem]/dock:[font-size:12px] text-prose-foreground",
           multi && "cursor-pointer transition-colors hover:bg-muted/50",
+          askingRestore && "flex-wrap",
         )}
       >
         {askingRestore ? (
-          <span data-draft-dock-confirmation="restore" className="min-w-0 flex-1 text-ink-muted">
+          <span
+            data-draft-dock-confirmation="restore"
+            className="min-w-0 basis-full text-ink-muted"
+          >
             <RestoreQuestion titles={restoring.map((file) => file.name)} />
           </span>
         ) : confirming ? (

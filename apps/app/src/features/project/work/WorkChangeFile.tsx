@@ -99,7 +99,10 @@ export function WorkChangeFile({
           </button>
         )}
       </div>
-      <DraftCommandStatus itemKey={file.draft.itemKey} item={file.draft} />
+      {/* The status line belongs to the row: its text starts under the title (chevron + the title's own inset, less the line's px-2). */}
+      <div className={touch ? "pl-10" : "pl-7"}>
+        <DraftCommandStatus itemKey={file.draft.itemKey} item={file.draft} />
+      </div>
       <DraftImagePreview
         target={previewing ? { projectId, workId, documentId: file.documentId, name } : null}
         onClose={() => setPreviewing(false)}
