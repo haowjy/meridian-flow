@@ -79,11 +79,13 @@ function isReadCommand(command: ToolCommand): boolean {
   return command === "read" || command === "skim";
 }
 
-/** A command that changed a document, including putting a change back. */
+/** A command that changed a document, including putting a change back, moving or deleting it. */
 function isEditCommand(command: ToolCommand): boolean {
   return (
     command === "create" ||
     command === "copy" ||
+    command === "move" ||
+    command === "delete" ||
     command === "edit" ||
     command === "undo" ||
     command === "redo"
