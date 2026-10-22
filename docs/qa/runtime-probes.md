@@ -896,16 +896,17 @@ restart smoke check.
      on the fork.
   4. First draft-mode write after a live read: a draft-mode thread on a new Work (body as in
      RP-19 step 4) sends one reply that reads `W2-Draft`, then writes `Beta waited` →
-     `Beta paced` twice in two steps.
+     `Beta paced` once. Repeat with a second new document, citing the hash from the read as
+     the replace scope instead of using `find`.
 - **Expect:**
   1. The first write is `status: region_changed` with "Not applied: this passage changed since
      you last saw it. Current text:" and the three paragraphs; the second lands (`write: e1`, using the returned edit handle).
   2. The write lands at once.
   3. The write on the compacted thread is refused with current text; the same write on the fork
      lands.
-  4. The read says `version: draft` with no Work draft yet (it read live); the first write is
-     `region_changed` with current text, the second `success` staged and settled as
-     `draft (wN)` using the fixture’s returned Work handle; `./mf doc read` still shows live unchanged.
+  4. Each read says `version: draft` with no Work draft yet (it read live); the first write
+     lands, for both the find-text and held-hash forms, and settles as `draft (wN)` using the
+     fixture's returned Work handle. `./mf doc read` still shows live unchanged.
 - **Evidence:** each send NDJSON (`tool.completed` and `tool.settled` lines).
 - **Last run:** 2026-10-19 on `f8e5f62b94` (M2 W2; the tree that commit holds), the branch
   worktree's own mock stack. All four passed. Evidence:

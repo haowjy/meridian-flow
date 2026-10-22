@@ -81,7 +81,10 @@ once, from `integration.ts`.
 
 The codec delegates parse/full serialize and block-body normalization to
 `@meridian/markup`, then adds hash-prefixed display forms. Hashes are rendered
-from the current sibling set and are not durable identity. A command receives
+from the current sibling set and are not durable identity. A seeded draft block's
+address identity is its live origin item; every other block uses its own item.
+The immutable origin map travels with every room copy, snapshot planning view and
+inverse cut, including deleted block listings. A command receives
 one scoped codec at entry and passes it to every serialization door; the package
 has no default Meridian schema.
 
