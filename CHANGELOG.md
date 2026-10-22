@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Deleting a document from the manuscript no longer throws away a Work's pending changes to it (D79). Its drafts stay ordinary drafts: the Work's chat still finds it at its path and keeps writing, undoing and reviewing against its last text, while the manuscript and Works with nothing pending see it gone. Apply brings it back, with its folders, then merges the change, and the result says `restored`. A new document at the freed path, or a move over the drafted one, shows as a clash in the Work. Server side; the app's notices and Apply all confirmation follow separately.
+
 - Model-facing owner-handle guidance is shorter: Work context now carries the concrete Scratch policy, repair errors give one copyable address, and repeated owner details are removed from receipts and listings.
 
 - RP-20 now expects `eN` edit receipts and `draft (wN)` Work labels; its historical last-run evidence is unchanged.
@@ -21,7 +23,7 @@
 - A usable draft review stays open when a background metadata refresh fails; Retry retries whichever step failed.
 - Dense draft review projection got faster: cleanup no longer rescans merged replacements on every edit.
 - Draft review reads the text (#862 re-landed on the lock-free store). Review is the difference between the live text a draft is reviewed against (`review_base`, server-written) and the draft, computed in the browser. Only red (removed) and green (added), writer typing and formatting included; no olive. Moves, cut and paste, Ctrl+Z and concurrent edits never corrupt it. A paragraph the draft removed and live then edited shows its byline, Apply and Discard (#945).
-- Discard on one document is an edit of its draft, one undoable step: Ctrl+Z in the editor, or Undo on the "Discarded" notice in the dock or Work page. The row leaves and the notice paints at the click, before the write-back. Discard all and document removal still close drafts; other tabs leave review on close (`4205`).
+- Discard on one document is an edit of its draft, one undoable step: Ctrl+Z in the editor, or Undo on the "Discarded" notice in the dock or Work page. The row leaves and the notice paints at the click, before the write-back. Discard all and a discarded creation still close drafts; other tabs leave review on close (`4205`).
 - Apply sends the frozen click (the text the writer saw and the changes clicked), merges it into current live, and never answers "stale". Clicks on one document apply in order, one at a time; a lost answer retries the same command. The trail credits each conversation with only its own changed passages.
 - A draft keeps one identity from seed to close: seeded fresh from live, newer live arrives as a server rebase written inside the append that commits it, and typing a rebase deleted is recovered. Removed draft generations, reset, close code `4206`, inverse holds, settlement batches and server-computed review.
 - Bylines come from Yjs item identity and AI receipts: writer edits say "You", AI changes link to their conversation, subagent changes reveal the spawn card.
