@@ -10,6 +10,7 @@ import {
   prepareEditRoots,
   removedFile,
 } from "@meridian/agent-edit/integration";
+import type { BranchId } from "@meridian/contracts";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
@@ -38,7 +39,7 @@ import type {
   TurnInverseStore,
 } from "./turn-inverse-service.js";
 
-type Query = TurnInverseQuery & { model: true; draftId: string | null };
+type Query = TurnInverseQuery & { model: true; draftId: string | null; branchId: BranchId | null };
 /** One own edit on the stack: text parts, or one tree entry (a move or delete) with none. */
 type Entry = { id: string; handle: string; parts: StoredInversePart[]; tree?: TransitionEntry };
 const entryKeys = (entry: Entry) =>
@@ -203,7 +204,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       return null;
     }
     /** The branch a draft-mode write lands in, for comparing a drafted tree entry's. */
-    const branchId = draft?.documentDraft.branchId ?? null;
+    const branchId = query.branchId;
     /**
      * Whether `entry` can be reversed in `direction` from the states `states` hold, judged by
      * state (D76): the planned transition, or the refusal.

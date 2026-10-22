@@ -3,27 +3,29 @@
 import type { DocumentEditRequest, DocumentEdits } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
-import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import type { TurnInverseService } from "./turn-inverse-service.js";
 
 export function createModelDocumentEdits(input: {
   service(): TurnInverseService;
   drafts: ApplicationDraftStore;
-  coordinator: Pick<LiveDocumentCoordinator, "withDocument">;
 }): DocumentEdits {
   async function query(request: DocumentEditRequest & { command: { file: string } }) {
     const documentId = request.documentId as DocumentId;
     const view = request.context.linkView;
     let draftId: string | null = null;
     if (view?.kind === "branch") {
-      const documentDraft = await input.coordinator.withDocument(documentId, (liveDoc) =>
-        input.drafts.ensureDocumentDraft({ documentId, branchId: view.branchId, liveDoc }),
+      const drafts = await Promise.all(
+        (await input.drafts.listActiveWorkDraftIds(documentId)).map((id) =>
+          input.drafts.getDraft(id),
+        ),
       );
-      draftId = documentDraft.draftId;
+      // A move-only branch entry has no text draft. Its tree inverse still targets the branch.
+      draftId = drafts.find((draft) => draft?.branchId === view.branchId)?.draftId ?? null;
     }
     return {
       model: true as const,
       draftId,
+      branchId: view?.kind === "branch" ? view.branchId : null,
       documentIds: [documentId],
       threadId: request.threadId as ThreadId,
       // A deleted document has no address of its own: results name it by the model's path.

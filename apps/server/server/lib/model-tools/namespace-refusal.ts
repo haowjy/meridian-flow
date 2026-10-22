@@ -35,8 +35,6 @@ function sentence(
       return `Can't move ${path} to ${to}: renaming it won't convert it to another file type. Keep its current extension.`;
     case "document_type_conversion":
       return `Can't move ${path} to ${to}: that extension requires a different document type. Keep its current extension.`;
-    case "mixed_modes":
-      return "This chat is in draft mode, so this move would be half drafted and half live. Copy the document, then delete the original, or ask the user to switch this chat to auto-apply.";
     case "unsupported":
       return `${lead}: this location doesn't support the change. Check the source and destination with \`ls\` before retrying.`;
   }

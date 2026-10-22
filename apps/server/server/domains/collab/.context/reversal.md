@@ -121,7 +121,9 @@ address it was deleted from, read through the same `restore` target. A drafted t
 inverse writes back the branch row's facts its entry recorded (an undo its `before`, a redo its
 `after`; `writeBackBranchFacts`) while the row still holds the state the plan started from, its
 branch is active, a moved folder still stands and the branch's view has room; the attempt also
-locks that branch's Work and where the branch has the document. A document the branch deleted is
+locks that branch's Work and where the branch has the document. The routed branch is separate
+from a content `draftId`: a move-only document has no text draft, including a Scratch document
+whose content stays live, but Undo and Redo still write its branch facts. A document the branch deleted is
 authorized where its row is (file facts' branch-deleted fallback).
 
 ## Effects and failures

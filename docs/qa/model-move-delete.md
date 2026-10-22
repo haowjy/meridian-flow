@@ -67,12 +67,13 @@ draft forks; read the drafted path (`ch1-old`) in a later reply, then `replace`.
    and ch5 → ch6 both land in dependency order from either row. Repeat with a swap: both land
    in one Apply transaction. Apply a drafted move after a new live document takes its target:
    the move lands at the next free name and the footer says "Added as <name>."
-8. **Mixed move.** Script `create` `scratch://@w1/sect-notes`, then `move` it to
-   `manuscript://sect-notes`: the row says "Couldn't move sect-notes" (the model reads D45's
-   refusal). Then `copy` it there and `delete` the scratch one: the dock lists sect-notes. The
-   other direction refuses alike: `move` `manuscript://ch2` to `scratch://@w1/ch2` reads the
-   same refusal. After both, `./mf` shows sect-notes still in scratch and ch2 still live at its
-   path, with no row in the dock for either move.
+8. **Scratch crossing.** Script `create` `scratch://@w1/sect-notes`, then `move` it to
+   `manuscript://sect-notes`. The result starts "not applied yet", the dock lists sect-notes at
+   its manuscript destination, and live still has it in Scratch. Script `undo` by either path:
+   the dock row disappears and the branch sees it in Scratch again. Redo the move and Apply it;
+   live now has sect-notes in the manuscript and not in Scratch. Move `manuscript://ch2` to
+   `scratch://@w1/ch2`: the branch sees it in Scratch while live keeps ch2 in the manuscript;
+   Discard removes the row and leaves live unchanged.
 9. **Undo after Apply.** Script `undo` of `manuscript://ch1-old`: "Couldn't undo ch1-old";
    the model reads `cant_undo_applied`.
 

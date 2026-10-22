@@ -437,10 +437,10 @@ export interface ContextPort {
   ): Promise<Result<ContextMoveResult, ContextError>>;
 
   /**
-   * A draft-mode chat's move or delete of a drafted document (D26): facts in its Work's
-   * branch, never the shared tree and never the mover. Both ends must be draft-placed
-   * sources; `record` runs in the same transaction. A move to where the branch already has
-   * the document answers `moved: false` and records nothing.
+   * A draft-mode chat's move or delete (D26, D45): facts in its Work's branch, never the
+   * shared tree and never the mover. Each end must participate in the branch tree; its content
+   * placement may remain live, as Scratch's does. `record` runs in the same transaction. A move
+   * to where the branch already has the document answers `moved: false` and records nothing.
    */
   changeInBranch(
     command: ContextBranchTreeCommand,
