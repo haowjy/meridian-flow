@@ -8,12 +8,17 @@
 
 import type {
   AdmissionLookup,
-  AGUIEvent,
+  CancelTurnResponse,
   RetireAdmissionResult,
   SendMessageResponse,
-  SequencedEvent,
-  ThreadSnapshotResponse,
 } from "@meridian/contracts/protocol";
+import type {
+  InterruptRespondInput,
+  InterruptRespondReceipt,
+  ThreadTransport,
+  ThreadTransportHandlers,
+  ThreadTransportSubscribeOptions,
+} from "@meridian/thread-client";
 import { QueryClient } from "@tanstack/react-query";
 import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
@@ -21,18 +26,7 @@ import {
   plainComposerDoc,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
-import type {
-  InterruptRespondInput,
-  InterruptRespondReceipt,
-  ThreadTransport,
-  ThreadTransportHandlers,
-  ThreadTransportSubscribeOptions,
-} from "@/core/transport";
-import {
-  type SubmitOptions,
-  type SubscribeLiveOptions,
-  ThreadRunController,
-} from "../ThreadRunController";
+import { type SubmitOptions, ThreadRunController } from "../ThreadRunController";
 
 type AppendRequest = {
   data: {
@@ -130,9 +124,12 @@ class ScenarioThreadTransport implements ThreadTransport {
     for (const listener of this.socketClosedListeners) listener(generation);
   }
 
-  async cancel(threadId: string, turnId: string) {
+  /** What the next cancels answer. */
+  cancelStatus: CancelTurnResponse["status"] = "cancelled";
+
+  async cancel(threadId: string, turnId: string): Promise<CancelTurnResponse> {
     this.cancelRequests.push({ threadId, turnId });
-    return { threadId, turnId, status: "cancelled" as const };
+    return { threadId, turnId, status: this.cancelStatus };
   }
 
   activeSubscription() {
@@ -141,34 +138,6 @@ class ScenarioThreadTransport implements ThreadTransport {
       if (subscription?.active) return subscription;
     }
     return undefined;
-  }
-
-  emit(event: AGUIEvent, seq = "1", sourceThreadId?: string): void {
-    this.activeSubscription()?.handlers.onEvent({
-      seq,
-      event,
-      sourceThreadId,
-    } satisfies SequencedEvent);
-  }
-
-  emitTo(subscriptionIndex: number, event: AGUIEvent, seq = "1", sourceThreadId?: string): void {
-    this.subscriptions[subscriptionIndex]?.handlers.onEvent({
-      seq,
-      event,
-      sourceThreadId,
-    } satisfies SequencedEvent);
-  }
-
-  fail(error: Error): void {
-    this.activeSubscription()?.handlers.onError?.(error);
-  }
-
-  gap(threadId: string): void {
-    this.activeSubscription()?.handlers.onGap?.({
-      threadId,
-      cause: "server_restart",
-      gapCount: 1,
-    });
   }
 }
 
@@ -179,19 +148,15 @@ export class ThreadRunScenario {
   });
   readonly transport = new ScenarioThreadTransport();
   readonly appendRequests: AppendRequest[] = [];
-  readonly snapshotRequests: string[] = [];
-  readonly snapshotSignals: AbortSignal[] = [];
   readonly lookupRequests: Array<{ threadId: string; submissionId: string }> = [];
   readonly retireRequests: Array<{ threadId: string; submissionId: string }> = [];
   readonly controller: ThreadRunController;
 
   private append: (request: AppendRequest) => Promise<SendMessageResponse>;
-  private snapshot: (threadId: string) => Promise<ThreadSnapshotResponse>;
 
   constructor(
     options: {
       append?: (request: AppendRequest) => Promise<SendMessageResponse>;
-      snapshot?: (threadId: string) => Promise<ThreadSnapshotResponse>;
       lookup?: (input: { threadId: string; submissionId: string }) => Promise<AdmissionLookup>;
       retire?: (input: {
         threadId: string;
@@ -200,11 +165,6 @@ export class ThreadRunScenario {
     } = {},
   ) {
     this.append = options.append ?? (async () => defaultSendResponse());
-    this.snapshot =
-      options.snapshot ??
-      (async () => {
-        throw new Error("No snapshot result was configured");
-      });
     this.controller = new ThreadRunController({
       transport: this.transport,
       actions: this.store.getState(),
@@ -228,21 +188,12 @@ export class ThreadRunScenario {
           }
         );
       },
-      getThreadSnapshotFn: async ({ data, signal }) => {
-        this.snapshotRequests.push(data.threadId);
-        if (signal) this.snapshotSignals.push(signal);
-        return this.snapshot(data.threadId);
-      },
     });
     this.controller.activate();
   }
 
   setAppend(handler: (request: AppendRequest) => Promise<SendMessageResponse>): void {
     this.append = handler;
-  }
-
-  setSnapshot(handler: (threadId: string) => Promise<ThreadSnapshotResponse>): void {
-    this.snapshot = handler;
   }
 
   submit(text: string, options: Partial<SubmitOptions> = {}, threadId = "thread_1") {
@@ -260,32 +211,12 @@ export class ThreadRunScenario {
     );
   }
 
-  resume(options: SubscribeLiveOptions = {}, threadId = "thread_1"): void {
-    this.controller.resume(threadId, options);
-  }
-
-  emit(event: AGUIEvent, seq = "1", sourceThreadId?: string): void {
-    this.transport.emit(event, seq, sourceThreadId);
-  }
-
-  failStream(error: Error): void {
-    this.transport.fail(error);
-  }
-
-  reportGap(threadId = "thread_1"): void {
-    this.transport.gap(threadId);
-  }
-
   closeSocket(generation = this.transport.socketGeneration): void {
     this.transport.emitSocketClose(generation);
   }
 
   turns(threadId = "thread_1") {
     return this.store.getState().turns(threadId) ?? [];
-  }
-
-  activeSubscription() {
-    return this.transport.activeSubscription();
   }
 }
 
@@ -295,7 +226,7 @@ export function defaultSendResponse(
   return {
     threadId: "thread_1",
     userTurnId: "turn-user",
-    assistantTurnId: "turn_1",
+    runStateVersion: null,
     resumeAfterSeq: "42",
     snapshotFloorNextSeq: "43",
     status: "accepted",

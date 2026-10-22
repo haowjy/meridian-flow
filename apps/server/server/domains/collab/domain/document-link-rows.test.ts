@@ -13,8 +13,8 @@ it("keys doc, ahead, asset and contextual occurrences, counting repeats once per
       occurrences: [
         { kind: "link", ref: `doc:${DOC}`, href: "manuscript://ch%201.md#top" },
         { kind: "link", ref: `doc:${DOC}`, href: "manuscript://ch%201.md" },
-        { kind: "link", ref: `ahead:${AHEAD}`, href: "scratch://@arc/next.md" },
-        { kind: "image", ref: `ahead:${AHEAD}`, href: "scratch://@arc/next.md" },
+        { kind: "link", ref: `ahead:${AHEAD}`, href: "scratch://@w1/next.md" },
+        { kind: "image", ref: `ahead:${AHEAD}`, href: "scratch://@w1/next.md" },
         { kind: "image", ref: null, href: `asset:${ASSET}` },
         { kind: "figure", ref: null, href: `asset:${ASSET}` },
         { kind: "link", ref: null, href: "scratch://notes.md" },
@@ -32,7 +32,7 @@ it("keys doc, ahead, asset and contextual occurrences, counting repeats once per
       linkKey: `ahead:${AHEAD}`,
       targetDocumentId: null,
       aheadId: AHEAD,
-      address: "scratch://@arc/next.md",
+      address: "scratch://@w1/next.md",
       occurrences: 2,
     },
     {

@@ -6,7 +6,7 @@ import type {
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { ContextRouteSelection } from "../context/context-removal-protocol";
 import { resolveLiveRouteDocument } from "../context/route-document-owner";
 import type { ProjectAddress, ProjectDestination } from "./project-address";
@@ -156,6 +156,8 @@ export function resolveLocalDocumentAddress(
       rootThreadRef: uri.value.authority.rootThreadRef,
     };
   } else {
+    // A chat's uploads are files, never editable text: they have no editor address.
+    if (entry.scope.kind === "chat") return undefined;
     if (!workId || workId !== entry.scope.workId) return undefined;
     const uri = parseUnifiedContextUri(file.uri);
     if (!uri.ok || uri.value.authority.kind === "contextual") return undefined;
@@ -163,7 +165,7 @@ export function resolveLocalDocumentAddress(
       kind: "work",
       projectId,
       workId: entry.scope.workId,
-      workSlug: uri.value.authority.kind === "work" ? uri.value.authority.workSlug : null,
+      workHandle: uri.value.authority.kind === "work" ? uri.value.authority.workHandle : null,
     };
   }
   return {
@@ -186,9 +188,14 @@ export function resolveLocalDocumentAddress(
 export function reconcileDocumentAddress(
   local: ReturnType<typeof resolveLocalDocumentAddress>,
   remote: DocumentAddressResult | undefined,
-): { result: DocumentAddressResult | undefined; localFile: CatalogFile | undefined } {
+  remoteView: "live" | "review" = "review",
+): {
+  result: DocumentAddressResult | undefined;
+  localFile: CatalogFile | undefined;
+  view: "live" | "review" | "local";
+} {
   // The route's open document outranks whatever the server says about the path it holds or left.
-  if (local?.bound) return { result: local.result, localFile: local.file };
+  if (local?.bound) return { result: local.result, localFile: local.file, view: "local" };
   if (remote && remote.kind !== "unavailable") {
     // While the writer's own move is unconfirmed, the path it gave this document is its
     // address; a server alias for that path only remembers where the document used to be.
@@ -197,14 +204,15 @@ export function reconcileDocumentAddress(
       local?.file.placementPending &&
       local.file.documentId === remote.document.documentId
     )
-      return { result: local.result, localFile: local.file };
+      return { result: local.result, localFile: local.file, view: "local" };
     return {
       result: remote,
+      view: remoteView,
       localFile: local?.file.documentId === remote.document.documentId ? local.file : undefined,
     };
   }
-  if (local) return { result: local.result, localFile: local.file };
-  return { result: remote, localFile: undefined };
+  if (local) return { result: local.result, localFile: local.file, view: "local" };
+  return { result: remote, localFile: undefined, view: remoteView };
 }
 
 /** Retain exact local ownership while successful server metadata owns the locator. */
@@ -228,9 +236,10 @@ export function mergeLocalResourceState(
 }
 
 /**
- * The server resolves every tree node, including a new document that only a
- * pending draft proposes and one whose draft was discarded. The live manifest
- * lists what can open live. A manuscript document missing from it has no live
+ * A successful server live lookup proves live membership, even if the catalog lags.
+ * A review-view lookup may admit a hidden document; it proves no live membership.
+ * The live manifest
+ * lists what can open live. A document missing from it has no live
  * view: its pending new-document draft opens as review, and with no such draft
  * the address is unavailable. Never a blank live editor.
  *
@@ -252,18 +261,27 @@ export function gateLiveView(
     isFetching: boolean;
     isError: boolean;
   },
-  drafts: { status: string; files: ReviewFileTarget[] | null },
+  draftList: { status: string; files: ReviewFileTarget[] | null },
   hasLiveTab: (documentId: string) => boolean,
+  admittedView: "live" | "review" | "local" = "local",
 ): GatedLiveView {
   if (!result || result.kind === "unavailable") return { outcome: "ready", result };
   const documentId = result.document.documentId;
-  if (hasLiveTab(documentId) || manifest.catalog?.normalized.entries.has(documentId))
+  if (admittedView === "review") {
+    const file = draftList.files?.find((candidate) => candidate.documentId === documentId);
+    return { outcome: "ready", result, ...(file?.draftOnly ? { draftOnly: file } : {}) };
+  }
+  if (
+    admittedView === "live" ||
+    hasLiveTab(documentId) ||
+    manifest.catalog?.normalized.entries.has(documentId)
+  )
     return { outcome: "ready", result };
-  if (manifest.isError || drafts.status === "error")
+  if (manifest.isError || draftList.status === "error")
     return { outcome: "failed", result: undefined };
   const settled = manifest.isComplete && !manifest.isFetching;
-  if (!settled || drafts.status === "loading") return { outcome: "pending", result: undefined };
-  const group = drafts.files?.find((candidate) => candidate.documentId === documentId);
-  if (group?.isNewDocument) return { outcome: "ready", result, draftOnly: group };
+  if (!settled || draftList.status === "loading") return { outcome: "pending", result: undefined };
+  const group = draftList.files?.find((candidate) => candidate.documentId === documentId);
+  if (group?.draftOnly) return { outcome: "ready", result, draftOnly: group };
   return { outcome: "ready", result: { kind: "unavailable" } };
 }

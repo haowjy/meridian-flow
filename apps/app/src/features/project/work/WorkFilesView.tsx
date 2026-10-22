@@ -1,34 +1,26 @@
-/**
- * Work Files tab: the Work's changes to review and its scratch notes as one
- * grouped list in the same row grammar as the Chats tab and the Editor's recents.
- * `useWorkFiles` owns the tab's state so the page toolbar can host its actions;
- * a new note on its way in is `useWorkNoteIntake`'s. An archived Work is not
- * `editable`: New note stays in place but disabled, rows only open, and a
- * refused note offers no Retry.
- */
+/** Work changes and ordinary Scratch, using the same nested rows as the sidebar and phone. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { FilePlus } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { CatalogDirectory } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
+import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
+import { serverTabFromFile } from "../context/context-tab-from-file";
+import { treeFolderIds } from "../context/tree-expansion-state";
 import { useTreeExpansion } from "../context/use-tree-expansion";
-import { RuledList, type RuledRow } from "../RuledList";
+import { useDockDocument } from "../dock/dock-document-store";
+import { useOpenDocumentInDock } from "../dock/use-open-document-in-dock";
+import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import { useWorkNoteIntake } from "./use-work-note-intake";
 import { WorkChanges } from "./WorkChanges";
 import { WorkFileGroup, WorkFileGroupLoading, WorkFileGroupNote } from "./WorkFileGroup";
-import { FolderRow, NoteAttemptRow, ScratchFileRow } from "./WorkFileRows";
-import {
-  catalogSiblings,
-  compareTreePlaces,
-  type TreePlace,
-  workFileSearch,
-} from "./work-files-model";
+import { NoteAttemptRow } from "./WorkFileRows";
+import { workFileSearch } from "./work-files-model";
 
 export function useWorkFiles(projectId: string, work: AddressableWork) {
   const scratch = useContextCatalogView(projectId, "scratch", { workId: work.id });
@@ -85,99 +77,97 @@ export function WorkFilesView({
 }) {
   const { scratch, intake } = files;
   const scratchDelete = useDeleteConfirmation({ projectId });
-  const scratchRoot = scratch.catalog?.root.entryId;
-  const scratchFolders =
-    scratch.catalog && scratchRoot
-      ? scratch.catalog
-          .children(scratchRoot)
-          .filter((node): node is CatalogDirectory => node.kind === "dir")
-      : [];
+  const catalog = scratch.catalog;
+  const openFile = useOpenDocumentInDock();
+  const docked = useDockDocument(useProjectScreen(), projectId)?.tab.documentId;
   const folderIds = useMemo(
     () =>
-      scratch.catalog && scratch.isComplete
-        ? scratch.catalog
-            .children(scratch.catalog.root.entryId)
-            .filter((node) => node.kind === "dir")
-            .map((node) => node.entryId)
+      catalog && scratch.isComplete
+        ? treeFolderIds((parent) =>
+            catalog
+              .children(parent ?? catalog.root.entryId)
+              .filter((node) => node.kind === "dir")
+              .map((node) => node.entryId),
+          )
         : null,
-    [scratch.catalog, scratch.isComplete],
+    [catalog, scratch.isComplete],
   );
   const { isExpanded, toggleEntry } = useTreeExpansion(
     projectId,
     `work-files:scratch:${work.id}`,
     folderIds,
   );
-  const expandedPaths = scratchFolders
-    .filter((folder) => isExpanded(folder.entryId))
-    .map((folder) => folder.path);
-  const scratchFiles =
-    scratch.catalog
-      ?.files()
-      .filter(
-        (file) =>
-          file.parentId === scratchRoot ||
-          expandedPaths.some((path) => file.path.startsWith(`${path}/`)),
-      ) ?? [];
+  const query = search.trim().toLowerCase();
+  const [searchDisclosure, setSearchDisclosure] = useState({ query, collapsed: new Set<string>() });
+  if (searchDisclosure.query !== query) setSearchDisclosure({ query, collapsed: new Set() });
+  const visibleIds = useMemo(() => {
+    if (!catalog || !query) return undefined;
+    const ids = new Set<string>();
+    const visit = (parentId: string, ancestorMatches: boolean): boolean => {
+      let found = false;
+      for (const node of catalog.children(parentId)) {
+        const matches =
+          ancestorMatches ||
+          node.path === files.renaming ||
+          node.name.toLowerCase().includes(query);
+        const descendants = node.kind === "dir" && visit(node.entryId, matches);
+        if (matches || descendants) {
+          ids.add(node.entryId);
+          found = true;
+        }
+      }
+      return found;
+    };
+    visit(catalog.root.entryId, false);
+    return ids;
+  }, [catalog, query, files.renaming]);
   const matchesSearch = workFileSearch(search);
-  const visible = [...scratchFolders, ...scratchFiles].filter((node) => matchesSearch(node.name));
-
-  const scratchRows = inTreeOrder([
-    ...visible.map((node) => ({
-      key: node.entryId,
-      place: { path: node.path, folder: node.kind === "dir" },
-      node:
-        node.kind === "dir" ? (
-          <FolderRow
-            projectId={projectId}
-            workId={work.id}
-            siblings={catalogSiblings(scratch.catalog, node)}
-            capabilities={files.editable ? ["rename", "move", "delete"] : []}
-            onRequestDelete={scratchDelete.requestDelete}
-            folder={node}
-            open={isExpanded(node.entryId)}
-            onToggle={() => toggleEntry(node.entryId)}
-          />
-        ) : (
-          <ScratchFileRow
-            projectId={projectId}
-            workId={work.id}
-            file={node}
-            siblings={catalogSiblings(scratch.catalog, node)}
-            capabilities={files.editable ? ["rename", "move", "delete"] : []}
-            onRequestDelete={scratchDelete.requestDelete}
-            requestRename={files.renaming === node.path}
-            onRenameDone={() => files.setRenaming(null)}
-          />
-        ),
-    })),
-    ...(intake.note
-      ? [
-          {
-            key: intake.note.key,
-            place: attemptPlace(intake.note),
-            node: (
-              <NoteAttemptRow
-                attempt={intake.note}
-                onRetry={files.editable ? files.retryNote : undefined}
-                onDismiss={intake.dismissNote}
-              />
-            ),
-          },
-        ]
-      : []),
-  ]);
+  const hasRows = catalog
+    ?.children(catalog.root.entryId)
+    .some((node) => !visibleIds || visibleIds.has(node.entryId));
 
   return (
     <div className="min-w-0 [--row-rule-inset:--spacing(2)]">
       <WorkChanges projectId={projectId} work={work} matchesSearch={matchesSearch} />
       <WorkFileGroup label={t`Scratch`}>
-        {scratch.isError ? (
+        {scratch.isError && !catalog ? (
           <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
-        ) : !scratch.catalog ? (
+        ) : !catalog ? (
           <WorkFileGroupLoading />
-        ) : scratchRows.length ? (
-          <RuledList className="-mx-2" rows={scratchRows} />
-        ) : (
+        ) : hasRows ? (
+          <TreeEnvProvider
+            value={{
+              projectId,
+              owner: { workId: work.id },
+              scheme: "scratch",
+              catalog,
+              capabilities: files.editable ? ["rename", "move", "delete"] : [],
+              activeScheme: "scratch",
+              activePath: catalog.findDocument(docked ?? "")?.path ?? null,
+              visibleIds,
+              rename: files.renaming
+                ? { path: files.renaming, done: () => files.setRenaming(null) }
+                : undefined,
+              isExpanded: query ? (id) => !searchDisclosure.collapsed.has(id) : isExpanded,
+              toggleEntry: query
+                ? (id) =>
+                    setSearchDisclosure((current) => {
+                      const collapsed = new Set(current.collapsed);
+                      if (collapsed.has(id)) collapsed.delete(id);
+                      else collapsed.add(id);
+                      return { query, collapsed };
+                    })
+                : toggleEntry,
+              onRequestDelete: scratchDelete.requestDelete,
+              onSelectFile: (_scheme, file) => {
+                const tab = serverTabFromFile("scratch", file, { workId: work.id });
+                if (tab) openFile(tab);
+              },
+            }}
+          >
+            <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={0} />
+          </TreeEnvProvider>
+        ) : !intake.note ? (
           <WorkFileGroupNote>
             {search ? (
               <Trans>No scratch notes match “{search}”.</Trans>
@@ -185,9 +175,20 @@ export function WorkFilesView({
               <Trans>No scratch notes yet.</Trans>
             )}
           </WorkFileGroupNote>
-        )}
+        ) : null}
+        {intake.note ? (
+          <NoteAttemptRow
+            attempt={intake.note}
+            onRetry={files.editable ? files.retryNote : undefined}
+            onDismiss={intake.dismissNote}
+          />
+        ) : null}
+        {scratch.isError && catalog ? (
+          <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
+        ) : null}
       </WorkFileGroup>
       <DeleteConfirmationDialog
+        projectId={projectId}
         target={scratchDelete.target}
         isPending={scratchDelete.isPending}
         error={scratchDelete.error}
@@ -196,16 +197,4 @@ export function WorkFilesView({
       />
     </div>
   );
-}
-
-/** A new note lands at the Scratch root, under its own name. */
-const attemptPlace = (attempt: { name: string }): TreePlace => ({
-  path: `/${attempt.name}`,
-  folder: false,
-});
-
-function inTreeOrder(rows: (RuledRow & { place: TreePlace })[]): RuledRow[] {
-  return rows
-    .sort((left, right) => compareTreePlaces(left.place, right.place))
-    .map(({ key, node }) => ({ key, node }));
 }

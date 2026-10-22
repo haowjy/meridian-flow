@@ -300,11 +300,29 @@ export function hydrateWorkingSet(
   enabled: boolean,
 ): WorkingSetHydrationPlan {
   if (!enabled) return { status: "disabled" };
-  return browserDriver()?.hydrate(projectId, result) ?? { status: "disabled" };
+  const plan = browserDriver()?.hydrate(projectId, result) ?? { status: "disabled" as const };
+  return hydrated(projectId, plan);
+}
+
+const hydrationListeners = new Set<(projectId: string) => void>();
+
+/** Called after a project's stored routes were hydrated, from this device or the server. */
+export function subscribeWorkingSetHydration(listener: (projectId: string) => void): () => void {
+  hydrationListeners.add(listener);
+  return () => hydrationListeners.delete(listener);
+}
+
+function hydrated(projectId: string, plan: WorkingSetHydrationPlan): WorkingSetHydrationPlan {
+  if (plan.status !== "disabled") for (const listener of hydrationListeners) listener(projectId);
+  return plan;
 }
 
 export function retryWorkingSetHydration(projectId: string): Promise<WorkingSetHydrationPlan> {
-  return browserDriver()?.retryHydration(projectId) ?? Promise.resolve({ status: "disabled" });
+  return (
+    browserDriver()
+      ?.retryHydration(projectId)
+      .then((plan) => hydrated(projectId, plan)) ?? Promise.resolve({ status: "disabled" })
+  );
 }
 
 export function readRecentRoutes(projectId: string): WorkingSetRoute[] {

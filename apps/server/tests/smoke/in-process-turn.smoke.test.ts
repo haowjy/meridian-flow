@@ -85,7 +85,7 @@ describe("smoke: in-process turn", () => {
     const contextPorts = createInMemoryUnifiedContextPortFactory({ documentSync });
     const writeResult = await contextPorts
       .forProject(project.id, project.userId)
-      .write(FILE_URI, FILE_CONTENT, { origin: { type: "system" } });
+      .createTrackedDocument(FILE_URI, FILE_CONTENT, { origin: { type: "system" } });
     expect(writeResult.ok).toBe(true);
 
     const toolRegistry = createToolRegistry({
@@ -97,7 +97,7 @@ describe("smoke: in-process turn", () => {
             const work = await works.findById(workId);
             if (!work || work.projectId !== projectId || work.deletedAt) return null;
             return work.isNoWork
-              ? resolvedWorkAuthority({ workId: work.id, workSlug: null })
+              ? resolvedWorkAuthority({ workId: work.id, workHandle: null })
               : null;
           },
           async bySlug() {
@@ -136,7 +136,7 @@ describe("smoke: in-process turn", () => {
       amountMillicredits: "1000000000",
       reason: "smoke",
     });
-    const journal = createInMemoryEventJournalWriter();
+    const journal = createInMemoryEventJournalWriter(repos.transactionOwner);
     const orchestrator = createRuntimeHarness({
       boundThreads: () => [thread.id],
       gateway,

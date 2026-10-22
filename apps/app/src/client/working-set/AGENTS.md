@@ -1,43 +1,30 @@
 # client/working-set
 
-Device-local recent document routes. Optional server sync provides
-cross-device document recency only. Recency can rank already-open Editor tabs;
-it never creates workspace membership. Browser-local Editor tabs belong to
-`../stores/context-tabs-store/`, and document content belongs to Yjs.
+Device-local recent document routes with optional cross-device sync. It can rank
+already-open Editor tabs but never creates workspace membership; Editor tabs and
+Yjs content have separate owners.
 
-Mental model: a deliberately narrow offline-first reconciler. Local
-canonical store (localStorage, userId-stamped, wholesale-discard on user
-mismatch); pending-record-existence means unsynced; debounced
-whole-snapshot PUTs with revision-checked acks. The server row is the
-≤3-route cross-device subset — never the full Editor workspace.
+## Rules
 
-Key rules:
+- The local store is user-stamped and is discarded wholesale on user mismatch.
+  Pending record existence means unsynced. Sync uses debounced whole-snapshot
+  PUTs with revision-checked acknowledgements.
+- A true revision conflict lets the server win; an outage lets local state stay
+  visible. After PUT failure, connectivity retry, or re-enabling sync, GET a
+  fresh baseline and run the precedence reducer before pushing again.
+- Sync consent fails closed. `AccountSettingsProvider` owns the confirmed value
+  and calls `configureWorkingSetSync`; pending or failed choices are display
+  state only and are never relayed or cached as confirmed.
+- Adopt once per mounted project identity during route bootstrap, before route
+  parsing; never adopt during render or for repeated loader echoes.
+- Build routes with `buildWorkingSetRoute`. Every server route requires its
+  stable document ID, and Work-capable schemes require real
+  Work or No Work authority; No Work Scratch carries its lineage instead of a
+  Work. Do not hand-assemble the union.
+- Recently opened documents belong to `../recents/`, and current chat is
+  device-local and unsynced; neither is working-set state.
+- The server row is only the cross-device subset of at most three routes, never
+  the full Editor workspace. Do not grow this into a general sync engine: the
+  narrowness is the design, and a new state kind gets its own record and policy.
 
-- Server wins on true conflict (base-revision mismatch); local wins on
-  plain outage. Recovery paths (PUT failure, shared connectivity retry hints, sync
-  re-enable) mark the baseline suspect: fresh GET + the precedence
-  reducer before any further push.
-- Sync consent fails closed — only a successfully resolved `true`
-  enables the driver. The account-lifetime
-  `AccountSettingsProvider` owns the confirmed value and calls
-  `configureWorkingSetSync`. Pending or failed intents own the displayed choice;
-  confirmed values drive sync and are the only values relayed or cached.
-  Newer ordered reads may replace settled choices.
-- Hydration adoption runs once per mounted project identity in the project
-  route bootstrap's layout commit, before `ReadableProjectRoute` mounts (and
-  once more when a project being created receives its route data). Never
-  adopt during render or repeat adoption for same-project loader echoes.
-- Build routes with `buildWorkingSetRoute`: every server route requires its
-  stable document ID, and Work-capable schemes require explicit real-Work or
-  no-Work authority; a No Work chat's Scratch names its lineage
-  (`rootThreadId`, the first chat's id) instead of a Work. Never hand-assemble
-  the union.
-- Do not grow this into a general sync engine. The narrowness is the
-  design. A new state kind gets its own record and policy instead of
-  widening this one. Account recently-opened documents are a separate
-  Continuity record (`../recents/`), not this store and not a new tier.
-
-Depth: [.context/CONTEXT.md](.context/CONTEXT.md) (contracts and protocol).
-
-The current chat is not working-set state: it is device-local and never
-synced (`../current-chat.ts`).
+Depth: [.context/CONTEXT.md](.context/CONTEXT.md) (contracts and protocol). Deferred driver lifetime work is in [.context/TODO.md](.context/TODO.md).

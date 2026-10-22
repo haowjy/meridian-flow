@@ -9,7 +9,7 @@ export type RecentDocumentItem = {
   projectId: string;
   projectName: string;
   /** Null for No Work and for project-scoped documents. */
-  workSlug: string | null;
+  workHandle: string | null;
   scheme: ProjectContextTreeScheme;
   /** Slash-prefixed locator, as elsewhere. */
   path: string;

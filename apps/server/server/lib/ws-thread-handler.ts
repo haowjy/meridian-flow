@@ -43,7 +43,7 @@ type WsPeerState = {
   closed: boolean;
   connectionToken: string;
   subscriptions: Map<ThreadId, ThreadSubscriptionSlot>;
-  catalogSubscriptions: Map<string, () => void>;
+  catalogSubscriptions: Map<string, { request: object; unsubscribe?: () => void }>;
 };
 
 type ThreadSubscriptionLease = {
@@ -74,8 +74,8 @@ function getPeerState(peer: WsPeer): WsPeerState {
   return state;
 }
 
-function meridianError(code: string, message: string): MeridianError {
-  return { code, message, retryable: false, source: "system" };
+function meridianError(code: string, message: string, retryable = false): MeridianError {
+  return { code, message, retryable, source: "system" };
 }
 
 function interruptRejectionError(
@@ -115,8 +115,11 @@ function sendFrame(peer: WsPeer, message: WsServerMessage): boolean {
   }
 }
 
-function sendError(peer: WsPeer, error: MeridianError, threadId?: string): boolean {
-  return sendFrame(peer, { type: "error", kind: "error", error, threadId });
+/** Every error names the request it answers when it can; a message that failed to parse has none. */
+type ErrorScope = { requestId?: string; threadId?: string };
+
+function sendError(peer: WsPeer, error: MeridianError, scope: ErrorScope = {}): boolean {
+  return sendFrame(peer, { type: "error", kind: "error", error, ...scope });
 }
 
 function runInPeerScope<T>(peer: WsPeer, operation: () => T): T {
@@ -154,25 +157,29 @@ function sendLiveEvent(
 
 async function subscribeThread(
   peer: WsPeer,
+  requestId: string,
   requestedThreadId: string,
   lastSeq?: string,
 ): Promise<void> {
   const auth = peer.context;
   if (!auth) {
-    sendError(peer, meridianError("auth_failed", "Authenticate before subscribing"));
+    sendError(peer, meridianError("auth_failed", "Authenticate before subscribing"), { requestId });
     return;
   }
 
   const threadId = parseRequestId(requestedThreadId) as ThreadId | null;
   if (!threadId) {
-    sendError(peer, meridianError("not_found", "Thread not found"), requestedThreadId);
+    sendError(peer, meridianError("not_found", "Thread not found"), {
+      requestId,
+      threadId: requestedThreadId,
+    });
     return;
   }
   const subscriptionThreadId = threadId;
 
   const parsedLastSeq = lastSeq ? parseSeq(lastSeq) : "0";
   if (parsedLastSeq === null) {
-    sendError(peer, meridianError("bad_request", "Invalid lastSeq"), threadId);
+    sendError(peer, meridianError("bad_request", "Invalid lastSeq"), { requestId, threadId });
     return;
   }
 
@@ -198,7 +205,7 @@ async function subscribeThread(
     await auth.app.threadRuntime.requireOwnedThread(threadId, auth.userId);
   } catch {
     if (currentRequest()) {
-      sendError(peer, meridianError("not_found", "Thread not found"), threadId);
+      sendError(peer, meridianError("not_found", "Thread not found"), { requestId, threadId });
       if (!slot.lease) state.subscriptions.delete(threadId);
     }
     return;
@@ -219,6 +226,11 @@ async function subscribeThread(
     lease.phase !== "disposed";
 
   try {
+    if (lastSeq === undefined) {
+      lease.delivered = await auth.app.threadEventHub.headSeq(threadId);
+      if (!currentLease()) return;
+    }
+    const after = lease.delivered;
     const { catchup, unsubscribe } = await auth.app.threadEventHub.catchupAndSubscribe(
       threadId,
       lease.delivered,
@@ -241,7 +253,9 @@ async function subscribeThread(
     if (
       !sendFrame(peer, {
         type: "subscribed",
+        requestId,
         threadId,
+        after: after.toString(),
         catchup: catchup.map(toProtocolSequencedEvent),
         state: liveState,
       }) ||
@@ -258,7 +272,17 @@ async function subscribeThread(
     if (!currentLease()) return;
     disposeLease(lease);
     state.subscriptions.delete(threadId);
-    throw error;
+    // A failed read is the one retryable subscribe failure: the client asks again.
+    emitEvent(auth.app.eventSink, {
+      level: "error",
+      source: "wire.thread_ws",
+      name: "subscribe.failed",
+      payload: unknownToEventPayload(error),
+    });
+    sendError(peer, meridianError("internal", "Could not read the thread", true), {
+      requestId,
+      threadId,
+    });
   }
 
   function flushBuffered(): void {
@@ -283,7 +307,7 @@ function disposeSubscriptions(peer: WsPeer): void {
   state.closed = true;
   for (const slot of state.subscriptions.values()) disposeLease(slot.lease);
   state.subscriptions.clear();
-  for (const unsubscribe of state.catalogSubscriptions.values()) unsubscribe();
+  for (const slot of state.catalogSubscriptions.values()) slot.unsubscribe?.();
   state.catalogSubscriptions.clear();
 }
 
@@ -312,9 +336,11 @@ export function createThreadWebSocketSession(peer: WsPeer) {
 
     async onMessage(raw: string | ArrayBuffer) {
       return runInPeerScope(peer, async () => {
+        let requestId: string | undefined;
         try {
           const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
           const message = parseWsClientMessage(text);
+          requestId = message?.type === "pong" ? undefined : message?.requestId;
           if (!message) {
             sendError(peer, meridianError("bad_request", "Malformed WebSocket message"));
             return;
@@ -322,21 +348,20 @@ export function createThreadWebSocketSession(peer: WsPeer) {
 
           switch (message.type) {
             case "subscribe":
-              await subscribeThread(peer, message.threadId as ThreadId, message.lastSeq);
-              return;
-            case "resume":
-              for (const subscription of message.subscriptions) {
-                await subscribeThread(
-                  peer,
-                  subscription.threadId as ThreadId,
-                  subscription.lastSeq,
-                );
-              }
+              await subscribeThread(
+                peer,
+                message.requestId,
+                message.threadId as ThreadId,
+                message.lastSeq,
+              );
               return;
             case "unsubscribe": {
               const threadId = parseRequestId(message.threadId) as ThreadId | null;
               if (!threadId) {
-                sendError(peer, meridianError("not_found", "Thread not found"), message.threadId);
+                sendError(peer, meridianError("not_found", "Thread not found"), {
+                  requestId: message.requestId,
+                  threadId: message.threadId,
+                });
                 return;
               }
               const state = getPeerState(peer);
@@ -347,41 +372,66 @@ export function createThreadWebSocketSession(peer: WsPeer) {
             case "catalog.subscribe": {
               const projectId = parseRequestId(message.projectId);
               if (!projectId || !peer.context) {
-                sendError(peer, meridianError("not_found", "Project not found"));
-                return;
-              }
-              const project = await peer.context.app.projectRepo.findById(projectId as never);
-              if (!project || project.userId !== peer.context.userId || project.deletedAt) {
-                sendError(peer, meridianError("not_found", "Project not found"));
+                sendError(peer, meridianError("not_found", "Project not found"), {
+                  requestId: message.requestId,
+                });
                 return;
               }
               const state = getPeerState(peer);
-              state.catalogSubscriptions.get(projectId)?.();
-              state.catalogSubscriptions.set(
-                projectId,
-                peer.context.app.contextCatalogWakeHub.subscribe({
+              if (state.closed) return;
+              let slot = state.catalogSubscriptions.get(projectId);
+              if (!slot) {
+                slot = { request: {} };
+                state.catalogSubscriptions.set(projectId, slot);
+              }
+              const request = {};
+              slot.request = request;
+              const currentRequest = () =>
+                !state.closed &&
+                state.catalogSubscriptions.get(projectId) === slot &&
+                slot.request === request;
+              try {
+                const project = await peer.context.app.projectRepo.findById(projectId as never);
+                if (!currentRequest()) return;
+                if (!project || project.userId !== peer.context.userId || project.deletedAt) {
+                  sendError(peer, meridianError("not_found", "Project not found"), {
+                    requestId: message.requestId,
+                  });
+                  return;
+                }
+                slot.unsubscribe?.();
+                slot.unsubscribe = peer.context.app.contextCatalogWakeHub.subscribe({
                   projectId,
                   userId: peer.context.userId,
                   listener: (hint) => sendFrame(peer, hint),
-                }),
-              );
+                });
+              } finally {
+                if (currentRequest() && !slot.unsubscribe)
+                  state.catalogSubscriptions.delete(projectId);
+              }
               return;
             }
             case "catalog.unsubscribe": {
               const state = getPeerState(peer);
-              state.catalogSubscriptions.get(message.projectId)?.();
+              state.catalogSubscriptions.get(message.projectId)?.unsubscribe?.();
               state.catalogSubscriptions.delete(message.projectId);
               return;
             }
             case "interrupt.respond": {
               const threadId = parseRequestId(message.threadId) as ThreadId | null;
               if (!threadId) {
-                sendError(peer, meridianError("not_found", "Thread not found"), message.threadId);
+                sendError(peer, meridianError("not_found", "Thread not found"), {
+                  requestId: message.requestId,
+                  threadId: message.threadId,
+                });
                 return;
               }
               const turnId = parseRequestId(message.turnId);
               if (!turnId) {
-                sendError(peer, meridianError("not_found", "Turn not found"), threadId);
+                sendError(peer, meridianError("not_found", "Turn not found"), {
+                  requestId: message.requestId,
+                  threadId,
+                });
                 return;
               }
               const context = peer.context;
@@ -389,7 +439,10 @@ export function createThreadWebSocketSession(peer: WsPeer) {
                 if (!context) throw new Error("Missing peer context");
                 await context.app.threadRuntime.requireOwnedThread(threadId, context.userId);
               } catch {
-                sendError(peer, meridianError("not_found", "Thread not found"), threadId);
+                sendError(peer, meridianError("not_found", "Thread not found"), {
+                  requestId: message.requestId,
+                  threadId,
+                });
                 return;
               }
               const result = context.app.interruptRegistry.resolve({
@@ -399,7 +452,10 @@ export function createThreadWebSocketSession(peer: WsPeer) {
                 value: message.value as JsonValue,
               });
               if (!result.ok) {
-                sendError(peer, interruptRejectionError(result.reason, result.message), threadId);
+                sendError(peer, interruptRejectionError(result.reason, result.message), {
+                  requestId: message.requestId,
+                  threadId,
+                });
               }
               return;
             }
@@ -416,7 +472,7 @@ export function createThreadWebSocketSession(peer: WsPeer) {
               payload: unknownToEventPayload(error),
             });
           }
-          sendError(peer, meridianError("internal", "Internal server error"));
+          sendError(peer, meridianError("internal", "Internal server error"), { requestId });
         }
       });
     },

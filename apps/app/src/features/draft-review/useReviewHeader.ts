@@ -10,22 +10,21 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
-import {
-  type DraftCommandFailure,
-  draftCommandFailure,
-  useDraftCommandRecords,
-} from "@/client/query/draft-command-record";
-import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import { useEffect, useSyncExternalStore } from "react";
+import { draftMetadataQueryOptions } from "@/client/query/useDraftMetadata";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useDraftReview } from "./DraftReviewProvider";
+import { isPathTaken } from "./deleted-drafts";
+import type { BranchCommandFailure } from "./review-command-types";
 import { nextReviewFile } from "./review-files";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
 
 export type ReviewHeaderOptions = {
   documentId: string;
   /** Empty while a stable chrome wrapper has no shown review. */
-  draftId: string;
+  itemKey: string;
   /** Set for a draft-only document: closes its tab instead of returning to live. */
   onCloseDraftOnly?: () => void;
   /** Opens another draft of the Work in review (the presenting container's launcher). */
@@ -42,20 +41,21 @@ export type ReviewHeaderModel = {
   /** The next draft in the switcher, if the Work has one. */
   next: ReviewFileTarget | null;
   locked: boolean;
-  /** Nothing left to publish: the server closed the draft, so its commands go. */
+  canApply: boolean;
+  /** Nothing left to apply: the server closed the draft, so its commands go. */
   finished: boolean;
   /** The draft is open but lists no change: formatting remains, handled by Apply draft or Discard draft. */
-  unlisted: boolean;
+
   /** The last change's command is in flight: the review says so and is not finished. */
   completing: "apply" | "discard" | null;
-  /** What the last whole-draft command of the open draft left on it (a refusal, a lost answer), if anything. */
-  commandError: DraftCommandFailure | null;
+  /** What the last command on the open draft left on it (a refusal, a lost answer), when no change bar shows it. */
+  commandError: BranchCommandFailure | null;
   /**
    * The Work's other listed drafts that hold a refusal or a lost answer: Apply
    * draft and Apply all move on (or finish) while the command runs, so the
    * review the writer is in must still say which drafts did not apply.
    */
-  failedElsewhere: { row: ReviewFileTarget; failure: DraftCommandFailure }[];
+  failedElsewhere: { row: ReviewFileTarget; failure: BranchCommandFailure }[];
   showLive: () => void;
   applyDraft: () => void;
   discardDraft: () => void;
@@ -63,96 +63,94 @@ export type ReviewHeaderModel = {
 
 /**
  * What the Work's drafts hold as refused or lost, as the review of
- * (`documentId`, `draftId`) reads it: its own draft's failure, every listed
- * draft's (a draft the review moved on from still says it was refused), and
- * the other drafts' separately. Pure reads of the command records, so the
- * identity row's notices can read them beside the header model.
+ * (`documentId`, `itemKey`) reads it: its own draft's failure, and the other
+ * listed drafts' separately (a draft the review moved on from still says it was
+ * refused). Pure reads of the command records, so the identity row's notices
+ * can read them beside the header model.
+ *
+ * Each failure shows once. While the focused change's bar is on screen
+ * (`ReviewChangeBar`: always on a phone, with the marks on a desktop) it
+ * carries the open draft's failure, so `commandError` is only the fallback for
+ * a review with no bar showing.
  */
-export function useReviewFailures({
-  documentId,
-  draftId,
-}: {
+export function useReviewFailures(input: {
   documentId: string;
-  draftId: string;
+  itemKey: string;
+  view: ReviewChangesView;
 }) {
+  const owner = useDraftCommandOwner();
   const { controller, files } = useDraftReview();
-  const commandRecords = useDraftCommandRecords();
-  const draftOf = (row: { documentId: string; draft: { draftId: string } }) => ({
-    projectId: controller.projectId,
-    workId: controller.workId,
-    documentId: row.documentId,
-    draftId: row.draft.draftId,
-  });
-  const commandError = draftCommandFailure(commandRecords, {
-    projectId: controller.projectId,
-    workId: controller.workId,
-    documentId,
-    draftId,
-  });
-  const failedElsewhere: { row: ReviewFileTarget; failure: DraftCommandFailure }[] = [];
-  for (const row of files) {
-    const failure = draftCommandFailure(commandRecords, draftOf(row));
-    if (!failure) continue;
-    if (row.documentId !== documentId) failedElsewhere.push({ row, failure });
-  }
-  return { commandError, failedElsewhere };
+  const phone = usePhoneShell();
+  const snapshot = () => (input.itemKey ? owner.snapshot() : 0);
+  useSyncExternalStore(owner.subscribe, snapshot, snapshot);
+  const { view } = input;
+  const barCarries =
+    view.itemKey === input.itemKey &&
+    view.status === "ready" &&
+    Boolean(view.focused) &&
+    (phone || controller.marksVisible);
+  return {
+    commandError: barCarries ? null : owner.state(input.itemKey).failure,
+    failedElsewhere: files.flatMap((row) => {
+      const failure = owner.state(row.draft.itemKey).failure;
+      return row.draft.itemKey !== input.itemKey && failure ? [{ row, failure }] : [];
+    }),
+  };
 }
 
 export function useReviewHeader({
   documentId,
-  draftId,
+  itemKey,
   onCloseDraftOnly,
   onOpenDraft,
 }: ReviewHeaderOptions): ReviewHeaderModel {
   const { controller, files } = useDraftReview();
-  const view = useReviewChanges(controller, { enabled: Boolean(draftId) });
+  const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
 
+  // Only a file with text has a review to move to: a move or delete alone has no draft room.
   const next = nextReviewFile(
-    files,
+    files.filter((file) => file.draft.hasDraft || file.documentId === documentId),
     documentId,
-    controller.inlineReview?.completion?.documentName ?? null,
+    null,
   );
-  // The draft Apply draft, Discard draft and Next draft move to is read while
-  // the writer is still here (once this review's own read is in), so opening it
-  // finds its preview already in the cache.
+  // Warm the next addressed room lookup without fetching a server text preview.
   const queryClient = useQueryClient();
   const nextDocumentId = next?.documentId;
-  const nextDraftId = next?.draft.draftId;
+  const nextItemKey = next?.draft.itemKey;
   const ready = view.status === "ready";
   useEffect(() => {
-    if (!ready || !nextDocumentId || !nextDraftId) return;
+    if (!ready || !nextDocumentId || !nextItemKey) return;
     void queryClient.prefetchQuery(
-      draftPreviewQueryOptions({
+      draftMetadataQueryOptions({
         projectId: controller.projectId,
         workId: controller.workId,
         documentId: nextDocumentId,
-        draftId: nextDraftId,
+        itemKey: nextItemKey,
       }),
     );
-  }, [ready, nextDocumentId, nextDraftId, controller.projectId, controller.workId, queryClient]);
-  const locked = controller.dispositionLocked;
-  const { finished, completing, unlisted } = view;
-  const { commandError, failedElsewhere } = useReviewFailures({ documentId, draftId });
+  }, [ready, nextDocumentId, nextItemKey, controller.projectId, controller.workId, queryClient]);
+  const locked = controller.dispositionLocked || view.status !== "ready";
+  const { finished, completing } = view;
+  const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey, view });
   const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
 
-  /**
-   * Run a whole-draft command, then move to the next draft (or live) without
-   * waiting on it. Offline the command is refused before it is sent, so the
-   * writer stays on this draft, where the refusal shows.
-   */
+  // Local Discard stays in this draft. Only Apply may advance to another file.
   const dispose = (mode: "apply" | "discard") => {
     if (locked) return;
-    const start = controller.startDraft(mode, { documentId, draftId });
+    const start = controller.startDraft(mode, { documentId, itemKey });
     void start.outcome;
-    if (next && start.sent) onOpenDraft(next);
+    if (mode === "apply" && next && start.sent) onOpenDraft(next);
   };
   return {
     controller,
     view,
     next,
     locked,
+    canApply:
+      ready &&
+      view.items.length > 0 &&
+      !isPathTaken(files.find((row) => row.draft.itemKey === itemKey)?.draft),
     finished,
-    unlisted,
     completing,
     commandError,
     failedElsewhere,

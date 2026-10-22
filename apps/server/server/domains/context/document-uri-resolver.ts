@@ -1,7 +1,8 @@
 /** Document ids to canonical URIs, answered by the one document-address owner (L32). */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { currentDocumentAddress, loadDocumentAddresses } from "./adapters/document-address.js";
+import { currentDocumentAddress } from "./adapters/document-address.js";
+import { loadDocumentAddresses } from "./tree/tree-addresses.js";
 
 /** Where a document lives now; null when it is deleted there or unspellable. */
 export type DocumentUriResolver = (documentId: string) => Promise<string | null>;

@@ -6,7 +6,6 @@
  * current chat, or an empty composer when there is none. Opening a chat on the
  * Chat screen navigates. Anywhere else it reveals the dock and the screen stays.
  */
-import { useQuery } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -20,7 +19,7 @@ import {
 import { isThreadAwaitingCreation } from "@/client/chat-submissions";
 import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
-import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
+import { useThreadSnapshotCache } from "@/client/query/thread-snapshot-query";
 import { useIsThreadPendingCreation } from "@/client/stores";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import type { ScreenKey } from "../shell/screens";
@@ -224,10 +223,10 @@ export function useProjectChatNavigation({
  */
 function useMissingChatFallback(accountId: string, threadId: string | null, onMissing: () => void) {
   const pending = useIsThreadPendingCreation(threadId);
-  const { error, errorUpdatedAt } = useQuery({
-    ...threadSnapshotQueryOptions(threadId ?? ""),
-    enabled: false,
-  });
+  const { error, errorUpdatedAt } = useThreadSnapshotCache(threadId) ?? {
+    error: null,
+    errorUpdatedAt: 0,
+  };
   const availability = threadAvailability(error, accountId);
   const notFound =
     !!error &&

@@ -2,11 +2,22 @@
  * Purpose: Provides canonical API path constants and URL builders for Meridian project, thread, context, and Yjs endpoints.
  * Why independent: Route paths are a shared client/server protocol primitive and should not be duplicated inside app code.
  */
+
+import { isOwnedContextScheme } from "../context-uri.js";
 import type { ContextOwner } from "./context-owner.js";
-import { isWorkScopedProjectContextScheme, type ProjectContextTreeScheme } from "./http-types.js";
+import type { ProjectContextTreeScheme } from "./http-types.js";
 
 /** A Work-capable scheme's owner: a Work, or for Scratch a lineage (the first chat's id). */
 export type ProjectContextRequestOptions = ContextOwner;
+
+/** Review URLs name the Work and the item (`itemKey`); a draft id or `branches.id` alone never selects one. */
+export type DocumentAddressReviewSelector = {
+  workId: string;
+  itemKey: string;
+};
+export type DocumentAddressRequestOptions = ProjectContextRequestOptions & {
+  review?: DocumentAddressReviewSelector;
+};
 
 /** Names a Work-capable document's owner in a query; exactly one owner is sent. */
 function setOwnerQuery(
@@ -14,8 +25,10 @@ function setOwnerQuery(
   scheme: ProjectContextTreeScheme,
   opts?: ProjectContextRequestOptions,
 ): void {
-  if (!isWorkScopedProjectContextScheme(scheme)) return;
-  if (scheme === "scratch" && opts?.rootThreadId) query.set("rootThreadId", opts.rootThreadId);
+  if (!isOwnedContextScheme(scheme)) return;
+  if (scheme === "uploads") {
+    if (opts?.chatThreadId) query.set("chatId", opts.chatThreadId);
+  } else if (opts?.rootThreadId) query.set("rootThreadId", opts.rootThreadId);
   else if (opts?.workId) query.set("workId", opts.workId);
 }
 
@@ -51,10 +64,14 @@ export function apiProjectDocumentAddressPath(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   path: string,
-  opts?: ProjectContextRequestOptions,
+  opts?: DocumentAddressRequestOptions,
 ): string {
   const query = new URLSearchParams({ path });
   setOwnerQuery(query, scheme, opts);
+  if (opts?.review) {
+    query.set("reviewWorkId", opts.review.workId);
+    query.set("itemKey", opts.review.itemKey);
+  }
   return `${apiProjectPath(projectId)}/context/${scheme}/address?${query}`;
 }
 
@@ -99,12 +116,27 @@ export function apiProjectWorkingSetPath(projectId: string): string {
   return `${API_PROJECTS_PATH}/${projectId}/working-set`;
 }
 
-export function apiProjectWorkWriteModePath(projectId: string, workId: string): string {
-  return `${apiProjectWorksPath(projectId)}/${workId}/write-mode`;
+/** The active branches with changes to one document, from any view. */
+export function apiProjectDocumentBranchesPath(projectId: string, documentId: string): string {
+  return `${apiProjectPath(projectId)}/documents/${documentId}/branches`;
 }
 
-export function apiProjectWorkDraftsPath(projectId: string, workId: string): string {
-  return `${apiProjectWorksPath(projectId)}/${workId}/drafts`;
+export function apiProjectWorkBranchesPath(projectId: string, workId: string): string {
+  return `${apiProjectWorksPath(projectId)}/${workId}/branches`;
+}
+
+/** Observes one Apply or Discard command by its client `commandId`. */
+export function apiProjectWorkBranchCommandPath(
+  projectId: string,
+  workId: string,
+  commandId: string,
+): string {
+  return `${apiProjectWorkBranchesPath(projectId, workId)}/commands/${commandId}`;
+}
+
+/** Discard all: one command over the Work's whole branch. */
+export function apiProjectWorkBranchesDiscardPath(projectId: string, workId: string): string {
+  return `${apiProjectWorkBranchesPath(projectId, workId)}/discard`;
 }
 
 export function apiProjectWorkDocumentDraftPath(
@@ -121,14 +153,6 @@ export function apiProjectWorkDocumentDraftApplyPath(
   documentId: string,
 ): string {
   return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/apply`;
-}
-
-export function apiProjectWorkDocumentDraftApplyChangesPath(
-  projectId: string,
-  workId: string,
-  documentId: string,
-): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/apply-changes`;
 }
 
 export function apiProjectWorkDocumentDraftDiscardPath(
@@ -257,6 +281,21 @@ export function apiThreadAdmissionPath(threadId: string, submissionId: string): 
 
 export function apiThreadCancelPath(threadId: string, turnId: string): string {
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/cancel`;
+}
+
+/** Chat Stop: cancels the running reply and hands the waiting writer messages back. */
+export function apiThreadStopPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/stop`;
+}
+
+/** Hand back waiting writer messages by id (the queue's x and Cancel queue). Never cancels a reply. */
+export function apiThreadHandBackPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/hand-back`;
+}
+
+/** Send now: cancels the reply the writer saw so the waiting queue runs next. */
+export function apiThreadSendNowPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/send-now`;
 }
 
 /** Writer `/compact` commands queued on a thread's inbox. */

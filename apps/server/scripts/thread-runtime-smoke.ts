@@ -122,7 +122,7 @@ await db.insert(works).values({
   projectId,
   createdByUserId: userId,
   name: "Smoke work",
-  slug: "smoke-work",
+  handle: "w1",
 });
 await db.insert(threads).values({
   rootThreadId: threadId,
@@ -130,6 +130,8 @@ await db.insert(threads).values({
   projectId,
   createdByUserId: userId,
   title: "Smoke thread",
+  // The chat copies its Work's default, as thread creation does.
+  aiWriteMode: "direct",
 });
 await db.insert(threadWorks).values({
   threadId,
@@ -170,7 +172,7 @@ const eventsPromise = waitForEventTypes(
   ]),
 );
 const subscribedPromise = waitForSubscribed(ws);
-ws.send(JSON.stringify({ type: "subscribe", threadId, lastSeq: "0" }));
+ws.send(JSON.stringify({ type: "subscribe", requestId: "r1", threadId, lastSeq: "0" }));
 await subscribedPromise;
 
 const response = await fetch(new URL(`/api/threads/${threadId}/messages`, serverUrl), {
@@ -189,7 +191,7 @@ const catchupWs = new WebSocket(wsUrlFor(serverUrl), {
 });
 await waitForOpen(catchupWs);
 const catchupPromise = waitForSubscribed(catchupWs);
-catchupWs.send(JSON.stringify({ type: "subscribe", threadId, lastSeq: "0" }));
+catchupWs.send(JSON.stringify({ type: "subscribe", requestId: "r1", threadId, lastSeq: "0" }));
 const catchupFrame = await catchupPromise;
 catchupWs.close();
 
@@ -203,7 +205,9 @@ const resumeWs = new WebSocket(wsUrlFor(serverUrl), {
 });
 await waitForOpen(resumeWs);
 const resumePromise = waitForSubscribed(resumeWs);
-resumeWs.send(JSON.stringify({ type: "subscribe", threadId, lastSeq: contentSeq }));
+resumeWs.send(
+  JSON.stringify({ type: "subscribe", requestId: "r1", threadId, lastSeq: contentSeq }),
+);
 const resumeFrame = await resumePromise;
 resumeWs.close();
 

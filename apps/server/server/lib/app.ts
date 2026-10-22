@@ -20,6 +20,8 @@ type AppGlobal = typeof globalThis & {
 
 const CHANGE_TRAIL_POLL_MS = 1_000;
 const SYSTEM_UPDATE_SWEEP_MS = 1_000;
+/** A draft badge a crash left stale converges within this, without another key (design §3.5). */
+const DRAFT_EFFECT_SWEEP_MS = 30_000;
 const WORK_PURGE_INTERVAL_MS = 60 * 60 * 1_000;
 const WAKE_SWEEP_INTERVAL_MS = resolveWakeSweepIntervalMs(process.env.WAKE_SWEEP_INTERVAL_MS);
 
@@ -63,6 +65,11 @@ async function createAppServices(): Promise<AppServices> {
         run: app.documentSync.documentDerivations.sweep,
       },
       { name: "change-trail", delayMs: CHANGE_TRAIL_POLL_MS, run: app.changeTrailDelivery.drain },
+      {
+        name: "draft-effects",
+        delayMs: DRAFT_EFFECT_SWEEP_MS,
+        run: app.documentSync.draftEffects.sweep,
+      },
     ],
     eventSink,
   );

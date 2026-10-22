@@ -1,0 +1,98 @@
+/**
+ * Writer-frame admission over the draft runtime: a frame judged on a private candidate of the
+ * committed replica (admissibility, the room, the cheap echo exit, authorship as an early
+ * rejection) and appended once, sequenced by the draft row's lock and finalized there against
+ * what is committed (design §2).
+ * The runtime (`draft-runtime.ts`) owns the replicas, candidates and their installation; this
+ * module owns only what a frame decides before the lock.
+ */
+import type * as Y from "yjs";
+import { testHook } from "../../../shared/test-hooks.js";
+import { admitWriterUpdate } from "./document-mutation-policy.js";
+import type { DraftRuntime, RoomReconcileTrigger } from "./draft-runtime.js";
+import { DraftStaleUpdateError } from "./draft-store.js";
+
+export type WriterFrameInput = {
+  draftId: string;
+  updateData: Uint8Array;
+  actorUserId?: string;
+  roomDocument: Y.Doc;
+};
+
+export type WriterFrameDiagnostics = {
+  /** The background tail fold failed; the tail stays until the next append crosses the bound. */
+  compactionFailed(input: { draftId: string; cause: unknown }): void;
+  /** A room lacked committed content and was brought up to the replica (decision D26). */
+  roomReconciled(input: {
+    draftId: string;
+    revision: number;
+    trigger: RoomReconcileTrigger;
+    bytes: number;
+  }): void;
+  /**
+   * An update reached the row lock before the update it depends on reached the journal: not
+   * sequenced, and its socket resyncs. Repeated on one draft, it is a server defect.
+   */
+  appendPrefixMissing(input: {
+    draftId: string;
+    clocks: readonly { client: number; clock: number }[];
+  }): void;
+};
+
+export function createWriterFrames(runtime: DraftRuntime) {
+  /**
+   * A writer frame: judged once on a private candidate of the committed replica, then appended
+   * at whatever revision the draft is at. A concurrent writer costs the frame one row-lock
+   * wait, never a second judgement: what landed meanwhile is folded into the committed prefix
+   * under the lock. The room is checked against the replica first, and a room that lacks it
+   * missed a delivery: it is reconciled and the frame goes on (decision D26). Only a closed
+   * draft, a frozen Work refuses the frame; an update
+   * whose prefix the journal lacks throws `DraftPrefixMissingError` for the gateway's resync.
+   */
+  async function commitWriterUpdate(frame: WriterFrameInput): Promise<{ admitted: boolean }> {
+    const write = await judgeWriterUpdate(frame);
+    if (!write) return { admitted: false };
+    const wrote = await runtime.commitOnce(write, {});
+    if (!wrote) return { admitted: false };
+    await testHook("draft.append.afterCommit");
+    return { admitted: true };
+  }
+
+  /** The frame judged on the committed replica: its prepared append, or null when contained. */
+  async function judgeWriterUpdate(frame: WriterFrameInput) {
+    const base = await runtime.loadBase(frame.draftId);
+    const { snapshot, replica } = base;
+    const admissible =
+      snapshot.kind === "work_draft" &&
+      snapshot.status === "active" &&
+      snapshot.lifecycle === "active";
+    if (admissible)
+      runtime.reconcileRoom({
+        draftId: frame.draftId,
+        room: frame.roomDocument,
+        replica,
+        trigger: "frame",
+      });
+    const admission = await admitWriterUpdate({
+      targetDocument: replica.doc,
+      update: frame.updateData,
+      validateTarget() {
+        if (!admissible) throw new DraftStaleUpdateError(`Draft ${frame.draftId}`);
+      },
+      isContained: () =>
+        runtime.acknowledgeContainedFrame(frame.draftId, replica.doc, frame.updateData),
+      append: async () =>
+        runtime.prepareAppend(base, [
+          {
+            draftId: frame.draftId,
+            updateData: frame.updateData,
+            source: "writer",
+            actorUserId: frame.actorUserId,
+          },
+        ]),
+    });
+    return admission.admitted ? admission.value : null;
+  }
+
+  return { commitWriterUpdate };
+}

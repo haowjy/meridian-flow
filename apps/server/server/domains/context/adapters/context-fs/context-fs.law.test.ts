@@ -1,6 +1,6 @@
 /** ContextFS in-memory laws: untitled allocation, rename-refuse, write/read, ensure-tracked. */
 
-import { documentTitleFromUri } from "@meridian/contracts";
+import { type DocumentId, documentTitleFromUri } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { Ok } from "../../../../shared/result.js";
 import type { BindMarkdownInput } from "../../../collab/index.js";
@@ -39,6 +39,7 @@ function createUntitledFs(input: {
   const mutationStore = new InMemoryContextTreeMutationStore(backing);
   return {
     fs: new ContextFS({
+      placement: { kind: "live" },
       holder: { projectId: "test-project" },
       links: { within: (_key, operation) => operation() },
       store,
@@ -62,6 +63,7 @@ function createKbFs(documentSync: object = {}) {
     store,
     mutationStore,
     context: new ContextFS({
+      placement: { kind: "live" },
       holder: { projectId: "test-project" },
       links: { within: (_key, operation) => operation() },
       store,
@@ -77,7 +79,7 @@ function documentSyncProbe() {
   const seeded: string[] = [];
   const documentSync: ContextFSDeps["documentSync"] = {
     ...createInMemoryCollabDomain(),
-    ensureDocument: async (documentId) => {
+    initializeEmptyDocument: async (documentId) => {
       ensured.push(documentId);
     },
     readAsMarkdown: async () => ({ ok: true, value: "" }),
@@ -97,6 +99,7 @@ function manuscriptFs(documentSync: ContextFSDeps["documentSync"]) {
   const backing = createInMemoryContextDocumentStoreBacking();
   const store = new InMemoryContextDocumentStore({ backing });
   return new ContextFS({
+    placement: { kind: "live" },
     holder: { projectId: "test-project" },
     links: { within: (_key, operation) => operation() },
     store,
@@ -151,12 +154,12 @@ describe("ContextFS createUntitledDocument", () => {
     let failDurableHeadOnce = true;
     const documentSync = {
       ...collab,
-      async ensureDocument(documentId: string) {
+      async initializeEmptyDocument(documentId: DocumentId) {
         if (failDurableHeadOnce) {
           failDurableHeadOnce = false;
           throw new Error("durable document authority head unavailable");
         }
-        return collab.ensureDocument(documentId);
+        return collab.initializeEmptyDocument(documentId);
       },
     } satisfies ContextFSDeps["documentSync"];
     const { fs, backing } = createUntitledFs({ documentSync });
@@ -219,13 +222,13 @@ describe("ContextFS rename filetype invariant", () => {
     const markdownByDocument = new Map<string, string>();
     const mutationStore = new InMemoryContextTreeMutationStore(backing);
     const context = new ContextFS({
+      placement: { kind: "live" },
       holder: { projectId: "test-project" },
       links: { within: (_key, operation) => operation() },
       store,
       mutationStore,
       scheme: "kb",
       documentSync: {
-        ensureDocument: async () => {},
         readAsMarkdown: async (documentId: string) => Ok(markdownByDocument.get(documentId) ?? ""),
         bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
         seedFromMarkdown: async (documentId: string, content: { markdown: string }) => {
@@ -253,7 +256,7 @@ describe("ContextFS rename filetype invariant", () => {
 
   it("serializes overlapping moves so one success cannot be rolled back", async () => {
     const { backing, context, move, mutationStore } = createHarness();
-    const initial = await context.write("chapter.md", "Chapter");
+    const initial = await context.createTrackedDocument("chapter.md", "Chapter");
     if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
     let releaseFirstMove = () => {};
     const firstMoveReleased = new Promise<void>((resolve) => {
@@ -329,11 +332,11 @@ describe("ContextFS write and read", () => {
 });
 
 describe("ContextFS ensureTrackedDocument", () => {
-  it("materializes new tracked documents atomically even when response staging defers later writes", async () => {
+  it("materializes new tracked documents empty and atomically", async () => {
     const { documentSync, ensured, seeded } = documentSyncProbe();
     const fs = manuscriptFs(documentSync);
 
-    const created = await fs.ensureTrackedDocument("chapter-1.md", { deferDocumentSync: true });
+    const created = await fs.ensureTrackedDocument("chapter-1.md");
     if (!created.ok) throw new Error(`create failed: ${created.error.code}`);
     expect(created.value.created).toBe(true);
     expect(ensured).toEqual([created.value.documentId]);
@@ -427,7 +430,11 @@ describe("canonical document naming laws", () => {
       error: { code: "conflict" },
     });
     await fs.ensureTrackedDocument("Chapter.md");
-    await expect(fs.mkdir("Chapter")).rejects.toThrow("Context entry already exists");
+    // A namespace clash is a conflict result naming its occupant, never a throw.
+    await expect(fs.mkdir("Chapter")).resolves.toEqual({
+      ok: false,
+      error: { code: "conflict", occupantKind: "file" },
+    });
     const mover = new ContextTreeMover();
     const dispatch = (path: string): ContextTreeDispatch => ({
       adapter: fs,
@@ -454,14 +461,14 @@ it("atomically claims opposite-kind names across in-memory store instances", asy
   for (const [index, fileFirst] of [true, false].entries()) {
     const name = `Clash ${index}`;
     const file = () =>
-      left.createDocument({
+      left.createDocumentRecordIfAbsent({
         folderId: null,
         name,
         extension: "",
         filetype: "markdown",
         markdown: "",
       });
-    const folder = () => right.createFolder(null, name);
+    const folder = () => right.ensureFolderPath([name]);
     const results = await Promise.allSettled(fileFirst ? [file(), folder()] : [folder(), file()]);
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     const rejected = results.find((result) => result.status === "rejected");
@@ -534,7 +541,11 @@ describe("router through real ContextFS naming", () => {
     });
     const chapter = await port.ensureTrackedDocument("manuscript://Chapter");
     expect(chapter.ok).toBe(true);
-    await expect(fs.mkdir("Chapter.txt/child")).rejects.toThrow("Context entry already exists");
+    // A namespace clash is a conflict result naming its occupant, never a throw.
+    await expect(fs.mkdir("Chapter.txt/child")).resolves.toEqual({
+      ok: false,
+      error: { code: "conflict", occupantKind: "file" },
+    });
     expect(
       await port.commitWriterLocation("manuscript://Chapter", "manuscript://Lore"),
     ).toMatchObject({ ok: false, error: { code: "conflict" } });

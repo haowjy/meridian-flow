@@ -10,7 +10,7 @@ import { useShallow } from "zustand/react/shallow";
 type AnnouncementState = {
   polite: string;
   assertive: string;
-  assertiveOwner: { key?: string } | null;
+  assertiveOwner: { token: object; entries: { key?: string; message: string }[] } | null;
 };
 
 type AnnouncementStore = AnnouncementState & {
@@ -33,21 +33,47 @@ export function announce(message: string): void {
   queueMicrotask(() => setPolite(message));
 }
 
-/** Push an assertive announcement (errors). Interrupts the current speech. */
-export function announceError(message: string, options?: { key: string }): void {
-  const owner = { key: options?.key };
+/** Publish a batch in one live-region update; report only keys actually published. */
+export function announceErrors(
+  entries: { key: string; message: string }[],
+  published: (keys: string[]) => void,
+): void {
+  publishErrors(entries, (keys) =>
+    published(keys.filter((key): key is string => key !== undefined)),
+  );
+}
+
+function publishErrors(
+  entries: { key?: string; message: string }[],
+  published?: (keys: (string | undefined)[]) => void,
+): void {
+  const owner = { token: {}, entries };
   useAnnouncementStore.setState({ assertive: "", assertiveOwner: owner });
   queueMicrotask(() => {
-    // A clear or newer alert also cancels publication that has not reached the DOM yet.
-    if (useAnnouncementStore.getState().assertiveOwner === owner)
-      useAnnouncementStore.setState({ assertive: message });
+    const current = useAnnouncementStore.getState().assertiveOwner;
+    if (current?.token !== owner.token) return;
+    useAnnouncementStore.setState({
+      assertive: current.entries.map((entry) => entry.message).join(" "),
+    });
+    published?.(current.entries.map((entry) => entry.key));
   });
 }
 
-/** Clear an alert only while the caller still owns it. */
+/** Push an assertive announcement (errors). Interrupts the current speech. */
+export function announceError(message: string, options?: { key: string }): void {
+  publishErrors([{ key: options?.key, message }]);
+}
+
+/** Retire a key, filtering unpublished batches and clearing published text without re-speaking survivors. */
 export function clearAnnouncement(key: string): void {
-  if (useAnnouncementStore.getState().assertiveOwner?.key === key)
-    useAnnouncementStore.setState({ assertive: "", assertiveOwner: null });
+  const { assertiveOwner: owner } = useAnnouncementStore.getState();
+  if (!owner?.entries.some((entry) => entry.key === key)) return;
+  const entries = owner.entries.filter((entry) => entry.key !== key);
+  useAnnouncementStore.setState({
+    assertiveOwner: entries.length ? { ...owner, entries } : null,
+    // An atomic region must not rewrite the surviving sentences and announce them again.
+    assertive: "",
+  });
 }
 
 /** React hook for {@link AnnouncementRegion} and components that announce. */

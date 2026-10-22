@@ -1,14 +1,10 @@
 /** First-chat identity lookup is independent of discovery of available lineage notes. */
 import type { Database } from "@meridian/database";
-import {
-  contentDocumentPredicate,
-  contextSources,
-  documents,
-  threads,
-} from "@meridian/database/schema";
+import { contextSources, threads } from "@meridian/database/schema";
 import { and, eq, exists, isNull, type SQL } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { ScratchLineage, ScratchLineages } from "../scratch-owner.js";
+import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import { lineageHasLiveMember } from "./lineage-scratch-lifecycle.js";
 
 export function createDrizzleScratchLineages(db: Database): ScratchLineages {
@@ -44,23 +40,22 @@ export function createDrizzleScratchLineages(db: Database): ScratchLineages {
       return member ? byId(projectId, member.rootThreadId) : null;
     },
     list(projectId) {
+      const notes = visibleDocuments(LIVE_TREE);
       return roots(
         projectId,
         and(
           lineageHasLiveMember(threads.id),
           exists(
             currentDrizzleDb(db)
-              .select({ id: documents.id })
+              .select({ id: notes.id })
               .from(contextSources)
-              .innerJoin(documents, eq(documents.contextSourceId, contextSources.id))
+              .innerJoin(notes, eq(notes.contextSourceId, contextSources.id))
               .where(
                 and(
                   eq(contextSources.rootThreadId, threads.id),
                   eq(contextSources.scope, "lineage"),
                   eq(contextSources.slug, "scratch"),
                   isNull(contextSources.deletedAt),
-                  isNull(documents.deletedAt),
-                  contentDocumentPredicate(),
                 ),
               ),
           ),

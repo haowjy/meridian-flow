@@ -30,6 +30,7 @@ export interface CleanupContext {
   readonly primaryWorktreePath: string;
   readonly currentWorktreePath: string;
   readonly eligibilityByBranch: ReadonlyMap<string, CleanupEligibility>;
+  readonly eligibilityRefusalByBranch: ReadonlyMap<string, string>;
   readonly autoReadinessByWorktree: ReadonlyMap<string, AutoCleanupReadinessDecision>;
   readonly baseBranch: string;
   readonly workItems: readonly MeridianWorkItem[];
@@ -49,6 +50,7 @@ export interface CleanupTarget {
 
 export type CleanupActionKind =
   | "stop-dev"
+  | "stop-nx"
   | "drop-database"
   | "remove-worktree"
   | "delete-branch"
@@ -92,6 +94,7 @@ export type CleanupEligibilityValidator = (
 
 export type CleanupReadinessValidator = (
   target: CleanupTargetPlan,
+  action: CleanupAction,
 ) => AutoCleanupReadinessDecision | Promise<AutoCleanupReadinessDecision>;
 
 export interface CleanupExecutionHooks {
@@ -182,6 +185,7 @@ export function parseMeridianWorkShow(id: string, output: string): MeridianWorkI
 export function buildCleanupContext(input: {
   readonly gitWorktreePorcelain: string;
   readonly eligibilityByBranch: ReadonlyMap<string, CleanupEligibility>;
+  readonly eligibilityRefusalByBranch?: ReadonlyMap<string, string>;
   readonly autoReadinessByWorktree?: ReadonlyMap<string, AutoCleanupReadinessDecision>;
   readonly baseBranch: string;
   readonly meridianWorkItems: readonly MeridianWorkItem[];
@@ -195,6 +199,7 @@ export function buildCleanupContext(input: {
     primaryWorktreePath: normalizePath(worktrees[0].path),
     currentWorktreePath: normalizePath(input.currentWorktreePath),
     eligibilityByBranch: input.eligibilityByBranch,
+    eligibilityRefusalByBranch: input.eligibilityRefusalByBranch ?? new Map(),
     autoReadinessByWorktree: input.autoReadinessByWorktree ?? new Map(),
     baseBranch: input.baseBranch,
     workItems: input.meridianWorkItems,
@@ -344,9 +349,14 @@ export function resolveTarget(context: CleanupContext, reference: TargetReferenc
   }
   const eligibility = context.eligibilityByBranch.get(worktree.branch);
   if (!eligibility) {
+    // The decision's own reason names what failed (containment, GitHub
+    // discovery); the fallback covers contexts assembled without one.
+    const refusal = context.eligibilityRefusalByBranch.get(worktree.branch);
     throw new CleanupResolverError(
-      `Refusing to clean branch '${worktree.branch}': its current commit is not merged into ` +
-        `'${context.baseBranch}' and has no exact merged pull request.`,
+      refusal
+        ? `Refusing to clean branch '${worktree.branch}': ${refusal}.`
+        : `Refusing to clean branch '${worktree.branch}': its current commit is not ` +
+            "contained in another branch and has no exact merged pull request.",
     );
   }
   return createCleanupTarget(context, worktree, eligibility);
@@ -375,6 +385,11 @@ export function resolveAutoTargets(context: CleanupContext): CleanupTarget[] {
 function actionsForTarget(primaryWorktreePath: string, target: CleanupTarget): CleanupAction[] {
   const actions: CleanupAction[] = [
     { kind: "stop-dev", cwd: target.worktree.path, command: ["pnpm", "dev", "--stop"] },
+    {
+      kind: "stop-nx",
+      cwd: target.worktree.path,
+      command: ["pnpm", "exec", "nx", "daemon", "--stop"],
+    },
     { kind: "drop-database", cwd: target.worktree.path, command: ["pnpm", "dev:db:drop", "--yes"] },
     {
       kind: "remove-worktree",
@@ -438,8 +453,8 @@ export async function executeCleanupPlan(
   for (const target of plan.targets) {
     hooks.onTargetStart?.(target);
     for (const action of target.actions) {
-      if (action.kind === "stop-dev" || action.kind === "drop-database") {
-        const readiness = await validateReadiness(target);
+      if (["stop-dev", "stop-nx", "drop-database", "remove-worktree"].includes(action.kind)) {
+        const readiness = await validateReadiness(target, action);
         if (!readiness.ready) {
           return {
             ok: false,

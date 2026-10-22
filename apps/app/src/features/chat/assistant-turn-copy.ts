@@ -1,4 +1,5 @@
 /** Serialize the visible final answer into Markdown and app-free rich clipboard HTML. */
+import { type AssistantView, isImageBlock } from "@meridian/thread-client";
 import { harden } from "rehype-harden";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
@@ -8,8 +9,7 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import { classifyLinkTarget } from "@/core/editor/links";
-import { imageContentForBlock, isImageBlock } from "./block-kind";
-import { finalMessageItems, type RenderItem } from "./partition-turn";
+import { parseImageBlockContent } from "@/rich-content/ImageBlock";
 import { payloadText } from "./report-payload";
 
 const copyProcessor = unified()
@@ -40,16 +40,17 @@ const copyProcessor = unified()
   .use(rehypeStringify);
 
 /** Build Markdown eagerly for the disabled state; rich HTML is deferred until copy. */
-export function assistantTurnCopyMarkdown(items: RenderItem[]): string {
-  return finalMessageItems(items)
+export function assistantTurnCopyMarkdown({ items, finalFrom }: AssistantView): string {
+  return items
+    .slice(finalFrom)
     .flatMap((item) => {
-      if (item.kind === "text") return [item.block.textContent ?? ""];
+      if (item.kind === "text") return [item.text];
       if (item.kind === "report") {
         const payload = payloadText(item.report.payload);
         return [item.report.summary, ...(payload.trim() ? [`\`\`\`json\n${payload}\n\`\`\``] : [])];
       }
       if (item.kind === "artifact" && isImageBlock(item.block)) {
-        const image = imageContentForBlock(item.block);
+        const image = parseImageBlockContent(item.block.content);
         if (!image) return [];
         const alt = (image.alt ?? image.caption ?? "").replace(/[[\]]/g, "");
         return [`![${alt}](<${image.url}>)`, ...(image.caption ? [image.caption] : [])];

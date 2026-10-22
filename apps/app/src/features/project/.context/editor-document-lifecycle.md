@@ -44,7 +44,9 @@ flowchart TD
   tab metadata to the route owner. Accepted history commits the tab and
   selection; a cancelled decision publishes neither. A background open publishes
   the tab without navigating or cancelling a foreground attempt. Uploads resources are not Editor
-  tabs (`isEditorScheme`): their resolved URLs show the deferred chat-resource viewing notice.
+  tabs (`isEditorScheme`): their resolved URLs show the deferred chat-resource viewing notice. The only viewer is the dock
+  beside a centered chat, so Open on an upload (`useOpenChatResource`, the Files menu and a sent
+  attachment) is offered only there; the docked chat on Work and Editor pages and the phone offer none.
   A Work's Scratch is an Editor tab only in that Work's Editor, and a chat's
   Scratch (`rootThreadId`) in every Editor (`isEditorTab`).
   The URL layer still does not repeat
@@ -117,7 +119,15 @@ still pending. Only that fallback is keyed by the destination; the editor is
 never keyed or remounted for loading. Settlement removes feedback immediately,
 with no minimum display duration. Busy state is exposed without loading copy.
 Different-project entry, Work recovery, unavailable destinations, and errors do
-not expose retained content as if it were the requested destination. A cold
+not expose retained content as if it were the requested destination.
+A masked destination leaves the workspace rails, dock and address navigation
+usable. Desktop supplies route-derived chrome outside the content mask when no
+admitted document chrome can be shown; the path is a locator, not an admitted
+identity or an editable placement. Review's prose-width hold does not collapse
+the sidebar while a route issue is shown. Phone keeps its top bar and drawer
+outside the boundary and mounts a document host only after admission (or for a
+retained warm transition), so a masked missing address cannot repair itself to
+Files. A cold
 content host may also need its own startup UI after address resolution.
 
 ## Session and synchronization boundary
@@ -144,3 +154,41 @@ Transport remains room-scoped; multiplexing is outside this routing contract.
 - [Loading boundary](../routing/ProjectRouteBoundary.tsx) and its sibling tests.
 - [Shell and phone retention](../ProjectView.tsx).
 - [Workspace transitions and restoration codec](../../../client/stores/context-tabs-store/editor-workspace-state.ts).
+
+
+Review-only document admission uses `getProjectDocumentAddress`. Only a route
+with `itemKey` and a resolved Work sends its Work and per-document draft
+selector, both included in the address query key. The server alone maps that
+review item to the whole branch tree after validating it. A plain
+manuscript address remains live-only; `gateLiveView` is unchanged, and no
+caller guesses a review selector from a path or a Work's draft list.
+
+`ReadableProjectRoute` retains `useDraftMetadata` above editor address admission.
+A metadata `gone` answer and the room's terminal `4205 draft-closed` frame are two arrivals of one
+account-owned disposition: available documents leave review for live; removed
+documents use availability's removal record. Catalog invalidation must not
+unmount the room first and strand the destination as unavailable. Unknown or
+failed metadata reads never prove closure. See the
+[review runtime](../../draft-review/.context/draft-review.md) for command and
+room ownership.
+
+### Who decides what
+
+- **A chat door's document** (a tool card's name, a receipt row, a passage door;
+  `chat/ProjectChatContextNavigationProvider.tsx`) is asked of the scoped link
+  follower a transcript link uses (`features/links`). A live answer opens where the
+  door opens documents (the Editor route, or the dock beside the chat). A hidden
+  document answers with its Work and item key (the server resolves an address the
+  live tree leaves empty in the request Work's branch view, as it does a ref) and
+  goes through the review handoff by identity. A missing answer routes the plain
+  address so the route says so in place. The Editor command only navigates explicit destinations and keeps the
+  review identity it already holds (caller, addressed tab, current address).
+- **Whether the destination is admitted** is the route's alone
+  (`ReadableProjectRoute`: address binding, local and remote resolution, draft
+  gating, tab admission), reported as the Editor mask's `issue`.
+- **The pane waits; the boundary presents** (`context/context-pane-state.ts`). `loading`
+  and an admitted address still waiting for its tab render the destination's
+  pending tab and a neutral body. A terminal verdict (`unavailable` or `error`) is
+  `ProjectRouteBoundary`'s alone, so one verdict never has two presentations. The pane never reads the live catalog to decide existence,
+  because a draft-only document is never in it. Retained documents and the removal
+  fence are separate inputs. The route installs tabs; the pane has no auto-open.

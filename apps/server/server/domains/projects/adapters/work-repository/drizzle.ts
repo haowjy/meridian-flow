@@ -1,21 +1,26 @@
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
-import { type AiWriteMode, decodeWorkSlug, type Work } from "@meridian/contracts/works";
+import {
+  type AiWriteMode,
+  decodeWorkHandle,
+  formatWorkHandle,
+  type Work,
+} from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
-  contentDocumentPredicate,
   contextAvailabilityHeads,
   contextCatalogScopeHeads,
   documents,
   projects,
   works,
 } from "@meridian/database/schema";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
   runInRootDrizzleReadSnapshot,
 } from "../../../../shared/drizzle-transaction.js";
+import { allocateHandleNumber } from "../../../../shared/handle-counter.js";
 import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
@@ -25,6 +30,7 @@ import {
   type LineageScratchLifecycle,
 } from "../../../context/index.js";
 import type { DocumentArrivals } from "../../../context/ports/document-arrivals.js";
+import type { DocumentRemoval } from "../../../context/ports/document-removal.js";
 import type { FileAccessChanges } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
 import { decideWorkRestore } from "../../domain/work-restore.js";
@@ -41,9 +47,9 @@ import {
   WorkNameConflictError,
   WorkRestoreConflictError,
 } from "../../ports/work-repository.js";
-import { hideWorkOwnedRows, unhideWorkOwnedRows } from "../work-cascade.js";
+import { cascadeDelete, cascadeRestore } from "../work-cascade.js";
 import type { WorkProjectionMutation } from "../work-projection-mutation.js";
-import { NO_WORK_NAME, nextWorkSlug } from "./shared.js";
+import { NO_WORK_NAME } from "./shared.js";
 
 type WorkRow = typeof works.$inferSelect;
 function workUniqueConstraint(cause: unknown): string | null {
@@ -59,20 +65,21 @@ function workUniqueConstraint(cause: unknown): string | null {
 }
 
 function mapWork(row: WorkRow): Work {
-  const slug = row.isNoWork ? null : decodeWorkSlug(row.slug);
-  if (!row.isNoWork && !slug) throw new Error(`Persisted Work ${row.id} has an invalid slug`);
+  const handle = row.isNoWork ? null : decodeWorkHandle(row.handle);
+  if (!row.isNoWork && !handle) throw new Error(`Persisted Work ${row.id} has an invalid handle`);
   return {
     id: row.id,
     projectId: row.projectId,
     createdByUserId: row.createdByUserId,
     name: row.name,
-    slug,
+    handle,
     isNoWork: row.isNoWork,
     goal: row.goal,
     status: row.status,
     archivedAt: row.archivedAt?.toISOString() ?? null,
-    aiWriteMode: row.aiWriteMode as AiWriteMode,
+    defaultAiWriteMode: row.defaultAiWriteMode,
     entityRevision: String(row.entityRevision),
+    pendingDocumentCount: row.pendingDocumentCount,
     lastActivityAt: row.updatedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -81,6 +88,7 @@ function mapWork(row: WorkRow): Work {
 }
 export interface DrizzleWorkRepositoryDeps {
   db: Database;
+  removal: DocumentRemoval;
   projectionMutation: WorkProjectionMutation;
   /** Each lifecycle change re-decides the Work's own files' access (file-access §7). */
   fileAccessChanges: Pick<FileAccessChanges, "publish">;
@@ -95,11 +103,11 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
   const projectionMutation = deps.projectionMutation;
   const now = deps.now ?? (() => new Date());
 
-  async function workHiddenDocumentIds(workId: WorkId): Promise<DocumentId[]> {
+  async function workCascadedDocumentIds(workId: WorkId): Promise<DocumentId[]> {
     const rows = await currentDrizzleDb(db)
       .select({ id: documents.id })
       .from(documents)
-      .where(and(eq(documents.deletedByWorkId, workId), contentDocumentPredicate()));
+      .where(eq(documents.deletedByWorkId, workId));
     return rows.map((row) => row.id as DocumentId);
   }
 
@@ -128,7 +136,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     const existing = await findWorkById(id);
     if (!existing) throw new WorkLifecycleUnavailableError(id, "missing");
     if (existing.deletedAt) {
-      throw new WorkLifecycleUnavailableError(id, "deleted", existing.slug);
+      throw new WorkLifecycleUnavailableError(id, "deleted", existing.handle);
     }
     if (existing.isNoWork) throw new WorkLockedError();
     return existing;
@@ -143,7 +151,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         .where(and(eq(works.id, id), isNull(works.deletedAt)))
         .returning();
       if (!row) throw new Error(`Work not found: ${id}`);
-      await projectionMutation.publishWorks([row.id]);
+      await projectionMutation.notifyWorksChanged([row.id]);
       return mapWork(row);
     });
   }
@@ -170,10 +178,9 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           .from(projects)
           .where(eq(projects.id, input.projectId))
           .limit(1);
-        const existingSlugs = await activeDb
-          .select({ slug: works.slug })
-          .from(works)
-          .where(eq(works.projectId, input.projectId));
+        const handle = formatWorkHandle(
+          await allocateHandleNumber(activeDb, input.projectId, "work"),
+        );
         let row: WorkRow | undefined;
         try {
           [row] = await activeDb
@@ -184,10 +191,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
               createdByUserId:
                 project?.userId ?? input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
               name: input.name,
-              slug: nextWorkSlug(
-                input.name,
-                existingSlugs.map(({ slug }) => slug),
-              ),
+              handle,
               goal: input.goal ?? null,
             })
             .returning();
@@ -198,7 +202,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           throw cause;
         }
         if (!row) throw new Error("Failed to create work");
-        await projectionMutation.publishWorks([row.id]);
+        await projectionMutation.notifyWorksChanged([row.id]);
         return mapWork(row);
       });
     },
@@ -206,6 +210,14 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       // A non-UUID id would reach the `uuid` column and raise a Postgres parse
       // error; treat it as not-found so callers get a clean 404, not a 500.
       return findWorkById(id);
+    },
+    async findByHandle(projectId: ProjectId, handle: string): Promise<Work | null> {
+      const [row] = await currentDrizzleDb(db)
+        .select()
+        .from(works)
+        .where(and(eq(works.projectId, projectId), eq(works.handle, handle)))
+        .limit(1);
+      return row ? mapWork(row) : null;
     },
     async findNoWork(projectId: ProjectId): Promise<Work | null> {
       return findNoWorkRow(projectId);
@@ -239,9 +251,9 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             projectId,
             createdByUserId: project.userId,
             name: NO_WORK_NAME,
-            slug: null,
+            handle: null,
             isNoWork: true,
-            aiWriteMode: "direct",
+            defaultAiWriteMode: "direct",
           })
           .returning();
         if (!row) throw new Error("Failed to create No Work");
@@ -330,7 +342,10 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         if (lockedTree.changed) throw new WorkDeleteRetryError();
 
         const deletedAt = now();
-        const deletedThreadIds = await hideWorkOwnedRows(db, {
+        const deletedThreadIds = await cascadeDelete(db, {
+          projectId: before.projectId,
+          removal: deps.removal,
+          projection: projectionMutation,
           workId: id,
           threadIds: lockedTree.threadIds,
           liveThreadIds: lockedTree.liveThreadIds,
@@ -344,7 +359,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             updatedAt: deletedAt,
           })
           .where(and(eq(works.id, id), isNull(works.deletedAt)));
-        await projectionMutation.publishWorks([id]);
+        await projectionMutation.notifyWorksChanged([id]);
         await deps.fileAccessChanges.publish({ workId: id });
         const after = await findWorkById(id);
         await lineageScratch.reconcile(lockedTree.threadIds);
@@ -362,7 +377,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           }
           // Thread forest → Work above, then the namespaces the restore re-occupies, before
           // any row reappears (contract §9.3). Individually deleted rows stay deleted.
-          const arriving = deps.arrivals ? await workHiddenDocumentIds(id) : [];
+          const arriving = deps.arrivals ? await workCascadedDocumentIds(id) : [];
           if (arriving.length > 0) await deps.arrivals?.lockNamespaces(arriving);
           await guardWorkContextRestore(db, id);
           const restoredAt = now();
@@ -376,7 +391,10 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             .where(eq(works.id, id))
             .returning();
           if (!row) throw new Error(`Work not found: ${id}`);
-          await unhideWorkOwnedRows(db, {
+          await cascadeRestore(db, {
+            projectId: existing.projectId,
+            removal: deps.removal,
+            projection: projectionMutation,
             workId: id,
             threadIds: lockedTree.threadIds,
             liveThreadIds: lockedTree.liveThreadIds,
@@ -384,7 +402,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           });
           await lineageScratch.reconcile(lockedTree.threadIds);
           if (arriving.length > 0) await deps.arrivals?.settle(arriving);
-          await projectionMutation.publishWorks([row.id]);
+          await projectionMutation.notifyWorksChanged([row.id]);
           await deps.fileAccessChanges.publish({ workId: id });
           return { before: existing, after: mapWork(row), changed: true };
         });
@@ -395,11 +413,22 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         if (constraint === "works_project_name_active") {
           throw new WorkRestoreConflictError("name");
         }
-        if (constraint === "works_project_slug") {
-          throw new WorkRestoreConflictError("slug");
-        }
         throw cause;
       }
+    },
+    async setDefaultAiWriteMode(id: WorkId, mode: AiWriteMode): Promise<void> {
+      await runInDrizzleTransaction(db, async () => {
+        const [changed] = await currentDrizzleDb(db)
+          .update(works)
+          .set({
+            defaultAiWriteMode: mode,
+            entityRevision: sql`${works.entityRevision} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(works.id, id), ne(works.defaultAiWriteMode, mode)))
+          .returning({ id: works.id });
+        if (changed) await projectionMutation.notifyWorksChanged([id]);
+      });
     },
     async touch(id: WorkId): Promise<void> {
       const activeDb = currentDrizzleDb(db);

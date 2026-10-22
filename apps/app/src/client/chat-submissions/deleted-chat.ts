@@ -11,13 +11,14 @@ import {
 } from "@/components/app/composer/composer-document";
 import { browserSubmissionLock } from "./adapters/browser-lock";
 import {
+  forgetChatSubmissionOrder,
   getChatSubmissionAccountId,
   getChatSubmissionEpoch,
   readChatSubmissionSnapshot,
   retireChatSubmission,
 } from "./index";
 import type { SubmissionLock } from "./lock";
-import type { ChatSubmission } from "./store";
+import { type ChatSubmission, compareSubmissions } from "./store";
 import { probeChatDestination, type ThreadAvailability } from "./thread-availability";
 
 export type DeletedChatSurface = {
@@ -30,6 +31,7 @@ export type DeletedChatPorts = {
   current(): boolean;
   records(): ChatSubmission[] | null;
   retire(recordId: string): boolean;
+  forgetOrder(): void;
   draft(accountId: string, scope: ComposerDraftScope): ComposerSessionDraft;
   surfaces(): DeletedChatSurface[];
   lock: SubmissionLock;
@@ -71,6 +73,7 @@ function browserPorts(accountId: string, threadId: string): DeletedChatPorts {
     current: () => getChatSubmissionAccountId() === accountId && getChatSubmissionEpoch() === epoch,
     records: () => readChatSubmissionSnapshot(accountId),
     retire: (recordId) => retireChatSubmission(accountId, recordId, epoch),
+    forgetOrder: () => forgetChatSubmissionOrder(accountId, threadId),
     draft: composerSessionDraft,
     surfaces: () => [...(surfaces.get(surfaceKey(accountId, threadId)) ?? [])],
     lock: browserSubmissionLock,
@@ -102,9 +105,7 @@ export async function cleanDeletedChat(
     let moved = false;
     if (visible && projectId) {
       const shown = visible.recordIds();
-      const drafts = records
-        .filter((entry) => shown.has(entry.recordId))
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      const drafts = records.filter((entry) => shown.has(entry.recordId)).sort(compareSubmissions);
       const snapshots = drafts.map(
         (entry) => entry.draft ?? serializeComposerDraft(plainComposerDoc(entry.text)).draft,
       );
@@ -128,6 +129,7 @@ export async function cleanDeletedChat(
     for (const entry of records) {
       if (!ports.current() || !ports.retire(entry.recordId)) return false;
     }
+    ports.forgetOrder();
     for (const pane of panes) pane.leave(moved);
     return true;
   };

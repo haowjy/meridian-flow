@@ -83,7 +83,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT,
           createdByUserId: USER,
           name: "No Work",
-          slug: null,
+          handle: null,
           isNoWork: true,
         },
         {
@@ -91,7 +91,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT,
           createdByUserId: USER,
           name: "Draft",
-          slug: "draft",
+          handle: "w2",
         },
       ]);
       await db.insert(contextSources).values([
@@ -99,8 +99,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { id: WORK_SCRATCH, workId: WORK, scope: "work", name: "Work scratch", slug: "scratch" },
         {
           id: NO_WORK_SCRATCH,
-          workId: NO_WORK,
-          scope: "work",
+          projectId: PROJECT,
+          chatThreadId: "00000000-0000-4000-8000-000000000bb9",
+          scope: "chat",
           name: "Uploads",
           slug: "uploads",
         },
@@ -147,7 +148,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
-    it("resolves project, scheme, path, and work slug within one project, and keeps projects apart", async () => {
+    it("resolves project, scheme, path, and work handle within one project, and keeps projects apart", async () => {
       const { repo } = await seed();
       await repo.record(userId(USER), documentId(SCRATCH));
       await repo.record(userId(USER), documentId(NO_WORK_DOC));
@@ -156,21 +157,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(listed).toHaveLength(2);
       expect(listed).toEqual(
         expect.arrayContaining([
-          // A work-scoped scratch document carries its work slug.
+          // A work-scoped scratch document carries its work handle.
           expect.objectContaining({
             documentId: SCRATCH,
             projectId: PROJECT,
             scheme: "scratch",
             path: "/scene",
-            workSlug: "draft",
+            workHandle: "w2",
           }),
-          // No Work resolves to a null work slug.
+          // No Work resolves to a null work handle.
           expect.objectContaining({
             documentId: NO_WORK_DOC,
             projectId: PROJECT,
             scheme: "uploads",
             path: "/aside",
-            workSlug: null,
+            workHandle: null,
           }),
         ]),
       );
@@ -182,7 +183,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PERSONAL,
           scheme: "user",
           path: "/notes",
-          workSlug: null,
+          workHandle: null,
         }),
       ]);
     });
@@ -190,7 +191,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("omits a soft-deleted document and does not let it occupy a cap slot", async () => {
       const { db, repo } = await seed();
       await repo.record(userId(USER), documentId(DOOMED));
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOOMED));
+      await db
+        .update(documents)
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
+        .where(eq(documents.id, DOOMED));
       await expect(repo.listForProject(PROJECT, userId(USER))).resolves.toEqual([]);
       await expect(repo.record(userId(USER), documentId(DOOMED))).rejects.toBeInstanceOf(
         RecentDocumentUnavailableError,

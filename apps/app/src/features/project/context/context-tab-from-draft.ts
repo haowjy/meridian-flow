@@ -1,7 +1,8 @@
 /**
  * context-tab-from-draft — ContextTab synthesized from a work-draft group.
  *
- * Draft-only NEW documents have no context-tree entry until Apply, so the
+ * Draft-only documents (created by the draft, or deleted live while this draft
+ * still has them) have no context-tree entry until Apply, so the
  * route→tab auto-open (ContextPaneController → findContextFile) has nothing
  * to match and review lands on an empty pane (#153). The document itself is
  * real — its `documents` row and Yjs state exist from write time — only the
@@ -15,22 +16,23 @@
  * a visible extension (`outline.json`) states its type.
  */
 import { classifyFiletype, filetypeForPath } from "@meridian/contracts/protocol";
-import type { ServerContextTab } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import type { ContextUri } from "@/lib/context-uri";
 
 export function contextTabFromDraftGroup(group: {
   workId: string;
   documentId: string;
-  draftId: string;
+  itemKey: string;
   contextLocation?: Pick<ContextUri, "scheme" | "path"> | null;
   documentName?: string | null;
   /**
-   * Server flag for a draft-CREATED document. Marks the tab `draftOnly` so
-   * the tab lifecycle can follow the draft's: cleared on Apply, closed on
-   * whole-draft Discard (the document never joins the tree).
+   * Live doesn't hold the document: the draft created it, or live deleted it and this
+   * draft still has it. Gives the tab a review entry (draft-only) so the tab lifecycle
+   * follows the draft's: cleared when Apply brings the document into the tree, closed
+   * when the draft leaves the Work's list.
    */
-  isNewDocument?: boolean;
-}): ServerContextTab | null {
+  draftOnly?: boolean;
+}): Extract<ContextTab, { kind: "tracked" }> | null {
   const location = group.contextLocation;
   if (!location?.path) return null;
   const { scheme, path } = location;
@@ -51,12 +53,11 @@ export function contextTabFromDraftGroup(group: {
     editable: true,
     filetype,
     schemaType: classification.schemaType,
-    reviewWorkId: group.workId,
-    ...(group.isNewDocument
+    ...(group.draftOnly
       ? {
-          draftOnly: true,
-          reviewDraftId: group.draftId,
-          tabInstanceToken: crypto.randomUUID(),
+          reviews: {
+            [group.workId]: { itemKey: group.itemKey, tabInstanceToken: crypto.randomUUID() },
+          },
         }
       : {}),
   };

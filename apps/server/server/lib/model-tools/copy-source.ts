@@ -144,7 +144,7 @@ export async function readTrackedCopySource(
   }
   const version = outcome.result.read?.version ?? grant.destination.kind;
   return {
-    nodes: outcome.nodes ?? [],
+    nodes: [...(outcome.nodes ?? [])],
     copiedFrom: { uri: address.uri, version, revision: outcome.revision },
   };
 }
@@ -169,8 +169,8 @@ export function fromMessage(source: CopySource, message: string): string {
 
 /**
  * A binary copy duplicates the stored object at once (D24). It isn't a Yjs
- * write, so it has no write handle, isn't part of the reply's save and is
- * never drafted.
+ * write, so it has no write handle and isn't part of the reply's save. In a
+ * draft-mode chat it lands in the branch as its own hidden row (12b-Q2).
  */
 export async function copyBinary(
   deps: ToolWiringDeps,
@@ -180,27 +180,35 @@ export async function copyBinary(
   sourceGrant: FileGrant<"read">,
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "agentSlug">,
 ) {
+  const destinationUri = splitDocumentFile(input.path).filePath;
   // Binary files have no drafts or revisions, so the copy always reads the live file.
   const copied = await copyBinaryDocument({
     port: context.port,
-    livePort: context.livePort(),
     objectStore: deps.objectStore,
     source,
     sourceGrant,
     origin: { type: "agent", agentSlug: ctx.agentSlug, threadId: ctx.threadId, turnId: ctx.turnId },
-    destinationUri: splitDocumentFile(input.path).filePath,
+    destinationUri,
     copiedFrom: { uri: source.uri, version: "live", revision: null },
   });
   if (!copied.ok) {
     return writeToolError(input.command, contextErrorMessage(copied.error));
   }
   if (copied.value.documentId) recordTouchInBackground(deps, copied.value.documentId, ctx);
+  // The port's placement decided where the copy landed; only the Work's handle is ours to add.
+  const destination = copied.value.placement;
+  const branchWork = context.resolution.primaryBranchWork;
   return {
     output: modelResult({
       command: "copy",
       status: "success",
       phase: "committed",
-      payload: { path: copied.value.uri, destination: "live", copied: { from: source.uri } },
+      payload: {
+        path: copied.value.uri,
+        destination,
+        ...(destination === "draft" ? { draftWork: branchWork?.handle ?? "/" } : {}),
+        copied: { from: source.uri },
+      },
     }),
   };
 }

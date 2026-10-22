@@ -19,9 +19,9 @@ export function createEditorSessions() {
       has: (roomKey: string) => sessions.has(roomKey),
       retain: () => {},
       release: () => {},
-      retainBranchRooms: () => {},
-      releaseBranchRooms: () => {},
-      getBranchRoom: get,
+      retainDraftRooms: () => {},
+      releaseDraftRooms: () => {},
+      getDraftRoom: get,
     },
     async dispose() {
       await Promise.all([...sessions.values()].map((session) => session.destroy()));

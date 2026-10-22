@@ -16,7 +16,7 @@ export function isProjectWorkDerivedKey(
   }
   const workId = queryKey[3];
   if (typeof workId !== "string" || (workIds && !workIds.has(workId))) return false;
-  return queryKey[4] === "drafts" || (queryKey[4] === "documents" && queryKey.includes("draft"));
+  return queryKey[4] === "branches" || (queryKey[4] === "documents" && queryKey.includes("draft"));
 }
 
 export function isWorkScopedProjectContextCatalogKey(
@@ -72,12 +72,14 @@ export const projectQueryKeys = {
   threadRenamePrefix: (projectId: string) => ["projects", projectId, "thread-rename"] as const,
   /** Client-only: this project's Work command records (`work-command-store`). */
   workCommands: (projectId: string) => ["projects", projectId, "work-commands"] as const,
-  /** Client-only, account-cache lifetime: undisplayed/dismissible handoff loss on this document. */
-  writerHandoffLoss: (projectId: string, documentId: string) =>
-    ["projects", projectId, "documents", documentId, "writer-handoff-loss"] as const,
-  workDrafts: (projectId: string, workId: string) =>
-    ["projects", projectId, "works", workId, "drafts"] as const,
-  workDraftPreview: (projectId: string, workId: string, documentId: string, draftId?: string) =>
+  workBranchDrafts: (projectId: string, workId: string) =>
+    ["projects", projectId, "works", workId, "branches"] as const,
+  /** The branches with changes to one document; invalidated with the Work draft lists. */
+  documentDraftHints: (projectId: string, documentId: string) =>
+    ["projects", projectId, "document-draft-hints", documentId] as const,
+  documentDraftHintsOf: (projectId: string) =>
+    ["projects", projectId, "document-draft-hints"] as const,
+  workDraftMetadata: (projectId: string, workId: string, documentId: string, itemKey?: string) =>
     [
       "projects",
       projectId,
@@ -86,23 +88,25 @@ export const projectQueryKeys = {
       "documents",
       documentId,
       "draft",
-      draftId ?? null,
+      itemKey ?? null,
     ] as const,
   contextCatalog: (projectId: string, scope: CatalogScope) =>
     ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const,
   contextCatalogView: (
     projectId: string,
     scheme: ProjectContextTreeScheme,
-    owner: { workId?: string | null; rootThreadId?: string | null } = {},
+    owner: { workId?: string | null; rootThreadId?: string | null; chatId?: string | null } = {},
   ) => {
     const scope: CatalogScope =
       scheme === "user"
         ? { kind: "user", userId: "self" }
-        : scheme === "scratch" && owner.rootThreadId
-          ? { kind: "lineage", projectId, rootThreadId: owner.rootThreadId }
-          : scheme === "scratch" || scheme === "uploads"
-            ? { kind: "work", projectId, workId: owner.workId ?? "" }
-            : { kind: "project", projectId };
+        : scheme === "uploads"
+          ? { kind: "chat", projectId, chatId: owner.chatId ?? "" }
+          : scheme === "scratch" && owner.rootThreadId
+            ? { kind: "lineage", projectId, rootThreadId: owner.rootThreadId }
+            : scheme === "scratch"
+              ? { kind: "work", projectId, workId: owner.workId ?? "" }
+              : { kind: "project", projectId };
     return ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const;
   },
   agents: (projectId: string) => ["projects", projectId, "agents"] as const,

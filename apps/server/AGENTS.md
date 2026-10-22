@@ -2,6 +2,9 @@
 
 Nitro API/WebSocket service. Domains live under `server/domains/<domain>/{domain,ports,adapters}` where practical.
 
+See [server architecture](.context/CONTEXT.md) for composition, transport, and
+cross-domain contracts.
+
 - Keep route handlers thin; compose repositories/services in `server/lib/app.ts`.
 - Put non-trivial route logic in testable `server/lib/*-route.ts` route-core helpers; Nitro route files authenticate, parse, delegate, and serialize.
 - Domain logic depends on ports, not concrete Drizzle/provider adapters.

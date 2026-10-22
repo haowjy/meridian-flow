@@ -5,6 +5,7 @@ import type { DocumentProjectionDiagnostics } from "../domain/document-projectio
 import type {
   PostDurabilityNoticeService,
   ReversalNoticeDiagnostics,
+  TurnInverseNoticePort,
 } from "../domain/reversal-notices.js";
 import type { TurnReversalServiceDeps } from "../domain/turn-reversal-service.js";
 
@@ -13,7 +14,7 @@ function threadContextReversalUnsupported(): never {
 }
 
 export const UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS = {
-  async listEditedDocumentsForTurn() {
+  async listTurnTargets() {
     return threadContextReversalUnsupported();
   },
   threadContext: {
@@ -21,13 +22,17 @@ export const UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS = {
       return threadContextReversalUnsupported();
     },
   },
-} satisfies Pick<TurnReversalServiceDeps, "listEditedDocumentsForTurn" | "threadContext">;
+} satisfies Pick<TurnReversalServiceDeps, "listTurnTargets" | "threadContext">;
 
 export const UNSUPPORTED_REVERSE_THREAD_CONTEXT: TurnReversalAccess["reverseThreadContext"] =
   async () => threadContextReversalUnsupported();
 
 export const SILENT_POST_DURABILITY_NOTICES: PostDurabilityNoticeService = {
   async recordAwarenessDegraded() {},
+};
+
+export const SILENT_TURN_INVERSE_NOTICES: TurnInverseNoticePort = {
+  async record() {},
 };
 
 export const SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS: DocumentProjectionDiagnostics = {

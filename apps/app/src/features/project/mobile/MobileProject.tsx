@@ -6,12 +6,14 @@ import { useEffect, useState } from "react";
 import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { DraftReviewBoundary } from "@/features/draft-review/DraftReviewProvider";
-import { WorkDraftCommandsBoundary } from "@/features/draft-review/useWorkDraftCommands";
+import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { ChatSurface } from "../chat/ChatSurface";
 import { ChatIndex } from "../chat-index/ChatIndex";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeAllowsCreation, schemeLabel } from "../context/context-schemes";
+import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
 import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
 import { EditorWorkRecovery } from "../EditorWorkRecovery";
@@ -78,6 +80,7 @@ export function MobileProject(props: MobileProjectProps) {
     "quiet",
   );
   const onWorkDetail = props.activeScreen === "work" && !work.onCollection && Boolean(work.title);
+  const removedNotice = useRemovedDocumentPhoneNotice(props.projectId);
 
   return (
     <div
@@ -102,7 +105,9 @@ export function MobileProject(props: MobileProjectProps) {
             <MobileBreadcrumb segments={crumbs} />
           ) : undefined
         }
-        notice={onWorkDetail ? work.notice : undefined}
+        notice={
+          onWorkDetail ? work.notice : props.activeScreen === "context" ? removedNotice : undefined
+        }
         chatAction={
           props.activeScreen !== "chat" ? (
             <PhoneIconButton aria-label={t`Open chat`} onClick={() => openChatSheet()}>
@@ -111,18 +116,23 @@ export function MobileProject(props: MobileProjectProps) {
           ) : undefined
         }
         actions={
-          onWorkDetail
-            ? work.actions
-            : props.contextLive
-              ? trailingAction(props, (kind) => {
-                  if (!props.activeContextScheme) return;
-                  setCreating({
-                    scheme: props.activeContextScheme,
-                    kind,
-                    parentPath: props.activeContextFolder ?? "",
-                  });
-                })
-              : undefined
+          props.activeScreen === "chat" ? (
+            <ChatFilesMenu
+              projectId={props.projectId}
+              threadId={displayedChatThreadId(props.chatDisplay)}
+            />
+          ) : onWorkDetail ? (
+            work.actions
+          ) : props.contextLive ? (
+            trailingAction(props, (kind) => {
+              if (!props.activeContextScheme) return;
+              setCreating({
+                scheme: props.activeContextScheme,
+                kind,
+                parentPath: props.activeContextFolder ?? "",
+              });
+            })
+          ) : undefined
         }
       />
       <main className="main-pane flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -130,6 +140,7 @@ export function MobileProject(props: MobileProjectProps) {
           destinationKey={props.routeLocationKey}
           retainWhileLoading={props.retainEditorWhileLoading}
           onRetry={props.routeIssues?.main ? undefined : props.onRetryEditorRoute}
+          removed={props.routeIssues?.main ? undefined : props.routeIssues?.removed}
           issue={
             props.routeIssues?.main ??
             (props.activeScreen === "context" && props.editorScope.status === "ready"
@@ -148,7 +159,7 @@ export function MobileProject(props: MobileProjectProps) {
         >
           <SheetTitle className="sr-only">{t`Chat`}</SheetTitle>
           <SheetDescription className="sr-only">{t`Chat alongside your current screen`}</SheetDescription>
-          <WorkDraftCommandsBoundary value={props.chatCommands}>
+          <WorkBranchCommandsBoundary value={props.chatCommands}>
             <MobileKeyboardAware>
               <ChatSurface
                 projectId={props.projectId}
@@ -165,7 +176,7 @@ export function MobileProject(props: MobileProjectProps) {
                 onOpenContextTarget={props.onOpenContextTarget}
               />
             </MobileKeyboardAware>
-          </WorkDraftCommandsBoundary>
+          </WorkBranchCommandsBoundary>
         </SheetContent>
       </Sheet>
       <NavigationDrawer
@@ -226,7 +237,7 @@ function renderActiveView(
       if (props.chatDisplay.kind === "index")
         return <ChatIndex projectId={props.projectId} namedByChrome />;
       return (
-        <WorkDraftCommandsBoundary value={props.chatCommands}>
+        <WorkBranchCommandsBoundary value={props.chatCommands}>
           <MobileChatHost
             projectId={props.projectId}
             threadId={displayedChatThreadId(props.chatDisplay)}
@@ -234,13 +245,16 @@ function renderActiveView(
             availableWorks={props.availableWorks}
             onOpenContextTarget={props.onOpenContextTarget}
           />
-        </WorkDraftCommandsBoundary>
+        </WorkBranchCommandsBoundary>
       );
     case "context":
       if (props.editorScope.status !== "ready") {
         return <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />;
       }
       if (!props.contextLive) return null;
+      // A masked cold address must not mount a host that repairs it to Files.
+      // A warm pending address still owns its retained document presentation.
+      if (props.routeIssues?.editor && !props.retainEditorWhileLoading) return null;
       return (
         <DraftReviewBoundary value={props.presentedReview}>
           <EditorReviewIntentClaimant

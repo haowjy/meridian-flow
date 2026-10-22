@@ -1,7 +1,7 @@
 /** Persistent owner for durable thread projections, including Work binding and trails. */
 import { EventType } from "@meridian/contracts/protocol";
 import {
-  decodeWorkSlug,
+  decodeWorkHandle,
   parseWorkReceipt,
   WORK_CONTEXT_PROJECTION_EVENT,
   type WorkContextProjectionSignal,
@@ -57,20 +57,20 @@ function decodeWorkProjection(
   }
   const parsedScope = scope as Record<string, unknown>;
   if (typeof parsedScope.workId !== "string") return null;
-  if (parsedScope.workSlug === null) {
+  if (parsedScope.workHandle === null) {
     return {
       seq,
-      signal: { threadId, projectId, scope: { workId: parsedScope.workId, workSlug: null } },
+      signal: { threadId, projectId, scope: { workId: parsedScope.workId, workHandle: null } },
     };
   }
-  const workSlug = decodeWorkSlug(parsedScope.workSlug);
-  return workSlug
+  const workHandle = decodeWorkHandle(parsedScope.workHandle);
+  return workHandle
     ? {
         seq,
         signal: {
           threadId,
           projectId,
-          scope: { workId: parsedScope.workId, workSlug },
+          scope: { workId: parsedScope.workId, workHandle },
         },
       }
     : null;
@@ -117,7 +117,7 @@ export function useThreadDurableProjections({
   const inFlight = useRef(false);
   const again = useRef(false);
   /**
-   * The Work-binding resync triggered by a gap fetches threads + works and
+   * The Work-binding resync fetches threads + works and
    * invalidates the thread namespace. A gap burst must not run it per gap, so it
    * coalesces like the trail list above: one in flight, one follow-up.
    */
@@ -176,7 +176,7 @@ export function useThreadDurableProjections({
           accountSignal ?? undefined,
         );
       } catch {
-        // Best effort: the next gap or snapshot refresh re-runs the resync.
+        // Best effort: the next mount, acknowledgment or gap re-runs the resync.
       } finally {
         bindingInFlight.current = false;
       }
@@ -200,7 +200,14 @@ export function useThreadDurableProjections({
     const threadGeneration = ++generation.current;
     void queryClient.removeQueries({ queryKey: ["change-trail-detail", threadId] });
     void reconcile(threadGeneration);
+    void resyncBinding(threadGeneration);
     const unsubscribe = transport.subscribe(threadId, {
+      onLiveState: () => {
+        if (accountSignal?.aborted) return;
+        // Head subscriptions omit events between the mount reads and acknowledgment.
+        void reconcile(threadGeneration);
+        void resyncBinding(threadGeneration);
+      },
       onEvent: ({ seq, event }) => {
         if (accountSignal?.aborted) return;
         const receipt = decodeWorkReceipt(event);

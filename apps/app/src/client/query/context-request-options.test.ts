@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import { contextRequestOptionsForScheme } from "./context-request-options";
 
 describe("a document request's owner", () => {
-  it("names the lineage for a chat's Scratch and the Work for a Work's", () => {
+  it("names the lineage for a chat's Scratch, the Work for a Work's and the chat for uploads", () => {
     expect(contextRequestOptionsForScheme("scratch", { rootThreadId: "root" })).toEqual({
       rootThreadId: "root",
     });
     expect(contextRequestOptionsForScheme("scratch", { workId: "work" })).toEqual({
       workId: "work",
     });
-    expect(contextRequestOptionsForScheme("uploads", { workId: "work" })).toEqual({
-      workId: "work",
+    expect(contextRequestOptionsForScheme("uploads", { chatThreadId: "chat" })).toEqual({
+      chatThreadId: "chat",
     });
   });
 

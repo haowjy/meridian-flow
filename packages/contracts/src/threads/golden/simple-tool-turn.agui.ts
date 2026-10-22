@@ -13,6 +13,7 @@ export const SIMPLE_TOOL_TURN_AGUI: AGUIEvent[] = [
     type: EventType.RUN_STARTED,
     threadId: GOLDEN_THREAD_ID,
     runId: GOLDEN_TOOL_ASSISTANT_TURN_ID,
+    rawEvent: { writeMode: null },
   },
   {
     type: EventType.TOOL_CALL_START,

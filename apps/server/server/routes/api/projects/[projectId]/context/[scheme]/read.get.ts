@@ -27,6 +27,7 @@ export default defineEventHandler(async (event) => {
       rawPath: query.path,
       workId,
       rootThreadId: typeof query.rootThreadId === "string" ? query.rootThreadId : null,
+      chatId: typeof query.chatId === "string" ? query.chatId : null,
     },
   );
   return serializeTransport(response);
