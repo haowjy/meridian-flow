@@ -6,6 +6,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   type AgentEditJournal,
+  bindBlockOrigins,
   bytesEqual,
   type ConcurrentUpdate,
   type ConcurrentUpdateOrigin,
@@ -182,12 +183,18 @@ export function createDraftAgentEditCoordinator(input: {
     return input.drafts.resolveWorkDraftForThread(documentId, input.threadId);
   }
 
+  function bindSeedAddresses(doc: Y.Doc, snapshot: DraftSnapshot): void {
+    const origins = seedAddresses(snapshot.seed);
+    if (origins) bindBlockOrigins(doc, origins);
+  }
+
   return {
     async readRoom(docId, staged, access) {
       const peer = access?.pinnedDraftId;
       const read = async (workDraftId: string, bound: boolean) => {
         const { doc, snapshot } = await drafts.copyDraft(workDraftId);
         try {
+          bindSeedAddresses(doc, snapshot);
           if (bound && snapshot.status !== "active")
             throw new DraftStaleUpdateError(`Draft ${workDraftId}`);
           const replay = staged
@@ -222,6 +229,9 @@ export function createDraftAgentEditCoordinator(input: {
       const peerId =
         access?.pinnedDraftId ?? (await resolveThreadDraftId(input, docId as DocumentId));
       return underAccess(peerId, async (workDraftId) => {
+        const blockOrigins = seedAddresses(
+          (await input.drafts.getDraft(workDraftId))?.seed ?? null,
+        );
         const { result, write } = await drafts.prepareStagedRows(
           workDraftId,
           async (doc) => {
@@ -240,9 +250,15 @@ export function createDraftAgentEditCoordinator(input: {
           true,
           precondition,
         );
-        if (!write) return { ...result, write: { kind: "no-effect" } };
+        if (!write)
+          return {
+            ...result,
+            ...(blockOrigins ? { blockOrigins } : {}),
+            write: { kind: "no-effect" },
+          };
         return {
           ...result,
+          ...(blockOrigins ? { blockOrigins } : {}),
           write: {
             kind: "write",
             async persist() {
@@ -280,6 +296,21 @@ export function createDraftAgentEditCoordinator(input: {
       );
     },
   };
+}
+
+function parseItemId(value: string): { clientID: number; clock: number } {
+  const [clientID, clock, extra] = value.split(":").map(Number);
+  if (!Number.isSafeInteger(clientID) || !Number.isSafeInteger(clock) || extra !== undefined)
+    throw new Error(`Invalid block item id ${value}`);
+  return { clientID, clock };
+}
+
+function seedAddresses(
+  seed: DraftSnapshot["seed"],
+): Map<string, { clientID: number; clock: number }> | null {
+  return seed
+    ? new Map(Object.entries(seed.origins).map(([target, origin]) => [target, parseItemId(origin)]))
+    : null;
 }
 
 /**
@@ -324,7 +355,7 @@ export type DraftLookupWithSnapshots = WorkDraftLookup &
       draftId: string,
     ): Promise<Pick<
       DraftSnapshot,
-      "upstreamDraftId" | "branchId" | "status" | "closedCause" | "documentId"
+      "upstreamDraftId" | "branchId" | "status" | "closedCause" | "documentId" | "seed"
     > | null>;
     /** The thread's primary Work's active draft on the document, as metadata. */
     resolveWorkDraftForThread(documentId: DocumentId, threadId: ThreadId): Promise<ResolvedDraft>;

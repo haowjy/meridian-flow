@@ -102,6 +102,10 @@ const draftColumns = {
     else 'active' end`,
   hasEffect: documentDrafts.hasEffect,
   schemaVersion: documentDrafts.schemaVersion,
+  seedOrigins: documentDrafts.seedOrigins,
+  seedLiveRoom: documentDrafts.seedLiveRoom,
+  seedLiveSnapshot: documentDrafts.seedLiveSnapshot,
+  seedDraftSnapshot: documentDrafts.seedDraftSnapshot,
 };
 
 /**
@@ -142,6 +146,15 @@ export function mapDraft(row: DraftSelectRow): DraftSnapshot {
     lifecycle: row.lifecycle,
     hasEffect: row.hasEffect,
     schemaVersion: unpackCollabSchemaVersion(row.schemaVersion),
+    seed:
+      row.seedOrigins && row.seedLiveRoom && row.seedLiveSnapshot && row.seedDraftSnapshot
+        ? {
+            origins: row.seedOrigins,
+            liveRoom: row.seedLiveRoom,
+            liveSnapshot: row.seedLiveSnapshot,
+            draftSnapshot: row.seedDraftSnapshot,
+          }
+        : null,
   };
 }
 

@@ -18,6 +18,14 @@ import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.
 export type DraftKind = "work_draft" | "thread_peer";
 export type DraftStatus = "active" | "closed";
 
+export type DraftSeedRecord = {
+  /** Draft canonical item id -> live canonical item id. */
+  origins: Readonly<Record<string, string>>;
+  liveRoom: string;
+  liveSnapshot: Uint8Array;
+  draftSnapshot: Uint8Array;
+};
+
 /** The branch's origin Work as the row was read: archived, deleted or missing freeze it. */
 export type DraftWorkLifecycle = "active" | "archived" | "deleted" | "missing";
 
@@ -45,6 +53,8 @@ export type DraftSnapshot = {
   lifecycle: DraftWorkLifecycle;
   hasEffect: boolean;
   schemaVersion: CollabSchemaVersion;
+  /** Present only on a Work draft copied from an addressable live room. */
+  seed: DraftSeedRecord | null;
 };
 
 /** A journal row past the checkpoint, applied on read. */

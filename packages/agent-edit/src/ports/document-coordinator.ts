@@ -1,6 +1,7 @@
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type * as Y from "yjs";
 import type { ConcurrentUpdate } from "../apply/types.js";
+import type { BlockOriginMap } from "../model/block-hash.js";
 
 /** Why a retired thread peer's staged writes did not land: a Discard, or the document's removal. */
 export type RetiredWriteReason = Exclude<
@@ -64,6 +65,8 @@ export interface SaveCut {
 export interface StagedWriteSaveResult extends StagedReconcile {
   /** The room the rows append into; null records no frontier when the host cannot name it. */
   room: string | null;
+  /** Immutable address context for every cut reconstructed from this save. */
+  blockOrigins?: BlockOriginMap;
   /**
    * The host's prepared write, always present. `no-effect` says there is nothing to persist,
    * and is valid only with no kept entries; the caller refuses it otherwise rather than
