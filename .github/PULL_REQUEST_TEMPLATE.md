@@ -12,6 +12,16 @@
      missing. When a section doesn't apply, keep the heading and write "None."
      with the reason. Add ### subheadings freely; the check reads only ##. -->
 
+## Changelog
+
+<!-- One line per change a user or developer will notice, written in the terms
+     of whoever feels it. Start each line with Added:, Changed:, Fixed: or
+     Removed:. A refactor, test, documentation or tooling change nobody can
+     notice says "None." and why. `pnpm changelog` builds the changelog from
+     these lines. -->
+
+- Fixed: <what a person sees now that was broken before>
+
 ## Summary
 
 <!-- What this PR does, in two to four bullets a reader could stop after.

@@ -87,6 +87,19 @@ export function createInMemoryEventJournalWriter(
         .slice(0, limit)
         .map(toEntry);
     },
+    async lastSeqBefore(threadId, beforeSeq, eventTypes) {
+      for (let index = events.length - 1; index >= 0; index -= 1) {
+        const entry = events[index];
+        if (
+          entry &&
+          entry.threadId === threadId &&
+          entry.seq < beforeSeq &&
+          eventTypes.includes(entry.event.type)
+        )
+          return entry.seq;
+      }
+      return 0n;
+    },
     async headSeq(threadId) {
       return seqByThread.get(threadId as string) ?? 0n;
     },
