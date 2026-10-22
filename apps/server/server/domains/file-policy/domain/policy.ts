@@ -121,12 +121,16 @@ export function personLevel(facts: FileFacts, grants: readonly NodeGrant[]): Fil
 }
 
 /**
- * Deleted anywhere up the chain: none. Its owning Work archived: read. A
- * draft also takes its own Work's lifecycle (§2).
+ * Deleted anywhere up the chain: none, except at a draft destination whose
+ * draft outlived the document's own delete (`survivingDraft`, keyed on the
+ * destination, never on which view supplied the facts: a writer's review list
+ * reads branch views for a live destination). Its owning Work archived: read.
+ * A draft also takes its own Work's lifecycle (§2).
  */
 function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
   const terms: Term[] = [];
-  if (facts.projectDeleted || facts.deleted || facts.ownerWork?.deleted) {
+  const deleted = facts.deleted && !(at.kind === "draft" && facts.survivingDraft);
+  if (facts.projectDeleted || deleted || facts.ownerWork?.deleted) {
     terms.push({ cap: "none", limit: "not_found" });
   }
   if (facts.ownerWork) terms.push(...workTerms(facts.ownerWork));

@@ -9,7 +9,16 @@ predicate and the lock order are the load-bearing rules.
 `TreeView` is `LIVE_TREE` or `{ kind: "branch", branchId }`. Live views exclude
 deleted and hidden rows. A branch view includes its live rows plus the hidden
 documents and folders it created or needs as ancestors, at their row-owned
-location. A path with two visible nodes answers `ambiguous`; normalization is a
+location, plus the deleted documents it has pending changes to (D79: an active
+Work draft with `has_effect`, the pending count's predicate) with the deleted
+folders above them. One used-folder walk seeds both the hidden and the deleted
+folder arms; each is its own `UNION ALL` branch so live lookups keep their
+partial indexes. `deletedDocument` is the one definition of a deletion a draft
+outlives (own or folder delete, reason `deleted`, no Work cascade); listing adds
+the pending effect, admission (`survivingDraftDocuments`) only an active draft.
+The identity relations' diagnostic arms exclude a view's surviving rows, so each
+identity appears once. A new live node at a surviving document's path makes that
+path `ambiguous` in the branch, and `treeState` reports the clash. A path with two visible nodes answers `ambiguous`; normalization is a
 write operation, while `treeState` reports the clash.
 
 `branch-ownership.ts` is the single rule for which branches may hold a document:

@@ -25,6 +25,7 @@ import {
 import { createBranches } from "../../collab/domain/branches.js";
 import { lineageHasLiveMember } from "../../context/index.js";
 import { branchMayHold, type SourceOwner } from "../../context/tree/branch-ownership.js";
+import { survivingDraftDocuments } from "../../context/tree/living-document.js";
 import {
   createTreeReader,
   identityDocuments,
@@ -73,7 +74,15 @@ export function createDrizzleFileFacts(
     const branchWork = await readWork(db, branchWorkId);
     // A Work's draft of a document it may not hold doesn't exist.
     if (branchWork && !branchMayHold(branchWork, ownerOf(facts))) return null;
-    return { ...facts, branchWork: branchWork ? workFacts(branchWork) : missingWork(branchWorkId) };
+    const surviving =
+      branchWork && facts.deleted && target.kind !== "container"
+        ? await survivingDraftDocuments(db, { workId: branchWork.id }, [target.documentId])
+        : null;
+    return {
+      ...facts,
+      branchWork: branchWork ? workFacts(branchWork) : missingWork(branchWorkId),
+      ...(surviving?.size ? { survivingDraft: true } : {}),
+    };
   }
 
   return {
@@ -93,6 +102,7 @@ export function createDrizzleFileFacts(
       }
       const branchWorkRow =
         branchWorkId === undefined ? undefined : await readWork(db, branchWorkId);
+      const surviving = new Set<DocumentId>();
       const tree = createTreeReader(db);
       for (const { view, ids } of groups.values()) {
         const documents = identityDocuments(view);
@@ -117,12 +127,20 @@ export function createDrizzleFileFacts(
             continue;
           }
           if (branchWorkRow && !branchMayHold(branchWorkRow, ownerOf(base))) continue;
+          if (branchWorkRow && base.deleted) surviving.add(documentId);
           out.set(documentId, {
             ...base,
             branchWork: branchWorkRow ? workFacts(branchWorkRow) : missingWork(branchWorkId),
           });
         }
       }
+      if (branchWorkRow && surviving.size)
+        for (const id of await survivingDraftDocuments(db, { workId: branchWorkRow.id }, [
+          ...surviving,
+        ])) {
+          const facts = out.get(id);
+          if (facts) out.set(id, { ...facts, survivingDraft: true });
+        }
       return out;
     },
   };
