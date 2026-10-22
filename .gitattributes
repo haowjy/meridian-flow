@@ -6,3 +6,6 @@
 # Scoped to *_snapshot.json only — _journal.json is tiny and worth reviewing (it
 # names which migration was added).
 packages/database/src/migrations/meta/*_snapshot.json linguist-generated=true -diff
+
+# probe
+CHANGELOG.md merge=union
