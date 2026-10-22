@@ -140,7 +140,7 @@ export function createDrizzleApplyClick(
     });
     if (!placed.ok) {
       throw new ApplyClickRefused(
-        placed.error.code === "path_taken" ? "ancestor_taken" : "not_found",
+        placed.error.code === "ancestor_taken" ? "ancestor_taken" : "not_found",
       );
     }
     await deps.arrivals?.settle([node.nodeId]);
@@ -419,7 +419,7 @@ export function createDrizzleApplyClick(
                           },
                           { arrivals: deps.arrivals, catalog: deps.catalog },
                         );
-                        if (outcome.kind === "location_taken")
+                        if (outcome.kind === "ancestor_taken")
                           throw new ApplyClickRefused("ancestor_taken");
                         if (outcome.kind === "refused") throw new ApplyClickRefused("not_found");
                         if (appliedNode.nodeId === command.documentId)
@@ -446,7 +446,7 @@ export function createDrizzleApplyClick(
                           },
                           { arrivals: deps.arrivals, catalog: deps.catalog },
                         );
-                        if (moved.kind === "location_taken")
+                        if (moved.kind === "ancestor_taken")
                           throw new ApplyClickRefused("ancestor_taken");
                         if (moved.kind !== "moved") throw new ApplyClickRefused("not_found");
                         if (appliedNode.nodeId === command.documentId)
@@ -509,7 +509,7 @@ export function createDrizzleApplyClick(
                           { documentId: command.documentId },
                           { arrivals: deps.arrivals, catalog: deps.catalog },
                         );
-                        if (outcome.kind === "location_taken")
+                        if (outcome.kind === "ancestor_taken")
                           throw new ApplyClickRefused("ancestor_taken");
                         if (outcome.kind === "refused") return finish(closed(command));
                         restored = outcome.kind === "restored";

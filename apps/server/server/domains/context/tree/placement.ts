@@ -143,7 +143,7 @@ export type PlaceResult = {
 };
 
 export type PlaceFault =
-  | { code: "path_taken"; at: string; occupant: NodeRef }
+  | { code: "ancestor_taken"; at: string; occupant: NodeRef }
   | { code: "stale"; node: NodeRef };
 
 /**
@@ -259,7 +259,7 @@ async function prepareLivePlacement(
       : ({ kind: "folder", name: target.at.name } as const);
   const filename = await allocateFilename(desired, async ({ filename }) =>
     Boolean(
-      pathTaken(
+      ancestorTaken(
         [...ancestors.value.path, filename].join("/"),
         await tree.childAt(LIVE_TREE, {
           contextSourceId: target.at.contextSourceId,
@@ -306,11 +306,11 @@ async function reveal(db: Database, target: PlaceTarget, parentId: FolderId | nu
 }
 
 /** The fault for a live path something other than `self` holds, else null. */
-function pathTaken(
+function ancestorTaken(
   at: string,
   occupant: PathResolution<NodeRef>,
   self?: NodeRef,
-): Extract<PlaceFault, { code: "path_taken" }> | null {
+): Extract<PlaceFault, { code: "ancestor_taken" }> | null {
   if (occupant.kind === "not_found") return null;
   const other =
     occupant.kind === "found"
@@ -318,7 +318,7 @@ function pathTaken(
         ? undefined
         : occupant.node
       : occupant.nodes.find((node) => node.id !== self?.id);
-  return other ? { code: "path_taken", at, occupant: other } : null;
+  return other ? { code: "ancestor_taken", at, occupant: other } : null;
 }
 
 async function revalidatePlacement(
@@ -389,7 +389,7 @@ async function placeAncestors(
       parentId = holder.node.id;
       continue;
     }
-    const taken = pathTaken(path.join("/"), holder);
+    const taken = ancestorTaken(path.join("/"), holder);
     if (taken) return Err(taken);
     if (row.hidden && row.deleted) return Err({ code: "stale", node: { kind: "folder", id } });
     await updatePlacedFolder(db, row.id, {
