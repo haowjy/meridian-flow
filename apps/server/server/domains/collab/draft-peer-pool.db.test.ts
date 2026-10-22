@@ -104,7 +104,7 @@ it("ensureThreadPeerDraft from more callers than connections completes", async (
         documentId: job.documentId as never,
         threadId: job.threadId as never,
         branchId: branch.id,
-        liveDoc: async () => createCollabYDoc({ gc: false }),
+        liveDoc: async () => ({ doc: createCollabYDoc({ gc: false }), room: null }),
       }),
     ),
   );

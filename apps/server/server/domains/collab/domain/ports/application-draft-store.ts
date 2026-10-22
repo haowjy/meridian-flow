@@ -41,8 +41,8 @@ export type ApplicationDraftStore = DraftStore &
       documentId: DocumentId;
       threadId: ThreadId;
       branchId: BranchId;
-      liveDoc: () => Promise<Y.Doc | { doc: Y.Doc; room: string | null }>;
-    }): Promise<{ documentDraft: DraftSnapshot; workDraft?: DraftSnapshot }>;
+      liveDoc: () => Promise<{ doc: Y.Doc; room: string | null }>;
+    }): Promise<{ documentDraft: DraftSnapshot; workDraft: DraftSnapshot }>;
     /** The thread's primary Work's active draft on the document, as metadata. */
     resolveWorkDraftForThread(documentId: DocumentId, threadId: ThreadId): Promise<ResolvedDraft>;
   };

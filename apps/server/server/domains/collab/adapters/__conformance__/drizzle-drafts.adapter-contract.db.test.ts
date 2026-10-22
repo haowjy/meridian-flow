@@ -204,7 +204,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         branchId: BRANCH_ID as never,
-        liveDoc: async () => live,
+        liveDoc: async () => ({ doc: live, room: null }),
       });
       await db.insert(works).values({
         id: NEXT_WORK_ID,
@@ -239,7 +239,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         branchId: NEXT_BRANCH_ID as never,
-        liveDoc: async () => live,
+        liveDoc: async () => ({ doc: live, room: null }),
       });
       const [oldRow, nextUpstream] = await Promise.all([
         db
