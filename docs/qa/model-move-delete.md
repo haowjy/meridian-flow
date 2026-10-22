@@ -67,9 +67,22 @@ draft forks; read the drafted path (`ch1-old`) in a later reply, then `replace`.
 With more than one file, the dock's Apply asks the same question in its footer
 ("Applying deletes ch2.") before it sends.
 
+9. **One queue per item; one Discard per item.** Draft a move with a text change of ch1, ch2,
+   ch3 and ch6 (moves first, then a `read` and a `replace` of each new path in later steps), a
+   move-only ch4 and a delete of ch5. In the browser, wrap `fetch` to delay an Apply POST with
+   text groups by 3 s and log each send. The dock's ch4 line Apply moves it with no room.
+   ch3's text Apply then at once its line Apply: the line's request goes out only after the
+   text's (about 3 s after its click), and ch3 lands renamed with its text. ch2's Draft view,
+   Apply draft: one request with both, and the review moves on. ch6's line Discard keeps
+   "white" listed and ch6 live under its name; the footer says "Discarded" with no Undo.
+   With only ch1 left, the dock's Discard drops both, says "Discarded" with no Undo, and the
+   Work lists nothing.
+
 ## Last run
 
 - 2026-10-22, `feat/model-tool-surface-namespace-ui` after `ee4c2555c`, local stack, mock model:
   steps 1 to 4 pass. Evidence: the work directory's `impl-pr3/evidence/phase-d/`.
 - 2026-10-22, `feat/model-tool-surface-namespace` (phase G), local stack, mock model: steps 5
   to 8 pass. Evidence: the work directory's `impl-pr3/evidence/phase-g/`.
+- 2026-10-22, `feat/model-tool-surface-namespace-client` after `95dbe0806`, local stack, mock
+  model: step 9 passes, twice. Evidence: the work directory's `impl-pr3/evidence/ef-client/`.
