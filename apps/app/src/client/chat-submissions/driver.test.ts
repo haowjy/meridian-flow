@@ -142,7 +142,14 @@ it("classifies the write failure table identically for creation and admission", 
 
 describe("the journal driver", () => {
   it("keeps a create abort on the writer row; Retry creates and admits once", async () => {
-    const r = rig();
+    let postedAtAdmission: boolean | undefined;
+    let r!: ReturnType<typeof rig>;
+    r = rig({
+      append: async () => {
+        postedAtAdmission = r.records.get("record-1")?.posted;
+        return defaultSendResponse();
+      },
+    });
     let attempts = 0;
     try {
       const { owner } = r.mount({
@@ -158,6 +165,7 @@ describe("the journal driver", () => {
       await owner.retry("sub-1");
       expect(attempts).toBe(2);
       expect(r.scenario.appendRequests).toHaveLength(1);
+      expect(postedAtAdmission).toBe(true);
       expect(r.scenario.turns().map((turn) => turn.role)).toEqual(["user"]);
       expect(r.records.size).toBe(0);
     } finally {
@@ -343,7 +351,12 @@ it("lookup and retirement request refusals never authorize identity change or tr
     throw new HttpResponseError("auth unavailable", 401, null);
   };
   const test = rig({ lookup: refusal, retire: refusal });
-  const initial = { ...record(), creation: undefined, state: "rejected" as const };
+  const initial = {
+    ...record(),
+    creation: undefined,
+    state: "rejected" as const,
+    posted: true as const,
+  };
   test.records.set(initial.recordId, initial);
   const transfer = vi.fn(() => true);
   const { owner: driver } = test.mount({ transferForEdit: transfer });
@@ -418,6 +431,7 @@ it("stops on owner-attested deletion from send, lookup or retire, without reject
       ...record,
       creation: undefined,
       state: operation === "retire" ? "rejected" : undefined,
+      posted: operation === "retire" ? true : undefined,
     });
     let disposition = "";
     try {
@@ -555,6 +569,54 @@ it("Retry and Edit finish incomplete deletion before handling a received first s
     expect(r.records.size).toBe(0);
     expect(r.scenario.lookupRequests).toHaveLength(0);
     expect(r.scenario.appendRequests).toHaveLength(0);
+  } finally {
+    r.dispose();
+  }
+});
+
+it("Edit retires a posted failed-derivation send but returns an unposted one locally", async () => {
+  const r = rig({
+    lookup: async ({ submissionId }) => ({ kind: "pending", submissionId }),
+    retire: async ({ submissionId }) => ({
+      kind: "already-accepted",
+      submissionId,
+      ...defaultSendResponse(),
+    }),
+  });
+  const posted = {
+    ...record(),
+    creation: undefined,
+    posted: true as const,
+  };
+  r.records.set(posted.recordId, posted);
+  const transferForEdit = vi.fn(() => true);
+  const edited = vi.fn();
+  const { owner } = r.mount({
+    whenDerived: async () => false,
+    transferForEdit,
+    edited,
+  });
+  try {
+    await owner.drive(posted.threadId);
+    expect(r.scenario.lookupRequests).toHaveLength(1);
+    expect(r.scenario.appendRequests).toHaveLength(0);
+    expect(r.records.get(posted.recordId)?.state).toBeUndefined();
+
+    const unresolved = r.records.get(posted.recordId);
+    if (!unresolved) throw new Error("Posted fixture was retired without a server answer");
+    const rejected = { ...unresolved, state: "rejected" as const };
+    r.records.set(rejected.recordId, rejected);
+    await owner.edit(rejected.submissionId);
+    expect(r.scenario.retireRequests).toHaveLength(1);
+    expect(transferForEdit).not.toHaveBeenCalled();
+
+    const { posted: _posted, ...unposted } = rejected;
+    r.records.set(unposted.recordId, unposted);
+    await owner.edit(unposted.submissionId);
+    expect(r.scenario.retireRequests).toHaveLength(1);
+    expect(transferForEdit).toHaveBeenCalledWith(unposted, [unposted]);
+    expect(edited).toHaveBeenCalledWith(unposted);
+    expect(r.records.size).toBe(0);
   } finally {
     r.dispose();
   }

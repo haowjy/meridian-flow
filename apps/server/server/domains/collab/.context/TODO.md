@@ -1,5 +1,14 @@
 # collab TODO
 
+- Audit teardown in suites using `test-support/change-trail-postgres-harness.ts`: most
+  callers cancel only scheduled live pulls, not pending draft-effect projection jobs.
+  `document-revisions.db.test.ts` now joins its reads/pulls and calls
+  `settleDraftEffects` before resetting shared IDs, after a stale test interceptor
+  caused a cross-fixture deletion in #1004. Check the other callers for in-flight
+  producers, then consolidate awaited harness cleanup where needed; cancelling
+  timers or disposing a projection does not join work already running. No failure
+  in those other suites has been reproduced.
+
 - `adapters/drizzle-drafts.ts` (`ensureThreadPeerDraft`) and the live agent-edit
   coordinator: measure paths that hold a pooled connection while acquiring
   another, including an ambient reply transaction. Restructure on demonstrated
