@@ -103,12 +103,25 @@ groups (P) and one room-base-to-O delta. Its acknowledgement barrier waits for
 the server to acknowledge every local update in that captured cut before dispatch. The queue
 retains a `readDraftRoom` lease independently of React until terminal.
 
+A deleted document (item conflict `deleted_live`, D79) is draft-only on every
+surface; Apply restores it, then merges. `apply(ref, target, restore)` sends
+`restore` only when the writer knew: a single document's Apply whose row showed
+the delete, or an Apply all for the documents its confirmation named. Without it
+the server answers `needs_restore` (nothing changed); the outcome is
+`needs-restore`, the list refreshes so the row shows the delete, and an Apply all
+asks again by name. An applied answer with `restored` makes the outcome
+`{ kind: "done", restored: true }` and marks the document (`wasRestored`) for the
+editor's "back in the manuscript" line; the surface that clicked says the same in
+its reserved notice slot (`CommandNotice`).
+
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds,
 then an item Retry. A terminal acknowledgement failure refuses unsent cuts
 with an item failure; sent heads keep their same-id settlement across session
 replacement. Transient disconnects keep acknowledgement barriers pending.
 A record alone proves landing; an applied answer without
-the record keeps its contribution. Closed/refused answers remove only their
+the record keeps its contribution. A record that arrives before the answer
+releases the head (the next click may send), but the click's outcome waits for
+that answer, which alone carries `restored`. Closed/refused answers remove only their
 own contribution. A `work_archived` refusal stores no failure (`shownRefusal`):
 the Works query refetches and `ArchivedWorkNotice` explains the reverted change,
 so no surface shows a refusal line. Other refusals still move prose in two cases,

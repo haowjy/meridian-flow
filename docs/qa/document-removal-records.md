@@ -218,6 +218,22 @@ otherwise, A's tabs are live tabs.
   `restored: true`, and the document is back in the manuscript with the change.
   Apply all over a deleted document confirms first, naming it; a document
   deleted after that confirmation answers `needs_restore` the same way.
+- The app's surfaces for a Work with pending changes to a deleted document
+  (seed with `./mf`: a draft-mode chat's reply edits the document, then delete
+  it from the tree). The delete dialog says "<title> will be deleted." and
+  names the Work: "The Work <name> has changes to it. Applying them brings it
+  back." (never a handle like `w3`). After the delete the chat dock row and the
+  Work page's Changes to review row keep the file with "Deleted from the
+  manuscript" on its status line; an open draft tab stays open. A dock with
+  several files, or Work Files' "Apply all changes", asks first: "Applying
+  brings back <title>, which was deleted from the manuscript." with Cancel and
+  Apply. Applying leaves "<title> is back in the manuscript." in the surface's
+  notice slot and the tree shows the document again. To force `needs_restore`,
+  route the Work's `**/works/<W>/branches` list to its pre-delete body before
+  the delete, then Apply all: the list asks again by name and the row says
+  "This document was deleted from the manuscript. Apply again to bring it
+  back." Create a new document at the deleted one's path: the row says another
+  document now has this name, and Apply all is not offered.
 - A stale 4208 (an init script dispatching the close on the page's `/ws/yjs`
   socket while the document exists): the room reconnects within a few hundred
   ms and typing saves. A second stale 4208 on the same tab reconnects too.

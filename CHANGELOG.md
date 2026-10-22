@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The app follows a live delete that leaves a Work's draft alive (D79). An open draft tab of the deleted document stays open; the chat dock and the Work page keep its row with "Deleted from the manuscript", and the draft editor says who deleted it and that applying brings it back. A single document's Apply brings it back; an Apply all asks first, naming each deleted document, and asks again for one a newer delete held back (`needs_restore`). Afterwards the surface says "‹title› is back in the manuscript.". The delete dialog drops "permanently" and names the Works whose changes would bring the file back. A deleted document whose name another document now holds says so and offers no Apply.
+
 - Deleting a document from the manuscript no longer throws away a Work's pending changes to it (D79). Its drafts stay ordinary drafts: the Work's chat still finds it at its path and keeps writing, undoing and reviewing against its last text, while the manuscript and Works with nothing pending see it gone. Apply brings it back, with its folders, then merges the change, and the result says `restored`, but only when the writer knew it was deleted: the click carries `restore`, and a click that didn't answers `needs_restore` and changes nothing. A new document at the freed path, or a move over the drafted one, shows as a clash in the Work. Server side; the app's notices and Apply all confirmation follow separately.
 
 - Model-facing owner-handle guidance is shorter: Work context now carries the concrete Scratch policy, repair errors give one copyable address, and repeated owner details are removed from receipts and listings.
