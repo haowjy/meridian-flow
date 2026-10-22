@@ -12,12 +12,18 @@ import {
   useState,
 } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { documentBasename } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import { isDeletedFromManuscript } from "./deleted-drafts";
 import type { CommandOutcome, DiscardNotice } from "./draft-command-owner";
 import type { DraftReviewSelection } from "./draft-review-session";
 import type { ChangeTarget } from "./review-model";
 
 export type BranchCommandOutcome = CommandOutcome;
+/** A surface's latest command feedback: a Discard with its Undo, or documents an Apply brought back. */
+export type SurfaceNotice =
+  | DiscardNotice
+  | { kind: "restored"; itemKey?: undefined; undo?: undefined; titles: string[]; end(): void };
 export type CommandStart = { sent: boolean; outcome: Promise<CommandOutcome> };
 export type WorkBranchCommands = ReturnType<typeof useWorkBranchCommands>;
 
@@ -36,8 +42,8 @@ export function useWorkBranchCommands({
   const queryClient = useQueryClient();
   const workId = work?.id ?? "";
   const locked = !work || isWorkArchived(work);
-  const [notice, setNotice] = useState<DiscardNotice | null>(null);
-  const heldNotice = useRef<DiscardNotice | null>(null);
+  const [notice, setNotice] = useState<SurfaceNotice | null>(null);
+  const heldNotice = useRef<SurfaceNotice | null>(null);
   const endNotice = () => {
     heldNotice.current?.end();
     heldNotice.current = null;
@@ -62,13 +68,30 @@ export function useWorkBranchCommands({
         queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
       });
     };
+    /** The list without the item's move or delete, until the refetch confirms it. */
+    const dropTreeLine = (item: ThreadDraftListItem) =>
+      queryClient.setQueryData<ThreadDraftListItem[]>(
+        projectQueryKeys.workBranchDrafts(projectId, workId),
+        (rows) =>
+          rows?.flatMap((row) =>
+            row.itemKey !== item.itemKey ? [row] : row.hasDraft ? [{ ...row, tree: null }] : [],
+          ),
+      );
     const blocked = (): CommandStart => ({
       sent: false,
       outcome: Promise.resolve({ kind: "blocked" }),
     });
-    const show = (value: DiscardNotice) => {
+    const show = (value: SurfaceNotice) => {
       heldNotice.current = value;
       setNotice(value);
+    };
+    // Each document an Apply brought back joins the notice until the surface's next action.
+    const restored = (item: ThreadDraftListItem | undefined) => {
+      const title = item?.documentName ?? documentBasename(item?.contextLocation?.path) ?? null;
+      if (!title) return;
+      const held = heldNotice.current;
+      const titles = held?.kind === "restored" ? [...held.titles, title] : [title];
+      show({ kind: "restored", titles, end() {} });
     };
     // An archived Work's refusal is silent (`shownRefusal`): its notice explains it once this tab
     // has read the archive, which another tab or device may have made.
@@ -76,29 +99,44 @@ export function useWorkBranchCommands({
       mode: "apply" | "discard",
       draft: DraftReviewSelection,
       target: ChangeTarget,
+      restore?: boolean,
     ): CommandStart => {
-      const started = dispatch(mode, draft, target);
+      const started = dispatch(mode, draft, target, restore);
       void started.outcome.then((outcome) => {
         if (outcome.kind === "change-refused" && outcome.code === "work_archived")
           void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
       });
       return started;
     };
+    /**
+     * `restore` is whether the writer chose to bring a deleted document back (D79). A single
+     * document's Apply means yes when its row showed it deleted; an Apply all passes what its
+     * confirmation named.
+     */
     const dispatch = (
       mode: "apply" | "discard",
       draft: DraftReviewSelection,
       target: ChangeTarget,
+      restore?: boolean,
     ): CommandStart => {
       endNotice();
       if (locked) return blocked();
       const item = row(draft);
       if (mode === "apply") {
-        const started =
-          item?.isNew && !item.hasDraft && target.kind === "draft"
-            ? owner.reveal(ref(draft))
-            : owner.apply(ref(draft), target);
-        void started.outcome.then(() => {
-          if (!owner.state(draft.itemKey).pending) refresh();
+        const bringBack = restore ?? isDeletedFromManuscript(item);
+        // The tree cut rides with the tree line, a whole-item click, or a selection that includes the line.
+        const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
+        const started = owner.apply(
+          ref(draft),
+          target,
+          bringBack,
+          (tree && item?.tree) || undefined,
+        );
+        void started.outcome.then((outcome) => {
+          if (outcome.kind === "done" && tree && item?.tree) dropTreeLine(item);
+          if (outcome.kind === "done" && outcome.restored) restored(item);
+          // A needs-restore answer means the row is behind: refresh so it shows the delete.
+          if (outcome.kind === "needs-restore" || !owner.state(draft.itemKey).pending) refresh();
         });
         return started;
       }
@@ -120,6 +158,19 @@ export function useWorkBranchCommands({
           return answer;
         });
         show(removed);
+        return { sent: true, outcome };
+      }
+      // A move or delete is discarded on the server, with the item's chosen text, as one command.
+      if (target.kind === "tree" || (item?.tree && (target.kind === "draft" || target.tree))) {
+        if (!item?.tree) return blocked();
+        // The line goes at once; the refetch after the answer restores it if the server refused.
+        dropTreeLine(item);
+        const outcome = owner.discardItem(ref(draft), item, target, surface).then((answer) => {
+          refresh();
+          return answer;
+        });
+        // No Undo: the server's settlement of the move or delete has none (`discardItem`).
+        if (surface === "dock") show({ kind: "discarded", itemKey: draft.itemKey, end() {} });
         return { sent: true, outcome };
       }
       const discarded = owner.discard(ref(draft), target, surface, endNotice);
@@ -171,17 +222,28 @@ export function useWorkBranchCommands({
         startDraft("apply", { documentId, itemKey }).outcome,
       discard: (documentId: string, itemKey: string) =>
         startDraft("discard", { documentId, itemKey }).outcome,
+      /** `restore`: the documents an Apply all's confirmation named; it brings back no other. */
       batch: (
         mode: "apply" | "discard",
         items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
+        restore: ReadonlySet<string> = new Set(),
       ) => {
         // Capture every item in the event turn, not in a promise continuation.
-        const outcomes = items.map(({ draft, target }) => start(mode, draft, target).outcome);
-        return Promise.all(outcomes);
+        const send = ({ draft, target }: (typeof items)[number]) =>
+          start(mode, draft, target, restore.has(draft.documentId)).outcome;
+        const outcomes = Promise.all(items.map(send));
+        return mode === "apply" ? afterHolds(outcomes, items, send) : outcomes;
       },
-      disposeDrafts: (mode: "apply" | "discard", drafts: readonly DraftReviewSelection[]) => {
-        if (mode === "apply")
-          return Promise.all(drafts.map((draft) => startDraft(mode, draft).outcome));
+      disposeDrafts: (
+        mode: "apply" | "discard",
+        drafts: readonly DraftReviewSelection[],
+        restore: ReadonlySet<string> = new Set(),
+      ) => {
+        if (mode === "apply") {
+          const send = (draft: DraftReviewSelection) =>
+            start(mode, draft, { kind: "draft" }, restore.has(draft.documentId)).outcome;
+          return afterHolds(Promise.all(drafts.map(send)), drafts, send);
+        }
         endNotice();
         const branchId = drafts.map(row).find(Boolean)?.branchId;
         if (locked || !branchId)
@@ -193,6 +255,32 @@ export function useWorkBranchCommands({
       },
     };
   }, [owner, locked, projectId, workId, threadId, surface, queryClient, notice]);
+}
+
+/**
+ * Apply all's order for drafted moves: a move whose destination another item still holds
+ * answers `held`, so once the others ran it is sent again, until a pass frees none (a swap
+ * stays held). Every other outcome is final.
+ */
+async function afterHolds<T>(
+  first: Promise<CommandOutcome[]>,
+  items: readonly T[],
+  send: (item: T) => Promise<CommandOutcome>,
+): Promise<CommandOutcome[]> {
+  const outcomes = await first;
+  for (;;) {
+    const held = outcomes.flatMap((outcome, index) => (outcome.kind === "held" ? [index] : []));
+    if (!held.length) return outcomes;
+    let freed = false;
+    for (const index of held) {
+      const item = items[index];
+      if (item === undefined) continue;
+      const again = await send(item);
+      outcomes[index] = again;
+      freed ||= again.kind !== "held";
+    }
+    if (!freed) return outcomes;
+  }
 }
 
 const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);

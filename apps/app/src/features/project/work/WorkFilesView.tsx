@@ -188,6 +188,7 @@ export function WorkFilesView({
         ) : null}
       </WorkFileGroup>
       <DeleteConfirmationDialog
+        projectId={projectId}
         target={scratchDelete.target}
         isPending={scratchDelete.isPending}
         error={scratchDelete.error}

@@ -16,10 +16,34 @@ reading the winner. Pending commands are observations, not a second scheduler.
 
 `adapters/drizzle-apply-click.ts` owns the atomic storage operation. The Works
 boundary locks the Work and confirms the route's bound edit grants before the
-first write (the command claim). A hidden-create reveal verifies its tree namespace before taking live's
-mutation lock. A source moving during that acquisition rolls back and retries
-the transaction, without re-compiling the click. Ordinary text Apply takes only
-live's mutation lock, so unrelated tree changes do not serialize it. The append
+first write (the command claim). A hidden-create reveal or a deleted document's
+restore verifies its tree namespace (`acquireTreeScope`) before taking live's
+mutation lock. The scope comes from an unlocked tree read, so Apply re-reads under
+the lock: a delete that landed in between, or a source moving during the
+acquisition, rolls back and retries the transaction namespace-first (remembered
+for every later attempt), without re-compiling the click and never taking a
+namespace under a document lock. Ordinary text Apply takes only live's mutation
+lock, so unrelated tree changes do not serialize it.
+
+A document deleted live whose draft outlived the delete (D79) comes back only
+when the writer knew it was deleted: the click carries `restore: true` (a
+per-document Apply on an item showing the deleted state, or an Apply all for the
+documents its confirmation named). The check runs under the document lock, so a
+delete the writer's view did not show, however late it landed, answers
+`needs_restore`: nothing changes, the draft stays pending, and the client asks
+before sending a new click with `restore`. The answer is stored, so a replay
+returns it. With `restore`, `restoreDocument` clears the record and restores its
+folders in the same transaction, then the ordinary text merge runs against the
+deleted document's last text, which equals its review base. The result carries
+`restored: true`. A path another document took refuses `forbidden` (the item
+lists `path_taken`); a Work cascade, discard or deleted source answers `closed`
+(no record on the answer). The route authorizes a deleted item at its source through the
+draft destination (`restoreGrant`) instead of a live grant. When a delete commits
+after the route resolved the item, its authorization or the transaction's grant
+confirmation refuses the live grant, nothing is claimed, and the route runs the
+click once more (once), which resolves the item as deleted. Apply reads the
+addressed document's own lifecycle row for these decisions, never a branch-wide
+tree listing. The append
 door is the sole draft-row lock and active-state check: live preparation and its
 staged journal write precede it inside the same Work transaction. A late draft
 closure unwinds that whole transaction before answering `closed`, so no live
@@ -59,8 +83,39 @@ It uses a scratch database and the real route core, file policy, command store,
 append door and trail writer. It does not stand in for integrated browser FIFO
 and optimistic-review verification.
 
-A still-hidden creation with no text draft uses empty `groupIds`/`baseViewDelta`
-and omits `snapshot`. The same transaction claims its command, rechecks hidden
-creation and no-room identity under the tree/live locks, reveals it and clears
-its branch rows. No room, Apply record or text lineage is fabricated. Empty
-groups on any other item are malformed.
+## The tree cut (design-v2 §4)
+
+A click may carry `tree: { revision }`, the revision of the branch's
+`branch_tree_changes` row the writer saw (`ThreadDraftListItem.tree`). A click
+applies exactly its cuts: tree alone (a move-only or delete-only item, or a
+creation with no text room: empty `groupIds`/`baseViewDelta`, no `snapshot`),
+text and tree (the whole item: tree first, then the text merge at the result),
+or text alone, which leaves a pending move or delete pending: a hidden creation
+is revealed at its own row, since text can't land in a document live lacks, and
+the branch's row loses only `created` (`endCreatedFact`, a new revision), so its
+move or delete stays a pending tree line on the now-live document. A tree cut takes the
+tree scope with the branch's placement and locks the branch; under the locks a
+row at another revision answers `changed` and nothing applies.
+
+The operation is keyed on the row's logical state and live's state:
+
+| State | Live | Apply |
+|---|---|---|
+| deleting | living | `DocumentRemoval.remove` (writer actor); the branch's draft closes |
+| deleting | hidden creation | end of use (`tombstoneUnused`) |
+| deleting | deleted | settle only, no restore and no `needs_restore` |
+| moving | living | `moveToPlacement` to the effective placement; `replaced` names live's old address |
+| moving | deleted | `restoreDocument` at the effective placement (needs `restore`, D79) |
+| moving | hidden creation | reveal at the effective placement |
+| created | hidden | reveal at the row |
+
+A move whose destination live still gives a document this branch moves or
+deletes answers `held` naming that item (the review item lists the same as
+`pending_item`); any other occupant refuses `forbidden`. The client's Apply all
+re-sends held clicks after the others until a pass frees none, so a renumber
+applies and a swap stays held. Then the row goes through `dropDocumentRows`,
+which writes the settlement rows every terminal path writes (`as: applied` for the
+entries in effect, `discarded` for those undone before it), and
+prunes every hidden folder its moves held that nothing else uses. The route authorizes a drafted
+delete of a document live deleted too through `restoreGrant` alone: the branch
+view has no draft of it to grant.

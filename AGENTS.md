@@ -16,9 +16,15 @@ life faster, with AI that understands narrative craft.
 progression-fantasy web serials at 5,000–10,000+ words/day who need
 Scrivener-scale power without its complexity.
 
-**Trust the LLM.** AI writes merge like any Yjs peer's: marks and receipts
-inform, and undo recovers. Never add approval gates, refusal vetoes, or
-"safety" friction to AI writes; that gates the writer's instruction. See the
+**Trust the LLM, and make changes easy to review.** The user and the model both
+change documents, often at the same time, and changing a document should be
+smooth for both. Their writes land: never put approval gates, refusals, or
+"safety" friction in front of them. The user is protected by seeing what
+changed and being able to take it back. AI writes merge like any Yjs peer's,
+marks and receipts say who did what, and review makes conflicting changes easy
+to resolve. Undo, redo, and revert are the essential operations: they must work
+whenever the change still exists to reverse. Refuse a write only when it can't
+mean anything, such as when its target is gone. See the
 [trust ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/trust-the-llm-mission.md).
 
 ## Engineering principles
@@ -85,6 +91,14 @@ parentheses, never `·`, `•`, `—`, or `|`. See the
 Feedback never displaces content already on screen: it uses blank space, or the
 end of a surface that grows downward, like a chat's latest turn. See the
 [offer-only-what-applies decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/offer-only-what-applies.md).
+
+**Trust the user, and save vertical space.** Teach how the product works once,
+in a tutorial, and then trust the user to know it. The UI shows state, never
+standing explanations of rules the user already learned or will learn by trying
+("ch5 still has that name. Apply its change first."). A refusal is said on the
+thing the user did, after they try it. Never reserve empty lines for messages
+that might come: a list row is one line until it has something to say. See the
+[trust-the-user decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/trust-the-user.md).
 
 **Debugging.** Follow [docs/debugging.md](docs/debugging.md).
 

@@ -293,10 +293,11 @@ export interface OrchestratorDeps {
       ctx: { threadId: ThreadId; turnId: TurnId; recordingFrontier: FrontierLookup },
       beforeTransactionCommit: (result: ResponseWriteCommitOutcome) => Promise<void>,
     ): Promise<ResponseWriteCommitOutcome>;
+    /** What a rollback couldn't reverse (a move back to a taken location); the rest it did. */
     rollbackResponse(
       responseIdentity: ModelResponseIdentity,
       ctx: { threadId: ThreadId; turnId: TurnId },
-    ): Promise<void>;
+    ): Promise<{ skipped: readonly { uri: string; cause: string }[] } | undefined>;
   };
 }
 
@@ -1592,6 +1593,8 @@ function createResponseScope(input: {
   };
   let id = input.responseId;
   let active = true;
+  /** A move or delete committed at its call, so a save boundary after it rotates the scope. */
+  let treeWrites = false;
   const reply = createReplyMutations();
   return {
     get id() {
@@ -1600,16 +1603,18 @@ function createResponseScope(input: {
     /** The reply's own accepted mutations: they outlive edit-scope rotations, not the reply. */
     reply,
     get hasWrites() {
-      return writes.size > 0;
+      return writes.size > 0 || treeWrites;
     },
     rotate() {
       // Durable tool blocks keep the provider response id; only edit identity rotates.
       id = crypto.randomUUID();
       writes.clear();
+      treeWrites = false;
       active = true;
     },
     stage(dispatched: Extract<Awaited<ReturnType<typeof dispatchToolCall>>, { block: Block }>) {
       const metadata = dispatched.metadata;
+      if (metadata?.treeWrite === true) treeWrites = true;
       if (metadata?.stagedWrite !== true || typeof metadata.documentId !== "string") return;
       if (typeof metadata.writeId !== "string" || typeof metadata.settlementId !== "string")
         throw new Error(
@@ -1730,10 +1735,19 @@ function createResponseScope(input: {
     async rollback() {
       if (!active) return;
       active = false;
-      await deps.responseWrites.rollbackResponse(
+      const rolledBack = await deps.responseWrites.rollbackResponse(
         { providerResponseId: input.responseId, editScopeId: id },
         { threadId, turnId },
       );
+      // Each move or delete reverses on its own; one that couldn't is reported, not fatal.
+      if (rolledBack?.skipped.length)
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "runtime.orchestrator",
+          name: "response_rollback.partial",
+          correlation: { threadId, turnId, runId: turnId },
+          payload: { threadId, turnId, skipped: rolledBack.skipped.map((skip) => ({ ...skip })) },
+        });
     },
   };
 }

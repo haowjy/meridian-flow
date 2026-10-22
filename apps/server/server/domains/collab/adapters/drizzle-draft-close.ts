@@ -3,7 +3,8 @@
  * peers, and the retirement it owes once the root transaction commits.
  *
  * Every close joins its root transaction's retirement batch (a transaction participant, so a
- * rolled-back savepoint's closes leave with it); a removal adds its documents and record. The
+ * rolled-back savepoint's closes leave with it); a removal registers its documents and record
+ * there whether or not it closes any draft (a delete closes none). The
  * batch retires once, after the root commits: a draft whose document the same transaction
  * removed retires as a removal whatever its own cause, so a Discard that closes a created
  * document's drafts and then tombstones it closes their rooms `4208`.
@@ -76,8 +77,13 @@ type Batch = { closed: ClosedDraft[]; removed: Map<DocumentId, DocumentRemovalRe
 
 export type DraftClose = {
   /**
+   * Adds removed documents to the root transaction's retirement batch: their live rooms close
+   * `4208` after commit. Their drafts stay as they are.
+   */
+  registerRemoved(documentIds: readonly DocumentId[], record: DocumentRemovalRecord): void;
+  /**
    * Close exactly the selection's active drafts and retire them after the root transaction
-   * commits. Already-closed rows keep their cause. A removal's selection names its documents, whose rooms close even with no draft.
+   * commits. Already-closed rows keep their cause. A removal cause registers its selection's documents too.
    */
   closeDrafts(
     db: DrizzleDb,
@@ -129,13 +135,22 @@ export function createDraftClose(): DraftClose {
     },
   };
 
+  function registerRemoved(
+    documentIds: readonly DocumentId[],
+    record: DocumentRemovalRecord,
+  ): void {
+    const batch = enlistDrizzleTransactionParticipant(participant);
+    for (const id of documentIds) batch.removed.set(id, record);
+  }
+
   return {
+    registerRemoved,
     async closeDrafts(db, selection, cause) {
       const batch = enlistDrizzleTransactionParticipant(participant);
       if (typeof cause === "object") {
         if (!("documentIds" in selection))
           throw new Error("A removal closes the drafts of the documents it removed");
-        for (const id of selection.documentIds) batch.removed.set(id, cause.documentRemoved);
+        registerRemoved(selection.documentIds, cause.documentRemoved);
       }
       const rows = await lockActiveDrafts(db, selection);
       const closed = rows.length

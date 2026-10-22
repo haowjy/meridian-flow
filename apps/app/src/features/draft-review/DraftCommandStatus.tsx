@@ -1,9 +1,26 @@
-/** Pending delivery and same-id Retry remain on the addressed item, even when no review groups remain. */
+/**
+ * A listed file's reserved status line: pending delivery and same-id Retry stay on the
+ * addressed item even when no review groups remain. With nothing in flight it says what
+ * live did to the document (deleted, or its name taken) or that a move waits for another
+ * pending change to free its name, so the line never pushes rows.
+ */
+
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import { isDeletedFromManuscript, isPathTaken } from "./deleted-drafts";
 import { useDraftCommandState } from "./draft-changes";
 import { ReviewMessageText } from "./ReviewMessageText";
-export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
+export function DraftCommandStatus({
+  itemKey,
+  item,
+}: {
+  itemKey: string;
+  /** The listed row; its conflict is the line's resting state. */
+  item?: ThreadDraftListItem;
+}) {
   const owner = useDraftCommandOwner();
   const state = useDraftCommandState(itemKey);
   return (
@@ -25,10 +42,25 @@ export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
       ) : state.applying ? (
         <Trans>Applying</Trans>
       ) : state.failure ? (
-        <span className="text-destructive">
+        // Asking to bring a deleted document back is a question, not an error.
+        <span
+          className={state.failure.serverCode === "needs_restore" ? undefined : "text-destructive"}
+        >
           <ReviewMessageText failure={state.failure} />
         </span>
+      ) : isPathTaken(item) ? (
+        <Trans>Another document now has this name. Rename that document to apply this draft.</Trans>
+      ) : item?.conflict?.code === "pending_item" ? (
+        <WaitsFor path={item.conflict.path} />
+      ) : isDeletedFromManuscript(item) ? (
+        <Trans>Deleted from the manuscript</Trans>
       ) : null}
     </div>
   );
+}
+
+/** A move held by another of the Work's pending changes, which still gives live that name. */
+function WaitsFor({ path }: { path: string }) {
+  const occupant = documentTitleFromUri(path) ?? t`Another document`;
+  return <Trans>{occupant} still has that name. Apply its change first.</Trans>;
 }

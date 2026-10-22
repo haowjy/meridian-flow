@@ -174,7 +174,7 @@ describe("gateLiveView", () => {
   const group = (isNew: boolean) =>
     ({
       documentId: "document-id",
-      isNew,
+      draftOnly: isNew,
       draft: { itemKey: "draft-id", status: "active", isNew },
     }) as unknown as ReviewFileTarget;
   const ready = (...files: ReviewFileTarget[]) => ({ status: "ready", files });

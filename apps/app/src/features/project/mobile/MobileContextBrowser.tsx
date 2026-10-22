@@ -182,6 +182,7 @@ function MobileFolderTree({
         <InlineErrorRow message={t`Could not load files.`} onRetry={refetch} />
       ) : null}
       <DeleteConfirmationDialog
+        projectId={projectId}
         target={deletion.target}
         isPending={deletion.isPending}
         error={deletion.error}

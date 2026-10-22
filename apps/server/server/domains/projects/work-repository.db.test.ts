@@ -810,8 +810,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.documentDrafts)
           .where(eq(schema.documentDrafts.id, "work-delete-draft")),
-        "cascade removal closes drafts without reviving them on restore",
-      ).resolves.toMatchObject([{ status: "closed", closedCause: "document_removed" }]);
+        "a cascade deletion leaves its documents' drafts open for the Work's Restore",
+      ).resolves.toMatchObject([{ status: "active", closedCause: null }]);
 
       await works.restore(work.id);
       await expect(
@@ -835,7 +835,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.documentDrafts)
           .where(eq(schema.documentDrafts.id, "work-delete-draft")),
-      ).resolves.toMatchObject([{ status: "closed", closedCause: "document_removed" }]);
+      ).resolves.toMatchObject([{ status: "active", closedCause: null }]);
       expect((await catalog.snapshot(scope)).entries.map((entry) => entry.entryId)).toContain(
         document.id,
       );

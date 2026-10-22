@@ -36,6 +36,6 @@ export function nextReviewFile(
 export function reviewFileTargetName(row: ReviewFileTarget, untitled: string): string {
   return (
     row.documentName ??
-    (row.isNew ? (documentBasename(row.contextLocation?.path) ?? untitled) : row.documentId)
+    (row.draftOnly ? (documentBasename(row.contextLocation?.path) ?? untitled) : row.documentId)
   );
 }

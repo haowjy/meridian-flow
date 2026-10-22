@@ -20,6 +20,8 @@ export type ReviewChangeBarProps = {
   disabled: boolean;
 
   draftFailure?: BranchCommandFailure | null;
+  /** False withdraws Apply (another document holds the path); Discard still applies. */
+  canApply?: boolean;
   onApply: () => void;
   onDiscard: () => void;
   touch?: boolean;
@@ -33,6 +35,7 @@ export function ReviewChangeBar({
   disabled,
 
   draftFailure,
+  canApply = true,
   onApply,
   onDiscard,
   touch = false,
@@ -93,14 +96,16 @@ export function ReviewChangeBar({
             >
               {touch ? <Trans>Discard</Trans> : label}
             </Button>
-            <Button
-              size="xs"
-              className={touch ? "h-11 min-w-20 px-5 text-sm" : undefined}
-              disabled={disabled}
-              onClick={onApply}
-            >
-              <Trans>Apply</Trans>
-            </Button>
+            {canApply ? (
+              <Button
+                size="xs"
+                className={touch ? "h-11 min-w-20 px-5 text-sm" : undefined}
+                disabled={disabled}
+                onClick={onApply}
+              >
+                <Trans>Apply</Trans>
+              </Button>
+            ) : null}
           </span>
         ) : null}
       </div>

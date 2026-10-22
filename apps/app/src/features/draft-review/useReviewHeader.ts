@@ -16,6 +16,7 @@ import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useDraftReview } from "./DraftReviewProvider";
+import { isPathTaken } from "./deleted-drafts";
 import type { BranchCommandFailure } from "./review-command-types";
 import { nextReviewFile } from "./review-files";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
@@ -106,7 +107,12 @@ export function useReviewHeader({
   const { controller, files } = useDraftReview();
   const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
 
-  const next = nextReviewFile(files, documentId, null);
+  // Only a file with text has a review to move to: a move or delete alone has no draft room.
+  const next = nextReviewFile(
+    files.filter((file) => file.draft.hasDraft || file.documentId === documentId),
+    documentId,
+    null,
+  );
   // Warm the next addressed room lookup without fetching a server text preview.
   const queryClient = useQueryClient();
   const nextDocumentId = next?.documentId;
@@ -140,7 +146,10 @@ export function useReviewHeader({
     view,
     next,
     locked,
-    canApply: ready && view.items.length > 0,
+    canApply:
+      ready &&
+      view.items.length > 0 &&
+      !isPathTaken(files.find((row) => row.draft.itemKey === itemKey)?.draft),
     finished,
     completing,
     commandError,

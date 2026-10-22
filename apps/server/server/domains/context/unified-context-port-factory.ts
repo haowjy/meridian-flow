@@ -32,7 +32,7 @@ import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { ContextFS, type ContextFSDeps } from "./adapters/context-fs/context-fs.js";
 import type { ContextPlacement } from "./adapters/context-fs/create-placement.js";
 import { lockContextNamespaces } from "./adapters/context-fs/document-locations.js";
-import { createDrizzleBranchCreates } from "./adapters/context-fs/drizzle-branch-creates.js";
+import { createDrizzleBranchTree } from "./adapters/context-fs/drizzle-branch-tree.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleContextOperationReceipts } from "./adapters/context-operation-receipts.js";
 import { createDrizzleOwnerLookup } from "./adapters/owner-lookup.js";
@@ -53,7 +53,7 @@ import {
   findNoWorkId,
 } from "./context-source-provisioning.js";
 import { bindOwners, emptyOwnerLookup, type OwnerLookup } from "./owner-lookup.js";
-import type { BranchCreatePort } from "./ports/branch-create.js";
+import type { BranchTreePort } from "./ports/branch-tree.js";
 import type { ContextSchemeAdapter } from "./ports/context-adapter.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
 import type {
@@ -147,7 +147,7 @@ interface AdapterAssembly {
 
 type BranchPlacements = {
   branches: Pick<Branches, "viewForWork">;
-  creates(store: ContextDocumentStore): BranchCreatePort;
+  tree(store: ContextDocumentStore): BranchTreePort;
 };
 
 /**
@@ -170,7 +170,7 @@ function placementFor(
     threadId: thread.threadId as ThreadId,
     userId: assembly.owner.userId as UserId,
     branches: placements.branches,
-    creates: placements.creates(store),
+    tree: placements.tree(store),
   };
 }
 
@@ -648,8 +648,8 @@ export function createProductionUnifiedContextPortFactory(options: {
 
   const placements: BranchPlacements = {
     branches: options.branches,
-    creates: (store) =>
-      createDrizzleBranchCreates({
+    tree: (store) =>
+      createDrizzleBranchTree({
         db: options.db,
         removal: options.removal,
         sourceId: () => store.contextSourceId(),
