@@ -32,7 +32,7 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
     case "held":
       return msg`Another document this Work moves or deletes still has that name. Apply that one first, or apply all changes.`;
     case "changed":
-      return msg`This rename or delete changed since you looked. Check it, then apply again.`;
+      return msg`This move or delete changed since you looked. Check it, then apply again.`;
     default:
       return undefined;
   }

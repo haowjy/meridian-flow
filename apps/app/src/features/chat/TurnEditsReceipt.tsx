@@ -21,7 +21,12 @@ import { ChangeViewRows } from "./ChangeViewRows";
 import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
 import { type ChangeRevealRequest, useChangeReveal } from "./conversation-reveal";
 import { DocumentName } from "./DocumentName";
-import { documentDisplayName, moveDestinationName } from "./document-display-name";
+import {
+  documentDisplayName,
+  documentLocationName,
+  moveDestinationName,
+} from "./document-display-name";
+import { useOwnerNames } from "./owner-names";
 import {
   dependentChangeCopy,
   type ReversalRefusal,
@@ -91,7 +96,11 @@ export function TurnEditsReceipt({
   const changeReveal = useChangeReveal(threadId, turn.id);
   const [pending, setPending] = useState(false);
   const [draftOutcome, setDraftOutcome] = useState(false);
-  const [actionSkips, setActionSkips] = useState<TurnInverseSkip[] | null>(null);
+  // The parts the writer's last Undo or Redo left, with the command that left them.
+  const [actionSkips, setActionSkips] = useState<{
+    direction: ReversalDirection;
+    skips: TurnInverseSkip[];
+  } | null>(null);
   const [commandRefusal, setCommandRefusal] = useState<ReversalRefusal | null>(null);
   const [restoredNotices, setRestoredNotices] = useState<string[] | null>(null);
   const turnMutation = useReverseTurnMutation(threadId);
@@ -99,10 +108,13 @@ export function TurnEditsReceipt({
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
   // A part the refusal line already names (a move or delete that met a taken location, a
   // missing folder, or a document gone again) isn't listed a second time.
-  const skips = (actionSkips ?? receipt?.skips ?? []).filter(
+  const skips = (actionSkips?.skips ?? receipt?.skips ?? []).filter(
     (skip) => !(skip.kind === "tree" && commandRefusal?.status === skip.cause),
   );
-  const guardCopy = commandRefusal ? reversalRefusalCopy(commandRefusal) : undoGuardCopy(receipt);
+  const names = useOwnerNames();
+  const guardCopy = commandRefusal
+    ? reversalRefusalCopy(commandRefusal, names)
+    : undoGuardCopy(receipt);
   const trailDocuments = changeTrail?.documents ?? [];
   const hasEditedDocuments = hasTurnEditsReceiptDocuments(documents, changeTrail);
   // Reversible Work mutation receipts are content in their own right: their
@@ -165,7 +177,7 @@ export function TurnEditsReceipt({
     setPending(true);
     try {
       const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
-      setActionSkips(outcome.skips ?? []);
+      setActionSkips({ direction, skips: outcome.skips ?? [] });
       const undoneInDraft =
         direction === "undo" &&
         outcome.documents.some(
@@ -299,12 +311,7 @@ export function TurnEditsReceipt({
               data-turn-skips
               role="status"
             >
-              <p>
-                {plural(skips.length, {
-                  one: "# part stayed",
-                  other: "# parts stayed",
-                })}
-              </p>
+              <p>{skipsHeading(skips.length, actionSkips?.direction ?? null, direction)}</p>
               <ul>
                 {skips.map((skip, index) => (
                   <li key={`${skip.documentId}:${index}`}>
@@ -523,10 +530,11 @@ function DocumentRow({
 
 /** A row's words: the document's name, or what the turn did to where it is. */
 function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
+  const names = useOwnerNames();
   const tree = document.tree;
   if (tree?.op === "move") {
     const source = documentDisplayName(tree.from);
-    const destination = moveDestinationName(tree.from, tree.to);
+    const destination = moveDestinationName(tree.from, tree.to, names);
     return (
       <span className="min-w-0 truncate text-prose-foreground" data-turn-tree-line="move">
         <Trans>
@@ -558,9 +566,55 @@ function documentCountLabel(count: number, tree: boolean) {
   return count === 1 ? <Trans>Edited 1 document</Trans> : <Trans>Edited {count} documents</Trans>;
 }
 
-/** What a part that stayed was: its text excerpts, or the document a move or delete named. */
+/**
+ * What the listed parts are: the ones the last Undo or Redo left as they were, or, before one,
+ * the ones it would leave (a stopped turn's rolled-back parts, an applied draft).
+ */
+function skipsHeading(
+  count: number,
+  done: ReversalDirection | null,
+  next: ReversalDirection,
+): string {
+  if (done === "redo")
+    return plural(count, {
+      one: "Redo left # part as it was",
+      other: "Redo left # parts as they were",
+    });
+  if (done === "undo")
+    return plural(count, {
+      one: "Undo left # part as it was",
+      other: "Undo left # parts as they were",
+    });
+  return next === "redo"
+    ? plural(count, {
+        one: "Redo leaves # part as it is",
+        other: "Redo leaves # parts as they are",
+      })
+    : plural(count, {
+        one: "Undo leaves # part as it is",
+        other: "Undo leaves # parts as they are",
+      });
+}
+
+/**
+ * What a part that stayed was: its text excerpts, or the document a move or delete named. A
+ * part stopped by a place (taken, its folder gone, moved again) names the whole place, so the
+ * writer can find it.
+ */
 function SkipSubject({ skip }: { skip: TurnInverseSkip }) {
-  if (skip.kind === "tree") return <>{documentDisplayName(skip.at ?? skip.uri)}</>;
+  const names = useOwnerNames();
+  if (skip.kind === "tree") {
+    const at = skip.at ?? skip.uri;
+    return (
+      <>
+        {skip.cause === "location_taken" ||
+        skip.cause === "folder_missing" ||
+        skip.cause === "superseded"
+          ? documentLocationName(at, names)
+          : documentDisplayName(at)}
+      </>
+    );
+  }
   if (!skip.before && !skip.after) return <>{documentDisplayName(skip.uri)}</>;
   return (
     <>

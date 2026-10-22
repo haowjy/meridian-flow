@@ -26,8 +26,10 @@ import {
   toolActivityPhrase,
 } from "./command-descriptor";
 import { DocumentName } from "./DocumentName";
+import type { OwnerNames } from "./document-display-name";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
 import { namespaceRefusalCopy } from "./namespace-refusal-copy";
+import { useOwnerNames } from "./owner-names";
 import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
@@ -251,7 +253,7 @@ export function toolRowFailed(tool: ToolView): boolean {
 }
 
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
-export function documentToolFailureCopy(tool: ToolView): string {
+export function documentToolFailureCopy(tool: ToolView, names?: OwnerNames): string {
   const name = documentFailureDocumentName(tool);
   const status = documentFailureStatus(tool);
   switch (status) {
@@ -319,7 +321,7 @@ export function documentToolFailureCopy(tool: ToolView): string {
         ? t`Some changes to ${name} couldn't be completed.`
         : t`Some changes couldn't be completed.`;
     case "invalid_write": {
-      const refused = namespaceRefusalCopy(inputObject(tool), documentFailureRefusal(tool));
+      const refused = namespaceRefusalCopy(inputObject(tool), documentFailureRefusal(tool), names);
       if (refused) return refused;
       const reason =
         documentFailureRejected(tool) === "removed"
@@ -449,6 +451,7 @@ function rejectionCopy(rejected: string | null): string | null {
 }
 
 function DocumentToolTitle({ tool }: { tool: ToolView }) {
+  const names = useOwnerNames();
   const input = inputObject(tool);
   const path = asString(input.path);
   const descriptor = descriptorFor(tool);
@@ -470,7 +473,7 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
     );
   }
 
-  const phrase = toolActivityPhrase(tool);
+  const phrase = toolActivityPhrase(tool, names);
   // A partial call has no settled path yet, so the row names no document —
   // and therefore offers no door onto one.
   if (tool.status !== "complete") return <PhraseTitle phrase={phrase} />;
@@ -499,11 +502,16 @@ function documentExpand(tool: ToolView): ToolExpand | null {
   // The next row (the retried write, or a read when the passage was too long) says what happened.
   if (isCatchUpPause(tool)) return null;
   if (documentToolFailed(tool)) {
-    return () => (
-      <div className="text-compact text-destructive">{documentToolFailureCopy(tool)}</div>
-    );
+    return () => <DocumentFailureText tool={tool} />;
   }
   return COMMAND_EXPANDS[descriptorFor(tool).expand](tool);
+}
+
+function DocumentFailureText({ tool }: { tool: ToolView }) {
+  const names = useOwnerNames();
+  return (
+    <div className="text-compact text-destructive">{documentToolFailureCopy(tool, names)}</div>
+  );
 }
 
 function readPath(tool: ToolView): string | undefined {
