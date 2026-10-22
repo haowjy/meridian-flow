@@ -14,11 +14,12 @@ const TEST_HOOK_POINTS = [
   "endUse.afterRevalidate",
   "moves.beforeInstall",
   "place.afterRevalidate",
+  /** A removal wrote its record and, for a discard, closed the drafts; not yet committed. */
+  "removal.afterRecord",
   "split.beforeRepoint",
   // Collab.
   "draft.ensure.afterDocumentLock",
   "draft.peer.afterDocumentLock",
-  "removal.afterClose",
   /** A reply's save has opened its transaction and taken no Work lock yet. */
   "save.beforeWorkLock",
   "save.afterWorkLock",
