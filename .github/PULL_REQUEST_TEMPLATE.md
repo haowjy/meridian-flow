@@ -22,12 +22,6 @@
 
 - Fixed: <what a person sees now that was broken before>
 
-## Summary
-
-<!-- What this PR does, in two to four bullets a reader could stop after.
-     Name each change in the terms of whoever feels it (what a writer sees,
-     what a developer can now do), not in terms of the code. -->
-
 ## Why
 
 <!-- The problem or opportunity, and who it hurts or helps. For a UI change,
