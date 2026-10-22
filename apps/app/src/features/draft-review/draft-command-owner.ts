@@ -13,6 +13,7 @@ import {
   recordRestorations,
   writeDiscardBlocks,
 } from "@meridian/agent-edit/diff";
+import { parseDraftItemKey } from "@meridian/contracts";
 import type {
   ApplyClick,
   DraftMetadataResponse,
@@ -68,12 +69,17 @@ const EMPTY: DraftCommandState = {
 };
 export type CommandOutcome =
   | { kind: "blocked" }
-  /** `restored`: the document had been deleted from the manuscript and this Apply brought it back. */
-  | { kind: "done"; restored?: true }
+  | {
+      kind: "done";
+      /** The document had been deleted from the manuscript and this Apply brought it back. */
+      restored?: true;
+      /** Final paths for documents that could not take their requested name. */
+      renamed?: string[];
+      /** Item keys whose branch tree row this click settled. */
+      appliedTrees?: string[];
+    }
   /** The document was deleted and the click didn't say the writer knew: nothing changed. */
   | { kind: "needs-restore" }
-  /** A move waits for another item of the branch that still holds its destination live. */
-  | { kind: "held"; by: { itemKey: string; path: string } }
   | { kind: "change-refused"; code: string };
 type Binding = {
   session: DocumentSession;
@@ -121,7 +127,6 @@ function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>):
       return answer.reason;
     case "needs_restore":
     case "changed":
-    case "held":
       return answer.status;
     default:
       return "gone";
@@ -144,6 +149,8 @@ export class DraftCommandOwner {
   private readonly reconciling = new Map<string, Promise<boolean>>();
   /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
   private readonly restoredDocuments = new Set<string>();
+  /** Final paths allocated by Apply, until dismissed or another document shows. */
+  private readonly renamedDocuments = new Map<string, string>();
   private active = true;
   private revision = 0;
   constructor(
@@ -363,16 +370,25 @@ export class DraftCommandOwner {
     return this.restoredDocuments.has(JSON.stringify([projectId, documentId]));
   }
 
-  forgetRestored(projectId: string, documentId: string): void {
-    if (this.restoredDocuments.delete(JSON.stringify([projectId, documentId]))) this.publish();
+  renamedPath(projectId: string, documentId: string): string | null {
+    return this.renamedDocuments.get(JSON.stringify([projectId, documentId])) ?? null;
   }
 
-  /** The writer moved on to `documentId`: every other document's mark ends. */
-  keepRestoredOnly(projectId: string, documentId: string): void {
+  forgetApplyFacts(projectId: string, documentId: string): void {
+    const key = JSON.stringify([projectId, documentId]);
+    const restored = this.restoredDocuments.delete(key);
+    const renamed = this.renamedDocuments.delete(key);
+    if (restored || renamed) this.publish();
+  }
+
+  /** The writer moved on to `documentId`: every other document's Apply fact ends. */
+  keepApplyFactsOnly(projectId: string, documentId: string): void {
     const kept = JSON.stringify([projectId, documentId]);
     let changed = false;
     for (const key of this.restoredDocuments)
       if (key !== kept) changed = this.restoredDocuments.delete(key) || changed;
+    for (const key of this.renamedDocuments.keys())
+      if (key !== kept) changed = this.renamedDocuments.delete(key) || changed;
     if (changed) this.publish();
   }
 
@@ -515,15 +531,29 @@ export class DraftCommandOwner {
   }
 
   private outcomeOf(ref: DraftRef, answer: ApplyClickOutcome): CommandOutcome {
-    if (answer.status === "applied" && answer.restored) {
-      this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
-      this.publish();
-      return { kind: "done", restored: true };
+    if (answer.status === "applied") {
+      if (answer.restored) {
+        this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
+      }
+      for (const item of answer.applied) {
+        if (!item.renamed) continue;
+        const documentId = parseDraftItemKey(item.itemKey)?.documentId;
+        if (documentId)
+          this.renamedDocuments.set(JSON.stringify([ref.projectId, documentId]), item.renamed.path);
+      }
+      if (answer.restored || answer.applied.some((item) => item.renamed)) this.publish();
+      const renamed = answer.applied.flatMap((item) => (item.renamed ? [item.renamed.path] : []));
+      const appliedTrees = answer.applied.flatMap((item) => (item.tree ? [item.itemKey] : []));
+      return {
+        kind: "done",
+        ...(answer.restored ? { restored: true as const } : {}),
+        ...(renamed.length ? { renamed } : {}),
+        ...(appliedTrees.length ? { appliedTrees } : {}),
+      };
     }
-    if (answer.status === "applied" || answer.status === "landed") return { kind: "done" };
+    if (answer.status === "landed") return { kind: "done" };
     if (answer.status === "cancelled") return { kind: "blocked" };
     if (answer.status === "needs_restore") return { kind: "needs-restore" };
-    if (answer.status === "held") return { kind: "held", by: answer.by };
     return { kind: "change-refused", code: refusalCode(answer) };
   }
 

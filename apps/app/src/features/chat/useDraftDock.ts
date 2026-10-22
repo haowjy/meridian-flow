@@ -6,10 +6,7 @@ import {
   type DraftImagePreviewTarget,
   isDraftImagePath,
 } from "@/features/draft-review/DraftImagePreview";
-import {
-  isDeletedFromManuscript,
-  isGroupApplyWithdrawn,
-} from "@/features/draft-review/deleted-drafts";
+import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
@@ -119,13 +116,9 @@ export function useDraftDock({
     [openReviewFile, projectId, workId],
   );
 
-  // What Apply sends. A taken path anywhere in the dock withdraws Apply, as in Work Files.
-  const applyWithdrawn = isGroupApplyWithdrawn(files.map((file) => file.row.draft));
-  const applicable = applyWithdrawn
-    ? []
-    : actionableFiles.filter(
-        (file) => file.row.draft.hasDraft || file.row.draft.isNew || hasTreeLine(file.row.draft),
-      );
+  const applicable = actionableFiles.filter(
+    (file) => file.row.draft.hasDraft || file.row.draft.isNew || hasTreeLine(file.row.draft),
+  );
 
   /**
    * Sends the strip's command. An Apply brings back only the deleted documents in `restore`;

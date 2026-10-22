@@ -52,13 +52,13 @@ it("retries a lost answer with the identical body at 1/2/4 seconds, then stalls 
   expect(send).toHaveBeenCalledTimes(4);
   expect(queue.clicks[0].stalled).toBe(true);
   expect(send.mock.calls.every(([request]) => request === first.body)).toBe(true);
-  send.mockResolvedValue({ status: "applied", commandId: "first" });
+  send.mockResolvedValue({ status: "applied", commandId: "first", applied: [] });
   queue.retry();
   await flush();
   expect(queue.clicks).toHaveLength(2);
   queue.observe("draft", ["first"]);
   await flush();
-  expect(await result).toEqual({ status: "applied", commandId: "first" });
+  expect(await result).toEqual({ status: "applied", commandId: "first", applied: [] });
   expect(send.mock.calls.at(-1)?.[0].commandId).toBe("second");
   queue.destroy();
 });
@@ -69,7 +69,11 @@ it("releases the head on the record before an answer and reports the answer's ou
   const send = vi
     .fn<(body: ApplyClick) => Promise<ApplyClickAnswer>>()
     .mockReturnValueOnce(answer.promise)
-    .mockImplementation(async (request) => ({ status: "applied", commandId: request.commandId }));
+    .mockImplementation(async (request) => ({
+      status: "applied",
+      commandId: request.commandId,
+      applied: [],
+    }));
   const queue = new ApplyClickQueue({ send, lookup: vi.fn(), changed() {} });
   const result = queue.enqueue(frozen("first"));
   queue.enqueue(frozen("second", laterAck.promise));
@@ -83,8 +87,13 @@ it("releases the head on the record before an answer and reports the answer's ou
   expect(send).toHaveBeenCalledTimes(2);
   expect(queue.clicks).toHaveLength(1);
   // Landed by the record; the late answer still says what the record can't.
-  answer.resolve({ status: "applied", commandId: "first", restored: true });
-  expect(await result).toEqual({ status: "applied", commandId: "first", restored: true });
+  answer.resolve({ status: "applied", commandId: "first", applied: [], restored: true });
+  expect(await result).toEqual({
+    status: "applied",
+    commandId: "first",
+    applied: [],
+    restored: true,
+  });
   expect(queue.clicks[0].body.commandId).toBe("second");
   queue.observe("draft", ["first", "second"]);
   expect(queue.clicks).toHaveLength(0);
@@ -95,10 +104,10 @@ it("a terminal close cancels unsent clicks and settles a sent head from its answ
   for (const status of ["applied", "none"] as const) {
     const answer = deferred<ApplyClickAnswer>();
     const lookup = vi.fn(
-      async (request: ApplyClick): Promise<ApplyClickObservation> => ({
-        status,
-        commandId: request.commandId,
-      }),
+      async (request: ApplyClick): Promise<ApplyClickObservation> =>
+        status === "applied"
+          ? { status, commandId: request.commandId, applied: [] }
+          : { status, commandId: request.commandId },
     );
     const queue = new ApplyClickQueue({
       send: () => answer.promise,
@@ -115,7 +124,7 @@ it("a terminal close cancels unsent clicks and settles a sent head from its answ
     await vi.advanceTimersByTimeAsync(1000);
     expect(lookup).toHaveBeenCalledWith(body("first"));
     expect(await first).toEqual(
-      status === "applied" ? { status, commandId: "first" } : { status: "cancelled" },
+      status === "applied" ? { status, commandId: "first", applied: [] } : { status: "cancelled" },
     );
     expect(queue.clicks).toHaveLength(0);
     queue.destroy();
@@ -128,11 +137,11 @@ it("a terminal close cancels unsent clicks and settles a sent head from its answ
   });
   const result = queue.enqueue(frozen("answered"));
   await flush();
-  answer.resolve({ status: "applied", commandId: "answered" });
+  answer.resolve({ status: "applied", commandId: "answered", applied: [] });
   await flush();
   expect(queue.clicks).toHaveLength(1);
   queue.close();
-  expect(await result).toEqual({ status: "applied", commandId: "answered" });
+  expect(await result).toEqual({ status: "applied", commandId: "answered", applied: [] });
   queue.destroy();
 });
 
@@ -141,7 +150,7 @@ it("one refusal in the middle removes only its contribution, answers its own cal
     async (request: ApplyClick): Promise<ApplyClickAnswer> =>
       request.commandId === "second"
         ? { status: "refused", commandId: request.commandId, reason: "work_archived" }
-        : { status: "applied", commandId: request.commandId },
+        : { status: "applied", commandId: request.commandId, applied: [] },
   );
   const queue = new ApplyClickQueue({ send, lookup: vi.fn(), changed() {} });
   queue.enqueue(frozen("first"));

@@ -415,10 +415,6 @@ msgstr "{names} are back in the manuscript."
 msgid "{names} is back in the manuscript."
 msgstr "{names} is back in the manuscript."
 
-#: src/features/draft-review/DraftCommandStatus.tsx
-msgid "{occupant} still has that name. Apply its change first."
-msgstr "{occupant} still has that name. Apply its change first."
-
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{position} of {count}"
 msgstr "{position} of {count}"
@@ -572,6 +568,10 @@ msgstr "A chat is renaming this to {place}."
 msgid "A chat you had open was deleted."
 msgstr "A chat you had open was deleted."
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "A document blocks part of this location. Move or rename it, then apply again."
+msgstr "A document blocks part of this location. Move or rename it, then apply again."
+
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
 #~ msgid "A file named {0} already exists in this location."
@@ -690,6 +690,19 @@ msgstr "Add to favorites"
 msgid "Add usage"
 msgstr "Add usage"
 
+#. placeholder {0}: renamed[0]
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Added as {0}."
+msgstr "Added as {0}."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Added as {name}."
+msgstr "Added as {name}."
+
+#: src/features/editor/ManuscriptStateNotice.tsx
+msgid "Added as {renamed}"
+msgstr "Added as {renamed}"
+
 #: src/features/chat/ChangeViewRows.tsx
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "After"
@@ -777,27 +790,6 @@ msgstr "Alt text"
 #: src/features/project/context/context-entry-name.ts
 msgid "An entry named {name} already exists in this location."
 msgstr "An entry named {name} already exists in this location."
-
-#: src/features/draft-review/DraftCommandStatus.tsx
-msgid "Another document"
-msgstr "Another document"
-
-#: src/features/draft-review/ReviewMessageText.tsx
-msgid "Another document is already at this name. Rename or remove it, then apply again."
-msgstr "Another document is already at this name. Rename or remove it, then apply again."
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Another document is at its location"
-#~ msgstr "Another document is at its location"
-
-#: src/features/draft-review/DraftCommandStatus.tsx
-#: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Another document now has this name. Rename that document to apply this draft."
-msgstr "Another document now has this name. Rename that document to apply this draft."
-
-#: src/features/draft-review/ReviewMessageText.tsx
-msgid "Another document this Work moves or deletes still has that name. Apply that one first, or apply all changes."
-msgstr "Another document this Work moves or deletes still has that name. Apply that one first, or apply all changes."
 
 #: src/client/query/work-update-failure.ts
 msgid "Another Work already has this name. Choose a different name."
@@ -2102,10 +2094,6 @@ msgstr "Deleted Work {name}"
 msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
 msgstr "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
 
-#: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Deleted, name taken"
-msgstr "Deleted, name taken"
-
 #: src/features/chat/command-descriptor.ts
 msgid "Deleting"
 msgstr "Deleting"
@@ -3125,10 +3113,6 @@ msgstr "Must be at most {value}"
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Name is required"
 msgstr "Name is required"
-
-#: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Name taken"
-msgstr "Name taken"
 
 #: src/features/project/work/WorkScreen.tsx
 msgid "Name this Work"
