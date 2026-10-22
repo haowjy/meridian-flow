@@ -86,7 +86,7 @@ function writeOutput(output, { format, noPager }) {
       });
 
   // A missing or unstartable pager must not make changelog output unavailable.
-  if (result.error || result.status === 126 || result.status === 127) {
+  if (result.error?.code === "ENOENT" || result.status === 126 || result.status === 127) {
     process.stdout.write(output);
   }
 }
