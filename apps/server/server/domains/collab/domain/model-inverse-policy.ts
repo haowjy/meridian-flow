@@ -2,7 +2,6 @@
 
 import { randomUUID } from "node:crypto";
 import {
-  type ComputedInverse,
   type DocumentEditResult,
   editHandle,
   type InverseSelection,
@@ -14,10 +13,10 @@ import {
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
+import { type InverseStep, simulateInverse } from "./inverse-stream.js";
 import { draftRoom } from "./observation-rooms.js";
 import { ReversalConflictError } from "./reversal-conflict.js";
 import {
-  advanceStates,
   isTransitionEntry,
   latestTransition,
   type PlannedTreeInverse,
@@ -26,7 +25,6 @@ import {
   settlementOf,
   type TransitionEntry,
   TreeInverseRefused,
-  transitionOf,
   treeChangedReason,
   treeEntrySummary,
   treeFaultReason,
@@ -216,6 +214,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       tree: readonly StoredTreeEntry[],
       states: InverseDocument["treeStates"],
       rolledBack: ReadonlySet<string>,
+      step: () => number,
     ): PlannedTreeInverse | Exclude<DocumentEditResult, { status: "success" }> {
       const verb = direction === "revert" ? "undo" : direction;
       const follow = "Check where it is with `ls`, then make a new move or delete if needed.";
@@ -246,7 +245,13 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       const latest = latestTransition(row, tree, rolledBack);
       const planned =
         latest.stands === (direction !== "redo")
-          ? planTreeInverse(row, direction === "redo" ? "reapply" : "invert", latest.row, states)
+          ? planTreeInverse(
+              row,
+              direction === "redo" ? "reapply" : "invert",
+              latest.row,
+              states,
+              step(),
+            )
           : null;
       if (planned) return planned;
       return {
@@ -301,10 +306,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     const policy = preparedPolicy ?? planner(document, query),
       own = policy.own,
       actionId = randomUUID();
-    // A draft that outlived the document's live delete still takes its own inverse (D79);
-    // the live document's text, and any draft no longer active, meet the removal. Its tree
-    // entries (the delete itself) still reverse.
-    const removedText = document.removal && !policy.draft ? removedFile(document.removal) : null;
     if (policy.draft?.frozen)
       return {
         status: "work_archived",
@@ -312,46 +313,69 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       };
     const scratch = new Y.Doc({ gc: false }),
       history = [...document.history],
-      computed: ComputedInverse = { actionId, edits: [], skipped: [] },
+      simulation = simulateInverse(document, {
+        identity: {
+          threadId: query.threadId,
+          turnId: query.turnId ?? null,
+          responseId: query.responseIdentity?.providerResponseId ?? null,
+          editScopeId: query.responseIdentity?.editScopeId ?? null,
+          actor: "agent",
+        },
+      }),
+      steps: InverseStep[] = [],
       consumes: string[] = [],
       handles: string[] = [],
       skipped: string[] = [],
-      tree = [...document.tree],
-      plannedTree: PlannedTreeInverse[] = [],
       treeFacts: string[] = [];
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(policy.view));
     // Until its first advance, scratch is identical to the locked view.
     let inspection: Inspection | undefined = policy.inspect();
-    let states = document.treeStates;
     const currentInspection = () => {
       if (!inspection)
         inspection = inspectionContext(
           prepareEditRoots(scratch, history),
-          inspectionActions(history, tree, own),
+          inspectionActions(history, simulation.tree, own),
         );
       return inspection;
     };
+    // A draft that outlived the document's live delete still takes its own inverse (D79); live
+    // text meets the removal unless an earlier step of this command restores the document.
+    const removedText = () =>
+      !policy.draft && simulation.liveRemoved() ? removedFile(document.removal) : null;
     try {
+      /**
+       * One step per original edit, in the order the command takes them: an undo's each its own
+       * action, so each can be redone separately; a redo's and a revert's the command's.
+       */
+      const stepAction = (kind: "undo" | "redo" | "revert") =>
+        kind === "undo" && steps.length ? randomUUID() : actionId;
       const apply = (
+        entry: Entry,
         selection: InverseSelection[],
         kind: "undo" | "redo" | "revert",
         consumed: string[],
       ) => {
-        const stepActionId = kind === "undo" && computed.edits.length ? randomUUID() : actionId;
+        const stepActionId = stepAction(kind);
         const result = currentInspection().index.compute(selection, {
           actionId: stepActionId,
           allocateClient: allocateDocumentClient,
         });
         if (result.skipped.length)
           throw new Error("Inverse classification changed within the scratch plan");
+        const at = Math.max(...entry.parts.map((part) => part.id));
         for (const edit of result.edits) {
-          computed.edits.push({ ...edit, actionId: stepActionId });
+          steps.push({
+            kind: "text",
+            edit: { ...edit, actionId: stepActionId },
+            actionId: stepActionId,
+            at,
+          });
           const id = randomUUID();
           for (const [ordinal, part] of edit.parts.entries()) {
             Y.applyUpdate(scratch, part.update);
             history.push({
               ...part,
-              id: Math.max(0, ...history.map((p) => p.id)) + 1,
+              id: simulation.nextId(),
               editId: id,
               ordinal,
               kind,
@@ -378,46 +402,30 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         // Neither lineage visibility nor action state survives a scratch advance.
         inspection = undefined;
       };
-      /** A planned tree inverse advances the simulated states and history like a text step. */
       const applyTree = (
         planned: PlannedTreeInverse,
         handle: string,
         kind: "undo" | "redo" | "revert",
         consumed: string[],
       ) => {
-        const stepActionId =
-          kind === "undo" && (computed.edits.length || plannedTree.length)
-            ? randomUUID()
-            : actionId;
-        plannedTree.push({ ...planned, actionId: stepActionId });
+        const stepActionId = stepAction(kind);
+        steps.push({ kind: "tree", planned, actionId: stepActionId, at: planned.entry.id });
         treeFacts.push(`${handle}: ${treeInverseFact(planned)}`);
-        const target = { editId: planned.entry.editId, direction: planned.direction };
-        tree.push({
-          ...planned.entry,
-          id: Math.max(0, ...history.map((p) => p.id), ...tree.map((t) => t.id)) + 1,
-          editId: randomUUID(),
-          kind,
-          actionId: stepActionId,
-          consumes: consumed,
-          threadId: query.threadId,
-          actor: "agent",
-          wId: null,
-          targets: [target],
-          tree: {
-            ...transitionOf(planned),
-            op: planned.op,
-            shownAt: planned.entry.tree.shownAt,
-            seq: planned.entry.tree.seq,
-            targets: [target],
-          },
-        });
-        states = advanceStates(states, planned);
+        simulation.recordTree(planned, { kind, actionId: stepActionId, consumes: consumed });
         inspection = undefined;
       };
       const treePlan = (
         entry: Entry & { tree: TransitionEntry },
         direction: "undo" | "redo" | "revert",
-      ) => policy.treePlan(entry, direction, tree, states, currentInspection().actions.rolledBack);
+      ) =>
+        policy.treePlan(
+          entry,
+          direction,
+          simulation.tree,
+          simulation.states,
+          currentInspection().actions.rolledBack,
+          simulation.nextStep,
+        );
       if (command.command === "revert") {
         const entry = own.find((entry) => entry.handle === command.edit);
         if (!entry)
@@ -437,7 +445,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           handles.push(entry.handle);
           applyTree(planned, entry.handle, "revert", []);
         } else {
-          if (removedText) return removedText;
+          const removed = removedText();
+          if (removed) return removed;
           const selection = policy.revertSelection(entry);
           skipped.push(...selection.skipped);
           handles.push(entry.handle);
@@ -446,7 +455,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               status: "nothing_to_revert",
               message: `reverted: ${entry.handle} (0 of ${skipped.length} parts)\nnot reverted: ${skipped.join("\nnot reverted: ")}\nRead ${document.uri} for current text.`,
             };
-          apply(selection.selection, "revert", []);
+          apply(entry, selection.selection, "revert", []);
         }
       } else
         for (let n = 0; n < (command.count ?? 1); n++) {
@@ -469,7 +478,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               applyTree(planned, entry.handle, "undo", []);
               continue;
             }
-            if (removedText) return removedText;
+            const removed = removedText();
+            if (removed) return removed;
             const current = currentInspection();
             current.states(entry.parts);
             for (const part of entry.parts) {
@@ -478,6 +488,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             }
             handles.push(entry.handle);
             apply(
+              entry,
               [...entry.parts]
                 .sort((a, b) => b.id - a.id)
                 .map((part) => ({ part, direction: "invert" })),
@@ -534,7 +545,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 applyTree(planned, entry.handle, "redo", [action.id]);
                 continue;
               }
-              if (removedText) return removedText;
+              const removed = removedText();
+              if (removed) return removed;
               const current = currentInspection();
               current.states(entry.parts);
               for (const original of entry.parts) {
@@ -552,6 +564,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 if (refused) return refused;
               }
               apply(
+                entry,
                 entry.parts.map((part) => ({ part, direction: "reapply" })),
                 "redo",
                 [action.id],
@@ -561,33 +574,28 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             consumes.push(action.id);
           }
         }
-      if (!computed.edits.length && !plannedTree.length)
+      if (!steps.length)
         return {
           status: "nothing_to_revert",
           message: `Nothing is left to reverse in ${document.uri}. Read it and make a new replace.`,
         };
+      const text = steps.flatMap((step) => (step.kind === "text" ? [step.edit] : []));
+      const reversesTree = steps.some((step) => step.kind === "tree");
       // An inverse that changed no text (a move's or delete's) has no text echo. The cuts are
       // taken before the commit, which applies the inverse to the view.
-      const cuts = computed.edits.length
+      const cuts = text.length
         ? { before: Y.encodeStateAsUpdate(policy.view), after: Y.encodeStateAsUpdate(scratch) }
         : {};
+      const plan = { document, draftId: query.draftId, steps, consumes, skips: [] };
       const committed = preview
         ? { handles: [], updates: [] }
         : await store.commit({
             query,
             kind: command.command,
-            plans: [
-              {
-                document,
-                draftId: query.draftId,
-                computed,
-                tree: plannedTree,
-                consumes,
-                skips: [],
-              },
-            ],
+            plans: [plan],
+            sequence: steps.map((step) => ({ plan, step })),
           });
-      const parts = computed.edits.reduce((n, edit) => n + edit.parts.length, 0);
+      const parts = text.reduce((n, edit) => n + edit.parts.length, 0);
       return {
         status: "success",
         actionId,
@@ -596,7 +604,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         updates: committed.updates,
         ...(command.command === "revert" ? { writeId: committed.handles[0] } : {}),
         message: [
-          command.command === "revert" && !plannedTree.length
+          command.command === "revert" && !reversesTree
             ? `reverted: ${handles[0]} (${parts} of ${parts + skipped.length} parts)${skipped.map((reason) => `\nnot reverted: ${reason}`).join("")}`
             : `${command.command === "undo" ? "undone" : command.command === "redo" ? "redone" : "reverted"}: ${handles.join(", ")}`,
           ...treeFacts,
@@ -682,13 +690,20 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               : (settled ??
                 (!latest.stands
                   ? "undone"
-                  : planTreeInverse(entry.tree, "invert", latest.row, document.treeStates)
+                  : planTreeInverse(entry.tree, "invert", latest.row, document.treeStates, 0)
                     ? entry.tree.tree.destination.kind === "draft"
                       ? "pending"
                       : "live"
                     : "changed"));
           const reversal = (direction: "undo" | "revert") =>
-            policy.treePlan(entry, direction, document.tree, document.treeStates, index.rolledBack);
+            policy.treePlan(
+              entry,
+              direction,
+              document.tree,
+              document.treeStates,
+              index.rolledBack,
+              () => 0,
+            );
           let command = "status" in reversal("revert") ? "none" : "revert";
           if (entry.id === topEntry?.id) {
             const undo = reversal("undo");

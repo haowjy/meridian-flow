@@ -15,6 +15,7 @@ import {
   type BranchTreeFacts,
   type DocumentId,
   isLiveTransition,
+  type LiveTreeState,
   type LiveTreeTransition,
   type TreeChangeOp,
   type TreePlacement,
@@ -60,6 +61,7 @@ import {
   type DraftDispositionView,
 } from "../domain/draft-disposition.js";
 import { type DraftStore, materializeDraftRead } from "../domain/draft-store.js";
+import type { InverseStep } from "../domain/inverse-stream.js";
 import { liveRoom } from "../domain/observation-rooms.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
@@ -448,19 +450,22 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         own.destroy();
       }
     },
-    async commit({ plans, kind, userId, query }) {
+    async commit({ plans, sequence, kind, userId, query }) {
       const attempt = attemptStorage.getStore();
       if (!attempt) throw new Error("An inverse commits only inside its captured attempt");
       if (!attempt.attempt) throw new ReversalConflictError();
       const scope = attempt.attempt;
       await testHook("inverse.beforeCommitScope");
       // Off every lock: each plan's parts with provenance on its attempt-local view.
-      const planned = plans.map((plan) => planDocument(plan, query));
-      const liveIds = planned.filter((entry) => !entry.draft).map((entry) => entry.documentId);
+      const planned = new Map(plans.map((plan) => [plan, planDocument(plan, query)]));
+      const documents = [...planned.values()];
+      const liveIds = documents.filter((entry) => !entry.draft).map((entry) => entry.documentId);
       const handles: string[] = [];
       const deliveries: (() => Promise<void>)[] = [];
-      const treeRuns = orderTreeRuns(plans, kind, query);
-      const treeSkips: TurnInverseSkip[] = [];
+      const skips: TurnInverseSkip[] = [];
+      const treeRuns = sequence.flatMap(({ plan, step }) =>
+        step.kind === "tree" ? [{ document: plan.document, planned: step.planned }] : [],
+      );
       await withLiveDocuments([...new Set(liveIds)].sort(), () =>
         scope.commit(() =>
           // A seam boundary before any other lock (decision D17, file-access §5): the captured
@@ -475,7 +480,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               if (treeRuns.length) await lockTreeScope(treeRuns, attempt.ids);
               else for (const id of [...attempt.ids].sort()) await lockDocumentMutation(db(), id);
               // The live state each plan was computed against is still the head.
-              for (const entry of planned) {
+              for (const entry of documents) {
                 if (entry.draft) continue;
                 const [head] = await db()
                   .select({ id: sql<number>`coalesce(max(${documentYjsUpdates.id}), 0)::bigint` })
@@ -484,21 +489,32 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 if (Number(head?.id ?? 0) !== attempt.heads.get(entry.documentId))
                   throw new InverseAttemptMiss();
               }
-              // Moves and deletes first: text lands in a document its restore brought back.
-              for (const run of treeRuns) {
-                const outcome = await commitTreeInverse(run, kind, userId, query);
-                if (typeof outcome === "string") handles.push(outcome);
-                else treeSkips.push(outcome);
+              // The steps in their planned order: text lands in a document a restore before it
+              // brought back, and before a delete after it takes the document away.
+              for (const { plan, step } of sequence) {
+                const entry = planned.get(plan);
+                if (!entry) throw new Error("A step's plan is not among the commit's plans");
+                const outcome =
+                  step.kind === "tree"
+                    ? await commitTreeStep(entry, step, kind, userId, query)
+                    : await commitTextStep(entry, step, kind, userId, query);
+                if (typeof outcome === "string") {
+                  if (outcome) handles.push(outcome);
+                } else skips.push(outcome);
               }
-              for (const entry of planned)
-                handles.push(...(await commitDocument(entry, kind, userId, query, deliveries)));
+              for (const entry of documents) await settleDocument(entry, kind, query, deliveries);
             },
             { seam: true },
           ),
         ),
       );
       attempt.deliveries.push(...deliveries);
-      return { handles, updates: planned.flatMap((entry) => entry.updates), treeSkips };
+      return {
+        handles,
+        updates: documents.flatMap((entry) => entry.updates),
+        skips,
+        reversed: new Map(documents.map((entry) => [entry.documentId, entry.reversed])),
+      };
     },
   };
 
@@ -539,26 +555,36 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   }
 
   /**
-   * One tree inverse, isolated in a savepoint: the live move, restore or delete, then its row.
-   * A destination that can't take it refuses a model inverse whole, and is a reported skip for
-   * the card and a rollback, whose other inverses still run. Returns the model's handle.
+   * One tree step, isolated in a savepoint: the live move, restore or delete, then its row. A
+   * step after one that makes a removal starts from the removal that step made. A destination
+   * that can't take it refuses a model inverse whole, and is a reported skip for the card and a
+   * rollback, whose other steps still run. Returns the model's handle.
    */
-  async function commitTreeInverse(
-    run: TreeRun,
+  async function commitTreeStep(
+    entry: PlannedInverse,
+    step: Extract<InverseStep, { kind: "tree" }>,
     kind: "undo" | "redo" | "revert" | "rollback",
     userId: UserId | undefined,
     query: TurnInverseQuery,
   ): Promise<string | TurnInverseSkip> {
-    const { document, plan, planned } = run;
+    const { planned } = step;
+    const document = entry.plan.document;
     const documentId = document.documentId;
     try {
       return await runInDrizzleSavepoint(input.db, async () => {
         if (!isLiveTransition(planned))
           // Drafted tree entries are written only by drafted placement, which brings their inverse.
           throw new Error("A drafted tree entry has no inverse yet");
+        const expected =
+          "madeBy" in planned.before ? entry.made.get(planned.before.madeBy) : planned.before;
         const [before] = (await readLiveTreeStates(db(), [documentId])).values();
-        if (!sameLiveState(before, planned.before)) throw new TreeFault("superseded");
-        const fault = await applyLiveTreeInverse(documentId, planned.op, planned, userId);
+        if (!expected || !sameLiveState(before, expected)) throw new TreeFault("superseded");
+        const fault = await applyLiveTreeInverse(
+          documentId,
+          planned.op,
+          { before: expected, after: planned.after },
+          userId,
+        );
         if (fault) throw new TreeFault(fault);
         const [after] = (await readLiveTreeStates(db(), [documentId])).values();
         if (!after) throw new Error(`Tree inverse left ${documentId} hidden`);
@@ -575,19 +601,22 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           editScopeId: query.model ? query.responseIdentity?.editScopeId : undefined,
           actorUserId: userId,
           kind,
-          actionId: planned.actionId ?? plan.computed.actionId,
-          consumes: plan.consumes,
+          actionId: step.actionId,
+          consumes: entry.plan.consumes,
           receipts: [],
           treeChange: {
             op: planned.op,
             destination: planned.destination,
-            before: planned.before,
+            before: expected,
             after,
             shownAt: document.uri,
             seq: await nextEditSeq(db()),
             targets: [{ editId: planned.entry.editId, direction: planned.direction }],
           },
         });
+        entry.made.set(planned.step, after);
+        entry.living = after.living;
+        entry.reversed++;
         return wId === undefined ? "" : editHandle(wId);
       });
     } catch (cause) {
@@ -651,42 +680,46 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     }
   }
 
-  /** Each part of a plan applied to its view with its restoration provenance; no I/O. */
+  /** Each text step of a plan applied to its view with its restoration provenance; no I/O. */
   function planDocument(plan: PreparedDocumentInverse, query: TurnInverseQuery): PlannedInverse {
     const document = plan.document;
     const draftEntry = plan.draftId ? document.drafts.get(plan.draftId) : undefined;
     const view = draftEntry?.doc ?? document.live;
-    const edits = plan.computed.edits.map((edit) => ({
-      edit,
-      parts: edit.parts.map((computedPart) => {
-        const client =
-          Y.decodeUpdate(computedPart.update).structs[0]?.id.client ?? allocateDocumentClient(view);
-        const provenance = captureMutationUpdates(view, () => {
-          view.transact(() => {
-            Y.applyUpdate(view, computedPart.update);
-            const planningClient = view.clientID;
-            view.clientID = client;
-            try {
-              appendInverseRestorationFacts(view, computedPart.aliases);
-            } finally {
-              view.clientID = planningClient;
-            }
+    const edits = new Map<ComputedInverseEdit, ComputedInverseEdit["parts"]>();
+    for (const step of plan.steps) {
+      if (step.kind !== "text") continue;
+      edits.set(
+        step.edit,
+        step.edit.parts.map((computedPart) => {
+          const client =
+            Y.decodeUpdate(computedPart.update).structs[0]?.id.client ??
+            allocateDocumentClient(view);
+          const provenance = captureMutationUpdates(view, () => {
+            view.transact(() => {
+              Y.applyUpdate(view, computedPart.update);
+              const planningClient = view.clientID;
+              view.clientID = client;
+              try {
+                appendInverseRestorationFacts(view, computedPart.aliases);
+              } finally {
+                view.clientID = planningClient;
+              }
+            });
           });
-        });
-        return {
-          ...computedPart,
-          update: provenance.length
-            ? Y.mergeUpdates([computedPart.update, ...provenance])
-            : computedPart.update,
-        };
-      }),
-    }));
-    const updates = edits.flatMap((entry) => entry.parts.map((part) => part.update));
+          return {
+            ...computedPart,
+            update: provenance.length
+              ? Y.mergeUpdates([computedPart.update, ...provenance])
+              : computedPart.update,
+          };
+        }),
+      );
+    }
     return {
       plan,
       documentId: document.documentId,
       edits,
-      updates,
+      updates: [],
       draft: draftEntry
         ? {
             draftId: draftEntry.documentDraft.draftId,
@@ -695,76 +728,49 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           }
         : undefined,
       source: query.model ? "agent" : "writer",
+      made: new Map(),
+      living: document.treeStates.live?.living ?? document.removal === null,
+      origins: new Map(),
+      committed: [],
+      stopped: false,
+      reversed: 0,
     };
   }
 
-  /** One planned document inside the commit scope: its rows, receipts, statuses, delivery. */
-  async function commitDocument(
+  /**
+   * One text step inside the commit scope: its parts written where its plan lands, and its row.
+   * A draft's text is one checkpoint rewrite, written at the plan's first text step. Live text
+   * whose document a skipped restore left removed is skipped with the rest of that document's
+   * text, which builds on it.
+   */
+  async function commitTextStep(
     entry: PlannedInverse,
+    step: Extract<InverseStep, { kind: "text" }>,
     kind: "undo" | "redo" | "revert" | "rollback",
     userId: UserId | undefined,
     query: TurnInverseQuery,
-    deliveries: (() => Promise<void>)[],
-  ): Promise<string[]> {
+  ): Promise<string | TurnInverseSkip> {
     const { plan, draft } = entry;
     const document = plan.document;
-    const handles: string[] = [];
-    const origins: EditOrigin[][] = entry.edits.map(() => []);
-    if (draft && entry.updates.length) {
-      // Shape (a): the captured draft plus the inverse parts, written whole as the
-      // checkpoint at the revision it was captured at; the rows are inserted under the row
-      // lock, inside the checkpoint they belong to.
-      const rewritten = await commitRewriteWithinTx(db(), {
-        draftId: draft.draftId,
-        policy: { kind: "exact", revision: draft.revision },
-        work: "active",
-        doc: draft.view,
-        withinLock: async () => {
-          const updateMeta = (
-            aliases: (typeof entry.edits)[number]["parts"][number]["aliases"],
-          ) => ({
-            ...(query.model && query.responseIdentity
-              ? {
-                  authoringResponseId: query.responseIdentity.providerResponseId,
-                  editScopeId: query.responseIdentity.editScopeId,
-                }
-              : {}),
-            restorationAliases: aliases.map((alias) => ({
-              source: { ...alias.source, length: alias.len },
-              target: { ...alias.target, length: alias.len },
-            })),
-          });
-          const edits = entry.edits.flatMap(({ parts }, index) =>
-            parts.map((part) => ({ index, part })),
-          );
-          const rowIds = await insertJournalRows(
-            db(),
-            edits.map(({ part }) => ({
-              draftId: draft.draftId,
-              updateData: part.update,
-              source: entry.source,
-              threadId: query.model ? query.threadId : null,
-              turnId: query.model ? query.turnId : null,
-              actorUserId: userId ?? null,
-              updateMeta: updateMeta(part.aliases),
-            })),
-          );
-          for (const [position, { index }] of edits.entries()) {
-            const rowId = rowIds[position];
-            if (rowId === undefined) throw new Error("Inverse journal was not inserted");
-            origins[index].push({
-              kind: "pending",
-              draftId: draft.draftId,
-              rowId,
-            });
-          }
-        },
-      });
-      if (rewritten.status !== "committed") throw new InverseAttemptMiss();
-    } else if (!draft) {
-      for (const [index, { parts }] of entry.edits.entries())
-        for (const part of parts) {
-          const seq = await input.journal.append(document.documentId, part.update, {
+    const parts = entry.edits.get(step.edit);
+    if (!parts) throw new Error("A text step was not planned with its document");
+    if (!draft && (entry.stopped || !entry.living)) {
+      entry.stopped = true;
+      return {
+        documentId: document.documentId,
+        uri: document.uri,
+        before: "",
+        after: "",
+        reason: "Its file wasn't restored",
+      };
+    }
+    if (draft && !entry.origins.size) await rewriteDraft(entry, draft, userId, query);
+    const origins: EditOrigin[] = draft ? (entry.origins.get(step.edit) ?? []) : [];
+    if (!draft)
+      for (const part of parts)
+        origins.push({
+          kind: "live",
+          seq: await input.journal.append(document.documentId, part.update, {
             // Inverse receipts are captured below; a human journal origin
             // would also capture a second, ordinary writer receipt.
             origin: query.model && query.turnId ? `agent:${query.turnId}` : "system",
@@ -776,42 +782,110 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 }
               : {}),
             seq: 0,
-          });
-          origins[index].push({ kind: "live", seq });
+          }),
+        });
+    const receipts = parts.map((part, ordinal) => {
+      const origin = origins[ordinal];
+      if (!origin) throw new Error("Inverse part has no journal origin");
+      return { ...part, origin };
+    });
+    const wId = query.model
+      ? await input.journal.reserveWriteOrdinal(document.documentId, query.threadId)
+      : undefined;
+    if (wId !== undefined)
+      for (const receipt of receipts)
+        if (receipt.origin.kind === "pending")
+          await db()
+            .update(draftWriteJournal)
+            .set({ wId })
+            .where(eq(draftWriteJournal.id, receipt.origin.rowId));
+    await recordDocumentEdit(db(), {
+      documentId: document.documentId,
+      actor: query.model ? "agent" : kind === "rollback" ? "system" : "human",
+      wId,
+      threadId: query.model ? query.threadId : undefined,
+      turnId: query.model ? query.turnId : undefined,
+      responseId: query.model ? query.responseIdentity?.providerResponseId : undefined,
+      editScopeId: query.model ? query.responseIdentity?.editScopeId : undefined,
+      actorUserId: userId,
+      kind,
+      actionId: step.actionId,
+      consumes: plan.consumes,
+      receipts,
+    });
+    entry.committed.push(step.edit);
+    entry.updates.push(...parts.map((part) => part.update));
+    entry.reversed += parts.length;
+    return wId === undefined ? "" : editHandle(wId);
+  }
+
+  /**
+   * Shape (a): the captured draft plus every text step's parts, written whole as the checkpoint
+   * at the revision it was captured at; the journal rows are inserted under the row lock, inside
+   * the checkpoint they belong to.
+   */
+  async function rewriteDraft(
+    entry: PlannedInverse,
+    draft: NonNullable<PlannedInverse["draft"]>,
+    userId: UserId | undefined,
+    query: TurnInverseQuery,
+  ) {
+    const edits = [...entry.edits].flatMap(([edit, parts]) =>
+      parts.map((part) => ({ edit, part })),
+    );
+    const rewritten = await commitRewriteWithinTx(db(), {
+      draftId: draft.draftId,
+      policy: { kind: "exact", revision: draft.revision },
+      work: "active",
+      doc: draft.view,
+      withinLock: async () => {
+        const rowIds = await insertJournalRows(
+          db(),
+          edits.map(({ part }) => ({
+            draftId: draft.draftId,
+            updateData: part.update,
+            source: entry.source,
+            threadId: query.model ? query.threadId : null,
+            turnId: query.model ? query.turnId : null,
+            actorUserId: userId ?? null,
+            updateMeta: {
+              ...(query.model && query.responseIdentity
+                ? {
+                    authoringResponseId: query.responseIdentity.providerResponseId,
+                    editScopeId: query.responseIdentity.editScopeId,
+                  }
+                : {}),
+              restorationAliases: part.aliases.map((alias) => ({
+                source: { ...alias.source, length: alias.len },
+                target: { ...alias.target, length: alias.len },
+              })),
+            },
+          })),
+        );
+        for (const [position, { edit }] of edits.entries()) {
+          const rowId = rowIds[position];
+          if (rowId === undefined) throw new Error("Inverse journal was not inserted");
+          const origins = entry.origins.get(edit) ?? [];
+          origins.push({ kind: "pending", draftId: draft.draftId, rowId });
+          entry.origins.set(edit, origins);
         }
-    }
-    for (const [index, { edit, parts }] of entry.edits.entries()) {
-      const receipts = parts.map((part, ordinal) => ({ ...part, origin: origins[index][ordinal] }));
-      const wId = query.model
-        ? await input.journal.reserveWriteOrdinal(document.documentId, query.threadId)
-        : undefined;
-      if (wId !== undefined) {
-        handles.push(editHandle(wId));
-        for (const receipt of receipts)
-          if (receipt.origin.kind === "pending")
-            await db()
-              .update(draftWriteJournal)
-              .set({ wId })
-              .where(eq(draftWriteJournal.id, receipt.origin.rowId));
-      }
-      await recordDocumentEdit(db(), {
-        documentId: document.documentId,
-        actor: query.model ? "agent" : kind === "rollback" ? "system" : "human",
-        wId,
-        threadId: query.model ? query.threadId : undefined,
-        turnId: query.model ? query.turnId : undefined,
-        responseId: query.model ? query.responseIdentity?.providerResponseId : undefined,
-        editScopeId: query.model ? query.responseIdentity?.editScopeId : undefined,
-        actorUserId: userId,
-        kind,
-        actionId: edit.actionId ?? plan.computed.actionId,
-        consumes: plan.consumes,
-        receipts,
-      });
-    }
+      },
+    });
+    if (rewritten.status !== "committed") throw new InverseAttemptMiss();
+  }
+
+  /** After every step: a rollback's remaining pending rows, and the document's delivery. */
+  async function settleDocument(
+    entry: PlannedInverse,
+    kind: "undo" | "redo" | "revert" | "rollback",
+    query: TurnInverseQuery,
+    deliveries: (() => Promise<void>)[],
+  ): Promise<void> {
+    const { plan, draft } = entry;
+    const document = plan.document;
     if (kind === "rollback") {
       const accepted = new Set(
-        plan.computed.edits.flatMap((edit) =>
+        entry.committed.flatMap((edit) =>
           edit.parts.flatMap((part) =>
             part.targets.map((target) => `${target.editId}:${target.ordinal}`),
           ),
@@ -847,8 +921,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           );
       }
     }
-    if (!entry.updates.length) return handles;
-    const deliver = async () => {
+    if (!entry.updates.length) return;
+    deliveries.push(async () => {
       if (draft) {
         input.onDraftCommitted(draft.draftId);
         await input.draftCoordinator.deliverCommitted(draft.draftId);
@@ -866,9 +940,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           sweptContent: false,
           beforeContentRef: null,
         });
-    };
-    deliveries.push(deliver);
-    return handles;
+    });
   }
 
   /** The live documents' coordinator mutexes, sorted, around the commit scope only (live scope). */
@@ -883,33 +955,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   return createTurnInverseService(store);
 }
 
-/** One tree inverse with its plan and document, in the order the commit runs it. */
-type TreeRun = {
-  plan: PreparedDocumentInverse;
-  document: InverseDocument;
-  planned: PlannedTreeInverse;
-};
-
-/**
- * The model's planned order stands (its steps simulate one after another); the card and a
- * rollback reverse across documents newest first, and redo oldest first, so a renumber
- * undone never meets a location it vacated later.
- */
-function orderTreeRuns(
-  plans: readonly PreparedDocumentInverse[],
-  kind: "undo" | "redo" | "revert" | "rollback",
-  query: TurnInverseQuery,
-): TreeRun[] {
-  const runs = plans.flatMap((plan) =>
-    plan.tree.map((planned) => ({ plan, document: plan.document, planned })),
-  );
-  if (query.model) return runs;
-  return runs.sort((a, b) =>
-    kind === "redo"
-      ? a.planned.entry.id - b.planned.entry.id
-      : b.planned.entry.id - a.planned.entry.id,
-  );
-}
+/** A tree step's document and transition, for the locks the commit takes. */
+type TreeRun = { document: InverseDocument; planned: PlannedTreeInverse };
 
 /** A tree inverse the destination refused under the locks; its savepoint rolls back. */
 class TreeFault extends Error {
@@ -930,10 +977,13 @@ type InverseCapture = {
   heads: Map<DocumentId, number>;
 };
 
+/** One plan as the commit runs it, and what its steps did so far. */
 type PlannedInverse = {
   plan: PreparedDocumentInverse;
   documentId: DocumentId;
-  edits: { edit: ComputedInverseEdit; parts: ComputedInverseEdit["parts"][number][] }[];
+  /** Each text step's parts with their restoration provenance. */
+  edits: Map<ComputedInverseEdit, ComputedInverseEdit["parts"]>;
+  /** The committed text's updates, for the model's echo and the delivery. */
   updates: Uint8Array[];
   draft?: {
     draftId: string;
@@ -941,6 +991,17 @@ type PlannedInverse = {
     view: Y.Doc;
   };
   source: "agent" | "writer";
+  /** The live state each tree step left, by step, for a later step's `madeBy`. */
+  made: Map<number, LiveTreeState>;
+  /** Whether the live document stands, as the steps so far left it. */
+  living: boolean;
+  /** A draft's journal origins per text step, once its rewrite ran. */
+  origins: Map<ComputedInverseEdit, EditOrigin[]>;
+  committed: ComputedInverseEdit[];
+  /** A skipped restore stopped this document's live text. */
+  stopped: boolean;
+  /** Text parts and tree steps committed. */
+  reversed: number;
 };
 
 /** The attempt a store call runs in: its capture, and whether it may still commit. */

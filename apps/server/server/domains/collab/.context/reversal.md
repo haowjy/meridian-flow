@@ -73,20 +73,34 @@ transition in its destination (live placement or removal; a branch row's facts),
 inverse row records the transition it made (`targets` names the entry).
 
 Tree entries are judged by state, never by row presence: an entry stands while its
-destination still holds the `after` of its latest transition (the entry itself, or the latest
-redo or undo naming it, since a redone delete writes a new removal); an undo restores the
-`before`. A later own entry that was undone does not block, so A→B, B→C, undo, undo returns to
-A. Applied or discarded comes only from a later settlement row naming the entry. The card and
-rollback plan tree entries newest first per document on simulated states, run them before
-text (text lands in a document its restore brought back), across documents newest first, each
-in its own savepoint: a fault (`location_taken`, `folder_missing`, `superseded`) is a reported
-skip and the rest still run. A model inverse is all or nothing (`TreeInverseRefused`). Every
-tree inverse commits under `acquireTreeScope` over the attempt's documents and the placements
-it returns to, then re-reads the captured tree states (a mismatch is an attempt miss). Live
-moves back go through `moveToPlacement`, deletes back through `restoreDocument` naming the
-removal, redone deletes through `DocumentRemoval.remove`. A tree-only inverse has no text cuts,
-so the engine echoes no blocks. Turn targets include every document a turn moved or deleted,
-deleted or not. Drafted tree entries (phase E) are not written yet; their inverse throws.
+destination still holds the `after` of its latest transition (the entry itself, a row naming
+it, or a row reversing such a row: an undo of a revert reapplies the entry, a rollback of an
+undo leaves it as the undo found it; latest, since a redone delete writes a new removal); an
+undo restores the `before`. A later own entry that was undone does not block, so A→B, B→C,
+undo, undo returns to A. Applied or discarded comes only from a later settlement row naming
+the entry. The history writer (`recordDocumentEdit`) is the one place a transition's states
+are checked against its destination and op; readers trust the rows.
+
+Every inverse (model undo, redo and revert, the card, a reply's rollback) is one ordered
+stream of steps (`domain/inverse-stream.ts`): each selected original edit is one step, text or
+tree, with its action and its place on the shared id axis allocated in that one loop, planned
+on a simulation the steps before it advanced (simulated rows, destination states, one clock).
+So a restore planned earlier lets later live text be reversed, a model count-N Undo records N
+separately redoable actions, and a step that reverses an undo puts its edit back on the stack.
+A removal an earlier step makes is `madeBy` that step until it runs; a restore planned after it
+carries the removal that step actually made, while an unrelated removal still refuses it. The
+commit runs the steps in planned order (the card and rollback merge documents newest first,
+redo oldest first), each tree step in its own savepoint: a fault (`location_taken`,
+`folder_missing`, `superseded`) is a reported skip for the card and rollback, and live text of a
+document a skipped restore left removed is skipped with the rest of that document's text. A
+model inverse is all or nothing (`TreeInverseRefused`). A draft's text still commits as one
+checkpoint rewrite, at its plan's first text step. Every tree inverse commits under
+`acquireTreeScope` over the attempt's documents and the placements it returns to, then
+re-reads the captured tree states (a mismatch is an attempt miss). Live moves back go through
+`moveToPlacement`, deletes back through `restoreDocument` naming the removal, redone deletes
+through `DocumentRemoval.remove`. A tree-only inverse has no text cuts, so the engine echoes no
+blocks. Turn targets include every document a turn moved or deleted, deleted or not. Drafted
+tree entries (phase E) are not written yet; their inverse throws.
 
 ## Effects and failures
 
