@@ -13,6 +13,7 @@ import { toDocHandle, toRef } from "../handles.js";
 import { renderedItems, type ShownCommandLinks, shownEvidence } from "../links/shown.js";
 import {
   blockHashesForDoc,
+  blockIdentityForItem,
   getBlockItemId,
   getTopLevelXmlBlocks,
   uniqueHashesForIds,
@@ -124,7 +125,7 @@ export function observeRendered(
   }
   let more = candidates.length - listed.length;
   if (removed.length > 0 && more === 0) {
-    const hashes = removedHashes(blocks, removed);
+    const hashes = removedHashes(doc, blocks, removed);
     const fitting: string[] = [];
     for (const hash of hashes) {
       const bytes = byteLength(hash) + 1;
@@ -168,10 +169,14 @@ function shownInFull(
 
 /** Removed blocks' hashes, unique among them and the present blocks, sorted. */
 function removedHashes(
+  doc: Y.Doc,
   present: readonly Y.XmlElement[],
   removed: readonly { clientID: number; clock: number }[],
 ): string[] {
-  const hashes = uniqueHashesForIds([...present.map(getBlockItemId), ...removed]);
+  const hashes = uniqueHashesForIds([
+    ...present.map((block) => blockIdentityForItem(doc, getBlockItemId(block))),
+    ...removed.map((id) => blockIdentityForItem(doc, id)),
+  ]);
   return hashes.slice(present.length).sort();
 }
 

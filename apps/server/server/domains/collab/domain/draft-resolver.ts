@@ -14,7 +14,7 @@ export interface DraftResolver {
 }
 
 /** A resolved draft's identity and state as its row was read; no content. */
-export type ResolvedDraft = Pick<DraftSnapshot, "draftId" | "status" | "lifecycle">;
+export type ResolvedDraft = Pick<DraftSnapshot, "draftId" | "status" | "lifecycle" | "seed">;
 
 export class DraftNotFoundError extends Error {
   readonly documentId: DocumentId;

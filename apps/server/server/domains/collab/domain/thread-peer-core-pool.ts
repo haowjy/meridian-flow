@@ -1,8 +1,10 @@
 /** The one model-edit entry point: routes per document to live or a thread peer, saves each reply once. */
 import {
   type AgentEditCore,
+  type FrontierLookup,
   modelResult,
   parseDocumentAddress,
+  projectSeedFrontier,
   type ReadCommand,
   ResponseAttemptStaleError,
   type ResponseCommitAttempt,
@@ -48,7 +50,9 @@ export type ResponseTransactionHooks = {
 import type { Branches } from "./branches.js";
 import { type EnsuredThreadPeer, peerLossReason } from "./draft-pulls.js";
 import { DraftNotFoundError } from "./draft-resolver.js";
+import type { DraftSeedRecord } from "./draft-store.js";
 import { DraftCasConflictError } from "./draft-store.js";
+import { draftRoom } from "./observation-rooms.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import {
   pinStaged,
@@ -220,11 +224,40 @@ export function createThreadPeerCorePool(input: {
     });
     return {
       ...context,
+      frontiers: projectedFrontiers(context.frontiers, peer.upstreamDraftId, peer.seed ?? null),
       interactionContext: {
         mode: "threadPeer" as const,
         peerDraftId: peer.peerDraftId,
         upstreamDraftId: peer.upstreamDraftId,
       },
+    };
+  }
+
+  function projectedFrontiers(
+    frontiers: WriteContext["frontiers"],
+    workDraftId: string,
+    seed: DraftSeedRecord | null,
+  ): WriteContext["frontiers"] {
+    if (!frontiers || !seed) return frontiers;
+    const targetRoom = draftRoom(workDraftId);
+    const origins = new Map(Object.entries(seed.origins));
+    const wrap =
+      (lookup: FrontierLookup): FrontierLookup =>
+      async (room) => {
+        const native = await lookup(room);
+        if (native || room !== targetRoom) return native;
+        return projectSeedFrontier(await lookup(seed.liveRoom), {
+          sourceRoom: seed.liveRoom,
+          sourceSnapshot: seed.liveSnapshot,
+          targetRoom,
+          targetSnapshot: seed.draftSnapshot,
+          origins,
+        });
+      };
+    return {
+      ...frontiers,
+      recording: wrap(frontiers.recording),
+      ...(frontiers.planning ? { planning: wrap(frontiers.planning) } : {}),
     };
   }
 
