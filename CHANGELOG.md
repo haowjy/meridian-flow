@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- A draft-mode chat's first edit now lands from its live read, whether it targets text or a block hash; Work draft seeds retain the exact live cut and block origins needed to keep that address and observation valid (#1002).
+- A draft-mode chat's first edit now lands from its live read, whether it targets text or a block hash, and later replies keep credit for the rest of that read. Work draft seeds retain the exact live cut and block origins needed by writes and Undo; edit-history reads stay in the requested live or draft destination (#1002).
 
 - Links inside a still-hidden draft document now resolve from that draft's own address, including relative links and unavailable targets; the “doesn't exist yet” card no longer explains Create (#876).
 - Applying one draft change no longer closes the desktop change list or phone Changes sheet while other changes remain, and its progress line no longer replaces those rows.

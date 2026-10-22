@@ -22,7 +22,7 @@ export interface ObservationFrontier {
   unshown: readonly string[];
 }
 
-export interface SeedFrontierProjection {
+interface SeedFrontierProjection {
   sourceRoom: string;
   sourceSnapshot: Uint8Array;
   targetRoom: string;

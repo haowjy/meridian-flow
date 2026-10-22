@@ -32,7 +32,7 @@ export function copyBlockOrigins(source: Y.Doc, target: Y.Doc): void {
   if (origins) originsByDocument.set(target, origins);
 }
 
-export function blockIdentity(block: Y.XmlElement | BlockRef): BlockItemId {
+function blockIdentity(block: Y.XmlElement | BlockRef): BlockItemId {
   const element = xmlElement(block);
   const own = getBlockItemId(element);
   return (element.doc && originsByDocument.get(element.doc)?.get(blockItemIdKey(own))) ?? own;
