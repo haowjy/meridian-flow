@@ -1,25 +1,39 @@
 /**
- * ManuscriptStateNotice — a line under the identity row saying what live did to the document
- * this draft holds (D79): deleted from the manuscript (Apply brings it back), or its name now
- * taken by another document. Once an Apply brings it back the same line says so, until the
- * writer dismisses it or opens another document; a host swap on promotion (the phone's)
- * remounts this line and must not end it. Renders nothing otherwise.
+ * ManuscriptStateNotice — what live did to the document this draft holds (D79): deleted from
+ * the manuscript (Apply brings it back), or its name now taken by another document. Once an
+ * Apply brings it back the same place says so, until the writer dismisses it or opens another
+ * document; a host swap on promotion (the phone's) remounts it and must not end it.
+ *
+ * It lives in the free end of a header row the document already has (the identity row, the
+ * phone's review row), never in a strip of its own: a delete lands while the writer reads, and
+ * a line pushed in above the toolbar would move the page under them. The slot takes only what
+ * the row leaves and adds nothing to the row's size, so its arrival never wraps or grows the
+ * row. A narrow slot shows the short label; the button opens the full sentence.
  */
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
-import { Trans } from "@lingui/react/macro";
 import { Info, X } from "lucide-react";
-import { type ReactNode, useEffect, useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import type { ContextTab } from "@/client/stores";
 import { IconButton } from "@/components/ui/icon-button";
-import { RestoredSentence } from "@/features/draft-review/CommandNotice";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { restoredSentence } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { isDeletedFromManuscript, isPathTaken } from "@/features/draft-review/deleted-drafts";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { deletedFromManuscriptSentence } from "@/features/project/context/RemovedDocumentNotice";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
+import { cn } from "@/lib/utils";
 
-export function ManuscriptStateNotice({ projectId, tab }: { projectId: string; tab: ContextTab }) {
+export type ManuscriptState = {
+  kind: "deleted" | "taken" | "restored";
+  sentence: string;
+  label: string;
+  dismiss?: () => void;
+};
+
+/** The document's manuscript state, or null when live did nothing to it. */
+export function useManuscriptState(projectId: string, tab: ContextTab): ManuscriptState | null {
   useLingui();
   const { documentId } = tab;
   const { files } = useDraftReview();
@@ -33,39 +47,87 @@ export function ManuscriptStateNotice({ projectId, tab }: { projectId: string; t
   const item = files.find((file) => file.documentId === documentId)?.draft;
   const deleted = isDeletedFromManuscript(item);
   const removal = useRemovalRecord(projectId, deleted ? documentId : null);
-  const title = tab.name;
   const taken = isPathTaken(item);
+  const title = tab.name;
+  const takenSentence = t`Another document now has this name. Rename that document to apply this draft.`;
   // Both can hold: a deleted document whose path another document then took.
-  const deletedLine = deleted
-    ? deletedFromManuscriptSentence(title, removal?.kind === "removed" ? removal.record : null)
-    : null;
-  const takenLine = taken ? (
-    <Trans>Another document now has this name. Rename that document to apply this draft.</Trans>
-  ) : null;
-  const line: ReactNode =
-    deleted || taken ? (
-      <>
-        {deletedLine}
-        {deleted && taken ? " " : null}
-        {takenLine}
-      </>
-    ) : restored ? (
-      <RestoredSentence titles={[title]} />
-    ) : null;
-  if (!line) return null;
+  if (deleted) {
+    const sentence = deletedFromManuscriptSentence(
+      title,
+      removal?.kind === "removed" ? removal.record : null,
+    );
+    return taken
+      ? { kind: "taken", sentence: `${sentence} ${takenSentence}`, label: t`Deleted, name taken` }
+      : { kind: "deleted", sentence, label: t`Deleted from the manuscript` };
+  }
+  if (taken) return { kind: "taken", sentence: takenSentence, label: t`Name taken` };
+  if (restored)
+    return {
+      kind: "restored",
+      sentence: restoredSentence([title]),
+      label: t`Back in the manuscript`,
+      dismiss: () => owner.forgetRestored(projectId, documentId),
+    };
+  return null;
+}
+
+/**
+ * The row's free end. Always rendered (it is the row's spacer), so a state that arrives fills
+ * space the row already has.
+ */
+export function ManuscriptStateSlot({
+  state,
+  touch = false,
+  className,
+}: {
+  state: ManuscriptState | null;
+  touch?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={cn("@container relative min-w-0 flex-1 self-stretch", className)}>
+      {state ? (
+        <div className="absolute inset-0 flex items-center">
+          <ManuscriptStateChip state={state} touch={touch} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ManuscriptStateChip({ state, touch }: { state: ManuscriptState; touch: boolean }) {
   return (
     <div
       role="status"
-      data-manuscript-state-notice={taken ? "taken" : deleted ? "deleted" : "restored"}
-      className="flex min-h-8 min-w-0 items-center gap-x-2 px-4 font-sans text-ink-muted text-sm [@media(pointer:coarse)]:min-h-11"
+      data-manuscript-state-notice={state.kind}
+      className="flex min-w-0 max-w-full items-center font-sans text-ink-muted text-xs"
     >
-      <Info aria-hidden className="size-3.5 shrink-0" />
-      <span className="min-w-0 flex-1">{line}</span>
-      {!deleted && !taken ? (
+      <Popover>
+        <PopoverTrigger
+          aria-label={state.sentence}
+          title={state.sentence}
+          className={cn(
+            "focus-ring flex min-w-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-muted hover:text-foreground",
+            touch ? "h-11" : "h-6 [@media(pointer:coarse)]:h-11",
+          )}
+        >
+          <Info aria-hidden className="size-3.5 shrink-0" />
+          <span aria-hidden className="min-w-0 truncate @max-[28rem]:hidden">
+            {state.sentence}
+          </span>
+          <span aria-hidden className="hidden min-w-0 truncate @max-[28rem]:inline">
+            {state.label}
+          </span>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-80 max-w-[calc(100vw-1rem)] p-3 text-sm">
+          {state.sentence}
+        </PopoverContent>
+      </Popover>
+      {state.dismiss ? (
         <IconButton
           aria-label={t`Dismiss`}
-          className="size-6 shrink-0 [@media(pointer:coarse)]:size-11"
-          onClick={() => owner.forgetRestored(projectId, documentId)}
+          className={cn("shrink-0", touch ? "size-11" : "size-6 [@media(pointer:coarse)]:size-11")}
+          onClick={state.dismiss}
         >
           <X aria-hidden className="size-3" />
         </IconButton>

@@ -24,7 +24,11 @@ import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
-import { ManuscriptStateNotice } from "@/features/editor/ManuscriptStateNotice";
+import {
+  type ManuscriptState,
+  ManuscriptStateSlot,
+  useManuscriptState,
+} from "@/features/editor/ManuscriptStateNotice";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import { MobileChangeBar } from "./MobileChangeBar";
 import { MobileChangeSheet } from "./MobileChangeSheet";
@@ -55,6 +59,7 @@ export function MobileDocumentReview({
     onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.workId),
   });
   const [listOpen, setListOpen] = useState(false);
+  const manuscriptState = useManuscriptState(projectId, tab);
   useEffect(() => {
     if (!itemKey) setListOpen(false);
   }, [itemKey]);
@@ -63,11 +68,14 @@ export function MobileDocumentReview({
     <MobileKeyboardAware>
       <div className="relative flex min-h-0 flex-1 flex-col">
         {itemKey ? (
-          <ReviewTop header={header} onOpenList={() => setListOpen(true)} />
+          <ReviewTop
+            header={header}
+            manuscriptState={manuscriptState}
+            onOpenList={() => setListOpen(true)}
+          />
         ) : (
-          <LiveDraftEntry documentId={documentId} />
+          <LiveDraftEntry documentId={documentId} manuscriptState={manuscriptState} />
         )}
-        <ManuscriptStateNotice projectId={projectId} tab={tab} />
         <DocumentDraftHint projectId={projectId} tab={tab} />
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         {itemKey ? (
@@ -81,12 +89,20 @@ export function MobileDocumentReview({
 /**
  * The live document's way into its pending draft: the Draft chip in a row of
  * the review header's own height and inset, so the chip stays where the
- * reviewing one will be. Nothing is drawn for a document with no pending draft.
+ * reviewing one will be. The row also holds what an Apply brought back, so that
+ * line takes the review header's place instead of pushing the page. Nothing is
+ * drawn for a document with neither.
  */
-function LiveDraftEntry({ documentId }: { documentId: string }) {
+function LiveDraftEntry({
+  documentId,
+  manuscriptState,
+}: {
+  documentId: string;
+  manuscriptState: ManuscriptState | null;
+}) {
   const { fileForDocument } = useDraftReview();
   const group = fileForDocument(documentId);
-  if (!group) return null;
+  if (!group && !manuscriptState) return null;
   return (
     <div
       data-phone-draft-entry
@@ -96,17 +112,30 @@ function LiveDraftEntry({ documentId }: { documentId: string }) {
         paddingRight: "calc(0.25rem + env(safe-area-inset-right))",
       }}
     >
-      <DraftReviewChip documentId={documentId} touch />
+      {group ? <DraftReviewChip documentId={documentId} touch /> : null}
+      <ManuscriptStateSlot state={manuscriptState} touch />
     </div>
   );
 }
 
-function ReviewTop({ header, onOpenList }: { header: ReviewHeaderModel; onOpenList: () => void }) {
+function ReviewTop({
+  header,
+  manuscriptState,
+  onOpenList,
+}: {
+  header: ReviewHeaderModel;
+  manuscriptState: ManuscriptState | null;
+  onOpenList: () => void;
+}) {
   const { status } = header.view;
   return (
     <>
       <PaintCapture surface={status} state={status === "loading" ? "pending" : "painted"} />
-      <MobileReviewHeader header={header} onOpenList={onOpenList} />
+      <MobileReviewHeader
+        header={header}
+        manuscriptState={manuscriptState}
+        onOpenList={onOpenList}
+      />
     </>
   );
 }

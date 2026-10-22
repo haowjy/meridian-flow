@@ -93,7 +93,9 @@ list omission alone must not infer local Discard or successful Apply. The list
 omits an active draft with no effect (a delete's held tab, a fully applied draft,
 one inside the `has_effect` lag), so an unlisted draft-only tab goes live when
 the catalog shows its document and closes only when its draft metadata answers
-`gone`; an active or unanswered draft keeps its tab. The server answers `gone`
+`gone`; an active or unanswered draft keeps its tab. While its draft is closed,
+`ReviewAddressOwner` does not restore the address's review: the room owner just
+ended it, and a draft-only tab keeps its address until settlement closes it. The server answers `gone`
 from the Work's ownership and the item key alone, before any content grant:
 the active draft is what grants reading a document deleted live or a hidden
 creation, so after a Discard on another device a content check would answer
@@ -120,7 +122,7 @@ the server answers `needs_restore` (nothing changed); the outcome is
 `needs-restore`, the list refreshes so the row shows the delete, and an Apply all
 asks again by name. An applied answer with `restored` makes the outcome
 `{ kind: "done", restored: true }` and marks the document (`wasRestored`) for the
-editor's "back in the manuscript" line; the surface that clicked says the same in
+editor's "back in the manuscript" state; the surface that clicked says the same in
 its reserved notice slot (`CommandNotice`).
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds,

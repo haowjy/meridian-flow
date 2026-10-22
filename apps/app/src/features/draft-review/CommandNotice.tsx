@@ -5,6 +5,7 @@
  * question a command asks first (Discard all, an Apply all that brings documents back).
  */
 import { i18n } from "@lingui/core";
+import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useRef } from "react";
@@ -104,18 +105,21 @@ export function RestoreQuestion({ titles }: { titles: readonly string[] }) {
 }
 
 /** "‹title› is back in the manuscript.", with every name when an Apply all brought back several. */
-export function RestoredSentence({ titles }: { titles: readonly string[] }) {
-  useLingui();
+export function restoredSentence(titles: readonly string[]): string {
   const names = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
     titles,
   );
+  return titles.length === 1
+    ? t`${names} is back in the manuscript.`
+    : t`${names} are back in the manuscript.`;
+}
+
+function RestoredSentence({ titles }: { titles: readonly string[] }) {
+  useLingui();
+  const sentence = restoredSentence(titles);
   return (
-    <span className="min-w-0 truncate" title={names}>
-      {titles.length === 1 ? (
-        <Trans>{names} is back in the manuscript.</Trans>
-      ) : (
-        <Trans>{names} are back in the manuscript.</Trans>
-      )}
+    <span className="min-w-0 truncate" title={sentence}>
+      {sentence}
     </span>
   );
 }
