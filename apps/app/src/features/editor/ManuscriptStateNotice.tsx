@@ -2,7 +2,8 @@
  * ManuscriptStateNotice — a line under the identity row saying what live did to the document
  * this draft holds (D79): deleted from the manuscript (Apply brings it back), or its name now
  * taken by another document. Once an Apply brings it back the same line says so, until the
- * writer dismisses it or leaves the document. Renders nothing otherwise.
+ * writer dismisses it or opens another document; a host swap on promotion (the phone's)
+ * remounts this line and must not end it. Renders nothing otherwise.
  */
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
@@ -28,11 +29,7 @@ export function ManuscriptStateNotice({ projectId, tab }: { projectId: string; t
     () => owner.wasRestored(projectId, documentId),
     () => false,
   );
-  // The notice belongs to this visit: leaving the document lets it go.
-  useEffect(
-    () => () => owner.forgetRestored(projectId, documentId),
-    [owner, projectId, documentId],
-  );
+  useEffect(() => owner.keepRestoredOnly(projectId, documentId), [owner, projectId, documentId]);
   const item = files.find((file) => file.documentId === documentId)?.draft;
   const deleted = isDeletedFromManuscript(item);
   const removal = useRemovalRecord(projectId, deleted ? documentId : null);
@@ -62,7 +59,7 @@ export function ManuscriptStateNotice({ projectId, tab }: { projectId: string; t
       {restored && !deleted ? (
         <IconButton
           aria-label={t`Dismiss`}
-          className="size-6 shrink-0"
+          className="size-6 shrink-0 [@media(pointer:coarse)]:size-11"
           onClick={() => owner.forgetRestored(projectId, documentId)}
         >
           <X aria-hidden className="size-3" />
