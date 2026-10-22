@@ -102,6 +102,9 @@ is recovery state, not authority. Work catalog snapshots are server-owned;
 command projection is the single optimistic read model and account switches
 clear queued commands. Work creation, archive, restore, delete, rename, and
 Goal editing keep their own failure/undo evidence on the destination or row.
+Archive focus follows the Work to its destination tab and, on refusal, returns
+to the origin tab if the user has not moved focus elsewhere; its ring follows
+the input modality of the command.
 Navigation never chooses a project-wide Work and never rebinds a chat.
 
 ## Navigation and chat
