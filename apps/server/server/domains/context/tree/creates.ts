@@ -24,7 +24,6 @@ import type {
   LiveCreateCandidate,
   TrackedNode,
 } from "./hidden-node-types.js";
-import { normalizeNames } from "./name-normalization.js";
 import { filePath, insertDocumentRow, insertFolder, lockDocuments } from "./node-rows.js";
 import { type PlaceResult, place, walkFolders } from "./placement.js";
 import { createTreeReader, LIVE_TREE, type TreeView } from "./tree-view.js";
@@ -247,7 +246,6 @@ export async function createLive(
       ...(provisionalName ? { provisionalName } : {}),
     });
     if (!documentId) return Err({ code: "row_exists" });
-    await normalizeNames(db, [{ kind: "document", id: documentId }]);
     return Ok({ kind: "inserted", documentId });
   }
   const placed = await place(db, {

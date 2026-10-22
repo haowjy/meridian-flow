@@ -4,6 +4,7 @@
  * a `read` agent has `write` but edits only its own scratch and changes no Work.
  */
 
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
@@ -146,7 +147,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(search.output).toContain("manuscript://chapter");
       expect(search.output).not.toContain(".md");
       const data = crypto.randomUUID();
-      await db.insert(schema.folders).values({ contextSourceId: MANUSCRIPT_ID, name: "scenes" });
+      await db.insert(schema.folders).values({
+        contextSourceId: MANUSCRIPT_ID,
+        name: "scenes",
+        documentAlias: folderDocumentName("scenes"),
+      });
       await db.insert(schema.documents).values({
         id: data,
         contextSourceId: MANUSCRIPT_ID,

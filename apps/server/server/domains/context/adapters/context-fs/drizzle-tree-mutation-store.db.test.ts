@@ -3,7 +3,9 @@
  * move barrier. What live folder operations do to hidden nodes is
  * `tree/folder-normalization.db.test.ts`.
  */
+
 import { randomUUID } from "node:crypto";
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -269,11 +271,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         parentId: string | null;
         contextSourceId: string;
         name: string;
+        documentAlias: string;
       }> = [];
       for (let i = 0; i < 150; i++) {
         const name = randomUUID();
         const id = randomUUID();
-        rows.push({ id, parentId, contextSourceId: SOURCE_ID, name });
+        rows.push({
+          id,
+          parentId,
+          contextSourceId: SOURCE_ID,
+          name,
+          documentAlias: folderDocumentName(name),
+        });
         names.push(name);
         parentId = id;
       }
@@ -314,13 +323,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const customId = "00000000-0000-4000-8000-000000000733";
       const nestedId = "00000000-0000-4000-8000-000000000734";
       await db.insert(folders).values([
-        { id: EMPTY_FOLDER_ID, contextSourceId: SOURCE_ID, name: "empty" },
-        { id: NON_EMPTY_FOLDER_ID, contextSourceId: SOURCE_ID, name: "occupied" },
+        {
+          id: EMPTY_FOLDER_ID,
+          contextSourceId: SOURCE_ID,
+          name: "empty",
+          documentAlias: folderDocumentName("empty"),
+        },
+        {
+          id: NON_EMPTY_FOLDER_ID,
+          contextSourceId: SOURCE_ID,
+          name: "occupied",
+          documentAlias: folderDocumentName("occupied"),
+        },
         {
           id: nestedFolderId,
           contextSourceId: SOURCE_ID,
           parentId: NON_EMPTY_FOLDER_ID,
           name: "nested",
+          documentAlias: folderDocumentName("nested"),
         },
       ]);
       await db.insert(documents).values([
@@ -440,7 +460,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     ] as const)("rolls back every recursive-delete effect when failure is injected %s", async (failurePoint) => {
       const folderId = "00000000-0000-4000-8000-000000000741";
       const documentId = "00000000-0000-4000-8000-000000000743";
-      await db.insert(folders).values({ id: folderId, contextSourceId: SOURCE_ID, name: folderId });
+      await db.insert(folders).values({
+        id: folderId,
+        contextSourceId: SOURCE_ID,
+        name: folderId,
+        documentAlias: folderDocumentName(folderId),
+      });
       await db.insert(documents).values({
         id: documentId,
         contextSourceId: SOURCE_ID,
@@ -534,9 +559,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           scope: "project",
           isPrimary: true,
         });
-        await committed
-          .insert(folders)
-          .values({ id: parentId, contextSourceId: sourceId, name: "parent" });
+        await committed.insert(folders).values({
+          id: parentId,
+          contextSourceId: sourceId,
+          name: "parent",
+          documentAlias: folderDocumentName("parent"),
+        });
         await committed.insert(documents).values({
           id: childId,
           contextSourceId: sourceId,

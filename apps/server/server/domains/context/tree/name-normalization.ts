@@ -25,6 +25,34 @@ type Claim = {
   createdAt: Date;
 };
 
+function matchingClaim(
+  claim: { kind: "document" | "folder"; filename: string },
+  at: Pick<Claim, "contextSourceId" | "parentId">,
+  excludeId?: string,
+) {
+  const documentParts = documentPartsForNamespaceClaim(claim);
+  return {
+    document: sql`d.deleted_at IS NULL
+      AND d.context_source_id = ${at.contextSourceId}::uuid
+      AND d.folder_id IS NOT DISTINCT FROM ${at.parentId}::uuid
+      AND ${
+        documentParts
+          ? sql`d.name = ${documentParts.name} AND d.extension = ${documentParts.extension}`
+          : sql`false`
+      }
+      AND ${excludeId ? sql`d.id <> ${excludeId}::uuid` : sql`true`}`,
+    folder: sql`f.deleted_at IS NULL
+      AND f.context_source_id = ${at.contextSourceId}::uuid
+      AND f.parent_id IS NOT DISTINCT FROM ${at.parentId}::uuid
+      AND ${
+        claim.kind === "document"
+          ? sql`f.document_alias = ${claim.filename}`
+          : sql`f.name = ${claim.filename}`
+      }
+      AND ${excludeId ? sql`f.id <> ${excludeId}::uuid` : sql`true`}`,
+  };
+}
+
 /** Make only hidden nodes conflicting with claims this write installed or reparented yield. */
 export async function normalizeNames(db: Database, arrivals: readonly NodeRef[]): Promise<void> {
   const tx = currentDrizzleDb(db);
@@ -46,26 +74,16 @@ export async function normalizeNames(db: Database, arrivals: readonly NodeRef[])
       installed.kind === "document"
         ? renderFilename(installed.name, installed.extension)
         : installed.name;
-    const documentParts = documentPartsForNamespaceClaim({ kind: installed.kind, filename });
+    const matching = matchingClaim({ kind: installed.kind, filename }, installed);
     const losers = await tx.execute<Claim>(sql`
       SELECT * FROM (
         SELECT d.id::text, 'document'::text AS kind, d.context_source_id::text AS "contextSourceId",
           d.folder_id::text AS "parentId", d.name, d.extension, d.hidden, d.created_at AS "createdAt"
-        FROM documents d WHERE d.deleted_at IS NULL
-          AND d.context_source_id = ${installed.contextSourceId}::uuid
-          AND d.folder_id IS NOT DISTINCT FROM ${installed.parentId}::uuid
-          AND ${
-            documentParts
-              ? sql`d.name = ${documentParts.name} AND d.extension = ${documentParts.extension}`
-              : sql`false`
-          }
+        FROM documents d WHERE ${matching.document}
         UNION ALL
         SELECT f.id::text, 'folder'::text, f.context_source_id::text, f.parent_id::text,
           f.name, ''::text, f.hidden, f.created_at
-        FROM folders f WHERE f.deleted_at IS NULL
-          AND f.context_source_id = ${installed.contextSourceId}::uuid
-          AND f.parent_id IS NOT DISTINCT FROM ${installed.parentId}::uuid
-          AND ${installed.kind === "document" ? sql`f.document_alias = ${filename}` : sql`f.name = ${filename}`}
+        FROM folders f WHERE ${matching.folder}
       ) n ORDER BY hidden ASC, (kind = 'folder') DESC, "createdAt", id`);
     for (const loser of losers.slice(1)) if (loser.hidden) await renameHiddenClaim(db, loser);
   }
@@ -78,23 +96,11 @@ async function renameHiddenClaim(db: Database, claim: Claim): Promise<void> {
       ? ({ kind: "document", name: claim.name, extension: claim.extension } as const)
       : ({ kind: "folder", name: claim.name } as const);
   const filename = await allocateFilename(desired, async (candidate) => {
-    const documentParts = documentPartsForNamespaceClaim(candidate);
+    const matching = matchingClaim(candidate, claim, claim.id);
     const [row] = await tx.execute<{ taken: boolean }>(sql`SELECT EXISTS (
-      SELECT 1 FROM documents d WHERE d.deleted_at IS NULL
-        AND d.context_source_id = ${claim.contextSourceId}::uuid
-        AND d.folder_id IS NOT DISTINCT FROM ${claim.parentId}::uuid
-        AND ${
-          documentParts
-            ? sql`d.name = ${documentParts.name} AND d.extension = ${documentParts.extension}`
-            : sql`false`
-        }
-        AND d.id <> ${claim.id}::uuid
+      SELECT 1 FROM documents d WHERE ${matching.document}
       UNION ALL
-      SELECT 1 FROM folders f WHERE f.deleted_at IS NULL
-        AND f.context_source_id = ${claim.contextSourceId}::uuid
-        AND f.parent_id IS NOT DISTINCT FROM ${claim.parentId}::uuid
-        AND ${candidate.kind === "document" ? sql`f.document_alias = ${candidate.filename}` : sql`f.name = ${candidate.filename}`}
-        AND f.id <> ${claim.id}::uuid
+      SELECT 1 FROM folders f WHERE ${matching.folder}
     ) AS taken`);
     return row?.taken ?? false;
   });

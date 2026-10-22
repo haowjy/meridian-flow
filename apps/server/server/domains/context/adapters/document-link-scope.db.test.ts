@@ -2,6 +2,7 @@
  * PostgreSQL proof for the document-link scope: batched prepare, views, snapshot lifetime,
  * and how a link reads per view (contract §10: "in a draft", precedence, the pinned holder).
  */
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -137,7 +138,12 @@ if (!RUN) {
         slug: "scratch",
         deletedAt: new Date(),
       });
-      await db.insert(folders).values({ id: PART, contextSourceId: SOURCE, name: "part1" });
+      await db.insert(folders).values({
+        id: PART,
+        contextSourceId: SOURCE,
+        name: "part1",
+        documentAlias: folderDocumentName("part1"),
+      });
       const row = (docId: string, name: string, extra: Record<string, unknown> = {}) => ({
         id: docId,
         contextSourceId: SOURCE,

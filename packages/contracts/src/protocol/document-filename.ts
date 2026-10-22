@@ -121,12 +121,13 @@ export function sameNamespaceName(left: NamespaceNameClaim, right: NamespaceName
     : namespaceName(left) === namespaceName(right);
 }
 
-/** Smallest available name. Callers own the atomic claim and any batch reservation. */
+/** Smallest available name at or after `startSuffix`. Callers own the atomic claim. */
 export async function allocateFilename(
   desired: { kind: "document"; name: string; extension: string } | { kind: "folder"; name: string },
   isTaken: (candidate: NamespaceNameClaim) => boolean | Promise<boolean>,
+  startSuffix = 1,
 ): Promise<string> {
-  for (let suffix = 1; ; suffix += 1) {
+  for (let suffix = startSuffix; ; suffix += 1) {
     const base = suffix === 1 ? desired.name : `${desired.name} (${suffix})`;
     const filename = desired.kind === "document" ? renderFilename(base, desired.extension) : base;
     if (!(await isTaken({ kind: desired.kind, filename }))) return filename;

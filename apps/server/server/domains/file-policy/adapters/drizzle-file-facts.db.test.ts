@@ -1,4 +1,5 @@
 /** Postgres file facts: ownership, lifecycle and the ancestor chain. */
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
@@ -50,8 +51,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { id: noWorkScratch, workId: noWork, scope: "work", name: "Scratch", slug: "scratch" },
       ]);
       await db.insert(folders).values([
-        { id: chapters, contextSourceId: manuscript, name: "chapters" },
-        { id: arc, contextSourceId: manuscript, parentId: chapters, name: "arc-1" },
+        {
+          id: chapters,
+          contextSourceId: manuscript,
+          name: "chapters",
+          documentAlias: folderDocumentName("chapters"),
+        },
+        {
+          id: arc,
+          contextSourceId: manuscript,
+          parentId: chapters,
+          name: "arc-1",
+          documentAlias: folderDocumentName("arc-1"),
+        },
       ]);
       await db.insert(documents).values([
         { id: chapter, contextSourceId: manuscript, folderId: arc, name: "ch1" },

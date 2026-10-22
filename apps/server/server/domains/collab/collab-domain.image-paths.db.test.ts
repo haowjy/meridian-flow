@@ -3,6 +3,7 @@
  * live reversal, and a reply's own create spelled alike by every reader and by
  * a cold undo in the draft it changed.
  */
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { createDb } from "@meridian/database";
 import { branchTreeChanges, documents, folders, modelResponses } from "@meridian/database/schema";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -61,9 +62,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     /** A chapter showing `assets/map.png`, and the model's grant in this project. */
     async function seedChapterWithMap(collab: ReturnType<typeof createTestCollab>) {
       const ASSETS_ID = "00000000-0000-4000-8000-000000000711";
-      await db
-        .insert(folders)
-        .values({ id: ASSETS_ID, contextSourceId: SOURCE_ID, name: "assets" });
+      await db.insert(folders).values({
+        id: ASSETS_ID,
+        contextSourceId: SOURCE_ID,
+        name: "assets",
+        documentAlias: folderDocumentName("assets"),
+      });
       await db.insert(documents).values({
         id: "00000000-0000-4000-8000-000000000712",
         contextSourceId: SOURCE_ID,

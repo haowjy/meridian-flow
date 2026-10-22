@@ -24,6 +24,7 @@ import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js"
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { renderFilename } from "../context/paths.js";
 import type { BinaryNode, TrackedNode } from "./hidden-node-types.js";
+import { normalizeNames } from "./name-normalization.js";
 import { bumpLocationVersions, claimDocumentLocation } from "./node-locations.js";
 import type { DocumentSlot } from "./tree-view-sql.js";
 
@@ -84,6 +85,7 @@ export async function insertDocumentRow(
       slot.folderId,
       renderFilename(slot.name, slot.extension),
     );
+    await normalizeNames(db, [{ kind: "document", id: row.id }]);
   }
   return row.id;
 }
