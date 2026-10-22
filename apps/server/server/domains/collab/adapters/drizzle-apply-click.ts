@@ -17,6 +17,7 @@ import type {
   AgentEditModel,
   UpdateJournal,
 } from "@meridian/agent-edit/integration";
+import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { ApplyClickAnswer, ApplyClickResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import {
@@ -38,6 +39,7 @@ import { acquireTreeScope, TreeScopeChangedError } from "../../context/tree/muta
 import { place } from "../../context/tree/placement.js";
 import { readRemovalRecords, restoreDocument } from "../../context/tree/removal.js";
 import { createTreeReader, type TreeStateNode } from "../../context/tree/tree-view.js";
+import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
 import {
   WorkLifecycleUnavailableError,
   type WorkProjectionMutation,
@@ -126,6 +128,11 @@ export function createDrizzleApplyClick(
       placed.value.placed.map((ref) => ref.id),
     );
   }
+  /** The addressed document's node in the branch, never another created document's. */
+  async function itemNode(branchId: BranchId, documentId: DocumentId) {
+    const nodes = await tree.treeState(branchId, [documentId], [documentId]);
+    return nodes.find((node) => node.nodeId === documentId);
+  }
   return {
     closed,
     async loadBase(command) {
@@ -209,21 +216,26 @@ export function createDrizzleApplyClick(
                     // Only a hidden-create reveal or a deleted document's restore changes the
                     // tree. Ordinary text Apply must not serialize unrelated documents on their
                     // source's namespace lock. This read is unlocked, so it only guesses.
-                    const [guess] = await tree.treeState(branchId, [command.documentId]);
-                    treeScope ||= Boolean(guess?.hidden || guess?.deleted);
+                    const lifecycle = async () => {
+                      const [row] = await loadDocumentIdentityRows(tx, [command.documentId]);
+                      if (!row) throw new ApplyClickRefused("not_found");
+                      return row;
+                    };
+                    const guess = await lifecycle();
+                    treeScope ||= guess.hidden || guess.deleted;
                     await testHook("apply.afterScopeGuess");
                     if (treeScope)
                       await acquireTreeScope(db, { documentIds: [command.documentId] });
                     else await lockDocumentMutation(tx, command.documentId);
-                    const [locked] = await tree.treeState(branchId, [command.documentId]);
-                    if (locked?.deleted && !treeScope) {
+                    const locked = await lifecycle();
+                    if (locked.deleted && !treeScope) {
                       // A delete committed between the guess and the lock: start over
                       // namespace-first, never taking a namespace under a document lock.
                       treeScope = true;
                       throw new TreeScopeChangedError();
                     }
                     let restored = false;
-                    if (locked?.deleted) {
+                    if (locked.deleted) {
                       const outcome = await restoreDocument(
                         db,
                         { documentId: command.documentId },
@@ -244,7 +256,7 @@ export function createDrizzleApplyClick(
                       restored = outcome.kind === "restored";
                     }
                     if (!base || !click) {
-                      const [node] = await tree.treeState(branchId, [command.documentId]);
+                      const node = await itemNode(branchId, command.documentId);
                       const [draft] = await tx
                         .select({ id: documentDrafts.id })
                         .from(documentDrafts)
@@ -320,7 +332,7 @@ export function createDrizzleApplyClick(
                           )
                         : null;
                       await testHook("apply.afterLive");
-                      const [node] = await tree.treeState(branchId, [command.documentId]);
+                      const node = await itemNode(branchId, command.documentId);
                       if (node?.hidden && node.origin === "created") {
                         await reveal(node);
                       }
