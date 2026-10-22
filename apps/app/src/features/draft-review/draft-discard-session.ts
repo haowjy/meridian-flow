@@ -11,7 +11,6 @@ import * as Y from "yjs";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { DraftRoomRegistry } from "@/core/editor/draft-room-read";
 import { readDraftRoom } from "@/core/editor/draft-room-read";
-import type { ApplyClickQueue } from "./apply-click-queue";
 import type { CommandOutcome, DiscardNotice, DraftCommandState } from "./draft-command-owner";
 import type { DraftRef } from "./review-command-types";
 import type { TextTarget } from "./review-model";
@@ -28,7 +27,6 @@ type Entry = {
     notices: Set<() => void>;
   } | null;
   users: number;
-  item: { queue: ApplyClickQueue };
 };
 
 export function startDraftDiscardSession(input: {
@@ -41,8 +39,8 @@ export function startDraftDiscardSession(input: {
   active(): boolean;
   state(): DraftCommandState;
   setState(state: Partial<DraftCommandState>): void;
-  textClicks(entry: Entry): readonly unknown[];
-  releaseIdle(entry: Entry): void;
+  textClicks(): readonly unknown[];
+  releaseIdle(): void;
 }): { notice: DiscardNotice; outcome: Promise<CommandOutcome> } | null {
   const { ref, target, surface, onNoticeEnd, entry } = input;
   const binding = entry?.binding;
@@ -65,7 +63,7 @@ export function startDraftDiscardSession(input: {
   const doc = binding.session.document;
   const fragment = doc.getXmlFragment("prosemirror");
   const wholeClick = !editor && target.kind === "draft";
-  const queued = wholeClick ? input.textClicks(entry) : [];
+  const queued = wholeClick ? input.textClicks() : [];
   let changed = false;
   const onTextChange = () => {
     changed = true;
@@ -91,7 +89,7 @@ export function startDraftDiscardSession(input: {
     if (
       !current ||
       (wholeClick
-        ? changed || !sameClicks(queued, input.textClicks(entry))
+        ? changed || !sameClicks(queued, input.textClicks())
         : !blocksEqual(frame.diff.base.blocks, current.diff.base.blocks) ||
           !blocksEqual(frame.diff.draft.blocks, current.diff.draft.blocks))
     ) {
@@ -150,7 +148,7 @@ export function startDraftDiscardSession(input: {
     history.destroy();
     lease.dispose();
     entry.users--;
-    input.releaseIdle(entry);
+    input.releaseIdle();
   };
   const end = () => {
     if (!active) return;
