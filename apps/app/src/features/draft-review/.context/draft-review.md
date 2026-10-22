@@ -65,8 +65,11 @@ Discard. Once synced, temporary offline status does not forget that history.
   newer projection. `useInlineReviewFocus` registers the mounted editor for
   controller-owned jumps and releases only its own claim on unmount. Same-entry
   URL replacements disable router scroll restoration so the editor owns the jump.
-  An empty frame shows “No changes left”; only the close contract can end the
-  draft room or send the editor to live.
+  An empty frame shows “No changes left” once the item has no tree line either:
+  the open review lists the item's pending move or delete first (focus and the
+  stepper walk only the text changes), so a text-only Discard leaves Discard
+  draft and Apply draft beside the Work notice. Only the close contract can end
+  the draft room or send the editor to live.
 
 `useReviewRefresh` discovers list/metadata changes from the runtime's semantic
 membership: any differences, pending owner-thread ids, and unknown attribution.
