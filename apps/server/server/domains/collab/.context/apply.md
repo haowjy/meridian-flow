@@ -35,8 +35,8 @@ before sending a new click with `restore`. The answer is stored, so a replay
 returns it. With `restore`, `restoreDocument` clears the record and restores its
 folders in the same transaction, then the ordinary text merge runs against the
 deleted document's last text, which equals its review base. The result carries
-`restored: true`. A path another document took refuses `forbidden` (the item
-lists `path_taken`); a Work cascade, discard or deleted source answers `closed`
+`restored: true`. A path another document took makes the restored document land at the next
+free name and adds a `renamed` note; a Work cascade, discard or deleted source answers `closed`
 (no record on the answer). The route authorizes a deleted item at its source through the
 draft destination (`restoreGrant`) instead of a live grant. When a delete commits
 after the route resolved the item, its authorization or the transaction's grant
@@ -109,11 +109,13 @@ The operation is keyed on the row's logical state and live's state:
 | moving | hidden creation | reveal at the effective placement |
 | created | hidden | reveal at the row |
 
-A move whose destination live still gives a document this branch moves or
-deletes answers `held` naming that item (the review item lists the same as
-`pending_item`); any other occupant refuses `forbidden`. The client's Apply all
-re-sends held clicks after the others until a pass frees none, so a renumber
-applies and a swap stays held. Then the row goes through `dropDocumentRows`,
+A move whose destination live still gives a document this branch moves or deletes applies that
+occupant's tree fact first, recursively, under the branch lock. It does not apply the occupant's
+pending text because no frozen click exists for that text; a drafted delete necessarily closes
+the deleted item's draft. A cycle moves together, so swaps keep both requested names. Any
+unrelated leaf occupant keeps its name and the arriving document takes the next free name. The
+result lists every tree item it applied and attaches a `renamed` note to any item that yielded.
+Then each row goes through `dropDocumentRows`,
 which writes the settlement rows every terminal path writes (`as: applied` for the
 entries in effect, `discarded` for those undone before it), and
 prunes every hidden folder its moves held that nothing else uses. The route authorizes a drafted

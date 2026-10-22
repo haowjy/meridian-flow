@@ -22,7 +22,12 @@ import type {
   UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import { type BranchId, type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
-import type { ApplyClickAnswer, ApplyClickResult } from "@meridian/contracts/branches";
+import type {
+  AppliedReviewItem,
+  ApplyClickAnswer,
+  ApplyClickResult,
+  ApplyRenamedNote,
+} from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import {
   branchCommands,
@@ -39,13 +44,9 @@ import { testHook } from "../../../shared/test-hooks.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
-import {
-  dropDocumentRows,
-  endCreatedFact,
-  readBranchTreeFacts,
-} from "../../context/tree/branch-tree-store.js";
+import { dropDocumentRows, endCreatedFact } from "../../context/tree/branch-tree-store.js";
 import { tombstoneUnused } from "../../context/tree/end-use.js";
-import { moveToPlacement } from "../../context/tree/live-tree-state.js";
+import { movePlacementCycle, moveToPlacement } from "../../context/tree/live-tree-state.js";
 import { acquireTreeScope, TreeScopeChangedError } from "../../context/tree/mutation-scope.js";
 import { place } from "../../context/tree/placement.js";
 import { restoreDocument } from "../../context/tree/removal.js";
@@ -117,11 +118,11 @@ export function createDrizzleApplyClick(
     status: "closed",
     commandId: command.envelope.commandId,
   });
-  /** Places a hidden creation at `at`; false when a document blocks an ancestor path. */
+  /** Places a hidden creation at `at`; null when a document blocks an ancestor path. */
   async function reveal(
     node: TreeStateNode,
     at: Pick<TreeStateNode["target"], "contextSourceId" | "parentFolderId" | "name" | "extension">,
-  ): Promise<boolean> {
+  ): Promise<TreeStateNode["target"] | null> {
     const placed = await place(db, {
       targets: [
         {
@@ -136,7 +137,7 @@ export function createDrizzleApplyClick(
       ],
     });
     if (!placed.ok) {
-      if (placed.error.code === "path_taken") return false;
+      if (placed.error.code === "path_taken") return null;
       throw new ApplyClickRefused("forbidden");
     }
     await deps.arrivals?.settle([node.nodeId]);
@@ -144,33 +145,68 @@ export function createDrizzleApplyClick(
       placed.value.sourceIds,
       placed.value.placed.map((ref) => ref.id),
     );
-    return true;
-  }
-  /**
-   * Who holds a move's destination live: another item of this branch that moves or deletes the
-   * document there is a hold naming it (Apply all applies that one first); anyone else is the
-   * existing taken-path refusal.
-   */
-  async function heldBy(branchId: BranchId, node: TreeStateNode) {
-    const found = await tree.resolvePath(LIVE_TREE, {
-      contextSourceId: node.target.contextSourceId,
-      path: node.target.path,
-      as: "document",
-    });
-    if (found.kind !== "found" || found.node.kind !== "document") return null;
-    const occupant = found.node.document.id;
-    if (occupant === node.nodeId) return null;
-    const facts = (await readBranchTreeFacts(currentDrizzleDb(db), [branchId], [occupant]))
-      .get(branchId)
-      ?.get(occupant);
-    return facts?.moved || facts?.deleted
-      ? { itemKey: draftItemKey(branchId, occupant), path: node.target.uri ?? node.target.path }
+    const [landed] = placed.value.landed;
+    return landed
+      ? {
+          ...node.target,
+          ...landed.at,
+          path: node.target.path,
+          dir: node.target.dir,
+          uri: node.target.uri,
+        }
       : null;
   }
   /** The addressed document's node in the branch, never another created document's. */
   async function itemNode(branchId: BranchId, documentId: DocumentId) {
     const nodes = await tree.treeState(branchId, [documentId], [documentId]);
     return nodes.find((node) => node.nodeId === documentId);
+  }
+
+  type DependencyPlan = {
+    nodes: Map<DocumentId, TreeStateNode>;
+    next: Map<DocumentId, DocumentId>;
+  };
+
+  /** The live occupant chain that this one click owns under the branch lock. */
+  async function dependencyPlan(branchId: BranchId, root: DocumentId): Promise<DependencyPlan> {
+    const nodes = new Map<DocumentId, TreeStateNode>();
+    const next = new Map<DocumentId, DocumentId>();
+    const visit = async (documentId: DocumentId): Promise<void> => {
+      if (nodes.has(documentId)) return;
+      const node = await itemNode(branchId, documentId);
+      if (!node) return;
+      nodes.set(documentId, node);
+      if (node.branch?.state !== "moving") return;
+      const found = await tree.resolvePath(LIVE_TREE, {
+        contextSourceId: node.target.contextSourceId,
+        path: node.target.path,
+        as: "document",
+      });
+      if (found.kind !== "found" || found.node.kind !== "document") return;
+      const occupant = found.node.document.id;
+      if (occupant === documentId) return;
+      const other = await itemNode(branchId, occupant);
+      if (!other?.branch || (!other.branch.moved && !other.branch.deleted)) return;
+      next.set(documentId, occupant);
+      await visit(occupant);
+    };
+    await visit(root);
+    return { nodes, next };
+  }
+
+  function displayedPath(node: TreeStateNode, path: string): string {
+    const marker = node.target.uri?.indexOf("://") ?? -1;
+    return marker < 0 ? path : `${node.target.uri?.slice(0, marker + 3)}${path}`;
+  }
+
+  async function renamedNote(node: TreeStateNode): Promise<ApplyRenamedNote | undefined> {
+    const found = await tree.findById(LIVE_TREE, node.nodeId);
+    if (found.kind !== "found" || found.document.path === node.target.path) return undefined;
+    return {
+      code: "renamed",
+      wanted: node.target.uri ?? node.target.path,
+      path: displayedPath(node, found.document.path),
+    };
   }
   return {
     async loadBase(command) {
@@ -256,8 +292,7 @@ export function createDrizzleApplyClick(
                     };
                     // Only a tree cut, a hidden-create reveal or a deleted document's restore
                     // changes the tree. Ordinary text Apply must not serialize unrelated
-                    // documents on their source's namespace lock. This read is unlocked, so it
-                    // only guesses.
+                    // documents on their source's namespace lock.
                     const lifecycle = async () => {
                       const [row] = await loadDocumentIdentityRows(tx, [command.documentId]);
                       if (!row) throw new ApplyClickRefused("not_found");
@@ -266,10 +301,16 @@ export function createDrizzleApplyClick(
                     const guess = await lifecycle();
                     treeScope ||= guess.hidden || guess.deleted || cut !== null;
                     await testHook("apply.afterScopeGuess");
+                    const guessedPlan = cut
+                      ? await dependencyPlan(branchId, command.documentId)
+                      : null;
+                    const scopeIds = guessedPlan
+                      ? [...guessedPlan.nodes.keys()]
+                      : [command.documentId];
                     if (treeScope)
                       await acquireTreeScope(db, {
-                        branches: [{ branchId, documentIds: [command.documentId] }],
-                        documentIds: [command.documentId],
+                        branches: [{ branchId, documentIds: scopeIds }],
+                        documentIds: scopeIds,
                       });
                     else await lockDocumentMutation(tx, command.documentId);
                     const locked = await lifecycle();
@@ -287,129 +328,219 @@ export function createDrizzleApplyClick(
                     )
                       return finish({ status: "changed", commandId: command.envelope.commandId });
                     const state = cut ? (node?.branch?.state ?? null) : null;
-                    const held = async () => {
-                      const by = node ? await heldBy(branchId, node) : null;
-                      if (!by) throw new ApplyClickRefused("forbidden");
-                      return finish({ status: "held", commandId: command.envelope.commandId, by });
-                    };
-                    if (state === "deleting") {
-                      // The branch deletes it: live loses it (a creation ends its use), and
-                      // this branch's draft of it ends; a document live deleted already only
-                      // settles. A masked move under the delete is never applied.
-                      if (!locked.deleted && !locked.hidden) {
-                        await deps.removal.remove({
-                          documentIds: [command.documentId],
-                          reason: "deleted",
-                          userId,
-                        });
-                        await deps.catalog.refreshSources(
-                          [locked.contextSourceId],
-                          [command.documentId],
-                        );
-                      }
-                      await deps.close.closeDrafts(
-                        tx,
-                        { documentIds: [command.documentId], branchId },
-                        "document_discarded",
-                      );
-                      await dropDocumentRows(db, {
-                        branchId,
-                        documentIds: [command.documentId],
-                        settle: { as: "applied", userId },
-                      });
-                      if (locked.hidden && !locked.deleted) {
-                        const ended = await tombstoneUnused(db, [command.documentId], {
-                          actor: { userId },
-                          removal: deps.removal,
-                        });
-                        if (ended.tombstoned.length)
-                          await deps.catalog.refreshSources(
-                            [locked.contextSourceId],
-                            ended.tombstoned.map((ref) => ref.id),
-                          );
-                        if (ended.releasedObjects.length)
-                          deferUntilDrizzleCommit(() => deps.releaseObjects(ended.releasedObjects));
-                      }
-                      deferUntilDrizzleCommit(() => deps.onCommitted(command.documentId));
-                      return finish({ status: "applied", commandId: command.envelope.commandId });
-                    }
                     // Only the writer's knowledge brings a document back: a delete their view
                     // did not show leaves the click undone and the draft pending (D79). A
                     // hidden tombstone is a discarded creation, never asked about.
-                    if (locked.deleted && !locked.hidden && !command.request.restore)
+                    if (
+                      state !== "deleting" &&
+                      locked.deleted &&
+                      !locked.hidden &&
+                      !command.request.restore
+                    )
                       return finish({
                         status: "needs_restore",
                         commandId: command.envelope.commandId,
                       });
                     let restored = false;
                     let replaced: string | undefined;
-                    if (locked.deleted) {
-                      // A drafted move of a document live deleted restores where the branch
-                      // put it, so a clash at its old path never blocks it.
-                      const outcome = await restoreDocument(
-                        db,
-                        {
-                          documentId: command.documentId,
-                          ...(state === "moving" && node ? { at: liveLocation(node) } : {}),
-                        },
-                        { arrivals: deps.arrivals, catalog: deps.catalog },
-                      );
-                      if (outcome.kind === "location_taken") return held();
-                      if (outcome.kind === "refused") return finish(closed(command));
-                      restored = outcome.kind === "restored";
-                    } else if (state === "moving" && node && !locked.hidden) {
-                      const moved = await moveToPlacement(
-                        db,
-                        {
-                          documentId: command.documentId,
-                          from: {
-                            folderId: locked.folderId,
-                            rootSourceId: locked.folderId ? null : locked.contextSourceId,
-                            name: locked.name,
-                            extension: locked.extension,
+                    const applied: AppliedReviewItem[] = [];
+                    const recordApplied = async (appliedNode: TreeStateNode) => {
+                      const renamed = await renamedNote(appliedNode);
+                      applied.push({
+                        itemKey: draftItemKey(branchId, appliedNode.nodeId),
+                        tree: true,
+                        ...(renamed ? { renamed } : {}),
+                      });
+                    };
+                    const settleTreeNode = async (appliedNode: TreeStateNode) => {
+                      await dropDocumentRows(db, {
+                        branchId,
+                        documentIds: [appliedNode.nodeId],
+                        settle: { as: "applied", userId },
+                      });
+                      await recordApplied(appliedNode);
+                      deferUntilDrizzleCommit(() => deps.onCommitted(appliedNode.nodeId));
+                    };
+                    const applyTreeNode = async (appliedNode: TreeStateNode) => {
+                      const [identity] = await loadDocumentIdentityRows(tx, [appliedNode.nodeId]);
+                      if (!identity) throw new ApplyClickRefused("not_found");
+                      if (appliedNode.branch?.state === "deleting") {
+                        if (!identity.deleted && !identity.hidden) {
+                          await deps.removal.remove({
+                            documentIds: [appliedNode.nodeId],
+                            reason: "deleted",
+                            userId,
+                          });
+                          await deps.catalog.refreshSources(
+                            [identity.contextSourceId],
+                            [appliedNode.nodeId],
+                          );
+                        }
+                        await deps.close.closeDrafts(
+                          tx,
+                          { documentIds: [appliedNode.nodeId], branchId },
+                          "document_discarded",
+                        );
+                        await dropDocumentRows(db, {
+                          branchId,
+                          documentIds: [appliedNode.nodeId],
+                          settle: { as: "applied", userId },
+                        });
+                        if (identity.hidden && !identity.deleted) {
+                          const ended = await tombstoneUnused(db, [appliedNode.nodeId], {
+                            actor: { userId },
+                            removal: deps.removal,
+                          });
+                          if (ended.tombstoned.length)
+                            await deps.catalog.refreshSources(
+                              [identity.contextSourceId],
+                              ended.tombstoned.map((ref) => ref.id),
+                            );
+                          if (ended.releasedObjects.length)
+                            deferUntilDrizzleCommit(() =>
+                              deps.releaseObjects(ended.releasedObjects),
+                            );
+                        }
+                        await recordApplied(appliedNode);
+                        deferUntilDrizzleCommit(() => deps.onCommitted(appliedNode.nodeId));
+                        return;
+                      }
+                      if (identity.deleted) {
+                        const outcome = await restoreDocument(
+                          db,
+                          {
+                            documentId: appliedNode.nodeId,
+                            ...(appliedNode.branch?.state === "moving"
+                              ? { at: liveLocation(appliedNode) }
+                              : {}),
                           },
-                          to: {
-                            folderId: node.target.parentFolderId,
-                            rootSourceId: node.target.parentFolderId
-                              ? null
-                              : node.target.contextSourceId,
-                            name: node.target.name,
-                            extension: node.target.extension,
+                          { arrivals: deps.arrivals, catalog: deps.catalog },
+                        );
+                        if (outcome.kind === "location_taken")
+                          throw new ApplyClickRefused("forbidden");
+                        if (outcome.kind === "refused") throw new ApplyClickRefused("not_found");
+                        if (appliedNode.nodeId === command.documentId)
+                          restored = outcome.kind === "restored";
+                      } else if (appliedNode.branch?.state === "moving" && !identity.hidden) {
+                        const moved = await moveToPlacement(
+                          db,
+                          {
+                            documentId: appliedNode.nodeId,
+                            from: {
+                              folderId: identity.folderId,
+                              rootSourceId: identity.folderId ? null : identity.contextSourceId,
+                              name: identity.name,
+                              extension: identity.extension,
+                            },
+                            to: {
+                              folderId: appliedNode.target.parentFolderId,
+                              rootSourceId: appliedNode.target.parentFolderId
+                                ? null
+                                : appliedNode.target.contextSourceId,
+                              name: appliedNode.target.name,
+                              extension: appliedNode.target.extension,
+                            },
                           },
-                        },
-                        { arrivals: deps.arrivals, catalog: deps.catalog },
-                      );
-                      if (moved.kind === "location_taken") return held();
-                      if (moved.kind !== "moved") throw new ApplyClickRefused("forbidden");
-                      replaced = node.from?.uri ?? node.from?.path;
-                    }
-                    // A creation is revealed: by a tree cut where the branch has it (moved or
-                    // not); by a text-only click at its own row, since text can't land in a
-                    // document live lacks, and a pending move or delete stays pending (§4).
-                    if (node?.hidden && node.origin === "created" && (cut || base)) {
-                      const at = cut
-                        ? node.target
-                        : {
+                          { arrivals: deps.arrivals, catalog: deps.catalog },
+                        );
+                        if (moved.kind !== "moved") throw new ApplyClickRefused("forbidden");
+                        if (appliedNode.nodeId === command.documentId)
+                          replaced = appliedNode.from?.uri ?? appliedNode.from?.path;
+                      }
+                      if (appliedNode.hidden && appliedNode.origin === "created") {
+                        if (!(await reveal(appliedNode, appliedNode.target)))
+                          throw new ApplyClickRefused("forbidden");
+                      }
+                      await settleTreeNode(appliedNode);
+                    };
+
+                    if (cut && node) {
+                      const plan = await dependencyPlan(branchId, command.documentId);
+                      if ([...plan.nodes.keys()].some((id) => !scopeIds.includes(id)))
+                        throw new TreeScopeChangedError();
+                      const done = new Set<DocumentId>();
+                      const visiting: DocumentId[] = [];
+                      const applyOrdered = async (documentId: DocumentId): Promise<void> => {
+                        if (done.has(documentId)) return;
+                        const cycleAt = visiting.indexOf(documentId);
+                        if (cycleAt >= 0) {
+                          const cycle = visiting.slice(cycleAt);
+                          const cycleNodes = cycle.map((id) => plan.nodes.get(id) as TreeStateNode);
+                          await movePlacementCycle(
+                            db,
+                            cycleNodes.map((cycleNode) => ({
+                              documentId: cycleNode.nodeId,
+                              to: liveLocation(cycleNode),
+                            })),
+                            { arrivals: deps.arrivals, catalog: deps.catalog },
+                          );
+                          for (const cycleNode of cycleNodes) {
+                            if (cycleNode.nodeId === command.documentId)
+                              replaced = cycleNode.from?.uri ?? cycleNode.from?.path;
+                            await settleTreeNode(cycleNode);
+                            done.add(cycleNode.nodeId);
+                          }
+                          return;
+                        }
+                        visiting.push(documentId);
+                        const dependency = plan.next.get(documentId);
+                        if (dependency) await applyOrdered(dependency);
+                        visiting.pop();
+                        if (done.has(documentId)) return;
+                        const planned = plan.nodes.get(documentId);
+                        if (planned) await applyTreeNode(planned);
+                        done.add(documentId);
+                      };
+                      await applyOrdered(command.documentId);
+                      if (state === "deleting")
+                        return finish({
+                          status: "applied",
+                          commandId: command.envelope.commandId,
+                          applied,
+                        });
+                    } else {
+                      if (locked.deleted) {
+                        const outcome = await restoreDocument(
+                          db,
+                          { documentId: command.documentId },
+                          { arrivals: deps.arrivals, catalog: deps.catalog },
+                        );
+                        if (outcome.kind === "location_taken")
+                          throw new ApplyClickRefused("forbidden");
+                        if (outcome.kind === "refused") return finish(closed(command));
+                        restored = outcome.kind === "restored";
+                      }
+                      if (node?.hidden && node.origin === "created" && base) {
+                        if (
+                          !(await reveal(node, {
                             contextSourceId: locked.contextSourceId,
                             parentFolderId: locked.folderId,
                             name: locked.name,
                             extension: locked.extension,
-                          };
-                      if (!(await reveal(node, at))) return held();
+                          }))
+                        )
+                          throw new ApplyClickRefused("forbidden");
+                      }
                     }
-                    if (cut)
-                      await dropDocumentRows(db, {
-                        branchId,
-                        documentIds: [command.documentId],
-                        settle: { as: "applied", userId },
-                      });
-                    else if (node?.origin === "created")
+                    if (!cut && node?.origin === "created")
                       await endCreatedFact(db, { branchId, documentId: command.documentId });
+                    if (
+                      !applied.some(
+                        ({ itemKey }) => itemKey === draftItemKey(branchId, command.documentId),
+                      )
+                    ) {
+                      const renamed = node ? await renamedNote(node) : undefined;
+                      applied.push({
+                        itemKey: draftItemKey(branchId, command.documentId),
+                        ...(renamed ? { renamed } : {}),
+                      });
+                    }
                     if (!base || !click) {
                       deferUntilDrizzleCommit(() => deps.onCommitted(command.documentId));
                       return finish({
                         status: "applied",
                         commandId: command.envelope.commandId,
+                        applied,
                         ...(restored ? { restored } : {}),
                         ...(replaced ? { replaced } : {}),
                       });
@@ -597,6 +728,7 @@ export function createDrizzleApplyClick(
                       const answer: ApplyClickResult = {
                         status: "applied",
                         commandId: command.envelope.commandId,
+                        applied,
                         ...(overrode ? { overrode } : {}),
                         ...(restored ? { restored } : {}),
                         ...(replaced ? { replaced } : {}),

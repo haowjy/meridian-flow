@@ -608,7 +608,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         row.tree?.op === "settle" ? [row.tree.settles.as] : [],
       );
 
-    it("Apply runs a drafted move or delete by the row it froze and counts past an occupied name", async () => {
+    it("Apply orders a move chain and swap, then reports a free name when a later arrival took its target", async () => {
       const script = await start();
       const drafting = runtimes.script(script.runtime, OTHER);
       const draft = (args: Record<string, unknown>) =>
@@ -617,29 +617,76 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       const writer = review(script);
 
-      // Review still reports the later lane's pending dependency, but the placement primitive lands.
+      // One row owns its whole dependency chain under the branch lock.
       await draft({ command: "move", from: { path: "ch2" }, path: "ch3" });
       await draft({ command: "move", from: { path: "ch1" }, path: "ch2" });
-      expect((await writer.item(CH1))?.conflict).toMatchObject({ code: "pending_item" });
-      expect(await writer.apply(CH1)).toMatchObject({ status: "applied" });
-      expect(await placement(CH1)).toMatchObject({ name: "ch2 (2)" });
-      expect(await writer.apply(CH2)).toMatchObject({ status: "applied" });
+      expect((await writer.item(CH1))?.conflict).toBeNull();
+      expect(await writer.apply(CH1)).toMatchObject({
+        status: "applied",
+        applied: [
+          { itemKey: expect.stringContaining(CH2) },
+          { itemKey: expect.stringContaining(CH1) },
+        ],
+      });
+      expect(await placement(CH1)).toMatchObject({ name: "ch2" });
+      expect(await placement(CH2)).toMatchObject({ name: "ch3" });
       expect(await settlements(CH1)).toEqual(["applied"]);
+
+      // Draft through a temporary name to express ch2↔ch3, then Apply either row.
+      await draft({ command: "move", from: { path: "ch2" }, path: "temporary" });
+      await draft({ command: "move", from: { path: "ch3" }, path: "ch2" });
+      await draft({ command: "move", from: { path: "temporary" }, path: "ch3" });
+      expect(await writer.apply(CH1)).toMatchObject({
+        status: "applied",
+        applied: expect.arrayContaining([
+          { itemKey: expect.stringContaining(CH1) },
+          { itemKey: expect.stringContaining(CH2) },
+        ]),
+      });
+      expect(await placement(CH1)).toMatchObject({ name: "ch3" });
+      expect(await placement(CH2)).toMatchObject({ name: "ch2" });
+
+      // A later live arrival wins the requested leaf; Apply lands beside it and says where.
+      await draft({ command: "move", from: { path: "ch3" }, path: "final" });
+      await script.reply(async (edit) => {
+        await edit("write", { command: "create", path: "final", content: "Occupied." });
+      });
+      expect(await writer.apply(CH1)).toMatchObject({
+        status: "applied",
+        applied: [
+          {
+            itemKey: expect.stringContaining(CH1),
+            renamed: {
+              code: "renamed",
+              wanted: "manuscript://final",
+              path: "manuscript://final (2)",
+            },
+          },
+        ],
+      });
+      expect(await placement(CH1)).toMatchObject({ name: "final (2)" });
       const { call } = await drafting.begin();
-      expect(text(await call("write", { command: "undo", path: "ch2 (2)" }))).toContain("applied");
+      expect(text(await call("write", { command: "undo", path: "final (2)" }))).toContain(
+        "applied",
+      );
 
       // A frozen click the model changed since answers changed; a delete after a live edit lands.
-      await draft({ command: "move", from: { path: "ch3" }, path: "part1/ch3" });
-      const revision = (await writer.item(CH2))?.tree?.revision ?? null;
+      await draft({ command: "move", from: { path: "final (2)" }, path: "part1/ch3" });
+      const revision = (await writer.item(CH1))?.tree?.revision ?? null;
       await draft({ command: "delete", path: "part1/ch3" });
-      expect(await writer.apply(CH2, { tree: { revision } })).toMatchObject({ status: "changed" });
+      expect(await writer.apply(CH1, { tree: { revision } })).toMatchObject({ status: "changed" });
       await script.reply(async (edit) => {
-        await edit("write", { command: "replace", path: "ch3", find: "two", content: "2" });
+        await edit("write", {
+          command: "replace",
+          path: "final (2)",
+          find: "one",
+          content: "1",
+        });
       });
-      expect(await writer.apply(CH2)).toMatchObject({ status: "applied" });
+      expect(await writer.apply(CH1)).toMatchObject({ status: "applied" });
       // Moved then deleted: only the delete applies, where live has it; its hidden folder goes.
-      expect(await placement(CH2)).toMatchObject({ name: "ch3" });
-      expect((await placement(CH2))?.deletedAt).not.toBeNull();
+      expect(await placement(CH1)).toMatchObject({ name: "final (2)" });
+      expect((await placement(CH1))?.deletedAt).not.toBeNull();
       const part1 = await db
         .select({ id: schema.folders.id })
         .from(schema.folders)

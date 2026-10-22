@@ -52,10 +52,27 @@ export type ApplyClickRefusalReason =
   | "not_found"
   | "forbidden";
 
+export type ApplyRenamedNote = {
+  code: "renamed";
+  /** The branch path the change asked for. */
+  wanted: string;
+  /** The live path the document claimed. */
+  path: string;
+};
+
+export type AppliedReviewItem = {
+  itemKey: DraftItemKey;
+  /** This click settled the item's branch tree row. */
+  tree?: true;
+  renamed?: ApplyRenamedNote;
+};
+
 export type ApplyClickResult =
   | {
       status: "applied";
       commandId: BranchCommandId;
+      /** Every item whose tree or text this click applied, dependency-first. */
+      applied: AppliedReviewItem[];
       overrode?: number;
       /**
        * The document had been deleted from the manuscript, and this Apply, sent with
@@ -68,11 +85,6 @@ export type ApplyClickResult =
     }
   /** The branch's row is not the revision the click froze: nothing applied (design-v2 §4). */
   | { status: "changed"; commandId: BranchCommandId }
-  /**
-   * The move's destination is still held live by another item of this branch that moves or
-   * deletes it: apply that one first (Apply all orders them). Nothing applied.
-   */
-  | { status: "held"; commandId: BranchCommandId; by: { itemKey: DraftItemKey; path: string } }
   /**
    * The document is deleted from the manuscript and the click did not carry `restore`: the
    * writer's view did not know (a delete landed after it read the item, or after an Apply
@@ -92,15 +104,6 @@ export type ApplyClickObservation =
 
 /** Stored writer-command outcomes. */
 export type StoredBranchCommandResult = BranchCommandResult | ApplyClickResult;
-
-/**
- * What blocks the item's Apply: another node took its path (Apply holds it until that one
- * moves). Whether live still has the document is `deletedLive`, a separate fact.
- */
-export type DraftItemConflict =
-  | { code: "path_taken"; path: string }
-  /** Live still has this branch's other item at the destination; it moves or deletes it. */
-  | { code: "pending_item"; path: string; itemKey: DraftItemKey };
 
 /**
  * One review item of the Work's active branch: a created or edited document, text or binary.
@@ -123,7 +126,7 @@ export interface ThreadDraftListItem {
   documentName: string | null;
   /** The document URI's scheme and leading-slash path in the branch's view, independent of the Work. */
   contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
-  conflict: DraftItemConflict | null;
+  conflict: null;
   /**
    * Deleted from the manuscript while this draft has it: live doesn't hold the document, and
    * Apply brings it back before merging (D79). Independent of `conflict`: another document
