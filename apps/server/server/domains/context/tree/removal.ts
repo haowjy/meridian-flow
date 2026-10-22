@@ -119,8 +119,8 @@ export function createDocumentRemoval(
 }
 
 /**
- * A Work Restore's documents: every one its deletion removed stands again, at the location
- * it held, and returns the Works whose branches use them, whose pending counts moved.
+ * A Work Restore's documents: every one its deletion removed stands again, at its prior or
+ * next free leaf name, and returns the Works whose branches use them, whose pending counts moved.
  */
 export async function restoreWorkDocuments(
   db: Database,
@@ -309,7 +309,7 @@ export async function restoreDocument(
         },
       );
       if (!landed.ok) {
-        // A non-hidden document's chain holds no hidden folder, so only a taken path faults; a
+        // A non-hidden document's chain holds no hidden folder, so only a blocked ancestor faults; a
         // drafted move's folders are the branch's, which placement reveals.
         if (landed.error.code !== "ancestor_taken") {
           // A drafted move's hidden folder can be gone since; the document's own chain can't.

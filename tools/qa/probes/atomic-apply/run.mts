@@ -784,7 +784,7 @@ try {
       f.close();
     },
   );
-  await row("Apply holds a deleted document whose path a new document took", async () => {
+  await row("Apply restores a deleted document beside a new document at its old path", async () => {
     const f = await fixture(["Base."], ["Changed."]);
     const [{ name, extension, folder_id: folderId }] =
       await h.raw`select name, extension, folder_id from documents where id=${f.documentId}`;
@@ -792,12 +792,14 @@ try {
     await h.raw`insert into documents (context_source_id, folder_id, name, extension)
       select context_source_id, ${folderId}, ${name}, ${extension} from documents where id=${f.documentId}`;
     const c = restoring(f.click());
-    assert.deepEqual(await f.send(c), {
-      status: "refused",
-      reason: "forbidden",
-      commandId: c.request.commandId,
-    });
-    assert.equal(await living(f), false);
+    const applied = await f.send(c);
+    assert.equal(applied.status, "applied", JSON.stringify(applied));
+    assert.equal(
+      applied.status === "applied" && applied.applied[0]?.renamed?.path.endsWith(" (2)"),
+      true,
+      JSON.stringify(applied),
+    );
+    assert.equal(await living(f), true);
     f.close();
   });
 

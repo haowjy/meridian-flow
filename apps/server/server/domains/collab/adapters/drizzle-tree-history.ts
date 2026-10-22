@@ -103,8 +103,8 @@ export function createDrizzleTreeHistory(
       const away = rows.filter(
         (row) => row.shownAt && matchDocumentPath([row.shownAt], path, (at) => at),
       );
-      // A document still deleted wins over one only moved away: the recovery for a taken path
-      // is to move the blocker aside and undo by that path again, and that move is newer.
+      // A document still deleted wins over one only moved away: restoring it can allocate a free
+      // leaf name, while undoing the newer move first would target a different history entry.
       const identities = await loadDocumentIdentityRows(tx(), [
         ...new Set(away.map((row) => row.documentId as DocumentId)),
       ]);

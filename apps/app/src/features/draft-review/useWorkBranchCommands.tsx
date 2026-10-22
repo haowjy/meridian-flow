@@ -15,7 +15,7 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { documentBasename } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { isDeletedFromManuscript } from "./deleted-drafts";
-import type { CommandOutcome, DiscardNotice } from "./draft-command-owner";
+import type { CapturedApply, CommandOutcome, DiscardNotice } from "./draft-command-owner";
 import type { DraftReviewSelection } from "./draft-review-session";
 import type { ChangeTarget } from "./review-model";
 
@@ -30,6 +30,7 @@ export type SurfaceNotice =
       restored: string[];
       renamed: string[];
       end(): void;
+      alsoApplied: string[];
     };
 export type CommandStart = { sent: boolean; outcome: Promise<CommandOutcome> };
 export type WorkBranchCommands = ReturnType<typeof useWorkBranchCommands>;
@@ -96,6 +97,7 @@ export function useWorkBranchCommands({
     const applied = (
       item: ThreadDraftListItem | undefined,
       outcome: Extract<CommandOutcome, { kind: "done" }>,
+      rows: readonly ThreadDraftListItem[],
     ) => {
       const held = heldNotice.current;
       const title = item?.documentName ?? documentBasename(item?.contextLocation?.path) ?? null;
@@ -110,10 +112,61 @@ export function useWorkBranchCommands({
           return name ? [name] : [];
         }),
       ];
-      if (restored.length || renamed.length) show({ kind: "applied", restored, renamed, end() {} });
+      const alsoApplied = [
+        ...(held?.kind === "applied" ? held.alsoApplied : []),
+        ...(outcome.appliedTrees ?? []).flatMap((appliedTree) => {
+          if (appliedTree.itemKey === item?.itemKey) return [];
+          const appliedItem = rows.find((candidate) => candidate.itemKey === appliedTree.itemKey);
+          const from = documentBasename(appliedItem?.tree?.movedFrom?.path);
+          const to = documentBasename(appliedTree.renamed ?? appliedItem?.contextLocation?.path);
+          return from && to ? [`${from} → ${to}`] : [];
+        }),
+      ];
+      if (restored.length || renamed.length || alsoApplied.length)
+        show({ kind: "applied", restored, renamed, alsoApplied, end() {} });
     };
     // An archived Work's refusal is silent (`shownRefusal`): its notice explains it once this tab
     // has read the archive, which another tab or device may have made.
+    type CapturedStart = { dispatch(treeAlreadyApplied?: boolean): CommandStart };
+    const captureApply = (
+      draft: DraftReviewSelection,
+      target: ChangeTarget,
+      restore?: boolean,
+      resetNotice = true,
+    ): CapturedStart | null => {
+      if (resetNotice) endNotice();
+      if (locked) return null;
+      const rows =
+        queryClient.getQueryData<ThreadDraftListItem[]>(
+          projectQueryKeys.workBranchDrafts(projectId, workId),
+        ) ?? [];
+      const item = rows.find((candidate) => candidate.itemKey === draft.itemKey);
+      const bringBack = restore ?? isDeletedFromManuscript(item);
+      const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
+      const captured: CapturedApply | null = owner.captureApply(
+        ref(draft),
+        target,
+        bringBack,
+        (tree && item?.tree) || undefined,
+      );
+      if (!captured) return null;
+      return {
+        dispatch(treeAlreadyApplied = false) {
+          if (treeAlreadyApplied && target.kind === "tree") {
+            if (item) dropTreeLine(item);
+            refresh();
+            return { sent: false, outcome: Promise.resolve({ kind: "done" }) };
+          }
+          const started = captured.dispatch({ omitTree: treeAlreadyApplied });
+          void started.outcome.then((outcome) => {
+            if (outcome.kind === "done" && tree && item?.tree) dropTreeLine(item);
+            if (outcome.kind === "done") applied(item, outcome, rows);
+            if (outcome.kind === "needs-restore" || !owner.state(draft.itemKey).pending) refresh();
+          });
+          return started;
+        },
+      };
+    };
     const start = (
       mode: "apply" | "discard",
       draft: DraftReviewSelection,
@@ -122,7 +175,11 @@ export function useWorkBranchCommands({
       treeAlreadyApplied = false,
       resetNotice = true,
     ): CommandStart => {
-      const started = dispatch(mode, draft, target, restore, treeAlreadyApplied, resetNotice);
+      const started =
+        mode === "apply"
+          ? (captureApply(draft, target, restore, resetNotice)?.dispatch(treeAlreadyApplied) ??
+            blocked())
+          : dispatchDiscard(draft, target, resetNotice);
       void started.outcome.then((outcome) => {
         if (outcome.kind === "change-refused" && outcome.code === "work_archived")
           void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
@@ -134,43 +191,14 @@ export function useWorkBranchCommands({
      * document's Apply means yes when its row showed it deleted; an Apply all passes what its
      * confirmation named.
      */
-    const dispatch = (
-      mode: "apply" | "discard",
+    const dispatchDiscard = (
       draft: DraftReviewSelection,
       target: ChangeTarget,
-      restore?: boolean,
-      treeAlreadyApplied = false,
       resetNotice = true,
     ): CommandStart => {
       if (resetNotice) endNotice();
       if (locked) return blocked();
       const item = row(draft);
-      if (mode === "apply") {
-        if (treeAlreadyApplied && target.kind === "tree") {
-          if (item) dropTreeLine(item);
-          refresh();
-          return { sent: false, outcome: Promise.resolve({ kind: "done" }) };
-        }
-        const bringBack = restore ?? isDeletedFromManuscript(item);
-        // The tree cut rides with the tree line, a whole-item click, or a selection that includes the line.
-        const tree =
-          !treeAlreadyApplied && (target.kind === "tree" || target.kind === "draft" || target.tree);
-        const appliedTarget =
-          treeAlreadyApplied && target.kind === "groups" ? { ...target, tree: undefined } : target;
-        const started = owner.apply(
-          ref(draft),
-          appliedTarget,
-          bringBack,
-          (tree && item?.tree) || undefined,
-        );
-        void started.outcome.then((outcome) => {
-          if (outcome.kind === "done" && tree && item?.tree) dropTreeLine(item);
-          if (outcome.kind === "done") applied(item, outcome);
-          // A needs-restore answer means the row is behind: refresh so it shows the delete.
-          if (outcome.kind === "needs-restore" || !owner.state(draft.itemKey).pending) refresh();
-        });
-        return started;
-      }
       if (item?.isNew && target.kind === "draft") {
         const removed: DiscardNotice = { kind: "removed", end() {} };
         const outcome = owner.removeCreated(ref(draft), item).then((answer) => {
@@ -262,7 +290,11 @@ export function useWorkBranchCommands({
         // Capture every item in the event turn, not in a promise continuation.
         if (mode === "apply") {
           endNotice();
-          return applyInServerOrder(items, restore, start);
+          const captured = items.map(({ draft, target }) => ({
+            draft,
+            command: captureApply(draft, target, restore.has(draft.documentId), false),
+          }));
+          return applyInServerOrder(captured);
         }
         return Promise.all(items.map(({ draft, target }) => start(mode, draft, target).outcome));
       },
@@ -273,11 +305,16 @@ export function useWorkBranchCommands({
       ) => {
         if (mode === "apply") {
           endNotice();
-          return applyInServerOrder(
-            drafts.map((draft) => ({ draft, target: { kind: "draft" as const } })),
-            restore,
-            start,
-          );
+          const captured = drafts.map((draft) => ({
+            draft,
+            command: captureApply(
+              draft,
+              { kind: "draft" as const },
+              restore.has(draft.documentId),
+              false,
+            ),
+          }));
+          return applyInServerOrder(captured);
         }
         endNotice();
         const branchId = drafts.map(row).find(Boolean)?.branchId;
@@ -297,31 +334,19 @@ export function useWorkBranchCommands({
  * not send a tree cut the server already named as applied.
  */
 async function applyInServerOrder(
-  items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
-  restore: ReadonlySet<string>,
-  start: (
-    mode: "apply" | "discard",
-    draft: DraftReviewSelection,
-    target: ChangeTarget,
-    restore?: boolean,
-    treeAlreadyApplied?: boolean,
-    resetNotice?: boolean,
-  ) => CommandStart,
+  items: readonly {
+    draft: DraftReviewSelection;
+    command: { dispatch(treeAlreadyApplied?: boolean): CommandStart } | null;
+  }[],
 ): Promise<CommandOutcome[]> {
   const appliedTrees = new Set<string>();
   const outcomes: CommandOutcome[] = [];
-  for (const { draft, target } of items) {
-    const outcome = await start(
-      "apply",
-      draft,
-      target,
-      restore.has(draft.documentId),
-      appliedTrees.has(draft.itemKey),
-      false,
-    ).outcome;
+  for (const { draft, command } of items) {
+    const outcome = await (command?.dispatch(appliedTrees.has(draft.itemKey)).outcome ??
+      Promise.resolve<CommandOutcome>({ kind: "blocked" }));
     outcomes.push(outcome);
     if (outcome.kind === "done")
-      for (const itemKey of outcome.appliedTrees ?? []) appliedTrees.add(itemKey);
+      for (const item of outcome.appliedTrees ?? []) appliedTrees.add(item.itemKey);
   }
   return outcomes;
 }

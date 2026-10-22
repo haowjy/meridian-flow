@@ -70,6 +70,15 @@ function asString(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/** Undo and redo can allocate a free name; their settled result owns the document door. */
+function settledDocumentPath(tool: ToolView, fallback: string | undefined): string | undefined {
+  const command = toolCommand(tool);
+  if (tool.status !== "complete" || (command !== "undo" && command !== "redo")) return fallback;
+  const result = tool.result;
+  if (result === null || typeof result !== "object" || Array.isArray(result)) return fallback;
+  return asString(result.path) ?? fallback;
+}
+
 /** A parameter the timeline shows as text rather than as a destination. */
 function TextParameter({ children }: { children: ReactNode }) {
   return <span className="min-w-0 truncate">{children}</span>;
@@ -453,7 +462,7 @@ function rejectionCopy(rejected: string | null): string | null {
 function DocumentToolTitle({ tool }: { tool: ToolView }) {
   const names = useOwnerNames();
   const input = inputObject(tool);
-  const path = asString(input.path);
+  const path = settledDocumentPath(tool, asString(input.path));
   const descriptor = descriptorFor(tool);
   const command = toolCommand(tool);
 

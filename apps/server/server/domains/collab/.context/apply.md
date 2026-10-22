@@ -112,7 +112,9 @@ The operation is keyed on the row's logical state and live's state:
 A move whose destination live still gives a document this branch moves or deletes applies that
 occupant's tree fact first, recursively, under the branch lock. It does not apply the occupant's
 pending text because no frozen click exists for that text; a drafted delete necessarily closes
-the deleted item's draft. A cycle moves together, so swaps keep both requested names. Any
+the deleted item's draft. A dependency whose destination is gone or has a document blocking an
+ancestor stays pending with its own tree fact; it does not stop the clicked document from taking
+the next free leaf name. A cycle moves together, so swaps keep both requested names. Any
 unrelated leaf occupant keeps its name and the arriving document takes the next free name. The
 result lists every tree item it applied and attaches a `renamed` note to any item that yielded.
 If a document occupies an ancestor where the destination needs a folder, Apply answers the

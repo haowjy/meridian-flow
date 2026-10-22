@@ -103,7 +103,7 @@ separately redoable actions, and a step that reverses an undo puts its edit back
 A removal an earlier step makes is `madeBy` that step until it runs; a restore planned after it
 carries the removal that step actually made, while an unrelated removal still refuses it. The
 commit runs the steps in planned order (the card and rollback merge documents newest first,
-redo oldest first), each tree step in its own savepoint: a fault (`folder_blocked`,
+redo oldest first), each tree step in its own savepoint: a fault (`ancestor_taken`,
 `folder_missing`, `superseded`) is a reported skip for the card and rollback, and live text of a
 document a skipped restore left removed is skipped with the rest of that document's text. A
 model inverse is all or nothing (`TreeInverseRefused`). A draft's text still commits as one
@@ -157,7 +157,7 @@ semantic unavailable outcomes such as `nothing_to_undo`, `nothing_to_redo`,
 `cant_undo_dependent`, `expired`, or `partial` with HTTP 200; callers retain
 those outcomes and refresh the turn query. A reversal that reversed nothing because a document
 blocks an ancestor folder, the folder is missing, or the document moved or was deleted again
-answers `folder_blocked`, `folder_missing` or `superseded` (per document too), never `expired` or
+answers `ancestor_taken`, `folder_missing` or `superseded` (per document too), never `expired` or
 `cant_undo_dependent`. Every skipped part carries a typed `cause` (`TurnInverseSkipCause`) and the
 app words it; a tree skip names the path its entry was shown at.
 
