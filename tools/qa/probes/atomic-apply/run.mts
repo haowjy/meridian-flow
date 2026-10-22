@@ -23,7 +23,7 @@ import { createBranchReviewItems } from "../../../../apps/server/server/domains/
 import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import { lockDocumentNamespaces } from "../../../../apps/server/server/domains/context/adapters/context-fs/document-locations.ts";
 import { recordCreated } from "../../../../apps/server/server/domains/context/tree/branch-tree-store.ts";
-import { acquireEndUseScope } from "../../../../apps/server/server/domains/context/tree/end-use.ts";
+import { acquireTreeScope } from "../../../../apps/server/server/domains/context/tree/mutation-scope.ts";
 import { readRemovalRecords } from "../../../../apps/server/server/domains/context/tree/removal.ts";
 import { createTreeReader } from "../../../../apps/server/server/domains/context/tree/tree-view.ts";
 import {
@@ -717,7 +717,7 @@ try {
     const f = await fixture(["Base."], ["Changed."]);
     const c = f.click();
     await h.projection.mutate({ works: [f.workId] }, async () => {
-      await acquireEndUseScope(h.db, { documentIds: [f.documentId] });
+      await acquireTreeScope(h.db, { documentIds: [f.documentId] });
       await createTestDocumentRemoval(h.db).remove({
         documentIds: [f.documentId],
         reason: "deleted",
@@ -927,7 +927,7 @@ try {
       if (once) {
         once = false;
         await h.projection.mutate({ works: [f.workId] }, async () => {
-          await acquireEndUseScope(h.db, { documentIds: [f.documentId] });
+          await acquireTreeScope(h.db, { documentIds: [f.documentId] });
           await createTestDocumentRemoval(h.db).remove({
             documentIds: [f.documentId],
             reason: "deleted",

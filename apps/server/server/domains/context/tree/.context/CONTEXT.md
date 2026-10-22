@@ -42,9 +42,12 @@ create joins an existing draft document. Placement reveals targets and
 ancestors; end-of-use tombstones an unused row, releases its content storage,
 and prunes empty hidden ancestors. Closed draft identity rows remain.
 
-`acquireEndUseScope` takes the complete namespace/document scope and rechecks
-that scope before mutation. A moved scope aborts and rediscovers. Hidden-node
-repair uses the same seam in its own transaction and reports after commit.
+`acquireTreeScope` (`mutation-scope.ts`) is the one verified acquisition for a
+tree mutation whose namespaces are discovered, not known: end of use, Discard,
+hidden-node repair, and Apply's reveal and restore. It locks the namespaces it
+read, re-reads, then takes document locks. A moved scope throws and the caller,
+which owns the transaction, aborts and rediscovers. Hidden-node repair uses the
+same seam in its own transaction and reports after commit.
 Tree writes return changed identities; ContextFS, the mover, Apply, and Discard
 refresh the catalog in their own surrounding transaction.
 
