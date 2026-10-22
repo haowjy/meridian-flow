@@ -34,12 +34,17 @@ staged create content and leaves the created document empty (#843: a create has
 no tree entry yet); the receipt shows it as undone and the document stays openable.
 
 A document the turn moved or deleted carries its net tree line in lineage, and
-its row says so: "Moved ch4 to ch4-old" (the folder or section kept only when it
-tells the destination apart, never a Work handle, #914) or "Deleted ch2". The
+its row says so: "Moved ch4 to ch4-old" (the folder, section or owner kept only
+when it tells the destination apart: "Scratch for Ascension/notes/ch4") or
+"Deleted ch2". An owner is named by its Work's name or its chat's title, never its
+handle (#914): the project shell supplies `OwnerNames` (`owner-names.tsx`,
+`ProjectOwnerNamesProvider`), and outside it a location reads "Scratch". The
 row is a record: it keeps its words after Undo, as text rows do. A deleted
 document's row is not a door, because its old address may hold another document
 now. A stopped reply's rolled-back moves and deletes get no line; the parts list
-says "Rolled back".
+says "Rolled back". The parts list's heading says which command leaves them as
+they are: "Undo leaves 2 parts as they are" before a press, "Undo left 1 part as
+it was" after one.
 
 The single Undo/Redo action calls the turn-scoped reverse endpoint. Receipt state
 (`live-active`, `work-active`, reversed, dependent, or expired) decides whether
@@ -59,9 +64,11 @@ Every refusal is visible, and the receipt's reason line is where it shows.
 Skipped parts and refusals are worded in `turn-receipt-copy.ts` from typed
 causes (`TurnInverseSkipCause`, the `location_taken` / `folder_missing` /
 `superseded` statuses); the card never prints server prose. A move or delete
-that can't come back names the cause and the next step ("Can't undo: another
-document is at ch2. Move or rename that document, then try again."), and the
-parts list doesn't repeat what that line already says.
+that can't come back names the cause, the whole place and the next step ("Can't
+undo: Manuscript/part2/ch2 is already taken. Move or rename what's there, then
+try again."), and the parts list doesn't repeat what that line already says. A
+place is "taken", never "another document": the refusal carries no occupant kind,
+and a folder can hold it.
 Copy covers the whole wire status union through an exhaustive switch that fails
 the build when a status is added, and a command that never reached a status at
 all — rejected fetch, HTTP error envelope — gets its own retry line naming the

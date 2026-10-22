@@ -33,6 +33,7 @@ import {
   documentDisplayName,
   folderDisplayName,
   moveDestinationName,
+  type OwnerNames,
 } from "./document-display-name";
 import { workReceiptLine } from "./work-receipt-copy";
 
@@ -68,7 +69,8 @@ export type CommandExpand =
 export type CommandDescriptor = {
   /** One glyph per command. Read down the icon column and the turn has a shape. */
   Icon: LucideIcon;
-  phrases: (tool: ToolView) => ToolActivityVocabulary;
+  /** `names` names the owners in Scratch addresses; a move's destination may need one. */
+  phrases: (tool: ToolView, names?: OwnerNames) => ToolActivityVocabulary;
   /** A failure is its own claim, so it never reuses the success verb. */
   failureVerb: () => string;
   /** The complete-tense title when the command named no document. */
@@ -299,7 +301,7 @@ function copyTenses(tool: ToolView): ToolActivityVocabulary {
 }
 
 /** A move's phrases: the document in the verb, where it went (as little as tells it apart) as the parameter. */
-function moveTenses(tool: ToolView): ToolActivityVocabulary {
+function moveTenses(tool: ToolView, names?: OwnerNames): ToolActivityVocabulary {
   const input = toolInputObject(tool);
   const from = sourcePath(input);
   const destination = documentTarget(input);
@@ -308,7 +310,7 @@ function moveTenses(tool: ToolView): ToolActivityVocabulary {
   const active = t`Moving ${source} to`;
   const complete = t`Moved ${source} to`;
   if (!destination) return tenses(`${active}…`, complete);
-  const place = moveDestinationName(from, destination);
+  const place = moveDestinationName(from, destination, names);
   return {
     active: { verb: active, parameter: `${place}…` },
     complete: { verb: complete, parameter: place },
@@ -330,10 +332,10 @@ export function humanizeToolName(toolName: string): string {
 }
 
 /** The phrase for the tool's current protocol state, never guessed from timing. */
-export function toolActivityPhrase(tool: ToolView): ToolActivityPhrase {
+export function toolActivityPhrase(tool: ToolView, names?: OwnerNames): ToolActivityPhrase {
   const descriptor = descriptorFor(tool);
   if (documentToolFailed(tool)) return { verb: descriptor.failureVerb() };
-  const vocabulary = descriptor.phrases(tool);
+  const vocabulary = descriptor.phrases(tool, names);
   return tool.status === "complete" ? vocabulary.complete : vocabulary.active;
 }
 

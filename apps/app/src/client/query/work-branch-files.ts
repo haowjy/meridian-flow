@@ -29,14 +29,19 @@ export function projectWorkBranchFiles(
     drafts.map((draft) => {
       const live = catalog?.findDocument(draft.documentId);
       const location = live ? parseContextUri(live.uri) : null;
+      // Until the catalog answers, a document the draft moves is live where it was, not at the
+      // draft's new path: opening it there would land on an address nothing holds yet.
+      const movedFrom = draft.tree?.movedFrom;
       return {
         documentId: draft.documentId,
         documentName: live
           ? (documentTitleFromUri(live.uri) ?? draft.documentName)
-          : draft.documentName,
+          : movedFrom
+            ? (documentTitleFromUri(movedFrom.path) ?? draft.documentName)
+            : draft.documentName,
         contextLocation: location
           ? { scheme: location.scheme, path: location.path }
-          : draft.contextLocation,
+          : (movedFrom ?? draft.contextLocation),
         draft,
         draftOnly: draft.isNew || draft.deletedLive,
       };

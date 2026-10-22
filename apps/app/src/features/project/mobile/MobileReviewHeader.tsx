@@ -22,7 +22,8 @@ export function MobileReviewHeader({
   onOpenList: () => void;
 }) {
   const { controller, view, finished } = header;
-  const count = view.items.length;
+  // The stepper walks the text changes; a pending move or delete is listed, not stepped to.
+  const count = view.items.filter(({ change }) => !change.tree).length;
   const stepping = view.status === "ready" && count > 0;
   return (
     <section
@@ -79,7 +80,7 @@ export function MobileReviewHeader({
           type="button"
           disabled={finished || !!header.completing}
           aria-haspopup="dialog"
-          aria-label={changeListLabel(count)}
+          aria-label={changeListLabel(view.items.length)}
           onClick={onOpenList}
           className="focus-ring flex h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-md px-2 text-sm text-muted-foreground tabular-nums active:scale-[0.98]"
         >

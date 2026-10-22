@@ -7,7 +7,7 @@ import type {
   TurnInverseSkipCause,
 } from "@meridian/contracts/protocol";
 import type { ReversalDirection } from "@/client/api/reverse-api";
-import { documentDisplayName } from "./document-display-name";
+import { documentLocationName, type OwnerNames } from "./document-display-name";
 
 type SuccessfulReversalStatus = "success" | "reversed" | "reconciled";
 
@@ -40,7 +40,7 @@ export function treeFaultLocation(
 }
 
 /** Writer-facing copy for a refused reversal. */
-export function reversalRefusalCopy(refusal: ReversalRefusal): string {
+export function reversalRefusalCopy(refusal: ReversalRefusal, names?: OwnerNames): string {
   switch (refusal.status) {
     case "nothing_to_redo":
       return t`Redo is no longer available because the manuscript changed.`;
@@ -55,18 +55,18 @@ export function reversalRefusalCopy(refusal: ReversalRefusal): string {
       return t`Only part of this change could be reversed.`;
     case "not_found":
     case "document_not_found":
-      return t`That chapter is no longer available, so this change can't be reversed.`;
+      return t`That document is no longer available, so this change can't be reversed.`;
     case "ambiguous_match":
     case "invalid_write":
-      return t`This change no longer matches the chapter text, so it can't be reversed.`;
+      return t`This change no longer matches the document's text, so it can't be reversed.`;
     case "binary_file":
       return t`This file is binary, so this change can't be reversed.`;
     case "permission_denied":
-      return t`This file's Work is archived. Unarchive the Work to reverse this change.`;
+      return t`This document's Work is archived. Unarchive the Work to reverse this change.`;
     case "location_taken":
     case "folder_missing":
     case "superseded":
-      return treeFaultCopy(refusal.status, refusal.direction, refusal.at ?? null);
+      return treeFaultCopy(refusal.status, refusal.direction, refusal.at ?? null, names);
     case "internal_error":
     case "region_changed":
     case "request_failed":
@@ -79,41 +79,45 @@ export function reversalRefusalCopy(refusal: ReversalRefusal): string {
   }
 }
 
-/** A move or delete that met its destination unable to take it back, naming the command. */
+/**
+ * A move or delete that met its destination unable to take it back, naming the command and the
+ * whole place, so the writer can find it. "Taken" doesn't say by what: a document or a folder.
+ */
 function treeFaultCopy(
   fault: TreeReversalFault,
   direction: ReversalDirection,
   at: string | null,
+  names: OwnerNames | undefined,
 ): string {
-  const place = at ? documentDisplayName(at) : null;
+  const place = at ? documentLocationName(at, names) : null;
   const redo = direction === "redo";
   switch (fault) {
     case "location_taken":
       if (place)
         return redo
-          ? t`Can't redo: another document is at ${place}. Move or rename that document, then try again.`
-          : t`Can't undo: another document is at ${place}. Move or rename that document, then try again.`;
+          ? t`Can't redo: ${place} is already taken. Move or rename what's there, then try again.`
+          : t`Can't undo: ${place} is already taken. Move or rename what's there, then try again.`;
       return redo
-        ? t`Can't redo: another document is at that location. Move or rename that document, then try again.`
-        : t`Can't undo: another document is at that location. Move or rename that document, then try again.`;
+        ? t`Can't redo: its location is already taken. Move or rename what's there, then try again.`
+        : t`Can't undo: its location is already taken. Move or rename what's there, then try again.`;
     case "folder_missing":
       return redo
-        ? t`Can't redo: the document's original folder is gone.`
-        : t`Can't undo: the document's original folder is gone.`;
+        ? t`Can't redo: the folder it would move to is gone.`
+        : t`Can't undo: the folder it would return to is gone.`;
     case "superseded":
       if (place)
         return redo
-          ? t`Can't redo: ${place} was moved or deleted again since.`
-          : t`Can't undo: ${place} was moved or deleted again since.`;
+          ? t`Can't redo: ${place} was moved or deleted after you undid this change.`
+          : t`Can't undo: ${place} was moved or deleted after this change.`;
       return redo
-        ? t`Can't redo: the document was moved or deleted again since.`
-        : t`Can't undo: the document was moved or deleted again since.`;
+        ? t`Can't redo: the document was moved or deleted after you undid this change.`
+        : t`Can't undo: the document was moved or deleted after this change.`;
   }
 }
 
 /** The one sentence for "later live edits depend on this", wherever it surfaces. */
 export function dependentChangeCopy(): string {
-  return t`Later edits build on this change. View the change instead of undoing it.`;
+  return t`Later edits build on this change, so it can't be reversed. View the change instead.`;
 }
 
 function reversalRetryCopy(direction: ReversalDirection): string {
@@ -126,13 +130,13 @@ function reversalRetryCopy(direction: ReversalDirection): string {
 export function skipCauseCopy(cause: TurnInverseSkipCause): string {
   switch (cause) {
     case "location_taken":
-      return t`Another document is at its location`;
+      return t`Its location is taken`;
     case "folder_missing":
       return t`Its folder is gone`;
     case "superseded":
-      return t`Moved or deleted again since`;
+      return t`Moved or deleted after this change`;
     case "refused":
-      return t`Couldn't be restored here`;
+      return t`Couldn't be reversed`;
     case "rolled_back":
       return t`Rolled back`;
     case "applied":
@@ -150,9 +154,9 @@ export function skipCauseCopy(cause: TurnInverseSkipCause): string {
     case "changed_since":
       return t`Changed since`;
     case "document_deleted":
-      return t`This file was deleted`;
+      return t`This document was deleted`;
     case "document_discarded":
-      return t`This file was discarded`;
+      return t`This document was discarded from the draft`;
     case "draft_archived":
       return t`This draft is archived`;
     case "paragraph_removed":
@@ -160,6 +164,6 @@ export function skipCauseCopy(cause: TurnInverseSkipCause): string {
     case "edited_since":
       return t`Stayed as you edited it`;
     case "not_restored":
-      return t`Its file wasn't restored`;
+      return t`Its document wasn't restored`;
   }
 }
