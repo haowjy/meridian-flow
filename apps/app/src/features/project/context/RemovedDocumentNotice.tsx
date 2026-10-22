@@ -154,36 +154,6 @@ export function RemovedDocumentSentence({ documents }: { documents: readonly Rem
   return <>{removalSentence(documents)}</>;
 }
 
-/**
- * Why a draft can't be applied: its document was removed. Apply never revives
- * a removed document, so there is nothing to try again.
- */
-export function RemovedDocumentApplyRefusal({ record }: { record: DocumentRemovalRecord | null }) {
-  useLingui();
-  return <>{applyRefusal(voiceOf(record))}</>;
-}
-
-function applyRefusal(voice: RemovalVoice): string {
-  switch (voice.kind) {
-    case "person": {
-      const { name } = voice;
-      return voice.reason === "discarded"
-        ? t`${name} discarded this document from the draft, so this draft can't be applied.`
-        : t`${name} deleted this document, so this draft can't be applied.`;
-    }
-    case "work": {
-      const { name } = voice;
-      return t`This document was deleted with the Work ${name}, so this draft can't be applied.`;
-    }
-    case "unfinished-reply":
-      return t`This document was removed when the reply that created it didn't finish, so this draft can't be applied.`;
-    case "anonymous":
-      return voice.reason === "discarded"
-        ? t`This document was discarded from the draft, so this draft can't be applied.`
-        : t`This document was deleted, so this draft can't be applied.`;
-  }
-}
-
 const EMPTY_NOTICE: RemovedNoticeSnapshot = { shown: [], waiting: [], version: 0 };
 const subscribeNothing = () => () => undefined;
 
