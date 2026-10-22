@@ -41,8 +41,7 @@ import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
 import { claimEditorFocus, focusIsFree } from "./focus-on-open";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
-import { SchemaFenceNotice } from "./SchemaFenceNotice";
-import { SchemaRepairNotice } from "./SchemaRepairNotice";
+import { SchemaNotices } from "./SchemaNotices";
 import { SyncStatus } from "./SyncStatus";
 import { ImageIngressRuntime } from "./surfaces/images";
 import { ProjectLinkRuntime } from "./surfaces/link";
@@ -396,12 +395,15 @@ function ActiveSessionEditorView({
         <div className="pointer-events-none absolute right-3 bottom-3 z-10">
           <SyncStatus session={session} onReopen={onReopen} removal={removal} />
         </div>
-        {snapshot.schemaFence ? <SchemaFenceNotice fence={snapshot.schemaFence} /> : null}
-        {snapshot.schemaRepairs.length > 0 ? (
-          <SchemaRepairNotice repairs={snapshot.schemaRepairs} />
-        ) : null}
         <TrackedEditorCanvas
           editor={editor}
+          notices={
+            <SchemaNotices
+              fence={snapshot.schemaFence}
+              repairs={snapshot.schemaRepairs}
+              editor={editor}
+            />
+          }
           toolbar={
             showToolbar ? (
               <DocumentToolbar
@@ -455,17 +457,20 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
 
 function TrackedEditorCanvas({
   editor,
+  notices,
   toolbar,
   scrollRef,
   onScroll,
 }: {
   editor: Editor | null;
+  notices?: ReactNode;
   toolbar?: ReactNode;
   scrollRef?: Ref<HTMLDivElement>;
   onScroll?: UIEventHandler<HTMLDivElement>;
 }) {
   return (
     <EditorSurfaceFrame
+      notices={notices}
       toolbar={toolbar}
       editor={editor}
       scrollRef={scrollRef}
