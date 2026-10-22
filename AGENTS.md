@@ -16,9 +16,14 @@ life faster, with AI that understands narrative craft.
 progression-fantasy web serials at 5,000–10,000+ words/day who need
 Scrivener-scale power without its complexity.
 
-**Trust the LLM.** AI writes merge like any Yjs peer's: marks and receipts
-inform, and undo recovers. Never add approval gates, refusal vetoes, or
-"safety" friction to AI writes; that gates the writer's instruction. See the
+**Changing a document is smooth; resolving changes is easy.** Our job is to let
+the writer and the model change documents without obstruction, and to make
+reviewing and resolving conflicting changes easy. A write lands: protection is
+review and undo, never a refusal, approval gate, or "safety" friction. AI writes
+merge like any Yjs peer's; marks and receipts inform. A refusal is right only
+when the write can't mean anything (its target is gone). Undo, redo and revert
+are the essential operations: they work whenever the change still exists to
+reverse. See the
 [trust ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/trust-the-llm-mission.md).
 
 ## Engineering principles
