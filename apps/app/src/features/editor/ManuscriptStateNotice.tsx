@@ -39,7 +39,9 @@ export function ManuscriptStateNotice({ projectId, tab }: { projectId: string; t
   const title = tab.name;
   let line: ReactNode = null;
   if (isPathTaken(item))
-    line = <Trans>Another document now has this name. Rename it to apply this draft.</Trans>;
+    line = (
+      <Trans>Another document now has this name. Rename that document to apply this draft.</Trans>
+    );
   else if (deleted)
     line = deletedFromManuscriptSentence(
       title,

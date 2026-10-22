@@ -334,12 +334,16 @@ msgid "{name} deleted {count} documents ({names})."
 msgstr "{name} deleted {count} documents ({names})."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{name} deleted {title} from the manuscript. Applying brings it back."
+msgstr "{name} deleted {title} from the manuscript. Applying brings it back."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted {title}."
 msgstr "{name} deleted {title}."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} deleted this document, so this draft can't be applied."
-msgstr "{name} deleted this document, so this draft can't be applied."
+#~ msgid "{name} deleted this document, so this draft can't be applied."
+#~ msgstr "{name} deleted this document, so this draft can't be applied."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted this document."
@@ -354,8 +358,8 @@ msgid "{name} discarded {title} from the draft."
 msgstr "{name} discarded {title} from the draft."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} discarded this document from the draft, so this draft can't be applied."
-msgstr "{name} discarded this document from the draft, so this draft can't be applied."
+#~ msgid "{name} discarded this document from the draft, so this draft can't be applied."
+#~ msgstr "{name} discarded this document from the draft, so this draft can't be applied."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} discarded this document from the draft."
@@ -380,6 +384,14 @@ msgstr "{name} was discarded from the draft before this reply saved its change."
 #: src/features/chat/tool-renderers.tsx
 msgid "{name} was removed when the reply that created it didn't finish, so this change wasn't made."
 msgstr "{name} was removed when the reply that created it didn't finish, so this change wasn't made."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{names} are back in the manuscript."
+msgstr "{names} are back in the manuscript."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{names} is back in the manuscript."
+msgstr "{names} is back in the manuscript."
 
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{position} of {count}"
@@ -408,6 +420,10 @@ msgstr "{title} added to Favorites"
 #: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "{title} removed from Favorites"
 msgstr "{title} removed from Favorites"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{title} was deleted from the manuscript. Applying brings it back."
+msgstr "{title} was deleted from the manuscript. Applying brings it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was deleted with the Work {name}."
@@ -455,8 +471,13 @@ msgstr "<0.1 s"
 
 #. placeholder {0}: target.name
 #: src/features/project/context/ContextEntryActions.tsx
-msgid "<0>{0}</0> and all its contents will be permanently deleted."
-msgstr "<0>{0}</0> and all its contents will be permanently deleted."
+msgid "<0>{0}</0> and all its contents will be deleted."
+msgstr "<0>{0}</0> and all its contents will be deleted."
+
+#. placeholder {0}: target.name
+#: src/features/project/context/ContextEntryActions.tsx
+#~ msgid "<0>{0}</0> and all its contents will be permanently deleted."
+#~ msgstr "<0>{0}</0> and all its contents will be permanently deleted."
 
 #. placeholder {0}: target?.title
 #: src/features/project/chat-list/DeleteChatDialog.tsx
@@ -465,8 +486,13 @@ msgstr "<0>{0}</0> and its messages will be deleted."
 
 #. placeholder {0}: target?.name
 #: src/features/project/context/ContextEntryActions.tsx
-msgid "<0>{0}</0> will be permanently deleted."
-msgstr "<0>{0}</0> will be permanently deleted."
+msgid "<0>{0}</0> will be deleted."
+msgstr "<0>{0}</0> will be deleted."
+
+#. placeholder {0}: target?.name
+#: src/features/project/context/ContextEntryActions.tsx
+#~ msgid "<0>{0}</0> will be permanently deleted."
+#~ msgstr "<0>{0}</0> will be permanently deleted."
 
 #: src/features/chat/DeletedChatCard.tsx
 msgid "<0>{title}</0> was deleted."
@@ -696,6 +722,11 @@ msgstr "An entry named {name} already exists in this location."
 msgid "Another document is already at this name. Rename or remove it, then apply again."
 msgstr "Another document is already at this name. Rename or remove it, then apply again."
 
+#: src/features/draft-review/DraftCommandStatus.tsx
+#: src/features/editor/ManuscriptStateNotice.tsx
+msgid "Another document now has this name. Rename that document to apply this draft."
+msgstr "Another document now has this name. Rename that document to apply this draft."
+
 #: src/client/query/work-update-failure.ts
 msgid "Another Work already has this name. Choose a different name."
 msgstr "Another Work already has this name. Choose a different name."
@@ -718,6 +749,10 @@ msgstr "Appearance and behavior settings."
 #: src/features/editor/DraftReviewBand.tsx
 msgid "Apply"
 msgstr "Apply"
+
+#: src/features/project/work/WorkChanges.tsx
+msgid "Apply all"
+msgstr "Apply all"
 
 #: src/features/project/work/WorkChanges.tsx
 msgid "Apply all changes"
@@ -744,6 +779,14 @@ msgstr "Apply is waiting for confirmation."
 #: src/features/draft-review/ReviewCompletion.tsx
 msgid "Applying"
 msgstr "Applying"
+
+#: src/features/draft-review/RestoreQuestion.tsx
+msgid "Applying brings back {names}, which was deleted from the manuscript."
+msgstr "Applying brings back {names}, which was deleted from the manuscript."
+
+#: src/features/draft-review/RestoreQuestion.tsx
+msgid "Applying brings back {names}, which were deleted from the manuscript."
+msgstr "Applying brings back {names}, which were deleted from the manuscript."
 
 #: src/features/project/work/WorkActionsMenu.tsx
 msgid "Archive"
@@ -868,11 +911,13 @@ msgstr "Calls"
 msgid "Can't undo"
 msgstr "Can't undo"
 
+#: src/features/chat/DraftDock.tsx
 #: src/features/creation/CreationDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/work/WorkChanges.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Cancel"
 msgstr "Cancel"
@@ -1784,6 +1829,10 @@ msgstr "Deleted {name}"
 msgid "Deleted a Work"
 msgstr "Deleted a Work"
 
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "Deleted from the manuscript"
+msgstr "Deleted from the manuscript"
+
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.deleted"
@@ -1858,7 +1907,7 @@ msgstr "Discard draft"
 msgid "Discard this chat's changes?"
 msgstr "Discard this chat's changes?"
 
-#: src/features/draft-review/DiscardNotice.tsx
+#: src/features/draft-review/CommandNotice.tsx
 msgid "Discarded"
 msgstr "Discarded"
 
@@ -1869,6 +1918,7 @@ msgstr "Discarding"
 #: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
 #: src/features/draft-review/ReviewToast.tsx
+#: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -3381,7 +3431,7 @@ msgstr "Remove link"
 msgid "Remove reference"
 msgstr "Remove reference"
 
-#: src/features/draft-review/DiscardNotice.tsx
+#: src/features/draft-review/CommandNotice.tsx
 msgid "Removed"
 msgstr "Removed"
 
@@ -4244,10 +4294,18 @@ msgstr "The text it edited was discarded, so the change wasn't kept. The AI will
 msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 msgstr "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "The Work {names} has changes to it. Applying them brings it back."
+msgstr "The Work {names} has changes to it. Applying them brings it back."
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "The Work did not change. Try again."
 msgstr "The Work did not change. Try again."
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "The Works {names} have changes to it. Applying them brings it back."
+msgstr "The Works {names} have changes to it. Applying them brings it back."
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Theme"
@@ -4440,9 +4498,13 @@ msgstr "This document is still opening."
 msgid "This document was deleted before this reply saved its change."
 msgstr "This document was deleted before this reply saved its change."
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This document was deleted from the manuscript. Apply again to bring it back."
+msgstr "This document was deleted from the manuscript. Apply again to bring it back."
+
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was deleted with the Work {name}, so this draft can't be applied."
-msgstr "This document was deleted with the Work {name}, so this draft can't be applied."
+#~ msgid "This document was deleted with the Work {name}, so this draft can't be applied."
+#~ msgstr "This document was deleted with the Work {name}, so this draft can't be applied."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was deleted with the Work {name}."
@@ -4453,8 +4515,8 @@ msgid "This document was deleted with the Work {work} before this reply saved it
 msgstr "This document was deleted with the Work {work} before this reply saved its change."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was deleted, so this draft can't be applied."
-msgstr "This document was deleted, so this draft can't be applied."
+#~ msgid "This document was deleted, so this draft can't be applied."
+#~ msgstr "This document was deleted, so this draft can't be applied."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was deleted."
@@ -4465,8 +4527,8 @@ msgid "This document was discarded from the draft before this reply saved its ch
 msgstr "This document was discarded from the draft before this reply saved its change."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was discarded from the draft, so this draft can't be applied."
-msgstr "This document was discarded from the draft, so this draft can't be applied."
+#~ msgid "This document was discarded from the draft, so this draft can't be applied."
+#~ msgstr "This document was discarded from the draft, so this draft can't be applied."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was discarded from the draft."
@@ -4477,8 +4539,8 @@ msgid "This document was removed when the reply that created it didn't finish, s
 msgstr "This document was removed when the reply that created it didn't finish, so this change wasn't made."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was removed when the reply that created it didn't finish, so this draft can't be applied."
-msgstr "This document was removed when the reply that created it didn't finish, so this draft can't be applied."
+#~ msgid "This document was removed when the reply that created it didn't finish, so this draft can't be applied."
+#~ msgstr "This document was removed when the reply that created it didn't finish, so this draft can't be applied."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was removed when the reply that created it didn't finish."
@@ -4748,7 +4810,7 @@ msgid "Undid change to Work {0}."
 msgstr "Undid change to Work {0}."
 
 #: src/features/chat/TurnEditsReceipt.tsx
-#: src/features/draft-review/DiscardNotice.tsx
+#: src/features/draft-review/CommandNotice.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
@@ -4784,6 +4846,7 @@ msgid "Unknown component: {kindLabel}"
 msgstr "Unknown component: {kindLabel}"
 
 #: src/features/editor/DocumentDraftHint.tsx
+#: src/features/project/context/ContextEntryActions.tsx
 msgid "Unnamed Work"
 msgstr "Unnamed Work"
 
@@ -4799,6 +4862,7 @@ msgstr "Untitled chat"
 
 #: src/features/chat/document-display-name.ts
 #: src/features/project/work/WorkChangeFile.tsx
+#: src/features/project/work/WorkChanges.tsx
 msgid "Untitled document"
 msgstr "Untitled document"
 
