@@ -23,19 +23,24 @@ model.
 1. **Rename.** Script `move` `{ from: { path: "manuscript://ch1" }, path:
    "manuscript://ch1-awakening" }`. The tree shows ch1-awakening, the row reads "Moved ch1 to
    ch1-awakening", and the card "Changed 1 document" lists "Moved ch1 to ch1-awakening". Open
-   ch3 and activate its link (Enter on the focused chip): ch1-awakening opens.
+   ch3 and activate its link (Enter on the focused chip): ch1-awakening opens. A move into
+   another owner's Scratch names that owner, never its handle: `move` ch8 to
+   `scratch://@w1/ideas/ch8` reads "Moved ch8 to Scratch for Ascension/ideas/ch8".
 2. **Delete, then Undo.** With ch2 open in a tab, script `delete` ch2. The tab becomes "The AI
    in Chapter cleanup deleted ch2.", the row reads "Deleted ch2" with no door, the card lists
    "Deleted ch2". The card's Undo brings ch2 back into the tree and offers Redo. The other
    Work's chat still docks "ch2 1 change Discard Apply".
 3. **Location taken.** Press Redo (ch2 deleted again), create a document at `manuscript://ch2`
-   (`./mf doc put`), then press Undo: the card reads "Can't undo: another document is at ch2.
-   Move or rename that document, then try again." once, with no "parts stayed" repeat.
+   (`./mf doc put`), then press Undo: the card reads "Can't undo: Manuscript/ch2 is already
+   taken. Move or rename what's there, then try again." once, with no "Undo left" list
+   repeating it. A refusal names the whole place (folder and area), and never says a document
+   is there: a folder can take a place too.
 4. **Stop mid-step.** Script step 1 `move` ch4 → ch4-old; step 2 `move` ch5 → ch5-final,
    `delete` ch3, then thousands of `ls` calls to hold the step open. When ch5-final shows,
    `./mf thread stop` (the app's Stop operation; the browser struggles to render thousands of
    live rows, so reload it afterwards). ch3 and ch5 are back, ch4-old stays, and the card
-   lists "Moved ch4 to ch4-old" with ch3 and ch5 under "Rolled back".
+   lists "Moved ch4 to ch4-old" with ch3 and ch5 "Rolled back" under "Undo leaves 2 parts as
+   they are".
 
 `ask_user` doesn't hold a mock step open: the reply completes.
 
@@ -80,6 +85,9 @@ With more than one file, the dock's Apply asks the same question in its footer
    "white" listed and ch6 live under its name; the footer says "Discarded" with no Undo.
    With only ch1 left, the dock's Discard drops both, says "Discarded" with no Undo, and the
    Work lists nothing.
+   In a Draft view of an item with a move and text, the change bar's Discard drops only the
+   text: the band keeps Discard draft and Apply draft beside the Work notice, and its change
+   list shows the move's line. Discard draft then drops the move.
 10. **A destination folder the writer makes, and a rename the Work ends.** Script `move` ch2 →
    `arc2/ch2` (a folder only the Work sees). In the live tree, create a folder and rename it to
    `arc2`: the dock still reads "ch2: renaming to arc2/ch2". The card's Undo moves it back and
