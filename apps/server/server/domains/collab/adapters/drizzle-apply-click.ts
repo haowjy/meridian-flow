@@ -31,8 +31,8 @@ import { testHook } from "../../../shared/test-hooks.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { dropDocumentRows } from "../../context/tree/branch-tree-store.js";
-import { acquireEndUseScope, EndUseScopeChangedError } from "../../context/tree/end-use.js";
 import { livingDocumentRefusal } from "../../context/tree/living-document.js";
+import { acquireTreeScope, TreeScopeChangedError } from "../../context/tree/mutation-scope.js";
 import { place } from "../../context/tree/placement.js";
 import { readRemovalRecords } from "../../context/tree/removal.js";
 import { createTreeReader, type TreeStateNode } from "../../context/tree/tree-view.js";
@@ -205,7 +205,7 @@ export function createDrizzleApplyClick(
                     // serialize unrelated documents on their source's namespace lock.
                     const [initialNode] = await tree.treeState(branchId, [command.documentId]);
                     if (initialNode?.hidden)
-                      await acquireEndUseScope(db, { documentIds: [command.documentId] });
+                      await acquireTreeScope(db, { documentIds: [command.documentId] });
                     else await lockDocumentMutation(tx, command.documentId);
                     const removed = await livingDocumentRefusal(tx, command.documentId);
                     if (removed)
@@ -446,7 +446,7 @@ export function createDrizzleApplyClick(
                 ),
             );
           } catch (cause) {
-            if (cause instanceof EndUseScopeChangedError && attempt < 3) continue;
+            if (cause instanceof TreeScopeChangedError && attempt < 3) continue;
             throw cause;
           }
         }

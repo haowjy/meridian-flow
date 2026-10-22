@@ -2,7 +2,7 @@
  * Repair on touch (contract §12.4): a hidden, live document no active branch uses can only
  * come from a bug (create and use commit together, and so do end of use and tombstone).
  * A read that meets one (`identityStatus` answering `gone`) schedules its repair here,
- * after the read and in its own transaction: the verified end-use scope (namespaces, a
+ * after the read and in its own transaction: the verified tree scope (namespaces, a
  * re-read, document locks), revalidation, then the tombstone with its storage release. A
  * create's candidate picker repairs in its own transaction and reports it here. Either
  * way, each repair is a `context.hidden-node.repaired` warn event once it commits.
@@ -22,12 +22,8 @@ import {
 import { type DetachedWorkTracker, processDetachedWork } from "../../runtime/detached-work.js";
 import type { ObjectRelease } from "../../storage/index.js";
 import type { DocumentRemoval } from "../ports/document-removal.js";
-import {
-  acquireEndUseScope,
-  type EndedUse,
-  EndUseScopeChangedError,
-  tombstoneUnused,
-} from "./end-use.js";
+import { type EndedUse, tombstoneUnused } from "./end-use.js";
+import { acquireTreeScope, TreeScopeChangedError } from "./mutation-scope.js";
 
 export type HiddenNodeRepair = {
   tombstoneUnused(
@@ -87,7 +83,7 @@ export function createHiddenNodeRepair(deps: {
     for (let attempt = 1; ; attempt += 1) {
       try {
         const ended = await runInRootDrizzleTransaction(deps.db, async () => {
-          await acquireEndUseScope(deps.db, { documentIds: ids });
+          await acquireTreeScope(deps.db, { documentIds: ids });
           return tombstoneUnused(deps.db, ids, {
             actor: { cause: "repair" },
             removal: deps.removal,
@@ -96,7 +92,7 @@ export function createHiddenNodeRepair(deps: {
         await repaired(ended, "read");
         return ended;
       } catch (cause) {
-        if (!(cause instanceof EndUseScopeChangedError) || attempt >= ATTEMPTS) throw cause;
+        if (!(cause instanceof TreeScopeChangedError) || attempt >= ATTEMPTS) throw cause;
       }
     }
   }

@@ -4,7 +4,7 @@
  * same kernel inside purge's transaction after purge's own lifecycle proof.
  *
  * Lock order (§14), after the live scopes an item Discard holds: the Work (purge: threads,
- * then the Work), the branch, then the one verified end-use scope (`acquireEndUseScope`:
+ * then the Work), the branch, then the one verified tree scope (`acquireTreeScope`:
  * namespaces of every created document's source and the branch's location, re-read, then
  * the documents), then draft rows as the kernel writes them. A scope that moved aborts
  * the transaction and runs again under the callers' bounded attempts.
@@ -23,14 +23,13 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
+import { endUse, hiddenDocumentIds } from "../../context/tree/end-use.js";
 import {
-  acquireEndUseScope,
-  type EndUseRequest,
-  EndUseScopeChangedError,
-  endUse,
-  hiddenDocumentIds,
-  readEndUseScope,
-} from "../../context/tree/end-use.js";
+  acquireTreeScope,
+  readTreeScope,
+  TreeScopeChangedError,
+  type TreeScopeRequest,
+} from "../../context/tree/mutation-scope.js";
 import type { WorkBranchDisposal, WorkProjectionMutation } from "../../projects/index.js";
 import { BranchCommandExistsError } from "../domain/branch-commands.js";
 import {
@@ -59,10 +58,10 @@ async function endUseReconciled(
   db: Database,
   deps: KernelDeps,
   branchId: BranchId,
-  request: EndUseRequest,
+  request: TreeScopeRequest,
   userId?: UserId,
 ) {
-  const scope = await readEndUseScope(db, request);
+  const scope = await readTreeScope(db, request);
   const ended = await endUse(db, {
     branchId,
     documentIds: scope.documentIds,
@@ -116,12 +115,11 @@ async function discardWholeLocked(
 }
 
 /** The verified scope, as Discard's callers retry it: a moved scope is a changed branch. */
-async function acquireScope(db: Database, branchId: BranchId, request: EndUseRequest) {
+async function acquireScope(db: Database, branchId: BranchId, request: TreeScopeRequest) {
   try {
-    return await acquireEndUseScope(db, request);
+    return await acquireTreeScope(db, request);
   } catch (cause) {
-    if (cause instanceof EndUseScopeChangedError)
-      throw new BranchDiscardScopeChangedError(branchId);
+    if (cause instanceof TreeScopeChangedError) throw new BranchDiscardScopeChangedError(branchId);
     throw cause;
   }
 }
@@ -212,7 +210,7 @@ const PURGE_ATTEMPTS = 3;
 
 /**
  * Work purge's disposal (§2.6): inside purge's transaction after its deleted/cutoff proof,
- * lock each of the Work's active branches, acquire the verified end-use scope of every one,
+ * lock each of the Work's active branches, acquire the verified tree scope of every one,
  * and discard each whole through the kernel. A scope that moved rolls the purge transaction
  * back and runs it again, a bounded attempt each. The public command's active-Work fence is
  * never used. No pending projection: the Work is being deleted; its closed drafts retire after
