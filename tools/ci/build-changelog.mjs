@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-/** Build a changelog from structured sections in merged pull request bodies. */
+/**
+ * Build a changelog from structured sections in merged pull request bodies.
+ * A malformed section fails the whole build and names its PR; consumers must
+ * check the exit status rather than accept a silently incomplete changelog.
+ */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -12,7 +16,8 @@ const GH_FIELDS = "number,title,mergedAt,baseRefName,body,url";
 function usage() {
   return `usage: pnpm changelog [-- --since <YYYY-MM-DD | N.days> | --all] [--json] [--input <file>]
 
-Build the changelog from pull requests merged into main. The default range is 30 days.`;
+Build the changelog from pull requests merged into main. The default range is 30 days.
+Malformed Changelog sections stop the build and name the PR; always check the exit status.`;
 }
 
 function parseArguments(argv, now) {
@@ -66,7 +71,15 @@ function parseCutoff(value, now) {
   }
 
   const relative = /^(\d+)\.days$/.exec(value);
-  if (relative) return new Date(now.valueOf() - Number(relative[1]) * DAY_MS);
+  if (relative) {
+    const cutoff = new Date(now.valueOf() - Number(relative[1]) * DAY_MS);
+    if (Number.isNaN(cutoff.valueOf())) {
+      throw new Error(
+        `invalid --since value: ${value}; relative date is outside the supported range`,
+      );
+    }
+    return cutoff;
+  }
   throw new Error(`invalid --since value: ${value}; use YYYY-MM-DD or N.days`);
 }
 

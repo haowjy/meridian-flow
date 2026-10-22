@@ -19,7 +19,7 @@ import {
   CHANGELOG_CATEGORIES,
   CHANGELOG_HEADING,
   extractSection,
-  parseChangelogSection,
+  parsePrChangelog,
 } from "./pr-changelog.mjs";
 
 const TEMPLATE_PATH = ".github/PULL_REQUEST_TEMPLATE.md";
@@ -78,7 +78,7 @@ const changelogGuidance = `write one-line bullets starting ${CHANGELOG_CATEGORIE
 for (const heading of headings) {
   const content = extractSection(body, heading);
   if (heading === CHANGELOG_HEADING) {
-    const parsed = parseChangelogSection(content);
+    const parsed = parsePrChangelog(body);
     if (content === null || !hasAuthoredLine(content) || parsed.kind === "invalid") {
       const reason = parsed.kind === "invalid" ? ` (${parsed.reason})` : "";
       failures.push(
