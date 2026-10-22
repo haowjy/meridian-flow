@@ -218,7 +218,6 @@ async function subscribeThread(
     buffered: [],
     delivered: BigInt(parsedLastSeq),
   };
-  const after = lease.delivered;
   slot.lease = lease;
   const currentLease = () =>
     !state.closed &&
@@ -227,6 +226,11 @@ async function subscribeThread(
     lease.phase !== "disposed";
 
   try {
+    if (lastSeq === undefined) {
+      lease.delivered = await auth.app.threadEventHub.headSeq(threadId);
+      if (!currentLease()) return;
+    }
+    const after = lease.delivered;
     const { catchup, unsubscribe } = await auth.app.threadEventHub.catchupAndSubscribe(
       threadId,
       lease.delivered,

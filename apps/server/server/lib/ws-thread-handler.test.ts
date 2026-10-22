@@ -102,7 +102,7 @@ it("preserves typed errors in catchup and live envelopes", async () => {
   };
   const { session, frames, deliverEntry } = createDelayedDeliveryHarness([entry]);
   await session.onMessage(
-    JSON.stringify({ type: "subscribe", requestId: "r1", threadId: THREAD_ID }),
+    JSON.stringify({ type: "subscribe", requestId: "r1", threadId: THREAD_ID, lastSeq: "0" }),
   );
   expect(frames.at(-1)).toMatchObject({ catchup: [{ seq: "1000", error }] });
   deliverEntry({ ...entry, seq: 2000n });
@@ -179,6 +179,9 @@ function createRequestHarness(options: {
   const app = {
     eventSink: createNoopEventSink(),
     threadEventHub: {
+      async headSeq() {
+        return 0n;
+      },
       async catchupAndSubscribe(threadId: ThreadId) {
         return { catchup: [], unsubscribe: () => unsubscribed.push(threadId) };
       },
