@@ -11,7 +11,12 @@
  * moves: the writer's text goes to live, and the document's draft stays pending for review.
  */
 import type { DocumentId, ProjectId } from "@meridian/contracts";
-import { allocateFilename, type Filetype, sameNamespaceName } from "@meridian/contracts/protocol";
+import {
+  allocateFilename,
+  type Filetype,
+  type NamespaceNameClaim,
+  sameNamespaceName,
+} from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { testHook } from "../../../../shared/test-hooks.js";
 import type {
@@ -23,7 +28,7 @@ import type {
   SyncError,
 } from "../../../collab/index.js";
 import { writeCollabMarkdownHeld } from "../../context/collab-document-sync.js";
-import { renderFilename } from "../../context/paths.js";
+import { joinPath, renderFilename } from "../../context/paths.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import {
@@ -39,11 +44,7 @@ import type {
   RevealExpectation,
 } from "../../tree/hidden-node-types.js";
 import { LIVE_TREE } from "../../tree/tree-view.js";
-import {
-  type BoundWrites,
-  binaryTrackedWriteFault,
-  DEFAULT_EDITABLE_FILETYPE,
-} from "./bound-writes.js";
+import { type BoundWrites, DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
 import { type CreateTarget, resolveCreateTarget } from "./create-target.js";
 
 /**
@@ -145,6 +146,10 @@ type Discovery =
   | { kind: "reveal"; reveal: RevealExpectation }
   | { kind: "none" };
 
+type CreateAttempt =
+  | { kind: "created"; documentId: string }
+  | { kind: "leaf-conflict"; occupantKind?: "file" | "folder" };
+
 export interface LiveCreateDeps {
   store: ContextDocumentStore;
   executor: ResultAwareCommandExecutor<AdapterFault>;
@@ -169,14 +174,78 @@ export class LiveCreate {
     content: BoundWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
+    const attempted = await this.createAttempt(path, content, options);
+    if (!attempted.ok) return attempted;
+    return attempted.value.kind === "created"
+      ? Ok({ documentId: attempted.value.documentId })
+      : Err({
+          code: "conflict",
+          ...(attempted.value.occupantKind ? { occupantKind: attempted.value.occupantKind } : {}),
+        });
+  }
+
+  /**
+   * Allocate a free document name and seed its content as one command. Batch claims are
+   * caller reservations; live occupancy and races stay inside this operation.
+   */
+  async createAtFreeName(
+    path: string,
+    markdown: string,
+    reserved: readonly NamespaceNameClaim[],
+    options?: ContextWriteOptions,
+  ): Promise<Result<{ documentId: string; path: string }, AdapterFault>> {
+    const target = resolveCreateTarget(path);
+    if (!target.ok) return target;
+    const unavailable = [...reserved];
+    for (;;) {
+      const filename = await allocateFilename(
+        { kind: "document", name: target.value.name, extension: target.value.extension },
+        (candidate) => unavailable.some((claim) => sameNamespaceName(candidate, claim)),
+      );
+      const candidatePath = joinPath(target.value.dir.join("/"), filename);
+      const candidate = resolveCreateTarget(candidatePath);
+      if (!candidate.ok) return candidate;
+      const found = await this.deps.executor.exclusive(() => this.discover(candidate.value));
+      if (found.kind === "conflict") {
+        unavailable.push({ kind: "document", filename });
+        continue;
+      }
+      const binding =
+        markdown.length > 0
+          ? await this.deps.boundWrites.bind(candidatePath, null, markdown)
+          : null;
+      if (binding && !binding.ok) return binding;
+      const attempted = await this.createAttempt(
+        candidatePath,
+        binding?.value ?? null,
+        options,
+        found,
+      );
+      if (!attempted.ok) return attempted;
+      if (attempted.value.kind === "created") {
+        return Ok({ documentId: attempted.value.documentId, path: candidatePath });
+      }
+      unavailable.push({ kind: "document", filename });
+    }
+  }
+
+  private async createAttempt(
+    path: string,
+    content: BoundWrite | null,
+    options?: ContextWriteOptions,
+    initialDiscovery?: Exclude<Discovery, { kind: "conflict" }>,
+  ): Promise<Result<CreateAttempt, AdapterFault>> {
     const target = resolveCreateTarget(path);
     if (!target.ok) return target;
     const withContent = content !== null && content.markdown.length > 0 ? content : null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const found = await this.deps.executor.exclusive(() => this.discover(target.value));
+      const found =
+        attempt === 0 && initialDiscovery
+          ? initialDiscovery
+          : await this.deps.executor.exclusive(() => this.discover(target.value));
       if (found.kind === "conflict") {
-        return Err({
-          code: "conflict",
+        return Ok({
+          kind: "leaf-conflict",
           ...(found.occupantKind ? { occupantKind: found.occupantKind } : {}),
         });
       }
@@ -221,7 +290,7 @@ export class LiveCreate {
         if (!(error instanceof LiveCreateCandidateChangedError)) throw error;
       }
     }
-    return Err({ code: "conflict" });
+    return Ok({ kind: "leaf-conflict" });
   }
 
   /** §6.3 step 1 and §6.4's discovery, holding nothing. */
@@ -250,15 +319,11 @@ export class LiveCreate {
     target: CreateTarget,
     plan: LiveCreatePlan,
     options?: ContextWriteOptions,
-  ): Promise<Result<{ documentId: string }, AdapterFault>> {
+  ): Promise<Result<CreateAttempt, AdapterFault>> {
     const folderId = await this.deps.store.ensureFolderPath(target.dir);
     const existing = await this.deps.store.findDocument(folderId, target.name, target.extension);
     if (existing) {
-      return Err(
-        existing.fileType !== null
-          ? binaryTrackedWriteFault(path)
-          : { code: "conflict", occupantKind: "file" },
-      );
+      return Ok({ kind: "leaf-conflict", occupantKind: "file" });
     }
     if (
       (plan.kind === "insert-with-content" || plan.kind === "reveal-with-content") &&
@@ -267,7 +332,13 @@ export class LiveCreate {
       return Err({ code: "stale_target" });
     }
     const created = await this.atomically({ ...target, folderId }, plan, { options });
-    return created.ok ? Ok({ documentId: created.value.document.id }) : created;
+    if (created.ok) return Ok({ kind: "created", documentId: created.value.document.id });
+    return created.error.code === "conflict"
+      ? Ok({
+          kind: "leaf-conflict",
+          ...(created.error.occupantKind ? { occupantKind: created.error.occupantKind } : {}),
+        })
+      : created;
   }
 
   /**

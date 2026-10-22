@@ -18,6 +18,7 @@ import type {
   DocumentFileType,
   Filetype,
   MoveContextEntryRequest,
+  NamespaceNameClaim,
   RetractionCause,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
@@ -371,6 +372,14 @@ export interface ContextPort {
   createTrackedDocument(
     uri: string,
     markdown: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
+
+  /** Allocate the first free leaf at `uri`, then create its identity and initial content together. */
+  createTrackedDocumentAtFreeName(
+    uri: string,
+    markdown: string,
+    reserved: readonly NamespaceNameClaim[],
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
 

@@ -1,12 +1,10 @@
 /** Convert supported corpus files into prose, keeping the writer's titles and hierarchy. */
 
-import { parseContextUri } from "@meridian/contracts/context-uri";
 import {
-  allocateFilename,
+  type NamespaceNameClaim,
   type ParsedDocumentFilename,
   parseDocumentFilename,
   renderFilename,
-  sameNamespaceName,
 } from "@meridian/contracts/protocol";
 import { joinPath } from "../context/paths.js";
 import type { ContextError } from "../ports/context-port.js";
@@ -144,29 +142,7 @@ export function createCorpusImportService({
     source: CorpusImportSource;
   }): Promise<CorpusImportBatchResult> => {
     const port = contextPorts.forProject(input.projectId, input.userId, new Map());
-    const taken = new Set<string>();
-    const claims = new Map<string, readonly { kind: "document" | "folder"; filename: string }[]>();
-    const existingClaims = async (directory: string) => {
-      const cached = claims.get(directory);
-      if (cached) return cached;
-      const listing = await port.list(`kb://${directory}`);
-      const loaded = listing.ok
-        ? listing.value.entries.flatMap((entry) => {
-            const parsed = parseContextUri(entry.uri);
-            const filename = parsed.ok ? parsed.value.path.split("/").at(-1) : null;
-            return filename
-              ? [
-                  {
-                    kind: entry.kind === "directory" ? ("folder" as const) : ("document" as const),
-                    filename,
-                  },
-                ]
-              : [];
-          })
-        : [];
-      claims.set(directory, loaded);
-      return loaded;
-    };
+    const taken = new Map<string, NamespaceNameClaim["kind"]>();
     const items: CorpusImportItemResult[] = [];
 
     const prepared: {
@@ -237,11 +213,12 @@ export function createCorpusImportService({
       for (let depth = 0; depth < segments.length; depth += 1) {
         const folder = parseDocumentFilename(segments[depth] ?? "");
         if (folder.ok)
-          taken.add(
+          taken.set(
             joinPath(
               segments.slice(0, depth).join("/"),
               renderFilename(folder.value.name, folder.value.extension),
             ),
+            "folder",
           );
       }
     }
@@ -262,60 +239,31 @@ export function createCorpusImportService({
 
     for (const { file, index, kind, title, parts, directory, converted } of prepared) {
       const ownDesired = joinPath(directory, renderFilename(parts.name, parts.extension));
-      const create = async () => {
-        const filename = await allocateFilename(
-          { kind: "document", ...parts },
-          async ({ filename: candidate }) => {
-            const path = joinPath(directory, candidate);
-            return (
-              taken.has(path) ||
-              (path !== ownDesired && desired.has(path)) ||
-              (await existingClaims(directory)).some((claim) =>
-                sameNamespaceName({ kind: "document", filename: candidate }, claim),
-              )
-            );
-          },
-        );
-        const path = joinPath(directory, filename);
-        taken.add(path);
-        const origin = {
-          type: "import" as const,
-          userId: input.userId,
-          source: input.source.kind,
-          filename: file.filename,
-          sourceId: file.sourceId,
-        };
-        const reserved = await port.createUntitledDocument("kb://", {
-          documentId: crypto.randomUUID(),
-          origin,
-          destination: {
-            parent: {
-              kind: "root",
-              scheme: "kb",
-              owner: { workId: null },
-              createFolders: directory.split("/").filter(Boolean),
-            },
-            name: filename,
-          },
-        });
-        if (!reserved.ok) return reserved;
-        const uri = `kb://${reserved.value.path}`;
-        const written = await port.write(uri, markdownForImport(kind, title, converted.markdown), {
-          origin,
-        });
-        if (!written.ok) {
-          await port.retractCreate(uri, {
-            documentId: reserved.value.documentId,
-            cause: "create_failed",
-          });
-          return written;
-        }
-        return {
-          ok: true as const,
-          value: { documentId: reserved.value.documentId, uri },
-        };
+      const origin = {
+        type: "import" as const,
+        userId: input.userId,
+        source: input.source.kind,
+        filename: file.filename,
+        sourceId: file.sourceId,
       };
-      const write = await create();
+      const parentOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")));
+      const leafOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+      const reserved: NamespaceNameClaim[] = [
+        ...[...taken].flatMap(([path, claimKind]) =>
+          parentOf(path) === directory ? [{ kind: claimKind, filename: leafOf(path) }] : [],
+        ),
+        ...[...desired].flatMap((path) =>
+          path !== ownDesired && parentOf(path) === directory
+            ? [{ kind: "document" as const, filename: leafOf(path) }]
+            : [],
+        ),
+      ];
+      const write = await port.createTrackedDocumentAtFreeName(
+        `kb://${ownDesired}`,
+        markdownForImport(kind, title, converted.markdown),
+        reserved,
+        { origin },
+      );
       if (!write.ok) {
         items[index] = {
           status: "failed",
@@ -326,6 +274,9 @@ export function createCorpusImportService({
         };
         continue;
       }
+
+      const actualPath = write.value.uri.slice("kb://".length);
+      taken.set(actualPath, "document");
 
       items[index] = {
         status: "imported",

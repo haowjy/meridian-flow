@@ -654,6 +654,25 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         adapter.createTrackedDocument(path, markdown, options),
       ),
 
+    async createTrackedDocumentAtFreeName(uri, markdown, reserved, options) {
+      const resolved = await resolveMutation(uri, options?.origin);
+      if (!resolved.ok) return resolved;
+      const dispatched = fileDispatch(resolved.value);
+      if (!dispatched.ok) return dispatched;
+      const permission = dispatched.value.requireCreation(options?.documentId ? "intake" : "entry");
+      if (!permission.ok) return permission;
+      const { adapter, path, scheme, authority, canonical } = dispatched.value;
+      const created = await callAdapter(canonical, () =>
+        adapter.createTrackedDocumentAtFreeName(path, markdown, reserved, options),
+      );
+      return created.ok
+        ? Ok({
+            documentId: created.value.documentId,
+            uri: uriFor(scheme, created.value.path, authority),
+          })
+        : created;
+    },
+
     createBoundDocument: (uri, bound, options) =>
       createDocument(uri, options, (adapter, path) =>
         adapter.createBoundDocument(path, bound, options),

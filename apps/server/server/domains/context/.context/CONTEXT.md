@@ -64,7 +64,10 @@ collab's document-aware engine; they never seed a Y.Doc with an assumed
 Markdown schema. Binary documents are storage-backed and are read through
 storage, not the text engine. A whole-file `write` overwrites a living document and
 answers `not_found` at an empty path: it never creates (W52); creation is
-`createTrackedDocument`, `createBoundDocument` or `ensureTrackedDocument`.
+`createTrackedDocument`, `createTrackedDocumentAtFreeName`, `createBoundDocument`
+or `ensureTrackedDocument`. The free-name command owns allocation, identity and
+initial content together; callers supply only batch reservations and use its
+authoritative URI.
 
 ## Views, identity, and revisions
 
