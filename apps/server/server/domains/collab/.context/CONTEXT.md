@@ -88,8 +88,11 @@ removed retires as a removal whatever its own cause (its rooms close `4208`,
 its peers' staged writes are refused `{ removed: record }`), so a Discard that
 closes a created document's drafts and then tombstones it still closes their
 rooms `4208`; any other closed draft's room closes stale and its peers are
-refused with their cause's `discarded_*` reason. A removal's selection names its
-documents, whose live rooms close `4208` even with no draft, but only while the
+refused with their cause's `discarded_*` reason. Every removal registers its
+documents with the batch (`DraftClose.registerRemoved`); only a discard also
+closes their drafts. A live delete closes no draft (D79): the drafts stay
+ordinary active drafts and their rooms stay open. A removed document's live
+rooms close `4208`, but only while the
 removal still stands: after every matching room load settles, one batched record
 read outside DB locks drops live rooms a Work Restore has since made living
 again (draft rooms close by exact draft id; a closed draft stays closed). A
@@ -105,10 +108,13 @@ fixtures without rooms, it retires nothing. A caller whose commit happens inside
 process-level live scopes (Discard) runs under `holdRetirement`, so retirement,
 and a save racing it, never wait on scopes the committer still holds.
 Retraction takes the same lock order before checking for other contributions
-and closes rather than deleting. Removed documents refuse new draft/peer inserts
-under their document mutation lock, after Work/thread and branch admission.
+and closes rather than deleting. Removed documents refuse new Work drafts under
+their document mutation lock, after Work/thread and branch admission; an
+existing active Work draft is returned whatever the document's state, and a
+thread peer forks one that outlived a live delete (`requireDraftableDocument`).
 
-Only a committed removal closes live and draft sockets with `4208`. The room
+Only a committed removal closes live sockets with `4208`, and the draft sockets
+of the drafts it closed (a discard's). The room
 helper closes the gateway transport before Hocuspocus's protocol close, which
 otherwise arrives as `1000`. Failures are logged as
 `collab.retirement.after_commit.failed`.
@@ -118,8 +124,8 @@ journals are deleted and `state`/`state_vector` are zero-length bytea.
 Zero-length state is deliberately
 invalid Yjs: `readDraftAt` omits its checkpoint and `materializeDraftRead`
 rejects it, including a raw zero-length checkpoint. It is never an empty document.
-A `deleted` removal retains all bytes. Restoring the document does not reopen
-its old drafts.
+A `deleted` removal retains all bytes and closes no draft, so restoring the
+document finds its drafts as they were.
 
 ## Review identity and enrichment
 

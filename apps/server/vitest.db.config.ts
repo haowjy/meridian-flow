@@ -55,6 +55,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/document-revisions.db.test.ts",
   "apps/server/server/domains/collab/branch-tree.apply-placement.db.test.ts",
   "apps/server/server/domains/collab/branch-tree.discard.db.test.ts",
+  "apps/server/server/domains/collab/branch-tree.live-delete.db.test.ts",
   "apps/server/server/domains/collab/branch-tree.reply.db.test.ts",
   "apps/server/server/domains/collab/branch-tree.user-source.db.test.ts",
   "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",
