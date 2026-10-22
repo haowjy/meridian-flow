@@ -1524,6 +1524,7 @@ msgstr ""
 #: src/components/app/CopyTextButton.tsx
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/command-descriptor.ts
+#: src/features/editor/SchemaNotices.tsx
 msgid "Copied"
 msgstr ""
 
@@ -1540,6 +1541,7 @@ msgid "Copied from {source} into"
 msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
+#: src/features/editor/SchemaNotices.tsx
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Copy"
 msgstr ""
@@ -1568,8 +1570,8 @@ msgid "Copy reference"
 msgstr ""
 
 #: src/features/editor/SchemaRepairNotice.tsx
-msgid "Copy removed text"
-msgstr ""
+#~ msgid "Copy removed text"
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewToast.tsx
 msgid "Copy unsent text"
@@ -1618,6 +1620,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't copy"
+msgstr ""
+
+#: src/features/editor/SchemaNotices.tsx
+msgid "Couldn't copy. Select the text to copy it."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -2130,6 +2136,14 @@ msgstr ""
 msgid "Destination"
 msgstr ""
 
+#: src/features/editor/SchemaNotices.tsx
+msgid "Details"
+msgstr ""
+
+#: src/features/editor/SchemaNotices.tsx
+msgid "Details about removed text"
+msgstr ""
+
 #: src/routes/dev-login.tsx
 msgid "Dev login"
 msgstr ""
@@ -2188,7 +2202,7 @@ msgstr ""
 #: src/components/app/InlineErrorRow.tsx
 #: src/features/draft-review/ReviewToast.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
-#: src/features/editor/SchemaRepairNotice.tsx
+#: src/features/editor/SchemaNotices.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
@@ -2317,6 +2331,10 @@ msgstr ""
 #: src/features/chat/command-descriptor.ts
 msgid "Editing"
 msgstr "编辑中"
+
+#: src/features/editor/SchemaNotices.tsx
+msgid "Editing paused. This chapter needs a newer version of Meridian."
+msgstr ""
 
 #: src/features/project/shell/screens.ts
 msgid "Editor"
@@ -2964,8 +2982,8 @@ msgid "Merging works on a rectangle of cells."
 msgstr ""
 
 #: src/features/editor/SchemaRepairNotice.tsx
-msgid "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
-msgstr ""
+#~ msgid "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
+#~ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 msgid "Message"
@@ -3752,6 +3770,7 @@ msgid "Reference a file"
 msgstr ""
 
 #: src/components/app/ConnectionBanner.tsx
+#: src/features/editor/SchemaNotices.tsx
 msgid "Refresh"
 msgstr ""
 
@@ -4222,6 +4241,10 @@ msgstr ""
 msgid "Some changes to {name} couldn't be completed."
 msgstr ""
 
+#: src/features/editor/SchemaNotices.tsx
+msgid "Some text was removed"
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "Something went wrong while changing {name}."
 msgstr ""
@@ -4675,8 +4698,8 @@ msgid "The project could not be reached. The link itself is fine."
 msgstr ""
 
 #: src/features/editor/SchemaRepairNotice.tsx
-msgid "The removed text could not be recovered."
-msgstr ""
+#~ msgid "The removed text could not be recovered."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The requested passage in {name} wasn't specific enough."
@@ -4777,8 +4800,8 @@ msgid "This browser will not turn that into an image."
 msgstr ""
 
 #: src/features/editor/SchemaRepairNotice.tsx
-msgid "This browser would not let the page write to the clipboard. The removed text is still above, so it can be selected and copied by hand."
-msgstr ""
+#~ msgid "This browser would not let the page write to the clipboard. The removed text is still above, so it can be selected and copied by hand."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This cell is not merged."
@@ -4823,8 +4846,8 @@ msgid "This chapter is temporarily unavailable"
 msgstr ""
 
 #: src/features/editor/SchemaFenceNotice.tsx
-msgid "This chapter was opened in a newer version of Meridian. Refresh to keep writing."
-msgstr ""
+#~ msgid "This chapter was opened in a newer version of Meridian. Refresh to keep writing."
+#~ msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "This chat continues without a brief."
@@ -5061,6 +5084,10 @@ msgstr ""
 #~ msgid "This part is in another draft"
 #~ msgstr ""
 
+#: src/features/editor/SchemaNotices.tsx
+msgid "This passage couldn't be recovered."
+msgstr ""
+
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "This project couldn’t load. It may be unavailable."
 msgstr ""
@@ -5099,6 +5126,10 @@ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "This switch already happened."
+msgstr ""
+
+#: src/features/editor/SchemaNotices.tsx
+msgid "This version of Meridian can't display it."
 msgstr ""
 
 #: src/features/project/dock/DockDocumentCommands.tsx

@@ -226,8 +226,8 @@ describe("editor lifetime", () => {
       expect(mountedEditor().getText()).toBe("Fenced words");
       expect(mountedEditor().isEditable).toBe(false);
       expect(mountedEditor().view.dom.getAttribute("contenteditable")).toBe("false");
-      expect(document.querySelector("[data-schema-fence]")?.textContent).toBe(
-        "This chapter was opened in a newer version of Meridian. Refresh to keep writing.",
+      expect(document.querySelector("[data-schema-fence] p")?.textContent).toBe(
+        "Editing paused. This chapter needs a newer version of Meridian.",
       );
     });
   });
