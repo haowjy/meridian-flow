@@ -71,6 +71,7 @@ export async function seedModelLiveWrite(harness: Harness, label: string) {
     db: harness.db,
     journal: harness.persistence.journal,
     drafts: harness.store,
+    initializeEmptyDocument: harness.initializeEmptyDocument,
     // The live coordinator's room is a fresh read of the journal; delivery is inert.
     coordinator: {
       withDocument: async <T,>(id: string, run: (doc: Y.Doc) => Promise<T>) => {

@@ -92,18 +92,19 @@ export function createDocumentRemoval(
           inArray(branchTreeChanges.nodeId, retired),
         );
         await tx
-          .update(branchTreeChanges)
-          .set({ created: false, updatedAt: now })
-          .where(and(ofRetired, eq(branchTreeChanges.created, true)));
-        await tx
           .delete(branchTreeChanges)
           .where(
             and(
               ofRetired,
+              eq(branchTreeChanges.created, true),
               eq(branchTreeChanges.moved, false),
               eq(branchTreeChanges.deleted, false),
             ),
           );
+        await tx
+          .update(branchTreeChanges)
+          .set({ created: false, updatedAt: now })
+          .where(and(ofRetired, eq(branchTreeChanges.created, true)));
       }
       const [record] = (await readRemovalRecords(tx, removed.slice(0, 1))).values();
       if (!record) throw new Error(`Removal of ${removed[0]} wrote no record`);
@@ -230,7 +231,13 @@ class RestoreFault extends Error {
  */
 export async function restoreDocument(
   db: Database,
-  input: { documentId: DocumentId; removal?: RemovalIdentity; at?: PlaceTarget["at"] },
+  input: {
+    documentId: DocumentId;
+    removal?: RemovalIdentity;
+    at?: PlaceTarget["at"];
+    /** Restores an undone create, including its discarded hidden identity. */
+    created?: boolean;
+  },
   deps: {
     arrivals?: Pick<DocumentArrivals, "settle">;
     catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
@@ -268,14 +275,40 @@ export async function restoreDocument(
   )
     return { kind: "superseded" };
   if (
-    row.reason !== "deleted" ||
-    row.hidden ||
+    (row.reason !== "deleted" && !(input.created && row.reason === "discarded")) ||
+    (!input.created && row.hidden) ||
     row.byWork !== null ||
     row.sourceDeleted ||
     row.projectDeleted
   )
     return { kind: "refused" };
   const node: NodeRef = { kind: "document", id: input.documentId };
+  if (row.hidden) {
+    await tx
+      .update(documents)
+      .set({
+        deletedAt: null,
+        deletionReason: null,
+        deletedByUserId: null,
+        deletedByThreadId: null,
+        deletionCause: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(documents.id, input.documentId));
+    await bumpLocationVersions(db, { documentIds: [input.documentId] });
+    await deps.arrivals?.settle([input.documentId]);
+    await deps.catalog.refreshSources([row.sourceId as ContextSourceId], [input.documentId]);
+    return {
+      kind: "restored",
+      placed: [node],
+      at: {
+        contextSourceId: row.sourceId as ContextSourceId,
+        parentFolderId: row.folderId as FolderId | null,
+        name: row.name,
+        extension: row.extension,
+      },
+    };
+  }
   try {
     const placed = await runInDrizzleSavepoint(db, async () => {
       const landed = await placeLive(

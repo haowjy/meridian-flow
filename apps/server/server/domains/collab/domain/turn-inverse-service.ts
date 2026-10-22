@@ -1,6 +1,7 @@
 /** Writer receipt and failed-response policies over immutable forward-inverse parts. */
 import { randomUUID } from "node:crypto";
 import {
+  type ComputedInverse,
   type InversePart,
   type InverseSelection,
   prepareEditRoots,
@@ -186,7 +187,12 @@ function prepare(
     targetsTurn(row, query) && admits(query, document, row);
   const turnTree = (document: InverseDocument) =>
     document.tree.filter(
-      (row): row is TransitionEntry => isTransitionEntry(row) && inTurn(document, row),
+      (row): row is TransitionEntry =>
+        isTransitionEntry(row) &&
+        inTurn(document, row) &&
+        // Response rollback already owns create retraction: it preserves a creation another
+        // committed contribution made stand, then removes only the reply's use.
+        !(kind === "rollback" && row.tree.op === "create"),
     );
   const keys = new Set([
     ...documents.flatMap((document) =>
@@ -269,6 +275,9 @@ function prepare(
       | { kind: "text"; editId: string; draftId: string | null; at: number }
     )[] = [];
     const selection = new Map<string | null, InverseSelection[]>();
+    const recreatedViews = new Set<string | null>();
+    const reopeningBranches = new Set<BranchId>();
+    let reopeningLive = false;
     for (const { at, row, parts } of originals) {
       if (row) {
         if (simulation.rolledBack.has(treeKey(row.editId))) {
@@ -297,6 +306,11 @@ function prepare(
           continue;
         }
         simulation.recordTree(planned, { kind, actionId, consumes });
+        if (direction === "redo" && planned.entry.tree.op === "create") {
+          if (planned.destination.kind === "draft")
+            reopeningBranches.add(planned.destination.branchId);
+          else reopeningLive = true;
+        }
         order.push({ kind: "tree", planned, at });
         continue;
       }
@@ -326,10 +340,19 @@ function prepare(
           skip(part, "discarded");
           continue;
         }
+        if (draft && draft.documentDraft.status !== "active") {
+          if (direction === "redo" && reopeningBranches.has(draft.documentDraft.branchId))
+            recreatedViews.add(draftId as string);
+          else {
+            skip(part, "discarded");
+            continue;
+          }
+        }
         if (draft?.frozen) {
           skip(part, "draft_archived");
           continue;
         }
+        if (!draftId && direction === "redo" && reopeningLive) recreatedViews.add(null);
         selection.set(draftId, [
           ...(selection.get(draftId) ?? []),
           { part, direction: direction === "undo" ? "invert" : "reapply" },
@@ -344,6 +367,33 @@ function prepare(
     // destination. Review membership does not decide inverse eligibility, including rollback.
     const computed = new Map(
       [...selection].map(([draftId, parts]) => {
+        if (recreatedViews.has(draftId)) {
+          const byEdit = new Map<string, InverseSelection[]>();
+          for (const selected of parts)
+            byEdit.set(selected.part.editId, [
+              ...(byEdit.get(selected.part.editId) ?? []),
+              selected,
+            ]);
+          return [
+            draftId,
+            {
+              actionId,
+              skipped: [],
+              edits: [...byEdit].map(([editId, selected]) => ({
+                targetEditId: editId,
+                parts: selected.map(({ part }) => ({
+                  update: part.update,
+                  effect: part.effect,
+                  frontier: part.frontier,
+                  aliases: part.aliases,
+                  targets: [
+                    { editId: part.editId, ordinal: part.ordinal, direction: "reapply" as const },
+                  ],
+                })),
+              })),
+            },
+          ] as [string | null, ComputedInverse];
+        }
         const draft = draftId ? document.drafts.get(draftId) : undefined;
         const index = draft ? liveIndex.forView(draft.doc) : liveIndex;
         return [

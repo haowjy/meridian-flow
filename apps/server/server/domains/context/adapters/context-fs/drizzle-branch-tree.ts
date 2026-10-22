@@ -46,8 +46,9 @@ export function createDrizzleBranchTree(deps: {
         ...(createdBy ? { createdBy } : {}),
         initializeEmptyContent: (documentId) => deps.documents.initializeEmptyDocument(documentId),
         repairContent: (documentId) => deps.documents.repairDocumentAuthority(documentId),
-        ensureDocumentDraft: (documentId) =>
-          deps.drafts.ensureCreatedDocumentDraft({ documentId, branchId: branch.id }),
+        ensureDocumentDraft: async (documentId) => {
+          await deps.drafts.ensureCreatedDocumentDraft({ documentId, branchId: branch.id });
+        },
         ...(deps.repair ? { repair: deps.repair } : {}),
       });
     },

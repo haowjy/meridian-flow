@@ -175,7 +175,7 @@ export type AgentEditAccess = {
 
 export type AgentTreeHistory = {
   /**
-   * Records a model's move or delete as a tree entry, in the tree mutation's own transaction,
+   * Records a model's create, move or delete as a tree entry, in the tree mutation's own transaction,
    * and returns its handle on the document's counter for this chat.
    */
   recordAgentTreeChange(input: {
@@ -183,9 +183,12 @@ export type AgentTreeHistory = {
     threadId: ThreadId;
     turnId?: TurnId;
     responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
-    op: "move" | "delete";
+    op: "create" | "move" | "delete";
     change: /** Live: the placement read before the mutation; the entry reads its `after` itself. */
-      | { destination: "live"; before: import("@meridian/contracts").LiveTreeState }
+      | {
+          destination: "live";
+          before: import("@meridian/contracts").LiveTreeState | null;
+        }
       /** Drafted: the branch row's facts on either side, as the branch write returned them. */
       | ({ destination: "draft" } & Omit<
           import("@meridian/contracts").BranchTreeTransition,
@@ -466,7 +469,10 @@ export type DraftPeerShadowAccess = {
    * document (empty: a draft create never seeds live Yjs), in the caller's transaction;
    * idempotent against a racing peer ensure (contract §6.2 step 5).
    */
-  ensureCreatedDocumentDraft(input: { documentId: DocumentId; branchId: BranchId }): Promise<void>;
+  ensureCreatedDocumentDraft(input: {
+    documentId: DocumentId;
+    branchId: BranchId;
+  }): Promise<import("./domain/draft-store.js").DraftSnapshot>;
   /**
    * Reverse a branch create's draft (contract §12.5, O-11), in the caller's transaction:
    * `stands` when the branch's draft on the document (or a thread peer of it) holds a

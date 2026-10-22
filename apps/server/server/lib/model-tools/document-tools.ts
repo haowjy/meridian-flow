@@ -87,6 +87,9 @@ export async function resolveDocumentAddress(
     sourceExtension?: string;
     metadata?: DocumentCreationMetadata;
     origin?: import("../../domains/context/index.js").WriteProvenance;
+    recordCreate?: NonNullable<
+      import("../../domains/context/ports/context-adapter.js").ContextEnsureTrackedOptions["recordCreate"]
+    >;
   } = {},
 ): Promise<ResolvedDocumentAddress | WriteToolErrorOutput> {
   const port = context.port;
@@ -100,6 +103,7 @@ export async function resolveDocumentAddress(
         : {}),
       ...(options.origin ? { origin: options.origin } : {}),
       ...(options.metadata ? { metadata: options.metadata } : {}),
+      ...(options.recordCreate ? { recordCreate: options.recordCreate } : {}),
     };
     const ensured = await port.ensureTrackedDocument(
       basePath,
@@ -435,6 +439,23 @@ export function createWriteHandler(deps: ToolWiringDeps) {
                   sourceExtension: sourceExtension(copied.copiedFrom.uri),
                 }
               : {}),
+            ...(creates
+              ? {
+                  recordCreate: async ({ documentId, change }) => {
+                    await deps.documentSync.treeHistory().recordAgentTreeChange({
+                      documentId,
+                      threadId: ctx.threadId as import("@meridian/contracts").ThreadId,
+                      ...(ctx.turnId
+                        ? { turnId: ctx.turnId as import("@meridian/contracts").TurnId }
+                        : {}),
+                      ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+                      op: "create",
+                      change,
+                      shownAt: parsed.path,
+                    });
+                  },
+                }
+              : {}),
           }),
         );
     if (isToolError(address)) return address;
@@ -479,11 +500,15 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         );
       }
     }
-    // A reversed move left the document somewhere else: the result names where it is now.
+    // A reversed move left the document somewhere else: the result names where it is now. A
+    // reversed creation removed the document, so its text half must not claim an empty document
+    // survived the tree half of the same inverse.
     if (inverse && !outcome.isError && outcome.result.status === "success") {
       const now = await currentUri(call, address.documentId);
       if (now && now !== outcome.result.path)
         outcome = { ...outcome, result: { ...outcome.result, path: now } };
+      else if (!now && outcome.result.documentEmpty)
+        outcome = { ...outcome, result: { ...outcome.result, documentEmpty: false } };
     }
     const stagedCreate =
       creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;

@@ -21,7 +21,7 @@ export type ApplicationDraftStore = DraftStore &
     ensureCreatedDocumentDraft(input: {
       documentId: DocumentId;
       branchId: BranchId;
-    }): Promise<void>;
+    }): Promise<DraftSnapshot>;
     /**
      * Close the branch's draft on a document it created and that draft's thread peers,
      * unless any of them holds a journal row that isn't discarded (a contribution).
