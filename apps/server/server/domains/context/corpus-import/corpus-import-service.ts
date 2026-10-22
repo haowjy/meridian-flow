@@ -1,10 +1,11 @@
 /** Convert supported corpus files into prose, keeping the writer's titles and hierarchy. */
 import {
+  allocateFilename,
   type ParsedDocumentFilename,
   parseDocumentFilename,
   renderFilename,
 } from "@meridian/contracts/protocol";
-import { allocateFilename, joinPath } from "../context/paths.js";
+import { joinPath } from "../context/paths.js";
 import type { ContextError } from "../ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import type { ConvertedDocument, DocumentConverterPort } from "./ports/document-converter.js";
@@ -241,12 +242,15 @@ export function createCorpusImportService({
     for (const { file, index, kind, title, parts, directory, converted } of prepared) {
       const ownDesired = joinPath(directory, renderFilename(parts.name, parts.extension));
       const create = async () => {
-        const filename = await allocateFilename(parts, async (candidate) => {
-          const path = joinPath(directory, candidate);
-          return (
-            taken.has(path) || (path !== ownDesired && desired.has(path)) || (await exists(path))
-          );
-        });
+        const filename = await allocateFilename(
+          { kind: "document", ...parts },
+          async ({ filename: candidate }) => {
+            const path = joinPath(directory, candidate);
+            return (
+              taken.has(path) || (path !== ownDesired && desired.has(path)) || (await exists(path))
+            );
+          },
+        );
         const path = joinPath(directory, filename);
         taken.add(path);
         return port.createTrackedDocument(
