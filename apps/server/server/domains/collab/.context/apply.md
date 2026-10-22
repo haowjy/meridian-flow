@@ -90,8 +90,10 @@ A click may carry `tree: { revision }`, the revision of the branch's
 applies exactly its cuts: tree alone (a move-only or delete-only item, or a
 creation with no text room: empty `groupIds`/`baseViewDelta`, no `snapshot`),
 text and tree (the whole item: tree first, then the text merge at the result),
-or text alone, which leaves a pending move or delete pending (a creation is
-still revealed where the branch has it, with its rows). A tree cut takes the
+or text alone, which leaves a pending move or delete pending: a hidden creation
+is revealed at its own row, since text can't land in a document live lacks, and
+the branch's row loses only `created` (`endCreatedFact`, a new revision), so its
+move or delete stays a pending tree line on the now-live document. A tree cut takes the
 tree scope with the branch's placement and locks the branch; under the locks a
 row at another revision answers `changed` and nothing applies.
 
