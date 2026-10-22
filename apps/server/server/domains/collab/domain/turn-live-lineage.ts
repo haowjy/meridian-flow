@@ -1,6 +1,6 @@
 /** Server-owned read-model for documents edited by one transcript turn. */
 
-import type { TurnReceiptChip } from "@meridian/contracts/protocol";
+import type { TurnReceiptChip, TurnTreeLine } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { FileDestination } from "../../file-policy/index.js";
 import type { TurnReceiptStateStore } from "./turn-receipt.js";
@@ -16,7 +16,15 @@ export type TurnEditedDocumentId =
   | { documentId: DocumentId; scope: "live" }
   | { documentId: DocumentId; scope: "draft"; work: { id: WorkId; handle: string | null } };
 
-export type TurnEditedDocument = TurnEditedDocumentId & { uri: string };
+export type TurnEditedDocument = TurnEditedDocumentId & { uri: string; tree?: TurnTreeLine };
+
+/** One of a turn's own moves, deletes or restores of a document, in `seq` order. */
+export type TurnTreeEntry = {
+  documentId: DocumentId;
+  op: "move" | "delete" | "restore";
+  shownAt: string | null;
+  landedAt: string | null;
+};
 
 export type LiveLineageDocument = TurnEditedDocument & { scope: "live" };
 
@@ -30,6 +38,8 @@ export function turnEditDestination(target: TurnEditedDocumentId): FileDestinati
 export type TurnLiveLineageDocumentStore = {
   listLiveDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<DocumentId[]>;
   listEditedDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocumentId[]>;
+  /** The turn's live tree entries, ordered by `seq`. */
+  listTreeEntriesForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeEntry[]>;
 };
 
 export type TurnLiveLineageReadModel = {
@@ -57,7 +67,16 @@ export function createTurnLiveLineageReadModel(deps: {
     },
 
     async listEditedDocumentsForTurn(threadId, turnId) {
-      return resolveDocuments(await deps.store.listEditedDocumentIdsForTurn(threadId, turnId));
+      const [targets, entries] = await Promise.all([
+        deps.store.listEditedDocumentIdsForTurn(threadId, turnId),
+        deps.store.listTreeEntriesForTurn(threadId, turnId),
+      ]);
+      const lines = treeLines(entries);
+      const documents = await resolveDocuments(targets, lines);
+      return documents.map((document) => {
+        const tree = document.scope === "live" ? lines.get(document.documentId) : undefined;
+        return tree ? { ...document, tree } : document;
+      });
     },
 
     async getTurnReceiptChip(threadId, turnId) {
@@ -65,13 +84,15 @@ export function createTurnLiveLineageReadModel(deps: {
     },
   };
 
+  /** A live document the turn deleted keeps its row at the address it was deleted from. */
   async function resolveDocuments(
     documentIds: readonly TurnEditedDocumentId[],
+    lines: ReadonlyMap<DocumentId, TurnTreeLine> = new Map(),
   ): Promise<TurnEditedDocument[]> {
     const documents = await Promise.all(
       documentIds.map(async (document): Promise<TurnEditedDocument | null> => {
         const uri =
-          document.scope === "draft"
+          document.scope === "draft" || lines.get(document.documentId)?.op === "delete"
             ? await deps.resolveLastDocumentUri(document.documentId)
             : await deps.resolveDocumentUri(document.documentId);
         return uri ? { ...document, uri } : null;
@@ -79,4 +100,33 @@ export function createTurnLiveLineageReadModel(deps: {
     );
     return documents.filter((document): document is TurnEditedDocument => document !== null);
   }
+}
+
+/**
+ * Each document's net tree line: deleted when the turn left it deleted, moved when it left it
+ * living somewhere other than where the turn found it. A destination the entry didn't record
+ * (a restore's) leaves the location as it was.
+ */
+export function treeLines(entries: readonly TurnTreeEntry[]): Map<DocumentId, TurnTreeLine> {
+  const folded = new Map<DocumentId, { from: string; at: string; living: boolean }>();
+  for (const entry of entries) {
+    const state = folded.get(entry.documentId) ?? {
+      from: entry.shownAt ?? "",
+      at: entry.shownAt ?? "",
+      living: true,
+    };
+    if (entry.op === "delete") state.living = false;
+    else {
+      state.living = true;
+      if (entry.op === "move" && entry.landedAt) state.at = entry.landedAt;
+    }
+    folded.set(entry.documentId, state);
+  }
+  const lines = new Map<DocumentId, TurnTreeLine>();
+  for (const [documentId, { from, at, living }] of folded) {
+    if (!from) continue;
+    if (!living) lines.set(documentId, { op: "delete", from });
+    else if (at !== from) lines.set(documentId, { op: "move", from, to: at });
+  }
+  return lines;
 }

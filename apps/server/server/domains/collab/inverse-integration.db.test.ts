@@ -276,7 +276,9 @@ describe("inverse integration (postgres)", () => {
     });
     expect(outcome).toMatchObject({ status: "expired", acceptedParts: 0 });
     expect(
-      (outcome.skips ?? []).map((skip) => [skip.before, skip.after, skip.reason]).sort(),
+      (outcome.skips ?? [])
+        .map((skip) => (skip.kind === "text" ? [skip.before, skip.after, skip.cause] : []))
+        .sort(),
     ).toEqual([
       // Discard released the draft's bytes. Live has unrelated item identities, so
       // receipts cannot manufacture snippets from it.

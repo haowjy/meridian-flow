@@ -200,11 +200,12 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
             acceptedParts: 1,
             skips: [
               {
+                kind: "text",
                 documentId: "doc",
                 uri: "manuscript://chapter.md",
                 before: "Mara",
                 after: "I",
-                reason: "discarded",
+                cause: "discarded",
               },
             ],
           });
@@ -215,7 +216,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
             "1 part stayed",
           );
           expect(document.body.textContent).toContain("“Mara” → “I”");
-          expect(document.body.textContent).toContain("discarded");
+          expect(document.body.textContent).toContain("Discarded");
           expect(document.querySelector("[data-turn-draft-outcome]")?.textContent).toBe(
             "Undone in your drafts. Apply them to change your manuscript.",
           );

@@ -354,6 +354,10 @@ function createInMemoryTurnLiveLineageStore(journal: InMemoryJournal) {
         scope: "live" as const,
       }));
     },
+    // The in-memory host has no tree history.
+    async listTreeEntriesForTurn() {
+      return [];
+    },
   };
 }
 

@@ -251,7 +251,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
       expect((await placement(CH2))?.deletedAt).not.toBeNull();
       expect(rolledBack.skipped).toEqual([
-        expect.objectContaining({ documentId: CH2, reason: "its location is taken" }),
+        expect.objectContaining({ documentId: CH2, cause: "location_taken" }),
       ]);
       const drafts = await db
         .select({ status: schema.documentDrafts.status })
