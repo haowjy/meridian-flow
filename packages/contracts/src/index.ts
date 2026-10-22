@@ -14,13 +14,20 @@ export * from "./handles.js";
 export * from "./ids";
 export * from "./jsonb";
 export type { ModelResponseIdentity } from "./model-response-identity.js";
-export type {
-  BranchTreeFacts,
-  LiveTreeState,
-  TreeChange,
-  TreeChangeDestination,
-  TreeChangeOp,
-  TreeChangeTarget,
-  TreePlacement,
+export {
+  type BranchTreeFacts,
+  type BranchTreeTransition,
+  isLiveTransition,
+  type LiveTreeState,
+  type LiveTreeTransition,
+  type TreeChange,
+  type TreeChangeDestination,
+  type TreeChangeOp,
+  type TreeChangeTarget,
+  type TreePlacement,
+  type TreeRemoval,
+  type TreeSettlement,
+  type TreeTransition,
+  type TreeTransitionChange,
 } from "./tree-change.js";
 export * from "./usage";

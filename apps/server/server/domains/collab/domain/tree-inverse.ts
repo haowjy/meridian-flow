@@ -4,17 +4,20 @@
  * its destination still holds the state its latest application left; redoable while it still
  * holds the state its undo left; applied or discarded only when a later settlement row says so.
  */
-import type {
-  BranchId,
-  BranchTreeFacts,
-  DocumentId,
-  LiveTreeState,
-  ThreadId,
-  TreeChange,
-  TreeChangeDestination,
-  TreeChangeOp,
-  TreePlacement,
-  TurnId,
+import {
+  type BranchId,
+  type BranchTreeFacts,
+  type DocumentId,
+  isLiveTransition,
+  type LiveTreeState,
+  type ThreadId,
+  type TreeChange,
+  type TreeChangeDestination,
+  type TreeChangeOp,
+  type TreePlacement,
+  type TreeTransition,
+  type TreeTransitionChange,
+  type TurnId,
 } from "@meridian/contracts";
 
 export type StoredTreeEntry = {
@@ -43,16 +46,17 @@ export type TreeStates = {
   branches: ReadonlyMap<BranchId, BranchTreeFacts>;
 };
 
+/** A tree entry that moved, deleted or restored: one with a transition to reverse. */
+export type TransitionEntry = StoredTreeEntry & { tree: TreeTransitionChange };
+
+export const isTransitionEntry = (row: StoredTreeEntry): row is TransitionEntry =>
+  row.tree.op !== "settle";
+
 /** One planned tree inverse: the entry, the transition it makes and the row it records. */
-export type PlannedTreeInverse = {
-  entry: StoredTreeEntry;
+export type PlannedTreeInverse = TreeTransition & {
+  entry: TransitionEntry;
   direction: "invert" | "reapply";
-  op: Exclude<TreeChangeOp, "settle">;
-  destination: TreeChangeDestination;
-  before: LiveTreeState | BranchTreeFacts;
-  after: LiveTreeState | BranchTreeFacts;
-  /** The removal a restore reverses, when the destination is live. */
-  removal?: { time: string; locationVersion: string };
+  op: TreeChangeOp;
   /** The action the recorded row joins; the plan's own when absent. */
   actionId?: string;
 };
@@ -87,24 +91,24 @@ export function samePlacement(a: TreePlacement, b: TreePlacement): boolean {
   );
 }
 
-function isLive(state: LiveTreeState | BranchTreeFacts): state is LiveTreeState {
-  return "living" in state;
+export function sameLiveState(
+  a: LiveTreeState | null | undefined,
+  b: LiveTreeState | null | undefined,
+): boolean {
+  if (!a || !b || a.living !== b.living) return false;
+  if (a.living && b.living) return samePlacement(a.at, b.at);
+  if (!a.living && !b.living)
+    return (
+      a.removal.time === b.removal.time && a.removal.locationVersion === b.removal.locationVersion
+    );
+  return false;
 }
 
-export function sameTreeState(
-  a: LiveTreeState | BranchTreeFacts | null | undefined,
-  b: LiveTreeState | BranchTreeFacts | null | undefined,
+export function sameBranchFacts(
+  a: BranchTreeFacts | null | undefined,
+  b: BranchTreeFacts | null | undefined,
 ): boolean {
   if (!a || !b) return false;
-  if (isLive(a) || isLive(b)) {
-    if (!isLive(a) || !isLive(b) || a.living !== b.living) return false;
-    if (a.living && b.living) return samePlacement(a.at, b.at);
-    if (!a.living && !b.living)
-      return (
-        a.removal.time === b.removal.time && a.removal.locationVersion === b.removal.locationVersion
-      );
-    return false;
-  }
   return (
     a.row === b.row &&
     a.created === b.created &&
@@ -113,19 +117,38 @@ export function sameTreeState(
   );
 }
 
-export function currentTreeState(
-  states: TreeStates,
-  destination: TreeChangeDestination,
-): LiveTreeState | BranchTreeFacts | null {
-  if (destination.kind === "live") return states.live;
-  return (
-    states.branches.get(destination.branchId) ?? {
-      row: false,
-      created: false,
-      moved: null,
-      deleted: false,
-    }
-  );
+const NO_BRANCH_FACTS: BranchTreeFacts = {
+  row: false,
+  created: false,
+  moved: null,
+  deleted: false,
+};
+
+/** A branch's facts in `states`: none until it has a row. */
+export function branchFacts(states: TreeStates, branchId: BranchId): BranchTreeFacts {
+  return states.branches.get(branchId) ?? NO_BRANCH_FACTS;
+}
+
+/** Whether `states` still hold what `transition` left: the state it can be reversed from. */
+export function holdsAfter(states: TreeStates, transition: TreeTransition): boolean {
+  return isLiveTransition(transition)
+    ? sameLiveState(states.live, transition.after)
+    : sameBranchFacts(branchFacts(states, transition.destination.branchId), transition.after);
+}
+
+/** The transition alone, its destination and states still correlated. */
+export function transitionOf(transition: TreeTransition): TreeTransition {
+  return isLiveTransition(transition)
+    ? { destination: transition.destination, before: transition.before, after: transition.after }
+    : { destination: transition.destination, before: transition.before, after: transition.after };
+}
+
+/** `states` once `transition` ran. */
+export function advanceStates(states: TreeStates, transition: TreeTransition): TreeStates {
+  if (isLiveTransition(transition)) return { ...states, live: transition.after };
+  const branches = new Map(states.branches);
+  branches.set(transition.destination.branchId, transition.after);
+  return { ...states, branches };
 }
 
 /**
@@ -134,13 +157,14 @@ export function currentTreeState(
  * while nothing else changed it; its direction says whether the entry stands.
  */
 export function latestTransition(
-  entry: StoredTreeEntry,
+  entry: TransitionEntry,
   tree: readonly StoredTreeEntry[],
   rolledBack: ReadonlySet<string>,
-): { row: StoredTreeEntry; stands: boolean } {
-  let latest: { row: StoredTreeEntry; stands: boolean } = { row: entry, stands: true };
+): { row: TransitionEntry; stands: boolean } {
+  let latest: { row: TransitionEntry; stands: boolean } = { row: entry, stands: true };
   for (const row of tree) {
-    if (row.id <= latest.row.id || rolledBack.has(treeKey(row.editId))) continue;
+    if (row.id <= latest.row.id || !isTransitionEntry(row) || rolledBack.has(treeKey(row.editId)))
+      continue;
     const target = row.targets.find((t) => t.editId === entry.editId);
     // A rollback row reverses the entry for good; the index already took it off the stack.
     if (target) latest = { row, stands: target.direction === "reapply" };
@@ -155,9 +179,48 @@ export function settlementOf(
 ): "applied" | "discarded" | null {
   let settled: { id: number; as: "applied" | "discarded" } | null = null;
   for (const row of tree)
-    if (row.id > entry.id && row.tree.settles?.editIds.includes(entry.editId))
+    if (
+      row.id > entry.id &&
+      row.tree.op === "settle" &&
+      row.tree.settles.editIds.includes(entry.editId)
+    )
       if (!settled || row.id > settled.id) settled = { id: row.id, as: row.tree.settles.as };
   return settled?.as ?? null;
+}
+
+/**
+ * Why `change` is not a row the history may hold, or null. The history writer is the one
+ * boundary that checks it: readers trust the rows. A transition joins states of its own
+ * destination's kind with endpoints its op can make; a settlement names what it ended.
+ */
+export function treeChangeFault(change: TreeChange): string | null {
+  if (change.op === "settle")
+    return change.targets.length === 0 && change.settles.editIds.length > 0
+      ? null
+      : "A settlement names the entries it ended and reverses none";
+  const live = change.destination.kind === "live";
+  const shaped = (state: unknown) =>
+    typeof state === "object" && state !== null && (live ? "living" in state : "row" in state);
+  if (!shaped(change.before) || !shaped(change.after))
+    return `A ${change.destination.kind} transition joins ${change.destination.kind} states`;
+  if (isLiveTransition(change)) {
+    const { before, after } = change;
+    const fits =
+      change.op === "move"
+        ? before.living && after.living && !samePlacement(before.at, after.at)
+        : change.op === "delete"
+          ? before.living && !after.living
+          : !before.living && after.living;
+    return fits ? null : `A live ${change.op} can't join these states`;
+  }
+  const { before, after } = change;
+  const fits =
+    change.op === "move"
+      ? !sameBranchFacts(before, after)
+      : change.op === "delete"
+        ? !before.deleted && after.deleted
+        : before.deleted && !after.deleted;
+  return fits ? null : `A drafted ${change.op} can't join these facts`;
 }
 
 const INVERSE_OP = { move: "move", delete: "restore", restore: "delete" } as const;
@@ -167,23 +230,31 @@ const INVERSE_OP = { move: "move", delete: "restore", restore: "delete" } as con
  * Null when that state no longer holds: the entry was built on.
  */
 export function planTreeInverse(
-  entry: StoredTreeEntry,
+  entry: TransitionEntry,
   direction: "invert" | "reapply",
-  latest: StoredTreeEntry,
-  current: LiveTreeState | BranchTreeFacts | null,
+  latest: TransitionEntry,
+  states: TreeStates,
 ): PlannedTreeInverse | null {
-  if (entry.tree.op === "settle" || !sameTreeState(current, latest.tree.after)) return null;
+  if (!holdsAfter(states, latest.tree)) return null;
   const op = direction === "invert" ? INVERSE_OP[entry.tree.op] : entry.tree.op;
-  const after = direction === "invert" ? entry.tree.before : entry.tree.after;
-  const before = latest.tree.after;
+  const common = { entry, direction, op };
+  const { tree } = entry;
+  const latestTree = latest.tree;
+  if (isLiveTransition(tree)) {
+    if (!isLiveTransition(latestTree)) return null;
+    return {
+      ...common,
+      destination: tree.destination,
+      before: latestTree.after,
+      after: direction === "invert" ? tree.before : tree.after,
+    };
+  }
+  if (isLiveTransition(latestTree)) return null;
   return {
-    entry,
-    direction,
-    op,
-    destination: entry.tree.destination,
-    before,
-    after,
-    ...(op === "restore" && isLive(before) && !before.living ? { removal: before.removal } : {}),
+    ...common,
+    destination: tree.destination,
+    before: latestTree.after,
+    after: direction === "invert" ? tree.before : tree.after,
   };
 }
 
@@ -230,8 +301,10 @@ export function treeFaultReason(fault: TreeInverseFault, at?: string): string {
 
 /** Why a tree entry can't be reversed as it stands, for the model and the card. */
 export function treeChangedReason(
-  current: LiveTreeState | BranchTreeFacts | null,
+  states: TreeStates,
+  destination: TreeChangeDestination,
 ): "deleted since" | "moved since" | "changed since" {
-  if (current && "living" in current) return current.living ? "moved since" : "deleted since";
+  if (destination.kind === "live" && states.live)
+    return states.live.living ? "moved since" : "deleted since";
   return "changed since";
 }

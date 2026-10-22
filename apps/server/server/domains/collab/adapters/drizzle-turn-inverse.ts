@@ -10,13 +10,15 @@ import {
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates, textInRanges } from "@meridian/agent-edit/yjs-mutation";
-import type {
-  BranchId,
-  BranchTreeFacts,
-  DocumentId,
-  LiveTreeState,
-  TreePlacement,
-  UserId,
+import {
+  type BranchId,
+  type BranchTreeFacts,
+  type DocumentId,
+  isLiveTransition,
+  type LiveTreeTransition,
+  type TreeChangeOp,
+  type TreePlacement,
+  type UserId,
 } from "@meridian/contracts";
 import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import {
@@ -65,7 +67,8 @@ import { ReversalConflictError } from "../domain/reversal-conflict.js";
 import {
   type PlannedTreeInverse,
   type StoredTreeEntry,
-  sameTreeState,
+  sameBranchFacts,
+  sameLiveState,
   type TreeInverseFault,
   TreeInverseRefused,
   type TreeStates,
@@ -505,10 +508,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
    * tree states checked again: a document that moved or was removed since is a miss.
    */
   async function lockTreeScope(runs: readonly TreeRun[], ids: readonly DocumentId[]) {
-    const placements = runs.flatMap(({ planned }) =>
-      [planned.before, planned.after].flatMap((state): TreePlacement[] =>
-        "living" in state && state.living ? [state.at] : [],
-      ),
+    const placements = runs.flatMap(({ planned }): TreePlacement[] =>
+      isLiveTransition(planned)
+        ? [planned.before, planned.after].flatMap((state) => (state.living ? [state.at] : []))
+        : [],
     );
     try {
       await acquireTreeScope(input.db, { documentIds: [...ids], placements });
@@ -526,9 +529,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const captured = document.treeStates;
       if (
         !current ||
-        (current.live !== captured.live && !sameTreeState(current.live, captured.live)) ||
+        (current.live !== captured.live && !sameLiveState(current.live, captured.live)) ||
         [...captured.branches].some(
-          ([branchId, facts]) => !sameTreeState(current.branches.get(branchId), facts),
+          ([branchId, facts]) => !sameBranchFacts(current.branches.get(branchId), facts),
         )
       )
         throw new InverseAttemptMiss();
@@ -550,12 +553,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     const documentId = document.documentId;
     try {
       return await runInDrizzleSavepoint(input.db, async () => {
-        if (planned.destination.kind !== "live")
+        if (!isLiveTransition(planned))
           // Drafted tree entries are written only by drafted placement, which brings their inverse.
           throw new Error("A drafted tree entry has no inverse yet");
         const [before] = (await readLiveTreeStates(db(), [documentId])).values();
-        if (!sameTreeState(before, planned.before)) throw new TreeFault("superseded");
-        const fault = await applyLiveTreeInverse(documentId, planned, userId);
+        if (!sameLiveState(before, planned.before)) throw new TreeFault("superseded");
+        const fault = await applyLiveTreeInverse(documentId, planned.op, planned, userId);
         if (fault) throw new TreeFault(fault);
         const [after] = (await readLiveTreeStates(db(), [documentId])).values();
         if (!after) throw new Error(`Tree inverse left ${documentId} hidden`);
@@ -601,16 +604,18 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     }
   }
 
-  /** The live operation a planned inverse makes; a fault when the destination can't take it. */
+  /**
+   * The live operation a planned inverse makes; a fault when the destination can't take it. The
+   * history writer checked each recorded transition's endpoints against its op.
+   */
   async function applyLiveTreeInverse(
     documentId: DocumentId,
-    planned: PlannedTreeInverse,
+    op: TreeChangeOp,
+    { before, after }: Pick<LiveTreeTransition, "before" | "after">,
     userId: UserId | undefined,
   ): Promise<TreeInverseFault | null> {
-    const before = planned.before as LiveTreeState;
-    const after = planned.after as LiveTreeState;
     const deps = { arrivals: input.arrivals, catalog: input.catalog };
-    switch (planned.op) {
+    switch (op) {
       case "move": {
         if (!before.living || !after.living) throw new Error("A move inverse joins two placements");
         const moved = await moveToPlacement(
