@@ -106,10 +106,6 @@ export function createProjectLinkResolver(
         if (answer && confirmed) return answered(answer);
         provisional = answer;
       }
-      // A holder whose own address has not arrived asks the server nothing: a
-      // question with no holder address is chat's, which may fall back to
-      // previous locations.
-      if (holderDocumentId && !baseUri) return provisional ? answered(provisional) : UNASKED;
       return { kind: "ask", provisional };
     },
 
@@ -118,6 +114,7 @@ export function createProjectLinkResolver(
         ...(rootThreadId ? { rootThreadId } : { workId }),
         ...(chatId ? { chatId } : {}),
         baseUri,
+        ...(holderDocumentId ? { holderDocumentId } : {}),
         links: questions.map(({ ref, target }) => ({ ref, href: linkTargetHref(target) })),
       });
       if (response.answers.length !== questions.length)

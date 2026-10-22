@@ -53,6 +53,7 @@ vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller,
     roomOwner,
+    fileForDocument: () => null,
   }),
 }));
 

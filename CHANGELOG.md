@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Links inside a still-hidden draft document now resolve from that draft's own address, including relative links and unavailable targets (#876).
+
 - Model-facing owner-handle guidance is shorter: Work context now carries the concrete Scratch policy, repair errors give one copyable address, and repeated owner details are removed from receipts and listings.
 
 - RP-20 now expects `eN` edit receipts and `draft (wN)` Work labels; its historical last-run evidence is unchanged.
