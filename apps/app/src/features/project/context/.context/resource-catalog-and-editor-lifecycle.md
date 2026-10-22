@@ -129,6 +129,10 @@ live editor. The phone hosts it through the same `ContextEditorMountHost`
 (`MobileDraftOnlyDocumentHost`), never its live-acquiring server host; both
 shells find the tab through `route-document-owner.ts`, the bound identity in the
 live catalog and then the draft-only admission before any path occupant.
+The live resource replica says nothing about a draft-only tab
+(`projectResourceTab` answers `none`): a deleted document's replica record is
+terminal, often from an earlier session's cache, and treating it as the tab's
+removal hid the editor behind a skeleton that never resolved.
 Once the server confirms Apply the tab is promoted to a durable tab
 and this host opens its live room like any other document. Whether that open is
 slow, fails, or disconnects is the host's business and never changes whether
