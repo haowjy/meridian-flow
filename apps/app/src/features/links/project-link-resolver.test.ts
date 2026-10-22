@@ -239,15 +239,16 @@ const ROWS: Row[] = [
     asked: ["Ten.md"],
   },
   {
-    rule: "a holder whose address has not arrived asks the server nothing",
+    rule: "a holder id lets the server pin an absolute link while its address is pending",
     links: [
       { ref: AHEAD, href: "manuscript://Ten.md" },
       { ref: null, href: "Ten.md" },
     ],
     scope: { baseUri: null, holderDocumentId: "00000000-0000-4000-8000-0000000000bb" },
-    before: [null, null],
-    after: [null, null],
-    asked: [],
+    server: { [AHEAD]: { state: "missing", uri: "manuscript://Ten.md" } },
+    before: ["pending", null],
+    after: ["missing", null],
+    asked: [AHEAD],
   },
 ];
 
@@ -305,6 +306,14 @@ it("routes each link to the local index or the server", async () => {
       )
       .toEqual(row.after);
     expect.soft(asked, row.rule).toEqual(row.asked);
+    if (row.scope?.holderDocumentId && row.asked.length > 0) {
+      expect
+        .soft(server, row.rule)
+        .toHaveBeenCalledWith(
+          "p",
+          expect.objectContaining({ holderDocumentId: row.scope.holderDocumentId }),
+        );
+    }
     if (row.heard) expect.soft(heard, row.rule).toBe(true);
     if (click) expect.soft(show(await click), row.rule).toBe(row.clicked);
 

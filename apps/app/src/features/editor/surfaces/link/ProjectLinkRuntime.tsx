@@ -62,7 +62,7 @@ export function useEditorLinkDestination(): LinkDestination {
   return useReviewingLinkDestination(openLive);
 }
 
-/** Runtime over the scope's document index, which the Editor also reads its holder from. */
+/** Runtime over the scope's document index and the holder address supplied by its surface. */
 export function ProjectLinkRuntime({
   editor,
   documentId,

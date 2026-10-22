@@ -43,7 +43,7 @@ const sequencedEventObjectSchema = z.object({
 export const sequencedEventSchema: z.ZodType<SequencedEvent> = sequencedEventObjectSchema;
 
 /** A client-chosen id naming one request; the server echoes it in the answer. */
-const wsRequestIdSchema = z.string().min(1);
+const wsRequestIdSchema = z.string().min(1).max(64);
 
 const wsSubscribeMessageSchema = z.object({
   type: z.literal("subscribe"),
@@ -205,7 +205,7 @@ export type WsServerMessage =
       /** The `subscribe` request this answers. */
       requestId: string;
       threadId: string;
-      /** The cursor the server's lease starts above: the request's `lastSeq`, or "0". */
+      /** The cursor the server's lease starts above: the request's `lastSeq`, or the current head when omitted. */
       after: string;
       catchup: SequencedEvent[];
       state: ThreadLiveState;

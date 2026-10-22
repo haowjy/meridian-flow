@@ -41,8 +41,7 @@ import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
 import { claimEditorFocus, focusIsFree } from "./focus-on-open";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
-import { SchemaFenceNotice } from "./SchemaFenceNotice";
-import { SchemaRepairNotice } from "./SchemaRepairNotice";
+import { SchemaNotices } from "./SchemaNotices";
 import { SyncStatus } from "./SyncStatus";
 import { ImageIngressRuntime } from "./surfaces/images";
 import { ProjectLinkRuntime } from "./surfaces/link";
@@ -66,6 +65,8 @@ type SessionEditorProps = {
   identity: EditorMountIdentity;
   session: DocumentSession;
   surfaceOptions: EditorSurfaceOptions;
+  /** Review's addressed document record; live surfaces derive this from their catalog. */
+  holderUri?: string | null;
   /** An addressed construction receipt; null withdraws this editor's receipt. */
   onConstructed?: (editor: Editor | null) => void;
   /** The tab instance this editor serves; it claims that instance's focus-on-open intent. */
@@ -131,6 +132,7 @@ function ActiveSessionEditorView({
   onConstructed,
   focusKey,
   onReopen,
+  holderUri: reviewHolderUri,
   snapshot,
   evidenceDegraded,
 }: ActiveSessionEditorViewProps) {
@@ -221,12 +223,15 @@ function ActiveSessionEditorView({
   // This document's own address: what its relative links resolve against and
   // what a link inserted into it is spelled relative to. Null until the tree
   // carrying it arrives, or while it has no address yet, which spells full URIs.
-  const holderUri = useMemo(
+  const indexedHolderUri = useMemo(
     () =>
       linkableDocuments.documents.find((document) => document.documentId === documentId)?.uri ??
       null,
     [linkableDocuments, documentId],
   );
+  // A draft-only holder takes its address from the review row. An ordinary review can outlive
+  // that row, so its live catalog address remains the fallback and continues to follow renames.
+  const holderUri = reviewHolderUri ?? indexedHolderUri;
   const sharedReferenceCatalog = useReferenceBrowserCatalog(
     active ? projectId : null,
     active ? scope.workId : null,
@@ -390,12 +395,15 @@ function ActiveSessionEditorView({
         <div className="pointer-events-none absolute right-3 bottom-3 z-10">
           <SyncStatus session={session} onReopen={onReopen} removal={removal} />
         </div>
-        {snapshot.schemaFence ? <SchemaFenceNotice fence={snapshot.schemaFence} /> : null}
-        {snapshot.schemaRepairs.length > 0 ? (
-          <SchemaRepairNotice repairs={snapshot.schemaRepairs} />
-        ) : null}
         <TrackedEditorCanvas
           editor={editor}
+          notices={
+            <SchemaNotices
+              fence={snapshot.schemaFence}
+              repairs={snapshot.schemaRepairs}
+              editor={editor}
+            />
+          }
           toolbar={
             showToolbar ? (
               <DocumentToolbar
@@ -449,17 +457,20 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
 
 function TrackedEditorCanvas({
   editor,
+  notices,
   toolbar,
   scrollRef,
   onScroll,
 }: {
   editor: Editor | null;
+  notices?: ReactNode;
   toolbar?: ReactNode;
   scrollRef?: Ref<HTMLDivElement>;
   onScroll?: UIEventHandler<HTMLDivElement>;
 }) {
   return (
     <EditorSurfaceFrame
+      notices={notices}
       toolbar={toolbar}
       editor={editor}
       scrollRef={scrollRef}

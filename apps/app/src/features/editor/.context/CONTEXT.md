@@ -46,6 +46,10 @@ Scope drives link catalogs, completion, resolver registration, contextual create
 and link destinations. It is deliberately excluded from `EditorMountIdentity`:
 moving a holder must not destroy its collaborative editor or undo manager.
 Editor route Work and review Work remain separate authorities.
+Live holders take their address from the link catalog. Review holders prefer the
+draft review row, because a still-hidden created document is deliberately absent
+from the live catalog until Apply; an ordinary review whose row has disappeared
+falls back to that same live catalog.
 
 The slash and `[[` catalogs are supplied as getters. They read labels and
 catalog contents when a menu opens, so locale changes do not remount the
@@ -89,9 +93,19 @@ it and shows the unavailable state.
 
 Binding waits behind the bounded repair-evidence horizon, then always mounts
 (even when evidence timed out). `SchemaRepairNotice` reports witnessed repairs
-and can be dismissed locally; it shows every recovered excerpt in full with a
-copy button, and never gates editing or offers reinsertion or approval. The notice reads session repair snapshots rather than inspecting the
-editor document.
+and never gates editing or offers reinsertion or approval. It reads session
+repair snapshots rather than inspecting the editor document.
+
+Both notices live in `SchemaNotices.tsx` as one-line bars in
+`EditorSurfaceFrame`'s `notices` slot, prose-aligned above the toolbar; the slot
+collapses when neither has anything to say. The fence bar carries Refresh. The
+repair bar says only that text was removed; its Details popover holds every
+recovered excerpt with Copy, then the cause and Dismiss, so the excerpts never
+push the manuscript down. The popover anchors to the whole bar and takes its
+width, so it fits a narrow dock pane. Dismiss hides the bar until the session
+reports another repair and sends focus to the editor, or to Refresh while the
+fence holds the editor read-only; one `SchemaNotices` owns both bars for that. Copy goes through `clipboard.ts`
+and reports a refusal on that excerpt; a pending Copied reset never erases it.
 
 ## Peer marks
 
