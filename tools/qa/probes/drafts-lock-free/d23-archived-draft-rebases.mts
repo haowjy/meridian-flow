@@ -29,6 +29,7 @@ export const d23ArchivedDraftRebases: Probe = {
       documentId,
       branchId,
       liveDoc: live,
+      liveRoom: null,
     });
     const pulls = createDraftPullService({
       outsideTransaction: independently,

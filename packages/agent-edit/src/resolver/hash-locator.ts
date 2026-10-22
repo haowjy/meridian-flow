@@ -60,8 +60,8 @@ function ambiguousHashMessage(
 }
 
 /**
- * Writes resolve hashes in the version they change, never live (D14), so a
- * hash from a `version: "live"` read can be missing here.
+ * An explicit `version: "live"` read can name a block absent from the diverged
+ * draft the write changes (D14). Seeded drafts retain their live block addresses.
  */
 function hashNotFoundMessage(hash: string): string {
   return `Block hash "${hash}" was not found in the version your writes change. Hashes from \`version: "live"\` can't target it.`;

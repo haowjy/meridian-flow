@@ -18,7 +18,6 @@ export type {
   FrontierLookups,
   ObservationFrontier,
   ReplyMutations,
-  SeedFrontierProjection,
 } from "./frontier.js";
 export { createReplyMutations, projectSeedFrontier } from "./frontier.js";
 export type { BlockRef, DocHandle } from "./handles.js";

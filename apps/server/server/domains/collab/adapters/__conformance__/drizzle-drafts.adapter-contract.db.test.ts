@@ -293,6 +293,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         branchId: BRANCH_ID as never,
         liveDoc: base,
+        liveRoom: null,
       });
       const snapshot = await measuredStore.getDraft(documentDraft.draftId);
       if (!snapshot) throw new Error("missing batch target");
@@ -376,6 +377,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         branchId: BRANCH_ID as never,
         liveDoc: live,
+        liveRoom: null,
       });
     });
 
@@ -408,6 +410,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         branchId: BRANCH_ID as never,
         liveDoc: docWithText("live"),
+        liveRoom: null,
       });
       await runInDrizzleTransaction(db, async () => {
         await branchStore.lockActive(BRANCH_ID as never);
@@ -432,6 +435,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentId: DOC_ID as never,
             branchId: BRANCH_ID as never,
             liveDoc: docWithText("live"),
+            liveRoom: null,
           }),
           "a write boundary refuses the closed branch",
         )
@@ -471,6 +475,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         branchId: BRANCH_ID as never,
         liveDoc: docWithText("seed"),
+        liveRoom: null,
       });
       const row = (updateData: Uint8Array) => ({
         draftId: documentDraft.draftId,

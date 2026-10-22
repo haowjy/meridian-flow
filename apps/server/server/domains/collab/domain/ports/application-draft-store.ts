@@ -16,7 +16,8 @@ export type ApplicationDraftStore = DraftStore &
       documentId: DocumentId;
       branchId: BranchId;
       liveDoc: Y.Doc;
-      liveRoom?: string | null;
+      /** Addressable authority room, or intentional null for created/empty content. */
+      liveRoom: string | null;
     }): Promise<DraftSnapshot>;
     /** The branch's draft on its new document, from its durable live state, in the caller's transaction. */
     ensureCreatedDocumentDraft(input: {

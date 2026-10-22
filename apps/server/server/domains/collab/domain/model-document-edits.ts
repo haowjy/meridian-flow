@@ -7,7 +7,9 @@ import type {
   DocumentEdits,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
+import { boundDocumentAuthority } from "./document-handle.js";
 import { DraftNotFoundError } from "./draft-resolver.js";
+import { liveRoom } from "./observation-rooms.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import type { TurnInverseService } from "./turn-inverse-service.js";
@@ -23,13 +25,23 @@ export function createModelDocumentEdits(input: {
   ) {
     const documentId = request.documentId as DocumentId;
     const view = request.context.linkView;
+    const version = request.context.documentVersion;
+    if (!version) throw new Error("Model edit history requires an explicitly routed version");
     let draftId: string | null = null;
     let blockOrigins: BlockOriginMap | undefined;
-    if (view?.kind === "branch") {
+    if (version === "draft") {
+      if (view?.kind !== "branch") return null;
       if (ensure) {
-        const documentDraft = await input.coordinator.withDocument(documentId, (liveDoc) =>
-          input.drafts.ensureDocumentDraft({ documentId, branchId: view.branchId, liveDoc }),
-        );
+        const documentDraft = await input.coordinator.withDocument(documentId, (liveDoc) => {
+          const authority = boundDocumentAuthority(liveDoc);
+          if (!authority) throw new Error(`Live document ${documentId} has no authority binding`);
+          return input.drafts.ensureDocumentDraft({
+            documentId,
+            branchId: view.branchId,
+            liveDoc,
+            liveRoom: liveRoom(documentId, authority.generation),
+          });
+        });
         draftId = documentDraft.draftId;
         blockOrigins = originsOf(documentDraft.seed?.origins);
       } else {
@@ -63,7 +75,7 @@ export function createModelDocumentEdits(input: {
   return {
     async execute(request) {
       const resolved = await query(request, true);
-      if (!resolved) throw new Error("A draft inverse did not resolve its ensured draft");
+      if (!resolved) return absentDraftInverse(request.command);
       const result = await input.service().modelInverse(resolved.query, request.command);
       return result.status === "success" && resolved.blockOrigins
         ? { ...result, blockOrigins: resolved.blockOrigins }
@@ -81,6 +93,26 @@ export function createModelDocumentEdits(input: {
           };
     },
   };
+}
+
+function absentDraftInverse(command: { command: "undo" | "redo" | "revert"; file: string }) {
+  switch (command.command) {
+    case "undo":
+      return {
+        status: "nothing_to_undo" as const,
+        message: `You have no edits to undo in ${command.file}. Read it and make a new replace if needed.`,
+      };
+    case "redo":
+      return {
+        status: "nothing_to_redo" as const,
+        message: `Nothing of yours to redo in ${command.file}. A new edit clears redo here. Read it and make a new replace if needed.`,
+      };
+    case "revert":
+      return {
+        status: "nothing_to_revert" as const,
+        message: `Nothing is left to reverse in ${command.file}. Read it and make a new replace.`,
+      };
+  }
 }
 
 function originsOf(

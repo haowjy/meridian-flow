@@ -215,49 +215,68 @@ export function createThreadPeerCorePool(input: {
     core: AgentEditCore,
     documentId: DocumentId | null,
     context: WriteContext,
-  ): Promise<WriteContext> {
-    if (!documentId || !context.threadId || core === input.liveUtilityCore) return context;
+  ): Promise<{ context: WriteContext; seed: DraftSeedRecord | null }> {
+    if (!documentId || !context.threadId || core === input.liveUtilityCore)
+      return { context, seed: null };
     const peer = await input.ensureThreadPeer({
       documentId,
       threadId: context.threadId as ThreadId,
       branchId: context.linkView?.kind === "branch" ? context.linkView.branchId : undefined,
     });
+    const seed = peer.seed ?? null;
     return {
-      ...context,
-      frontiers: projectedFrontiers(context.frontiers, peer.upstreamDraftId, peer.seed ?? null),
-      interactionContext: {
-        mode: "threadPeer" as const,
-        peerDraftId: peer.peerDraftId,
-        upstreamDraftId: peer.upstreamDraftId,
+      seed,
+      context: {
+        ...context,
+        frontiers: projectedFrontiers(context.frontiers, [
+          { workDraftId: peer.upstreamDraftId, seed },
+        ]),
+        interactionContext: {
+          mode: "threadPeer" as const,
+          peerDraftId: peer.peerDraftId,
+          upstreamDraftId: peer.upstreamDraftId,
+        },
       },
     };
   }
 
+  type FrontierProjection = { workDraftId: string; seed: DraftSeedRecord | null };
+
+  /** One projection door for both tool calls and their later response save. */
   function projectedFrontiers(
     frontiers: WriteContext["frontiers"],
-    workDraftId: string,
-    seed: DraftSeedRecord | null,
+    projections: readonly FrontierProjection[],
   ): WriteContext["frontiers"] {
-    if (!frontiers || !seed) return frontiers;
-    const targetRoom = draftRoom(workDraftId);
-    const origins = new Map(Object.entries(seed.origins));
-    const wrap =
-      (lookup: FrontierLookup): FrontierLookup =>
-      async (room) => {
-        const native = await lookup(room);
-        if (native || room !== targetRoom) return native;
-        return projectSeedFrontier(await lookup(seed.liveRoom), {
-          sourceRoom: seed.liveRoom,
-          sourceSnapshot: seed.liveSnapshot,
-          targetRoom,
-          targetSnapshot: seed.draftSnapshot,
-          origins,
-        });
-      };
+    if (!frontiers) return frontiers;
     return {
       ...frontiers,
-      recording: wrap(frontiers.recording),
-      ...(frontiers.planning ? { planning: wrap(frontiers.planning) } : {}),
+      recording: projectedLookup(frontiers.recording, projections),
+      ...(frontiers.planning ? { planning: projectedLookup(frontiers.planning, projections) } : {}),
+    };
+  }
+
+  function projectedLookup(
+    lookup: FrontierLookup,
+    projections: readonly FrontierProjection[],
+  ): FrontierLookup {
+    const byRoom = new Map(
+      projections.flatMap(({ workDraftId, seed }) =>
+        seed ? [[draftRoom(workDraftId), seed] as const] : [],
+      ),
+    );
+    if (!byRoom.size) return lookup;
+    return async (room) => {
+      const native = await lookup(room);
+      if (native) return native;
+      const seed = byRoom.get(room);
+      if (!seed) return null;
+      return projectSeedFrontier(await lookup(seed.liveRoom), {
+        sourceRoom: seed.liveRoom,
+        sourceSnapshot: seed.liveSnapshot,
+        targetRoom: room,
+        targetSnapshot: seed.draftSnapshot,
+        origins: new Map(Object.entries(seed.origins)),
+      });
     };
   }
 
@@ -332,6 +351,7 @@ export function createThreadPeerCorePool(input: {
     evictIdleCores();
     const routedContext = {
       ...(await routedTo(context, destination, pinned?.linkView)),
+      documentVersion: version,
       ...(workDraftId ? { workDraftId } : {}),
     };
     // An edits read shows history, not the document: it records no frontier.
@@ -403,8 +423,9 @@ export function createThreadPeerCorePool(input: {
     let callContext: WriteContext = routedContext;
     const call = async () => {
       if (!immediateInverse) {
-        callContext = await threadPeerIdentity(core, documentId, callContext);
-        pinStaged(entry, callContext);
+        const identity = await threadPeerIdentity(core, documentId, callContext);
+        callContext = identity.context;
+        pinStaged(entry, callContext, identity.seed);
       }
       // A staged write records nothing: its save records in the room the save committed into.
       return core.write(command, callContext);
@@ -581,7 +602,7 @@ export function createThreadPeerCorePool(input: {
       (destination.kind === "live"
         ? { kind: "live" as const }
         : await input.branches.viewForWork(destination.workId));
-    return { ...context, linkView };
+    return { ...context, linkView, documentVersion: destination.kind };
   }
 
   async function commitResponse(
@@ -603,7 +624,16 @@ export function createThreadPeerCorePool(input: {
     // Each saved document records in the room its save committed into.
     const saveOptions = {
       ...finalizeOptions(),
-      ...(options?.recordingFrontier ? { recordingFrontier: options.recordingFrontier } : {}),
+      ...(options?.recordingFrontier
+        ? {
+            recordingFrontier: projectedLookup(
+              options.recordingFrontier,
+              [...record.documents.values()].flatMap(({ pin }) =>
+                pin ? [{ workDraftId: pin.upstreamDraftId, seed: pin.seed }] : [],
+              ),
+            ),
+          }
+        : {}),
     };
     // The first attempt is prepared before the transaction opens, off every lock. One
     // that cannot be prepared yet (a document `confirm` will refuse) is prepared again
