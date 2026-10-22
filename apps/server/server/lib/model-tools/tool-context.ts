@@ -8,7 +8,7 @@ import type {
   DocumentVersion,
   WriteErrorStatus,
 } from "@meridian/agent-edit/integration";
-import { modelResult } from "@meridian/agent-edit/integration";
+import { modelResult, splitDocumentFile } from "@meridian/agent-edit/integration";
 import type { AgentPermission } from "@meridian/contracts/agents";
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import {
@@ -261,4 +261,14 @@ export function documentRevisionMetadata(
       } satisfies DocumentRevisionEvidence,
     ],
   };
+}
+
+/** The path as a canonical URI: its folder's own URI (with any owner), then its name. */
+export async function canonicalPath(call: ToolCall, path: string): Promise<string> {
+  const { filePath } = splitDocumentFile(path);
+  const uri = filePath.includes("://") ? filePath : `manuscript://${filePath}`;
+  const slash = uri.lastIndexOf("/");
+  const listing = await call.context.port.list(uri.slice(0, slash + 1));
+  const folder = listing.ok ? listing.value.uri : null;
+  return folder ? `${folder.replace(/\/?$/, "/")}${uri.slice(slash + 1)}` : uri;
 }

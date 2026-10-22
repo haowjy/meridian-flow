@@ -38,7 +38,10 @@ not own authorization.
 Runtime tool definitions and policy live in `domains/runtime`; `lib/model-tools`
 binds context, collab, file-policy, and thread services. Document writes pass
 through file grants and `@meridian/agent-edit`; URI parsing and document-row
-creation remain server-side. Tool handlers return the typed agent-edit result,
+creation remain server-side. `write move` and `write delete` change where a whole
+document lives, so the host runs them through the live context port
+(`namespace-commands.ts`) and records their tree entry in collab's edit history
+inside the mutation's own transaction. Tool handlers return the typed agent-edit result,
 and model renderers never replace the persisted typed result. Context-backed
 handlers resolve one unified `ContextPort` per call.
 

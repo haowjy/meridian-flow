@@ -5,7 +5,7 @@ import {
   captureEditParts,
   type EditTarget,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type { DocumentId, ThreadId, TreeChange, TurnId, UserId } from "@meridian/contracts";
 import {
   type Database,
   documentEditParts,
@@ -16,6 +16,7 @@ import {
 } from "@meridian/database";
 import { eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { treeChangeFault } from "../domain/tree-inverse.js";
 
 type Db = Pick<Database, "select" | "insert" | "update">;
 export interface ReceiptWrite {
@@ -32,11 +33,16 @@ export interface ReceiptWrite {
   actionId?: string;
   consumes?: string[];
   receipts: (CapturedPart & { origin: EditOrigin; targets?: EditTarget[] })[];
+  /** A tree entry: a move, delete, restore or settlement, recorded with no parts. */
+  treeChange?: TreeChange;
 }
+
 /** Caller holds the authoritative document/draft mutation lock and its event transaction. */
 export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<string> {
   if (input.actor === "agent" && input.threadId && input.wId === undefined)
     throw new Error("Model edit capture requires its reserved ordinal");
+  const fault = input.treeChange && treeChangeFault(input.treeChange);
+  if (fault) throw new Error(fault);
   const wId = input.actor === "agent" ? (input.wId ?? null) : null;
   const [edit] = await db
     .insert(documentEdits)
@@ -52,9 +58,14 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       wId,
       actionId: input.actionId,
       consumes: input.consumes,
+      treeChange: input.treeChange,
     })
     .returning({ id: documentEdits.id });
   if (!edit) throw new Error("Edit receipt was not inserted");
+  if (!input.receipts.length) {
+    if (!input.treeChange) throw new Error("An edit with no parts must be a tree entry");
+    return edit.id;
+  }
   await db.insert(documentEditParts).values(
     input.receipts.map((p, ordinal) => ({
       editId: edit.id,
@@ -65,7 +76,6 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       aliases: p.aliases,
       targets: p.targets ?? [],
       origin: p.origin,
-      // Required by the legacy NOT NULL column until the migrations lane drops it.
     })),
   );
   for (const [ordinal, p] of input.receipts.entries()) {

@@ -61,6 +61,10 @@ describe("file policy", () => {
     ["a stranger gets nothing", { accountId: "stranger" }, file("manuscript"), "none", "not_found"],
     ["a deleted document is gone", person, file("manuscript", null, { deleted: true }), "none", "not_found"],
     ["a deleted project is gone", person, file("kb", null, { projectDeleted: true }), "none", "not_found"],
+    // A draft that outlived its document's live delete opens its draft destination only (D79).
+    ["a surviving draft stays writable", person, file("manuscript", null, { deleted: true, survivingDraft: true, target: { kind: "draft", documentId: "doc", workId: "a" }, branchWork: A }), "edit", null],
+    ["a surviving draft opens nothing live", person, file("manuscript", null, { deleted: true, survivingDraft: true, branchWork: A }), "none", "not_found"],
+    ["a surviving draft of a deleted project is gone", person, file("manuscript", null, { deleted: true, survivingDraft: true, projectDeleted: true, target: { kind: "draft", documentId: "doc", workId: "a" }, branchWork: A }), "none", "not_found"],
     ["a deleted Work's scratch is gone", person, file("scratch", work("d", { deleted: true })), "none", "not_found"],
     ["an archived Work's scratch is read-only", person, file("scratch", archived), "read", "work_archived"],
     ["an archived Work's chat still edits manuscript", agent(link("edit", "old")), file("manuscript"), "edit", null],

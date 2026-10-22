@@ -1,18 +1,19 @@
 /**
- * Postgres branch creates for one source: the tree owner's hidden-node lifecycle with the
- * collab half injected (the branch's document draft is ensured and retracted by collab, which owns
- * draft lifecycle, journals and pooled cores).
+ * Postgres branch tree writes for one source: the tree owner's hidden-node lifecycle and
+ * drafted placement, with the collab half injected (the branch's document draft is ensured and
+ * retracted by collab, which owns draft lifecycle, journals and pooled cores).
  */
 import type { Database } from "@meridian/database";
 import type { DraftPeerShadowAccess, MarkdownDocumentStore } from "../../../collab/index.js";
-import type { BranchCreatePort } from "../../ports/branch-create.js";
+import type { BranchTreePort } from "../../ports/branch-tree.js";
 import type { DocumentRemoval } from "../../ports/document-removal.js";
+import { deleteInBranch, moveInBranch } from "../../tree/branch-tree-changes.js";
 import { createInBranch } from "../../tree/creates.js";
 import { retractCreate } from "../../tree/end-use.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import { lockDocumentNamespaces } from "./document-locations.js";
 
-export function createDrizzleBranchCreates(deps: {
+export function createDrizzleBranchTree(deps: {
   db: Database;
   removal: DocumentRemoval;
   /** The source, provisioned when the first create needs it. */
@@ -21,7 +22,7 @@ export function createDrizzleBranchCreates(deps: {
   drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
   /** Repair on touch: the candidate picker reports what it repaired (§12.4). */
   repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
-}): BranchCreatePort {
+}): BranchTreePort {
   /**
    * The source, with its namespace held (§14: after the command's Work and branch, before
    * any document lock). A resolved source id is cached across commands, so the lock is
@@ -61,6 +62,18 @@ export function createDrizzleBranchCreates(deps: {
           deps.drafts.retractCreatedDocumentDraft({ documentId, branchId: branch.id }),
       });
       return retracted.retracted ? "retracted" : "stands";
+    },
+    async moveInBranch({ branch, documentId, dir, name, extension, changedBy }) {
+      return moveInBranch(deps.db, {
+        branchId: branch.id,
+        documentId,
+        to: { contextSourceId: await lockedSource(), dir, name, extension },
+        changedBy,
+      });
+    },
+    async deleteInBranch({ branch, documentId, changedBy }) {
+      await lockedSource();
+      return deleteInBranch(deps.db, { branchId: branch.id, documentId, changedBy });
     },
   };
 }

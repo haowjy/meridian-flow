@@ -13,8 +13,11 @@ export type ReviewFileTarget = {
   contextLocation: Pick<ContextUri, "scheme" | "path"> | null;
   /** The active draft the row's verbs act on. */
   draft: ThreadDraftListItem;
-  /** Absent from the live project until Apply. */
-  isNew: boolean;
+  /**
+   * Absent from the live project until Apply: a document the draft created, or one deleted
+   * from the manuscript that this draft still has (`deletedLive`, D79).
+   */
+  draftOnly: boolean;
 };
 
 /** The DB guarantees one active draft per document/Work; raw rows remain untouched. */
@@ -26,16 +29,21 @@ export function projectWorkBranchFiles(
     drafts.map((draft) => {
       const live = catalog?.findDocument(draft.documentId);
       const location = live ? parseContextUri(live.uri) : null;
+      // Until the catalog answers, a document the draft moves is live where it was, not at the
+      // draft's new path: opening it there would land on an address nothing holds yet.
+      const movedFrom = draft.tree?.movedFrom;
       return {
         documentId: draft.documentId,
         documentName: live
           ? (documentTitleFromUri(live.uri) ?? draft.documentName)
-          : draft.documentName,
+          : movedFrom
+            ? (documentTitleFromUri(movedFrom.path) ?? draft.documentName)
+            : draft.documentName,
         contextLocation: location
           ? { scheme: location.scheme, path: location.path }
-          : draft.contextLocation,
+          : (movedFrom ?? draft.contextLocation),
         draft,
-        isNew: draft.isNew === true,
+        draftOnly: draft.isNew || draft.deletedLive,
       };
     }),
   );

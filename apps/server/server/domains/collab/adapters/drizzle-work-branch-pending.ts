@@ -1,83 +1,46 @@
-/** Drizzle store for what is pending review in a Work: counts, the branches changing a document, creators and evidence. */
+/** Drizzle store for what is pending review in a Work: counts, the branches changing a document, the chats behind its tree rows and evidence. */
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branches, documentDrafts, works } from "@meridian/database/schema";
+import { branches, branchTreeChanges, documentDrafts, works } from "@meridian/database/schema";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { draftBranchWork } from "../../../shared/work-branch-lifecycle.js";
-import { livingDocumentUses } from "../../context/tree/tree-view.js";
+import { livingDocumentUses, pendingDocuments } from "../../context/tree/tree-view.js";
 import { createDraftDispositionReader } from "../domain/draft-disposition.js";
 import type { WorkBranchPendingStore } from "../domain/ports/work-branch-pending-store.js";
 import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
 
 /**
- * The one SQL membership rule for a draft to count as a pending document, twin of
- * `branch-review-items.ts` (active with `hasEffect`). The Work count and the
- * document hint both filter by it; the Works boundary reconciles each Work's stored count
- * through that count.
+ * What is pending in a Work is the tree view's one reviewable-pending predicate
+ * (`pendingDocuments`), the review list's too: the Work count and the document hint both
+ * count by it, and the Works boundary reconciles each Work's stored count through it.
  */
-const reviewableWorkDraft = and(
-  eq(documentDrafts.kind, "work_draft"),
-  eq(documentDrafts.status, "active"),
-  eq(documentDrafts.hasEffect, true),
-);
-
 export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPendingStore {
   const readDisposition = createDraftDispositionReader(createDrizzleDraftDispositionStore(db));
   return {
     async countPendingByWorkIds(workIds) {
       if (workIds.length === 0) return new Map();
       const tx = currentDrizzleDb(db);
-      const branchTreeChanges = livingDocumentUses(tx);
-      const drafted = tx
-        .select({ workId: draftBranchWork.workId, documentId: documentDrafts.documentId })
-        .from(documentDrafts)
-        .innerJoin(draftBranchWork.branches, draftBranchWork.on)
-        .where(
-          and(
-            inArray(draftBranchWork.workId, workIds),
-            eq(branches.status, "active"),
-            reviewableWorkDraft,
-          ),
-        );
-      // A created document is pending with no text yet (a draftless image, an empty create).
-      const changed = tx
-        .select({ workId: branches.originWorkId, documentId: branchTreeChanges.nodeId })
-        .from(branchTreeChanges)
-        .innerJoin(branches, eq(branches.id, branchTreeChanges.branchId))
-        .where(
-          and(
-            inArray(branches.originWorkId, workIds),
-            eq(branches.status, "active"),
-            eq(branchTreeChanges.nodeKind, "document"),
-          ),
-        );
-      // `union` (not `union all`) leaves each Work's document once, so a row is a document.
-      const pending = drafted.union(changed).as("pending");
-      const rows = await tx
-        .select({ workId: pending.workId, count: sql<number>`count(*)::int` })
-        .from(pending)
-        .groupBy(pending.workId);
+      const active = sql`SELECT b.id FROM branches b WHERE b.status = 'active'
+        AND b.origin_work_id IN (${sql.join(
+          workIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})`;
+      // One row per Work and document, whichever arm made it pending.
+      const rows = await tx.execute<{ work_id: string | null; count: number }>(sql`
+        SELECT b.origin_work_id::text AS work_id, count(DISTINCT p.document_id)::int AS count
+        FROM (${pendingDocuments(active)}) p JOIN branches b ON b.id = p.branch_id
+        GROUP BY b.origin_work_id`);
       return new Map(
-        rows.flatMap(({ workId, count }) => (workId ? [[workId as WorkId, count]] : [])),
+        rows.flatMap(({ work_id, count }) => (work_id ? [[work_id as WorkId, Number(count)]] : [])),
       );
     },
     async listBranchesChangingDocument({ projectId, documentId }) {
       const tx = currentDrizzleDb(db);
-      const branchTreeChanges = livingDocumentUses(tx);
-      // The same membership arms as the Work counts, narrowed to one document.
-      const drafted = tx
-        .select({ branchId: documentDrafts.branchId })
-        .from(documentDrafts)
-        .where(and(eq(documentDrafts.documentId, documentId), reviewableWorkDraft));
-      const changed = tx
-        .select({ branchId: branchTreeChanges.branchId })
-        .from(branchTreeChanges)
-        .where(
-          and(eq(branchTreeChanges.nodeId, documentId), eq(branchTreeChanges.nodeKind, "document")),
-        );
-      // Archived Works stay (their branches remain reviewable); deleted Works and branches whose
-      // origin Work is gone are out, since today's review address needs a live Work.
+      const active = sql`SELECT b.id FROM branches b
+        WHERE b.status = 'active' AND b.project_id = ${projectId}::uuid`;
+      // The same membership as the Work counts, narrowed to one document. Archived Works stay
+      // (their branches remain reviewable); deleted Works and branches whose origin Work is
+      // gone are out, since today's review address needs a live Work.
       const rows = await tx
         .select({
           branchId: branches.id,
@@ -92,7 +55,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
             eq(branches.projectId, projectId),
             eq(branches.status, "active"),
             isNull(works.deletedAt),
-            sql`${branches.id} in (${drafted.union(changed)})`,
+            sql`${branches.id} in (SELECT p.branch_id FROM (${pendingDocuments(active, documentId as DocumentId)}) p)`,
           ),
         )
         .orderBy(asc(branches.createdAt), asc(branches.id));
@@ -102,27 +65,37 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
         originWorkName: row.isNoWork ? null : row.name,
       }));
     },
-    async listCreators(branchId, documentIds) {
-      const branchTreeChanges = livingDocumentUses(currentDrizzleDb(db));
-      const rows = await currentDrizzleDb(db)
-        .select({
-          documentId: branchTreeChanges.nodeId,
-          threadId: branchTreeChanges.createdThreadId,
-        })
-        .from(branchTreeChanges)
-        .where(
-          and(
-            eq(branchTreeChanges.branchId, branchId),
-            eq(branchTreeChanges.nodeKind, "document"),
-            isNotNull(branchTreeChanges.createdThreadId),
-            documentIds ? inArray(branchTreeChanges.nodeId, [...documentIds]) : undefined,
-          ),
+    async listTreeActors(branchId, documentIds) {
+      // A creation counts only while its document lives; a move or delete stays the chat's
+      // while the row holds it, whatever live did to the document since (D79).
+      const uses = livingDocumentUses(currentDrizzleDb(db));
+      const scope = (table: typeof uses | typeof branchTreeChanges) =>
+        and(
+          eq(table.branchId, branchId),
+          eq(table.nodeKind, "document"),
+          documentIds ? inArray(table.nodeId, [...documentIds]) : undefined,
         );
-      return new Map(
-        rows.flatMap((row) =>
-          row.threadId ? [[row.documentId as DocumentId, row.threadId as string] as const] : [],
-        ),
-      );
+      const [created, changed] = await Promise.all([
+        currentDrizzleDb(db)
+          .select({ documentId: uses.nodeId, threadId: uses.createdThreadId })
+          .from(uses)
+          .where(and(scope(uses), isNotNull(uses.createdThreadId))),
+        currentDrizzleDb(db)
+          .select({
+            documentId: branchTreeChanges.nodeId,
+            threadId: branchTreeChanges.changedThreadId,
+          })
+          .from(branchTreeChanges)
+          .where(and(scope(branchTreeChanges), isNotNull(branchTreeChanges.changedThreadId))),
+      ]);
+      const actors = new Map<DocumentId, string[]>();
+      for (const row of [...changed, ...created]) {
+        if (!row.threadId) continue;
+        const list = actors.get(row.documentId as DocumentId) ?? [];
+        if (!list.includes(row.threadId)) list.push(row.threadId);
+        actors.set(row.documentId as DocumentId, list);
+      }
+      return actors;
     },
     async listBranchDraftMetadata(branchId, documentIds) {
       const rows = await currentDrizzleDb(db)

@@ -14,7 +14,7 @@ function threadContextReversalUnsupported(): never {
 }
 
 export const UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS = {
-  async listEditedDocumentsForTurn() {
+  async listTurnTargets() {
     return threadContextReversalUnsupported();
   },
   threadContext: {
@@ -22,7 +22,7 @@ export const UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS = {
       return threadContextReversalUnsupported();
     },
   },
-} satisfies Pick<TurnReversalServiceDeps, "listEditedDocumentsForTurn" | "threadContext">;
+} satisfies Pick<TurnReversalServiceDeps, "listTurnTargets" | "threadContext">;
 
 export const UNSUPPORTED_REVERSE_THREAD_CONTEXT: TurnReversalAccess["reverseThreadContext"] =
   async () => threadContextReversalUnsupported();

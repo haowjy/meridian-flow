@@ -18,8 +18,17 @@ import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
+import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useRenameProject } from "@/client/query/useRenameProject";
@@ -64,6 +73,7 @@ import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import {
   useAccountId,
   useContextRemovalCoordinator,
+  useDraftCommandOwner,
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
@@ -80,6 +90,7 @@ import {
 import { ChatDocumentsBesideProvider } from "./dock/ChatDocumentsBesideProvider";
 import { useDockDocument, useDockDocumentStore } from "./dock/dock-document-store";
 import {
+  type AiDraftLaunchTarget,
   EditorReviewHandoffProvider,
   EditorReviewIntentClaimant,
   useOpenEditorReview,
@@ -570,26 +581,57 @@ function HydratedReviewControllers({
     threadId: null,
   });
   const openEditorReview = useOpenEditorReview();
-  const port = useMemo<ReviewAddressPort>(
-    () =>
-      props.activeScreen !== "context"
-        ? {
-            write: (review) => useDockDocumentStore.getState().setDocumentReview(review),
-            admit: (target) =>
-              presentedReview.controller.enterInlineReview(target.documentId, target.itemKey),
-          }
-        : {
-            write: (review) =>
-              props.onSetEditorReviewItemKey(review?.itemKey ?? null, review?.changeId),
-            admit: openEditorReview,
-          },
-    [
-      props.activeScreen,
-      presentedReview.controller.enterInlineReview,
-      props.onSetEditorReviewItemKey,
-      openEditorReview,
-    ],
-  );
+  const draftCommands = useDraftCommandOwner();
+  const queryClient = useQueryClient();
+  const addressedItemKey = presented?.review?.itemKey ?? "";
+  const generation = () => draftCommands.generation(addressedItemKey);
+  // A new generation of the addressed item is a new port: the owner retries what it refused.
+  const addressedGeneration = useSyncExternalStore(draftCommands.subscribe, generation, generation);
+  const port = useMemo<ReviewAddressPort>(() => {
+    // A closed draft (Discard, here or on another device) has already ended its review; a
+    // draft-only address keeps naming it until settlement closes the tab, and admitting it
+    // again would re-open what the room owner just closed, every render. The address names
+    // an item, not a draft: the server decides whether a newer draft replaced the closed one.
+    const open =
+      (admit: (target: AiDraftLaunchTarget) => unknown): ReviewAddressPort["admit"] =>
+      async (target) => {
+        if (draftCommands.state(target.itemKey).closed) {
+          const ref = {
+            projectId: props.projectId,
+            workId: target.workId,
+            documentId: target.documentId,
+            itemKey: target.itemKey,
+          };
+          const current = await draftCommands.reconcileClosed(ref, () =>
+            fetchCurrentDraftMetadata(queryClient, ref),
+          );
+          if (!current) return false;
+        }
+        await admit(target);
+        return true;
+      };
+    return props.activeScreen !== "context"
+      ? {
+          write: (review) => useDockDocumentStore.getState().setDocumentReview(review),
+          admit: open((target) =>
+            presentedReview.controller.enterInlineReview(target.documentId, target.itemKey),
+          ),
+        }
+      : {
+          write: (review) =>
+            props.onSetEditorReviewItemKey(review?.itemKey ?? null, review?.changeId),
+          admit: open(openEditorReview),
+        };
+  }, [
+    props.activeScreen,
+    props.projectId,
+    presentedReview.controller.enterInlineReview,
+    props.onSetEditorReviewItemKey,
+    openEditorReview,
+    draftCommands,
+    queryClient,
+    addressedGeneration,
+  ]);
   const scopedProps = { ...props, chatCommands, presentedReview, mobileDocumentRoute };
   return (
     <PresentedDocumentContext.Provider value={presented}>

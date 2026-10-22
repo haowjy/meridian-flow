@@ -1,17 +1,19 @@
 /**
  * The review list (contract §13.1, sync 8 §3.1): a branch's items are its tree state (every
- * document it created, listed with no text yet, and the documents it edited) merged by
- * document with its `work_draft` drafts. A created document is always an item; an edited
- * one is when its active draft has `hasEffect`, so a write and its
- * undo net to no item. That one predicate feeds the list, the
- * Work counts and the D40 confirmation. A draft with no effect is still addressable
+ * document it created, moved or deleted, listed with no text yet, and the documents it
+ * edited) merged by document with its `work_draft` drafts. An item is listed when the tree
+ * view's one reviewable-pending predicate holds (`TreeStateNode.pending`): a created
+ * document, a move or delete live doesn't already agree with, or an active draft with
+ * `hasEffect` the branch isn't deleting, so a write and its undo net to no item. That one
+ * predicate feeds the list, the Work counts and the D40 confirmation. A draft with no effect is still addressable
  * (`resolve`), unlisted, so its next proposal keeps the same room. Every item is keyed `${branchId}:${documentId}` (F12) and carries the
  * tree-derived address and whether it has a text draft.
  */
 import type { BranchId } from "@meridian/contracts";
 import { type DraftItemKey, draftItemKey } from "@meridian/contracts";
+import type { DraftItemConflict } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { TreeReader, TreeStateNode } from "../../context/tree/tree-view.js";
+import { LIVE_TREE, type TreeReader, type TreeStateNode } from "../../context/tree/tree-view.js";
 import type { WorkBranchDraftMetadata } from "./ports/work-branch-pending-store.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
 
@@ -31,15 +33,22 @@ export type DraftReviewItem = {
   documentName: string | null;
   /** Canonical URI in the branch's view (the last address for one deleted live). */
   path: string | null;
-  conflict: { code: "path_taken"; path: string } | { code: "deleted_live" } | null;
+  /** Eligibility only; existence is `deletedLive`, which a taken path doesn't hide. */
+  conflict: DraftItemConflict | null;
   /**
-   * Deleted live (an edited document, or a revealed create): no view shows it, so it
-   * authorizes through the branch's draft on it and its final location (F9, §13.3).
+   * Deleted live (an edited document, or a revealed create): live no longer shows it, the
+   * branch's view does while it has pending changes (D79). It authorizes through the
+   * branch's draft on it and its final location (F9, §13.3), and Apply restores it.
    */
   deletedLive: boolean;
-  /** `isNew || binary || deletedLive`: one change, settled by item Apply or Discard only (§3.3). */
+  /** `isNew || binary`: one change, settled by item Apply or Discard only (§3.3). */
   wholeItem: boolean;
-  /** Chats with pending writes on the draft, latest first, then the creating chat. */
+  /**
+   * The branch's row on the document: the revision a tree cut freezes, and what it says.
+   * `movedFrom` is where live has a moving document now (`path` is where the branch puts it).
+   */
+  tree: { revision: string | null; movedFrom: string | null; deleted: boolean } | null;
+  /** Chats with pending writes on the draft, latest first, then the chats behind its tree row. */
   actorThreadIds: string[];
   updatedAt: Date;
 };
@@ -58,7 +67,7 @@ export interface BranchReviewItems {
 }
 
 export function createBranchReviewItems(deps: {
-  tree: Pick<TreeReader, "treeState">;
+  tree: Pick<TreeReader, "treeState" | "resolvePath">;
   /**
    * The branch's active `work_draft` drafts (only these documents' when given), each
    * metadata only.
@@ -69,11 +78,11 @@ export function createBranchReviewItems(deps: {
   ): Promise<readonly WorkBranchDraftMetadata[]>;
   /** Expensive receipt membership, read only for listed items. */
   pendingThreadIds(draftId: string): Promise<string[]>;
-  /** The chat that created each document the branch created; absent for a writer's create. */
-  creators(
+  /** The chats behind each document's branch row (moved or deleted it, created it). */
+  treeActors(
     branchId: BranchId,
     documentIds?: readonly DocumentId[],
-  ): Promise<ReadonlyMap<DocumentId, string>>;
+  ): Promise<ReadonlyMap<DocumentId, readonly string[]>>;
 }): BranchReviewItems {
   async function items(
     branchId: BranchId,
@@ -86,14 +95,43 @@ export function createBranchReviewItems(deps: {
       drafts.map((evidence) => evidence.documentId),
       documentIds,
     );
-    const creators = await deps.creators(branchId, documentIds);
-    return nodes
-      .map((node) => {
+    const treeActors = await deps.treeActors(branchId, documentIds);
+    const resolved = await Promise.all(
+      nodes.map(async (node) => {
         const evidence = draftOf.get(node.nodeId);
-        const item = toItem(branchId, node, evidence, creators.get(node.nodeId));
-        return { item, listed: node.origin === "created" || isEdited(evidence) };
-      })
-      .sort((a, b) => (a.item.path ?? "").localeCompare(b.item.path ?? ""));
+        const item = toItem(branchId, node, evidence, treeActors.get(node.nodeId) ?? []);
+        item.conflict ??= await waitsFor(branchId, node);
+        return { item, listed: node.pending };
+      }),
+    );
+    return resolved.sort((a, b) => (a.item.path ?? "").localeCompare(b.item.path ?? ""));
+  }
+
+  /**
+   * A moving document whose destination live still gives another document this branch moves
+   * or deletes: its Apply waits for that item's (Apply all orders them; a swap stays held).
+   */
+  async function waitsFor(
+    branchId: BranchId,
+    node: TreeStateNode,
+  ): Promise<DraftReviewItem["conflict"]> {
+    if (node.branch?.state !== "moving") return null;
+    const found = await deps.tree.resolvePath(LIVE_TREE, {
+      contextSourceId: node.target.contextSourceId,
+      path: node.target.path,
+      as: "document",
+    });
+    if (found.kind !== "found" || found.node.kind !== "document") return null;
+    const occupant = found.node.document.id;
+    if (occupant === node.nodeId) return null;
+    const [other] = await deps.tree.treeState(branchId, [], [occupant]);
+    return other?.nodeId === occupant && (other.branch?.moved || other.branch?.deleted)
+      ? {
+          code: "pending_item",
+          path: node.target.uri ?? node.target.path,
+          itemKey: draftItemKey(branchId, occupant),
+        }
+      : null;
   }
 
   return {
@@ -107,21 +145,17 @@ export function createBranchReviewItems(deps: {
       );
     },
     async resolve(branchId, documentId) {
-      return (await items(branchId, [documentId]))[0] ?? null;
+      const resolved = await items(branchId, [documentId]);
+      return resolved.find(({ item }) => item.documentId === documentId) ?? null;
     },
   };
-}
-
-/** The §3.1 predicate for a document the branch only edited. */
-function isEdited(evidence: WorkBranchDraftMetadata | undefined): boolean {
-  return evidence?.hasEffect ?? false;
 }
 
 function toItem(
   branchId: BranchId,
   node: TreeStateNode,
   evidence: WorkBranchDraftMetadata | undefined,
-  creatorThreadId: string | undefined,
+  treeActorThreadIds: readonly string[],
 ): DraftReviewItem {
   const deletedLive = !node.hidden && node.deleted;
   const isNew = node.origin === "created" && node.hidden;
@@ -134,13 +168,21 @@ function toItem(
     origin: node.origin,
     isNew,
     binary: node.binary,
-    wholeItem: isNew || node.binary || deletedLive,
+    // A document deleted live takes per-change Apply too: any Apply restores it first.
+    wholeItem: isNew || node.binary,
+    tree: node.branch
+      ? {
+          revision: node.branch.revision?.toString() ?? null,
+          movedFrom: node.branch.state === "moving" ? (node.from?.uri ?? null) : null,
+          deleted: node.branch.state === "deleting",
+        }
+      : null,
     hasDraft: !!evidence,
     documentName: documentTitleFromUri(path),
     path,
     conflict: conflictOf(node),
     deletedLive,
-    actorThreadIds: creatorThreadId ? [creatorThreadId] : [],
+    actorThreadIds: [...treeActorThreadIds],
     updatedAt: evidence?.updatedAt ?? new Date(),
   };
 }
@@ -150,7 +192,6 @@ function conflictOf(node: TreeStateNode): DraftReviewItem["conflict"] {
     case "clash":
       return { code: "path_taken", path: node.conflict.uri ?? node.conflict.at };
     case "deleted_live":
-      return { code: "deleted_live" };
     case "none":
       return null;
   }
