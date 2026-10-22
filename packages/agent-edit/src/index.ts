@@ -68,7 +68,6 @@ export type {
 export {
   DOCUMENT_NAMES_DESCRIPTION,
   DocumentVersionSchema,
-  PublishedWriteToolInputSchema,
   ReadCommandSchema,
   ReadToolInputSchema,
   WriteCommandSchema,

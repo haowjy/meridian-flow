@@ -16,7 +16,6 @@ import {
   DOCUMENT_NAMES_DESCRIPTION,
   DocumentVersionSchema,
   modelResult,
-  PublishedWriteToolInputSchema,
   ReadToolInputSchema,
   renderAgentEditResult,
   WriteToolInputSchema,
@@ -216,14 +215,7 @@ function documentExecutionError(command: (error: ToolExecutionError) => AgentEdi
     });
 }
 
-/**
- * `internalWriteSurface` makes `write` parse the commands the model isn't shown yet (D66): for
- * scripted mock replies and probes only. A real model's calls validate against what it is shown.
- */
-export function createCoreToolRegistrations(
-  handlers: CoreToolHandlers,
-  options: { internalWriteSurface?: boolean } = {},
-): ToolRegistration[] {
+export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolRegistration[] {
   return [
     {
       source: "core",
@@ -256,9 +248,9 @@ export function createCoreToolRegistrations(
           DOCUMENT_NAMES_DESCRIPTION +
           "\n" +
           "Change documents. In draft mode your changes to a document go to its draft, except `scratch://`, which is always edited directly.",
-        inputSchema: modelToolSchema(PublishedWriteToolInputSchema),
+        inputSchema: modelToolSchema(WriteToolInputSchema),
       },
-      input: options.internalWriteSurface ? WriteToolInputSchema : PublishedWriteToolInputSchema,
+      input: WriteToolInputSchema,
       execution: { type: "server", handler: handlers.write },
       documentText: writeDocumentText,
       historySummary: documentHistorySummary,
