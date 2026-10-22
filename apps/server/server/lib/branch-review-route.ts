@@ -125,6 +125,7 @@ const ApplyClickBody = z
       }),
     ),
     groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
+    restore: z.literal(true).optional(),
   })
   .refine((body) => Boolean(body.snapshot) === Boolean(body.draftId));
 const DiscardBody = z.strictObject(Base);

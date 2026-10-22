@@ -25,19 +25,25 @@ for every later attempt), without re-compiling the click and never taking a
 namespace under a document lock. Ordinary text Apply takes only live's mutation
 lock, so unrelated tree changes do not serialize it.
 
-A document deleted live whose draft outlived the delete (D79) comes back first:
-`restoreDocument` clears the record and restores its folders in the same
-transaction, then the ordinary text merge runs against the deleted document's
-last text, which equals its review base. The result carries `restored: true`.
-A path another document took refuses `forbidden` (the item lists `path_taken`);
-a Work cascade, discard or deleted source answers `closed` with the record. The
-route authorizes a deleted item at its source through the draft destination
-(`restoreGrant`) instead of a live grant. When a delete commits after the route
-took the live grant, the transaction's grant confirmation refuses it, nothing is
-claimed, and the route runs the click once more, which now restores. So every
-click restores whichever delete is current, including an Apply all whose
-confirmation list was read before a later delete; the client words its notice
-per document from `restored`. The append
+A document deleted live whose draft outlived the delete (D79) comes back only
+when the writer knew it was deleted: the click carries `restore: true` (a
+per-document Apply on an item showing the deleted state, or an Apply all for the
+documents its confirmation named). The check runs under the document lock, so a
+delete the writer's view did not show, however late it landed, answers
+`needs_restore`: nothing changes, the draft stays pending, and the client asks
+before sending a new click with `restore`. The answer is stored, so a replay
+returns it. With `restore`, `restoreDocument` clears the record and restores its
+folders in the same transaction, then the ordinary text merge runs against the
+deleted document's last text, which equals its review base. The result carries
+`restored: true`. A path another document took refuses `forbidden` (the item
+lists `path_taken`); a Work cascade, discard or deleted source answers `closed`
+with the record. The route authorizes a deleted item at its source through the
+draft destination (`restoreGrant`) instead of a live grant. When a delete commits
+after the route resolved the item, its authorization or the transaction's grant
+confirmation refuses the live grant, nothing is claimed, and the route runs the
+click once more (once), which resolves the item as deleted. Apply reads the
+addressed document's own lifecycle row for these decisions, never a branch-wide
+tree listing. The append
 door is the sole draft-row lock and active-state check: live preparation and its
 staged journal write precede it inside the same Work transaction. A late draft
 closure unwinds that whole transaction before answering `closed`, so no live
