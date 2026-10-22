@@ -437,7 +437,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     drafts: (branchId, documentIds) =>
       workBranchPendingStore.listBranchDraftMetadata(branchId, documentIds),
     pendingThreadIds: workBranchPendingStore.pendingThreadIds,
-    creators: (branchId, documentIds) => workBranchPendingStore.listCreators(branchId, documentIds),
+    treeActors: (branchId, documentIds) =>
+      workBranchPendingStore.listTreeActors(branchId, documentIds),
   });
   // Exactly what each committed transaction ended: its closed drafts' rooms and thread peers.
   deps.draftClose.bindRetirement(

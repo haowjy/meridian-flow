@@ -157,6 +157,11 @@ export interface DocumentDraftHint {
   /** How the branch is named to the writer; null when it has no name (the client words that). */
   label: string | null;
   originWorkId: string | null;
+  /**
+   * The branch's move or delete of the document, which live doesn't show until Apply (D26):
+   * where the branch puts it, or that it deletes it. Null when the branch only edits its text.
+   */
+  tree: { movedTo: Pick<ParsedContextUri, "scheme" | "path"> } | { deleted: true } | null;
 }
 
 export interface DocumentDraftHintsResponse {
