@@ -5,7 +5,6 @@ PR bodies via `pnpm changelog`; PRs no longer edit this file.
 
 ## [Unreleased]
 
-- Chat streaming now uses the document Markdown parser's block, fence and repair decisions, so code and tables do not change meaning while a reply arrives or settles.
 - Start cursorless chat subscriptions at the head; reconcile trails and Work binding without replaying history.
 - Reject thread socket request IDs longer than 64 characters.
 
