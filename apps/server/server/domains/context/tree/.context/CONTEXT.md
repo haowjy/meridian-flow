@@ -86,7 +86,8 @@ cascade and last use, and returns exactly the documents it tombstoned. It is
 built at the composition root (`lib/compose.ts`), not by collab. Callers take
 Work and namespace locks, then the complete sorted document mutation-lock set
 before any document row lock. The kernel writes the record, collects the Works
-of all tree uses, and calls collab's `closeRemovedDocuments` with the record.
+of all tree uses, and registers the record with collab (`registerRemoved`); a
+discard also closes the drafts it ends (`closeDiscardedDrafts`).
 Independent removal retires uses; Work cascade retains hidden creations' uses
 so `restoreWorkDocuments` brings their membership back with the tombstone (the
 rule lives beside the Restore it serves). Retained uses are inactive while their

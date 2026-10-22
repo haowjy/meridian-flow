@@ -9,7 +9,6 @@
 import { z } from "zod";
 import type { ParsedContextUri } from "../context-uri.js";
 import type { BranchCommandId, BranchId, DraftItemKey } from "../ids.js";
-import type { DocumentRemovalRecord } from "../protocol/document-removal.js";
 
 /** A UUID the client mints once per writer command; resends reuse it (contract §4.6). */
 export const BranchCommandIdSchema = z.string().uuid();
@@ -65,7 +64,7 @@ export type ApplyClickResult =
    * the client asks the writer, then sends a new click with `restore`.
    */
   | { status: "needs_restore"; commandId: BranchCommandId }
-  | { status: "closed"; commandId: BranchCommandId; removal?: DocumentRemovalRecord }
+  | { status: "closed"; commandId: BranchCommandId }
   | { status: "refused"; commandId: BranchCommandId; reason: ApplyClickRefusalReason };
 
 export type ApplyClickAnswer =

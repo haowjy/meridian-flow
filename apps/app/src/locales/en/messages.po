@@ -342,10 +342,6 @@ msgid "{name} deleted {title}."
 msgstr "{name} deleted {title}."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "{name} deleted this document, so this draft can't be applied."
-#~ msgstr "{name} deleted this document, so this draft can't be applied."
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted this document."
 msgstr "{name} deleted this document."
 
@@ -356,10 +352,6 @@ msgstr "{name} discarded {count} documents from the draft ({names})."
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} discarded {title} from the draft."
 msgstr "{name} discarded {title} from the draft."
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "{name} discarded this document from the draft, so this draft can't be applied."
-#~ msgstr "{name} discarded this document from the draft, so this draft can't be applied."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} discarded this document from the draft."
@@ -474,11 +466,6 @@ msgstr "<0.1 s"
 msgid "<0>{0}</0> and all its contents will be deleted."
 msgstr "<0>{0}</0> and all its contents will be deleted."
 
-#. placeholder {0}: target.name
-#: src/features/project/context/ContextEntryActions.tsx
-#~ msgid "<0>{0}</0> and all its contents will be permanently deleted."
-#~ msgstr "<0>{0}</0> and all its contents will be permanently deleted."
-
 #. placeholder {0}: target?.title
 #: src/features/project/chat-list/DeleteChatDialog.tsx
 msgid "<0>{0}</0> and its messages will be deleted."
@@ -488,11 +475,6 @@ msgstr "<0>{0}</0> and its messages will be deleted."
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "<0>{0}</0> will be deleted."
 msgstr "<0>{0}</0> will be deleted."
-
-#. placeholder {0}: target?.name
-#: src/features/project/context/ContextEntryActions.tsx
-#~ msgid "<0>{0}</0> will be permanently deleted."
-#~ msgstr "<0>{0}</0> will be permanently deleted."
 
 #: src/features/chat/DeletedChatCard.tsx
 msgid "<0>{title}</0> was deleted."
@@ -758,10 +740,6 @@ msgstr "Apply all"
 msgid "Apply all changes"
 msgstr "Apply all changes"
 
-#: src/features/draft-review/ReviewMessageText.tsx
-#~ msgid "Apply couldn't finish"
-#~ msgstr "Apply couldn't finish"
-
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewBand.tsx
 msgid "Apply draft"
@@ -780,11 +758,11 @@ msgstr "Apply is waiting for confirmation."
 msgid "Applying"
 msgstr "Applying"
 
-#: src/features/draft-review/RestoreQuestion.tsx
+#: src/features/draft-review/CommandNotice.tsx
 msgid "Applying brings back {names}, which was deleted from the manuscript."
 msgstr "Applying brings back {names}, which was deleted from the manuscript."
 
-#: src/features/draft-review/RestoreQuestion.tsx
+#: src/features/draft-review/CommandNotice.tsx
 msgid "Applying brings back {names}, which were deleted from the manuscript."
 msgstr "Applying brings back {names}, which were deleted from the manuscript."
 
@@ -1343,14 +1321,6 @@ msgstr "Could not load files."
 msgid "Couldn't apply this draft."
 msgstr "Couldn't apply this draft."
 
-#: src/features/draft-review/ReviewMessageText.tsx
-#~ msgid "Couldn't apply this draft. Try again."
-#~ msgstr "Couldn't apply this draft. Try again."
-
-#: src/features/draft-review/ReviewMessageText.tsx
-#~ msgid "Couldn't apply. Check your connection and try again."
-#~ msgstr "Couldn't apply. Check your connection and try again."
-
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
 msgstr "Couldn't check Work"
@@ -1359,10 +1329,6 @@ msgstr "Couldn't check Work"
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t confirm this preference saved."
 msgstr "Couldn’t confirm this preference saved."
-
-#: src/features/draft-review/ReviewMessageText.tsx
-#~ msgid "Couldn't confirm whether this applied. Check what is left before you try again."
-#~ msgstr "Couldn't confirm whether this applied. Check what is left before you try again."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't confirm whether this discarded. Check what is left before you try again."
@@ -1423,14 +1389,6 @@ msgstr "Couldn't delete this folder. Try again."
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't discard this draft."
 msgstr "Couldn't discard this draft."
-
-#: src/features/draft-review/ReviewMessageText.tsx
-#~ msgid "Couldn't discard this draft. Try again."
-#~ msgstr "Couldn't discard this draft. Try again."
-
-#: src/features/draft-review/ReviewMessageText.tsx
-#~ msgid "Couldn't discard. Check your connection and try again."
-#~ msgstr "Couldn't discard. Check your connection and try again."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't edit"
@@ -4503,20 +4461,12 @@ msgid "This document was deleted from the manuscript. Apply again to bring it ba
 msgstr "This document was deleted from the manuscript. Apply again to bring it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "This document was deleted with the Work {name}, so this draft can't be applied."
-#~ msgstr "This document was deleted with the Work {name}, so this draft can't be applied."
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was deleted with the Work {name}."
 msgstr "This document was deleted with the Work {name}."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "This document was deleted with the Work {work} before this reply saved its change."
 msgstr "This document was deleted with the Work {work} before this reply saved its change."
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "This document was deleted, so this draft can't be applied."
-#~ msgstr "This document was deleted, so this draft can't be applied."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was deleted."
@@ -4527,20 +4477,12 @@ msgid "This document was discarded from the draft before this reply saved its ch
 msgstr "This document was discarded from the draft before this reply saved its change."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "This document was discarded from the draft, so this draft can't be applied."
-#~ msgstr "This document was discarded from the draft, so this draft can't be applied."
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was discarded from the draft."
 msgstr "This document was discarded from the draft."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "This document was removed when the reply that created it didn't finish, so this change wasn't made."
 msgstr "This document was removed when the reply that created it didn't finish, so this change wasn't made."
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "This document was removed when the reply that created it didn't finish, so this draft can't be applied."
-#~ msgstr "This document was removed when the reply that created it didn't finish, so this draft can't be applied."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was removed when the reply that created it didn't finish."
@@ -4671,10 +4613,6 @@ msgstr "This view couldn’t open."
 #: src/features/project/work/ArchivedWorkNotice.tsx
 msgid "This Work is archived."
 msgstr "This Work is archived."
-
-#: src/features/draft-review/ReviewMessageText.tsx
-#~ msgid "This Work is archived. Unarchive it to apply or discard its changes."
-#~ msgstr "This Work is archived. Unarchive it to apply or discard its changes."
 
 #: src/client/query/work-update-failure.ts
 msgid "This Work is archived. Unarchive it to edit."
