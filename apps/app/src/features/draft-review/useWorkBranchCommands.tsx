@@ -124,14 +124,14 @@ export function useWorkBranchCommands({
       const item = row(draft);
       if (mode === "apply") {
         const bringBack = restore ?? isDeletedFromManuscript(item);
-        // The tree cut rides with a whole-item click or a selection that includes the tree line.
+        // The tree cut rides with the tree line, a whole-item click, or a selection that includes the line.
         const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
-        const started =
-          target.kind === "tree"
-            ? item?.tree
-              ? owner.applyTree(ref(draft), item.tree, bringBack)
-              : blocked()
-            : owner.apply(ref(draft), target, bringBack, (tree && item?.tree) || undefined);
+        const started = owner.apply(
+          ref(draft),
+          target,
+          bringBack,
+          (tree && item?.tree) || undefined,
+        );
         void started.outcome.then((outcome) => {
           if (outcome.kind === "done" && tree && item?.tree) dropTreeLine(item);
           if (outcome.kind === "done" && outcome.restored) restored(item);
@@ -160,21 +160,17 @@ export function useWorkBranchCommands({
         show(removed);
         return { sent: true, outcome };
       }
-      // A move or delete is discarded on the server; the item's text, if any, here as always.
+      // A move or delete is discarded on the server, with the item's chosen text, as one command.
       if (target.kind === "tree" || (item?.tree && (target.kind === "draft" || target.tree))) {
         if (!item?.tree) return blocked();
-        const text =
-          item.hasDraft && target.kind !== "tree"
-            ? owner.discard(ref(draft), target, surface, endNotice)
-            : null;
         // The line goes at once; the refetch after the answer restores it if the server refused.
         dropTreeLine(item);
-        const outcome = Promise.all([owner.discardTree(ref(draft), item), text?.outcome]).then(
-          ([tree, discardedText]) => {
-            refresh();
-            return tree.kind === "done" && discardedText ? discardedText : tree;
-          },
-        );
+        const outcome = owner.discardItem(ref(draft), item, target, surface).then((answer) => {
+          refresh();
+          return answer;
+        });
+        // No Undo: the server's settlement of the move or delete has none (`discardItem`).
+        if (surface === "dock") show({ kind: "discarded", itemKey: draft.itemKey, end() {} });
         return { sent: true, outcome };
       }
       const discarded = owner.discard(ref(draft), target, surface, endNotice);

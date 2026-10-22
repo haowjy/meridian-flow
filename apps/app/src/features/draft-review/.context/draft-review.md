@@ -98,7 +98,7 @@ the catalog shows its document and closes only when its draft metadata answers
 Closure belongs to a draft generation, not to its item key. The key (branch +
 document) outlives its drafts: discarding one item leaves the branch active, and
 a later write to the same document mints a new draft under the same key. The
-command owner keeps each draft's record (its unsent text, its queue) under its
+command owner keeps each draft's record (its unsent text, its room) under its
 draft id, and an item follows its newest known generation: `bind` and
 `reconcileClosed` advance it, never a close. A close (room reset or metadata
 `gone`) retires the generation it was issued for, so a late answer about the old
@@ -119,10 +119,18 @@ creation, so after a Discard on another device a content check would answer
 ## Account command lifetime
 
 `AccountFeatureLifetime.draftCommands` is shared by editor, chat and Work
-surfaces. `bind(ref, session)` joins one stable draft-row queue and installs a replaceable
-session binding (runtime, base-fold provider and Apply-record observer). A pending
-queue owns a room reader that follows replacement sessions even without a surface.
-Retiring a session detaches that binding, not the draft queue. `apply(ref, target)` synchronously freezes the stable `draftId`, Yjs
+surfaces. The review item owns command scheduling: one `ApplyClickQueue` per item key
+for its text, tree and text+tree clicks, so a tree cut waits behind the text clicks
+before it and one path publishes `pending`, `applying` and `stalled` on the item's
+current generation. Draft rooms are resources the item attaches. `bind(ref, session)`
+joins the item and installs a replaceable session binding on that draft's room
+(runtime, base-fold provider and Apply-record observer). A text click names its draft
+(`body.draftId`); only that draft's room records it, folds it into its base, holds a
+room reader for it (following replacement sessions even without a surface), and
+cancels it on close, so a newer draft under the same key never inherits an old click.
+A tree-only click has no room and its applied answer settles it. A refusal lands on
+the generation the click was made for. Retiring a session detaches that binding and
+refuses only its draft's unsent clicks. `apply(ref, target)` synchronously freezes the stable `draftId`, Yjs
 snapshot, the reviewed base blocks (O), selected ids, the result of applying those
 groups (P) and one room-base-to-O delta. Its acknowledgement barrier waits for
 the server to acknowledge every local update in that captured cut before dispatch. The queue
@@ -226,11 +234,16 @@ room is a lifecycle transition, not a room-opening error. The metadata GET retur
 `gone`; list item keys cannot supply room identity. An item with a branch row
 (`tree`: a creation, move or delete) applies it with a tree cut: the whole item's
 Apply carries `tree.revision`, and with no text to send (no room, or no changes)
-it is `applyTree` alone: empty `groupIds` and `baseViewDelta`, no `snapshot` or
-`draftId`. A changed row answers `changed`; a move whose destination another of
+it is the tree cut alone: empty `groupIds` and `baseViewDelta`, no `snapshot` or
+`draftId`, in the same item FIFO. A tree cut already queued is not sent again. A
+changed row answers `changed`; a move whose destination another of
 the branch's items still holds answers `held`, and Apply all re-sends those after
-the others. The item's Discard drops a move or delete on the server
-(`discardTree`) and its text here as always.
+the others. `discardItem` is the item's one Discard when it has a tree line: the
+server drops the move or delete, and the chosen text is discarded here as always.
+Its text offers no Undo, because Undo would bring back the text without the move
+or delete the server already settled (#763): the owner ends the text notice at
+once (the accepted write keeps its paint opportunity, then releases its room), and
+the surface shows "Discarded" without Undo.
 
 The move or delete is a row of its own, the item's tree line (`tree-line.ts`):
 a `ReviewChange` with no frame and `tree` set, listed before the text changes
