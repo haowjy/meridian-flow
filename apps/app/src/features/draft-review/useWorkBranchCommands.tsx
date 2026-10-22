@@ -97,7 +97,6 @@ export function useWorkBranchCommands({
     const applied = (
       item: ThreadDraftListItem | undefined,
       outcome: Extract<CommandOutcome, { kind: "done" }>,
-      rows: readonly ThreadDraftListItem[],
     ) => {
       const held = heldNotice.current;
       const title = item?.documentName ?? documentBasename(item?.contextLocation?.path) ?? null;
@@ -107,18 +106,18 @@ export function useWorkBranchCommands({
       ];
       const renamed = [
         ...(held?.kind === "applied" ? held.renamed : []),
-        ...(outcome.renamed ?? []).flatMap((path) => {
+        ...(outcome.applied ?? []).flatMap(({ renamed: path }) => {
+          if (!path) return [];
           const name = documentBasename(path);
           return name ? [name] : [];
         }),
       ];
       const alsoApplied = [
         ...(held?.kind === "applied" ? held.alsoApplied : []),
-        ...(outcome.appliedTrees ?? []).flatMap((appliedTree) => {
-          if (appliedTree.itemKey === item?.itemKey) return [];
-          const appliedItem = rows.find((candidate) => candidate.itemKey === appliedTree.itemKey);
-          const from = documentBasename(appliedItem?.tree?.movedFrom?.path);
-          const to = documentBasename(appliedTree.renamed ?? appliedItem?.contextLocation?.path);
+        ...(outcome.applied ?? []).flatMap((appliedItem) => {
+          if (appliedItem.itemKey === item?.itemKey || !appliedItem.transition) return [];
+          const from = documentBasename(appliedItem.transition.from);
+          const to = documentBasename(appliedItem.transition.to);
           return from && to ? [`${from} → ${to}`] : [];
         }),
       ];
@@ -127,7 +126,11 @@ export function useWorkBranchCommands({
     };
     // An archived Work's refusal is silent (`shownRefusal`): its notice explains it once this tab
     // has read the archive, which another tab or device may have made.
-    type CapturedStart = { dispatch(treeAlreadyApplied?: boolean): CommandStart };
+    type CapturedStart = {
+      release(treeAlreadyApplied?: boolean): CommandStart;
+      captured: CapturedApply;
+      present(outcome: CommandOutcome): void;
+    };
     const captureApply = (
       draft: DraftReviewSelection,
       target: ChangeTarget,
@@ -150,19 +153,23 @@ export function useWorkBranchCommands({
         (tree && item?.tree) || undefined,
       );
       if (!captured) return null;
+      const present = (outcome: CommandOutcome) => {
+        if (outcome.kind === "done" && tree && item?.tree) dropTreeLine(item);
+        if (outcome.kind === "done") applied(item, outcome);
+        if (outcome.kind === "needs-restore" || !owner.state(draft.itemKey).pending) refresh();
+      };
       return {
-        dispatch(treeAlreadyApplied = false) {
+        captured,
+        present,
+        release(treeAlreadyApplied = false) {
           if (treeAlreadyApplied && target.kind === "tree") {
+            void captured.release({ cancel: true }).outcome;
             if (item) dropTreeLine(item);
             refresh();
             return { sent: false, outcome: Promise.resolve({ kind: "done" }) };
           }
-          const started = captured.dispatch({ omitTree: treeAlreadyApplied });
-          void started.outcome.then((outcome) => {
-            if (outcome.kind === "done" && tree && item?.tree) dropTreeLine(item);
-            if (outcome.kind === "done") applied(item, outcome, rows);
-            if (outcome.kind === "needs-restore" || !owner.state(draft.itemKey).pending) refresh();
-          });
+          const started = captured.release({ omitTree: treeAlreadyApplied });
+          void started.outcome.then(present);
           return started;
         },
       };
@@ -177,7 +184,7 @@ export function useWorkBranchCommands({
     ): CommandStart => {
       const started =
         mode === "apply"
-          ? (captureApply(draft, target, restore, resetNotice)?.dispatch(treeAlreadyApplied) ??
+          ? (captureApply(draft, target, restore, resetNotice)?.release(treeAlreadyApplied) ??
             blocked())
           : dispatchDiscard(draft, target, resetNotice);
       void started.outcome.then((outcome) => {
@@ -294,7 +301,18 @@ export function useWorkBranchCommands({
             draft,
             command: captureApply(draft, target, restore.has(draft.documentId), false),
           }));
-          return applyInServerOrder(captured);
+          const outcomes = owner.releaseBatch(
+            captured.map(({ draft, command }) => ({
+              itemKey: draft.itemKey,
+              command: command?.captured ?? null,
+            })),
+          );
+          void outcomes.then((settled) => {
+            settled.forEach((outcome, index) => {
+              captured[index]?.command?.present(outcome);
+            });
+          });
+          return outcomes;
         }
         return Promise.all(items.map(({ draft, target }) => start(mode, draft, target).outcome));
       },
@@ -314,7 +332,18 @@ export function useWorkBranchCommands({
               false,
             ),
           }));
-          return applyInServerOrder(captured);
+          const outcomes = owner.releaseBatch(
+            captured.map(({ draft, command }) => ({
+              itemKey: draft.itemKey,
+              command: command?.captured ?? null,
+            })),
+          );
+          void outcomes.then((settled) => {
+            settled.forEach((outcome, index) => {
+              captured[index]?.command?.present(outcome);
+            });
+          });
+          return outcomes;
         }
         endNotice();
         const branchId = drafts.map(row).find(Boolean)?.branchId;
@@ -327,28 +356,6 @@ export function useWorkBranchCommands({
       },
     };
   }, [owner, locked, projectId, workId, threadId, surface, queryClient, notice]);
-}
-
-/**
- * One Apply can settle the tree rows ahead of it. Later items still send their text, but do
- * not send a tree cut the server already named as applied.
- */
-async function applyInServerOrder(
-  items: readonly {
-    draft: DraftReviewSelection;
-    command: { dispatch(treeAlreadyApplied?: boolean): CommandStart } | null;
-  }[],
-): Promise<CommandOutcome[]> {
-  const appliedTrees = new Set<string>();
-  const outcomes: CommandOutcome[] = [];
-  for (const { draft, command } of items) {
-    const outcome = await (command?.dispatch(appliedTrees.has(draft.itemKey)).outcome ??
-      Promise.resolve<CommandOutcome>({ kind: "blocked" }));
-    outcomes.push(outcome);
-    if (outcome.kind === "done")
-      for (const item of outcome.appliedTrees ?? []) appliedTrees.add(item.itemKey);
-  }
-  return outcomes;
 }
 
 const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);

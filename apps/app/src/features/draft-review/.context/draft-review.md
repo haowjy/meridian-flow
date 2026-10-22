@@ -136,11 +136,12 @@ the generation the click was made for. Retiring a session detaches that binding 
 refuses only its draft's unsent clicks. `captureApply(ref, target)` synchronously freezes the stable `draftId`, Yjs
 snapshot, the reviewed base blocks (O), selected ids, the result of applying those
 groups (P) and one room-base-to-O delta. Its acknowledgement barrier waits for
-the server to acknowledge every local update in that captured cut before dispatch. A single
-Apply dispatches that capture immediately. Apply all captures every item in the click's event
-turn, then dispatches those immutable commands in server order; an earlier answer may omit a
-tree cut it already settled, but never recaptures later text or a later tree revision. The queue
-retains a `readDraftRoom` lease independently of React until terminal.
+the server to acknowledge every local update in that captured cut before sending. Capture
+immediately enters the immutable command in the item's account-owned FIFO. A single Apply
+releases it to send at once. Apply all captures and queues every item in the click's event turn,
+then the owner releases sends in server order; an earlier answer may omit a tree cut it already
+settled, but never recaptures later text or a later tree revision. The queue retains a
+`readDraftRoom` lease independently of React until terminal.
 
 A deleted document (the list item's `deletedLive`, D79) is draft-only on every
 surface. Existence is its own fact, never read from a name conflict. If another document took

@@ -5,7 +5,7 @@ PR bodies via `pnpm changelog`; PRs no longer edit this file.
 
 ## [Unreleased]
 
-- Apply all freezes every document at the click while sending them in server order. A blocked dependency no longer stops the selected move from landing at a free name, and single-row Apply names the other moves it applied. Duplicate uploads show their allocated names in the composer and sent message. Model Undo opens a moved document at the path where it landed.
+- Apply all queues every frozen document in the account command owner before sending them in server order. A blocked dependency stays in Changes to review, reports its obstructed destination when applied, and no longer stops the selected move from landing at a free name. Apply reports the committed paths of other moves it settled. Duplicate uploads show their allocated names in the composer and sent message. Model Undo opens a moved document at the path where it landed.
 - Start cursorless chat subscriptions at the head; reconcile trails and Work binding without replaying history.
 - Reject thread socket request IDs longer than 64 characters.
 

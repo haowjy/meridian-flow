@@ -128,7 +128,7 @@ export function createDrizzleApplyClick(
   async function reveal(
     node: TreeStateNode,
     at: Pick<TreeStateNode["target"], "contextSourceId" | "parentFolderId" | "name" | "extension">,
-  ): Promise<TreeStateNode["target"]> {
+  ): Promise<void> {
     const placed = await place(db, {
       targets: [
         {
@@ -152,15 +152,7 @@ export function createDrizzleApplyClick(
       placed.value.sourceIds,
       placed.value.placed.map((ref) => ref.id),
     );
-    const [landed] = placed.value.landed;
-    if (!landed) throw new ApplyClickRefused("not_found");
-    return {
-      ...node.target,
-      ...landed.at,
-      path: node.target.path,
-      dir: node.target.dir,
-      uri: node.target.uri,
-    };
+    if (!placed.value.landed[0]) throw new ApplyClickRefused("not_found");
   }
   /** The addressed document's node in the branch, never another created document's. */
   async function itemNode(branchId: BranchId, documentId: DocumentId) {
@@ -170,34 +162,42 @@ export function createDrizzleApplyClick(
 
   type DependencyPlan = {
     nodes: Map<DocumentId, TreeStateNode>;
-    next: Map<DocumentId, DocumentId>;
+    chain: DocumentId[];
+    cycleAt: number | null;
   };
 
   /** The live occupant chain that this one click owns under the branch lock. */
   async function dependencyPlan(branchId: BranchId, root: DocumentId): Promise<DependencyPlan> {
     const nodes = new Map<DocumentId, TreeStateNode>();
-    const next = new Map<DocumentId, DocumentId>();
-    const visit = async (documentId: DocumentId): Promise<void> => {
-      if (nodes.has(documentId)) return;
+    const chain: DocumentId[] = [];
+    const positions = new Map<DocumentId, number>();
+    let cycleAt: number | null = null;
+    let documentId: DocumentId | null = root;
+    while (documentId) {
+      const repeated = positions.get(documentId);
+      if (repeated !== undefined) {
+        cycleAt = repeated;
+        break;
+      }
       const node = await itemNode(branchId, documentId);
-      if (!node) return;
+      if (!node) break;
+      positions.set(documentId, chain.length);
+      chain.push(documentId);
       nodes.set(documentId, node);
-      if (node.branch?.state !== "moving") return;
+      if (node.branch?.state !== "moving") break;
       const found = await tree.resolvePath(LIVE_TREE, {
         contextSourceId: node.target.contextSourceId,
         path: node.target.path,
         as: "document",
       });
-      if (found.kind !== "found" || found.node.kind !== "document") return;
+      if (found.kind !== "found" || found.node.kind !== "document") break;
       const occupant = found.node.document.id;
-      if (occupant === documentId) return;
+      if (occupant === documentId) break;
       const other = await itemNode(branchId, occupant);
-      if (!other?.branch || (!other.branch.moved && !other.branch.deleted)) return;
-      next.set(documentId, occupant);
-      await visit(occupant);
-    };
-    await visit(root);
-    return { nodes, next };
+      if (!other?.branch || (!other.branch.moved && !other.branch.deleted)) break;
+      documentId = occupant;
+    }
+    return { nodes, chain, cycleAt };
   }
 
   function displayedPath(node: TreeStateNode, path: string): string {
@@ -349,26 +349,43 @@ export function createDrizzleApplyClick(
                         commandId: command.envelope.commandId,
                       });
                     let restored = false;
-                    let replaced: string | undefined;
                     const applied: AppliedReviewItem[] = [];
-                    const recordApplied = async (appliedNode: TreeStateNode) => {
+                    const committedTreeItem = async (
+                      appliedNode: TreeStateNode,
+                      from: string | null,
+                    ): Promise<AppliedReviewItem> => {
                       const renamed = await renamedNote(appliedNode);
-                      applied.push({
+                      const to =
+                        appliedNode.branch?.state === "deleting"
+                          ? null
+                          : (renamed?.path ?? displayedPath(appliedNode, appliedNode.target.path));
+                      return {
                         itemKey: draftItemKey(branchId, appliedNode.nodeId),
-                        tree: true,
+                        transition: { from, to },
                         ...(renamed ? { renamed } : {}),
-                      });
+                      };
                     };
-                    const settleTreeNode = async (appliedNode: TreeStateNode) => {
+                    const settleTreeNode = async (
+                      appliedNode: TreeStateNode,
+                      from: string | null,
+                    ): Promise<AppliedReviewItem> => {
                       await dropDocumentRows(db, {
                         branchId,
                         documentIds: [appliedNode.nodeId],
                         settle: { as: "applied", userId },
                       });
-                      await recordApplied(appliedNode);
+                      const item = await committedTreeItem(appliedNode, from);
                       deferUntilDrizzleCommit(() => deps.onCommitted(appliedNode.nodeId));
+                      return item;
                     };
-                    const applyTreeNode = async (appliedNode: TreeStateNode) => {
+                    const applyTreeNode = async (
+                      appliedNode: TreeStateNode,
+                    ): Promise<AppliedReviewItem> => {
+                      const before = await tree.findById(LIVE_TREE, appliedNode.nodeId);
+                      const from =
+                        before.kind === "found"
+                          ? displayedPath(appliedNode, before.document.path)
+                          : null;
                       const [identity] = await loadDocumentIdentityRows(tx, [appliedNode.nodeId]);
                       if (!identity) throw new ApplyClickRefused("not_found");
                       if (appliedNode.branch?.state === "deleting") {
@@ -408,9 +425,9 @@ export function createDrizzleApplyClick(
                               deps.releaseObjects(ended.releasedObjects),
                             );
                         }
-                        await recordApplied(appliedNode);
+                        const item = await committedTreeItem(appliedNode, from);
                         deferUntilDrizzleCommit(() => deps.onCommitted(appliedNode.nodeId));
-                        return;
+                        return item;
                       }
                       if (identity.deleted) {
                         const outcome = await restoreDocument(
@@ -452,14 +469,24 @@ export function createDrizzleApplyClick(
                         );
                         if (moved.kind === "ancestor_taken")
                           throw new ApplyClickRefused("ancestor_taken");
+                        if (moved.kind === "folder_missing") {
+                          for (let length = 1; length <= appliedNode.target.dir.length; length++) {
+                            const occupant = await tree.resolvePath(LIVE_TREE, {
+                              contextSourceId: appliedNode.target.contextSourceId,
+                              path: appliedNode.target.dir.slice(0, length).join("/"),
+                              as: "folder",
+                            });
+                            if (occupant.kind === "not_found") break;
+                            if (occupant.kind === "ambiguous" || occupant.node.kind === "document")
+                              throw new ApplyClickRefused("ancestor_taken");
+                          }
+                        }
                         if (moved.kind !== "moved") throw new ApplyClickRefused("not_found");
-                        if (appliedNode.nodeId === command.documentId)
-                          replaced = appliedNode.from?.uri ?? appliedNode.from?.path;
                       }
                       if (appliedNode.hidden && appliedNode.origin === "created") {
                         await reveal(appliedNode, appliedNode.target);
                       }
-                      await settleTreeNode(appliedNode);
+                      return settleTreeNode(appliedNode, from);
                     };
 
                     if (cut && node) {
@@ -467,27 +494,35 @@ export function createDrizzleApplyClick(
                       const scoped = new Set(scopeIds);
                       if ([...plan.nodes.keys()].some((id) => !scoped.has(id)))
                         throw new TreeScopeChangedError();
-                      const done = new Set<DocumentId>();
-                      const visiting: DocumentId[] = [];
-                      const applyDependency = async (documentId: DocumentId): Promise<void> => {
-                        const doneBefore = new Set(done);
-                        const appliedBefore = applied.length;
-                        const visitingBefore = [...visiting];
+                      const tolerateDependency = async (
+                        operation: () => Promise<AppliedReviewItem[]>,
+                      ): Promise<AppliedReviewItem[]> => {
                         try {
-                          await runInDrizzleSavepoint(db, () => applyOrdered(documentId));
+                          return await runInDrizzleSavepoint(db, operation);
                         } catch (cause) {
                           if (!(cause instanceof ApplyClickRefused)) throw cause;
-                          for (const id of done) if (!doneBefore.has(id)) done.delete(id);
-                          applied.splice(appliedBefore);
-                          visiting.splice(0, visiting.length, ...visitingBefore);
+                          return [];
                         }
                       };
-                      const applyOrdered = async (documentId: DocumentId): Promise<void> => {
-                        if (done.has(documentId)) return;
-                        const cycleAt = visiting.indexOf(documentId);
-                        if (cycleAt >= 0) {
-                          const cycle = visiting.slice(cycleAt);
-                          const cycleNodes = cycle.map((id) => plan.nodes.get(id) as TreeStateNode);
+                      const cycleIds = plan.cycleAt === null ? [] : plan.chain.slice(plan.cycleAt);
+                      if (cycleIds.length) {
+                        const cycleNodes = cycleIds.map(
+                          (id) => plan.nodes.get(id) as TreeStateNode,
+                        );
+                        const installCycle = async (): Promise<AppliedReviewItem[]> => {
+                          const before = new Map(
+                            await Promise.all(
+                              cycleNodes.map(async (cycleNode) => {
+                                const found = await tree.findById(LIVE_TREE, cycleNode.nodeId);
+                                return [
+                                  cycleNode.nodeId,
+                                  found.kind === "found"
+                                    ? displayedPath(cycleNode, found.document.path)
+                                    : null,
+                                ] as const;
+                              }),
+                            ),
+                          );
                           await movePlacementCycle(
                             db,
                             cycleNodes.map((cycleNode) => ({
@@ -496,26 +531,31 @@ export function createDrizzleApplyClick(
                             })),
                             { arrivals: deps.arrivals, catalog: deps.catalog },
                           );
-                          for (const cycleNode of cycleNodes) {
-                            if (cycleNode.nodeId === command.documentId)
-                              replaced = cycleNode.from?.uri ?? cycleNode.from?.path;
-                            await settleTreeNode(cycleNode);
-                            done.add(cycleNode.nodeId);
-                          }
-                          return;
-                        }
-                        visiting.push(documentId);
-                        const dependency = plan.next.get(documentId);
-                        // A dependency's impossible destination leaves its own row pending. It
-                        // cannot veto the clicked row, which can still claim a free leaf name.
-                        if (dependency) await applyDependency(dependency);
-                        visiting.pop();
-                        if (done.has(documentId)) return;
-                        const planned = plan.nodes.get(documentId);
-                        if (planned) await applyTreeNode(planned);
-                        done.add(documentId);
-                      };
-                      await applyOrdered(command.documentId);
+                          const items: AppliedReviewItem[] = [];
+                          for (const cycleNode of cycleNodes)
+                            items.push(
+                              await settleTreeNode(cycleNode, before.get(cycleNode.nodeId) ?? null),
+                            );
+                          return items;
+                        };
+                        applied.push(
+                          ...(plan.cycleAt === 0
+                            ? await installCycle()
+                            : await tolerateDependency(installCycle)),
+                        );
+                      }
+                      const beforeCycle = plan.cycleAt ?? plan.chain.length;
+                      for (let index = beforeCycle - 1; index >= 0; index--) {
+                        const planned = plan.nodes.get(plan.chain[index] as DocumentId);
+                        if (!planned) continue;
+                        if (index === 0) applied.push(await applyTreeNode(planned));
+                        else
+                          applied.push(
+                            ...(await tolerateDependency(async () => [
+                              await applyTreeNode(planned),
+                            ])),
+                          );
+                      }
                       if (state === "deleting")
                         return finish({
                           status: "applied",
@@ -563,7 +603,6 @@ export function createDrizzleApplyClick(
                         commandId: command.envelope.commandId,
                         applied,
                         ...(restored ? { restored } : {}),
-                        ...(replaced ? { replaced } : {}),
                       });
                     }
                     const { schema } = click;
@@ -752,7 +791,6 @@ export function createDrizzleApplyClick(
                         applied,
                         ...(overrode ? { overrode } : {}),
                         ...(restored ? { restored } : {}),
-                        ...(replaced ? { replaced } : {}),
                       };
                       await finish(answer);
                       deferUntilDrizzleCommit(async () => {

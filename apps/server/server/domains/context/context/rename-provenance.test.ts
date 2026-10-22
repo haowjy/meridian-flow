@@ -9,8 +9,8 @@ import { ContextFS } from "../adapters/context-fs/context-fs.js";
 import {
   createInMemoryContextDocumentStoreBacking,
   InMemoryContextDocumentStore,
-  InMemoryContextTreeMutationStore,
 } from "../adapters/context-fs/in-memory-store.js";
+import { InMemoryContextTreeMutationStore } from "../adapters/context-fs/in-memory-tree-mutation-store.js";
 import { createContextPortRouter } from "./router.js";
 
 describe.each(["path", "identity", "identity suffix"] as const)("%s destination naming", (mode) => {

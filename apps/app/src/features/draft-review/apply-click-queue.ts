@@ -42,6 +42,7 @@ function isFinalRefusal(
 export type ApplyClickLanded = { status: "landed"; commandId: string };
 export type ApplyClickOutcome = ApplyClickResult | ApplyClickLanded | { status: "cancelled" };
 type Click = FrozenApply & {
+  release: Promise<{ cancel?: boolean; omitTree?: boolean }>;
   sent: boolean;
   attempts: number;
   stalled: boolean;
@@ -75,11 +76,15 @@ export class ApplyClickQueue {
     },
   ) {}
 
-  enqueue(frozen: FrozenApply): Promise<ApplyClickOutcome> {
+  enqueue(
+    frozen: FrozenApply,
+    release: Promise<{ cancel?: boolean; omitTree?: boolean }> = Promise.resolve({}),
+  ): Promise<ApplyClickOutcome> {
     if (this.closed) return Promise.resolve({ status: "cancelled" });
     const result = new Promise<ApplyClickOutcome>((finish) => {
       const click: Click = {
         ...frozen,
+        release,
         sent: false,
         attempts: 0,
         stalled: false,
@@ -193,7 +198,15 @@ export class ApplyClickQueue {
   private async dispatch(click: Click): Promise<void> {
     if (this.request || this.clicks[0] !== click || click.stalled) return;
     try {
-      await click.acknowledged;
+      const [, released] = await Promise.all([click.acknowledged, click.release]);
+      if (released.cancel) {
+        const index = this.clicks.indexOf(click);
+        if (index >= 0) this.clicks.splice(index, 1);
+        click.finish({ status: "cancelled" });
+        this.moveOn();
+        return;
+      }
+      if (released.omitTree && click.body.tree) click.body = { ...click.body, tree: undefined };
     } catch {
       this.refuse(click);
       return;
