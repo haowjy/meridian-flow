@@ -70,8 +70,8 @@ export function ProjectChatContextNavigationProvider({
   children,
 }: {
   projectId: string;
-  activeWork: { id: string; slug: string | null } | null;
-  availableWorks: readonly { id: string; slug: string | null }[];
+  activeWork: { id: string; handle: string | null } | null;
+  availableWorks: readonly { id: string; handle: string | null }[];
   /** The displayed chat's lineage: where its bare `scratch://` points while it is on No Work. */
   rootThreadId: string | null;
   /** The chat that owns the displayed thread's uploads: a subagent's top chat. */
@@ -219,11 +219,11 @@ export function ProjectChatContextNavigationProvider({
           ? ownHandle
           : threads?.find((thread) => thread.id === target.rootThreadId)?.ref
         : null;
-      const workSlug =
+      const workHandle =
         target.workId === noWorkId
           ? null
-          : (availableWorks.find(({ id }) => id === target.workId)?.slug ?? undefined);
-      const catalogUri = canonicalDoorUri(target, { ownerRef, workSlug }) ?? uri;
+          : (availableWorks.find(({ id }) => id === target.workId)?.handle ?? undefined);
+      const catalogUri = canonicalDoorUri(target, { ownerRef, workHandle }) ?? uri;
       // A new intent retires an earlier search row's passage work now, not when this answer lands.
       passages.retire();
       const link = classifyLinkTarget(catalogUri);

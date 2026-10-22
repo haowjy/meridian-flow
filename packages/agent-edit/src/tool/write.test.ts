@@ -378,8 +378,8 @@ describe("write tool dispatch", () => {
 
     expectOutcome(first, "success");
     expectOutcome(second, "success");
-    expect(first.writeId).toBe("w1");
-    expect(second.writeId).toBe("w2");
+    expect(first.writeId).toBe("e1");
+    expect(second.writeId).toBe("e2");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
       "Alpha.",
       "First response write.",

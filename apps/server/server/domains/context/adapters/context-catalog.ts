@@ -15,7 +15,7 @@ import type {
   CatalogSnapshot,
 } from "@meridian/contracts/protocol";
 import { catalogScopeKey } from "@meridian/contracts/protocol";
-import { decodeWorkSlug } from "@meridian/contracts/works";
+import { decodeWorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
   contextAvailabilityHeads,
@@ -184,7 +184,7 @@ async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
       name: contextSources.name,
       slug: contextSources.slug,
       workId: contextSources.workId,
-      workSlug: works.slug,
+      workHandle: works.handle,
       chatThreadId: contextSources.chatThreadId,
       ownerThreadRef: threads.ref,
     })
@@ -339,7 +339,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
     const authority = catalogSourceAuthority(
       scheme,
       source.workId,
-      source.workSlug,
+      source.workHandle,
       source.ownerThreadRef,
       source.chatThreadId !== null,
     );
@@ -377,7 +377,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
           observationVersion,
           scheme,
           workId: source.workId,
-          workSlug: source.workSlug,
+          workHandle: source.workHandle,
           ownerThreadRef: source.ownerThreadRef,
           chatOwned: source.chatThreadId !== null,
           upload: uploadFacts.get(document.id),
@@ -390,7 +390,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
     const workRows = await db
       .select({
         id: works.id,
-        slug: works.slug,
+        handle: works.handle,
         name: works.name,
         archivedAt: works.archivedAt,
         deletedAt: works.deletedAt,
@@ -399,13 +399,13 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       .from(works)
       .where(eq(works.projectId, scope.projectId));
     for (const work of workRows) {
-      const workSlug = work.slug === null ? null : decodeWorkSlug(work.slug);
-      if (work.slug !== null && !workSlug) continue;
+      const workHandle = work.handle === null ? null : decodeWorkHandle(work.handle);
+      if (work.handle !== null && !workHandle) continue;
       entries.push({
         kind: "authority",
         entryId: work.id,
         scope,
-        authority: { workId: work.id, workSlug },
+        authority: { workId: work.id, workHandle },
         name: work.name,
         available: work.deletedAt === null && work.archivedAt === null,
         entityRevision: String(work.entityRevision),
@@ -823,7 +823,7 @@ export function createDrizzleContextCatalog(
           .select({
             id: works.id,
             projectId: works.projectId,
-            slug: works.slug,
+            handle: works.handle,
             name: works.name,
             archivedAt: works.archivedAt,
             deletedAt: works.deletedAt,
@@ -867,13 +867,13 @@ export function createDrizzleContextCatalog(
             );
           const existingById = new Map(existingRows.map(({ entryId, entry }) => [entryId, entry]));
           for (const work of projectRows.sort((left, right) => left.id.localeCompare(right.id))) {
-            const workSlug = work.slug === null ? null : decodeWorkSlug(work.slug);
-            if (work.slug !== null && !workSlug) continue;
+            const workHandle = work.handle === null ? null : decodeWorkHandle(work.handle);
+            if (work.handle !== null && !workHandle) continue;
             const entry: CatalogEntry = {
               kind: "authority",
               entryId: work.id,
               scope,
-              authority: { workId: work.id, workSlug },
+              authority: { workId: work.id, workHandle },
               name: work.name,
               available: work.deletedAt === null && work.archivedAt === null,
               entityRevision: String(work.entityRevision),

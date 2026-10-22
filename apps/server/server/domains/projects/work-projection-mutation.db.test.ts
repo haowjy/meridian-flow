@@ -81,21 +81,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Projection work",
-        slug: "projection-work",
+        handle: "w1",
       });
       await db.insert(works).values({
         id: SECOND_WORK_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Unaffected work",
-        slug: "unaffected-work",
+        handle: "w2",
       });
       await db.insert(works).values({
         id: OTHER_WORK_ID,
         projectId: OTHER_PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Other project work",
-        slug: "other-project-work",
+        handle: "w3",
       });
       await db.insert(contextSources).values({
         id: SOURCE_ID,

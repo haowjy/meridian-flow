@@ -113,14 +113,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "Direct",
-          slug: "direct",
+          handle: "w1",
         },
         {
           id: DRAFT_WORK_ID,
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "Branch",
-          slug: "draft",
+          handle: "w2",
         },
       ]);
       await db.insert(schema.threads).values({
@@ -219,7 +219,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("refuses an unknown Work or scheme in a read as not found", async () => {
       const fixture = await createFixture();
-      for (const path of ["scratch://@ghost-arc/backstory.md", "skill://story-review/x.md"]) {
+      for (const path of ["scratch://@w99/backstory.md", "skill://story-review/x.md"]) {
         const read = await fixture.callTool("read", { path });
         expect(read.result).toMatchObject({ status: "document_not_found" });
       }

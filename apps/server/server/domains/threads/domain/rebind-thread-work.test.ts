@@ -2,7 +2,7 @@ import type { ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
-import { testWorkSlug } from "../../../test-support/work-slug.js";
+import { testWorkHandle } from "../../../test-support/work-handle.js";
 import { ThreadMembershipUnavailableError } from "../ports/repositories.js";
 import { rebindThreadWork } from "./rebind-thread-work.js";
 
@@ -12,13 +12,15 @@ const TARGET_ID = "00000000-0000-4000-8000-000000000103" as WorkId;
 const NO_WORK_ID = "00000000-0000-4000-8000-000000000105" as WorkId;
 const USER_ID = "00000000-0000-4000-8000-000000000104" as UserId;
 
+let handleCounter = 0;
+
 function work(id: WorkId, name: string, projectId = "project-1"): Work {
   return {
     id,
     projectId,
     createdByUserId: USER_ID,
     name,
-    slug: testWorkSlug(name.toLowerCase().replaceAll(" ", "-")),
+    handle: testWorkHandle(`w${++handleCounter}`),
     isNoWork: false,
     goal: null,
     status: null,
@@ -36,7 +38,7 @@ function work(id: WorkId, name: string, projectId = "project-1"): Work {
 function noWorkRow(projectId = "project-1"): Work {
   return {
     ...work(NO_WORK_ID, "No Work", projectId),
-    slug: null,
+    handle: null,
     isNoWork: true,
     defaultAiWriteMode: "draft",
   };

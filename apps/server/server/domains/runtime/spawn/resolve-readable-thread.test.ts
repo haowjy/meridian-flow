@@ -2,6 +2,7 @@
 
 import type { Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { emptyOwnerLookup } from "../../context/owner-lookup.js";
 import { TURN_GRAPH } from "../../threads/ports/turn-graph.js";
 import { resolveReadableThread } from "./resolve-readable-thread.js";
 
@@ -66,8 +67,9 @@ describe("resolveReadableThread", () => {
       await resolveReadableThread({ caller: rows[2] as Thread, ref: "c2", threads, turns }),
     ).toMatchObject({ ok: false, error: { code: "thread_not_connected" } });
     const chatFiles = {
-      byRef: async (_project: string, ref: string) =>
-        ref === "c2" ? { uploads: "uploads://@/c2/", scratch: "scratch://@/c2/" } : null,
+      ...emptyOwnerLookup,
+      chat: async (_project: string, ref: string) =>
+        ref === "c2" ? { uploads: "uploads://@c2/", scratch: "scratch://@c2/" } : null,
     };
     expect(
       await resolveReadableThread({
@@ -80,7 +82,7 @@ describe("resolveReadableThread", () => {
     ).toMatchObject({
       error: {
         message:
-          "Thread is not connected to this conversation. Its uploads are at uploads://@/c2/ and its scratch notes at scratch://@/c2/.",
+          "Thread is not connected to this conversation. Files: uploads://@c2/ and scratch://@c2/.",
       },
     });
   });

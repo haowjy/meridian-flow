@@ -5,6 +5,7 @@
  * observation versions (0038/0039) and #713's edit ledger and dirty signals (0040/0041) run
  * over them first, as they do in a deploy; #713's edit rows are seeded after 0041.
  */
+
 import { execFileSync } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -26,6 +27,7 @@ import {
   type ScratchDatabase,
   stageThrough,
 } from "./staged-migrations.js";
+import { testWorkHandle } from "./work-handle.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
@@ -548,15 +550,15 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
     };
     const world = branchTreeWorldOver(db, project, [id(3) as WorkId, id(4) as WorkId]);
     const s = { ...world, ...branchTreeCommands(world, () => ({ runtime, runtimes })) };
-    const work = (n: number, thread: number, turn: number, slug: string): ScenarioWork => ({
+    const work = (n: number, thread: number, turn: number, handle: string): ScenarioWork => ({
       id: id(n) as WorkId,
-      slug,
+      handle: testWorkHandle(handle),
       threadId: id(thread) as ScenarioWork["threadId"],
       turnId: id(turn),
       mode: "draft",
     });
-    const alpha = work(3, 20, 22, "alpha");
-    const beta = work(4, 21, 23, "beta");
+    const alpha = work(3, 20, 22, "w1");
+    const beta = work(4, 21, 23, "w2");
     const [created, shared, discarded, kept] = [11, 12, 13, 14].map((n) => id(n) as DocumentId);
     const isNew = async (of: ScenarioWork) =>
       (await s.items(of)).filter((item) => item.isNew).map((item) => item.documentId);
@@ -589,7 +591,7 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
     expect(await isNew(beta)).toEqual([shared]);
     expect(await tombstoned(discarded)).toBe(true);
     // A Work whose only draft was the manifest's has no branch.
-    expect(await s.branchStatuses(work(5, 20, 22, "gamma"))).toEqual([]);
+    expect(await s.branchStatuses(work(5, 20, 22, "w3"))).toEqual([]);
 
     // A live create at any prose spelling of its path reveals the same identity.
     expect(await s.writer.create("new.md")).toMatchObject({

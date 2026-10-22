@@ -9,7 +9,7 @@ export type LockedWorkLifecycle = "active" | "archived" | "deleted" | "missing";
 
 export interface LockedWork {
   state: LockedWorkLifecycle;
-  slug: string | null;
+  handle: string | null;
 }
 
 /**
@@ -28,7 +28,7 @@ export async function lockWorksInIdOrder(
   const rows = await currentDrizzleDb(db)
     .select({
       id: works.id,
-      slug: works.slug,
+      handle: works.handle,
       archivedAt: works.archivedAt,
       deletedAt: works.deletedAt,
     })
@@ -44,9 +44,9 @@ export async function lockWorksInIdOrder(
       row
         ? {
             state: row.deletedAt ? "deleted" : row.archivedAt !== null ? "archived" : "active",
-            slug: row.slug,
+            handle: row.handle,
           }
-        : { state: "missing", slug: null },
+        : { state: "missing", handle: null },
     );
   }
   return locked;
@@ -82,7 +82,7 @@ export async function requireLockedActiveWorks(
   for (const workId of [...new Set(workIds)].sort()) {
     const work = locked.get(workId);
     if (work && work.state !== "active") {
-      throw new WorkLifecycleUnavailableError(workId, work.state, work.slug);
+      throw new WorkLifecycleUnavailableError(workId, work.state, work.handle);
     }
   }
 }

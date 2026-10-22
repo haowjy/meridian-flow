@@ -1,14 +1,20 @@
 /** Context router metadata propagation at the adapter-to-public-port boundary. */
 import { describe, expect, it, vi } from "vitest";
 import { Err, Ok } from "../../../shared/result.js";
-import { testWorkSlug } from "../../../test-support/work-slug.js";
+import { testWorkHandle } from "../../../test-support/work-handle.js";
 import { resolvedWorkAuthority } from "../../projects/domain/work-authority.js";
+import {
+  bindOwners,
+  createOwnerLookup,
+  emptyOwnerLookup,
+  type WorkOwner,
+} from "../owner-lookup.js";
 import { type ContextSchemeAdapter, schemeCapabilities } from "../ports/context-adapter.js";
 import type { ContextScheme } from "../ports/context-port.js";
 import { createContextPortRouter } from "./router.js";
 
-const authority = (workId: string, slug: string) =>
-  resolvedWorkAuthority({ workId, workSlug: testWorkSlug(slug) });
+const authority = (workId: string, handle: string) =>
+  resolvedWorkAuthority({ workId, workHandle: testWorkHandle(handle) });
 
 function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
   return {
@@ -85,7 +91,7 @@ describe("context router deletion receipts", () => {
   });
 });
 
-describe("context router Work slug resolution", () => {
+describe("context router owner resolution", () => {
   const PRIMARY_ID = "00000000-0000-4000-8000-000000000001";
   const SIBLING_ID = "00000000-0000-4000-8000-000000000002";
 
@@ -110,74 +116,97 @@ describe("context router Work slug resolution", () => {
     } as unknown as ContextSchemeAdapter;
   }
 
+  const work = (
+    handle: string,
+    name: string,
+    state: "active" | "deleted" = "active",
+  ): WorkOwner => ({
+    handle: testWorkHandle(handle),
+    name,
+    state,
+    restorableDays: state === "deleted" ? 12 : null,
+  });
+  const allWorks = [
+    work("w1", "Drafting"),
+    work("w2", "Second pass"),
+    work("w3", "Tea Notes"),
+    work("w4", "Gone", "deleted"),
+    work("w7", "W2"),
+  ];
+  // The real owner component over fake storage, so the corrections under test are the shipped ones.
+  const owners = bindOwners(
+    createOwnerLookup({
+      chats: { byRef: async (_p, ref) => ({ chatId: ref, chatRef: ref, live: ref === "c1" }) },
+      lineages: {
+        byId: async () => null,
+        byRef: async () => null,
+        list: async () => [],
+        rootForThreadRef: async () => null,
+      },
+      namedWorkHandle: async () => "w1",
+      subagentChatRef: async (_p, ref) => (ref === "p3" ? "c1" : null),
+      workByHandle: async (_p, handle) => allWorks.find((owner) => owner.handle === handle) ?? null,
+      worksNamed: async () => allWorks.filter((owner) => owner.state !== "deleted"),
+      listWorks: async () => allWorks.filter((owner) => owner.state !== "deleted"),
+      chatsWithFiles: async () => [],
+    }),
+    "project",
+  );
+
   function port() {
     const primary = workAdapter(PRIMARY_ID);
     const sibling = workAdapter(SIBLING_ID);
-    return createContextPortRouter({
+    const router = createContextPortRouter({
       sources: new Map([
-        [
-          "scratch",
-          async () => ({
-            adapter: primary,
-            authority: { kind: "lineage" as const, rootThreadRef: "c12" },
-          }),
-        ],
+        ["scratch", async () => ({ adapter: primary, authority: authority(PRIMARY_ID, "w1") })],
       ]),
-      chatFiles: async (ref) =>
-        ref === "c1" ? { uploads: "uploads://@/c1/", scratch: "scratch://@/c1/" } : null,
-      primaryWorkAuthority: authority(PRIMARY_ID, "drafting"),
+      owners,
+      primaryWorkAuthority: authority(PRIMARY_ID, "w1"),
       workAuthorities: new Map([
-        [testWorkSlug("drafting"), authority(PRIMARY_ID, "drafting")],
-        [testWorkSlug("revision-pass"), authority(SIBLING_ID, "revision-pass")],
+        [testWorkHandle("w1"), authority(PRIMARY_ID, "w1")],
+        [testWorkHandle("w2"), authority(SIBLING_ID, "w2")],
       ]),
       resolveWorkAdapters: (resolved) =>
         new Map([["scratch", resolved.workId === SIBLING_ID ? sibling : primary]]),
     });
+    return Object.assign(router, { adapters: [primary, sibling] });
   }
 
-  it("resolves a same-project sibling slug for both reads and writes", async () => {
+  it("resolves a same-project sibling by handle for both reads and writes", async () => {
     const context = port();
-    await expect(context.list()).resolves.toMatchObject({
+    await expect(context.read("scratch://@w2/notes.md")).resolves.toEqual({
       ok: true,
-      value: { entries: [{ kind: "directory", uri: "scratch://", readonly: false }] },
+      value: { content: SIBLING_ID, uri: "scratch://@w2/notes" },
     });
-    await expect(context.read("scratch://@revision-pass/notes.md")).resolves.toEqual({
+    await expect(context.write("scratch://@w2/notes.md", "revised")).resolves.toEqual({
       ok: true,
-      value: { content: SIBLING_ID, uri: "scratch://@revision-pass/notes" },
-    });
-    await expect(context.write("scratch://@revision-pass/notes.md", "revised")).resolves.toEqual({
-      ok: true,
-      value: { documentId: SIBLING_ID, uri: "scratch://@revision-pass/notes" },
+      value: { documentId: SIBLING_ID, uri: "scratch://@w2/notes" },
     });
   });
 
-  it("reports an unknown or cross-project slug and points to work list", async () => {
-    await expect(port().read("scratch://@other-project-work/notes.md")).resolves.toEqual({
-      ok: false,
-      error: {
-        code: "invalid_uri",
-        uri: "scratch://@other-project-work/notes.md",
-        reason: 'Unknown Work @other-project-work. List Works with work({"command":"list"}).',
-        workSlug: "other-project-work",
-      },
-    });
-    await expect(port().read("scratch://@c1/notes.md")).resolves.toMatchObject({
-      ok: false,
-      error: {
-        reason: "Chat c1's scratch notes are at scratch://@/c1/. @c1 is not a Work.",
-      },
-    });
-    // A fork's explicit lineage spelling is answered from the chat's real owner, like the slug.
-    await expect(port().read("scratch://@/c1/notes.md")).resolves.toMatchObject({
-      ok: false,
-      error: {
-        reason:
-          "Chat c1's scratch notes are at scratch://@/c1/. scratch://x in that chat reaches the same notes.",
-      },
-    });
-    await expect(port().read("scratch://@c9/notes.md")).resolves.toMatchObject({
-      ok: false,
-      error: { reason: 'Unknown Work @c9. List Works with work({"command":"list"}).' },
+  it.each([
+    ["scratch://@w4/notes.md", "Work w4 was deleted; restorable for 12 days."],
+    ["scratch://@tea-notes/notes.md", 'Use scratch://@w3/… (Work "Tea Notes").'],
+    [
+      "scratch://@W2/notes.md",
+      'Handles are lowercase: scratch://@w2/… w2 is "Second pass"; "W2" is w7.',
+    ],
+  ])("points the wrong spelling %s at the right owner and never writes", async (uri, reason) => {
+    const context = port();
+    for (const result of [await context.read(uri), await context.write(uri, "x")]) {
+      expect(result).toMatchObject({ ok: false, error: { reason } });
+    }
+    for (const adapter of context.adapters) expect(adapter.write).not.toHaveBeenCalled();
+  });
+
+  it("lists owners with the handle address first and the label after", async () => {
+    const listed = await port().list("scratch://@");
+    expect(listed).toMatchObject({ ok: true, value: { uri: "scratch://@" } });
+    expect(listed.ok && listed.value.entries[0]).toEqual({
+      kind: "directory",
+      uri: "scratch://@w1/",
+      title: "Drafting",
+      readonly: false,
     });
   });
 });
@@ -208,7 +237,7 @@ describe("context router untitled identity recovery", () => {
       sources: new Map([
         ["manuscript", { adapter: manuscript, authority: { kind: "contextual" } }],
       ]),
-      workAuthorities: new Map([[testWorkSlug("secondary"), authority("work-2", "secondary")]]),
+      workAuthorities: new Map([[testWorkHandle("w8"), authority("work-2", "w8")]]),
       resolveWorkAdapters: () => new Map([["scratch", scratch]]),
     });
 
@@ -243,11 +272,11 @@ describe("context router scheme creation capabilities", () => {
       uploads,
       port: createContextPortRouter({
         sources: new Map([
-          ["scratch", { adapter: scratch, authority: authority(workId, "current") }],
+          ["scratch", { adapter: scratch, authority: authority(workId, "w7") }],
           ["uploads", { adapter: uploads, authority: { kind: "chat", chatRef: "c12" } }],
         ]),
-        workAuthorities: new Map([[testWorkSlug("current"), authority(workId, "current")]]),
-        primaryWorkAuthority: authority(workId, "current"),
+        workAuthorities: new Map([[testWorkHandle("w7"), authority(workId, "w7")]]),
+        primaryWorkAuthority: authority(workId, "w7"),
       }),
     };
   }
@@ -279,7 +308,7 @@ describe("context router scheme creation capabilities", () => {
       }),
     ).resolves.toEqual({
       ok: true,
-      value: { documentId: "document-new", uri: "uploads://@/c12/notes" },
+      value: { documentId: "document-new", uri: "uploads://@c12/notes" },
     });
     expect(uploads.createTrackedDocument).toHaveBeenCalledWith("notes", "notes", {
       documentId: "00000000-0000-4000-8000-000000000001",
@@ -289,21 +318,19 @@ describe("context router scheme creation capabilities", () => {
   it("rejects cross-scheme moves into uploads but allows renames within uploads", async () => {
     const { port, uploads } = createPort();
 
-    await expect(port.move(`scratch://@current/old.md`, `uploads://old.md`)).resolves.toMatchObject(
-      {
-        ok: false,
-        error: {
-          code: "invalid_operation",
-          uri: "uploads://@/c12/old.md",
-          message: expect.stringContaining("scratch://"),
-        },
+    await expect(port.move(`scratch://@w7/old.md`, `uploads://old.md`)).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "invalid_operation",
+        uri: "uploads://@c12/old.md",
+        message: expect.stringContaining("scratch://"),
       },
-    );
+    });
     await expect(
-      port.commitWriterLocation(`scratch://@current/old.md`, `uploads://old.md`),
+      port.commitWriterLocation(`scratch://@w7/old.md`, `uploads://old.md`),
     ).resolves.toMatchObject({
       ok: false,
-      error: { code: "invalid_operation", uri: "uploads://@/c12/old.md" },
+      error: { code: "invalid_operation", uri: "uploads://@c12/old.md" },
     });
     await expect(port.move(`uploads://old.md`, `uploads://renamed.md`)).resolves.toEqual({
       ok: true,
@@ -313,47 +340,42 @@ describe("context router scheme creation capabilities", () => {
   });
 });
 
-it("reads another chat's uploads by handle and refuses a trashed, unknown or Work-spelled owner", async () => {
+it("reads another chat's uploads by handle and refuses a trashed, unknown or Work owner", async () => {
   const own = writableAdapter("uploads");
   const other = writableAdapter("uploads");
   const port = createContextPortRouter({
     sources: new Map([["uploads", { adapter: own, authority: { kind: "chat", chatRef: "c1" } }]]),
-    chatFiles: async (ref) => (ref === "c2" ? { uploads: "uploads://@/c2/", scratch: "" } : null),
+    owners: {
+      ...bindOwners(emptyOwnerLookup, "project"),
+      chat: async (ref) => (ref === "c2" ? { uploads: "uploads://@c2/", scratch: "" } : null),
+    },
     resolveChatSource: async (ref) =>
       ref === "c2"
         ? { kind: "found", binding: { adapter: other, authority: { kind: "chat", chatRef: "c2" } } }
         : { kind: ref === "c3" ? "unavailable" : "missing" },
-    workAuthorities: new Map([[testWorkSlug("current"), authority("w", "current")]]),
+    workAuthorities: new Map([[testWorkHandle("w7"), authority("w", "w7")]]),
   });
 
   await expect(port.list("uploads://")).resolves.toMatchObject({
     ok: true,
-    value: { uri: "uploads://@/c1/" },
+    value: { uri: "uploads://@c1/" },
   });
-  await expect(port.list("uploads://@/c2/")).resolves.toMatchObject({
+  await expect(port.list("uploads://@c2/")).resolves.toMatchObject({
     ok: true,
-    value: { uri: "uploads://@/c2/" },
+    value: { uri: "uploads://@c2/" },
   });
   expect(other.list).toHaveBeenCalledOnce();
-  await expect(port.list("uploads://@/c3/")).resolves.toMatchObject({
+  await expect(port.list("uploads://@c3/")).resolves.toMatchObject({
     ok: false,
     error: { code: "invalid_uri", reason: expect.stringContaining("unavailable") },
   });
-  await expect(port.list("uploads://@/c4/")).resolves.toMatchObject({
+  await expect(port.list("uploads://@c4/")).resolves.toMatchObject({
     ok: false,
     error: { code: "invalid_uri" },
   });
-  await expect(port.list("uploads://@current/")).resolves.toMatchObject({
+  await expect(port.list("uploads://@w7/")).resolves.toMatchObject({
     ok: false,
-    error: { code: "invalid_uri", reason: expect.stringContaining("Uploads belong to a chat") },
-  });
-  await expect(port.list("uploads://@c2/x")).resolves.toMatchObject({
-    ok: false,
-    error: { reason: "Another chat's uploads are at uploads://@/c2/…" },
-  });
-  await expect(port.list("uploads://@c4/x")).resolves.toMatchObject({
-    ok: false,
-    error: { reason: expect.stringContaining("Uploads belong to a chat") },
+    error: { code: "invalid_uri", reason: expect.stringContaining("Uploads belong to chats") },
   });
 });
 
@@ -371,7 +393,7 @@ it("guards both tracked creation doors by lineage actor while binding remains pr
       authority: { kind: "lineage", rootThreadRef: "c12" },
     }),
   });
-  const uri = "scratch://@/c12/note.md";
+  const uri = "scratch://@c12/note.md";
   const origin = { type: "human" as const, userId: "writer" };
   const bound = await port.bindTrackedDocument(uri, "prepared");
   expect(bound.ok).toBe(true);

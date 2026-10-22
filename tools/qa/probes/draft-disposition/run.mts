@@ -108,7 +108,7 @@ try {
             model: true,
           },
           command === "revert"
-            ? { command, file: "project://probe.md", edit: `w${wId}` }
+            ? { command, file: "project://probe.md", edit: `e${wId}` }
             : { command, file: "project://probe.md" },
         ),
       );

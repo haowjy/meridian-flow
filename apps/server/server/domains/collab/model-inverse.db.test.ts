@@ -94,7 +94,7 @@ describe("model document stack", () => {
         expect(
           await core.write(
             {
-              ...(kind === "revert" ? { command: kind, edit: "w1" } : { command: kind }),
+              ...(kind === "revert" ? { command: kind, edit: "e1" } : { command: kind }),
               documentId: ALPHA_ID,
               file: "alpha.md",
               tool_use_id: `model-${kind}`,
@@ -176,7 +176,7 @@ describe("model document stack", () => {
             },
             context,
           ),
-        ).toMatchObject({ status: "success", writeId: `w${index + 1}` });
+        ).toMatchObject({ status: "success", writeId: `e${index + 1}` });
       await harness.commit(responseId);
       const draftId = await readDraftId(db, ALPHA_ID);
       let call = 0;
@@ -204,7 +204,7 @@ describe("model document stack", () => {
         }
         expect(await write("redo")).toMatchObject({
           status: "success",
-          result: { message: "redone: w1" },
+          result: { message: "redone: e1" },
         });
         expect(await view.draftMarkdown(draftId)).toBe("Alpha Gold.\n\nBlue.\n");
         expect(await write("redo", 2)).toMatchObject({ status: "success" });
@@ -250,7 +250,7 @@ describe("model document stack", () => {
         core.write({ ...address, command, count }, inverse);
       expect(await write("undo", 2)).toMatchObject({
         status: "success",
-        result: { message: "undone: w2, w1" },
+        result: { message: "undone: e2, e1" },
       });
       expect(await prose()).toBe("Alpha Beta.\n\nBlue.\n");
       if (schedule === "rollback") {
@@ -279,17 +279,17 @@ describe("model document stack", () => {
       } else if (schedule === "stepwise") {
         expect(await write("redo")).toMatchObject({
           status: "success",
-          result: { message: "redone: w1" },
+          result: { message: "redone: e1" },
         });
         expect(await prose()).toBe("Alpha Gold.\n\nBlue.\n");
         expect(await write("redo")).toMatchObject({
           status: "success",
-          result: { message: "redone: w2" },
+          result: { message: "redone: e2" },
         });
       } else {
         expect(await write("redo", 2)).toMatchObject({
           status: "success",
-          result: { message: "redone: w1, w2" },
+          result: { message: "redone: e1, e2" },
         });
       }
       expect(await prose()).toBe(
@@ -350,7 +350,7 @@ it.each([
     expect(await core.write({ ...command, command: direction }, context)).toMatchObject({
       status: `cant_${direction}_changed`,
     });
-    expect(await core.write({ ...command, command: "revert", edit: "w1" }, context)).toMatchObject({
+    expect(await core.write({ ...command, command: "revert", edit: "e1" }, context)).toMatchObject({
       status: "nothing_to_revert",
     });
     expect(await view.draftMarkdown(draftId)).toBe(expected);

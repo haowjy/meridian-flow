@@ -52,7 +52,7 @@ function lifecycleCommandFailure(error: unknown, uri: string): Result<never, Con
       code: "context_unavailable",
       uri,
       reason: `work_${error.state}`,
-      workSlug: error.workSlug ?? null,
+      workHandle: error.workHandle ?? null,
     });
   throw error;
 }

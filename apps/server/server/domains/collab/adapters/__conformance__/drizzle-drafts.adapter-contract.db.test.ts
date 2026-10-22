@@ -83,7 +83,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "Draft Work",
-          slug: "branch-work",
+          handle: "w1",
         });
         await db.insert(branches).values({
           id: BRANCH_ID,
@@ -180,7 +180,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Next Work",
-        slug: "next-work",
+        handle: "w2",
       });
       await db.insert(branches).values({
         id: NEXT_BRANCH_ID,

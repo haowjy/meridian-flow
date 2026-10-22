@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+- Model-facing owner-handle guidance is shorter: Work context now carries the concrete Scratch policy, repair errors give one copyable address, and repeated owner details are removed from receipts and listings.
+
+- RP-20 now expects `eN` edit receipts and `draft (wN)` Work labels; its historical last-run evidence is unchanged.
+
+- Owner-handle migration backfills commit in bounded pages without retaining an exclusive Work-table lock. Concurrent Work creation shares the backfill counter, and interrupted upgrades resume without renumbering handles.
+
+- Owner-handle addresses and `eN` edit receipts now integrate with text-based draft review. Owner-handle migrations follow the draft-review cutover without resetting stored data. Runtime probes and browser fixtures seed permanent handles too.
+
+- Addresses name an owner by its handle: a Work's notes are `scratch://@w3/`, a chat's files `uploads://@c15/`, and a No Work chat's notes `scratch://@c12/`. Every Work gets a permanent handle (`w1`, `w2`, ...) when it is created, and the old Work slugs and the `@/` spelling are gone. A wrong address now gets a correction that names the owner it meant, for example a Work's name answers with its handle, and `ls scratch://@` and `ls uploads://@` list every owner with its handle and label. Work names stay unique among Works that are not deleted.
+- When the AI reads or writes a Work's or a chat's notes or files by its handle, the result names that owner beside the address, for example `scratch://@w1/outline (Work "Tea Arc")`, so a renamed Work is visible in the answer itself.
+- Path segments beginning with `~` are refused with one concrete legal repair, and files and folders cannot be named that way. `scratch://@/` and `uploads://@/` are refused too; `ls scratch://@` and `ls uploads://@` list owners.
+- A bare `[map](uploads://map)` the model writes into a document binds to the chat's existing `map.png`, the same as the full `uploads://@c3/map` spelling, instead of minting a link to a file that does not exist.
+- Files attached to a Work, or to No Work, before uploads moved to chats are deleted, and a message that attached one shows the file as no longer available. Uploads without a chat handle (`uploads://@name`) are no longer an address.
 - Moving a paragraph next to an AI change keeps both readable: the move paints as one red and one green block, the neighbouring change keeps its word-level marks, including full heading renames and level changes (#986).
 - Ctrl+Z after moving an AI-written block restores its conversation byline, not "You".
 - A refused review command shows once and never covers its controls. A refusal because the Work was archived reverts silently under the archived notice; the phone now shows that notice and freezes an archived Work's draft, as desktop does. Unavailable Apply and Discard are hidden on locked drafts. Remaining text displacement in two rare cases: #992.
@@ -87,8 +100,6 @@
 
 - `pnpm dev:prune-worktrees` targeted cleanup accepts a branch whose planned commit is contained in another local or remote-tracking ref (its own refs never count), or whose exact merged pull request went into any base branch, stacked PRs included. Batch cleanup's evidence requirements are unchanged: an exact merged PR into the repository base branch, with duplicate exact records still refused. Cleanup runs execute one at a time per repository, and a stale lock refuses rather than being taken over.
 - A file attached in a New chat opens from the sent message as soon as the chat is named, in No Work as in a Work, instead of staying unclickable until a reload.
-- A bare `[map](uploads://map)` the model writes into a document binds to the chat's existing `map.png`, the same as the full `uploads://@/c3/map` spelling, instead of minting a link to a file that does not exist.
-- Files attached to a Work, or to No Work, before uploads moved to chats are deleted, and a message that attached one shows the file as no longer available. Uploads without a chat handle (`uploads://@/name`) are no longer an address.
 - A chat's top bar lists the files attached in that chat (a paperclip and the count, once it has one). A row adds the file to the message as an `@` reference, opens it beside the chat, or deletes it while no sent message has used it. A fork or handoff names the chat it continues from. A chat upload's dock tab comes back after a reload.
 - The AI never sees a failure. `thread_history` no longer prints `error:` or `failure reason:` lines or marks failed turns: a failed turn shows the text and tool calls it kept, and is skipped when it kept none. Stop keeps its `cancelled` marker. A tool call that a failed reply never finished now reads "did not finish" instead of "interrupted by an error".
 - The server logs each failure once where it is classified and once where it ends, as `failure.recorded` and `failure.ended` in `./mf log` (a failed reply, compaction or handoff brief; a usage block and its clear). Each carries the occurrence id, a category and source, and how it ended (`retried`, `forgotten`, `moved_on` or `resolved`). They are emitted after the transaction commits. The event hub's `turn.error` log line is replaced by `failure.recorded`.

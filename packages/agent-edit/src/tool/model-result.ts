@@ -93,9 +93,13 @@ export interface AgentEditModelPayload {
   path?: string;
   /** Where a write landed: the live document, or the document's draft in the Work named by `draftWork`. */
   destination?: "live" | "draft";
-  /** The slug of the Work containing the document's draft, `/` for No Work; present only when `destination` is `draft`. */
+  /** The drafted Work's handle, `/` for No Work; present only when `destination` is `draft`. */
   draftWork?: string;
   message?: string;
+  /** A line the host puts first when the address named an owner the caller may not have meant. */
+  notice?: string;
+  /** The owner a named address reaches (`Work "Tea Arc"`), which the receipt puts after the path. */
+  owner?: string;
   /** Why an `invalid_write` write was rejected after it was staged, when the host knows. */
   rejected?: WriteRejection;
   /** Who removed the document and how, beside `rejected: "removed"`, for the chat's card. */

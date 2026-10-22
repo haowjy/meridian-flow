@@ -11,7 +11,7 @@ import { formatUtc } from "./ls-result.js";
 
 /** A Work as the handler returns it. Pending changes use the writer's words. */
 export interface ModelWork {
-  slug: string | null;
+  handle: string | null;
   name: string;
   goal: string | null;
   status: string | null;
@@ -101,7 +101,7 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
 }
 
 /**
- * One Work: slug, name, status, then the goal cut to `goalLength` (0 omits it),
+ * One Work: handle, name, status, then the goal cut to `goalLength` (0 omits it),
  * how many documents have pending changes only when some do, and archived. `verbose` adds a line of dates.
  */
 function workLines(work: ModelWork, verbose: boolean, goalLength: number): string {
@@ -124,8 +124,9 @@ function workLines(work: ModelWork, verbose: boolean, goalLength: number): strin
   return `${line}\n  ${dates.join(", ")}`;
 }
 
-function workRef(work: Pick<ModelWork, "slug">): string {
-  return work.slug ? `@${work.slug}` : "@/";
+/** The handle the model copies into addresses and `work` arguments. No Work has none and is never listed. */
+function workRef(work: Pick<ModelWork, "handle">): string {
+  return work.handle ?? "none";
 }
 
 function pending(count: number): string {

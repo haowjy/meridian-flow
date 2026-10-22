@@ -306,6 +306,7 @@ export interface PromptBake {
   createdAt: string;
 }
 
+export { formatThreadRef, parseThreadRef } from "../handles.js";
 export { blockContentRecord } from "./block-content-record.js";
 export { blockPlainText } from "./block-plain-text.js";
 export { interruptIdForBlock } from "./interrupt-id-for-block.js";
@@ -349,7 +350,6 @@ export type {
 } from "./run-state.js";
 export type { TurnStatus } from "./status.js";
 export { isTerminalTurnStatus } from "./status.js";
-export { formatThreadRef, parseThreadRef } from "./thread-ref.js";
 export type {
   TurnContextPreview,
   TurnContextPreviewFunctionTool,

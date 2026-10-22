@@ -24,7 +24,7 @@ export const KEEP_OPEN_INSTRUCTION_LINES = [
   "Failed or oversized reads are omitted, never retried with different arguments. The server replaces this list with the reads it actually re-shows.",
   "",
   "Example:",
-  '{"path":"scratch://@/c12/plan"}',
+  '{"path":"scratch://@c12/plan"}',
   '{"path":"manuscript://Chapter 1#the-duel"}',
   '{"path":"manuscript://Chapter 2","in":"2194"}',
   '{"path":"manuscript://Chapter 3","in":[40,95]}',

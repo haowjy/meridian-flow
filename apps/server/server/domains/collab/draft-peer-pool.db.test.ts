@@ -50,7 +50,7 @@ it("ensureThreadPeerDraft from more callers than connections completes", async (
   await db.insert(projects).values({ id: projectId, userId, name: "P", slug: `p-${projectId}` });
   await db
     .insert(works)
-    .values({ id: workId, projectId, createdByUserId: userId, name: "W", slug: "w" });
+    .values({ id: workId, projectId, createdByUserId: userId, name: "W", handle: "w1" });
   await db.insert(contextSources).values({
     id: sourceId,
     projectId,

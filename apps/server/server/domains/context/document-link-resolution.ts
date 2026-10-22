@@ -60,7 +60,7 @@ export function createDocumentLinkResolver({
         ? { kind: "lineage", projectId: input.projectId, rootThreadId: lineage.rootThreadId }
         : null;
     } else if (scheme === "uploads") {
-      // Uploads belong to a chat; a Work owns none, so `uploads://@slug/` names nothing.
+      // Uploads belong to a chat; a Work owns none, so `uploads://@w3/` names nothing.
       const chatId =
         authority.kind === "chat"
           ? (await chats?.byRef(input.projectId, authority.chatRef))?.chatId
@@ -71,7 +71,7 @@ export function createDocumentLinkResolver({
             : null;
       scope = chatId ? { kind: "chat", projectId: input.projectId, chatId } : null;
     } else if (authority.kind === "work") {
-      const work = await workAuthorityResolver.bySlug(input.projectId, authority.workSlug);
+      const work = await workAuthorityResolver.byHandle(input.projectId, authority.workHandle);
       scope = work ? { kind: "work", projectId: input.projectId, workId: work.workId } : null;
     } else scope = await currentScope(input);
     return scope ? { scope, scheme, path } : null;

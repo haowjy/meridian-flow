@@ -104,7 +104,8 @@ export async function resolveContextRoute(
   } else if (scheme === "uploads") {
     throw createError({ statusCode: 400, message: "Uploads belong to a chat" });
   } else if (isWorkScopedScheme(scheme)) {
-    if (!workId) authority = { kind: "none" };
+    if (!workId)
+      throw createError({ statusCode: 400, message: "Scratch belongs to a Work or a chat" });
     else {
       const resolved = await app.workAuthorityResolver.byId(projectId, workId);
       if (!resolved) {
@@ -116,7 +117,7 @@ export async function resolveContextRoute(
   if (
     scheme === "scratch" &&
     !rootThreadId &&
-    !("workSlug" in authority && authority.workSlug !== null)
+    !("workHandle" in authority && authority.workHandle !== null)
   )
     throw createError({ statusCode: 400, message: "Scratch requires a chat or named Work" });
   const container: FileTarget = rootThreadId

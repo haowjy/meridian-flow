@@ -5,18 +5,18 @@ import {
   type ParsedContextAuthority,
 } from "@meridian/contracts/context-uri";
 import type { CatalogScope, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { decodeWorkSlug } from "@meridian/contracts/works";
+import { decodeWorkHandle } from "@meridian/contracts/works";
 import type { ResourceOwner } from "./resource-records";
 
 /** The locked row is separate from named Works in the project's authoritative snapshot. */
 export function resourceWorkAuthorityFor(
   workId: string,
-  snapshot: { works: readonly { id: string; slug: string | null }[]; noWork: { id: string } },
+  snapshot: { works: readonly { id: string; handle: string | null }[]; noWork: { id: string } },
 ): ResourceOwner {
-  if (workId === snapshot.noWork.id) return { workId, workSlug: null };
+  if (workId === snapshot.noWork.id) return { workId, workHandle: null };
   const work = snapshot.works.find((candidate) => candidate.id === workId);
-  if (!work?.slug) throw new Error("The destination Work has no known named authority");
-  return { workId: work.id, workSlug: work.slug };
+  if (!work?.handle) throw new Error("The destination Work has no known named authority");
+  return { workId: work.id, workHandle: work.handle };
 }
 
 /** The owner a lineage catalog entry asserts: the scope's first-chat id and the handle its URI spells. */
@@ -38,8 +38,7 @@ export function resourceChatOwner(
 /** What a location's owner spells in a context URI. */
 export type ResourceContextAuthority =
   | { kind: "contextual" }
-  | { kind: "none" }
-  | { kind: "work"; workSlug: string }
+  | { kind: "work"; workHandle: string }
   | { kind: "lineage"; rootThreadRef: string }
   | { kind: "chat"; chatRef: string | null };
 
@@ -48,7 +47,7 @@ export function resourceContextAuthority(
   scheme: ProjectContextTreeScheme,
   owner: {
     workId: string | null;
-    workSlug?: string | null;
+    workHandle?: string | null;
     rootThreadId?: string | null;
     rootThreadRef?: string | null;
     chatId?: string | null;
@@ -66,9 +65,10 @@ export function resourceContextAuthority(
       throw new Error("Lineage authority requires Scratch and a first-chat handle");
     return { kind: "lineage", rootThreadRef: owner.rootThreadRef };
   }
-  if (!owner.workId || owner.workSlug === undefined)
+  if (!owner.workId || owner.workHandle === undefined)
     throw new Error("Work-scoped authority requires a known Work identity");
-  return owner.workSlug === null ? { kind: "none" } : { kind: "work", workSlug: owner.workSlug };
+  if (owner.workHandle === null) throw new Error("No Work owns no Scratch");
+  return { kind: "work", workHandle: owner.workHandle };
 }
 
 /**
@@ -84,8 +84,8 @@ export function resourceContextUri(
   const bare = path.replace(/^\/+/, "");
   switch (authority.kind) {
     case "work": {
-      const workSlug = decodeWorkSlug(authority.workSlug);
-      return workSlug ? formatParsedContextUri(scheme, bare, { kind: "work", workSlug }) : null;
+      const workHandle = decodeWorkHandle(authority.workHandle);
+      return workHandle ? formatParsedContextUri(scheme, bare, { kind: "work", workHandle }) : null;
     }
     case "chat":
       return formatParsedContextUri(
@@ -95,7 +95,8 @@ export function resourceContextUri(
           ? { kind: "contextual" }
           : { kind: "chat", chatRef: authority.chatRef },
       );
-    default:
+    case "contextual":
+    case "lineage":
       return formatParsedContextUri(scheme, bare, authority);
   }
 }
@@ -113,7 +114,10 @@ export function catalogEntryOwner(
     // A chat that does not exist yet has no handle, so its uploads spell a bare URI.
     return resourceChatOwner(scope, authority.kind === "chat" ? authority.chatRef : null);
   if (scope.kind !== "work") return { workId: null };
-  return { workId: scope.workId, workSlug: authority.kind === "work" ? authority.workSlug : null };
+  return {
+    workId: scope.workId,
+    workHandle: authority.kind === "work" ? authority.workHandle : null,
+  };
 }
 
 /** Whether a catalog scope is where this owner's documents are listed. */
@@ -135,8 +139,8 @@ export function ownerListedInScope(
 /** The owner fields a move request carries for its source and destination locations. */
 export function moveOwnerFields(source: ResourceOwner, destination: ResourceOwner) {
   return {
-    sourceWorkSlug: source.workSlug ?? null,
-    destinationWorkSlug: destination.workSlug ?? null,
+    sourceWorkHandle: source.workHandle ?? null,
+    destinationWorkHandle: destination.workHandle ?? null,
     sourceRootThreadRef: source.rootThreadRef ?? null,
     destinationRootThreadRef: destination.rootThreadRef ?? null,
     body: {

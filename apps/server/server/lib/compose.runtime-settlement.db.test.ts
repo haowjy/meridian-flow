@@ -52,7 +52,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Runtime settlement",
-        slug: "runtime-settlement",
+        handle: "w1",
         defaultAiWriteMode: "direct",
       });
       // The Work already has its branch, as if an earlier write ensured it (contract §2.5).
@@ -138,7 +138,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "No Work",
-        slug: null,
+        handle: null,
         isNoWork: true,
       });
       await db

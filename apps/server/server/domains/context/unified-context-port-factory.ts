@@ -13,7 +13,7 @@ import {
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
 } from "@meridian/contracts/context-uri";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
+import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { projects } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
@@ -27,7 +27,6 @@ import { sourceDestination } from "../file-policy/index.js";
 import type { EventSink } from "../observability/index.js";
 import { createDrizzleTopPrimaryChatResolver } from "../threads/adapters/drizzle/top-primary-chat.js";
 import type { TopPrimaryChatResolver } from "../threads/index.js";
-import { createDrizzleChatFileLookup } from "./adapters/chat-file-lookup.js";
 import { createDrizzleChatUploadsOwners } from "./adapters/chat-uploads-owners.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { ContextFS, type ContextFSDeps } from "./adapters/context-fs/context-fs.js";
@@ -36,12 +35,12 @@ import { lockContextNamespaces } from "./adapters/context-fs/document-locations.
 import { createDrizzleBranchCreates } from "./adapters/context-fs/drizzle-branch-creates.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleContextOperationReceipts } from "./adapters/context-operation-receipts.js";
+import { createDrizzleOwnerLookup } from "./adapters/owner-lookup.js";
 import {
   createDrizzleProjectContextAvailability,
   resolveActiveFolderUri,
 } from "./adapters/project-context-availability.js";
 import { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
-import type { ChatFileLookup } from "./chat-file-addresses.js";
 import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
 import { ContextOperationReceipts } from "./context/context-operation-receipts.js";
 import { type ContextSourceBinding, createContextPortRouter } from "./context/router.js";
@@ -53,6 +52,7 @@ import {
   createWorkContextDocumentStore,
   findNoWorkId,
 } from "./context-source-provisioning.js";
+import { bindOwners, emptyOwnerLookup, type OwnerLookup } from "./owner-lookup.js";
 import type { BranchCreatePort } from "./ports/branch-create.js";
 import type { ContextSchemeAdapter } from "./ports/context-adapter.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
@@ -90,14 +90,14 @@ const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] = ["sc
 export interface UnifiedContextPortFactory {
   lineages: ScratchLineages;
   topPrimaryChats: TopPrimaryChatResolver;
-  /** Chats by handle, for `uploads://@/c12/` addresses. */
+  /** Chats by handle, for `uploads://@c12/` addresses. */
   chats: ChatUploadsOwners;
   /** Where a chat's uploads and Scratch live, for errors and pointers. */
-  chatFiles: ChatFileLookup;
+  chatFiles: OwnerLookup;
   forProject(
     projectId: string,
     userId: string,
-    workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>,
+    workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>,
     lineage?: ScratchLineage,
     /** Whose uploads bare `uploads://` names, when the caller scopes to one chat. */
     chat?: UploadsOwner,
@@ -106,7 +106,7 @@ export interface UnifiedContextPortFactory {
     authority: ResolvedWorkAuthority,
     projectId: string,
     userId: string,
-    workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>,
+    workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>,
     thread?: ThreadContextView,
   ): ContextPort;
 }
@@ -115,7 +115,7 @@ interface ContextStoreResolvers {
   lineages: ScratchLineages;
   chats: ChatUploadsOwners;
   /** Absent in the in-memory factory, which has no threads to ask. */
-  chatFiles?: ChatFileLookup;
+  chatFiles?: OwnerLookup;
   resolveLineageStore(projectId: string, rootThreadId: string): ContextDocumentStore;
   /** The chat's uploads; `chatId` is a top primary thread id (`resolveTopPrimaryChat`). */
   resolveChatStore(projectId: string, chatId: string, scheme: "uploads"): ContextDocumentStore;
@@ -249,14 +249,14 @@ type ContextPortBuildScope =
       chat?: UploadsOwner;
       projectId: string;
       userId: string;
-      workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
+      workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>;
     }
   | {
       kind: "work";
       authority: ResolvedWorkAuthority;
       projectId: string;
       userId: string;
-      workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
+      workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>;
       thread?: ThreadContextView;
     };
 
@@ -289,7 +289,7 @@ function buildUnifiedContextPort(input: {
   const adapters = buildProjectContextFsAdapters(assembly, scope.projectId, scope.userId);
 
   const workAuthorities = scope.workAuthorities;
-  if (scope.kind === "work" && scope.authority.workSlug !== null) {
+  if (scope.kind === "work" && scope.authority.workHandle !== null) {
     const primaryAdapters = buildWorkScopedContextFsAdapters(
       assembly,
       scope.authority.workId,
@@ -368,12 +368,11 @@ function buildUnifiedContextPort(input: {
         ? { kind: "found", binding: chatSource({ chatId: chat.chatId, chatRef: chat.chatRef }) }
         : { kind: "unavailable" };
     },
-    chatFiles: async (ref) => (await storeResolvers.chatFiles?.byRef(scope.projectId, ref)) ?? null,
+    owners: storeResolvers.chatFiles && bindOwners(storeResolvers.chatFiles, scope.projectId),
     resolveLineageSource: async (ref) => {
       const lineage = await storeResolvers.lineages.byRef(scope.projectId, ref);
       return lineage ? lineageSource(lineage) : null;
     },
-    listLineages: () => storeResolvers.lineages.list(scope.projectId),
     workAuthorities,
     primaryWorkAuthority: scope.kind === "work" ? scope.authority : undefined,
     resolveWorkAdapters: (targetAuthority) =>
@@ -384,7 +383,7 @@ function buildUnifiedContextPort(input: {
         targetAuthority,
       ),
     resolveNoWorkId: async () =>
-      scope.kind === "work" && scope.authority.workSlug === null
+      scope.kind === "work" && scope.authority.workHandle === null
         ? scope.authority.workId
         : await storeResolvers.resolveNoWorkId(scope.projectId),
     parseOptions: { barePathDefault: "manuscript", schemes: UNIFIED_CONTEXT_SCHEMES },
@@ -497,7 +496,7 @@ export function createInMemoryUnifiedContextPortFactory(
     lineages?: ScratchLineages;
     chats?: ChatUploadsOwners;
     topPrimaryChats?: TopPrimaryChatResolver;
-    chatFiles?: ChatFileLookup;
+    chatFiles?: OwnerLookup;
   } = {},
 ): UnifiedContextPortFactory {
   const registry = options.storeRegistry ?? createInMemoryUnifiedContextStoreRegistry();
@@ -531,7 +530,7 @@ export function createInMemoryUnifiedContextPortFactory(
     (
       projectId: string,
       userId: string,
-      authorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>,
+      authorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>,
       primary?: ResolvedWorkAuthority,
     ) =>
     async (folderId: string): Promise<string | null> => {
@@ -576,7 +575,7 @@ export function createInMemoryUnifiedContextPortFactory(
     lineages: storeResolvers.lineages,
     chats: storeResolvers.chats,
     topPrimaryChats: options.topPrimaryChats ?? { resolveTopPrimaryChat: async () => null },
-    chatFiles: options.chatFiles ?? { byRef: async () => null },
+    chatFiles: options.chatFiles ?? emptyOwnerLookup,
     forProject(projectId, userId, workAuthorities, lineage, chat) {
       return buildUnifiedContextPort({
         scope: { kind: "project", projectId, userId, workAuthorities, lineage, chat },
@@ -640,9 +639,10 @@ export function createProductionUnifiedContextPortFactory(options: {
     options.arrivals,
     options.hiddenNodeRepair,
   );
-  const chatFiles = createDrizzleChatFileLookup(options.db, {
+  const chatFiles = createDrizzleOwnerLookup(options.db, {
     chats: storeResolvers.chats,
     lineages: storeResolvers.lineages,
+    topChats: topPrimaryChats,
   });
   storeResolvers.chatFiles = chatFiles;
 

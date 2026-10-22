@@ -145,7 +145,7 @@ else
       const [update] = await updates();
       if (!update) throw new Error("Missing update");
       const blocks = await repos.blocks.listByTurn(update.id);
-      expect(blocks[0]?.textContent).toContain('current: rebound-target: "Rebound target"');
+      expect(blocks[0]?.textContent).toContain('current: w3 "Rebound target"');
       expect(blocks[0]?.textContent).not.toContain("latest");
       expect(blocks[0]?.textContent).toContain("<system_update>");
       expect(await notices.selectPending(ids.threadId)).toEqual([]);

@@ -6,7 +6,7 @@ import {
   InMemoryTransactionOwner,
   noTransactionOwner,
 } from "../../../../shared/in-memory-transaction.js";
-import { testWorkSlug } from "../../../../test-support/work-slug.js";
+import { testWorkHandle } from "../../../../test-support/work-handle.js";
 import {
   type CreditLedger,
   createBillingUsagePolicy,
@@ -123,7 +123,7 @@ export function createRuntimeHarness(
           execution: {
             scope: {
               workId: "00000000-0000-0000-0000-000000000002",
-              workSlug: testWorkSlug("test-work"),
+              workHandle: testWorkHandle("w1"),
             },
             aiWriteMode: "direct" as const,
             branchOwner: null,

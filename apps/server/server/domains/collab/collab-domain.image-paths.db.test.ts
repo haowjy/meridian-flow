@@ -151,7 +151,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
         threadView: {
           threadId: THREAD_ID,
-          branchWork: { id: WORK_ID as never, slug: "work" },
+          branchWork: { id: WORK_ID as never, handle: "w1" },
         },
         documentSync: {
           ...collab,
@@ -338,7 +338,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadView: {
           threadId: THREAD_ID,
           responseId: RESPONSE_ID,
-          branchWork: { id: WORK_ID as never, slug: "work" },
+          branchWork: { id: WORK_ID as never, handle: "w1" },
         },
         documentSync: collab,
       }).search("See created");

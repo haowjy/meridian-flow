@@ -87,7 +87,7 @@ export async function threadContainerTarget(
       owner: { scope: "project", projectId: thread.projectId as ProjectId },
     };
   }
-  if (scheme === "uploads" && authority.kind !== "none") {
+  if (scheme === "uploads") {
     // Uploads belong to a chat: its own for a bare path, another's by handle. A Work owns none.
     const chat =
       authority.kind === "chat"
@@ -133,10 +133,8 @@ export async function threadContainerTarget(
   }
   const workId =
     authority.kind === "work"
-      ? workAuthorities.get(authority.workSlug as never)?.workId
-      : authority.kind === "none"
-        ? (await works.findNoWork(thread.projectId))?.id
-        : primaryWorkId;
+      ? workAuthorities.get(authority.workHandle as never)?.workId
+      : primaryWorkId;
   return workId
     ? { kind: "container", scheme, owner: { scope: "work", workId: workId as WorkId } }
     : null;

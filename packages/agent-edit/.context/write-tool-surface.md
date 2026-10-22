@@ -80,7 +80,7 @@ find is supported through structural lowering. Package tests cover markup,
 resolution, admission, receipts, response recovery, and forward inverses;
 host tests cover placement, restoration, stack policy, and rollback.
 
-Successful edits expose immutable `w<N>` handles to model tools. `read(format:
+Successful edits expose immutable `e<N>` handles to model tools. `read(format:
 "edits")` pages those handles; undo/redo take counts and revert names one edit.
 The host owns policy and notices, and handles do not reach the writer card.
 `region_changed` is in the reversal statuses (`WriteErrorStatus`, contracts'

@@ -4,6 +4,7 @@
  * reads no draft, so its rows are decided live. `ls` returns a typed listing
  * the model reads as plain text (D61).
  */
+import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { ContextFileEntry, SearchResult } from "../../domains/context/index.js";
@@ -42,6 +43,12 @@ async function listingCall(
   return { ...call, principal: withBranchWork(call.principal, null) };
 }
 
+/** `ls scratch://@` and `ls uploads://@` list owners, each a distinct container of its own. */
+function isOwnerListing(path: string): boolean {
+  const parsed = parseUnifiedContextUri(path);
+  return parsed.ok && parsed.value.authority.kind === "owners";
+}
+
 function listedDocumentIds(rows: readonly { documentId?: string }[]): DocumentId[] {
   return rows.flatMap((row) => (row.documentId ? [row.documentId as DocumentId] : []));
 }
@@ -71,7 +78,7 @@ export function createLsHandler(deps: ToolWiringDeps) {
     const access = await deps.fileAccess.listAccess(principal, listedDocumentIds(listed));
     // Ordinary folders share their container; source and lineage discovery list distinct owners.
     const folderReadonly =
-      path && path !== "scratch://@/"
+      path && !isOwnerListing(path)
         ? await containerReadonly(deps, principal, context, path)
         : undefined;
     const entries = await Promise.all(

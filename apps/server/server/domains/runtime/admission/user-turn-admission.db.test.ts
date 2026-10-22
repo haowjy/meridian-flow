@@ -74,7 +74,7 @@ if (!RUN) {
         projectId: PROJECT,
         createdByUserId: USER,
         name: "Admission Work",
-        slug: "admission-work",
+        handle: "w1",
       });
       await firstDb.insert(schema.threadWorks).values({
         threadId: THREAD,
@@ -89,7 +89,7 @@ if (!RUN) {
     });
 
     async function seedUpload(documentId: string, suffix: string) {
-      const uri = `uploads://@/c1/map-${suffix}.png`;
+      const uri = `uploads://@c1/map-${suffix}.png`;
       await firstDb.insert(schema.documents).values({
         id: documentId as never,
         contextSourceId: SOURCE,
@@ -151,7 +151,7 @@ if (!RUN) {
                     kind: "work",
                     projectId: PROJECT,
                     workId: "00000000-0000-4000-8000-000000000f70",
-                    workSlug: null,
+                    workHandle: null,
                   },
                   entry: {
                     observationVersion: "1",

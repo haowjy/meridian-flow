@@ -58,11 +58,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           createdByUserId: u,
           name: "No Work",
-          slug: null,
+          handle: null,
           isNoWork: true,
         },
-        { id: a, projectId: p, createdByUserId: u, name: "A", slug: "work-a" },
-        { id: b, projectId: p, createdByUserId: u, name: "B", slug: "work-b" },
+        { id: a, projectId: p, createdByUserId: u, name: "A", handle: "w2" },
+        { id: b, projectId: p, createdByUserId: u, name: "B", handle: "w3" },
       ]);
     });
     it("views No Work's branch when its lineage root has rebound to another Work", async () => {
@@ -110,7 +110,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
       };
-      for (const baseUri of [null, "scratch://@/c1/holder"]) {
+      for (const baseUri of [null, "scratch://@c1/holder"]) {
         viewed.length = 0;
         const response = await handleDocumentLinkResolveRequest(deps, {
           projectId: p,
@@ -165,7 +165,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ["kb", null, ""],
         ["unfiled", null, ""],
         ["user", null, ""],
-        ["scratch", b, "@work-b/"],
+        ["scratch", b, "@w3/"],
       ] as const) {
         const id = await add(scheme, "Gate", workId);
         const uri = `${scheme}://${qualifier}Gate`;
@@ -195,16 +195,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ...(chat ? { chatId: chat } : {}),
           target: { kind: "scheme", uri },
         });
-      expect(await resolveUpload("uploads://@/c9/Gate")).toMatchObject({
+      expect(await resolveUpload("uploads://@c9/Gate")).toMatchObject({
         documentId: upload,
-        uri: "uploads://@/c9/Gate",
+        uri: "uploads://@c9/Gate",
         chatThreadId: chatId,
       });
       // A bare name means the holder chat's file; a document holder has no chat, so it names nothing.
       expect(await resolveUpload("uploads://Gate", chatId)).toMatchObject({ documentId: upload });
       expect(await resolveUpload("uploads://Gate")).toBeNull();
       // A Work owns no uploads.
-      expect(await resolveUpload("uploads://@work-b/Gate")).toBeNull();
+      expect(await resolveUpload("uploads://@w3/Gate")).toBeNull();
     });
     it("canonicalizes prose aliases before exact-first non-prose omission", async () => {
       const r = resolver();
@@ -268,7 +268,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://@work-b/Gate" },
+          target: { kind: "scheme", uri: "scratch://@w3/Gate" },
         }),
       ).toMatchObject({ scheme: "scratch", path: "Gate" });
       await database.current.update(works).set({ deletedAt: new Date() }).where(eq(works.id, b));
@@ -277,7 +277,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://@work-b/Gate" },
+          target: { kind: "scheme", uri: "scratch://@w3/Gate" },
         }),
       ).toBeNull();
       await database.current
@@ -337,7 +337,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await r.resolve(input)).toMatchObject({ documentId: occupant });
     });
 
-    it("transports the prepared owners of a mixed catalog without resolving Work slugs again", async () => {
+    it("transports the prepared owners of a mixed catalog without resolving Work handles again", async () => {
       const db = database.current;
       const root = crypto.randomUUID();
       await db.insert(threads).values({
@@ -364,8 +364,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "",
       });
       const rows = [
-        { id: note, uri: "scratch://@/c1/note", workId: null, rootThreadId: root },
-        { id: await add("scratch", "named", b), uri: "scratch://@work-b/named", workId: b },
+        { id: note, uri: "scratch://@c1/note", workId: null, rootThreadId: root },
+        { id: await add("scratch", "named", b), uri: "scratch://@w3/named", workId: b },
         { id: await add("manuscript", "chapter"), uri: "manuscript://chapter", workId: null },
         { id: await add("user", "personal"), uri: "user://personal", workId: null },
       ];
@@ -380,7 +380,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
         documentLinks: resolver(),
         fileAccess,
-        workAuthorityResolver: { ...works, bySlug: unexpectedLookup, noWork: unexpectedLookup },
+        workAuthorityResolver: { ...works, byHandle: unexpectedLookup, noWork: unexpectedLookup },
         linkScopes: createDrizzleDocumentLinkScopes({
           db,
           fileAccess,
@@ -656,7 +656,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: otherProject,
         createdByUserId: u,
         name: "Foreign",
-        slug: "foreign",
+        handle: "w4",
       });
       provisioned.length = 0;
       await expect

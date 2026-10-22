@@ -1,5 +1,6 @@
 /** Authenticated writer adapter for the canonical thread Work-rebind command. */
 
+import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import { meridianError, meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import {
@@ -80,12 +81,15 @@ export async function handleRebindThreadWorkRequest(
           workId,
         });
         const root = await deps.threads.findByIdIncludingDeleted(thread.rootThreadId);
-        if (rebound.before.slug === null && !root?.ref)
+        if (rebound.before.handle === null && !root?.ref)
           throw new Error("Scratch requires the first chat's assigned handle");
-        const previousScratchUri =
-          rebound.before.slug === null
-            ? `scratch://@/${root?.ref}/`
-            : `scratch://@${rebound.before.slug}/`;
+        const previousScratchUri = formatParsedContextUri(
+          "scratch",
+          "",
+          rebound.before.handle === null
+            ? { kind: "lineage", rootThreadRef: root?.ref ?? "" }
+            : { kind: "work", workHandle: rebound.before.handle },
+        );
         await recordWriterWorkSwitchNotice(deps.notices, rebound, previousScratchUri);
         return rebound;
       }),

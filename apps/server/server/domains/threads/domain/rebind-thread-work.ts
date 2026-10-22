@@ -46,7 +46,7 @@ function receiptState(work: Work): WorkBindingState {
   return {
     workId: work.id,
     name: work.name,
-    slug: work.slug,
+    handle: work.handle,
     goal: work.goal,
     status: work.status,
     archived: work.archivedAt !== null,

@@ -7,16 +7,16 @@ the storage seam; file access remains the responsibility of [file policy](../fil
 ## Mental model
 
 - `manuscript://`, `kb://`, and `unfiled://` are project content; `user://` is
-  personal content. A named Work owns `scratch://@slug/`. A chat owns its
-  uploads at `uploads://@/c12/`, where bare `uploads://name` is the asking
+  personal content. A named Work owns `scratch://@w3/` (`w3` is its handle). A chat owns its
+  uploads at `uploads://@c12/`, where bare `uploads://name` is the asking
   chat's and a subagent uses its top chat's. A fork or handoff owns its own;
   the Work and No Work own none.
-- A No Work chat lineage owns `scratch://@/c12/`. The locked No Work row owns no
+- A No Work chat lineage owns `scratch://@c12/`. The locked No Work row owns no
   Scratch source. `scratchOwnerFor(thread, work)` is the single owner rule for
   bare Scratch and file policy.
 - `skills://` is model-only skill loading, not a context scheme. All callers
   resolve through the unified `ContextPort` for the thread.
-- Work URI authorities use the persisted opaque slug. Membership selects a
+- Work URI authorities use the persisted Work handle. Membership selects a
   thread's primary Work but does not grant context access.
 
 ## Rules that change behavior

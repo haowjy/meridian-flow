@@ -59,7 +59,7 @@ beforeEach(async () => {
     projectId: PROJECT,
     createdByUserId: OWNER,
     name: "Arc",
-    slug: "arc",
+    handle: "w1",
   });
   await db.insert(schema.threads).values({
     id: THREAD,

@@ -68,10 +68,10 @@ export function permissionDeniedMessage(denial: PermissionDenial): string {
  * action policy lets unarchive is offered the call.
  */
 function workArchivedMessage(denial: FileAccessDenied): string {
-  const slug = denial.archivedWork?.slug ?? null;
-  const work = slug === null ? "This chat's Work" : `Work @${slug}`;
-  const named = slug === null ? "it" : `@${slug}`;
-  const unarchive = slug === null ? null : `\`work({"command":"unarchive","work":"${slug}"})\``;
+  const handle = denial.archivedWork?.handle ?? null;
+  const work = handle === null ? "This chat's Work" : `Work ${handle}`;
+  const named = handle === null ? "it" : handle;
+  const unarchive = handle === null ? null : `\`work({"command":"unarchive","work":"${handle}"})\``;
   const mayUnarchive =
     unarchive !== null &&
     denial.agentChain !== null &&
@@ -83,6 +83,6 @@ function workArchivedMessage(denial: FileAccessDenied): string {
       : `${frozen} Ask the user to unarchive ${named} or switch this chat to auto-apply.`;
   }
   return mayUnarchive
-    ? `${work} is archived and read-only. Unarchive it with ${unarchive} before changing its files.`
+    ? `${work} is archived. To change its files, use ${unarchive}.`
     : `${work} is archived and read-only. Ask the user to unarchive ${named}.`;
 }

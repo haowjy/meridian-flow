@@ -20,12 +20,12 @@ it("records Work refusals and replays the same final HTTP code even after recove
     });
     const command = {
       kind: "delete" as const,
-      uri: "scratch://@arc/note.md",
+      uri: "scratch://@w1/note.md",
       expected: { kind: "file" as const, documentId: "document" },
     };
     const refusal: ContextOperationResult<"delete"> = {
       ok: false,
-      error: { code: "context_unavailable", reason, workSlug: "arc", uri: command.uri },
+      error: { code: "context_unavailable", reason, workHandle: "arc", uri: command.uri },
     };
     const first = await receipts.execute("operation", command, async () => refusal);
     expect(saved).toMatchObject({ result: refusal });

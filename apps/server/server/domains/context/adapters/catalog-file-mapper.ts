@@ -8,7 +8,7 @@ import {
 } from "@meridian/contracts/context-uri";
 import type { CatalogFileEntry, CatalogScope, Filetype } from "@meridian/contracts/protocol";
 import { classifyFiletype } from "@meridian/contracts/protocol";
-import { decodeWorkSlug, type ResolvedWorkAuthority } from "@meridian/contracts/works";
+import { decodeWorkHandle, type ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { documentAliases } from "../document-metadata.js";
 
 /** The stored file types whose bytes live in object storage (one definition, SQL included). */
@@ -40,7 +40,7 @@ export type CatalogFileRow = {
 export function catalogSourceAuthority(
   scheme: ContextUriScheme,
   workId: string | null,
-  workSlug: string | null,
+  workHandle: string | null,
   /** The ref of the thread that owns a lineage Scratch or chat uploads source. */
   ownerThreadRef?: string | null,
   /** A chat-owned source: its address is the chat's, or bare until the chat row exists. */
@@ -52,10 +52,10 @@ export function catalogSourceAuthority(
   if (scheme === "scratch" && ownerThreadRef)
     return { kind: "lineage", rootThreadRef: ownerThreadRef };
   if (!workId) throw new Error("Work-scoped catalog row is missing Work id");
-  if (workSlug === null) return { workId, workSlug: null } as ResolvedWorkAuthority;
-  const decoded = decodeWorkSlug(workSlug);
+  if (workHandle === null) return { workId, workHandle: null } as ResolvedWorkAuthority;
+  const decoded = decodeWorkHandle(workHandle);
   if (!decoded) throw new Error("Persisted Work authority is inconsistent");
-  return { workId, workSlug: decoded } as ResolvedWorkAuthority;
+  return { workId, workHandle: decoded } as ResolvedWorkAuthority;
 }
 
 export function mapAuthoritativeFile(input: {
@@ -64,7 +64,7 @@ export function mapAuthoritativeFile(input: {
   scope: CatalogScope;
   scheme: ContextUriScheme;
   workId: string | null;
-  workSlug: string | null;
+  workHandle: string | null;
   parentPath: readonly string[];
   ownerThreadRef?: string | null;
   chatOwned?: boolean;
@@ -121,7 +121,7 @@ export function mapAuthoritativeFile(input: {
       catalogSourceAuthority(
         scheme,
         input.workId,
-        input.workSlug,
+        input.workHandle,
         input.ownerThreadRef,
         input.chatOwned,
       ),

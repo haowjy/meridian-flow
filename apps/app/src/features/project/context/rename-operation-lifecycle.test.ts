@@ -45,8 +45,8 @@ function settled(overrides: Partial<NamespaceIntent> = {}): NamespaceIntent {
         request: {
           kind: "move",
           scheme: "manuscript",
-          sourceWorkSlug: null,
-          destinationWorkSlug: null,
+          sourceWorkHandle: null,
+          destinationWorkHandle: null,
           body: {
             operationId: "move",
             path: "old.md",

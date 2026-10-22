@@ -189,7 +189,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId,
         createdByUserId: USER_ID,
         name: "Current Work",
-        slug: "current-work",
+        handle: "w1",
       });
       const contextPorts = createProductionUnifiedContextPortFactory({
         pendingBranch: createTestWorkProjectionMutation(db),
@@ -205,7 +205,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         authority,
         projectId,
         USER_ID,
-        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
+        authority.workHandle ? new Map([[authority.workHandle, authority]]) : new Map(),
       );
       await createUntitledContextDocument({
         port,
@@ -287,7 +287,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { port } = await arrangeUntitled();
       const operationId = crypto.randomUUID();
       const options = { operationId, expected: { kind: "file" as const, nodeId: DOCUMENT_ID } };
-      const source = "scratch://@current-work/Untitled 1";
+      const source = "scratch://@w1/Untitled 1";
       const first = await port.commitWriterLocation(source, "manuscript://first", options);
       expect(first.ok).toBe(true);
       await expect(
@@ -361,7 +361,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("keeps a delete receipt when its old path is claimed by a different document", async () => {
       const { projectId, port } = await arrangeUntitled();
-      const uri = "scratch://@current-work/Untitled 1";
+      const uri = "scratch://@w1/Untitled 1";
       const operationId = crypto.randomUUID();
       const options = { operationId, expected: { kind: "file" as const, documentId: DOCUMENT_ID } };
       const deleted = await port.delete(uri, options);
@@ -466,13 +466,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .set({ archivedAt: new Date() })
         .where(eq(schema.works.id, workId));
       await expect(
-        port.createTrackedDocument("scratch://@current-work/new", "blocked"),
+        port.createTrackedDocument("scratch://@w1/new", "blocked"),
       ).resolves.toMatchObject({
         ok: false,
         error: { code: "context_unavailable" },
       });
       await expect(
-        port.commitWriterLocation("scratch://@current-work/Untitled 1", "manuscript://moved", {
+        port.commitWriterLocation("scratch://@w1/Untitled 1", "manuscript://moved", {
           expected: { kind: "file", nodeId: DOCUMENT_ID },
         }),
       ).resolves.toMatchObject({ ok: false, error: { code: "context_unavailable" } });
@@ -481,7 +481,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await documentOwner(DOCUMENT_ID)).sourceWorkId).toBe(workId);
       await db.update(schema.works).set({ archivedAt: null }).where(eq(schema.works.id, workId));
       await expect(
-        port.commitWriterLocation("scratch://@current-work/Untitled 1", "manuscript://moved", {
+        port.commitWriterLocation("scratch://@w1/Untitled 1", "manuscript://moved", {
           expected: { kind: "file", nodeId: DOCUMENT_ID },
         }),
       ).resolves.toMatchObject({ ok: true });
@@ -534,15 +534,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(port.stat("manuscript://Act 1")).resolves.toMatchObject({ ok: false });
       await expect(port.stat("kb://Renamed/Untitled 1")).resolves.toMatchObject({ ok: true });
       await expect(
-        port.commitWriterLocation(
-          "scratch://@current-work/Untitled 1",
-          "manuscript://Act 1/Untitled 1",
-          {
-            operationId,
-            expected: { kind: "file", nodeId: DOCUMENT_ID },
-            destinationParent: { kind: "folder", folderId: crypto.randomUUID() },
-          },
-        ),
+        port.commitWriterLocation("scratch://@w1/Untitled 1", "manuscript://Act 1/Untitled 1", {
+          operationId,
+          expected: { kind: "file", nodeId: DOCUMENT_ID },
+          destinationParent: { kind: "folder", folderId: crypto.randomUUID() },
+        }),
       ).resolves.toMatchObject({ ok: false, error: { code: "operation_mismatch" } });
     });
 
@@ -580,21 +576,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const folderId = await destinationFolder(projectId);
       const operationId = crypto.randomUUID();
       await expect(
-        port.commitWriterLocation(
-          "scratch://@current-work/Untitled 1",
-          "manuscript://Act 1/Untitled 1",
-          {
-            operationId,
-            expected: { kind: "file", nodeId: DOCUMENT_ID },
-            destinationParent: { kind: "folder", folderId },
-            authorizeDestination: async () => false,
-          },
-        ),
+        port.commitWriterLocation("scratch://@w1/Untitled 1", "manuscript://Act 1/Untitled 1", {
+          operationId,
+          expected: { kind: "file", nodeId: DOCUMENT_ID },
+          destinationParent: { kind: "folder", folderId },
+          authorizeDestination: async () => false,
+        }),
       ).resolves.toMatchObject({ ok: false, error: { code: "destination_missing" } });
       await expect(port.lookupOperation(operationId)).resolves.toMatchObject({
         result: { ok: false, error: { code: "destination_missing" } },
       });
-      await expect(port.stat("scratch://@current-work/Untitled 1")).resolves.toMatchObject({
+      await expect(port.stat("scratch://@w1/Untitled 1")).resolves.toMatchObject({
         ok: true,
       });
     });
@@ -627,17 +619,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Destination",
       });
       await expect(
-        port.commitWriterLocation(
-          "scratch://@current-work/Untitled 1",
-          "manuscript://Act 1/Untitled 1",
-          {
-            operationId: crypto.randomUUID(),
-            expected: { kind: "file", nodeId: DOCUMENT_ID },
-            destinationParent: { kind: "folder", folderId },
-          },
-        ),
+        port.commitWriterLocation("scratch://@w1/Untitled 1", "manuscript://Act 1/Untitled 1", {
+          operationId: crypto.randomUUID(),
+          expected: { kind: "file", nodeId: DOCUMENT_ID },
+          destinationParent: { kind: "folder", folderId },
+        }),
       ).resolves.toMatchObject({ ok: false, error: { code: "destination_missing" } });
-      await expect(port.stat("scratch://@current-work/Untitled 1")).resolves.toMatchObject({
+      await expect(port.stat("scratch://@w1/Untitled 1")).resolves.toMatchObject({
         ok: true,
       });
     });
@@ -701,7 +689,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         destinationParent: { kind: "folder" as const, folderId: parent.id },
       };
       const result = await port.commitWriterLocation(
-        "scratch://@current-work/Untitled 1",
+        "scratch://@w1/Untitled 1",
         "manuscript://Act 1/Untitled 1",
         options,
       );
@@ -712,7 +700,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await expect(
         port.commitWriterLocation(
-          "scratch://@current-work/Untitled 1",
+          "scratch://@w1/Untitled 1",
           "manuscript://Act 1/Untitled 1",
           options,
         ),
@@ -728,7 +716,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("repairs delayed delivery after the captured destination authority is retired", async () => {
       const { projectId, workId, port, contextPorts } = await arrangeUntitled();
-      await expect(port.mkdir("scratch://@current-work/B")).resolves.toMatchObject({ ok: true });
+      await expect(port.mkdir("scratch://@w1/B")).resolves.toMatchObject({ ok: true });
       const [parent] = await db
         .select({ id: schema.folders.id })
         .from(schema.folders)
@@ -740,7 +728,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!parent) throw new Error("Missing parent");
       const folderId = parent.id;
       await expect(
-        port.commitWriterLocation("scratch://@current-work/Untitled 1", "manuscript://loose", {
+        port.commitWriterLocation("scratch://@w1/Untitled 1", "manuscript://loose", {
           expected: { kind: "file", nodeId: DOCUMENT_ID },
           operationId: crypto.randomUUID(),
         }),
@@ -755,7 +743,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         destinationParent: { kind: "folder", folderId },
       };
       await expect(
-        port.commitWriterLocation("scratch://@current-work/B", "manuscript://Renamed", {
+        port.commitWriterLocation("scratch://@w1/B", "manuscript://Renamed", {
           expected: { kind: "folder", nodeId: folderId },
           operationId: crypto.randomUUID(),
         }),
@@ -966,7 +954,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         result: { ok: false, error: { code: "destination_missing" } },
       });
-      await expect(port.stat("scratch://@current-work/Untitled 1")).resolves.toMatchObject({
+      await expect(port.stat("scratch://@w1/Untitled 1")).resolves.toMatchObject({
         ok: true,
         value: { documentId: DOCUMENT_ID },
       });
@@ -1010,7 +998,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         provisionalName: false,
       });
       expect(row?.sourceId).toBe(row?.folderSourceId);
-      await expect(port.stat(`scratch://@current-work/Untitled 1`)).resolves.toMatchObject({
+      await expect(port.stat(`scratch://@w1/Untitled 1`)).resolves.toMatchObject({
         ok: false,
         error: { code: "not_found" },
       });
@@ -1033,7 +1021,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         deletedAt: new Date(),
       });
-      const result = await port.write("scratch://@/c12/after-trash", "unavailable", {
+      const result = await port.write("scratch://@c12/after-trash", "unavailable", {
         origin: { type: "agent", agentSlug: null, threadId: rootId, turnId: crypto.randomUUID() },
       });
       expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
@@ -1055,12 +1043,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId,
         createdByUserId: USER_ID,
       });
-      const created = await port.createTrackedDocument("scratch://@/c12/Unassigned", "portable", {
+      const created = await port.createTrackedDocument("scratch://@c12/Unassigned", "portable", {
         origin: { type: "agent", agentSlug: null, threadId: rootId, turnId: crypto.randomUUID() },
       });
       expect(created).toMatchObject({
         ok: true,
-        value: { uri: "scratch://@/c12/Unassigned", documentId: expect.any(String) },
+        value: { uri: "scratch://@c12/Unassigned", documentId: expect.any(String) },
       });
       if (!created.ok || !created.value.documentId) throw new Error("missing no-Work document");
       const documentId = created.value.documentId;
@@ -1104,10 +1092,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         folderName: "Assigned",
       });
       expect(assigned?.documentSourceId).toBe(assigned?.folderSourceId);
-      await expect(port.stat("scratch://@current-work/Assigned/Unassigned")).resolves.toMatchObject(
-        { ok: true, value: { documentId } },
-      );
-      await expect(port.stat("scratch://@/c12/Unassigned")).resolves.toMatchObject({
+      await expect(port.stat("scratch://@w1/Assigned/Unassigned")).resolves.toMatchObject({
+        ok: true,
+        value: { documentId },
+      });
+      await expect(port.stat("scratch://@c12/Unassigned")).resolves.toMatchObject({
         ok: false,
         error: { code: "not_found" },
       });
@@ -1171,11 +1160,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("keeps provisional naming across a system move without the writer-placement option", async () => {
       const { projectId, port } = await arrangeUntitled();
 
-      const moved = await port.move(
-        `scratch://@current-work/Untitled 1`,
-        "manuscript://Act 1/Untitled 1",
-        { origin: { type: "human", userId: USER_ID } },
-      );
+      const moved = await port.move(`scratch://@w1/Untitled 1`, "manuscript://Act 1/Untitled 1", {
+        origin: { type: "human", userId: USER_ID },
+      });
       expect(moved).toMatchObject({ ok: true });
 
       // Generic ContextPort.move never silently graduates a document when only its container changes.
@@ -1189,12 +1176,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("moves a folder and its children across schemes", async () => {
       const { workId, port } = await arrangeUntitled();
       await expect(
-        port.mkdir(`scratch://@current-work/Source/Nested`, {
+        port.mkdir(`scratch://@w1/Source/Nested`, {
           origin: { type: "human", userId: USER_ID },
         }),
       ).resolves.toMatchObject({ ok: true });
       await expect(
-        port.createTrackedDocument(`scratch://@current-work/Source/Nested/chapter`, "Chapter", {
+        port.createTrackedDocument(`scratch://@w1/Source/Nested/chapter`, "Chapter", {
           origin: { type: "human", userId: USER_ID },
         }),
       ).resolves.toMatchObject({ ok: true });
@@ -1222,9 +1209,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(port.stat("manuscript://Act 1/Source/Nested/chapter")).resolves.toMatchObject({
         ok: true,
       });
-      await expect(
-        port.stat(`scratch://@current-work/Source/Nested/chapter`),
-      ).resolves.toMatchObject({
+      await expect(port.stat(`scratch://@w1/Source/Nested/chapter`)).resolves.toMatchObject({
         ok: false,
         error: { code: "not_found" },
       });
@@ -1232,7 +1217,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("returns the exact existing folder locator instead of nesting into it", async () => {
       const { workId, port } = await arrangeUntitled();
-      await expect(port.mkdir(`scratch://@current-work/Source/Children`)).resolves.toMatchObject({
+      await expect(port.mkdir(`scratch://@w1/Source/Children`)).resolves.toMatchObject({
         ok: true,
       });
       await expect(port.mkdir("manuscript://Act 1/Source")).resolves.toMatchObject({ ok: true });
@@ -1262,7 +1247,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: true,
         value: { uri: "manuscript://Act 1/Source", entries: [] },
       });
-      await expect(port.list(`scratch://@current-work/Source`)).resolves.toMatchObject({
+      await expect(port.list(`scratch://@w1/Source`)).resolves.toMatchObject({
         ok: true,
       });
     });

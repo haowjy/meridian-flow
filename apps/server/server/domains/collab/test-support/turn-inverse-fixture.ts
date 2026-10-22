@@ -32,7 +32,10 @@ export async function inverseFixture(db: ReturnType<typeof createTestDatabase>) 
     threadId: THREAD_ID,
     turnId: TURN_ID,
     responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-    grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }, ALPHA_ID),
+    grant: testFileGrant(
+      { kind: "draft", workId: WORK_ID, workHandle: "atomicity-work" },
+      ALPHA_ID,
+    ),
   };
   const target = { projectId: PROJECT_ID as never, workId: WORK_ID, documentId: ALPHA_ID };
   return { harness, view, responseId, context, target };

@@ -25,7 +25,7 @@ const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0
 const resolve = chatReferenceResolver({
   projectId: uuid(1),
   userId: uuid(2),
-  work: { id: uuid(3), slug: null },
+  work: { id: uuid(3), handle: null },
   rootThreadId: uuid(4),
   rootThreadRef: "c1",
 } as never);
@@ -37,9 +37,9 @@ const returned = composerDocFromHandedBack(
         { type: "text", text: "Steer first " },
         {
           type: "reference",
-          text: "[notes](scratch://@/c1/notes.md)",
+          text: "[notes](scratch://@c1/notes.md)",
           documentId: uuid(5),
-          uri: "scratch://@/c1/notes.md",
+          uri: "scratch://@c1/notes.md",
         },
       ],
     },
@@ -69,7 +69,7 @@ it("prepends a hand-back once, whether the tab reloads before the answer or afte
   // The original answer and the re-posted one both arrive in this tab.
   expect(afterPress.receiveHandBack("request-1", returned)).toBe(true);
   expect(afterPress.receiveHandBack("request-1", returned)).toBe(true);
-  const merged = "Steer first [notes](scratch://@/c1/notes.md)\n\nSteer second\n\nTyped since";
+  const merged = "Steer first [notes](scratch://@c1/notes.md)\n\nSteer second\n\nTyped since";
   expect(typed(afterPress)).toBe(merged);
   expect(afterPress.handBacks).toEqual([queueCommand]);
 

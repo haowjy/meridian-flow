@@ -38,8 +38,8 @@ React, or provider behavior.
   never transcript block lifecycle fields.
 - Agent execution knobs, aliases, patch presence, and effort mapping have one
   canonical definition in `src/agents/execution-knobs.ts`.
-- Work slugs prove syntax, not authority. URI formatting does not grant Work
-  access; resolve opaque Work authority before stable serialization.
+- Work handles (`w3`) prove syntax, not authority. URI formatting does not grant
+  Work access; resolve Work authority before stable serialization.
 
 See [`.context/CONTEXT.md`](.context/CONTEXT.md) for URI, link, filename,
 retention, and cross-package contract details.

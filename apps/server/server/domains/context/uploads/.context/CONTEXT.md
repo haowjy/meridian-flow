@@ -11,8 +11,8 @@ not exist yet (a New-chat attach), with no foreign key, as for lineage Scratch.
 The `(projectId, intakeId)` key binds a normalized fingerprint and the lifecycle
 `reserved → object_stored → finalized → deleted`. Reservation allocates stable
 document ID, flat collision-safe filename, object key, owner chat, and
-location revision once. The address is derived from the owner chat's handle when
-read. Tracked text seeds through ContextFS and collab; binary
+location revision once. The address is derived from the owner's handle, never
+frozen before the chat row exists. Tracked text seeds through ContextFS and collab; binary
 content remains object-backed. Definite failure compensates storage, while an
 unknown outcome retains the key for recovery.
 
@@ -20,8 +20,8 @@ Filename validation runs after upload normalization and before reservation or
 storage. It uses the shared Context entry-name validator and returns typed
 client errors; intake does not relax ContextFS naming rules.
 
-A chat's uploads serialize as `uploads://@/c12/name`; bare `uploads://name` is
-the asking chat's. `uploads://@/name`
+A chat's uploads serialize as `uploads://@c12/name`; bare `uploads://name` is
+the asking chat's. The Work and No Work own none, and `uploads://@name`
 without a handle, `uploads://@slug/`, and a subagent handle (`p…`) are errors.
 A New-chat upload has no address until its chat exists. A fork or handoff owns
 its own uploads, and its seed names the source chat's address. Admission

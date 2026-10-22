@@ -56,7 +56,7 @@ const SECOND = {
   ...WORK,
   id: "00000000-0000-4000-8000-000000000002",
   name: "Coda",
-  slug: "coda",
+  handle: "w2",
 } as Work;
 const OPERATIONS = ["create", "update", "archive", "unarchive"] as const;
 type Seen = {
@@ -332,7 +332,7 @@ describe("Work creation", () => {
     ...WORK,
     id: "00000000-0000-4000-8000-000000000003",
     name: "Branch three",
-    slug: "draft-three",
+    handle: "w3",
   } as Work;
   const CREATED_ID = CREATED.id as ParsedRequestId;
 

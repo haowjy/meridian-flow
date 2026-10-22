@@ -1,5 +1,9 @@
 /** Hierarchical, renderer-neutral reference browser composed with the suggestion lifecycle. */
-import { type ContextUriScheme, parseContextUri } from "@meridian/contracts/context-uri";
+import {
+  type ContextUriScheme,
+  ownerSegment,
+  parseContextUri,
+} from "@meridian/contracts/context-uri";
 import type {
   CatalogAuthorityEntry,
   CatalogEntry,
@@ -244,15 +248,6 @@ export function createReferenceBrowserController(
           if (parsed.scheme === "kb" || parsed.scheme === "manuscript")
             return scope.kind === "project";
           if (parsed.scheme === "user") return scope.kind === "user";
-          if (parsed.authority.kind === "none") {
-            return (
-              scope.kind === "work" &&
-              [...authorityIndex.values()].some(
-                (entry) =>
-                  entry.authority.workId === scope.workId && entry.authority.workSlug === null,
-              )
-            );
-          }
           if (parsed.authority.kind === "lineage") return scope.kind === "lineage";
           if (parsed.authority.kind === "chat") return scope.kind === "chat";
           // A bare `uploads://` is this chat's.
@@ -268,7 +263,7 @@ export function createReferenceBrowserController(
               (entry) =>
                 entry.authority.workId === scope.workId &&
                 parsed.authority.kind === "work" &&
-                entry.authority.workSlug === parsed.authority.workSlug,
+                entry.authority.workHandle === parsed.authority.workHandle,
             )
           );
         })
@@ -531,6 +526,7 @@ function rootRows(
         if (!entry.available || authorityRows.has(entry.entryId)) continue;
         authorityRows.add(entry.entryId);
         const row = rowForAuthority(entry);
+        if (!row) continue;
         const authorityView = catalog.read(row.action.scope);
         if (
           !includeEmpty &&
@@ -624,9 +620,12 @@ function populatedContainers(
   return populated;
 }
 
+/** A Work's row in the browser; No Work owns no Scratch, so it has none. */
 function rowForAuthority(
   entry: CatalogAuthorityEntry,
-): Extract<ReferenceRow, { kind: "authority" }> {
+): Extract<ReferenceRow, { kind: "authority" }> | null {
+  const { workHandle } = entry.authority;
+  if (workHandle === null) return null;
   const scope: CatalogScope = {
     kind: "work",
     projectId: entry.scope.projectId,
@@ -638,14 +637,23 @@ function rowForAuthority(
     rowId: `authority:${entry.entryId}`,
     label: entry.name,
     location: "",
-    matchAliases: entry.authority.workSlug === null ? ["@"] : [entry.authority.workSlug],
+    matchAliases: [workHandle],
     action: {
       type: "navigate",
-      prefix: entry.authority.workSlug === null ? "@/" : `@${entry.authority.workSlug}/`,
+      prefix: ownerSegment({ kind: "work", workHandle }) ?? "",
       scope,
       acquire: true,
     },
   };
+}
+
+/**
+ * The writer's name for the area's owner, never its handle. Only a Work has a
+ * name the catalog carries; a chat, the project and the account name no one
+ * beside the row's own label.
+ */
+function ownerLabel(scope: CatalogScope, authorities: ReferenceAuthorityIndex): string {
+  return scope.kind === "work" ? (authorities.get(`work:${scope.workId}`)?.name ?? "") : "";
 }
 
 function rowForEntry(
@@ -660,8 +668,7 @@ function rowForEntry(
       kind: "source",
       rowId: `source:${catalogScopeKey(entry.scope)}:${entry.entryId}`,
       label: entry.name,
-      // A chat's Scratch and uploads are named by the chat, never by a handle.
-      location: entry.scope.kind === "lineage" || entry.scope.kind === "chat" ? "" : prefix,
+      location: ownerLabel(entry.scope, authorities),
       matchAliases: [entry.scheme],
       action: {
         type: "navigate",

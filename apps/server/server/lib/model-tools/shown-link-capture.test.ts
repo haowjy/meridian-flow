@@ -18,6 +18,7 @@ import type { SpelledLinkFact } from "@meridian/markup/links";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createInMemoryUnifiedContextPortFactory } from "../../domains/context/index.js";
+import { emptyOwnerLookup } from "../../domains/context/owner-lookup.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
   getInMemoryProjectContextStore,
@@ -220,6 +221,7 @@ async function harness(
     threads: repos.threads,
     documentSync,
     shownLinks: store,
+    contextPorts: { chatFiles: emptyOwnerLookup },
     fileAccess: {
       // The hidden document's hit is filtered before the model sees it.
       listAccess: async (_principal: unknown, ids: readonly string[]) =>
@@ -229,11 +231,11 @@ async function harness(
   const port = createInMemoryUnifiedContextPortFactory({
     documentSync: documentSync as never,
     storeRegistry: registry,
-  }).forWork({ workId: crypto.randomUUID(), workSlug: null } as never, PROJECT, USER, new Map(), {
+  }).forWork({ workId: crypto.randomUUID(), workHandle: null } as never, PROJECT, USER, new Map(), {
     threadId: crypto.randomUUID(),
     branchWork: null,
   });
-  call.context = { port, resolution: {} as never };
+  call.context = { port, resolution: { thread: { projectId: PROJECT } } as never };
   const registrations = createModelToolRegistrations(deps).map(
     (registration): ToolRegistration =>
       registration.definition.type === "function" &&
@@ -467,12 +469,12 @@ const rows: Array<{
         write: async (context) => ({
           ...success("insert", [fact(94)], undefined, TARGET_URI),
           phase: "staged",
-          ...(context.responseIdentity?.editScopeId ? { writeId: "w1", settlementId: "s1" } : {}),
+          ...(context.responseIdentity?.editScopeId ? { writeId: "e1", settlementId: "s1" } : {}),
         }),
       });
       const receipt = {
         ...success("insert", [fact(95)], undefined, MOVED),
-        writeId: "w1",
+        writeId: "e1",
         settlementId: "s1",
       };
       const { threadId, results } = await runTurn(

@@ -128,6 +128,7 @@ const expectedSuites = [
   "apps/server/server/test-support/drizzle-reset.db.test.ts",
   "packages/database/src/consume-credit-lots-fifo.db.test.ts",
   "packages/database/src/fresh-migrations.db.test.ts",
+  "packages/database/src/owner-handles-migration.db.test.ts",
   "packages/database/src/saved-subagent-contracts-migration.db.test.ts",
   "apps/server/server/test-support/scratch-archive-migration.db.test.ts",
   "apps/server/server/test-support/work-branch-foundation-migration.db.test.ts",

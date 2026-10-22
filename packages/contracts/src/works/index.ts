@@ -1,17 +1,17 @@
 export { type AiWriteMode, aiWriteModeSchema, effectiveAiWriteMode } from "./ai-write-mode.js";
 
+import type { WorkHandle } from "../handles.js";
 import type { ProjectId, ThreadId, UserId, WorkId } from "../ids.js";
 import type { AiWriteMode } from "./ai-write-mode.js";
 import type { WorkReceiptState } from "./receipts.js";
-import type { WorkSlug } from "./work-slug.js";
 
 export interface Work {
   id: WorkId;
   projectId: ProjectId;
   createdByUserId: UserId;
   name: string;
-  /** Stable project-unique handle. Null on the locked No Work row. */
-  slug: WorkSlug | null;
+  /** Permanent project-unique handle (`w3`), never reused. Null on the locked No Work row. */
+  handle: WorkHandle | null;
   isNoWork: boolean;
   goal: string | null;
   /** AI-owned one-to-three-word progress summary. */
@@ -44,8 +44,8 @@ export function isWorkArchived(work: Pick<Work, "archivedAt">): boolean {
   return work.archivedAt !== null;
 }
 
-export type NamedWorkCatalogEntry = Work & { isNoWork: false; slug: WorkSlug };
-export type NoWorkCatalogEntry = Work & { isNoWork: true; slug: null };
+export type NamedWorkCatalogEntry = Work & { isNoWork: false; handle: WorkHandle };
+export type NoWorkCatalogEntry = Work & { isNoWork: true; handle: null };
 
 /** Complete, version-ordered Work lifecycle projection for one project. */
 export type WorksSnapshot = {
@@ -71,10 +71,10 @@ export interface UpdateWorkRequest {
   goal?: string;
 }
 
-/** Resolved execution scope. Null slug is No Work. */
-export type ThreadWorkScope = { workId: WorkId; workSlug: WorkSlug | null };
+/** Resolved execution scope. Null handle is No Work. */
+export type ThreadWorkScope = { workId: WorkId; workHandle: WorkHandle | null };
 
-/** Resolved execution always has a Work id. Null slug is No Work. */
+/** Resolved execution always has a Work id. Null handle is No Work. */
 export type ThreadExecutionContext = {
   scope: ThreadWorkScope;
   aiWriteMode: AiWriteMode;
@@ -96,7 +96,7 @@ export type WorkContextUpdateStatus = "delivered" | "pending" | "not_required";
 /** One side of a thread's Work rebind. */
 export type WorkBindingState = WorkReceiptState & {
   workId: WorkId;
-  slug: WorkSlug | null;
+  handle: WorkHandle | null;
 };
 
 /** Authoritative result shared by writer and model Work-rebind adapters. */
@@ -120,8 +120,8 @@ export interface WorkContextProjectionSignal {
   scope: ThreadWorkScope;
 }
 
+export { decodeWorkHandle, formatWorkHandle, type WorkHandle } from "../handles.js";
 export * from "./metadata.js";
 export * from "./receipts.js";
 export * from "./work-authority.js";
 export * from "./work-retention.js";
-export * from "./work-slug.js";

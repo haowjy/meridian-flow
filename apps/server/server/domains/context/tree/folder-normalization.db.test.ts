@@ -5,7 +5,9 @@
  * folder arriving at a hidden folder's path absorbs it (F-4), and neither race leaves a
  * branch's create behind (I-4, I-5).
  */
+
 import { randomUUID } from "node:crypto";
+import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import { createDb } from "@meridian/database";
 import { documents, folders, users } from "@meridian/database/schema";
 import { eq, sql } from "drizzle-orm";
@@ -181,7 +183,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const destination =
           into === "project"
             ? "world"
-            : `scratch://@${(await scenario.work("Notes", "direct")).slug}/world`;
+            : formatParsedContextUri("scratch", "world", {
+                kind: "work",
+                workHandle: (await scenario.work("Notes", "direct")).handle,
+              });
         const map = await scenario.seedLive(`${origin}/places/map`);
         const places = await scenario.seedLiveFolder(`${origin}/places`);
         const harbor = await scenario.model(ascension).create(`${origin}/places/harbor`, "Harbor.");
@@ -234,7 +239,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .soft(
           await scenario.writer.move(
             "q/t",
-            `scratch://@${(await scenario.work("Notes", "direct")).slug}/t`,
+            formatParsedContextUri("scratch", "t", {
+              kind: "work",
+              workHandle: (await scenario.work("Notes", "direct")).handle,
+            }),
           ),
           "the child's live move",
         )

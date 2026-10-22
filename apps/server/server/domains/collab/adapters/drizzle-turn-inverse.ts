@@ -4,7 +4,11 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { ComputedInverseEdit, UpdateJournal } from "@meridian/agent-edit/integration";
+import {
+  type ComputedInverseEdit,
+  editHandle,
+  type UpdateJournal,
+} from "@meridian/agent-edit/integration";
 import { captureMutationUpdates, textInRanges } from "@meridian/agent-edit/yjs-mutation";
 import type { DocumentId, UserId } from "@meridian/contracts";
 import {
@@ -191,14 +195,14 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             const doc = materializeDraftRead(read, new Y.Doc({ gc: false }));
             const [name] = documentDraft.workId
               ? await db()
-                  .select({ slug: works.slug })
+                  .select({ handle: works.handle })
                   .from(works)
                   .where(eq(works.id, documentDraft.workId))
               : [];
             drafts.set(draftId, {
               documentDraft,
               doc,
-              name: name?.slug ? `@${name.slug}` : "@/",
+              name: name?.handle ?? "No Work",
               frozen: documentDraft.lifecycle !== "active",
             });
           }
@@ -498,7 +502,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         ? await input.journal.reserveWriteOrdinal(document.documentId, query.threadId)
         : undefined;
       if (wId !== undefined) {
-        handles.push(`w${wId}`);
+        handles.push(editHandle(wId));
         for (const receipt of receipts)
           if (receipt.origin.kind === "pending")
             await db()

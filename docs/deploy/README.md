@@ -38,6 +38,14 @@ pnpm --filter @meridian/database db:migrate
 pnpm --filter @meridian/database db:apply-functions
 ```
 
+Some migrations require every application writer stopped while they run. Their
+header comment says so, and `packages/database/.context/CONTEXT.md` explains
+why. For those releases: stop all app servers and workers, let open transactions
+drain, run both commands above, then start the new release. If a migration fails,
+fix the cause and rerun it with writers still stopped; never restart the old
+release on a partly migrated schema. Current stop-the-writers ranges: 0075–0081
+(draft review conversion) and 0082–0083 (owner handles).
+
 ## Environment variables
 
 Production env vars are platform-provided through secrets/env management. There
