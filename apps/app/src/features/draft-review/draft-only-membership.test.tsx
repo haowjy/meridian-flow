@@ -87,7 +87,18 @@ it("a join seen first by one Work keeps the review another Work has on screen", 
       },
     } as never),
     vi.spyOn(account, "useObservedResourceProjection").mockReturnValue({
-      records: [{ resource: { handle: "h", identity: { documentId: "document-a" }, aliases: {} } }],
+      records: [
+        {
+          resource: {
+            handle: "h",
+            identity: { documentId: "document-a" },
+            aliases: {},
+            lifecycle: { kind: "live" },
+          },
+        },
+      ],
+      // The join placed the document in the live tree.
+      placement: { resourceLocation: () => ({ scheme: "manuscript", path: "/chapter.md" }) },
       folders: [],
       snapshot: null,
       error: null,
