@@ -62,8 +62,8 @@ export type ApplyRenamedNote = {
 
 export type AppliedReviewItem = {
   itemKey: DraftItemKey;
-  /** This click settled the item's branch tree row. */
-  tree?: true;
+  /** The committed move, when this click settled the item's branch tree row. */
+  transition?: { from: string | null; to: string | null };
   renamed?: ApplyRenamedNote;
 };
 
@@ -80,8 +80,6 @@ export type ApplyClickResult =
        * this flag, per document.
        */
       restored?: true;
-      /** A drafted move landed: where live had the document before (its path), named once. */
-      replaced?: string;
     }
   /** The branch's row is not the revision the click froze: nothing applied (design-v2 §4). */
   | { status: "changed"; commandId: BranchCommandId }
