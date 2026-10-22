@@ -1,5 +1,8 @@
 /**
- * One draft's FIFO of frozen Apply clicks. Two independent duties per click:
+ * One review item's FIFO of frozen Apply clicks: text, tree, or text+tree. A text click names
+ * its draft (`body.draftId`); that draft's room records it, and closing that draft closes only
+ * its clicks, so a later draft under the same item key never inherits one. A tree-only click
+ * has no room: its applied answer settles it. Two independent duties per click:
  * - release: the click leaves the FIFO (its optimistic contribution ends) exactly once, on the
  *   room's record or on a terminal answer. Unknown delivery never releases the head.
  * - completion: the caller's promise resolves from the full answer or, when the record released
@@ -20,10 +23,6 @@ export type FrozenApply = {
   patched: readonly PMNode[];
   acknowledged: Promise<void>;
 };
-/**
- * The room recorded the click, but neither its answer nor its stored result could be read after
- * every retry. It landed; what only the result carries (`restored`) is unknown.
- */
 /** An answer that ends a click unapplied: nothing changed, and resending can't change that. */
 function isFinalRefusal(
   answer: ApplyClickObservation,
@@ -37,12 +36,18 @@ function isFinalRefusal(
   );
 }
 
+/**
+ * The room recorded the click, but neither its answer nor its stored result could be read after
+ * every retry. It landed; what only the result carries (`restored`) is unknown.
+ */
 export type ApplyClickLanded = { status: "landed"; commandId: string };
 export type ApplyClickOutcome = ApplyClickResult | ApplyClickLanded | { status: "cancelled" };
 type Click = FrozenApply & {
   sent: boolean;
   attempts: number;
   stalled: boolean;
+  /** Its draft closed (or the queue did): no record can arrive, only a durable answer settles it. */
+  closed: boolean;
   answer?: ApplyClickResult;
   inFlight?: boolean;
   reading?: boolean;
@@ -53,7 +58,8 @@ const RETRY_DELAYS = [1000, 2000, 4000];
 
 export class ApplyClickQueue {
   readonly clicks: Click[] = [];
-  private recorded = new Set<string>();
+  /** Each draft room's recorded command ids. */
+  private readonly recorded = new Map<string, Set<string>>();
   private closed = false;
   private request: Click | null = null;
   /** Released by the record, not yet completed: awaiting the in-flight answer or reading the stored result. */
@@ -67,14 +73,20 @@ export class ApplyClickQueue {
       send(body: ApplyClick): Promise<ApplyClickAnswer>;
       lookup(body: ApplyClick): Promise<ApplyClickObservation>;
       changed(): void;
-      refused(answer: Exclude<ApplyClickResult, { status: "applied" }>): void;
     },
   ) {}
 
   enqueue(frozen: FrozenApply): Promise<ApplyClickOutcome> {
     if (this.closed) return Promise.resolve({ status: "cancelled" });
     const result = new Promise<ApplyClickOutcome>((finish) => {
-      const click: Click = { ...frozen, sent: false, attempts: 0, stalled: false, finish };
+      const click: Click = {
+        ...frozen,
+        sent: false,
+        attempts: 0,
+        stalled: false,
+        closed: false,
+        finish,
+      };
       this.clicks.push(click);
       void frozen.acknowledged.then(
         () => {
@@ -83,7 +95,7 @@ export class ApplyClickQueue {
             if (this.clicks[0] === click) void this.dispatch(click);
           }
         },
-        () => this.refuseUnsent(click),
+        () => this.refuse(click),
       );
     });
     if (!this.feedbackTimer)
@@ -96,10 +108,10 @@ export class ApplyClickQueue {
   }
 
   /** The record alone proves landing. It and the base arrive in the same Yjs transaction. */
-  observe(commandIds: Iterable<string>): void {
-    this.recorded = new Set(commandIds);
+  observe(draftId: string, commandIds: Iterable<string>): void {
+    this.recorded.set(draftId, new Set(commandIds));
     const head = this.clicks[0];
-    if (head && this.recorded.has(head.body.commandId)) {
+    if (head && this.isRecorded(head)) {
       this.release(head);
       this.complete(head);
     } else this.port.changed();
@@ -114,37 +126,59 @@ export class ApplyClickQueue {
     void this.dispatch(head);
   }
 
-  /** A retired session cannot acknowledge its unsent cuts; sent ids keep their settlement. */
-  refuseUnsent(only?: Click): void {
-    for (const click of [...this.clicks]) {
-      if (click.sent || (only && click !== only)) continue;
-      const answer = {
-        status: "refused",
-        commandId: click.body.commandId,
-        reason: "unsynced",
-      } as const;
-      this.clicks.splice(this.clicks.indexOf(click), 1);
-      this.port.refused(answer);
-      click.finish(answer);
-    }
-    this.clearFeedbackIfIdle();
-    this.port.changed();
+  private isRecorded(click: Click): boolean {
+    const { draftId, commandId } = click.body;
+    return draftId !== undefined && (this.recorded.get(draftId)?.has(commandId) ?? false);
   }
 
-  /** Closed rooms cannot deliver records. Only a durable answer/lookup can settle a sent head. */
-  close(): void {
+  /** A retired session cannot acknowledge its draft's unsent cuts; sent ids keep their settlement. */
+  refuseUnsent(draftId: string): void {
+    for (const click of this.clicks.filter((click) => click.body.draftId === draftId))
+      this.refuse(click);
+  }
+
+  private refuse(click: Click): void {
+    const index = this.clicks.indexOf(click);
+    if (click.sent || index < 0) return;
+    this.clicks.splice(index, 1);
+    click.finish({ status: "refused", commandId: click.body.commandId, reason: "unsynced" });
+    this.moveOn();
+  }
+
+  /**
+   * A closed room cannot deliver records: its draft's unsent clicks are cancelled, and only a
+   * durable answer/lookup can settle its sent head. Other drafts' and tree clicks go on.
+   * Without a draft, the whole queue closes (the account is ending).
+   */
+  close(draftId?: string): void {
     if (this.closed) return;
-    this.closed = true;
-    clearTimeout(this.retryTimer);
+    if (draftId === undefined) {
+      this.closed = true;
+      clearTimeout(this.retryTimer);
+    }
+    const closing = this.clicks.filter(
+      (click) => !click.closed && (draftId === undefined || click.body.draftId === draftId),
+    );
     const head = this.clicks[0];
-    const cancelled = this.clicks.splice(head?.sent ? 1 : 0);
-    for (const click of cancelled) click.finish({ status: "cancelled" });
-    this.clearFeedbackIfIdle();
-    if (head?.sent) {
+    for (const click of closing) {
+      click.closed = true;
+      if (click === head && click.sent) continue;
+      this.clicks.splice(this.clicks.indexOf(click), 1);
+      click.finish({ status: "cancelled" });
+    }
+    if (head?.sent && closing.includes(head)) {
       if (head.answer?.status === "applied") this.settle(head, head.answer);
       else if (!this.request) void this.lookupClosed(head);
     }
+    this.moveOn();
+  }
+
+  /** After clicks left out of turn: the next head is sent unless one is already in flight. */
+  private moveOn(): void {
+    this.clearFeedbackIfIdle();
     this.port.changed();
+    const next = this.clicks[0];
+    if (next && !this.request && !next.sent && !this.closed) void this.dispatch(next);
   }
 
   destroy(): void {
@@ -162,7 +196,7 @@ export class ApplyClickQueue {
     try {
       await click.acknowledged;
     } catch {
-      this.refuseUnsent(click);
+      this.refuse(click);
       return;
     }
     if (this.request || this.clicks[0] !== click) return;
@@ -171,7 +205,7 @@ export class ApplyClickQueue {
     click.inFlight = true;
     let answer: ApplyClickObservation | undefined;
     try {
-      answer = await (this.closed ? this.port.lookup(click.body) : this.port.send(click.body));
+      answer = await (click.closed ? this.port.lookup(click.body) : this.port.send(click.body));
     } catch {
       // No answer is not a refusal. The immutable command remains the only head.
     }
@@ -187,21 +221,19 @@ export class ApplyClickQueue {
       return;
     }
     if (answer?.status === "applied") {
-      if (!click.body.snapshot || this.closed || this.recorded.has(click.body.commandId))
-        this.settle(click, answer);
+      if (!click.body.draftId || click.closed || this.isRecorded(click)) this.settle(click, answer);
       // Otherwise keep the optimistic contribution until the room's record arrives.
       return;
     }
     if (answer && isFinalRefusal(answer)) {
-      this.port.refused(answer);
       this.settle(click, answer);
       return;
     }
-    if (this.closed && answer?.status === "none") {
+    if (click.closed && answer?.status === "none") {
       this.settle(click, { status: "cancelled" });
       return;
     }
-    if (this.closed && !answer) {
+    if (click.closed && !answer) {
       // An in-flight send may have been answered by the close. Observe it before counting a retry.
       void this.lookupClosed(click);
       return;
@@ -214,7 +246,6 @@ export class ApplyClickQueue {
       const result = await this.port.lookup(click.body);
       if (this.clicks[0] !== click || result.commandId !== click.body.commandId) return;
       if (result.status === "applied" || isFinalRefusal(result)) {
-        if (result.status !== "applied") this.port.refused(result);
         this.settle(click, result);
         return;
       }

@@ -10,7 +10,9 @@ it never partitions the text.
 
 - The room runtime owns projection. The account command owner supplies its
   cached optimistic base and freezes each Apply at the click, one FIFO per
-  stable draft id. Never hide ids, translate selections or recut at dispatch.
+  review item for text, tree and text+tree clicks; draft rooms are resources
+  it attaches, and a text click stays pinned to its draft id. Never hide ids,
+  translate selections or recut at dispatch.
 - Text Discard is one local transaction. Its caller owns history: editor
   Ctrl+Z, or a pool-held surface notice with its own UndoManager. A dock
   Discard never enters editor history. Dock/Work rows and their notice paint
