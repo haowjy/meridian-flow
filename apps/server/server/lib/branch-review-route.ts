@@ -7,7 +7,7 @@
  */
 
 import type { BranchCommandId, BranchId } from "@meridian/contracts";
-import { draftItemKey } from "@meridian/contracts";
+import { draftItemKey, parseDraftItemKey } from "@meridian/contracts";
 import {
   type ApplyClick,
   type ApplyClickAnswer,
@@ -353,20 +353,27 @@ export async function handleWorkBranchListRequest(
   };
 }
 
-/** Addressability is independent of list membership and reads only persisted metadata. */
+/**
+ * Addressability is independent of list membership and reads only persisted metadata.
+ * Disposition precedes the content grant: the active draft is what grants reading a document
+ * deleted live (or a creation the manuscript never had), so once Discard retires it the grant
+ * is gone too, and a device that did not discard must still learn `gone` from the Work's owner.
+ */
 export async function handleDraftMetadataRequest(
   deps: BranchRouteServices,
   input: CommandScope & { documentId: DocumentId; itemKey: string },
 ): Promise<DraftMetadataResponse> {
   await requireBranchWorkAccess(deps, input);
+  if (parseDraftItemKey(input.itemKey)?.documentId !== input.documentId)
+    throw createError({ statusCode: 404, message: "Draft not found" });
+  const resolved = await deps.documentSync.draftReview.resolveItem(input);
+  if (!resolved?.draftId || resolved.documentId !== input.documentId) return { status: "gone" };
   await requireFileGrant(
     deps.fileAccess,
     input.userId,
     { kind: "draft", documentId: input.documentId, workId: input.workId },
     "read",
   );
-  const resolved = await deps.documentSync.draftReview.resolveItem(input);
-  if (!resolved?.draftId || resolved.documentId !== input.documentId) return { status: "gone" };
   return {
     status: "active",
     draftId: resolved.draftId,

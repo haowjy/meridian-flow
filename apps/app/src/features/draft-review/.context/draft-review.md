@@ -93,7 +93,11 @@ list omission alone must not infer local Discard or successful Apply. The list
 omits an active draft with no effect (a delete's held tab, a fully applied draft,
 one inside the `has_effect` lag), so an unlisted draft-only tab goes live when
 the catalog shows its document and closes only when its draft metadata answers
-`gone`; an active or unanswered draft keeps its tab.
+`gone`; an active or unanswered draft keeps its tab. The server answers `gone`
+from the Work's ownership and the item key alone, before any content grant:
+the active draft is what grants reading a document deleted live or a hidden
+creation, so after a Discard on another device a content check would answer
+404 forever. Inaccessible active content and network errors stay nonterminal.
 
 ## Account command lifetime
 
