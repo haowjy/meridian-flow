@@ -126,6 +126,7 @@ const ApplyClickBody = z
     ),
     groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
     restore: z.literal(true).optional(),
+    tree: z.strictObject({ revision: z.string().regex(/^\d+$/).nullable() }).optional(),
   })
   .refine((body) => Boolean(body.snapshot) === Boolean(body.draftId));
 const DiscardBody = z.strictObject(Base);
@@ -337,11 +338,14 @@ export async function handleWorkBranchListRequest(
         { accountId: input.userId },
         listed.items.map((item) => item.documentId),
         {
+          // A document the branch deletes is gone from its view; it is read where it still is.
           branchViews: new Map(
-            listed.items.map((item) => [
-              item.documentId,
-              { kind: "branch" as const, branchId: listed.branchId as BranchId },
-            ]),
+            listed.items
+              .filter((item) => !item.tree?.deleted)
+              .map((item) => [
+                item.documentId,
+                { kind: "branch" as const, branchId: listed.branchId as BranchId },
+              ]),
           ),
         },
       )
@@ -560,8 +564,13 @@ export async function handleApplyClickRequest(
       : denial
         ? deniedAnswer(denial)
         : refuse("not_found");
+  // A drafted delete of a document live deleted too has no draft to read: the click only
+  // settles the branch's row, authorized like a restore through the draft's destination.
+  const settlesOnly = deletedLive && item?.item.tree?.deleted === true;
   for (const target of [
-    { kind: "draft" as const, documentId: input.documentId, workId: input.workId },
+    ...(settlesOnly
+      ? []
+      : [{ kind: "draft" as const, documentId: input.documentId, workId: input.workId }]),
     ...(item?.item.isNew || deletedLive ? [] : [documentTarget(input.documentId)]),
   ]) {
     const grant = await deps.fileAccess.authorize({ accountId: input.userId }, target, "edit");
@@ -674,6 +683,15 @@ export function toWireItem(
     isNew: item.isNew,
     binary: item.binary,
     wholeItem: item.wholeItem,
+    tree: item.tree
+      ? {
+          revision: item.tree.revision,
+          ...(item.tree.movedFrom
+            ? { movedFrom: reviewContextLocation(item.tree.movedFrom) ?? undefined }
+            : {}),
+          ...(item.tree.deleted ? { deleted: true as const } : {}),
+        }
+      : null,
     documentName: item.documentName,
     contextLocation: reviewContextLocation(item.path),
     conflict: item.conflict,

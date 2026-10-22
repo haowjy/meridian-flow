@@ -42,6 +42,7 @@ import {
   runInDrizzleSavepoint,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
+import { nextEditSeq } from "../../../shared/edit-history-seq.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
@@ -85,7 +86,7 @@ import {
   type TurnInverseQuery,
   type TurnInverseStore,
 } from "../domain/turn-inverse-service.js";
-import { nextEditSeq, recordDocumentEdit } from "./drizzle-document-edits.js";
+import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
 import { commitRewriteWithinTx, insertJournalRows } from "./drizzle-draft-storage.js";
 import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";

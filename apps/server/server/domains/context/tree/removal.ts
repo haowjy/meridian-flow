@@ -32,7 +32,7 @@ import type {
 } from "../ports/document-removal.js";
 import { bumpLocationVersions } from "./node-locations.js";
 import { releaseDocumentStorage } from "./node-rows.js";
-import { placeLive } from "./placement.js";
+import { type PlaceTarget, placeLive } from "./placement.js";
 import type { NodeRef } from "./tree-view.js";
 import { loadActiveBranchUses, loadDocumentIdentityRows } from "./tree-view-sql.js";
 
@@ -161,13 +161,15 @@ export type RestoreOutcome =
 
 /** A placement fault, carried out of the savepoint it rolls back. */
 class RestoreFault extends Error {
-  constructor(readonly outcome: Extract<RestoreOutcome, { kind: "location_taken" }>) {
-    super(`Restore found ${outcome.at} taken`);
+  constructor(readonly outcome: Extract<RestoreOutcome, { kind: "location_taken" | "refused" }>) {
+    super(`Restore faulted: ${outcome.kind}`);
   }
 }
 
 /**
- * Brings one deleted document back at the location it held, with every folder on that path
+ * Brings one deleted document back at the location it held, or at `at` (Apply of a drafted
+ * move restores where the branch put it, so an old-path clash never blocks it), with every
+ * folder on that path
  * (a living folder there is reused, a deleted one restored), through placement's one
  * name-claim rule. Apply restores whichever removal is current; a reversing caller (a
  * reply's rollback, the turn card's Undo) names the removal it reverses. Clears the record,
@@ -178,7 +180,7 @@ class RestoreFault extends Error {
  */
 export async function restoreDocument(
   db: Database,
-  input: { documentId: DocumentId; removal?: RemovalIdentity },
+  input: { documentId: DocumentId; removal?: RemovalIdentity; at?: PlaceTarget["at"] },
   deps: {
     arrivals?: Pick<DocumentArrivals, "settle">;
     catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
@@ -230,7 +232,7 @@ export async function restoreDocument(
         db,
         {
           node,
-          at: {
+          at: input.at ?? {
             contextSourceId: row.sourceId as ContextSourceId,
             parentFolderId: row.folderId as FolderId | null,
             name: row.name,
@@ -242,6 +244,13 @@ export async function restoreDocument(
             .update(documents)
             .set({
               folderId: parentId,
+              ...(input.at
+                ? {
+                    contextSourceId: input.at.contextSourceId,
+                    name: input.at.name,
+                    extension: input.at.extension ?? row.extension,
+                  }
+                : {}),
               deletedAt: null,
               deletionReason: null,
               deletedByUserId: null,
@@ -254,9 +263,13 @@ export async function restoreDocument(
         },
       );
       if (!landed.ok) {
-        // A non-hidden document's chain holds no hidden folder, so only a taken path faults.
-        if (landed.error.code !== "path_taken")
+        // A non-hidden document's chain holds no hidden folder, so only a taken path faults; a
+        // drafted move's folders are the branch's, which placement reveals.
+        if (landed.error.code !== "path_taken") {
+          // A drafted move's hidden folder can be gone since; the document's own chain can't.
+          if (input.at) throw new RestoreFault({ kind: "refused" });
           throw new Error(`Restore of ${input.documentId} met a broken folder chain`);
+        }
         throw new RestoreFault({
           kind: "location_taken",
           at: landed.error.at,
@@ -267,7 +280,12 @@ export async function restoreDocument(
     });
     await deps.arrivals?.settle([input.documentId]);
     await deps.catalog.refreshSources(
-      [row.sourceId as ContextSourceId],
+      [
+        ...new Set([
+          row.sourceId as ContextSourceId,
+          ...(input.at ? [input.at.contextSourceId] : []),
+        ]),
+      ],
       placed.map((ref) => ref.id),
     );
     return { kind: "restored", placed };

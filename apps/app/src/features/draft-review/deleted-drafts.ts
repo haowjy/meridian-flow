@@ -4,9 +4,13 @@
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 
-/** Deleted from the manuscript, and Apply can bring it back. */
+/**
+ * Deleted from the manuscript, and Apply can bring it back: a draft or a drafted move does
+ * (at the branch's location), a drafted delete never does, so Apply all's confirmation never
+ * names one.
+ */
 export function isDeletedFromManuscript(item: ThreadDraftListItem | null | undefined): boolean {
-  return item?.deletedLive === true;
+  return item?.deletedLive === true && !item.tree?.deleted;
 }
 
 /** Another document holds the item's path, so Apply can't succeed until it moves. */

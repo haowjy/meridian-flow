@@ -40,14 +40,20 @@ export type CompiledClick = {
 };
 export interface ApplyClickStore {
   loadBase(command: ApplyClickCommand): Promise<DraftBase | null>;
+  /**
+   * Applies exactly the click's cuts in one transaction: the tree cut first (the move, delete
+   * or creation its frozen revision holds), then the text cut at the result.
+   */
   execute(
     command: ApplyClickCommand,
     prepared:
-      | { kind: "text"; base: DraftBase; click: CompiledClick }
-      | { kind: "reveal"; branchId: import("@meridian/contracts").BranchId },
+      | { kind: "text"; base: DraftBase; click: CompiledClick; tree?: TreeCut }
+      | { kind: "tree"; branchId: import("@meridian/contracts").BranchId; tree: TreeCut },
   ): Promise<ApplyClickAnswer>;
   measured?(input: { commandId: string; compileClickMs: number }): void;
 }
+/** The branch row revision a click froze. */
+export type TreeCut = { revision: string | null };
 const schema = buildDocumentSchema();
 
 export class ApplyClickRefused extends Error {
@@ -192,20 +198,21 @@ export function createApplyClickService(input: {
     if (first) return first;
     await testHook("apply.beforeCompile");
     try {
-      const revealOnly =
-        !command.request.snapshot &&
-        !command.request.groupIds.length &&
-        !command.request.baseViewDelta.length;
-      if (revealOnly) {
+      const { tree } = command.request;
+      const textCut =
+        !!command.request.snapshot ||
+        command.request.groupIds.length > 0 ||
+        command.request.baseViewDelta.length > 0;
+      if (!textCut) {
+        // A tree cut alone: a move, a delete or a creation with no text room (design-v2 §4).
+        if (!tree) throw new ApplyClickRefused("malformed");
         const resolved = await input.identity.resolveReviewItemByDocument(command);
-        if (
-          !resolved ||
-          resolved.draftId ||
-          !resolved.item.isNew ||
-          resolved.item.origin !== "created"
-        )
-          throw new ApplyClickRefused("malformed");
-        return await input.store.execute(command, { kind: "reveal", branchId: resolved.branchId });
+        if (!resolved) throw new ApplyClickRefused("not_found");
+        return await input.store.execute(command, {
+          kind: "tree",
+          branchId: resolved.branchId,
+          tree,
+        });
       }
       if (!command.request.groupIds.length) throw new ApplyClickRefused("malformed");
       if (!command.request.draftId) throw new ApplyClickRefused("malformed");
@@ -235,7 +242,12 @@ export function createApplyClickService(input: {
       } finally {
         input.store.measured?.({ commandId, compileClickMs: performance.now() - start });
       }
-      const result = await input.store.execute(command, { kind: "text", base, click });
+      const result = await input.store.execute(command, {
+        kind: "text",
+        base,
+        click,
+        ...(tree ? { tree } : {}),
+      });
       return result.status === "closed" || result.status === "refused"
         ? ((await lookup()) ?? result)
         : result;

@@ -8,14 +8,21 @@ import type {
   BranchId,
   BranchTreeFacts,
   DocumentId,
+  FolderId,
   ThreadId,
   TreePlacement,
   TurnId,
+  UserId,
 } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { branchTreeChanges } from "@meridian/database/schema";
+import { branchTreeChanges, documentEdits } from "@meridian/database/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { nextEditSeq } from "../../../shared/edit-history-seq.js";
+import { tombstoneFolders } from "./node-rows.js";
+import { loadFolderChains } from "./tree-addresses.js";
+import type { NodeRef } from "./tree-view.js";
+import { isUnusedHiddenFolder } from "./tree-view-sql.js";
 
 /** The branch created (or joined) this document; its place is the document row's. The branch can't already have the row. */
 export async function recordCreated(
@@ -38,12 +45,21 @@ export async function recordCreated(
     });
 }
 
-/** The branch stops saying anything about these documents (its settlements are the registry's). */
+/** Who ended a branch's drafted entries, and how: the writer's Apply or Discard, or a cleanup. */
+export type BranchSettlement = { as: "applied" | "discarded"; userId?: UserId | null };
+
+/**
+ * The branch stops saying anything about these documents: its rows go, and the drafted moves
+ * and deletes they held are settled (`settleBranchEntries`), so a later undo of one refuses
+ * as applied or discarded. Every terminal path ends a branch's facts here.
+ */
 export async function dropDocumentRows(
   db: Database,
-  input: { branchId: BranchId; documentIds: readonly DocumentId[] },
-): Promise<void> {
-  if (input.documentIds.length === 0) return;
+  input: { branchId: BranchId; documentIds: readonly DocumentId[]; settle: BranchSettlement },
+): Promise<readonly NodeRef[]> {
+  if (input.documentIds.length === 0) return [];
+  await settleBranchEntries(db, input);
+  const movedInto = await movedFolders(db, input.branchId, input.documentIds);
   await currentDrizzleDb(db)
     .delete(branchTreeChanges)
     .where(
@@ -53,6 +69,106 @@ export async function dropDocumentRows(
         inArray(branchTreeChanges.nodeId, [...input.documentIds]),
       ),
     );
+  // The hidden folders only its moves used go with them.
+  return pruneHiddenFolders(db, movedInto);
+}
+
+/**
+ * One settlement row per document naming every drafted entry (a move, delete or their
+ * inverses) the branch recorded on it that no settlement ended yet (design-v2 §4). It mutates
+ * nothing; the stack rules read it (`settlementOf`).
+ */
+export async function settleBranchEntries(
+  db: Database,
+  input: { branchId: BranchId; documentIds: readonly DocumentId[]; settle: BranchSettlement },
+): Promise<void> {
+  const tx = currentDrizzleDb(db);
+  const rows = await tx
+    .select({
+      editId: documentEdits.id,
+      documentId: documentEdits.documentId,
+      treeChange: documentEdits.treeChange,
+    })
+    .from(documentEdits)
+    .where(
+      and(
+        inArray(documentEdits.documentId, [...input.documentIds]),
+        sql`${documentEdits.treeChange}->'destination'->>'branchId' = ${input.branchId}`,
+      ),
+    );
+  const settled = new Set(
+    rows.flatMap((row) => (row.treeChange?.op === "settle" ? row.treeChange.settles.editIds : [])),
+  );
+  const open = new Map<DocumentId, string[]>();
+  for (const row of rows)
+    if (row.treeChange && row.treeChange.op !== "settle" && !settled.has(row.editId))
+      open.set(row.documentId, [...(open.get(row.documentId) ?? []), row.editId]);
+  for (const [documentId, editIds] of open)
+    await tx.insert(documentEdits).values({
+      documentId,
+      actor: input.settle.userId ? "human" : "system",
+      actorUserId: input.settle.userId ?? null,
+      kind: "write",
+      treeChange: {
+        op: "settle",
+        destination: { kind: "draft", branchId: input.branchId },
+        shownAt: null,
+        seq: await nextEditSeq(tx),
+        targets: [],
+        settles: { editIds, as: input.settle.as },
+      },
+    });
+}
+
+/** The folders a branch's moves put these documents in. */
+async function movedFolders(
+  db: Database,
+  branchId: BranchId,
+  documentIds: readonly DocumentId[],
+): Promise<FolderId[]> {
+  const rows = await currentDrizzleDb(db)
+    .select({ folderId: branchTreeChanges.movedFolderId })
+    .from(branchTreeChanges)
+    .where(
+      and(
+        eq(branchTreeChanges.branchId, branchId),
+        eq(branchTreeChanges.nodeKind, "document"),
+        inArray(branchTreeChanges.nodeId, [...documentIds]),
+      ),
+    );
+  return rows.flatMap((row) => (row.folderId ? [row.folderId as FolderId] : []));
+}
+
+/**
+ * Tombstones the hidden folders in these folders' chains that nothing uses any more (no
+ * living document or folder in them, no branch's move into them), bottom-up: a folder is
+ * judged only after all of the batch's folders beneath it, so a sibling still alive at first
+ * glance never leaves its parent behind. Visible folders are never touched.
+ */
+export async function pruneHiddenFolders(
+  db: Database,
+  folderIds: readonly (FolderId | null)[],
+): Promise<NodeRef[]> {
+  const tx = currentDrizzleDb(db);
+  const chains = await loadFolderChains(
+    tx,
+    folderIds.filter((id): id is FolderId => id !== null),
+  );
+  const depthOf = new Map<FolderId, number>();
+  for (const chain of chains.values()) {
+    chain.forEach((folder, index) => {
+      const depth = chain.length - index;
+      depthOf.set(folder.id, Math.max(depthOf.get(folder.id) ?? 0, depth));
+    });
+  }
+  const deepestFirst = [...depthOf.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  const pruned: NodeRef[] = [];
+  for (const folderId of deepestFirst) {
+    if (!(await isUnusedHiddenFolder(tx, folderId))) continue;
+    await tombstoneFolders(db, [folderId]);
+    pruned.push({ kind: "folder", id: folderId });
+  }
+  return pruned;
 }
 
 const NO_FACTS: BranchTreeFacts = { row: false, created: false, moved: null, deleted: false };

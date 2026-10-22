@@ -27,7 +27,7 @@ import {
   type DraftRoomRegistry,
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
-import { ApplyClickQueue } from "./apply-click-queue";
+import { type ApplyClickOutcome, ApplyClickQueue } from "./apply-click-queue";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
 import type { ChangeTarget, ReviewChange } from "./review-model";
@@ -65,6 +65,8 @@ export type CommandOutcome =
   | { kind: "done"; restored?: true }
   /** The document was deleted and the click didn't say the writer knew: nothing changed. */
   | { kind: "needs-restore" }
+  /** A move waits for another item of the branch that still holds its destination live. */
+  | { kind: "held"; by: { itemKey: string; path: string } }
   | { kind: "change-refused"; code: string };
 type Binding = {
   session: DocumentSession;
@@ -94,6 +96,19 @@ const EDITOR_DISCARD_ORIGIN = Symbol("editor-draft-discard");
  */
 function shownRefusal(failure: BranchCommandFailure): BranchCommandFailure | null {
   return failure.serverCode === "work_archived" ? null : failure;
+}
+/** The server's word for an unapplied click, as the surfaces' refusal copy keys it. */
+function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>): string {
+  switch (answer.status) {
+    case "refused":
+      return answer.reason;
+    case "needs_restore":
+    case "changed":
+    case "held":
+      return answer.status;
+    default:
+      return "gone";
+  }
 }
 const base64 = (bytes: Uint8Array) =>
   btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
@@ -207,12 +222,7 @@ export class DraftCommandOwner {
               {
                 failure: shownRefusal({
                   code: "apply-refused",
-                  serverCode:
-                    answer.status === "refused"
-                      ? answer.reason
-                      : answer.status === "needs_restore"
-                        ? "needs_restore"
-                        : "gone",
+                  serverCode: refusalCode(answer),
                 }),
               },
               address.draftId,
@@ -391,7 +401,15 @@ export class DraftCommandOwner {
     if (this.byItem.get(entry.ref.itemKey) === entry) this.byItem.delete(entry.ref.itemKey);
   }
 
-  reveal(ref: DraftRef): { sent: boolean; outcome: Promise<CommandOutcome> } {
+  /**
+   * A tree cut alone (design-v2 §4): the move, delete or creation the branch's row revision
+   * `tree` holds, for an item with no text to apply with it.
+   */
+  applyTree(
+    ref: DraftRef,
+    tree: { revision: string | null },
+    restore = false,
+  ): { sent: boolean; outcome: Promise<CommandOutcome> } {
     if (!this.active || this.reveals.has(ref.itemKey))
       return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
     const queue = new ApplyClickQueue({
@@ -406,28 +424,42 @@ export class DraftCommandOwner {
       refused: (answer) =>
         this.setState(ref.itemKey, {
           hidden: false,
-          failure: shownRefusal({
-            code: "apply-refused",
-            serverCode: answer.status === "refused" ? answer.reason : "gone",
-          }),
+          failure: shownRefusal({ code: "apply-refused", serverCode: refusalCode(answer) }),
         }),
     });
     this.reveals.set(ref.itemKey, queue);
     this.setState(ref.itemKey, { hidden: true, failure: null });
     const outcome = queue
       .enqueue({
-        body: { commandId: crypto.randomUUID(), groupIds: [], baseViewDelta: [] },
+        body: {
+          commandId: crypto.randomUUID(),
+          groupIds: [],
+          baseViewDelta: [],
+          tree,
+          ...(restore ? { restore: true as const } : {}),
+        },
         optimistic: [],
         patched: [],
         acknowledged: Promise.resolve(),
       })
-      .then((answer): CommandOutcome => {
+      .then((answer) => {
         this.reveals.delete(ref.itemKey);
-        return answer.status === "applied" || answer.status === "landed"
-          ? { kind: "done" }
-          : { kind: "change-refused", code: answer.status === "refused" ? answer.reason : "gone" };
+        return this.outcomeOf(ref, answer);
       });
     return { sent: true, outcome };
+  }
+
+  private outcomeOf(ref: DraftRef, answer: ApplyClickOutcome): CommandOutcome {
+    if (answer.status === "applied" && answer.restored) {
+      this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
+      this.publish();
+      return { kind: "done", restored: true };
+    }
+    if (answer.status === "applied" || answer.status === "landed") return { kind: "done" };
+    if (answer.status === "cancelled") return { kind: "blocked" };
+    if (answer.status === "needs_restore") return { kind: "needs-restore" };
+    if (answer.status === "held") return { kind: "held", by: answer.by };
+    return { kind: "change-refused", code: refusalCode(answer) };
   }
 
   /**
@@ -439,8 +471,15 @@ export class DraftCommandOwner {
     ref: DraftRef,
     target: ChangeTarget,
     restore = false,
+    /** The item's tree cut: a whole-item Apply applies its move, delete or creation too. */
+    tree?: { revision: string | null },
   ): { sent: boolean; outcome: Promise<CommandOutcome> } {
     const entry = this.byItem.get(ref.itemKey);
+    // No text to apply with it (no room open, or no change in it): the tree cut alone.
+    const whole = tree && target.kind === "draft";
+    const frameNow =
+      whole && entry?.binding?.runtime.state().ready ? entry.binding.runtime.projectNow() : null;
+    if (tree && whole && !frameNow?.groups.length) return this.applyTree(ref, tree, restore);
     const binding = entry?.binding;
     if (
       !this.active ||
@@ -485,6 +524,7 @@ export class DraftCommandOwner {
         optimistic,
       ).map((patch) => ({ ...patch, blocks: patch.blocks.map((block) => block.toJSON()) })),
       ...(restore ? { restore: true as const } : {}),
+      ...(tree && target.kind === "draft" ? { tree } : {}),
     };
     this.setState(ref.itemKey, { failure: null });
     const result = entry.queue.enqueue({
@@ -496,20 +536,7 @@ export class DraftCommandOwner {
     binding.runtime.projectNow();
     return {
       sent: true,
-      outcome: result.then((answer): CommandOutcome => {
-        if (answer.status === "applied" && answer.restored) {
-          this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
-          this.publish();
-          return { kind: "done", restored: true };
-        }
-        if (answer.status === "applied" || answer.status === "landed") return { kind: "done" };
-        if (answer.status === "cancelled") return { kind: "blocked" };
-        if (answer.status === "needs_restore") return { kind: "needs-restore" };
-        return {
-          kind: "change-refused",
-          code: answer.status === "refused" ? answer.reason : "gone",
-        };
-      }),
+      outcome: result.then((answer) => this.outcomeOf(ref, answer)),
     };
   }
 
@@ -736,6 +763,29 @@ export class DraftCommandOwner {
       settleOwn?.("kept");
       if (this.active)
         this.setState(ref.itemKey, { hidden: false, failure: { code: "discard-unknown" } });
+      return { kind: "change-refused", code: "unknown" };
+    }
+  }
+  /**
+   * Discards the branch's move or delete of a document (its tree line): the server drops the
+   * row's facts and settles them. Not undoable, like a creation's Discard (#763).
+   */
+  async discardTree(ref: DraftRef, item: ThreadDraftListItem): Promise<CommandOutcome> {
+    if (!this.active || !item.tree) return { kind: "blocked" };
+    try {
+      const result = await discardCreatedDraft(ref, {
+        branchId: item.branchId,
+        itemKey: item.itemKey,
+        commandId: crypto.randomUUID(),
+      });
+      if (!this.active) return { kind: "blocked" };
+      if (result.status === "discarded") return { kind: "done" };
+      this.setState(ref.itemKey, {
+        failure: shownRefusal({ code: "discard-refused", serverCode: result.status }),
+      });
+      return { kind: "change-refused", code: result.status };
+    } catch {
+      if (this.active) this.setState(ref.itemKey, { failure: { code: "discard-unknown" } });
       return { kind: "change-refused", code: "unknown" };
     }
   }

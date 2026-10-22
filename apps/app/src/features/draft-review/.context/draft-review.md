@@ -209,7 +209,11 @@ Addressed room lookup is `useDraftMetadata`, never a server text preview.
 The route retains this read above editor address admission, so catalog
 invalidation cannot strand a review after unmounting its room readers. A gone
 room is a lifecycle transition, not a room-opening error. The metadata GET returns the stable draft id and room name, or authoritative
-`gone`; list item keys cannot supply room identity. A still-hidden creation with
-no text room uses a reveal-only Apply: empty `groupIds` and `baseViewDelta`, no
-`snapshot` or `draftId`. The server rechecks that exact no-room creation before
-revealing it; every other empty-group click is malformed.
+`gone`; list item keys cannot supply room identity. An item with a branch row
+(`tree`: a creation, move or delete) applies it with a tree cut: the whole item's
+Apply carries `tree.revision`, and with no text to send (no room, or no changes)
+it is `applyTree` alone: empty `groupIds` and `baseViewDelta`, no `snapshot` or
+`draftId`. A changed row answers `changed`; a move whose destination another of
+the branch's items still holds answers `held`, and Apply all re-sends those after
+the others. The item's Discard drops a move or delete on the server
+(`discardTree`) and its text here as always.

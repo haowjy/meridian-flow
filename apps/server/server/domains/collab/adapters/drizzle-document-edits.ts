@@ -37,18 +37,6 @@ export interface ReceiptWrite {
   treeChange?: TreeChange;
 }
 
-/**
- * A tree entry's place in the history: the next value of the parts' id sequence, so one
- * chronology orders tree entries and text parts across turns and writers.
- */
-export async function nextEditSeq(db: Pick<Database, "execute">): Promise<number> {
-  const rows = await db.execute(
-    sql`select nextval(pg_get_serial_sequence('document_edit_parts', 'id'))::text as seq`,
-  );
-  const seq = Array.from(rows as unknown as Iterable<{ seq: string }>)[0]?.seq;
-  if (seq === undefined) throw new Error("The edit history sequence returned nothing");
-  return Number(seq);
-}
 /** Caller holds the authoritative document/draft mutation lock and its event transaction. */
 export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<string> {
   if (input.actor === "agent" && input.threadId && input.wId === undefined)

@@ -13,7 +13,7 @@ import type { BranchId } from "@meridian/contracts";
 import { type DraftItemKey, draftItemKey } from "@meridian/contracts";
 import type { DraftItemConflict } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { TreeReader, TreeStateNode } from "../../context/tree/tree-view.js";
+import { LIVE_TREE, type TreeReader, type TreeStateNode } from "../../context/tree/tree-view.js";
 import type { WorkBranchDraftMetadata } from "./ports/work-branch-pending-store.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
 
@@ -43,6 +43,11 @@ export type DraftReviewItem = {
   deletedLive: boolean;
   /** `isNew || binary`: one change, settled by item Apply or Discard only (§3.3). */
   wholeItem: boolean;
+  /**
+   * The branch's row on the document: the revision a tree cut freezes, and what it says.
+   * `movedFrom` is where live has a moving document now (`path` is where the branch puts it).
+   */
+  tree: { revision: string | null; movedFrom: string | null; deleted: boolean } | null;
   /** Chats with pending writes on the draft, latest first, then the creating chat. */
   actorThreadIds: string[];
   updatedAt: Date;
@@ -62,7 +67,7 @@ export interface BranchReviewItems {
 }
 
 export function createBranchReviewItems(deps: {
-  tree: Pick<TreeReader, "treeState">;
+  tree: Pick<TreeReader, "treeState" | "resolvePath">;
   /**
    * The branch's active `work_draft` drafts (only these documents' when given), each
    * metadata only.
@@ -91,13 +96,42 @@ export function createBranchReviewItems(deps: {
       documentIds,
     );
     const creators = await deps.creators(branchId, documentIds);
-    return nodes
-      .map((node) => {
+    const resolved = await Promise.all(
+      nodes.map(async (node) => {
         const evidence = draftOf.get(node.nodeId);
         const item = toItem(branchId, node, evidence, creators.get(node.nodeId));
+        item.conflict ??= await waitsFor(branchId, node);
         return { item, listed: node.pending };
-      })
-      .sort((a, b) => (a.item.path ?? "").localeCompare(b.item.path ?? ""));
+      }),
+    );
+    return resolved.sort((a, b) => (a.item.path ?? "").localeCompare(b.item.path ?? ""));
+  }
+
+  /**
+   * A moving document whose destination live still gives another document this branch moves
+   * or deletes: its Apply waits for that item's (Apply all orders them; a swap stays held).
+   */
+  async function waitsFor(
+    branchId: BranchId,
+    node: TreeStateNode,
+  ): Promise<DraftReviewItem["conflict"]> {
+    if (node.branch?.state !== "moving") return null;
+    const found = await deps.tree.resolvePath(LIVE_TREE, {
+      contextSourceId: node.target.contextSourceId,
+      path: node.target.path,
+      as: "document",
+    });
+    if (found.kind !== "found" || found.node.kind !== "document") return null;
+    const occupant = found.node.document.id;
+    if (occupant === node.nodeId) return null;
+    const [other] = await deps.tree.treeState(branchId, [], [occupant]);
+    return other?.nodeId === occupant && (other.branch?.moved || other.branch?.deleted)
+      ? {
+          code: "pending_item",
+          path: node.target.uri ?? node.target.path,
+          itemKey: draftItemKey(branchId, occupant),
+        }
+      : null;
   }
 
   return {
@@ -136,6 +170,13 @@ function toItem(
     binary: node.binary,
     // A document deleted live takes per-change Apply too: any Apply restores it first.
     wholeItem: isNew || node.binary,
+    tree: node.branch
+      ? {
+          revision: node.branch.revision?.toString() ?? null,
+          movedFrom: node.branch.state === "moving" ? (node.from?.uri ?? null) : null,
+          deleted: node.branch.state === "deleting",
+        }
+      : null,
     hasDraft: !!evidence,
     documentName: documentTitleFromUri(path),
     path,

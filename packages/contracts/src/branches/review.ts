@@ -35,6 +35,13 @@ export type ApplyClick = {
    * confirmation named (D79). Without it, a deleted document answers `needs_restore`.
    */
   restore?: true;
+  /**
+   * The tree cut: the revision of the branch's row on the document the writer saw (the
+   * item's `tree.revision`). The click applies the move, delete or creation that revision
+   * holds, and answers `changed` if the row holds another now. A click with no text cut and
+   * no tree cut is malformed; a text cut alone leaves a pending move or delete pending.
+   */
+  tree?: { revision: string | null };
 };
 
 export type ApplyClickRefusalReason =
@@ -56,7 +63,16 @@ export type ApplyClickResult =
        * this flag, per document.
        */
       restored?: true;
+      /** A drafted move landed: where live had the document before (its path), named once. */
+      replaced?: string;
     }
+  /** The branch's row is not the revision the click froze: nothing applied (design-v2 §4). */
+  | { status: "changed"; commandId: BranchCommandId }
+  /**
+   * The move's destination is still held live by another item of this branch that moves or
+   * deletes it: apply that one first (Apply all orders them). Nothing applied.
+   */
+  | { status: "held"; commandId: BranchCommandId; by: { itemKey: DraftItemKey; path: string } }
   /**
    * The document is deleted from the manuscript and the click did not carry `restore`: the
    * writer's view did not know (a delete landed after it read the item, or after an Apply
@@ -81,7 +97,10 @@ export type StoredBranchCommandResult = BranchCommandResult | ApplyClickResult;
  * What blocks the item's Apply: another node took its path (Apply holds it until that one
  * moves). Whether live still has the document is `deletedLive`, a separate fact.
  */
-export type DraftItemConflict = { code: "path_taken"; path: string };
+export type DraftItemConflict =
+  | { code: "path_taken"; path: string }
+  /** Live still has this branch's other item at the destination; it moves or deletes it. */
+  | { code: "pending_item"; path: string; itemKey: DraftItemKey };
 
 /**
  * One review item of the Work's active branch: a created or edited document, text or binary.
@@ -111,6 +130,16 @@ export interface ThreadDraftListItem {
    * may also have taken its path.
    */
   deletedLive: boolean;
+  /**
+   * The branch's move, delete or creation of the document, when it has one: what a tree cut
+   * applies (`revision`, frozen into the click) and what the row says. `movedFrom` is where
+   * live has it now (`contextLocation` is where the branch puts it).
+   */
+  tree: {
+    revision: string | null;
+    movedFrom?: Pick<ParsedContextUri, "scheme" | "path">;
+    deleted?: true;
+  } | null;
   /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
   updatedAt: string;
