@@ -6,6 +6,7 @@
  * Work's branch and live is untouched (D26).
  */
 
+import { randomUUID } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -27,6 +28,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
     const { readRemovalRecords } = await import("../domains/context/tree/removal.js");
     const { createTreeReader } = await import("../domains/context/tree/tree-view.js");
+    const {
+      handleApplyClickRequest,
+      handleDiscardWorkDraftRequest,
+      handleWorkBranchListRequest,
+      selectBranchRouteServices,
+    } = await import("./branch-review-route.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000d01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000d02";
@@ -500,6 +507,136 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect(await branchRow(CH1)).toBeUndefined();
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
+    });
+
+    /** The Work's review routes over the composed app, as the writer's clicks reach them. */
+    function review(script: Awaited<ReturnType<typeof start>>) {
+      const routes = selectBranchRouteServices(script.runtime.app);
+      const scope = { userId: USER_ID, projectId: PROJECT_ID, workId: OTHER_WORK_ID } as never;
+      const item = async (documentId: string) =>
+        (await handleWorkBranchListRequest(routes, scope)).items.find(
+          (row) => row.documentId === documentId,
+        );
+      return {
+        item,
+        apply: async (documentId: string, extra: Record<string, unknown> = {}) =>
+          handleApplyClickRequest(routes, {
+            ...(scope as object),
+            documentId: documentId as never,
+            request: {
+              commandId: randomUUID(),
+              groupIds: [],
+              baseViewDelta: [],
+              tree: { revision: (await item(documentId))?.tree?.revision ?? null },
+              ...extra,
+            },
+          } as never),
+        discard: async (documentId: string) => {
+          const row = await item(documentId);
+          return handleDiscardWorkDraftRequest(routes, {
+            ...(scope as object),
+            documentId: documentId as never,
+            request: { branchId: row?.branchId, itemKey: row?.itemKey, commandId: randomUUID() },
+          } as never);
+        },
+      };
+    }
+    const settlements = async (id: string) =>
+      (await treeEntries(id)).flatMap((row) =>
+        row.tree?.op === "settle" ? [row.tree.settles.as] : [],
+      );
+
+    it("Apply runs a drafted move or delete by the row it froze, held behind the Work's own move", async () => {
+      const script = await start();
+      const drafting = runtimes.script(script.runtime, OTHER);
+      const draft = (args: Record<string, unknown>) =>
+        drafting.reply(async (edit) => {
+          await edit("write", args);
+        });
+      const writer = review(script);
+
+      // Renumber ch1 → ch2 → ch3: ch1's move waits for ch2's, which vacates its destination.
+      await draft({ command: "move", from: { path: "ch2" }, path: "ch3" });
+      await draft({ command: "move", from: { path: "ch1" }, path: "ch2" });
+      expect((await writer.item(CH1))?.conflict).toMatchObject({ code: "pending_item" });
+      expect(await writer.apply(CH1)).toMatchObject({ status: "held" });
+      expect(await placement(CH1)).toMatchObject({ name: "ch1" });
+      expect(await writer.apply(CH2)).toMatchObject({ status: "applied" });
+      // A live rename since the draft: the draft wins and the result names the replaced name.
+      await script.reply(async (edit) => {
+        await edit("write", { command: "move", from: { path: "ch1" }, path: "chA" });
+      });
+      expect(await writer.apply(CH1)).toMatchObject({
+        status: "applied",
+        replaced: "manuscript://chA",
+      });
+      expect(await placement(CH1)).toMatchObject({ name: "ch2", deletedAt: null });
+      expect(await settlements(CH1)).toEqual(["applied"]);
+      const { call } = await drafting.begin();
+      expect(text(await call("write", { command: "undo", path: "ch2" }))).toContain("applied");
+
+      // A frozen click the model changed since answers changed; a delete after a live edit lands.
+      await draft({ command: "move", from: { path: "ch3" }, path: "part1/ch3" });
+      const revision = (await writer.item(CH2))?.tree?.revision ?? null;
+      await draft({ command: "delete", path: "part1/ch3" });
+      expect(await writer.apply(CH2, { tree: { revision } })).toMatchObject({ status: "changed" });
+      await script.reply(async (edit) => {
+        await edit("write", { command: "replace", path: "ch3", find: "two", content: "2" });
+      });
+      expect(await writer.apply(CH2)).toMatchObject({ status: "applied" });
+      // Moved then deleted: only the delete applies, where live has it; its hidden folder goes.
+      expect(await placement(CH2)).toMatchObject({ name: "ch3" });
+      expect((await placement(CH2))?.deletedAt).not.toBeNull();
+      const part1 = await db
+        .select({ id: schema.folders.id })
+        .from(schema.folders)
+        .where(and(eq(schema.folders.name, "part1"), sql`${schema.folders.deletedAt} IS NULL`));
+      expect(part1).toEqual([]);
+    });
+
+    it("Apply restores a moved document at the Work's place; Discard drops a move and keeps its text", async () => {
+      const script = await start();
+      const drafting = runtimes.script(script.runtime, OTHER);
+      const draft = (args: Record<string, unknown>) =>
+        drafting.reply(async (edit) => {
+          await edit("write", args);
+        });
+      const writer = review(script);
+
+      // Deleted live, another document at its old path: restored where the Work moved it.
+      await draft({ command: "move", from: { path: "ch1" }, path: "part1/ch1-moved" });
+      await script.reply(async (edit) => {
+        await edit("write", { command: "delete", path: "ch1" });
+        await edit("write", { command: "create", path: "ch1", content: "New." });
+      });
+      expect(await writer.apply(CH1)).toMatchObject({ status: "needs_restore" });
+      expect(await writer.apply(CH1, { restore: true })).toMatchObject({
+        status: "applied",
+        restored: true,
+      });
+      expect(await placement(CH1)).toMatchObject({ name: "ch1-moved", deletedAt: null });
+
+      // A drafted delete of a document live deleted too settles, with no restore.
+      await draft({ command: "delete", path: "ch2" });
+      const revision = (await writer.item(CH2))?.tree?.revision ?? null;
+      await script.reply(async (edit) => {
+        await edit("write", { command: "delete", path: "ch2" });
+      });
+      expect(await writer.apply(CH2, { tree: { revision } })).toMatchObject({ status: "applied" });
+      expect((await placement(CH2))?.deletedAt).not.toBeNull();
+      expect(await settlements(CH2)).toEqual(["applied"]);
+
+      // Discard of a move keeps the text change; the model's undo then says discarded.
+      await draft({ command: "replace", path: "part1/ch1-moved", find: "one", content: "ONE" });
+      await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-final" });
+      expect(await writer.discard(CH1)).toMatchObject({ body: { status: "discarded" } });
+      expect(await writer.item(CH1)).toMatchObject({ hasDraft: true, tree: null });
+      expect(await drafting.text("part1/ch1-moved")).toContain("Chapter ONE.");
+      const { call } = await drafting.begin();
+      expect(text(await call("write", { command: "undo", path: "part1/ch1-moved" }))).toContain(
+        "discarded",
+      );
+      expect(await settlements(CH1)).toEqual(["applied", "discarded"]);
     });
 
     it("refuses a draft-mode move between a drafted document and a live one (D45)", async () => {
