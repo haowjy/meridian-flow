@@ -109,9 +109,9 @@ describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", 
     expect
       .soft(await s.view(ascension).stat("ch3"), "two documents at one path in the branch")
       .toMatchObject({ ok: false, error: { reason: "ambiguous_path" } });
-    // The taken path withdraws Apply; it must not hide that live deleted the document.
+    // A taken leaf is no conflict: Apply restores at the next free name.
     expect.soft(itemFor(await s.items(ascension), ch3)).toMatchObject({
-      conflict: { code: "path_taken" },
+      conflict: null,
       deletedLive: true,
     });
 
@@ -124,8 +124,6 @@ describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", 
     expect
       .soft(await draftStatuses(ch4), "the victim keeps its draft")
       .toContain("work_draft:active");
-    expect.soft(itemFor(await s.items(ascension), ch4).conflict).toMatchObject({
-      code: "path_taken",
-    });
+    expect.soft(itemFor(await s.items(ascension), ch4).conflict).toBeNull();
   });
 });

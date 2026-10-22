@@ -468,10 +468,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // Deleted with its folder; a new live folder of that name now holds its path.
       const replaced = await scenario.seedLive("saga/three");
       await softDelete(replaced, ["saga"]);
-      const occupant = await scenario.seedLive("saga/three");
+      await scenario.seedLive("saga/three");
       const tale = await scenario.seedLive("tale/four");
       await softDelete(tale, ["tale"]);
-      const taleFolder = await scenario.seedLiveFolder("tale/four");
+      await scenario.seedLiveFolder("tale/four");
       const quiet = await scenario.seedLive("notes");
 
       const state = new Map(
@@ -515,18 +515,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         target: { path: "arc/two" },
         conflict: { kind: "deleted_live" },
       });
-      expect(state.get(replaced)?.conflict).toEqual({
-        kind: "clash",
-        withNode: { kind: "document", id: occupant },
-        at: "saga/three",
-        uri: "manuscript://saga/three",
-      });
-      expect(state.get(tale)?.conflict).toEqual({
-        kind: "clash",
-        withNode: { kind: "folder", id: taleFolder },
-        at: "tale/four",
-        uri: "manuscript://tale/four",
-      });
+      expect(state.get(replaced)?.conflict).toEqual({ kind: "none" });
+      expect(state.get(tale)?.conflict).toEqual({ kind: "none" });
       expect(state.get(quiet)).toMatchObject({ origin: "edited", conflict: { kind: "none" } });
       // A tombstone is no longer the branch's item.
       expect(state.has(tomb)).toBe(false);
