@@ -12,9 +12,10 @@ import { CodecParseError } from "./error.js";
 import { EMPTY_PARAGRAPH_SENTINEL, parseBlockAst } from "./helpers.js";
 import { blockOccurrenceSpans } from "./link-occurrences.js";
 import { attentionHandlers } from "./markdown/attention.js";
-import { originalSource, type PreparedSource } from "./prepared-source.js";
+import { originalOffset, originalSource, type PreparedSource } from "./prepared-source.js";
 import { blockSourceMap } from "./presentation-source-map.js";
 import { type CodecRuntime, MARKDOWN_STRINGIFY_OPTIONS, withRuntime } from "./runtime.js";
+import { createMarkdownStreamer, type SourceBlock } from "./streaming.js";
 import type {
   BuildOptions,
   CodecParseErrorLocation,
@@ -126,7 +127,13 @@ function buildMarkupCodec(
     baseCtx: ParseContext,
     withSpans: boolean,
     withSourceMap = false,
-  ): { blocks: PMNode[]; spans: OccurrenceSpan[]; sourceMap: PresentationSourceRun[] } => {
+  ): {
+    blocks: PMNode[];
+    spans: OccurrenceSpan[];
+    sourceMap: PresentationSourceRun[];
+    ranges: SourceBlock[];
+    tree: MdastRoot;
+  } => {
     const prepared = preprocess(content);
     const source = prepared.value;
     const runtime = makeRuntime(source);
@@ -136,6 +143,7 @@ function buildMarkupCodec(
     const blocks: PMNode[] = [];
     const spans: OccurrenceSpan[] = [];
     const sourceMap: PresentationSourceRun[] = [];
+    const ranges: SourceBlock[] = [];
     for (const child of tree.children) {
       if (runtime.inlineOrigins) runtime.inlineOrigins.length = 0;
       const node = parseBlockAst(child, ctx);
@@ -145,21 +153,37 @@ function buildMarkupCodec(
           ...blockSourceMap(node, blocks.length, runtime.inlineOrigins ?? [], source === content),
         );
       blocks.push(node);
+      const position = astOffsets(child);
+      const from = originalOffset(prepared, position?.from ?? 0);
+      ranges.push({
+        from: physicalLineStart(content, from),
+        to: originalOffset(prepared, position?.to ?? content.length),
+      });
       if (withSpans)
         spans.push(
           ...blockOccurrenceSpans(node, child, source === content ? source : null, content.length),
         );
     }
-    return { blocks, spans, sourceMap };
+    return { blocks, spans, sourceMap, ranges, tree };
   };
 
   const parseDocument = (content: string, withSpans: boolean, withSourceMap = false) => {
     if (content.trim().length === 0)
-      return { blocks: [schema.node("paragraph")], spans: [], sourceMap: [] };
+      return {
+        blocks: [schema.node("paragraph")],
+        spans: [],
+        sourceMap: [],
+        ranges: [{ from: 0, to: content.length }],
+        tree: { type: "root", children: [] } as MdastRoot,
+      };
     const parsed = parseTopLevel(content, { schema }, withSpans, withSourceMap);
     return parsed.blocks.length > 0
       ? parsed
-      : { blocks: [schema.node("paragraph")], spans: [], sourceMap: [] };
+      : {
+          ...parsed,
+          blocks: [schema.node("paragraph")],
+          ranges: [{ from: 0, to: content.length }],
+        };
   };
 
   const makeRuntime = (source: string): CodecRuntime => ({
@@ -197,6 +221,8 @@ function buildMarkupCodec(
     return blockList.map((block) => serializeBody(block, ctx));
   };
 
+  const stream = createMarkdownStreamer((content) => parseDocument(content, false));
+
   return {
     serialize(blockList: PMNode[], links: DocumentLinkScope): string {
       const runtime = makeRuntime("");
@@ -225,7 +251,23 @@ function buildMarkupCodec(
     },
 
     serializeBlocks,
+    stream,
   };
+}
+
+function astOffsets(node: unknown): SourceBlock | null {
+  if (!node || typeof node !== "object") return null;
+  const position = (
+    node as { position?: { start?: { offset?: number }; end?: { offset?: number } } }
+  ).position;
+  const from = position?.start?.offset;
+  const to = position?.end?.offset;
+  return typeof from === "number" && typeof to === "number" ? { from, to } : null;
+}
+
+function physicalLineStart(source: string, offset: number): number {
+  const newline = source.lastIndexOf("\n", Math.max(0, offset - 1));
+  return newline === -1 ? 0 : newline + 1;
 }
 
 function toCodecParseError(error: unknown): CodecParseError {

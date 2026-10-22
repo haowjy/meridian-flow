@@ -30,6 +30,8 @@ export type {
   DocumentLinkScope,
   MarkAttrs,
   MarkCodec,
+  MarkdownStreamOptions,
+  MarkdownStreamSnapshot,
   MarkupCodec,
   OccurrenceSpan,
   ParseContext,

@@ -115,6 +115,26 @@ export interface MarkupCodec {
   serialize(blocks: PMNode[], links: DocumentLinkScope): string;
   serializeBlock(block: PMNode, links: DocumentLinkScope): string;
   serializeBlocks(blocks: readonly PMNode[], links: DocumentLinkScope): string[];
+  /** Immutable append snapshot for presentation while Markdown is arriving. */
+  stream(
+    previous: MarkdownStreamSnapshot | null,
+    source: string,
+    options?: MarkdownStreamOptions,
+  ): MarkdownStreamSnapshot;
+}
+
+export interface MarkdownStreamOptions {
+  repair?: boolean;
+}
+
+export interface MarkdownStreamSnapshot {
+  readonly source: string;
+  readonly displaySource: string;
+  readonly blocks: readonly PMNode[];
+  /** The exact code node whose fenced construct is awaiting more input. */
+  readonly openCode: PMNode | null;
+  readonly fullParse: boolean;
+  readonly fullParseReason: "initial" | "non-append" | "html" | null;
 }
 
 /** Original source offsets, never stored on document nodes. */
