@@ -135,6 +135,9 @@ fragment and query dropped), or null when it names none. The dialog never shows
 it as text. Every state draws one location line: the area's icon and the
 folder, worded by `documentLocation` as the `@` menu words a row's location
 (nothing for a manuscript document at the root), with the address as a tooltip.
+A creatable missing target has no description sentence, so this location line is
+the dialog's accessible description; when a manuscript document sits at the root
+and the line draws nothing, the description uses the area's label instead.
 A link that names no area shows its plain label instead. `{name}` is
 `addressDocumentName(address)` (the filename without `.md`), falling back to
 the link's label; Create uses the address.

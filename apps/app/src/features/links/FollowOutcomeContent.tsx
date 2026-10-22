@@ -21,7 +21,11 @@ import { type LineageKey, useLineageTitle } from "@/client/query/useLineageTitle
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { addressDocumentName, type LinkFollowOutcome, linkTargetLabel } from "@/core/editor/links";
-import { documentLocation, schemeIcon } from "@/features/project/context/context-schemes";
+import {
+  documentLocation,
+  schemeIcon,
+  schemeLabel,
+} from "@/features/project/context/context-schemes";
 
 import type { LinkDocumentRef } from "./follow-link";
 import { linkCreationTarget, useCreateLinkedDocument } from "./use-create-linked-document";
@@ -95,7 +99,7 @@ function TargetLocation({
     : documentLocation(scheme, folder);
   if (!location) {
     return description ? (
-      <DialogDescription className="sr-only">{address}</DialogDescription>
+      <DialogDescription className="sr-only">{schemeLabel(scheme)}</DialogDescription>
     ) : null;
   }
   const Icon = schemeIcon(scheme);
