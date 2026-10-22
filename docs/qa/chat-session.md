@@ -417,7 +417,9 @@ into the work item's evidence.
 
 - **Protects:** live-only subscribers do not replay settled history, while snapshot
   subscribers retain every event after their explicit cursor. Trail receipts and
-  Work binding cannot rely on that omitted history to become current.
+  Work binding cannot rely on that omitted history to become current. A trail
+  records a reply's document edits; Work binding names the editing task that owns
+  the chat. A lease is the listener installed by an accepted subscription.
 - **Setup:** owned mock stack and authenticated browser, as above. Create a chat
   with a settled reply and a document write through `./mf`; retain its thread ID.
 - **Socket checks:** inspect `/api/threads/ws` with an authenticated client.
@@ -449,10 +451,86 @@ into the work item's evidence.
   malformed messages must not mutate their target or echo the invalid ID.
 - **Lifecycle failures:** hold or reject a cursorless head read. Unsubscribe, close
   and replacement must invalidate the old request before it acquires a listener.
-  A current read failure returns a correlated retryable error; a later request can
-  succeed. Retired requests send no error or acknowledgment.
+  A current read failure returns `{ type: "error", requestId, threadId,
+  error: { code: "internal", retryable: true, ... } }`; a later request can succeed. Retired requests send no error or acknowledgment.
 - **Evidence:** record the acknowledged head, catchup counts and exact suffix
   comparison; browser network ordering, screenshots of history, receipt, binding
   and child activity; browser errors; and the subsequent send outcome. Cold server
   initialization still reconstructs history internally; zero historical frames on
   the wire does not prove zero database reads.
+
+### Holding the mount-read / subscribe interval
+
+Use an owned chat, not someone else's active work. This is development-only
+browser instrumentation; restore it below. Start with another chat open in the
+same project so the authenticated shared socket already exists. Create the target
+chat and a named Work through `./mf`, retaining their returned IDs:
+
+```bash
+./mf thread create --project "$P" --title 'Head acquisition probe' --json
+./mf api POST /api/projects/$P/works --data '{"name":"Head acquisition probe"}' --json
+```
+
+Set `P` to the project ID and `T` to the new chat ID in the browser console. Install
+this before navigating to the target. It holds target subscriptions and delays
+its first snapshot request, while allowing the mount trail/binding reads:
+
+```js
+const P = "<project-id>", T = "<thread-id>";
+const send0 = WebSocket.prototype.send, fetch0 = window.fetch;
+let held = [], reads = [], wire = [], hold = true, releaseSnapshot;
+const snapshotGate = new Promise(resolve => { releaseSnapshot = resolve; });
+WebSocket.prototype.send = function (raw) {
+  const frame = JSON.parse(raw);
+  if (frame.type === "subscribe" && frame.threadId === T) {
+    if (!this.probeListening) {
+      this.probeListening = true;
+      this.addEventListener("message", ({ data }) => {
+        const f = JSON.parse(data);
+        if (f.threadId === T) wire.push({ type: f.type, after: f.after, catchup: f.catchup?.length });
+      });
+    }
+    if (hold) { held.push([this, raw]); return; }
+  }
+  return send0.call(this, raw);
+};
+window.fetch = async (input, init) => {
+  const url = typeof input === "string" ? input : input.url ?? String(input);
+  if (url.includes(T + "/snapshot")) await snapshotGate;
+  const response = await fetch0(input, init);
+  if (url.includes("/change-trails") || url.endsWith("/threads") || url.endsWith("/works")) {
+    reads.push({ url, time: Date.now(), body: await response.clone().json() });
+  }
+  return response;
+};
+history.pushState({}, "", `/p/${P}/chats/${T}`);
+window.dispatchEvent(new PopStateEvent("popstate"));
+```
+
+1. Inspect `reads` until the target's `change-trails` answer has `shells: []`.
+   No target acknowledgment should appear in `wire`. Do not reload: that removes
+   the wrapper.
+2. In the shell, set `P`, `T`, and `W` to the project, chat, and named Work IDs.
+   Finish a unique document write, then rebind the idle chat:
+
+   ```bash
+   ./mf thread send "$T" 'Write the probe scene' --mock '[{"toolCalls":[{"name":"write","args":{"command":"create","path":"manuscript://HeadProbeScene","content":"Rain reached the gate."}}]},{"text":"Scene complete."}]' --json
+   ./mf api PUT /api/threads/$T/work --data "{\"workId\":\"$W\"}" --json
+   ```
+
+3. In the console, run `releaseSnapshot()`. Wait until `held` includes a subscribe
+   with the fresh nonzero `lastSeq`. The snapshot may already show the receipt
+   (`Edited 1 document`) and named Work; neither proves the trail read recovered.
+4. Release subscriptions: `hold = false; for (const [ws, raw] of held.splice(0)) send0.call(ws, raw)`.
+   Expect the current acknowledgment with zero catchup and no target event frames.
+   Then `reads` must contain a later trail answer with one shell and a later
+   project thread-list answer naming the new Work. This isolates acknowledgment
+   acquisition from replayed `turn_change_trail.settled` events. If catchup is
+   nonempty, the run does not prove that isolation; repeat with a fresh chat.
+5. Capture the visible receipt and Work name, the wire metadata and the read
+   ordering. Restore `WebSocket.prototype.send = send0; window.fetch = fetch0` and
+   reload to remove the diagnostic listener. Close the browser when finished.
+
+The browser screenshot proves preserved rendering; the empty catchup plus later
+HTTP answers prove acknowledgment acquisition. Record them separately. Link the
+result and screenshots from the PR at their committed evidence revision.
