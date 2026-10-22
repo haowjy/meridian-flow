@@ -1,6 +1,7 @@
 /**
  * DocumentPaneChrome — the strip above an open document's editor: the passage
- * notice, the archived-Work notice, and the review-capable identity bar.
+ * notice, the archived-Work notice, the review-capable identity bar, and what
+ * live did to the document this draft holds.
  * The Editor's page and the dock's document stack the same chrome, so an open
  * document looks and behaves alike wherever it is shown; the dock shows the
  * identity bar in its header instead (`identity: null`). The draft hint is the
@@ -11,6 +12,7 @@ import type { Work } from "@meridian/contracts/works";
 import type { ContextTab } from "@/client/stores";
 import { isDraftOnly } from "@/client/stores";
 import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
+import { ManuscriptStateNotice } from "@/features/editor/ManuscriptStateNotice";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
@@ -68,6 +70,8 @@ export function DocumentPaneChrome({
           onOpenExisting={identity.onOpenExisting}
         />
       ) : null}
+      {/* What live did to the document this draft holds: deleted, its name taken, or brought back. */}
+      <ManuscriptStateNotice projectId={projectId} tab={tab} />
       {/* Other Works' drafts of this document are discoverable wherever it is shown, live or in review. */}
       <DocumentDraftHint projectId={projectId} tab={tab} />
     </>
