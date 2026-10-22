@@ -27,6 +27,8 @@ export type Removal = Readonly<{ title: string | null; record: DocumentRemovalRe
 type RemovalVoice =
   | { kind: "person"; name: string; reason: DocumentRemovalRecord["reason"] }
   | { kind: "work"; name: string }
+  /** The model of a chat deleted it; null `chat` when that chat has no title. */
+  | { kind: "agent"; chat: string | null }
   | { kind: "unfinished-reply" }
   | { kind: "anonymous"; reason: DocumentRemovalRecord["reason"] };
 
@@ -36,6 +38,7 @@ function voiceOf(record: DocumentRemovalRecord | null): RemovalVoice {
   if (actor?.kind === "user" && actor.displayName)
     return { kind: "person", name: actor.displayName, reason };
   if (actor?.kind === "work") return { kind: "work", name: actor.name };
+  if (actor?.kind === "agent") return { kind: "agent", chat: actor.chatTitle };
   if (actor?.kind === "system" && actor.cause !== "repair") return { kind: "unfinished-reply" };
   return { kind: "anonymous", reason };
 }
@@ -57,6 +60,12 @@ function thisDocumentSentence(voice: RemovalVoice): string {
       const { name } = voice;
       return t`This document was deleted with the Work ${name}.`;
     }
+    case "agent": {
+      const { chat } = voice;
+      return chat
+        ? t`The AI in ${chat} deleted this document.`
+        : t`The AI in a chat deleted this document.`;
+    }
     case "unfinished-reply":
       return t`This document was removed when the reply that created it didn't finish.`;
     case "anonymous":
@@ -77,6 +86,10 @@ function oneSentence(title: string, voice: RemovalVoice): string {
     case "work": {
       const { name } = voice;
       return t`${title} was deleted with the Work ${name}.`;
+    }
+    case "agent": {
+      const { chat } = voice;
+      return chat ? t`The AI in ${chat} deleted ${title}.` : t`The AI in a chat deleted ${title}.`;
     }
     case "unfinished-reply":
       return t`${title} was removed when the reply that created it didn't finish.`;
@@ -101,6 +114,12 @@ function manySentence(count: number, names: string, voice: RemovalVoice | null):
   if (voice?.kind === "work") {
     const { name } = voice;
     return t`${count} documents were deleted with the Work ${name} (${names}).`;
+  }
+  if (voice?.kind === "agent") {
+    const { chat } = voice;
+    return chat
+      ? t`The AI in ${chat} deleted ${count} documents (${names}).`
+      : t`The AI in a chat deleted ${count} documents (${names}).`;
   }
   if (voice?.kind === "anonymous")
     return voice.reason === "discarded"
@@ -128,6 +147,28 @@ export function removalSentence(documents: readonly Removal[]): string {
   );
 }
 
+/**
+ * A draft that outlived its document's delete (D79), in the draft's own editor: who deleted it,
+ * in the removal notice's voice, and what Apply does about it.
+ */
+export function deletedFromManuscriptSentence(
+  title: string,
+  record: DocumentRemovalRecord | null,
+): string {
+  const voice = voiceOf(record);
+  if (voice.kind === "person") {
+    const { name } = voice;
+    return t`${name} deleted ${title} from the manuscript. Applying brings it back.`;
+  }
+  if (voice.kind === "agent") {
+    const { chat } = voice;
+    return chat
+      ? t`The AI in ${chat} deleted ${title} from the manuscript. Applying brings it back.`
+      : t`The AI in a chat deleted ${title} from the manuscript. Applying brings it back.`;
+  }
+  return t`${title} was deleted from the manuscript. Applying brings it back.`;
+}
+
 /** What a chip says when only a short sentence fits: the count and what happened. */
 function shortRemovalSentence(documents: readonly Removal[]): string {
   const count = documents.length;
@@ -136,7 +177,7 @@ function shortRemovalSentence(documents: readonly Removal[]): string {
       const voice = voiceOf(document.record);
       return voice.kind === "unfinished-reply"
         ? "removed"
-        : voice.kind === "work"
+        : voice.kind === "work" || voice.kind === "agent"
           ? "deleted"
           : voice.reason;
     }),
@@ -152,36 +193,6 @@ function shortRemovalSentence(documents: readonly Removal[]): string {
 export function RemovedDocumentSentence({ documents }: { documents: readonly Removal[] }) {
   useLingui();
   return <>{removalSentence(documents)}</>;
-}
-
-/**
- * Why a draft can't be applied: its document was removed. Apply never revives
- * a removed document, so there is nothing to try again.
- */
-export function RemovedDocumentApplyRefusal({ record }: { record: DocumentRemovalRecord | null }) {
-  useLingui();
-  return <>{applyRefusal(voiceOf(record))}</>;
-}
-
-function applyRefusal(voice: RemovalVoice): string {
-  switch (voice.kind) {
-    case "person": {
-      const { name } = voice;
-      return voice.reason === "discarded"
-        ? t`${name} discarded this document from the draft, so this draft can't be applied.`
-        : t`${name} deleted this document, so this draft can't be applied.`;
-    }
-    case "work": {
-      const { name } = voice;
-      return t`This document was deleted with the Work ${name}, so this draft can't be applied.`;
-    }
-    case "unfinished-reply":
-      return t`This document was removed when the reply that created it didn't finish, so this draft can't be applied.`;
-    case "anonymous":
-      return voice.reason === "discarded"
-        ? t`This document was discarded from the draft, so this draft can't be applied.`
-        : t`This document was deleted, so this draft can't be applied.`;
-  }
 }
 
 const EMPTY_NOTICE: RemovedNoticeSnapshot = { shown: [], waiting: [], version: 0 };

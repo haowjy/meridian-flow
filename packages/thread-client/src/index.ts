@@ -76,10 +76,10 @@ export { placeStandIns } from "./view/retry-stand-ins";
 export { type FoldDigest, foldDigest } from "./view/thinking-digest";
 export { threadMessageRow } from "./view/thread-message-result";
 export {
-  copySourcePath,
   documentToolFailed,
   humanizeSkillSlug,
   skillFile,
+  sourcePath,
   stringInput,
   type ToolCommand,
   toolCommand,

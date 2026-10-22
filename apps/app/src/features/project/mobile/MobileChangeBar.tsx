@@ -9,7 +9,14 @@
 import { ReviewChangeBar } from "@/features/draft-review/ReviewChangeBar";
 import type { ReviewChangesView } from "@/features/draft-review/useReviewChanges";
 
-export function MobileChangeBar({ view }: { view: ReviewChangesView }) {
+export function MobileChangeBar({
+  view,
+  canApply,
+}: {
+  view: ReviewChangesView;
+  /** The review's Apply eligibility (`useReviewHeader`): a taken path withdraws it. */
+  canApply: boolean;
+}) {
   const item = view.items.find((candidate) => candidate.change.id === view.focused?.id);
   if (!item) return null;
   const { change, draftFailure } = item;
@@ -29,6 +36,7 @@ export function MobileChangeBar({ view }: { view: ReviewChangesView }) {
         change={change}
         disabled={view.locked}
         draftFailure={draftFailure}
+        canApply={canApply}
         onApply={() => void view.apply(change)}
         onDiscard={() => void view.discard(change)}
         className="rounded-xl"

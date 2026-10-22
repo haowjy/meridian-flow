@@ -1,22 +1,24 @@
-/** Removal's collab half: every active draft on the removed documents closes as a removal. */
+/**
+ * Removal's collab half: every removal registers its documents with the retirement batch, so
+ * their live rooms close `4208`; only a discard closes their drafts.
+ */
 import type { WorkId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { branches } from "@meridian/database/schema";
 import { inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { testHook } from "../../../shared/test-hooks.js";
 import type { DocumentRemovalCollab } from "../../context/ports/document-removal.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 
 export function createDrizzleDocumentRemovalCollab(
   db: Database,
-  close: Pick<DraftClose, "closeDrafts">,
+  close: Pick<DraftClose, "closeDrafts" | "registerRemoved">,
 ): DocumentRemovalCollab {
   return {
-    async closeRemovedDocuments(documentIds, record) {
+    registerRemoved: (documentIds, record) => close.registerRemoved(documentIds, record),
+    async closeDiscardedDrafts(documentIds, record) {
       const tx = currentDrizzleDb(db);
       const closed = await close.closeDrafts(tx, { documentIds }, { documentRemoved: record });
-      await testHook("removal.afterClose");
       const branchIds = [...new Set(closed.map((draft) => draft.branchId))];
       if (!branchIds.length) return [];
       const owners = await tx

@@ -269,7 +269,7 @@ export function gateLiveView(
   const documentId = result.document.documentId;
   if (admittedView === "review") {
     const file = draftList.files?.find((candidate) => candidate.documentId === documentId);
-    return { outcome: "ready", result, ...(file?.isNew ? { draftOnly: file } : {}) };
+    return { outcome: "ready", result, ...(file?.draftOnly ? { draftOnly: file } : {}) };
   }
   if (
     admittedView === "live" ||
@@ -282,6 +282,6 @@ export function gateLiveView(
   const settled = manifest.isComplete && !manifest.isFetching;
   if (!settled || draftList.status === "loading") return { outcome: "pending", result: undefined };
   const group = draftList.files?.find((candidate) => candidate.documentId === documentId);
-  if (group?.isNew) return { outcome: "ready", result, draftOnly: group };
+  if (group?.draftOnly) return { outcome: "ready", result, draftOnly: group };
   return { outcome: "ready", result: { kind: "unavailable" } };
 }

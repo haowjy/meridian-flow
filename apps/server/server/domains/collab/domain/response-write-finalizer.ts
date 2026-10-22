@@ -77,8 +77,8 @@ export function createResponseWriteFinalizer(input: {
             return { stagedCreates: { committed: [], discarded: [] } };
           throw cause;
         });
-      await input.rollback.rollbackResponse({ ...ctx, responseIdentity });
-      return { stagedCreates: result.stagedCreates };
+      const skipped = await input.rollback.rollbackResponse({ ...ctx, responseIdentity });
+      return { stagedCreates: result.stagedCreates, skipped };
     },
   };
 }

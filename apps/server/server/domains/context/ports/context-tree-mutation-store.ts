@@ -102,6 +102,8 @@ export interface ContextTreeDeleteResult {
 
 export type ContextTreeDeleteCommand = {
   actorUserId?: string;
+  /** The chat whose model deleted it: the removal names "the AI in ‹chat›". */
+  actorThreadId?: string;
   removal?: { reason: "discarded"; cause: RetractionCause };
   root: ContextLocationToken;
   mode: "recursive";

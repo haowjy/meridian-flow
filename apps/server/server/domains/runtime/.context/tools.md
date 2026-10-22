@@ -45,7 +45,8 @@ executor calls do not silently reapply it; callers must choose the policy seam.
 
 ## Document and cost boundaries
 
-`read` is non-mutating; all `write` commands mutate through agent-edit. Source
+`read` is non-mutating; `write`'s text commands mutate through agent-edit (`move` and
+`delete` are host commands, below), and every result renders through it. Source
 text for copy/insert/replace is read as nodes and never passes through model
 text. File destinations and grants come from file-policy, and all document
 results use the typed agent-edit contract. `ls`, `search`, and `work` return
@@ -54,7 +55,19 @@ add detail only for explicit `verbose` requests. A Work has no write mode of its
 own: the chat's mode is in its work context (D62).
 
 Document inverse commands use `write undo/redo` and `write revert`; model-only
-handles select edits, and the command is all-or-nothing. Skills retain Mars
+handles select edits, and the command is all-or-nothing. `write move` and
+`write delete` (PR 3) are host commands (`lib/model-tools/namespace-commands.ts`):
+they run at the call, record a tree entry on the document's stack inside the
+mutation's own transaction, and mark the reply's scope as having writes
+(`treeWrite`), so a later save boundary rotates it. In an auto-apply chat they go
+through the live port. In a draft-mode chat on drafted sources they go through
+the chat's own port (`ContextPort.changeInBranch`): facts on the Work's branch
+row, never the mover, and live is untouched until the writer applies them (D26);
+a move between a drafted source and a live one refuses (D45). The writer applies
+or discards them like any pending change (`collab/.context/apply.md`); both are
+published once both modes work (D66). A path no
+visible document holds names, for undo/redo/revert only, the document this
+chat's latest move or delete took away from it (`inverse-address.ts`). Skills retain Mars
 filenames while `skills://` exposes the document codec's names.
 
 Tool policy does not gate model-call cost. `turn-accounting.ts` uses

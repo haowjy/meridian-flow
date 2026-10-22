@@ -7,9 +7,62 @@ predicate and the lock order are the load-bearing rules.
 ## Views and ownership
 
 `TreeView` is `LIVE_TREE` or `{ kind: "branch", branchId }`. Live views exclude
-deleted and hidden rows. A branch view includes its live rows plus the hidden
-documents and folders it created or needs as ancestors, at their row-owned
-location. A path with two visible nodes answers `ambiguous`; normalization is a
+deleted and hidden rows. A branch's `branch_tree_changes` row has one logical
+state, delete dominant: `deleting` (a move under it is masked intent, kept for
+the delete's undo), `moving`, or `created`. A branch view's arms are disjoint
+over it: live rows it neither moved nor deleted; the hidden documents and
+folders it created or needs as ancestors, at their row-owned location; the
+documents it moved, at its effective placement (`moved_folder_id`'s current
+source, or `moved_root_source_id`, so a live rename or cross-source move of that
+folder carries them, D80); and the deleted documents it has pending changes to
+and no move or delete of (D79) with the deleted folders above them. A document
+the branch deletes is in no arm; its identity is `deleted` there. Identity,
+lineage and file facts read the effective placement, so a drafted manuscript→kb
+move takes kb's grants.
+
+`pendingIn` / `pendingDocuments` are the one reviewable-pending predicate: the
+row's logical state against live's (deleting a living document; moving one
+elsewhere, revealing a hidden creation at the branch's place, or restoring a
+deleted one there; a created row while its document lives), or an active Work
+draft with `has_effect` unless the branch is deleting the document. The
+surviving arm, `treeState`'s `pending` (review membership), the Work counts and
+the per-document branch hints all read it; write admission does not.
+`branch-tree-changes.ts` writes drafted moves and deletes (`moveInBranch`,
+`deleteInBranch`) and their inverses (`writeBackBranchFacts`) through the one
+facts writer (`writeBranchTreeFacts`: a new `revision` from its sequence per
+write, the first `base_version` kept). The row's `changed_thread_id` is the chat
+whose turn the entry or its inverse belongs to, also when the writer's card or a
+rollback runs the inverse: the chat's dock lists the pending item by it. Every folder a moved fact names is
+held in `branch_tree_folders` per (branch, document) until settlement, even
+after a later move or an undo leaves it: a held folder is in use for
+hidden-folder liveness, so an undo or redo back into it finds it, and
+`settleBranchEntries` (every terminal path: Apply, Discard, end of use, branch
+close, purge) releases and prunes all of them, not only the row's current folder.
+Every facts write also marks the document in `branch_tree_unsettled` until
+settlement, so terminal cleanup finds a document whose row an undo removed (a
+root-to-root rename has no folder to hold) and `readTreeScope` locks it.
+Settlement names stack entries only (moves, deletes, reverts; never the undo,
+redo or rollback rows): those in effect as the caller's applied or discarded,
+those undone as discarded, those rolled back not at all.
+Absorption rewrites the row's folder and repoints its holds; the tombstoned
+hidden folder records `absorbed_into`, and the inverse service reads recorded
+placements through `resolveAbsorbedFolders`, so an entry recorded against the
+hidden folder still matches and writes back the live one. A create joins a hidden
+candidate only while no branch using it moved it away. A live removal clears
+each branch's `created` fact and keeps `moved` and `deleted` (D79, D80).
+
+The live folder arm is its own `UNION ALL` branch so live
+lookups keep their partial indexes; the hidden and deleted folders share one
+non-live arm, so the branch's used-folder walk runs once per statement half, and
+its predicate is `folders_nonlive_location`'s, so a path slot reaches that index. `deletedDocument` is the one definition of a deletion a draft
+outlives (own or folder delete, reason `deleted`, no Work cascade); listing adds
+the pending effect, admission (`survivingDraftDocuments`) an active draft or the branch's move of it.
+The identity relations' diagnostic arms exclude a view's surviving rows, so each
+identity appears once. Availability lookups in a branch view follow the same
+listing: a surviving document (and a deleted folder the view places it under)
+answers `available` at its deleted-at location, never `deleted`, so a review
+address opens its draft; live lookups still answer `deleted`. A new live node at a surviving document's path makes that
+path `ambiguous` in the branch, and `treeState` reports the clash. A path with two visible nodes answers `ambiguous`; normalization is a
 write operation, while `treeState` reports the clash.
 
 `branch-ownership.ts` is the single rule for which branches may hold a document:
@@ -42,16 +95,30 @@ create joins an existing draft document. Placement reveals targets and
 ancestors; end-of-use tombstones an unused row, releases its content storage,
 and prunes empty hidden ancestors. Closed draft identity rows remain.
 
-`acquireEndUseScope` takes the complete namespace/document scope and rechecks
-that scope before mutation. A moved scope aborts and rediscovers. Hidden-node
-repair uses the same seam in its own transaction and reports after commit.
+`acquireTreeScope` (`mutation-scope.ts`) is the one verified acquisition for a
+tree mutation whose namespaces are discovered, not known: end of use, Discard,
+hidden-node repair, Apply's reveal and restore, and the inverses of moves and
+deletes. Its `placements` lock the sources of placements no row names yet (a
+move's undo returns to its old folder), each where that folder is now; its
+`branches` lock where each branch has its documents (physical and effective)
+and where every folder it holds sits now, including documents with only a held
+folder (a move undone to no row): the effective placement is the read model,
+not the cleanup footprint, which a masked move's folder is part of. `sourceIds`
+lock a drafted move's destination.
+`live-tree-state.ts` reads a document's live state as an edit history's tree
+entry records it, and moves a document back to a recorded placement; a deleted
+folder there is `folder_missing`, never recreated. It locks the namespaces it
+read, re-reads, then takes document locks. A moved scope throws and the caller,
+which owns the transaction, aborts and rediscovers. Hidden-node repair uses the
+same seam in its own transaction and reports after commit.
 Tree writes return changed identities; ContextFS, the mover, Apply, and Discard
 refresh the catalog in their own surrounding transaction.
 
 ## Removal facts
 
 `tree/removal.ts` is the removal record's one owner: `createDocumentRemoval`
-writes it, `restoreWorkDocuments` clears it for a Work Restore, and
+writes it, `restoreWorkDocuments` clears it for a Work Restore,
+`restoreDocument` clears one document's own delete (below), and
 `readRemovalRecords` reads it (actor names joined as they read now) through the
 handle its caller gives. Adapters call the reader directly; domain code that
 needs a seam (the reply save fence, the model's file tools) takes the narrow
@@ -62,14 +129,17 @@ collab port, so collab need not import a context adapter. A removed document
 refuses as agent-edit's `DocumentNotFoundError` carrying its record in
 `removal`. A writer's Discard never sets the Work-cascade restore marker.
 Retractions name `reply_rolled_back` or `create_failed`; both repair paths name
-`repair` (one `DocumentRemovalCause`, from contracts).
+`repair` (one `DocumentRemovalCause`, from contracts). A model's delete names its
+chat (`deleted_by_thread_id`, actor `agent` with the chat's title) and keeps the
+chat's owner in `deleted_by_user_id`, who stands in once the chat is gone.
 
 `DocumentRemoval.remove` is the shared kernel for tree delete, overwrite, Work
 cascade and last use, and returns exactly the documents it tombstoned. It is
 built at the composition root (`lib/compose.ts`), not by collab. Callers take
 Work and namespace locks, then the complete sorted document mutation-lock set
 before any document row lock. The kernel writes the record, collects the Works
-of all tree uses, and calls collab's `closeRemovedDocuments` with the record.
+of all tree uses, and registers the record with collab (`registerRemoved`); a
+discard also closes the drafts it ends (`closeDiscardedDrafts`).
 Independent removal retires uses; Work cascade retains hidden creations' uses
 so `restoreWorkDocuments` brings their membership back with the tombstone (the
 rule lives beside the Restore it serves). Retained uses are inactive while their
@@ -94,6 +164,23 @@ use recounts nothing itself: every caller holds the branch's Work. Folder
 deletion locks the complete pre-split subtree, hidden boundary documents
 included, before the split updates any document row. Rollback delivers nothing.
 
+## Restoring one document
+
+`restoreDocument` is the one restore of a deleted document: Apply of a draft
+that outlived the delete (D79), and from PR 3 a reply's rollback and the turn
+card's Undo. The caller holds the document's namespace, then its lock
+(`acquireTreeScope`). A reversing caller names the removal it reverses (its
+time and the `location_version` it wrote), so a later, different removal
+answers `superseded`; Apply names none, and calls it only for a click that
+carries the writer's `restore` (D79). A living document answers
+`already_living`. Discards, Work cascades and deleted sources or projects
+answer `refused`: a Work's own Restore owns its cascade. It places the document
+through `placeLive` (placement's ancestry and one name-claim rule: a living
+folder at a path is reused, a deleted one restored), so a taken path answers
+`location_taken` and the savepoint rolls back every folder it restored. It
+settles arrivals and refreshes the catalog through ports its caller passes,
+and never touches a draft.
+
 ## Lock and identity contracts
 
 Before the first document lock, callers take in-process leases, thread/Work and
@@ -103,5 +190,6 @@ namespace lock while holding a document lock.
 
 Location claims and history use location-only CAS tokens. A move snapshots the
 subtree, checks the final path, handles hidden splits/absorbs, and then records
-history and versions. Apply reveals through placement and never restores a
-removed document (W52); it does not move nodes. Tree code never refreshes the catalog independently of its caller.
+history and versions. Apply reveals through placement; it brings a deleted document back only
+through `restoreDocument`, a recorded restore, never as a side effect of a
+write. It does not move nodes. Tree code never refreshes the catalog independently of its caller.

@@ -14,11 +14,12 @@ const TEST_HOOK_POINTS = [
   "endUse.afterRevalidate",
   "moves.beforeInstall",
   "place.afterRevalidate",
+  /** A removal wrote its record and, for a discard, closed the drafts; not yet committed. */
+  "removal.afterRecord",
   "split.beforeRepoint",
   // Collab.
   "draft.ensure.afterDocumentLock",
   "draft.peer.afterDocumentLock",
-  "removal.afterClose",
   /** A reply's save has opened its transaction and taken no Work lock yet. */
   "save.beforeWorkLock",
   "save.afterWorkLock",
@@ -33,9 +34,9 @@ const TEST_HOOK_POINTS = [
   "draft.beforeAccess",
   "apply.beforeCompile",
   "apply.beforeBoundary",
+  /** Apply chose its lock scope from an unlocked tree read and holds no tree lock yet. */
+  "apply.afterScopeGuess",
   "apply.afterLive",
-  "applyItems.beforeStaging",
-  "applyItems.afterStaging",
   /** A created document's retraction read its drafts and holds no draft row yet. */
   "retract.beforeLocks",
   /** A retraction holds its draft rows and found no contribution; nothing is deleted yet. */

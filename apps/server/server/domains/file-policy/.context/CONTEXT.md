@@ -16,7 +16,14 @@ level = min(person term, lifecycle term, agent term)
   adapter grants the project owner `edit`; sharing belongs in the adapter, not
   in policy.
 - **Lifecycle** makes deleted ancestry `none` and an archived Work's files
-  `read`. A draft destination also takes its Work lifecycle. Project-owned
+  `read`. A draft destination also takes its Work lifecycle. One exception
+  (D79): `survivingDraft` lifts the document's own or folder's delete at a
+  draft destination whose branch has an active Work draft of it
+  (`survivingDraftDocuments` in `context/tree/living-document.ts`, the same
+  proof draft creation uses under its lock). It is keyed on the destination,
+  never on the view that supplied the facts, and never reads `has_effect`, so a
+  writer's review list (branch views, live destination) stays denied and a
+  no-effect draft stays writable. Source, project and Work deletions stay `none`. Project-owned
   Manuscript, KB, User, and Unfiled files do not inherit a Work lifecycle.
 - **Agent** allows uploads to be read. Each delegation link caps the result;
   Scratch ownership is the named Work or the No Work chat lineage selected by
@@ -49,7 +56,11 @@ and lets a reply save the rest. Read agent-chain state fresh on every tool call;
 a Work switch or rebind must affect the next call.
 
 Targets are explicit: `document` for ordinary file access, `draft` for a
-Work-branch view, and `container` for creates. A create in a folder needs both
+Work-branch view, `container` for creates, and `restore` for a deleted document
+an inverse brings back: its facts are its own folder and source, live, without
+its own delete (a deleted folder or source above it still hides it), so a turn
+card's Undo or a model's undo by an old path is authorized where the document
+actually returns, not at the path it was shown at. A create in a folder needs both
 the container grant and the document grant it will write. Denials preserve a
 wire reason and the facts needed for allowed recovery; deleted reads are
 `not_found` (HTTP 404) and archived Work writes are `work_archived` (HTTP 403).

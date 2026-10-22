@@ -23,7 +23,7 @@ import { createBranchReviewItems } from "../../../../apps/server/server/domains/
 import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import { lockDocumentNamespaces } from "../../../../apps/server/server/domains/context/adapters/context-fs/document-locations.ts";
 import { recordCreated } from "../../../../apps/server/server/domains/context/tree/branch-tree-store.ts";
-import { acquireEndUseScope } from "../../../../apps/server/server/domains/context/tree/end-use.ts";
+import { acquireTreeScope } from "../../../../apps/server/server/domains/context/tree/mutation-scope.ts";
 import { readRemovalRecords } from "../../../../apps/server/server/domains/context/tree/removal.ts";
 import { createTreeReader } from "../../../../apps/server/server/domains/context/tree/tree-view.ts";
 import {
@@ -132,6 +132,9 @@ async function fixture(
     trail: createDrizzleChangeTrailAggregateWriter(h.db),
     catalog: { refreshSources: async () => "0" },
     arrivals: { settle: async () => 0 },
+    removal: createTestDocumentRemoval(h.db),
+    close: createDraftClose(),
+    releaseObjects: async () => {},
     onCommitted: async () => {},
     measured: (m) => measure.push(m),
   });
@@ -142,7 +145,7 @@ async function fixture(
       tree: createTreeReader(h.db),
       drafts: pending.listBranchDraftMetadata,
       pendingThreadIds: pending.pendingThreadIds,
-      creators: pending.listCreators,
+      treeActors: pending.listTreeActors,
     }),
   });
   const service = createApplyClickService({
@@ -713,24 +716,117 @@ try {
     await applied(f, c);
     f.close();
   });
-  await row("removed document closes with durable removal record", async () => {
-    const f = await fixture(["Base."], ["Changed."]);
-    const c = f.click();
-    await h.projection.mutate({ works: [f.workId] }, async () => {
-      await acquireEndUseScope(h.db, { documentIds: [f.documentId] });
+  /** Deletes the fixture's document live, as the tree's delete does, in its own transaction. */
+  async function deleteLive(f: Awaited<ReturnType<typeof fixture>>) {
+    await runInDrizzleTransaction(h.db, async () => {
+      await acquireTreeScope(h.db, { documentIds: [f.documentId] });
       await createTestDocumentRemoval(h.db).remove({
         documentIds: [f.documentId],
         reason: "deleted",
         userId: h.ids.user,
       });
     });
-    const result = await f.send(c);
-    assert.equal(result.status, "closed");
-    assert.equal(result.removal?.reason, "deleted");
-    assert.deepEqual(await f.liveText(), ["Base."]);
+  }
+  const living = async (f: Awaited<ReturnType<typeof fixture>>) =>
+    (await h.raw`select deleted_at is null as living from documents where id=${f.documentId}`)[0]
+      .living;
+  const draftStatus = async (f: Awaited<ReturnType<typeof fixture>>) =>
+    (await h.raw`select status from document_drafts where id=${f.draftId}`)[0].status;
+  /** The click a writer sends knowing the document is deleted (D79). */
+  const restoring = (c: FrozenClick): FrozenClick => ({
+    ...c,
+    request: { ...c.request, restore: true },
+  });
+  await row("a document deleted live: its draft stays, Apply restores it then merges", async () => {
+    const f = await fixture(["Base."], ["Changed."]);
+    await deleteLive(f);
+    assert.equal(await draftStatus(f), "active");
+    // A click that did not know of the delete changes nothing, and its replay says so again.
+    const unknowing = f.click();
+    const asked = await f.send(unknowing);
+    assert.deepEqual(asked, { status: "needs_restore", commandId: unknowing.request.commandId });
+    assert.deepEqual(await f.send(unknowing), asked);
+    assert.equal(await living(f), false);
+    assert.equal(await draftStatus(f), "active");
+    const c = restoring(f.click());
+    const result = await applied(f, c);
+    assert.equal(result.status === "applied" && result.restored, true, JSON.stringify(result));
+    assert.equal(await living(f), true);
+    assert.deepEqual(await f.liveText(), ["Changed."]);
+    assert.equal(
+      (await h.raw`select deletion_reason from documents where id=${f.documentId}`)[0]
+        .deletion_reason,
+      null,
+    );
+    // The replay answers the stored result, restore included.
+    assert.deepEqual(await f.send(c), result);
+    f.close();
+  });
+  await row(
+    "a delete between Apply's scope guess and its lock retries namespace-first",
+    async () => {
+      const f = await fixture(["Base."], ["Changed."]);
+      let raced = 0;
+      const remove = setTestHook("apply.afterScopeGuess", async () => {
+        if (raced++ === 0) await independently(() => deleteLive(f));
+      });
+      let result: ApplyClickAnswer;
+      try {
+        result = await applied(f, restoring(f.click()));
+      } finally {
+        remove();
+      }
+      assert.equal(raced, 2, "one guess saw it living, the retry saw it deleted");
+      assert.equal(result.status === "applied" && result.restored, true, JSON.stringify(result));
+      assert.equal(await living(f), true);
+      assert.deepEqual(await f.liveText(), ["Changed."]);
+      f.close();
+    },
+  );
+  await row("Apply holds a deleted document whose path a new document took", async () => {
+    const f = await fixture(["Base."], ["Changed."]);
+    const [{ name, extension, folder_id: folderId }] =
+      await h.raw`select name, extension, folder_id from documents where id=${f.documentId}`;
+    await deleteLive(f);
+    await h.raw`insert into documents (context_source_id, folder_id, name, extension)
+      select context_source_id, ${folderId}, ${name}, ${extension} from documents where id=${f.documentId}`;
+    const c = restoring(f.click());
+    assert.deepEqual(await f.send(c), {
+      status: "refused",
+      reason: "forbidden",
+      commandId: c.request.commandId,
+    });
+    assert.equal(await living(f), false);
     f.close();
   });
 
+  await row(
+    "a deleted document's Apply reads its own state beside the branch's hidden creation",
+    async () => {
+      const f = await fixture(["Base."], ["Changed."]);
+      // An unrelated creation the branch holds hidden: the branch's view lists it first.
+      const created = await h.seedDocument(`apply-${client++}`, "Created.");
+      await h.raw`update documents set hidden=true where id=${created.documentId}`;
+      await recordCreated(h.db, { branchId: f.branchId, documentId: created.documentId });
+      await deleteLive(f);
+      const unknowing = f.click();
+      assert.deepEqual(await f.send(unknowing), {
+        status: "needs_restore",
+        commandId: unknowing.request.commandId,
+      });
+      const result = await applied(f, restoring(f.click()));
+      assert.equal(result.status === "applied" && result.restored, true, JSON.stringify(result));
+      assert.equal(await living(f), true);
+      assert.deepEqual(await f.liveText(), ["Changed."]);
+      assert.equal(
+        (await h.raw`select hidden from documents where id=${created.documentId}`)[0].hidden,
+        true,
+        "the other creation stays the branch's",
+      );
+      created.live.destroy();
+      f.close();
+    },
+  );
   await row("hidden creation reveals inside Apply without replacing identity", async () => {
     const f = await fixture([""], ["Created content."]);
     await h.raw`update documents set hidden=true where id=${f.documentId}`;
@@ -919,32 +1015,36 @@ try {
       }
     },
   );
-  await row("removal after compilation wins with closed record, not a grant refusal", async () => {
-    const f = await fixture(["Base."], ["Changed."]);
-    const c = f.click();
-    let once = true;
-    const remove = setTestHook("apply.beforeBoundary", async () => {
-      if (once) {
-        once = false;
-        await h.projection.mutate({ works: [f.workId] }, async () => {
-          await acquireEndUseScope(h.db, { documentIds: [f.documentId] });
-          await createTestDocumentRemoval(h.db).remove({
-            documentIds: [f.documentId],
-            reason: "deleted",
-            userId: h.ids.user,
+  await row(
+    "a delete after compilation overtakes the live grant; the click asks first",
+    async () => {
+      const f = await fixture(["Base."], ["Changed."]);
+      const c = f.click();
+      let once = true;
+      const remove = setTestHook("apply.beforeBoundary", async () => {
+        if (once) {
+          once = false;
+          await h.projection.mutate({ works: [f.workId] }, async () => {
+            await acquireTreeScope(h.db, { documentIds: [f.documentId] });
+            await createTestDocumentRemoval(h.db).remove({
+              documentIds: [f.documentId],
+              reason: "deleted",
+              userId: h.ids.user,
+            });
           });
-        });
+        }
+      });
+      try {
+        const answer = await f.send(c);
+        assert.deepEqual(answer, { status: "needs_restore", commandId: c.request.commandId });
+        assert.equal(await living(f), false);
+        assert.equal(await draftStatus(f), "active");
+      } finally {
+        remove();
+        f.close();
       }
-    });
-    try {
-      const answer = await f.send(c);
-      assert.equal(answer.status, "closed");
-      assert.equal(answer.removal?.reason, "deleted");
-    } finally {
-      remove();
-      f.close();
-    }
-  });
+    },
+  );
   await row(
     "archived or deleted Work refuses fresh id but never replaces landed result",
     async () => {

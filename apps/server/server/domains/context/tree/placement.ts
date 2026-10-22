@@ -1,7 +1,9 @@
 /**
  * Live placement (contract §6.3, §7): the one owner of bringing nodes into the live tree.
- * `place` reveals a hidden node at its final location with its ancestors (a removed
- * document is never placed: nothing writes it back into being); `ensureLiveFolderPath` makes a live folder chain, revealing a hidden
+ * `placeLive` brings one node to a live location with its ancestors under the one
+ * name-claim rule; `place` reveals hidden nodes through it, and the removal record's owner
+ * restores a deleted document through it (`restoreDocument`: no write brings a removed
+ * document back as a side effect). `ensureLiveFolderPath` makes a live folder chain, revealing a hidden
  * folder at a path instead of making a twin. Both walk folders through `walkFolders`, the
  * walk branch and live creates share. Both are tree writes only: they return what they
  * placed, and their callers refresh the catalog.
@@ -148,59 +150,82 @@ export async function place(
   db: Database,
   input: { targets: readonly PlaceTarget[] },
 ): Promise<Result<PlaceResult, PlaceFault>> {
-  const tree = createTreeReader(db);
   const placed: NodeRef[] = [];
   const sourceIds = new Set<ContextSourceId>();
   for (const target of input.targets) {
     const stale = await revalidatePlacement(db, target);
     if (stale) return Err(stale);
     await testHook("place.afterRevalidate");
-    const ancestors = await placeAncestors(db, tree, target);
-    if (!ancestors.ok) return ancestors;
-    placed.push(...ancestors.value.placed);
-    const { parentId } = ancestors.value;
-    const filename =
-      target.node.kind === "document"
-        ? renderFilename(target.at.name, target.at.extension ?? "")
-        : target.at.name;
-    const taken = pathTaken(
-      [...ancestors.value.path, filename].join("/"),
-      await tree.childAt(LIVE_TREE, {
-        contextSourceId: target.at.contextSourceId,
-        parentId,
-        filename,
-        as: target.node.kind,
-      }),
-      target.node,
-    );
-    if (taken) return Err(taken);
-    if (target.node.kind === "document") {
-      await currentDrizzleDb(db)
-        .update(documents)
-        .set({
-          contextSourceId: target.at.contextSourceId,
-          folderId: parentId,
-          name: target.at.name,
-          extension: target.at.extension ?? "",
-          hidden: false,
-          updatedAt: new Date(),
-        })
-        .where(eq(documents.id, target.node.id));
-      await bumpLocationVersions(db, { documentIds: [target.node.id] });
-    } else {
-      await updatePlacedFolder(db, target.node.id, {
-        parentId,
-        clear: "hidden",
-        contextSourceId: target.at.contextSourceId,
-        name: target.at.name,
-      });
-    }
-    await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
+    const landed = await placeLive(db, target, (parentId) => reveal(db, target, parentId));
+    if (!landed.ok) return landed;
     if (target.node.kind === "folder") await absorbAt(db, target.node.id);
-    placed.push(target.node);
+    placed.push(...landed.value.ancestors, target.node);
     sourceIds.add(target.at.contextSourceId);
   }
   return Ok({ placed, sourceIds: [...sourceIds] });
+}
+
+/**
+ * One node into the live tree at `target.at`, whatever its lifecycle: its folder chain
+ * placed root down (`placeAncestors`), the one name-claim rule at its final path, then
+ * `land` writes the node's row under the parent the walk resolved (which may differ from
+ * `target.at.parentFolderId` when another folder now holds a deleted one's path), and the
+ * path's previous-location aliases are consumed. Reveal (`place`) and restore
+ * (`restoreDocument`) differ only in what they validate first and what `land` writes. A
+ * fault may leave ancestors placed: the caller rolls back.
+ */
+export async function placeLive(
+  db: Database,
+  target: PlaceTarget,
+  land: (parentId: FolderId | null) => Promise<void>,
+): Promise<Result<{ ancestors: readonly NodeRef[] }, PlaceFault>> {
+  const tree = createTreeReader(db);
+  const ancestors = await placeAncestors(db, tree, target);
+  if (!ancestors.ok) return ancestors;
+  const { parentId } = ancestors.value;
+  const filename =
+    target.node.kind === "document"
+      ? renderFilename(target.at.name, target.at.extension ?? "")
+      : target.at.name;
+  const taken = pathTaken(
+    [...ancestors.value.path, filename].join("/"),
+    await tree.childAt(LIVE_TREE, {
+      contextSourceId: target.at.contextSourceId,
+      parentId,
+      filename,
+      as: target.node.kind,
+    }),
+    target.node,
+  );
+  if (taken) return Err(taken);
+  await land(parentId);
+  await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
+  return Ok({ ancestors: ancestors.value.placed });
+}
+
+/** A hidden target's row at its final location, visible. */
+async function reveal(db: Database, target: PlaceTarget, parentId: FolderId | null) {
+  if (target.node.kind === "document") {
+    await currentDrizzleDb(db)
+      .update(documents)
+      .set({
+        contextSourceId: target.at.contextSourceId,
+        folderId: parentId,
+        name: target.at.name,
+        extension: target.at.extension ?? "",
+        hidden: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(documents.id, target.node.id));
+    await bumpLocationVersions(db, { documentIds: [target.node.id] });
+  } else {
+    await updatePlacedFolder(db, target.node.id, {
+      parentId,
+      clear: "hidden",
+      contextSourceId: target.at.contextSourceId,
+      name: target.at.name,
+    });
+  }
 }
 
 /** The fault for a live path something other than `self` holds, else null. */

@@ -252,6 +252,7 @@ export function ChatScratchTree({
         />
       ) : null}
       <DeleteConfirmationDialog
+        projectId={projectId}
         target={deletion.target}
         isPending={deletion.isPending}
         error={deletion.error}

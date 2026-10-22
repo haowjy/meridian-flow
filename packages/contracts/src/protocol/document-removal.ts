@@ -7,6 +7,8 @@ export type RetractionCause = Exclude<DocumentRemovalCause, "repair">;
 
 type DocumentRemovalActor =
   | { kind: "user"; userId: UserId; displayName: string | null }
+  /** A chat's model deleted it; null `chatTitle` when the chat has none yet. */
+  | { kind: "agent"; chatTitle: string | null }
   | { kind: "work"; name: string }
   | { kind: "system"; cause: DocumentRemovalCause };
 

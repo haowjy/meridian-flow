@@ -1,6 +1,14 @@
 # Document removal records
 
-This recipe covers removal records, draft closure, creation admission and server room retirement.
+This recipe covers removal records, which removals close drafts, creation
+admission and server room retirement. The two removals differ:
+
+- **A live delete** (a document's or folder's delete, a move's victim) changes
+  live only (D79). It closes the document's live rooms `4208` and no draft:
+  every active draft, its draft rooms and its pending parts stay, and the
+  drafting Work's branch keeps the document.
+- **A discarded creation** (Discard, reply retraction, repair) closes the
+  creation's drafts with it, then tombstones it; its draft rooms close `4208`.
 Run it on a disposable stack. Use `./mf` for server setup/readback and finish
 by deleting a document in the browser. The record lookup is owner-gated through
 `POST /api/projects/:projectId/context/availability`.
@@ -84,26 +92,33 @@ known-id denial can include its record without allowing content access.
 
 1. Open a document with a pending Work draft in both a live room and a draft
    room. Delete it through the tree. Observe the **client close code**, not
-   only its reason: both must be `4208 document-deleted`. Hocuspocus's protocol
-   close alone reports `1000` even with the right reason; the gateway transport
-   must close first. Drafts remain closed with `closed_cause=document_removed`,
-   current-generation pending parts become discarded, all tree-use rows disappear
-   and every affected Work's stored pending count drops.
-2. Pause at `removal.afterClose`, then abort the transaction. No room/runtime
-   retirement or recount may run. The document and drafts remain living/active.
+   only its reason: the live room must close `4208 document-deleted`.
+   Hocuspocus's protocol close alone reports `1000` even with the right reason;
+   the gateway transport must close first. The draft room stays open and its
+   typing saves; the draft stays `active` with its pending parts, the Work's
+   pending count is unchanged, and the Work's branch still lists the document
+   at its path (`./mf` read in that Work), while live and other Works see it
+   gone. Discard all then closes the draft as usual.
+2. Pause at `removal.afterRecord`, then abort the transaction. No room/runtime
+   retirement or recount may run. The document remains living.
 3. Hold both a living document's mutation lock and its Work row lock on one
    connection; ensure its already-active draft on another. It returns
    immediately with no locking SQL. Then race the first Work-draft ensure and first peer creation separately against
    removal. Pause creation at `draft.ensure.afterDocumentLock` or
    `draft.peer.afterDocumentLock` for creation-first. For removal-first pause
-   at `removal.afterClose`. Removal either closes the inserted row or creation
-   refuses with `DocumentNotFoundError` carrying `removal`. No active peer may remain.
-4. Pull a peer whose ID sorts before its upstream while removing the document.
-   The pull holds the upstream shared row lock before its peer update lock;
-   removal must wait on parents before locking any peer, without a deadlock.
+   at `removal.afterRecord`. A first Work draft created first stays active
+   through the delete; removal-first, its creation refuses with
+   `DocumentNotFoundError` carrying `removal`. A peer of an existing Work draft
+   is created either way (the Work draft outlived the delete).
+4. Pull a peer whose ID sorts before its upstream while deleting the document
+   live: the delete locks no draft row, so the pull finishes without waiting on
+   it and the peer stays `active`. Then pull while Discarding a hidden creation
+   with a peer: the pull holds the upstream shared row lock before its peer
+   update lock, and the discard's close locks upstream Work drafts before peers,
+   so it waits on the parent before any peer, without a deadlock.
 5. Move over a drafted victim, and move opposite-direction multi-document
    folders whose path order reverses their document-ID order. Victim drafts
-   close and keep their removal record; both moves finish. Also race folder
+   stay active (the branch shows a `path_taken` clash); both moves finish. Also race folder
    deletion with a save holding a living child's mutation lock: deletion must
    wait **before** `split.beforeRepoint`, because the split updates hidden
    boundary document rows too.
@@ -151,9 +166,21 @@ the tab/tree update without an error. Capture a screenshot outside this repo.
 
 Two tabs of one signed-in browser (A and B), plus `./mf doc rm` as another
 device. Every removal by a person names the actor from the record: "<name> deleted
-<title>." ("<title> was deleted." without a display name), never "you" or "elsewhere". The server closes a
-removed document's live and draft rooms with `4208` after the removal commits.
+<title>." ("<title> was deleted." without a display name), never "you" or "elsewhere".
+After the removal commits, a live delete closes the document's **live** rooms
+`4208` and leaves its draft rooms open; a discarded creation's draft rooms close
+`4208`.
 
+Each case names the destination A's tab is hosted on. A **live tab** shows the
+manuscript document itself; a **draft tab** shows it through A's Work draft
+(the Work has a draft of it, with pending changes or none). Unless a case says
+otherwise, A's tabs are live tabs.
+
+- A has a draft tab of a document (once with pending changes, once with none
+  left after a per-change Discard); B deletes it from Files. The tab stays,
+  its draft room stays connected (no `4208`) and typing saves; it shows the
+  deleted state instead of a removal chip. A live tab of the same document in
+  another Work closes as below.
 - A shows a document with a long one beside it; B deletes it from Files. A
   falls back to the long document and the tab strip's free end shows a dashed
   chip "<name> deleted <title>." ("<title> was deleted." without a name); nothing covers the text. B says
@@ -182,10 +209,56 @@ removed document's live and draft rooms with `4208` after the removal commits.
 - B Discards a created document A is reviewing: A says "<name> discarded <title>
   from the draft." Reopen its review address: the pane says the
   same in place of "This destination is unavailable".
-- Apply during a removal: restart with `HOOK_PAUSE_AT=applyItems.afterStaging
-  HOOK_PAUSE_FILE=<file>`, touch the file, click Apply, `./mf doc rm` the
-  document, delete the file. The command answers `held` with `deleted_live` and
-  the record; the review closes with the removal's chip.
+- Apply during a removal: restart with `HOOK_PAUSE_AT=apply.beforeBoundary
+  HOOK_PAUSE_FILE=<file>`, touch the file, click Apply on a living document's
+  item, `./mf doc rm` the document, delete the file. The click did not know of
+  the delete, so it answers `needs_restore`: nothing changes, the document
+  stays deleted and the draft pending, and the review asks before restoring.
+  Confirm: the new click carries `restore` and answers `applied` with
+  `restored: true`, and the document is back in the manuscript with the change.
+  Apply all over a deleted document confirms first, naming it; a document
+  deleted after that confirmation answers `needs_restore` the same way.
+- The app's surfaces for a Work with pending changes to a deleted document
+  (seed with `./mf`: a draft-mode chat's reply edits the document, then delete
+  it from the tree). The delete dialog says "<title> will be deleted." and
+  names the Work: "The Work <name> has changes to it. Applying them brings it
+  back." (never a handle like `w3`). After the delete the chat dock row and the
+  Work page's Changes to review row keep the file with "Deleted from the
+  manuscript" on its status line; an open draft tab stays open. A dock with
+  several files, or Work Files' "Apply all changes", asks first: "Applying
+  brings back <title>, which was deleted from the manuscript." with Cancel and
+  Apply, in the footer below the rows (as Discard all's question does): no row
+  moves when it opens. Applying leaves "<title> is back in the manuscript." in the surface's
+  notice slot and the tree shows the document again. To force `needs_restore`,
+  route the Work's `**/works/<W>/branches` list to its pre-delete body before
+  the delete, then Apply all: the list asks again by name and the row says
+  "This document was deleted from the manuscript. Apply again to bring it
+  back." Create a new document at the deleted one's path: the row says another
+  document now has this name, and neither Work Files' "Apply all changes" nor
+  the chat dock's group Apply is offered (desktop and phone; Discard stays, and
+  the other rows keep their own Apply). Opening that draft from the row still
+  opens it draft-only, and the identity row says "Deleted, name taken"; its
+  popover names both the delete and the taken name (the list item's
+  `deletedLive` is independent of `conflict`). The editor's change bar offers
+  only Discard there.
+- The draft editor's manuscript state never moves the page. With a draft tab
+  open, `./mf doc rm` its document from another device: "Deleted from the
+  manuscript" appears in the identity row's free end (desktop) or the review
+  row (phone), and the heading's top is unchanged before and after
+  (`getBoundingClientRect().top`). A narrow slot shows the short label; the
+  button opens the full sentence. After Apply draft, reselecting the tab shows
+  "<title> is back in the manuscript." in the same place, with Dismiss.
+- B runs Work Files' Discard all while A holds a draft tab of a deleted document
+  or of a created document only the draft has: A's tab closes (the draft's
+  metadata answers `gone` once retired, without a content grant) and A's
+  Editor stays usable. Before the fix the created document's tab looped
+  ("Maximum update depth exceeded" in `EditorReviewIntentClaimant`) and the
+  project failed to load.
+  A draft left with no changes (apply its only change from the editor, so the
+  list is empty) whose document is then deleted from another device keeps its
+  tab on the draft, across a reload too, and typing in it lists the document
+  again as deleted: the review address resolves through the draft
+  (`admitDrafts`), while a path still finds the document gone.
 - A stale 4208 (an init script dispatching the close on the page's `/ws/yjs`
   socket while the document exists): the room reconnects within a few hundred
   ms and typing saves. A second stale 4208 on the same tab reconnects too.
@@ -193,11 +266,15 @@ removed document's live and draft rooms with `4208` after the removal commits.
   fails: the tab says "Access lost (not saving to the server)"; once lookups
   succeed (focus, online or the 60 s poll) the room reconnects and typing
   saves.
-- Discard a draft of an existing document open in a tab or the dock, then
-  `./mf doc rm` it: the removal's chip shows (the Discard left no mark).
+- Discard every change of an existing document's draft while it is open in a
+  live tab or the dock, then `./mf doc rm` it: the removal's chip shows (the
+  Discard left no mark). The same with a draft tab: the draft is still active
+  with no changes, so the tab stays writable as in the draft-tab case above.
 - B Discards a created document A reviews in the dock beside Chat: A's dock
   says "<name> discarded <title> from the draft." beside "Recent".
 - A folder delete closing several tabs reads "<name> deleted 3 documents
   (one, two, and three)." (names in the locale's list form).
-- A holds unsent text (block its `/ws/yjs` sockets, type), B deletes: A closes
-  with the notice and the unsent text is lost (a recorded divergence).
+- A holds unsent text in a live tab (block its `/ws/yjs` sockets, type), B
+  deletes: A closes with the notice and the unsent text is lost (a recorded
+  divergence). In a draft tab the room stays, so the text saves once the
+  sockets unblock.

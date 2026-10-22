@@ -10,6 +10,7 @@ import {
   isEditorTab,
   matchesTabInstance,
   type ProjectTabsSlice,
+  type ReviewEntries,
   reviewEntryOf,
   type TabOwner,
 } from "./editor-workspace-model";
@@ -36,6 +37,7 @@ export {
   matchesReviewItem,
   matchesTabInstance,
   type ProjectTabsSlice,
+  type ReviewEntries,
   type ReviewItemTabIdentity,
   replaceOwner,
   reviewEntriesOf,
@@ -92,6 +94,7 @@ type ContextTabsActions = {
   ) => Promise<void>;
   settleDraft: (projectId: string, tab: ContextTab) => Promise<DraftWorkspaceSettlementReceipt>;
   dropReviewEntry: (projectId: string, workId: string, tabInstanceId: string) => void;
+  keepForDrafts: (projectId: string, documentId: string, reviews: ReviewEntries) => void;
 };
 
 export type DraftWorkspaceSettlementReceipt = { kind: "settled" } | { kind: "not-settled" };
@@ -287,6 +290,10 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           dispatchResult(() => ({ kind: "drop-review", projectId, workId, tabInstanceId }));
         },
 
+        keepForDrafts: (projectId, documentId, reviews) => {
+          dispatchResult(() => ({ kind: "keep-for-drafts", projectId, documentId, reviews }));
+        },
+
         settleDraft: async (projectId, tab) => {
           if (tab.kind === "new") return { kind: "not-settled" };
           const result = dispatchResult(() => ({ kind: "settle-draft", projectId, tab }));
@@ -354,6 +361,14 @@ export function commitPlannedContextRemoval(
     selectedTabIdByWork: normalizeSelections(tabs, selectedTabIdByWork),
   });
   return removed;
+}
+
+/**
+ * Coordinator-only: live deleted a document whose drafts survive (D79), so its tab stays,
+ * presented draft-only in the Works whose drafts still have it.
+ */
+export function commitDraftHold(projectId: string, documentId: string, reviews: ReviewEntries) {
+  useContextTabsStore.getState().keepForDrafts(projectId, documentId, reviews);
 }
 
 /** Coordinator-only exact draft settlement: the draft-only tab becomes the ordinary tab in place. */

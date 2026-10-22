@@ -6,9 +6,13 @@
  * reads `documents.hidden` or `folders.hidden`.
  *
  * Live is the predicate over the table, so Postgres flattens it into the reader's query.
- * A branch view is a `UNION ALL`: live rows the branch says nothing about, plus the branch's
- * change rows at the branch's location. Folders have no change rows yet, so a branch's
- * folders are the live ones plus the hidden ones its documents sit under.
+ * A branch view is a `UNION ALL` of disjoint arms: live rows the branch neither moved nor
+ * deleted; the branch's hidden creations at their row; the documents it moved, at its
+ * placement (its effective placement: a folder's source, so a live move of that folder
+ * carries them); and the deleted documents it still has pending changes to (D79: a draft
+ * outlives a live delete of its document). A document the branch deleted is in none. Folders
+ * have no change rows yet, so a branch's folders are the live ones plus the hidden and
+ * deleted ones its documents sit under.
  */
 import type { BranchId, ContextSourceId, DocumentId, FolderId, WorkId } from "@meridian/contracts";
 import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
@@ -97,8 +101,97 @@ const folderColumns = sql.raw(
 
 /** The predicate: a document row in the live tree. */
 const liveDocument = sql.raw("d.deleted_at IS NULL AND NOT d.hidden");
-/** A hidden document the branch created, in the branch's view (PR 3 adds `AND NOT c.deleted`). */
-const branchCreatedDocument = sql.raw("d.deleted_at IS NULL AND d.hidden AND c.created");
+/** A hidden document the branch created, on alias `c`, where it stands: not moved or deleted. */
+const branchCreatedDocument = sql.raw(
+  "d.deleted_at IS NULL AND d.hidden AND c.created AND NOT c.moved AND NOT c.deleted",
+);
+/**
+ * A visible document's own delete or its folder's, on alias `d`: never a discard, a Work
+ * cascade (its Restore owns it), or a hidden row. The one definition of a deletion a draft
+ * outlives: with `pendingIn` the branch lists it; with an active Work draft the branch
+ * admits writes to it (`survivingDraftDocuments`).
+ */
+const DELETED_DOCUMENT =
+  "d.deleted_at IS NOT NULL AND NOT d.hidden AND d.deletion_reason = 'deleted' " +
+  "AND d.deleted_by_work_id IS NULL";
+export const deletedDocument = sql.raw(DELETED_DOCUMENT);
+/**
+ * The branch's move of document `d`, on alias `c` (its logical state is moving: `deleted`
+ * masks a move): a living document live has, the branch's own hidden creation, or one deleted
+ * live that a draft outlives (Apply restores it at the branch's placement).
+ */
+const movedDocument = sql.raw(
+  `c.moved AND NOT c.deleted AND ((d.deleted_at IS NULL AND (NOT d.hidden OR c.created)) OR (${DELETED_DOCUMENT}))`,
+);
+/** A visible folder's delete: in a branch's view only above a document it still has. */
+const deletedFolder = sql.raw("f.deleted_at IS NOT NULL AND NOT f.hidden");
+/**
+ * A folder a branch's view may show besides live ones: a branch's hidden folder, or a visible
+ * folder's delete above a document a draft outlived. Each only where the branch uses it
+ * (`usedFolderIds`). Spelled as `folders_nonlive_location`'s predicate, so a slot lookup
+ * reaches that index.
+ */
+const nonLiveFolder = sql.raw(
+  "((f.hidden AND f.deleted_at IS NULL) OR (NOT f.hidden AND f.deleted_at IS NOT NULL))",
+);
+
+/** Branch `b`'s row on document `d` has a move or delete: `d` leaves its live and surviving arms. */
+function treeFactOf(b: SQL): SQL {
+  return sql`EXISTS (SELECT 1 FROM branch_tree_changes x
+    WHERE x.branch_id = ${b} AND x.node_kind = 'document' AND x.node_id = d.id
+      AND (x.moved OR x.deleted))`;
+}
+
+/** The moved placement differs from the row's own, on aliases `c` and `d`. */
+const movedElsewhere = sql.raw(
+  "NOT (c.moved_folder_id IS NOT DISTINCT FROM d.folder_id " +
+    "AND (c.moved_folder_id IS NOT NULL OR c.moved_root_source_id = d.context_source_id) " +
+    "AND c.moved_name = d.name AND c.moved_extension = d.extension)",
+);
+
+/**
+ * The one reviewable-pending predicate (design-v2 §1): branch `b` has a change to document
+ * `d` that review lists, the Work's count counts and Apply all applies. From the row's
+ * logical state (deleting, moving, created; delete dominant) against live's, or an active
+ * Work draft with an effect, unless the branch is deleting the document: a drafted delete
+ * hides its text changes everywhere. The view's surviving arm, review membership, the
+ * pending counts and per-document branch hints all read this; write admission does not
+ * (`survivingDraftDocuments`).
+ */
+export function pendingIn(b: SQL): SQL {
+  return sql`(EXISTS (SELECT 1 FROM branch_tree_changes c
+      WHERE c.branch_id = ${b} AND c.node_kind = 'document' AND c.node_id = d.id AND (
+        (c.deleted AND d.deleted_at IS NULL AND NOT d.hidden)
+        OR (c.moved AND NOT c.deleted AND (
+          (d.deleted_at IS NULL AND NOT d.hidden AND ${movedElsewhere})
+          OR (d.deleted_at IS NULL AND d.hidden AND c.created)
+          OR (${deletedDocument})))
+        OR (c.created AND NOT c.moved AND NOT c.deleted AND d.deleted_at IS NULL)))
+    OR (EXISTS (SELECT 1 FROM document_drafts dd
+        WHERE dd.document_id = d.id AND dd.branch_id = ${b}
+          AND dd.kind = 'work_draft' AND dd.status = 'active' AND dd.has_effect)
+      AND NOT EXISTS (SELECT 1 FROM branch_tree_changes x
+        WHERE x.branch_id = ${b} AND x.node_kind = 'document' AND x.node_id = d.id
+          AND x.deleted)))`;
+}
+
+/**
+ * Every (branch, document) the reviewable-pending predicate holds for, among the branches
+ * `branches` selects (a SQL list of branch ids): the Work counts and the branch hints.
+ */
+export function pendingDocuments(branches: SQL, documentId?: DocumentId): SQL {
+  const one = documentId ? sql` AND candidate.document_id = ${documentId}::uuid` : sql``;
+  return sql`SELECT candidate.branch_id, candidate.document_id FROM (
+      SELECT c.branch_id, c.node_id AS document_id FROM branch_tree_changes c
+      WHERE c.node_kind = 'document' AND c.branch_id IN (${branches})
+      UNION
+      SELECT dd.branch_id, dd.document_id FROM document_drafts dd
+      WHERE dd.kind = 'work_draft' AND dd.status = 'active' AND dd.has_effect
+        AND dd.branch_id IN (${branches})
+    ) candidate
+    JOIN documents d ON d.id = candidate.document_id
+    WHERE ${pendingIn(sql`candidate.branch_id`)}${one}`;
+}
 
 /**
  * Lookup positions joined into each branch, so a path question stays bounded by the path
@@ -124,10 +217,18 @@ function at(
 }
 
 const rowLocation = { source: "d.context_source_id", parent: "d.folder_id", name: "d.name" };
+/** A moved document's placement in the branch, on aliases `c` and `mf` (its folder). */
+const movedLocation = {
+  source: "coalesce(mf.context_source_id, c.moved_root_source_id)",
+  parent: "c.moved_folder_id",
+  name: "c.moved_name",
+};
 
 /**
- * Live rows, and the hidden documents D created. Both sit at their row's location (a branch's
- * create is a real hidden row), as separate SQL UNION branches so a path predicate reaches an index.
+ * Live rows the branch neither moved nor deleted, the hidden documents D created where they
+ * stand, the documents D moved at D's placement, and the deleted documents D has pending
+ * changes to and no move or delete of. Each arm is a separate SQL UNION branch so a path
+ * predicate reaches an index; they are disjoint, so each document appears once.
  */
 function documentsQuery(view: TreeView, match?: SlotMatch): SQL {
   const slots = slotted(match, "key, source_id, parent_id, name, extension");
@@ -137,30 +238,54 @@ function documentsQuery(view: TreeView, match?: SlotMatch): SQL {
   const live = sql`${select}
     FROM ${slots}documents d WHERE ${liveDocument}${at(match, rowLocation, "d.extension")}`;
   if (view.kind === "live") return live;
-  return sql`${live}
+  const branch = sql`${view.branchId}::uuid`;
+  const moved = match
+    ? sql`SELECT p.key, d.id`
+    : sql`SELECT d.id, coalesce(mf.context_source_id, c.moved_root_source_id) AS context_source_id,
+        c.moved_folder_id AS folder_id, c.moved_name AS name, c.moved_extension AS extension,
+        ${documentTail}`;
+  return sql`${live} AND NOT ${treeFactOf(branch)}
     UNION ALL
     ${select}
     FROM ${slots}branch_tree_changes c JOIN documents d ON d.id = c.node_id
-    WHERE c.branch_id = ${view.branchId}::uuid AND c.node_kind = 'document' AND ${branchCreatedDocument}${at(match, rowLocation, "d.extension")}`;
+    WHERE c.branch_id = ${branch} AND c.node_kind = 'document' AND ${branchCreatedDocument}${at(match, rowLocation, "d.extension")}
+    UNION ALL
+    ${moved}
+    FROM ${slots}branch_tree_changes c JOIN documents d ON d.id = c.node_id
+      LEFT JOIN folders mf ON mf.id = c.moved_folder_id
+    WHERE c.branch_id = ${branch} AND c.node_kind = 'document' AND ${movedDocument}${at(match, movedLocation, "c.moved_extension")}
+    UNION ALL
+    ${select}
+    FROM ${slots}documents d
+    WHERE ${deletedDocument} AND NOT ${treeFactOf(branch)} AND ${pendingIn(branch)}${at(match, rowLocation, "d.extension")}`;
 }
 
 /**
- * Hidden folders D's view places something under, and their ancestors (TM invariant 1),
- * seeded from D's change rows: each row's document is one primary-key probe.
+ * Folders D's view places something under, and their ancestors (TM invariant 1): seeded
+ * from D's change rows (each row's document is one primary-key probe: where a creation
+ * stands, or where D moved a document) and from the deleted documents D has pending
+ * changes to, in one walk. The non-live arm keeps the hidden and the deleted ones; live
+ * ones are already in the live arm.
  */
-function usedHiddenFolderIds(branchId: BranchId): SQL {
+function usedFolderIds(branchId: BranchId): SQL {
   return sql`
     WITH RECURSIVE used(id) AS (
       SELECT placed.folder_id FROM branch_tree_changes c
       CROSS JOIN LATERAL (
-        SELECT d.folder_id AS folder_id FROM documents d
-        WHERE d.id = c.node_id AND ${branchCreatedDocument} OFFSET 0
+        SELECT CASE WHEN c.moved THEN c.moved_folder_id ELSE d.folder_id END AS folder_id
+        FROM documents d
+        WHERE d.id = c.node_id AND (${branchCreatedDocument} OR ${movedDocument}) OFFSET 0
       ) placed
       WHERE c.branch_id = ${branchId}::uuid AND c.node_kind = 'document'
         AND placed.folder_id IS NOT NULL
       UNION
       SELECT c.node_id FROM branch_tree_changes c
       WHERE c.branch_id = ${branchId}::uuid AND c.node_kind = 'folder' AND c.created
+      UNION
+      SELECT d.folder_id FROM document_drafts dd JOIN documents d ON d.id = dd.document_id
+      WHERE dd.branch_id = ${branchId}::uuid AND dd.kind = 'work_draft' AND dd.status = 'active'
+        AND dd.has_effect AND ${deletedDocument} AND d.folder_id IS NOT NULL
+        AND NOT ${treeFactOf(sql`${branchId}::uuid`)}
       UNION
       SELECT f2.parent_id FROM folders f2 JOIN used u ON f2.id = u.id
       WHERE f2.parent_id IS NOT NULL
@@ -179,12 +304,13 @@ function foldersQuery(view: TreeView, match?: SlotMatch): SQL {
   const live = sql`${select} FROM ${slots}folders f
     WHERE f.deleted_at IS NULL AND NOT f.hidden${position}`;
   if (view.kind === "live") return live;
-  // A second branch rather than an OR, so live lookups keep their indexes.
+  // The live arm stays separate, so live lookups keep their indexes; the hidden and deleted
+  // folders share one arm, so the branch's used-ancestor walk runs once.
   return sql`${live}
     UNION ALL
     ${select} FROM ${slots}folders f
-    WHERE f.deleted_at IS NULL AND f.hidden${position}
-      AND f.id IN (${usedHiddenFolderIds(view.branchId)})`;
+    WHERE ${nonLiveFolder}${position}
+      AND f.id IN (${usedFolderIds(view.branchId)})`;
 }
 
 /** One lookup position: a name under a parent folder (null: the source root). */
@@ -368,22 +494,120 @@ export async function loadActiveBranchUses(
   }));
 }
 
-export async function loadBranchCreatedDocuments(
+/** What one branch says about a document (its `branch_tree_changes` row), as stored. */
+export type BranchTreeFactsRow = {
+  created: boolean;
+  moved: {
+    folderId: FolderId | null;
+    rootSourceId: ContextSourceId | null;
+    name: string;
+    extension: string;
+  } | null;
+  deleted: boolean;
+  /** Null only on a created row written before PR 3. */
+  revision: bigint | null;
+  baseVersion: bigint | null;
+};
+
+/**
+ * A branch's row on a document with the document's physical identity, and where the branch
+ * has it: its moved placement (the folder's source now) when it is moving it, else the row's.
+ */
+export type BranchTreeRow = DocumentIdentityRow & {
+  facts: BranchTreeFactsRow;
+  effective: {
+    contextSourceId: ContextSourceId;
+    folderId: FolderId | null;
+    name: string;
+    extension: string;
+  };
+};
+
+/** Every row the branch has on a document (only these documents' when given), oldest first. */
+export async function loadBranchTreeRows(
   db: DrizzleDb,
   branchId: BranchId,
   only?: readonly string[],
-): Promise<DocumentIdentityRow[]> {
+): Promise<BranchTreeRow[]> {
   if (only?.length === 0) return [];
-  const rows = await currentDrizzleDb(db).execute<RawIdentityRow>(sql`
-    SELECT ${identityColumns}
+  const rows = await currentDrizzleDb(db).execute<
+    RawIdentityRow & {
+      branch_created: boolean;
+      branch_moved: boolean;
+      branch_deleted: boolean;
+      moved_folder_id: string | null;
+      moved_root_source_id: string | null;
+      moved_source_id: string | null;
+      moved_name: string | null;
+      moved_extension: string | null;
+      revision: string | null;
+      base_version: string | null;
+    }
+  >(sql`
+    SELECT ${identityColumns}, c.created AS branch_created, c.moved AS branch_moved,
+      c.deleted AS branch_deleted,
+      c.moved_folder_id::text AS moved_folder_id,
+      c.moved_root_source_id::text AS moved_root_source_id,
+      coalesce(mf.context_source_id, c.moved_root_source_id)::text AS moved_source_id,
+      c.moved_name, c.moved_extension, c.revision::text AS revision,
+      c.base_version::text AS base_version
     FROM branch_tree_changes c
     CROSS JOIN LATERAL (
       SELECT * FROM documents d WHERE d.id = c.node_id OFFSET 0
     ) d
-    WHERE c.branch_id = ${branchId}::uuid AND c.node_kind = 'document' AND c.created
+    LEFT JOIN folders mf ON mf.id = c.moved_folder_id
+    WHERE c.branch_id = ${branchId}::uuid AND c.node_kind = 'document'
       ${only ? sql`AND c.node_id IN (${uuidList(only)})` : sql``}
     ORDER BY c.created_at, c.node_id`);
-  return rows.map(identityRow);
+  return rows.map((row) => {
+    const identity = identityRow(row);
+    const moved =
+      row.branch_moved && row.moved_name !== null && row.moved_extension !== null
+        ? {
+            folderId: row.moved_folder_id as FolderId | null,
+            rootSourceId: row.moved_root_source_id as ContextSourceId | null,
+            name: row.moved_name,
+            extension: row.moved_extension,
+          }
+        : null;
+    return {
+      ...identity,
+      facts: {
+        created: row.branch_created,
+        moved,
+        deleted: row.branch_deleted,
+        revision: row.revision === null ? null : BigInt(row.revision),
+        baseVersion: row.base_version === null ? null : BigInt(row.base_version),
+      },
+      effective:
+        moved && !row.branch_deleted && row.moved_source_id
+          ? {
+              contextSourceId: row.moved_source_id as ContextSourceId,
+              folderId: moved.folderId,
+              name: moved.name,
+              extension: moved.extension,
+            }
+          : {
+              contextSourceId: identity.contextSourceId,
+              folderId: identity.folderId,
+              name: identity.name,
+              extension: identity.extension,
+            },
+    };
+  });
+}
+
+/** Of `documentIds`, those the reviewable-pending predicate holds for in this branch. */
+export async function loadPendingDocumentIds(
+  db: DrizzleDb,
+  branchId: BranchId,
+  documentIds: readonly DocumentId[],
+): Promise<Set<DocumentId>> {
+  if (documentIds.length === 0) return new Set();
+  const rows = await currentDrizzleDb(db).execute<{ id: string }>(sql`
+    SELECT d.id::text AS id FROM documents d
+    WHERE d.id IN (${uuidList(documentIds)}) AND ${pendingIn(sql`${branchId}::uuid`)}`);
+  return new Set(rows.map((row) => row.id as DocumentId));
 }
 
 /** The `hidden` column of a documents alias, for the address loader's identity rows. */
@@ -435,21 +659,62 @@ function uuidList(ids: readonly string[]): SQL {
  * Diagnostics extend the canonical selection with formerly live lifecycle/malformed
  * identities, plus discarded creations so their removal can answer. Placement comes from
  * the same SQL UNION branches as visibleDocuments; no other hidden tombstone enters
- * either arm, even with a stale branch change row.
+ * either arm, even with a stale branch change row. A branch's surviving documents are in
+ * the canonical arm, so the diagnostic arm leaves them out: each identity appears once.
  */
 export function identityDocuments(view: TreeView) {
   const columns = getTableColumns(documents);
-  const query = sql`SELECT d.* FROM (${documentsQuery(view)}) shown JOIN documents d ON d.id = shown.id
-    UNION ALL SELECT d.* FROM documents d WHERE d.deleted_at IS NOT NULL
-      AND (NOT d.hidden OR d.deletion_reason = 'discarded')`;
+  // A branch's moved document stands at the branch's placement: its grants and lineage are
+  // the destination's (a manuscript→kb drafted move takes kb's).
+  const names = Object.values(columns).map((column) => column.name);
+  const canonical = sql.raw(
+    names.map((name) => (PLACEMENT_COLUMNS.has(name) ? `shown.${name}` : `d.${name}`)).join(", "),
+  );
+  const diagnostic = sql.raw(names.map((name) => `d.${name}`).join(", "));
+  const query = sql`SELECT ${canonical} FROM (${documentsQuery(view)}) shown JOIN documents d ON d.id = shown.id
+    UNION ALL SELECT ${diagnostic} FROM documents d WHERE d.deleted_at IS NOT NULL
+      AND (NOT d.hidden OR d.deletion_reason = 'discarded')${
+        view.kind === "branch"
+          ? sql` AND NOT (${deletedDocument} AND ${branchShowsDeleted(sql`${view.branchId}::uuid`)})`
+          : sql``
+      }`;
   return subquery(query, columns, "document_identities");
 }
 
-/** Canonical visible folders plus non-hidden deleted ancestor diagnostics. */
+/**
+ * The living documents a branch view deletes (alias "document_identities", the identity
+ * relation's shape): in no branch reader, yet where an undo of that delete brings them back,
+ * at their row. Authorization only; listing and availability never read it.
+ */
+export function branchDeletedDocuments(view: Extract<TreeView, { kind: "branch" }>) {
+  const columns = getTableColumns(documents);
+  const query = sql`SELECT ${sql.raw(
+    Object.values(columns)
+      .map((column) => `d.${column.name}`)
+      .join(", "),
+  )} FROM documents d WHERE d.deleted_at IS NULL AND EXISTS (SELECT 1 FROM branch_tree_changes c
+      WHERE c.branch_id = ${view.branchId}::uuid AND c.node_kind = 'document'
+        AND c.node_id = d.id AND c.deleted)`;
+  return subquery(query, columns, "document_identities");
+}
+
+const PLACEMENT_COLUMNS = new Set(["context_source_id", "folder_id", "name", "extension"]);
+
+/** Branch `b`'s view shows deleted document `d`: it moved it, or a draft of it is pending. */
+function branchShowsDeleted(b: SQL): SQL {
+  return sql`(EXISTS (SELECT 1 FROM branch_tree_changes c
+      WHERE c.branch_id = ${b} AND c.node_kind = 'document' AND c.node_id = d.id
+        AND c.moved AND NOT c.deleted)
+    OR (NOT ${treeFactOf(b)} AND ${pendingIn(b)}))`;
+}
+
+/** Canonical visible folders plus non-hidden deleted ancestor diagnostics, each once. */
 export function identityFolders(view: TreeView) {
   const columns = getTableColumns(folders);
   const query = sql`SELECT f.* FROM (${foldersQuery(view)}) shown JOIN folders f ON f.id = shown.id
-    UNION ALL SELECT f.* FROM folders f WHERE NOT f.hidden AND f.deleted_at IS NOT NULL`;
+    UNION ALL SELECT f.* FROM folders f WHERE ${deletedFolder}${
+      view.kind === "branch" ? sql` AND f.id NOT IN (${usedFolderIds(view.branchId)})` : sql``
+    }`;
   return subquery(query, columns, "folder_identities");
 }
 
@@ -503,8 +768,8 @@ const textDocument = sql`d.storage_url IS NULL AND d.file_type NOT IN (${sql.joi
 
 /**
  * Hidden, live text documents at `slot`, oldest first, matched by the row's own location,
- * excluding the documents
- * `excludeBranchId` already uses (§6.2 step 3). Binaries are never candidates (12b-Q2).
+ * excluding the documents `excludeBranchId` already uses (§6.2 step 3) and those a using
+ * branch moved elsewhere (it no longer has them at the slot). Binaries are never candidates (12b-Q2).
  * `ids` narrows the match to rows already locked, for revalidation under their locks.
  */
 export async function loadHiddenDocumentCandidates(
@@ -530,6 +795,9 @@ export async function loadHiddenDocumentCandidates(
     WHERE d.hidden AND d.deleted_at IS NULL AND ${textDocument}
       AND d.context_source_id = ${slot.contextSourceId}::uuid AND ${sameFolder("d.folder_id")}
       AND d.name = ${slot.name} AND d.extension = ${slot.extension}
+      -- A create joins a candidate only when every branch using it still has it at this slot.
+      AND NOT EXISTS (SELECT 1 FROM branch_tree_changes m JOIN branches r ON r.id = m.branch_id
+        WHERE m.node_kind = 'document' AND m.node_id = d.id AND m.moved AND r.status = 'active')
       ${
         options.excludeBranchId
           ? sql`AND NOT EXISTS (SELECT 1 FROM branch_tree_changes x
@@ -622,13 +890,16 @@ export async function loadFolderIdentityRows(
 
 /**
  * Whether a hidden, live folder is unused: nothing live under it, hidden or not (no
- * non-deleted document or folder), which includes every branch's created documents (§12.2 step 5).
+ * non-deleted document or folder), which includes every branch's created documents
+ * (§12.2 step 5), and no branch holds it for a drafted move (`branch_tree_folders`: every
+ * folder a move placed a document in, until that branch's entries on it settle).
  */
 export async function isUnusedHiddenFolder(db: DrizzleDb, folderId: FolderId): Promise<boolean> {
   const [row] = await currentDrizzleDb(db).execute<{ unused: boolean }>(sql`
     SELECT (f.hidden AND f.deleted_at IS NULL
       AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.folder_id = f.id AND d.deleted_at IS NULL)
       AND NOT EXISTS (SELECT 1 FROM folders c WHERE c.parent_id = f.id AND c.deleted_at IS NULL)
+      AND NOT EXISTS (SELECT 1 FROM branch_tree_folders h WHERE h.folder_id = f.id)
     ) AS unused
     FROM folders f WHERE f.id = ${folderId}::uuid`);
   return row?.unused === true;
