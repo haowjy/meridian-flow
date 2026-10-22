@@ -18,7 +18,7 @@ type Click = FrozenApply & {
   attempts: number;
   stalled: boolean;
   answer?: ApplyClickResult;
-  /** The record released this head while its request was in flight; the answer reports it. */
+  /** The record released this head while its request was in flight; the answer (or, lost, the stored result) reports it. */
   awaitingAnswer?: true;
   finish(result: ApplyClickResult | { status: "cancelled" }): void;
 };
@@ -29,6 +29,7 @@ export class ApplyClickQueue {
   readonly clicks: Click[] = [];
   private recorded = new Set<string>();
   private closed = false;
+  private destroyed = false;
   private request: Click | null = null;
   private retryTimer?: ReturnType<typeof setTimeout>;
   private feedbackTimer?: ReturnType<typeof setTimeout>;
@@ -128,6 +129,7 @@ export class ApplyClickQueue {
   }
 
   destroy(): void {
+    this.destroyed = true;
     clearTimeout(this.retryTimer);
     clearTimeout(this.feedbackTimer);
     for (const click of this.clicks.splice(0)) click.finish({ status: "cancelled" });
@@ -152,11 +154,9 @@ export class ApplyClickQueue {
     }
     if (this.request === click) this.request = null;
     if (click.awaitingAnswer) {
-      click.finish(
-        answer?.status === "applied" && answer.commandId === click.body.commandId
-          ? answer
-          : { status: "applied", commandId: click.body.commandId },
-      );
+      if (answer?.status === "applied" && answer.commandId === click.body.commandId)
+        click.finish(answer);
+      else void this.recoverResult(click);
     }
     if (this.clicks[0] !== click) {
       const next = this.clicks[0];
@@ -214,6 +214,27 @@ export class ApplyClickQueue {
       /* Remains unknown. */
     }
     this.scheduleRetry(click);
+  }
+
+  /**
+   * The record proved this released click landed, but its answer was lost. Only the stored
+   * result carries `restored`, so read it back under the same command id; never resend.
+   */
+  private async recoverResult(click: Click): Promise<void> {
+    for (const delay of [0, ...RETRY_DELAYS]) {
+      if (this.destroyed) break;
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+      try {
+        const result = await this.port.lookup(click.body);
+        if (result.status === "applied" && result.commandId === click.body.commandId) {
+          click.finish(result);
+          return;
+        }
+      } catch {
+        /* Still unknown; the record already proved landing. */
+      }
+    }
+    click.finish({ status: "applied", commandId: click.body.commandId });
   }
 
   private scheduleRetry(click: Click): void {

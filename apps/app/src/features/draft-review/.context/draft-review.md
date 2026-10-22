@@ -125,7 +125,8 @@ replacement. Transient disconnects keep acknowledgement barriers pending.
 A record alone proves landing; an applied answer without
 the record keeps its contribution. A record that arrives before the answer
 releases the head (the next click may send), but the click's outcome waits for
-that answer, which alone carries `restored`. Closed/refused answers remove only their
+that answer, which alone carries `restored`; a lost answer reads the stored
+result back under the same command id (never a resend). Closed/refused answers remove only their
 own contribution. A `work_archived` refusal stores no failure (`shownRefusal`):
 the Works query refetches and `ArchivedWorkNotice` explains the reverted change,
 so no surface shows a refusal line. Other refusals still move prose in two cases,
