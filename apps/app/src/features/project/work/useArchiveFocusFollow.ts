@@ -15,8 +15,18 @@ const tabIn = (tabs: HTMLElement | null, view: ArchiveTab) =>
 export function useArchiveFocusFollow(works: readonly Work[] | null) {
   const tabs = useRef<HTMLDivElement>(null);
   const intent = useRef<Intent | null>(null);
+  const focusOwner = useRef<Intent | null>(null);
 
-  useEffect(() => trackInputModality(document), []);
+  useEffect(() => {
+    trackInputModality(document);
+    const tabList = tabs.current;
+    const releaseFocus = (event: FocusEvent) => {
+      const owner = focusOwner.current;
+      if (owner && event.target === tabIn(tabList, owner.view)) focusOwner.current = null;
+    };
+    tabList?.addEventListener("focusout", releaseFocus);
+    return () => tabList?.removeEventListener("focusout", releaseFocus);
+  }, []);
 
   // The move is optimistic, so this fires as soon as the command starts.
   useEffect(() => {
@@ -25,7 +35,10 @@ export function useArchiveFocusFollow(works: readonly Work[] | null) {
     const work = works.find((candidate) => candidate.id === target.workId);
     if (!work || archiveTab(work) !== target.view) return;
     const destination = tabIn(tabs.current, target.view);
-    if (destination) moveFocus(destination, { ring: target.ring });
+    if (destination) {
+      moveFocus(destination, { ring: target.ring });
+      focusOwner.current = target;
+    }
     intent.current = null;
   }, [works]);
 
@@ -36,12 +49,18 @@ export function useArchiveFocusFollow(works: readonly Work[] | null) {
    */
   const follow = useCallback((workId: string, view: ArchiveTab, command: Promise<Error | null>) => {
     const next = { workId, view, ring: lastInputWasKeyboard() };
+    focusOwner.current = null;
     intent.current = next;
     void command.then((error) => {
-      if (!error) return;
+      if (!error) {
+        if (focusOwner.current === next) focusOwner.current = null;
+        return;
+      }
       if (intent.current === next) intent.current = null;
+      if (focusOwner.current !== next) return;
       const destination = tabIn(tabs.current, view);
       const origin = tabIn(tabs.current, view === "archived" ? "active" : "archived");
+      focusOwner.current = null;
       if (origin && destination && document.activeElement === destination)
         moveFocus(origin, { ring: next.ring });
     });
