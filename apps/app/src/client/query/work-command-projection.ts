@@ -16,18 +16,20 @@ import {
 } from "./work-commands";
 
 /** A Work the server has not created yet, as the writer asked for it. */
-export type WorkDraft = Pick<Work, "name" | "goal" | "lastActivityAt"> & { id: ParsedRequestId };
+export type UncreatedWork = Pick<Work, "name" | "goal" | "lastActivityAt"> & {
+  id: ParsedRequestId;
+};
 
 /**
  * A Work the server has not created yet: pending while its create is on its
  * way, failed once it was refused.
  */
-export type WorkCreation = { work: WorkDraft; phase: "pending" | "failed" };
+export type WorkCreation = { work: UncreatedWork; phase: "pending" | "failed" };
 
-function draftWork(
+function uncreatedWork(
   { workId, name, goal }: WorkCommandVariables["create"],
   submittedAt: number,
-): WorkDraft {
+): UncreatedWork {
   return { id: workId, name, goal: goal ?? null, lastActivityAt: isoAt(submittedAt) };
 }
 
@@ -56,7 +58,7 @@ export function projectWorkCommands(
     const before = byId.get(record.workId);
     if (!before && record.operation === "create" && !record.committed) {
       creations.set(record.workId, {
-        work: draftWork(record.variables, record.submittedAt),
+        work: uncreatedWork(record.variables, record.submittedAt),
         phase: refused ? "failed" : "pending",
       });
       continue;

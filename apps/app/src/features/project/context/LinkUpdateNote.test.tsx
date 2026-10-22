@@ -19,7 +19,7 @@ it("names the receipt's destination without mistaking a rename or refusal for pl
   expect(movedDestinationName(receipt("manuscript://Book/ch.md", "kb://note.md"))).toBe(
     "Knowledge Base",
   );
-  expect(movedDestinationName(receipt("scratch://@old/ch.md", "scratch://@new/ch.md"))).toBe(
+  expect(movedDestinationName(receipt("scratch://@w1/ch.md", "scratch://@w2/ch.md"))).toBe(
     "Scratch",
   );
   expect(

@@ -2,10 +2,13 @@
 
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
+import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
 import { createDrizzleThreadLock } from "../adapters/drizzle-thread-lock.js";
 import { processDetachedWork } from "../detached-work.js";
+import { decideForgetting, loadForgettingFacts } from "../loop/forget-failed-attempt.js";
 import { createHandoffBriefs } from "./brief-service.js";
 
 const url = process.env.DATABASE_URL;
@@ -26,10 +29,10 @@ else
     );
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { executionScenario } = await import("../../../test-support/execution-scenario.js");
-    const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
+    const { createLockedDrizzleInbox } = await import("../../../test-support/locked-inbox.js");
     const { createDetachedWorkTracker } = await import("../detached-work.js");
     const { createDrizzleCreditLedger } = await import("../../billing/index.js");
-    const { createTestDrizzleDelivery } = await import(
+    const { createTestDrizzleDelivery, createTestOrphanRepair } = await import(
       "../loop/__tests__/test-drizzle-delivery.js"
     );
     const { createRuntimeHarness } = await import("../loop/__tests__/runtime-harness.js");
@@ -37,7 +40,6 @@ else
     const { scriptedGateway } = await import("../loop/__tests__/test-gateway.js");
     const { createRunStarter } = await import("../loop/run-starter.js");
     const { createWakeIfRunnable } = await import("../loop/wake-if-runnable.js");
-    const { createOrphanReportRepair } = await import("../spawn/orphan-report-repair.js");
     const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
     const { handoffSeedMetadata } = await import("../../threads/index.js");
     const databaseUrl = required(url);
@@ -51,6 +53,7 @@ else
       const source = required(await repos.threads.findById(ids.caller));
       const cutoff = required(await repos.turns.findById(ids.callerTurn));
       const { thread: destination } = await repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID() as never,
         userId: ids.user,
         projectId: ids.project,
@@ -88,7 +91,7 @@ else
         shutdown: { started: false },
         backgroundTasks: processDetachedWork,
         repos: options.repos ?? repos,
-        eventWriter: createDrizzleEventJournalWriter(db),
+        eventWriter: createQuietDrizzleJournalWriter(db),
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim,
@@ -133,7 +136,7 @@ else
     ) {
       const backgroundTasks = createDetachedWorkTracker();
       const runClaim = createDrizzleRunClaim(db, { holderId: "brief-wake-runner" });
-      const eventWriter = createDrizzleEventJournalWriter(db);
+      const eventWriter = createQuietDrizzleJournalWriter(db);
       const creditLedger = createDrizzleCreditLedger(db);
       await creditLedger.grant({
         userId: fixture.ids.user,
@@ -174,6 +177,7 @@ else
       const source = required(await repos.threads.findById(ids.caller));
       const cutoff = required(await repos.turns.findById(ids.callerTurn));
       const destination = await repos.threads.create({
+        aiWriteMode: "direct",
         userId: ids.user,
         projectId: ids.project,
         title: "Handoff destination",
@@ -191,7 +195,7 @@ else
         }),
       });
       const runClaim = createDrizzleRunClaim(db, { holderId: "source-run" });
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       const queued = await inbox.enqueue({
         threadId: destination.id,
         intent: "message",
@@ -200,14 +204,18 @@ else
         idempotencyKey: "queued-during-brief",
       });
       expect(await inbox.pendingMessageThreads(10)).toEqual([destination.id]);
-      const sourceLease = await runClaim.startExecution(source.id, "source-running");
+      const sourceLease = await runClaim.startExecution(
+        source.id,
+        "source-running",
+        async () => {},
+      );
       const heldSourceLease = required(sourceLease);
       const sourceTurnsBefore = await repos.turns.listByThread(source.id);
       const sourceInboxBefore = await db
         .select()
         .from(schema.threadInboxMessages)
         .where(eq(schema.threadInboxMessages.threadId, source.id));
-      const eventWriter = createDrizzleEventJournalWriter(db);
+      const eventWriter = createQuietDrizzleJournalWriter(db);
       const statusReader = (
         await import("../adapters/drizzle-handoff-status-reader.js")
       ).createDrizzleHandoffStatusReader(db, runClaim);
@@ -287,7 +295,7 @@ else
           .from(schema.threadInboxMessages)
           .where(eq(schema.threadInboxMessages.threadId, source.id)),
       ).toEqual(sourceInboxBefore);
-      await runClaim.release(heldSourceLease);
+      await releaseLeaseUnderLock(db, runClaim, heldSourceLease);
     });
 
     it.each([
@@ -310,7 +318,7 @@ else
         shutdown: { started: false },
         backgroundTasks,
         repos: fixture.repos,
-        eventWriter: createDrizzleEventJournalWriter(db),
+        eventWriter: createQuietDrizzleJournalWriter(db),
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim,
@@ -350,7 +358,9 @@ else
       const launchPostCommit = required(postCommit.shift());
       await launchPostCommit();
       await providerStarted;
-      expect(await runClaim.startExecution(fixture.destination.id, "racing-run")).toBeNull();
+      expect(
+        await runClaim.startExecution(fixture.destination.id, "racing-run", async () => {}),
+      ).toBeNull();
       const queued = await delivery.enqueue({
         threadId: fixture.destination.id,
         intent: "message",
@@ -365,7 +375,9 @@ else
         body: { kind: "compact" },
         idempotencyKey: "compact-during-brief",
       });
-      expect(await runClaim.startExecution(fixture.destination.id, "racing-wake")).toBeNull();
+      expect(
+        await runClaim.startExecution(fixture.destination.id, "racing-wake", async () => {}),
+      ).toBeNull();
       releaseProvider();
 
       const expectedSeedStatus = ending === "failed" ? "error" : "cancelled";
@@ -400,7 +412,7 @@ else
     it("settles paid rows on shutdown, leaves S pending, releases the claim, and skips the wake", async () => {
       const fixture = await handoffSeed();
       const runClaim = createDrizzleRunClaim(db, { holderId: "shutdown-brief" });
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       let startAttempts = 0;
       let startedRuns = 0;
       const runStarter = {
@@ -409,10 +421,11 @@ else
           const lease = await runClaim.startExecution(
             threadId as never,
             `shutdown-wake-${startAttempts}`,
+            async () => {},
           );
           if (!lease) return;
           startedRuns += 1;
-          await runClaim.release(lease);
+          await releaseLeaseUnderLock(db, runClaim, lease);
         },
       };
       const delivery = createTestDrizzleDelivery(db, {
@@ -461,7 +474,7 @@ else
         shutdown: { started: false },
         backgroundTasks: processDetachedWork,
         repos: fixture.repos,
-        eventWriter: createDrizzleEventJournalWriter(db),
+        eventWriter: createQuietDrizzleJournalWriter(db),
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim,
@@ -558,14 +571,18 @@ else
       });
       await heldBrief.release();
       expect(await service.stop(fixture.destination.id, fixture.seed.id)).toBe(true);
-      const liveReply = await runClaim.startExecution(fixture.destination.id, "destination-reply");
+      const liveReply = await runClaim.startExecution(
+        fixture.destination.id,
+        "destination-reply",
+        async () => {},
+      );
       const heldLiveReply = required(liveReply);
       await expect(
         service.retry({ threadId: fixture.destination.id, seedId: retryId }),
       ).rejects.toMatchObject({
         code: "handoff_retry_unavailable",
       });
-      await runClaim.release(heldLiveReply);
+      await releaseLeaseUnderLock(db, runClaim, heldLiveReply);
 
       const retried = await service.retry({ threadId: fixture.destination.id, seedId: retryId });
       expect(retried.created).toBe(true);
@@ -618,6 +635,48 @@ else
       );
     });
 
+    it("ends a failed brief's failure at the writer's first message and forgets nothing (C13)", async () => {
+      // Risk: a first-brief failure has no earlier closing row, so it could neither be forgotten nor end;
+      // and forgetting it would drop the model text ("handed off with no brief") the model can act on.
+      const fixture = await handoffSeed();
+      const runClaim = createDrizzleRunClaim(db, { holderId: "failed-brief" });
+      const service = serviceFor(fixture.repos, runClaim, {
+        async canStartTurn() {
+          return false;
+        },
+      });
+      expect(await startBrief(service, fixture.destination.id, fixture.seed.id)).toBe(true);
+      await expect
+        .poll(async () => (await fixture.repos.turns.findById(fixture.seed.id))?.status)
+        .toBe("error");
+      const deps = { turns: fixture.repos.turns, blocks: fixture.repos.blocks };
+      const closing = { closes: true, reservationExecutionId: null, retries: null };
+      expect(
+        decideForgetting(
+          await loadForgettingFacts(deps, fixture.destination.id, fixture.seed.id),
+          closing,
+        ),
+      ).toEqual({
+        forget: [],
+        ends: [{ turnId: fixture.seed.id, end: "moved_on" }],
+        reason: null,
+      });
+
+      const runner = await destinationRunner(fixture);
+      await runner.delivery.enqueue({
+        threadId: fixture.destination.id,
+        intent: "message",
+        provenance: { kind: "writer", actorId: fixture.ids.user },
+        body: { kind: "text", text: "Where were we?" },
+        idempotencyKey: "first-message",
+      });
+      await runner.delivery.materializeIdle(fixture.destination.id);
+      await runner.backgroundTasks.drain();
+      const turns = await fixture.repos.turns.listByThread(fixture.destination.id);
+      expect(turns.map((turn) => turn.role).slice(0, 2)).toEqual(["system", "user"]);
+      expect(turns.every((turn) => turn.forgottenBy === null)).toBe(true);
+    });
+
     it("runs one provider call when two service instances claim the same seed", async () => {
       const fixture = await handoffSeed();
       const runClaim = createDrizzleRunClaim(db, { holderId: "multi-worker" });
@@ -667,7 +726,7 @@ else
     it("keeps Stop's terminal block when a late provider result arrives", async () => {
       const fixture = await handoffSeed();
       const runClaim = createDrizzleRunClaim(db, { holderId: "stop-race" });
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       const compact = await inbox.enqueue({
         threadId: fixture.destination.id,
         intent: "control",
@@ -750,17 +809,15 @@ else
       const fixture = await handoffSeed();
       const authority = createDrizzleRunClaim(db, { holderId: "handoff-placeholder-sweep" });
       let statusPublishes = 0;
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         repos: fixture.repos,
-        inbox: createDrizzleInbox(db),
-        eventWriter: createDrizzleEventJournalWriter(db),
+        inbox: createLockedDrizzleInbox(db),
+        eventWriter: createQuietDrizzleJournalWriter(db),
         authority,
-        settleStaleExecution: createTestDrizzleDelivery(db, {
-          async publishStatus(threadId) {
-            expect(threadId).toBe(fixture.destination.id);
-            statusPublishes += 1;
-          },
-        }).settleStaleExecution,
+        async publishStatus(threadId) {
+          expect(threadId).toBe(fixture.destination.id);
+          statusPublishes += 1;
+        },
         publisher: {
           async publish() {
             return "already" as const;

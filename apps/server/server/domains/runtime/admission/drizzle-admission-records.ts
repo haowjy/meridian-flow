@@ -2,7 +2,7 @@
 import type { AcceptedAdmission, RetireAdmissionResult } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { turns, userTurnAdmissions } from "@meridian/database/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
 import { currentDrizzleDb } from "../../threads/adapters/drizzle/repositories.js";
@@ -26,7 +26,7 @@ function map(row: typeof userTurnAdmissions.$inferSelect): AdmissionRecord {
         threadId: row.threadId,
         submissionId: row.submissionId,
         userTurnId: row.userTurnId,
-        assistantTurnId: row.assistantTurnId ?? null,
+        runStateVersion: row.runStateVersion ?? null,
         resumeAfterSeq: row.resumeAfterSeq,
         snapshotFloorNextSeq: row.snapshotFloorNextSeq,
       },
@@ -137,14 +137,11 @@ export function createDrizzleAdmissionRecords(db: Database): AdmissionPersistenc
         if (row.claimExpiresAt > input.now || (await input.hasLiveClaim(input.threadId))) {
           return map(row);
         }
-        const turnIds = [row.userTurnId, row.assistantTurnId].filter(
-          (id): id is NonNullable<typeof id> => id !== null,
-        );
-        if (turnIds.length > 0) {
+        if (row.userTurnId) {
           const committed = await currentDrizzleDb(db)
             .select({ id: turns.id })
             .from(turns)
-            .where(inArray(turns.id, turnIds));
+            .where(eq(turns.id, row.userTurnId));
           if (committed.length > 0) return map(row);
         }
         const [rejected] = await currentDrizzleDb(db)
@@ -186,7 +183,7 @@ export function createDrizzleAdmissionRecords(db: Database): AdmissionPersistenc
         .set({
           state: "accepted",
           userTurnId: input.response.userTurnId,
-          assistantTurnId: input.response.assistantTurnId,
+          runStateVersion: input.response.runStateVersion,
           resumeAfterSeq: input.response.resumeAfterSeq,
           snapshotFloorNextSeq: input.response.snapshotFloorNextSeq,
           claimExpiresAt: null,

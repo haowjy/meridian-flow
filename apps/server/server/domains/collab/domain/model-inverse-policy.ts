@@ -1,17 +1,36 @@
 // Per-document model stacks over immutable edits, with all-or-nothing action planning.
+
 import { randomUUID } from "node:crypto";
 import {
-  type ComputedInverse,
   type DocumentEditResult,
+  editHandle,
   type InverseSelection,
   type ModelInverseCommand,
   type PreparedEditRoots,
   prepareEditRoots,
+  removedFile,
 } from "@meridian/agent-edit/integration";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
-import { prepareHolds } from "./inverse-holds.js";
+import { type InverseStep, simulateInverse } from "./inverse-stream.js";
+import { draftRoom } from "./observation-rooms.js";
+import { ReversalConflictError } from "./reversal-conflict.js";
+import {
+  isTransitionEntry,
+  latestTransition,
+  type PlannedTreeInverse,
+  planTreeInverse,
+  type StoredTreeEntry,
+  settlementOf,
+  type TransitionEntry,
+  TreeInverseRefused,
+  treeChangedCause,
+  treeEntrySummary,
+  treeFaultReason,
+  treeInverseFact,
+  treeKey,
+} from "./tree-inverse.js";
 import type {
   InverseDocument,
   StoredInversePart,
@@ -19,12 +38,26 @@ import type {
   TurnInverseStore,
 } from "./turn-inverse-service.js";
 
-type Query = TurnInverseQuery & { model: true; branchId: string | null };
-type Entry = { id: string; handle: string; parts: StoredInversePart[] };
-const eligible = (part: StoredInversePart) =>
-  part.placement.kind === "live" || part.placement.kind === "pending";
+type Query = TurnInverseQuery & { model: true; draftId: string | null };
+/** One own edit on the stack: text parts, or one tree entry (a move or delete) with none. */
+type Entry = { id: string; handle: string; parts: StoredInversePart[]; tree?: TransitionEntry };
+const entryKeys = (entry: Entry) =>
+  entry.tree ? [treeKey(entry.tree.editId)] : entry.parts.map(key);
+const entryRows = (entry: Entry): { id: number; key: string }[] =>
+  entry.tree
+    ? [{ id: entry.tree.id, key: treeKey(entry.tree.editId) }]
+    : entry.parts.map((part) => ({ id: part.id, key: key(part) }));
 function entries(document: InverseDocument, threadId: string): Entry[] {
   const map = new Map<string, Entry>();
+  for (const row of document.tree)
+    if (
+      isTransitionEntry(row) &&
+      row.threadId === threadId &&
+      row.actor === "agent" &&
+      row.wId !== null &&
+      (row.kind === "write" || row.kind === "revert")
+    )
+      map.set(row.editId, { id: row.editId, handle: editHandle(row.wId), parts: [], tree: row });
   for (const part of document.history) {
     if (
       part.threadId !== threadId ||
@@ -34,28 +67,38 @@ function entries(document: InverseDocument, threadId: string): Entry[] {
       (!part.effect.inserted.length && !part.effect.deleted.length)
     )
       continue;
-    const entry = map.get(part.editId) ?? { id: part.editId, handle: `w${part.wId}`, parts: [] };
+    const entry = map.get(part.editId) ?? {
+      id: part.editId,
+      handle: editHandle(part.wId),
+      parts: [],
+    };
     entry.parts.push(part);
     map.set(part.editId, entry);
   }
   return [...map.values()].sort((a, b) => Number(b.handle.slice(1)) - Number(a.handle.slice(1)));
 }
-function inspectionActions(history: StoredInversePart[], own: Entry[]) {
-  const actions = effectiveActionIndex(
-    history,
-    new Set(own.flatMap((entry) => entry.parts.map(key))),
+function inspectionActions(
+  history: StoredInversePart[],
+  tree: readonly StoredTreeEntry[],
+  own: Entry[],
+) {
+  const actions = effectiveActionIndex<StoredInversePart | StoredTreeEntry>(
+    [...history, ...tree],
+    new Set(own.flatMap(entryKeys)),
   );
   const rolledBack = (part: StoredInversePart) => actions.rolledBack.has(key(part));
   return {
     actions,
     rolledBack,
     top: own.find(
-      (entry) => !entry.parts.every((part) => actions.byPart.has(key(part)) || rolledBack(part)),
+      (entry) => !entryKeys(entry).every((k) => actions.byPart.has(k) || actions.rolledBack.has(k)),
     ),
     candidate: actions.actions.find(
       (action) =>
         !own.some((entry) =>
-          entry.parts.some((part) => part.id > action.newest && !rolledBack(part)),
+          entryRows(entry).some(
+            (row) => row.id > action.newest && !actions.rolledBack.has(row.key),
+          ),
         ),
     ),
   };
@@ -83,34 +126,41 @@ function inspectionContext(
 }
 type Inspection = ReturnType<typeof inspectionContext>;
 
+/** A tree inverse the destination refused under the locks: nothing of the command ran. */
+function treeRefusal(cause: TreeInverseRefused): DocumentEditResult {
+  const verb = cause.planned.direction === "invert" ? "undo" : "redo";
+  const what =
+    cause.fault === "location_taken"
+      ? `${cause.at ?? "its location"} is already taken. Use \`ls\` to check what is there. If it is a document, move or rename it before retrying. Otherwise, tell the user the location is blocked.`
+      : cause.fault === "folder_missing"
+        ? "the destination folder is gone. Tell the user this change can't be reversed here."
+        : `${treeFaultReason(cause.fault)}. Tell the user this change can't be reversed here.`;
+  return {
+    status: `cant_${verb}_changed`,
+    message: `Can't ${verb} ${cause.planned.entry.tree.shownAt ?? "this change"}: ${what}`,
+  };
+}
+
 export function createModelInversePolicy(store: TurnInverseStore) {
   function planner(document: InverseDocument, query: Query) {
-    const context = prepareHolds([document]).get(document.documentId);
-    if (!context) throw new Error("Missing inverse hold context");
-    const draft = query.branchId ? document.drafts.get(query.branchId) : undefined;
+    const liveIndex = prepareEditRoots(document.live, document.history);
+    const draft = query.draftId ? document.drafts.get(query.draftId) : undefined;
     const view = draft?.doc ?? document.live;
     const own = entries(document, query.threadId);
-    const actions = inspectionActions(document.history, own);
+    const actions = inspectionActions(document.history, document.tree, own);
     const inspections = new Map<Y.Doc, Inspection>();
-    inspections.set(document.live, inspectionContext(context.liveIndex, actions));
-    for (const [id, branch] of document.drafts) {
-      const index = context.views.get(id);
-      if (!index) throw new Error("Missing inverse draft index");
-      inspections.set(branch.doc, inspectionContext(index, actions));
+    inspections.set(document.live, inspectionContext(liveIndex, actions));
+    for (const documentDraft of document.drafts.values()) {
+      const index = liveIndex.forView(documentDraft.doc);
+      inspections.set(documentDraft.doc, inspectionContext(index, actions));
     }
     const inspect = (current = view) => {
       const inspection = inspections.get(current);
       if (!inspection) throw new Error("Missing immutable-view inspection");
       return inspection;
     };
-    const blocking = new Set<string>();
-    const holder = (part: StoredInversePart) =>
-      context.liveIndex
-        .roots(part.effect)
-        .flatMap((root) => [...(context.holds.get(root) ?? [])])
-        .find((id) => id !== query.branchId);
-    const version = (branchId: string | null) =>
-      branchId ? `draft (${document.drafts.get(branchId)?.name ?? "unavailable"})` : "live";
+    const version = (draftId: string | null) =>
+      draftId ? `draft (${document.drafts.get(draftId)?.name ?? "unavailable"})` : "live";
     function refusal(
       part: StoredInversePart,
       handle: string,
@@ -118,41 +168,32 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       inspection: Inspection,
     ): Exclude<DocumentEditResult, { status: "success" }> | null {
       const follow = `Use revert on ${document.uri}, or read it and make a new replace.`;
+      const discarded = {
+        status: `cant_${direction}_discarded` as const,
+        message: `The user discarded ${handle}; it is already gone. ${follow}`,
+      };
       if (draft?.frozen)
         return {
           status: "work_archived",
           message: `This draft is archived. Write to an active draft or live version of ${document.uri}.`,
         };
-      if (part.origin.kind === "pending" && part.placement.kind === "live")
+      if (part.origin.kind === "pending" && part.disposition === "applied")
         return {
           status: `cant_${direction}_applied`,
           message: `The user applied ${handle} to the manuscript. ${follow}`,
         };
-      if (!eligible(part))
-        return {
-          status: `cant_${direction}_discarded`,
-          message: `The user ${part.placement.kind === "discarded" ? "discarded" : "settled"} ${handle}; it is already gone. ${follow}`,
-        };
-      const branchId = part.placement.kind === "pending" ? part.placement.branchId : null;
-      if (
-        branchId !== query.branchId ||
-        (part.placement.kind === "pending" &&
-          part.placement.generation !== draft?.branch.generation)
-      )
+      if (part.origin.kind === "pending" && !document.drafts.has(part.origin.draftId))
+        return discarded;
+      const draftId = part.origin.kind === "pending" ? part.origin.draftId : null;
+      if (draftId !== query.draftId)
         return {
           status: `cant_${direction}_elsewhere`,
-          message: `${handle} is in another version (${version(branchId)}). You can ${direction} only in the version you write to. ${follow}`,
+          message: `${handle} is in another version (${version(draftId)}). You can ${direction} only in the version you write to. ${follow}`,
         };
-      const held = holder(part);
-      if (held) {
-        blocking.add(held);
-        return {
-          status: `cant_${direction}_held`,
-          message: `Another draft (${document.drafts.get(held)?.name ?? "unavailable"}) holds a restored copy of ${handle}'s text. The user can apply or discard that draft. ${follow}`,
-        };
-      }
+      // Restoring the review base can hide an effective Undo from review membership.
       const state = inspection.states([part])[0];
       if (state.state !== (direction === "undo" ? "active" : "undone")) {
+        if (part.disposition === "discarded") return discarded;
         const excerpt = store.describePart(document, part);
         return {
           status: `cant_${direction}_changed`,
@@ -161,37 +202,94 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       }
       return null;
     }
+    /** The branch a draft-mode write lands in, for comparing a drafted tree entry's. */
+    const branchId = draft?.documentDraft.branchId ?? null;
+    /**
+     * Whether `entry` can be reversed in `direction` from the states `states` hold, judged by
+     * state (D76): the planned transition, or the refusal.
+     */
+    function treePlan(
+      entry: Entry & { tree: TransitionEntry },
+      direction: "undo" | "redo" | "revert",
+      tree: readonly StoredTreeEntry[],
+      states: InverseDocument["treeStates"],
+      rolledBack: ReadonlySet<string>,
+      step: () => number,
+    ): PlannedTreeInverse | Exclude<DocumentEditResult, { status: "success" }> {
+      const verb = direction === "revert" ? "undo" : direction;
+      const follow = "Check where it is with `ls`, then make a new move or delete if needed.";
+      const row = entry.tree;
+      const destination = row.tree.destination;
+      if (draft?.frozen)
+        return {
+          status: "work_archived",
+          message: `This draft is archived. Write to an active draft or live version of ${document.uri}.`,
+        };
+      const settled = settlementOf(row, tree);
+      if (settled === "applied")
+        return {
+          status: `cant_${verb}_applied`,
+          message: `The user applied ${entry.handle} to the manuscript. ${follow}`,
+        };
+      if (settled === "discarded")
+        return {
+          status: `cant_${verb}_discarded`,
+          message: `The user discarded ${entry.handle}; it is already gone. ${follow}`,
+        };
+      const here = destination.kind === "live" ? null : destination.branchId;
+      if (here !== branchId)
+        return {
+          status: `cant_${verb}_elsewhere`,
+          message: `${entry.handle} is in another version (${here ? "draft" : "live"}). You can ${verb} only in the version you write to. ${follow}`,
+        };
+      const latest = latestTransition(row, tree, rolledBack);
+      const planned =
+        latest.stands === (direction !== "redo")
+          ? planTreeInverse(
+              row,
+              direction === "redo" ? "reapply" : "invert",
+              latest.row,
+              states,
+              step(),
+            )
+          : null;
+      if (planned) return planned;
+      return {
+        status: `cant_${verb}_changed`,
+        message: `${entry.handle} can't be ${verb === "undo" ? "undone" : "redone"}: the document was ${treeChangedCause(states, destination).replace("_", " ")} you ${verb === "undo" ? "made" : "undid"} it. ${follow}`,
+      };
+    }
     function revertSelection(entry: Entry, inspection = inspect()) {
       const skipped: string[] = [],
         selection: InverseSelection[] = [];
       const states = inspection.states(entry.parts);
       for (const [i, part] of entry.parts.entries()) {
-        const held = holder(part),
-          state = states[i];
-        if (held) blocking.add(held);
-        const reason = !eligible(part)
-          ? "already removed"
-          : held
-            ? `held by the draft in ${document.drafts.get(held)?.name ?? "unavailable"}`
-            : inspection.rolledBack(part)
-              ? "rolled back"
-              : state.state === "undone"
-                ? "already removed"
-                : state.reasons.includes("inaccessible ancestor")
-                  ? "its paragraph was removed"
-                  : state.state !== "active"
-                    ? "edited since"
-                    : null;
-        if (reason) {
-          const excerpt = store.describePart(document, part);
-          skipped.push(
-            `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}: ${reason}`,
-          );
-        } else selection.push({ part, direction: "invert" });
+        const state = states[i];
+        const originDraft = part.origin.kind === "pending" ? part.origin.draftId : null;
+        const kernelReason =
+          state.state === "undone"
+            ? "already removed"
+            : state.reasons.includes("inaccessible ancestor")
+              ? "paragraph replaced or removed"
+              : state.state !== "active"
+                ? "edited since"
+                : null;
+        const reason =
+          (query.draftId && !draft) || (originDraft && !document.drafts.has(originDraft))
+            ? "discarded"
+            : originDraft && originDraft !== query.draftId
+              ? "in another draft"
+              : inspection.rolledBack(part)
+                ? "rolled back"
+                : kernelReason && part.disposition === "discarded"
+                  ? "discarded"
+                  : kernelReason;
+        if (reason) skipped.push(`part ${part.ordinal + 1}: ${reason}`);
+        else selection.push({ part, direction: "invert" });
       }
       return { selection, skipped };
     }
-    return { view, draft, own, inspect, refusal, revertSelection, version, blocking };
+    return { view, draft, own, inspect, refusal, treePlan, revertSelection, version };
   }
   async function plan(
     document: InverseDocument | undefined,
@@ -208,11 +306,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     const policy = preparedPolicy ?? planner(document, query),
       own = policy.own,
       actionId = randomUUID();
-    if (query.branchId && !policy.draft)
-      return {
-        status: "cant_undo_elsewhere",
-        message: `The draft is unavailable. Read ${document.uri} and make a new replace in your current destination.`,
-      };
     if (policy.draft?.frozen)
       return {
         status: "work_archived",
@@ -220,10 +313,20 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       };
     const scratch = new Y.Doc({ gc: false }),
       history = [...document.history],
-      computed: ComputedInverse = { actionId, edits: [], skipped: [] },
+      simulation = simulateInverse(document, {
+        identity: {
+          threadId: query.threadId,
+          turnId: query.turnId ?? null,
+          responseId: query.responseIdentity?.providerResponseId ?? null,
+          editScopeId: query.responseIdentity?.editScopeId ?? null,
+          actor: "agent",
+        },
+      }),
+      steps: InverseStep[] = [],
       consumes: string[] = [],
       handles: string[] = [],
-      skipped: string[] = [];
+      skipped: string[] = [],
+      treeFacts: string[] = [];
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(policy.view));
     // Until its first advance, scratch is identical to the locked view.
     let inspection: Inspection | undefined = policy.inspect();
@@ -231,31 +334,49 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       if (!inspection)
         inspection = inspectionContext(
           prepareEditRoots(scratch, history),
-          inspectionActions(history, own),
+          inspectionActions(history, simulation.tree, own),
         );
       return inspection;
     };
+    // A draft that outlived the document's live delete still takes its own inverse (D79); live
+    // text meets the removal unless an earlier step of this command restores the document.
+    const removedText = () =>
+      !policy.draft && simulation.liveRemoved() ? removedFile(document.removal) : null;
     try {
+      /**
+       * One step per original edit, in the order the command takes them: an undo's each its own
+       * action, so each can be redone separately; a redo's and a revert's the command's.
+       */
+      const stepAction = (kind: "undo" | "redo" | "revert") =>
+        kind === "undo" && steps.length ? randomUUID() : actionId;
       const apply = (
+        entry: Entry,
         selection: InverseSelection[],
         kind: "undo" | "redo" | "revert",
         consumed: string[],
       ) => {
-        const stepActionId = kind === "undo" && computed.edits.length ? randomUUID() : actionId;
+        const stepActionId = stepAction(kind);
         const result = currentInspection().index.compute(selection, {
           actionId: stepActionId,
           allocateClient: allocateDocumentClient,
         });
         if (result.skipped.length)
           throw new Error("Inverse classification changed within the scratch plan");
+        const at = Math.max(...entry.parts.map((part) => part.id));
         for (const edit of result.edits) {
-          computed.edits.push({ ...edit, actionId: stepActionId });
+          steps.push({
+            kind: "text",
+            edit: { ...edit, actionId: stepActionId },
+            draftId: query.draftId,
+            actionId: stepActionId,
+            at,
+          });
           const id = randomUUID();
           for (const [ordinal, part] of edit.parts.entries()) {
             Y.applyUpdate(scratch, part.update);
             history.push({
               ...part,
-              id: Math.max(0, ...history.map((p) => p.id)) + 1,
+              id: simulation.nextId(),
               editId: id,
               ordinal,
               kind,
@@ -268,28 +389,44 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               editScopeId: query.responseIdentity?.editScopeId ?? null,
               actor: "agent",
               wId: null,
-              origin: query.branchId
+              origin: query.draftId
                 ? {
                     kind: "pending",
-                    branchId: query.branchId,
-                    generation: policy.draft?.branch.generation ?? 0,
+                    draftId: query.draftId,
                     rowId: 0,
                   }
                 : { kind: "live", seq: 0 },
-              placement: query.branchId
-                ? {
-                    kind: "pending",
-                    branchId: query.branchId,
-                    generation: policy.draft?.branch.generation ?? 0,
-                    rowId: 0,
-                  }
-                : { kind: "live", seq: 0 },
+              disposition: "pending",
             });
           }
         }
         // Neither lineage visibility nor action state survives a scratch advance.
         inspection = undefined;
       };
+      const applyTree = (
+        planned: PlannedTreeInverse,
+        handle: string,
+        kind: "undo" | "redo" | "revert",
+        consumed: string[],
+      ) => {
+        const stepActionId = stepAction(kind);
+        steps.push({ kind: "tree", planned, actionId: stepActionId, at: planned.entry.id });
+        treeFacts.push(`${handle}: ${treeInverseFact(planned)}`);
+        simulation.recordTree(planned, { kind, actionId: stepActionId, consumes: consumed });
+        inspection = undefined;
+      };
+      const treePlan = (
+        entry: Entry & { tree: TransitionEntry },
+        direction: "undo" | "redo" | "revert",
+      ) =>
+        policy.treePlan(
+          entry,
+          direction,
+          simulation.tree,
+          simulation.states,
+          currentInspection().actions.rolledBack,
+          simulation.nextStep,
+        );
       if (command.command === "revert") {
         const entry = own.find((entry) => entry.handle === command.edit);
         if (!entry)
@@ -297,15 +434,30 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             status: "invalid_write",
             message: `Unknown edit ${command.edit} in ${document.uri}. Read with format: "edits" for a valid handle.`,
           };
-        const selection = policy.revertSelection(entry);
-        skipped.push(...selection.skipped);
-        handles.push(entry.handle);
-        if (!selection.selection.length)
-          return {
-            status: "nothing_to_revert",
-            message: `Nothing of ${entry.handle} is left as you wrote it. ${skipped.join("\n")} Read ${document.uri} and make a new replace.`,
-          };
-        apply(selection.selection, "revert", []);
+        if (entry.tree) {
+          const planned = treePlan({ ...entry, tree: entry.tree }, "revert");
+          if ("status" in planned)
+            return planned.status === "cant_undo_changed"
+              ? {
+                  status: "nothing_to_revert",
+                  message: `reverted: ${entry.handle} (0 of 1 changes)\nnot reverted: ${planned.message}`,
+                }
+              : planned;
+          handles.push(entry.handle);
+          applyTree(planned, entry.handle, "revert", []);
+        } else {
+          const removed = removedText();
+          if (removed) return removed;
+          const selection = policy.revertSelection(entry);
+          skipped.push(...selection.skipped);
+          handles.push(entry.handle);
+          if (!selection.selection.length)
+            return {
+              status: "nothing_to_revert",
+              message: `reverted: ${entry.handle} (0 of ${skipped.length} parts)\nnot reverted: ${skipped.join("\nnot reverted: ")}\nRead ${document.uri} for current text.`,
+            };
+          apply(entry, selection.selection, "revert", []);
+        }
       } else
         for (let n = 0; n < (command.count ?? 1); n++) {
           if (command.command === "undo") {
@@ -320,6 +472,15 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 status: "nothing_to_undo",
                 message: `You have no edits to undo in ${document.uri}. Read it and make a new replace if needed.`,
               };
+            if (entry.tree) {
+              const planned = treePlan({ ...entry, tree: entry.tree }, "undo");
+              if ("status" in planned) return planned;
+              handles.push(entry.handle);
+              applyTree(planned, entry.handle, "undo", []);
+              continue;
+            }
+            const removed = removedText();
+            if (removed) return removed;
             const current = currentInspection();
             current.states(entry.parts);
             for (const part of entry.parts) {
@@ -328,6 +489,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             }
             handles.push(entry.handle);
             apply(
+              entry,
               [...entry.parts]
                 .sort((a, b) => b.id - a.id)
                 .map((part) => ({ part, direction: "invert" })),
@@ -347,9 +509,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 message: `Nothing of yours to redo in ${document.uri}. A new edit clears redo here. Read it and make a new replace if needed.`,
               };
             const targets = own.flatMap((entry) =>
-              entry.parts
-                .filter((part) => action.targets.has(key(part)))
-                .map((part) => ({ part, handle: entry.handle })),
+              entryKeys(entry)
+                .filter((k) => action.targets.has(k))
+                .map(() => ({ handle: entry.handle })),
             );
             if (
               action.parts.some(
@@ -367,22 +529,35 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 ...entry,
                 parts: entry.parts.filter((part) => action.targets.has(key(part))),
               }))
-              .filter((entry) => entry.parts.length)
+              .filter(
+                (entry) =>
+                  entry.parts.length ||
+                  (entry.tree && action.targets.has(treeKey(entry.tree.editId))),
+              )
               .sort(
                 (a, b) =>
-                  Math.min(...a.parts.map((part) => part.id)) -
-                  Math.min(...b.parts.map((part) => part.id)),
+                  Math.min(...entryRows(a).map((row) => row.id)) -
+                  Math.min(...entryRows(b).map((row) => row.id)),
               );
             for (const entry of restoring) {
+              if (entry.tree) {
+                const planned = treePlan({ ...entry, tree: entry.tree }, "redo");
+                if ("status" in planned) return planned;
+                applyTree(planned, entry.handle, "redo", [action.id]);
+                continue;
+              }
+              const removed = removedText();
+              if (removed) return removed;
               const current = currentInspection();
               current.states(entry.parts);
               for (const original of entry.parts) {
-                const inverse = action.parts.find((part) =>
-                  part.targets.some((t) => key(t) === key(original)),
+                const inverse = action.parts.find(
+                  (part): part is StoredInversePart =>
+                    !("tree" in part) && part.targets.some((t) => key(t) === key(original)),
                 );
                 if (!inverse) throw new Error("Undo action has no inverse for its target");
                 const refused = policy.refusal(
-                  { ...original, origin: inverse.origin, placement: inverse.placement },
+                  { ...original, origin: inverse.origin, disposition: inverse.disposition },
                   entry.handle,
                   "redo",
                   current,
@@ -390,6 +565,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 if (refused) return refused;
               }
               apply(
+                entry,
                 entry.parts.map((part) => ({ part, direction: "reapply" })),
                 "redo",
                 [action.id],
@@ -399,55 +575,62 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             consumes.push(action.id);
           }
         }
-      if (!computed.edits.length)
+      if (!steps.length)
         return {
           status: "nothing_to_revert",
           message: `Nothing is left to reverse in ${document.uri}. Read it and make a new replace.`,
         };
-      const before = Y.encodeStateAsUpdate(policy.view),
-        after = Y.encodeStateAsUpdate(scratch);
-      const writeHandles = preview
-        ? []
+      const text = steps.flatMap((step) => (step.kind === "text" ? [step.edit] : []));
+      const reversesTree = steps.some((step) => step.kind === "tree");
+      // An inverse that changed no text (a move's or delete's) has no text echo. The cuts are
+      // taken before the commit, which applies the inverse to the view.
+      const cuts = text.length
+        ? { before: Y.encodeStateAsUpdate(policy.view), after: Y.encodeStateAsUpdate(scratch) }
+        : {};
+      const plan = { document, steps, consumes, skips: [] };
+      const committed = preview
+        ? { handles: [], updates: [] }
         : await store.commit({
             query,
             kind: command.command,
-            plans: [
-              {
-                document,
-                branchId: query.branchId,
-                computed,
-                consumes,
-                skips: [],
-                heldDraftIds: [],
-              },
-            ],
+            plans: [plan],
+            sequence: steps.map((step) => ({ plan, step })),
           });
-      const parts = computed.edits.reduce((n, edit) => n + edit.parts.length, 0);
+      const parts = text.reduce((n, edit) => n + edit.parts.length, 0);
       return {
         status: "success",
         actionId,
-        before,
-        after,
-        ...(command.command === "revert" ? { writeId: writeHandles[0] } : {}),
-        message:
-          command.command === "revert"
+        room: query.draftId ? draftRoom(query.draftId) : document.liveRoom,
+        ...cuts,
+        updates: committed.updates,
+        ...(command.command === "revert" ? { writeId: committed.handles[0] } : {}),
+        message: [
+          command.command === "revert" && !reversesTree
             ? `reverted: ${handles[0]} (${parts} of ${parts + skipped.length} parts)${skipped.map((reason) => `\nnot reverted: ${reason}`).join("")}`
-            : `${command.command === "undo" ? "undone" : "redone"}: ${handles.join(", ")}`,
+            : `${command.command === "undo" ? "undone" : command.command === "redo" ? "redone" : "reverted"}: ${handles.join(", ")}`,
+          ...treeFacts,
+        ].join("\n"),
       };
     } finally {
-      try {
-        if (!preview) await store.markBlocking([...policy.blocking]);
-      } finally {
-        scratch.destroy();
-      }
+      scratch.destroy();
     }
   }
   return {
-    modelInverse(query: Query, command: ModelInverseCommand): Promise<DocumentEditResult> {
-      return store.withLockedDocuments(query, (documents) => plan(documents[0], query, command));
+    async modelInverse(query: Query, command: ModelInverseCommand): Promise<DocumentEditResult> {
+      try {
+        return await store.withCapturedDocuments(query, (documents) =>
+          plan(documents[0], query, command),
+        );
+      } catch (cause) {
+        // Every attempt missed while the edit still applied: retryable, not a refusal.
+        if (cause instanceof ReversalConflictError)
+          return { status: "internal_error", message: cause.message };
+        if (cause instanceof TreeInverseRefused) return treeRefusal(cause);
+        throw cause;
+      }
     },
     async modelEdits(query: Query, before?: string): Promise<DocumentEditResult> {
-      return store.withLockedDocuments(query, async (documents) => {
+      return store.withCapturedDocuments(query, async (documents) => {
         const document = documents[0];
         if (!document)
           return {
@@ -479,8 +662,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           : null;
         const displayInspection = (part: StoredInversePart) =>
           policy.inspect(
-            part.placement.kind === "pending"
-              ? (document.drafts.get(part.placement.branchId)?.doc ?? policy.view)
+            part.origin.kind === "pending"
+              ? (document.drafts.get(part.origin.draftId)?.doc ?? policy.view)
               : document.live,
           );
         const displayParts = new Map<Inspection, StoredInversePart[]>();
@@ -492,10 +675,55 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             displayParts.set(context, parts);
           }
         for (const [context, parts] of displayParts) context.states(parts);
-        // Revert and Undo are evaluated in the current destination, not the displayed placement.
+        // Revert and Undo are evaluated in the current destination, not the historical view.
         inspection.states(page.flatMap((entry) => entry.parts));
         const index = inspection.actions;
+        const turn = (turnId: string | null) =>
+          turnId === query.turnId ? "this turn" : "earlier turn";
+        const treeLine = (entry: Entry & { tree: TransitionEntry }) => {
+          const k = treeKey(entry.tree.editId);
+          const latest = latestTransition(entry.tree, document.tree, index.rolledBack);
+          const settled = settlementOf(entry.tree, document.tree);
+          const state = index.rolledBack.has(k)
+            ? "rolled back"
+            : index.byPart.has(k)
+              ? "undone"
+              : (settled ??
+                (!latest.stands
+                  ? "undone"
+                  : planTreeInverse(entry.tree, "invert", latest.row, document.treeStates, 0)
+                    ? entry.tree.tree.destination.kind === "draft"
+                      ? "pending"
+                      : "live"
+                    : "changed"));
+          const reversal = (direction: "undo" | "revert") =>
+            policy.treePlan(
+              entry,
+              direction,
+              document.tree,
+              document.treeStates,
+              index.rolledBack,
+              () => 0,
+            );
+          let command = "status" in reversal("revert") ? "none" : "revert";
+          if (entry.id === topEntry?.id) {
+            const undo = reversal("undo");
+            command =
+              "status" in undo
+                ? `undo: no (${undo.status.replace("cant_undo_", "")})${command === "revert" ? "; revert" : ""}`
+                : "undo";
+          } else if (
+            action?.targets.has(k) &&
+            action.parts.every(
+              (part) => part.actor === "agent" && part.threadId === query.threadId,
+            ) &&
+            redo?.status === "success"
+          )
+            command = "redo";
+          return `${entry.handle}  ${turn(entry.tree.turnId)}  ${state}  ${treeEntrySummary(entry.tree)}  ${command}`;
+        };
         const lines = page.map((entry) => {
+          if (entry.tree) return treeLine({ ...entry, tree: entry.tree });
           const undos = index.actions.filter((action) =>
             entry.parts.some((part) => action.targets.has(key(part))),
           );
@@ -504,7 +732,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
 
           const states = entry.parts.map((part) => displayInspection(part).states([part])[0]),
             applied = entry.parts.filter(
-              (part) => part.origin.kind === "pending" && part.placement.kind === "live",
+              (part) => part.origin.kind === "pending" && part.disposition === "applied",
             ).length;
           const state = entry.parts.every((part) => inspection.rolledBack(part))
             ? "rolled back"
@@ -520,13 +748,13 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 ? applied === entry.parts.length
                   ? "applied"
                   : `partly applied (${applied} of ${entry.parts.length})`
-                : entry.parts.every((part) => !eligible(part))
+                : entry.parts.every((part) => part.disposition === "discarded")
                   ? "discarded"
                   : states.every((state) => state.state === "undone")
                     ? "undone"
                     : states.some((state) => state.state === "changed")
                       ? "changed"
-                      : entry.parts.some((part) => part.placement.kind === "pending")
+                      : entry.parts.some((part) => part.origin.kind === "pending")
                         ? "pending"
                         : "live";
           let command = "none";
@@ -562,8 +790,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         return {
           status: "success",
           actionId: randomUUID(),
+          room: null,
           message: [
-            `your edits to ${document.uri}, newest first (version: ${policy.version(query.branchId)})`,
+            `your edits to ${document.uri}, newest first (version: ${policy.version(query.draftId)})`,
             ...lines,
             ...(older.length > 20 ? [`more: before ${page.at(-1)?.handle}`] : []),
           ].join("\n"),

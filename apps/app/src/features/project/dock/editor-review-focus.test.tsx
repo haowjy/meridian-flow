@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** A review opened on given operations focuses their change once, after the requested review paints. */
+/** A review opened on given group ids focuses their change once, after the requested review paints. */
 
 import { act, useEffect, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
 } from "@/features/draft-review/DraftReviewProvider";
+import type { ReviewFrame } from "@/features/draft-review/review-frame";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ReviewAddressOwner } from "../ReviewAddressOwner";
@@ -17,11 +18,11 @@ import {
   useOpenEditorReview,
 } from "./editor-review-handoff";
 
-type Open = { documentId: string; draftId: string; shown: boolean } | null;
+type Open = { documentId: string; itemKey: string; shown: boolean } | null;
 type Model = {
   inline: Open;
   preview: { status: "active" | "gone" } | null;
-  changes: { classId: string; operationIds: string[]; anchorOperationId: string }[];
+  changes: { id: string; frame: ReviewFrame | null }[];
 };
 
 // The preview read is the one boundary that needs a query client; the claimant
@@ -31,14 +32,14 @@ vi.mock("@/features/draft-review/useOpenReviewChanges", () => ({ useOpenReviewCh
 const target: AiDraftLaunchTarget = {
   workId: "work-1",
   documentId: "doc-1",
-  draftId: "draft-1",
+  itemKey: "draft-1",
   contextLocation: { scheme: "manuscript", path: "chapters/one.md" },
-  focusOperationIds: ["op-2"],
+  focus: { id: "g2", frame: null },
 };
-const other = { documentId: "doc-0", draftId: "draft-0" };
+const other = { documentId: "doc-0", itemKey: "draft-0" };
 const changes = [
-  { classId: "c1", operationIds: ["op-1"], anchorOperationId: "op-1" },
-  { classId: "c2", operationIds: ["op-2", "op-3"], anchorOperationId: "op-2" },
+  { id: "g1", frame: null },
+  { id: "g2", frame: null },
 ];
 
 function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = false) {
@@ -74,8 +75,12 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
     const [mounted, setMounted] = useState(!delayedAdmission);
     const [addressed, setAddressed] = useState(false);
     vi.mocked(useOpenReviewChanges).mockReturnValue({
-      preview: state.preview,
-      active: state.preview?.status === "active" ? state.preview : null,
+      status:
+        state.preview?.status === "active"
+          ? "ready"
+          : state.preview?.status === "gone"
+            ? "gone"
+            : "loading",
       changes: state.changes,
     } as unknown as ReturnType<typeof useOpenReviewChanges>);
     fixture.update = (next) => setState((previous) => ({ ...previous, ...next }));
@@ -86,7 +91,7 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
         documentId: target.documentId,
         documentName: "One",
         contextLocation: target.contextLocation,
-        draft: { draftId: target.draftId },
+        draft: { itemKey: target.itemKey },
       },
     ];
     const review = {
@@ -108,6 +113,7 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
         <CommandCapture />
         {delayedAdmission && (
           <ReviewAddressOwner
+            admission="admitted"
             review={review}
             presented={{
               container: "editor",
@@ -115,16 +121,19 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
               scheme: "manuscript",
               path: target.contextLocation.path,
               draftOnly: false,
-              review: (addressed ? target.draftId : undefined)
+              review: (addressed ? target.itemKey : undefined)
                 ? {
                     workId: review.controller.workId,
-                    draftId: (addressed ? target.draftId : undefined)!,
+                    itemKey: (addressed ? target.itemKey : undefined)!,
                   }
                 : null,
             }}
             port={{
-              write: (address) => vi.fn()(address?.draftId ?? null),
-              admit: (target) => fixture.openReview?.(target),
+              write: (address) => vi.fn()(address?.itemKey ?? null),
+              admit: async (target) => {
+                await fixture.openReview?.(target);
+                return true;
+              },
             }}
           />
         )}
@@ -151,9 +160,9 @@ async function launch(
   });
 }
 
-const requested = { documentId: target.documentId, draftId: target.draftId };
+const requested = { documentId: target.documentId, itemKey: target.itemKey };
 
-describe("opening a review on given operations", () => {
+describe("opening a review on given group ids", () => {
   it("focuses the change once the requested review has painted and loaded", async () => {
     await launch(target, {}, async ({ enterInlineReview, focusReviewChange, update }) => {
       expect(enterInlineReview).toHaveBeenCalledWith("doc-1", "draft-1");
@@ -181,9 +190,9 @@ describe("opening a review on given operations", () => {
     );
   });
 
-  it("opens at the top when none of the operations is in the review any more", async () => {
+  it("opens at the top when a new projection reuses the requested group id", async () => {
     await launch(
-      { ...target, focusOperationIds: ["op-gone"] },
+      { ...target, focus: { id: "g2", frame: { diff: {} } as ReviewFrame } },
       { inline: { ...requested, shown: true }, preview: { status: "active" }, changes },
       async ({ enterInlineReview, focusReviewChange, update }) => {
         expect(enterInlineReview).toHaveBeenCalledOnce();
@@ -219,9 +228,9 @@ describe("opening a review on given operations", () => {
     });
   });
 
-  it("does not focus a launch that names no operation", async () => {
+  it("does not focus a launch that names no group", async () => {
     await launch(
-      { ...target, focusOperationIds: undefined },
+      { ...target, focus: undefined },
       { inline: { ...requested, shown: true }, preview: { status: "active" }, changes },
       async ({ focusReviewChange }) => expect(focusReviewChange).not.toHaveBeenCalled(),
     );
@@ -238,8 +247,8 @@ describe("a launch whose route settles before the Editor mounts the document", (
   it("focuses the change it named once the Editor has the document", async () => {
     const fixture = createLaunchFixture({}, true);
     const { enterInlineReview, focusReviewChange, route } = fixture.controls;
-    enterInlineReview.mockImplementation((documentId: string, draftId: string) =>
-      fixture.controls.update({ inline: { documentId, draftId, shown: false } }),
+    enterInlineReview.mockImplementation((documentId: string, itemKey: string) =>
+      fixture.controls.update({ inline: { documentId, itemKey, shown: false } }),
     );
     await withReactRoot(<fixture.Harness />, async () => {
       await act(async () => {

@@ -1,10 +1,11 @@
 /**
  * The one server read path (D18): the `read` tool, a copy's source read and
- * reference loading all call `readDocument`; nothing builds tool arguments to
- * reach it.
+ * reference loading all call `readDocument`. Tool and reference reads share
+ * the tracked-document adapter; private copy-source reads supply their own grant.
  */
 import type {
   DocumentVersion,
+  FrontierLookup,
   ReadToolInput,
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
@@ -30,6 +31,11 @@ export async function readDocument(
     version?: DocumentVersion;
     /** A copy's source read also returns the selected blocks as nodes. */
     includeNodes?: boolean;
+    /**
+     * A read whose text goes to the model records its frontier, chained from
+     * this lookup; a copy's private source read passes none.
+     */
+    recordingFrontier?: FrontierLookup;
   },
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity" | "toolCallId">,
 ): Promise<WriteOutcome> {
@@ -47,6 +53,7 @@ export async function readDocument(
       grant,
       ...(options.version === "live" ? { liveVersion: true } : {}),
       ...(options.includeNodes ? { includeNodes: true } : {}),
+      ...(options.recordingFrontier ? { frontiers: { recording: options.recordingFrontier } } : {}),
       ...(ctx.responseIdentity?.editScopeId ? { responseIdentity: ctx.responseIdentity } : {}),
       ...(ctx.toolCallId ? { tool_use_id: ctx.toolCallId } : {}),
     },

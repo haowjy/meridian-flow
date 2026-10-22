@@ -16,7 +16,7 @@ import { createInMemoryEventSink } from "../../domains/observability/index.js";
 import { createYjsRoomAccessIndex } from "../yjs-room-access.js";
 import { clientSchemaVersionFromRequest, createHocuspocus } from "../yjs-ws-handler.js";
 
-const branchRoomName = "branch:branch_1:gen:3";
+const draftRoomName = "draft:draft_1";
 const liveDocumentName = "00000000-0000-4000-8000-000000000101";
 const userId = "00000000-0000-4000-8000-000000000102";
 const version = (major: number, minor: number, patch = 0): CollabSchemaVersion => ({
@@ -31,35 +31,34 @@ const OTHER_MAJOR_HEAD = version(COLLAB_SCHEMA_VERSION.major + 1, 0);
 function versionGateServices(
   input: {
     liveHead?: CollabSchemaVersion | null;
-    branchHead?: CollabSchemaVersion;
+    draftHead?: CollabSchemaVersion;
     liveGeneration?: bigint;
   } = {},
 ) {
   const documentSync = {
+    roomRemoval: vi.fn(async () => null),
+    repairDocumentAuthority: vi.fn(async () => {}),
     bindHocuspocus: vi.fn(),
     headSchemaVersion: vi.fn(async () => (input.liveHead === undefined ? null : input.liveHead)),
-    resolveBranchHocuspocusRoom: vi.fn(async (branchId: string, generation: number) => ({
-      branchId,
+    resolveDraftHocuspocusRoom: vi.fn(async (draftId: string, generation: number) => ({
+      draftId,
       documentId: liveDocumentName,
       workId: "00000000-0000-4000-8000-000000000107",
       generation,
-      schemaVersion: input.branchHead ?? COLLAB_SCHEMA_VERSION,
+      schemaVersion: input.draftHead ?? COLLAB_SCHEMA_VERSION,
       status: "active" as const,
     })),
-    resolveManifestMembership: vi.fn(async () => ({
-      documentId: liveDocumentName,
-      members: [liveDocumentName],
-    })),
-    reconcileProjectManifest: vi.fn(async () => undefined),
     validateHocuspocusDocument: vi.fn(async () => {}),
     currentLiveGeneration: vi.fn(async () => input.liveGeneration ?? 1n),
     admitLiveWriterUpdate: vi.fn(async () => ({
       admitted: true as const,
-      joinedSettlement: false,
     })),
-    flushBranchLivePull: vi.fn(async () => undefined),
+    flushDraftLivePull: vi.fn(async () => undefined),
   };
   return {
+    liveDocuments: {
+      findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
+    },
     fileAccess: createAllowAllFileAccess(),
     fileAccessChanges: createLocalFileAccessChanges(),
     documentSync,
@@ -227,9 +226,9 @@ describe("Yjs connect-time schema version gate", () => {
     expect(services.documentSync.admitLiveWriterUpdate).not.toHaveBeenCalled();
   });
 
-  it("gates branch rooms at the same strict monotonic edge", async () => {
+  it("gates draft rooms at the same strict monotonic edge", async () => {
     const hocuspocus = createHocuspocus(
-      versionGateServices({ branchHead: COLLAB_SCHEMA_VERSION }) as never,
+      versionGateServices({ draftHead: COLLAB_SCHEMA_VERSION }) as never,
       createYjsRoomAccessIndex(),
     );
     const staleClientContext = connectContext(SENTINEL_SCHEMA_VERSION);
@@ -237,7 +236,7 @@ describe("Yjs connect-time schema version gate", () => {
     await expect(
       hocuspocus.configuration.onConnect?.({
         connectionConfig: connectionConfig(),
-        documentName: branchRoomName,
+        documentName: draftRoomName,
         context: staleClientContext,
       } as never),
     ).rejects.toMatchObject({ code: 4406, reason: "client-schema-superseded" });
@@ -248,21 +247,21 @@ describe("Yjs connect-time schema version gate", () => {
     await expect(
       hocuspocus.configuration.onConnect?.({
         connectionConfig: connectionConfig(),
-        documentName: branchRoomName,
+        documentName: draftRoomName,
         context: connectContext(COLLAB_SCHEMA_VERSION),
       } as never),
     ).resolves.toBeUndefined();
   });
 
-  it("refuses major-mismatched live and branch heads per connection", async () => {
+  it("refuses major-mismatched live and draft heads per connection", async () => {
     const majorMismatchHead = OTHER_MAJOR_HEAD;
     const services = versionGateServices({
       liveHead: majorMismatchHead,
-      branchHead: majorMismatchHead,
+      draftHead: majorMismatchHead,
     });
     const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
 
-    for (const room of [liveDocumentName, branchRoomName]) {
+    for (const room of [liveDocumentName, draftRoomName]) {
       const context = connectContext(COLLAB_SCHEMA_VERSION);
       await expect(
         hocuspocus.configuration.onConnect?.({
@@ -298,35 +297,16 @@ describe("Yjs connect-time schema version gate", () => {
     });
   });
 
-  it("maps a stale manifest dependency to the same typed close", async () => {
-    const services = versionGateServices({ liveHead: COLLAB_SCHEMA_VERSION });
-    services.documentSync.resolveManifestMembership.mockRejectedValue(staleSchemaError());
-    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
-    const context = connectContext(COLLAB_SCHEMA_VERSION);
-
-    await expect(
-      hocuspocus.configuration.onConnect?.({
-        connectionConfig: connectionConfig(),
-        documentName: liveDocumentName,
-        context,
-      } as never),
-    ).rejects.toMatchObject({ code: 4407, reason: "document-schema-stale" });
-    expect(context.closeTransport).toHaveBeenCalledWith({
-      code: 4407,
-      reason: "document-schema-stale",
-    });
-  });
-
   it.each([
     ["live", liveDocumentName],
-    ["branch", branchRoomName],
+    ["draft", draftRoomName],
   ])("keeps the typed stale-head close on the %s document-load guard", async (_kind, room) => {
     const services = versionGateServices({ liveHead: null });
     Object.assign(services.documentSync, {
       loadHocuspocusDocument: vi.fn(async () => {
         throw staleSchemaError();
       }),
-      loadHocuspocusBranchState: vi.fn(async () => {
+      loadHocuspocusDraftState: vi.fn(async () => {
         throw staleSchemaError();
       }),
     });

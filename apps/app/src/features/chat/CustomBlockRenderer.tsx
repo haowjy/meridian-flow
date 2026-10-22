@@ -13,11 +13,11 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Block, TurnStatus } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
+import type { DirectInvocationResult } from "@meridian/thread-client";
+import { componentBlockContent } from "@meridian/thread-client";
 import { useThreadStore } from "@/client/stores";
 import { interruptResponseKey } from "@/core/session/interrupt-response";
-import { componentBlockContent } from "./component-block-content";
 import { COMPONENT_REGISTRY } from "./component-registry";
-import type { DirectInvocationResult } from "./invocation-direct-result";
 
 export type InterruptRespondRequest = {
   threadId: string;

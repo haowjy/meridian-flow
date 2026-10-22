@@ -1,6 +1,8 @@
 /** Real catalog/Work-authority integration for canonical document-link navigation. */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
+  branches,
+  branchTreeChanges,
   contextSources,
   documents,
   linkAheadRefs,
@@ -16,10 +18,12 @@ import {
   type DocumentLinkRouteDeps,
   handleDocumentLinkResolveRequest,
 } from "../../lib/document-link-route.js";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import { createLinkScopeObserver } from "../collab/index.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../projects/index.js";
+import { createDrizzleChatUploadsOwners } from "./adapters/chat-uploads-owners.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
@@ -54,14 +58,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           createdByUserId: u,
           name: "No Work",
-          slug: null,
+          handle: null,
           isNoWork: true,
         },
-        { id: a, projectId: p, createdByUserId: u, name: "A", slug: "work-a" },
-        { id: b, projectId: p, createdByUserId: u, name: "B", slug: "work-b" },
+        { id: a, projectId: p, createdByUserId: u, name: "A", handle: "w2" },
+        { id: b, projectId: p, createdByUserId: u, name: "B", handle: "w3" },
       ]);
     });
-    it("reads No Work's manifest when its lineage root has rebound to another Work", async () => {
+    it("views No Work's branch when its lineage root has rebound to another Work", async () => {
       const db = database.current;
       const root = crypto.randomUUID();
       const fork = crypto.randomUUID();
@@ -74,8 +78,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { threadId: fork, projectId: p, workId: noWork, isPrimary: true },
       ]);
       const source = crypto.randomUUID();
-      const namedOnly = crypto.randomUUID();
-      const noWorkOnly = crypto.randomUUID();
+      const chapter = crypto.randomUUID();
       await db.insert(contextSources).values({
         id: source,
         projectId: p,
@@ -83,54 +86,44 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "manuscript",
         name: "Manuscript",
       });
-      await db.insert(documents).values([
-        { id: namedOnly, contextSourceId: source, name: "named", extension: "" },
-        { id: noWorkOnly, contextSourceId: source, name: "no-work", extension: "" },
-      ]);
-      const { createHarness } = await import(
-        "../collab/test-support/change-trail-postgres-harness.js"
-      );
-      const { createTestDocumentLinkScopes } = await import(
-        "../collab/test-support/document-link-scopes.js"
-      );
-      const harness = createHarness(db, { links: createTestDocumentLinkScopes(db) });
-      try {
-        const branches = harness.crossWorkProbeFixture().branchStore;
-        await branches.recordManifestDocumentCreated(namedOnly, { projectId: p, workId: a });
-        await branches.recordManifestDocumentCreated(noWorkOnly, { projectId: p, workId: noWork });
-        const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
-          listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
-        };
-        const deps: DocumentLinkRouteDeps = {
-          projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
-          documentLinks: resolver(),
+      await db
+        .insert(documents)
+        .values({ id: chapter, contextSourceId: source, name: "chapter", extension: "" });
+      const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
+        listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
+      };
+      const viewed: (string | null)[] = [];
+      const deps: DocumentLinkRouteDeps = {
+        projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
+        documentLinks: resolver(),
+        fileAccess,
+        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+        linkScopes: createDrizzleDocumentLinkScopes({
+          db,
           fileAccess,
-          workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-          linkScopes: createDrizzleDocumentLinkScopes({
-            db,
-            fileAccess,
-            membership: (view) => branches.resolveManifestMembership(view),
-            observer: createLinkScopeObserver(createNoopEventSink()),
-          }),
-        };
-        const links = [
-          { ref: `doc:${namedOnly}`, href: "manuscript://named" },
-          { ref: `doc:${noWorkOnly}`, href: "manuscript://no-work" },
-        ];
-        for (const baseUri of [null, "scratch://@/c1/holder"]) {
-          const response = await handleDocumentLinkResolveRequest(deps, {
-            projectId: p,
-            userId: u as never,
-            request: { rootThreadId: root, baseUri, links },
-          });
-          expect(response.answers).toMatchObject([
-            { state: "gone" },
-            { state: "document", document: { id: noWorkOnly }, inDraft: true },
-          ]);
-        }
-      } finally {
-        harness.cancelScheduledPulls();
-        harness.destroyWarmState();
+          observer: createLinkScopeObserver(createNoopEventSink()),
+        }),
+        branches: {
+          viewForWork: async (workId) => {
+            viewed.push(workId);
+            return { kind: "live" };
+          },
+        },
+      };
+      for (const baseUri of [null, "scratch://@c1/holder"]) {
+        viewed.length = 0;
+        const response = await handleDocumentLinkResolveRequest(deps, {
+          projectId: p,
+          userId: u as never,
+          request: {
+            rootThreadId: root,
+            baseUri,
+            links: [{ ref: `doc:${chapter}`, href: "manuscript://chapter" }],
+          },
+        });
+        expect(response.answers).toMatchObject([{ state: "document", document: { id: chapter } }]);
+        // The lineage owns Scratch, not the branch: links read No Work's branch view.
+        expect(viewed).toEqual([noWork]);
       }
     });
     function resolver() {
@@ -139,9 +132,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalog: createDrizzleContextCatalog(db),
         history: createDrizzleDocumentLinkHistory(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+        chats: createDrizzleChatUploadsOwners(db),
       });
     }
-    async function add(scheme: string, name: string, workId: string | null = null) {
+    async function add(
+      scheme: string,
+      name: string,
+      workId: string | null = null,
+      chatThreadId: string | null = null,
+    ) {
       const db = database.current;
       const sourceId = crypto.randomUUID();
       const documentId = crypto.randomUUID();
@@ -149,9 +148,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: sourceId,
         slug: scheme,
         name: scheme,
-        scope: workId ? "work" : "project",
+        scope: chatThreadId ? "chat" : workId ? "work" : "project",
         projectId: workId ? null : scheme === "user" ? personal : p,
         workId,
+        chatThreadId,
       });
       await db
         .insert(documents)
@@ -165,9 +165,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ["kb", null, ""],
         ["unfiled", null, ""],
         ["user", null, ""],
-        ["scratch", b, "@work-b/"],
-        ["uploads", b, "@work-b/"],
-        ["uploads", noWork, "@/"],
+        ["scratch", b, "@w3/"],
       ] as const) {
         const id = await add(scheme, "Gate", workId);
         const uri = `${scheme}://${qualifier}Gate`;
@@ -179,6 +177,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           workId,
         });
       }
+      // An upload belongs to the chat that received it, spelled by that chat's handle.
+      const chatId = crypto.randomUUID();
+      await database.current.insert(threads).values({
+        id: chatId,
+        projectId: p,
+        rootThreadId: chatId,
+        createdByUserId: u,
+        ref: "c9",
+      });
+      const upload = await add("uploads", "Gate", null, chatId);
+      const resolveUpload = (uri: string, chat?: string) =>
+        r.resolve({
+          projectId: p,
+          userId: u,
+          workId: a,
+          ...(chat ? { chatId: chat } : {}),
+          target: { kind: "scheme", uri },
+        });
+      expect(await resolveUpload("uploads://@c9/Gate")).toMatchObject({
+        documentId: upload,
+        uri: "uploads://@c9/Gate",
+        chatThreadId: chatId,
+      });
+      // A bare name means the holder chat's file; a document holder has no chat, so it names nothing.
+      expect(await resolveUpload("uploads://Gate", chatId)).toMatchObject({ documentId: upload });
+      expect(await resolveUpload("uploads://Gate")).toBeNull();
+      // A Work owns no uploads.
+      expect(await resolveUpload("uploads://@w3/Gate")).toBeNull();
     });
     it("canonicalizes prose aliases before exact-first non-prose omission", async () => {
       const r = resolver();
@@ -242,7 +268,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://@work-b/Gate" },
+          target: { kind: "scheme", uri: "scratch://@w3/Gate" },
         }),
       ).toMatchObject({ scheme: "scratch", path: "Gate" });
       await database.current.update(works).set({ deletedAt: new Date() }).where(eq(works.id, b));
@@ -251,12 +277,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://@work-b/Gate" },
+          target: { kind: "scheme", uri: "scratch://@w3/Gate" },
         }),
       ).toBeNull();
       await database.current
         .update(documents)
-        .set({ deletedAt: new Date() })
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
         .where(eq(documents.id, local));
       expect(
         await r.resolve({
@@ -272,7 +298,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const targetId = await add("manuscript", "old");
       const [target] = await db.select().from(documents).where(eq(documents.id, targetId));
       if (!target) throw new Error("target fixture missing");
-      const tree = new DrizzleContextTreeMutationStore(db);
+      const tree = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+      });
       const source = await tree.inspect(target.contextSourceId, "old");
       if (source?.kind !== "file") throw new Error("source fixture missing");
       expect(
@@ -298,6 +326,38 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         uri: "manuscript://new",
       });
       expect(await r.resolve(input)).toBeNull();
+      const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
+        listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
+      };
+      const deps: DocumentLinkRouteDeps = {
+        projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
+        documentLinks: r,
+        fileAccess,
+        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+        linkScopes: createDrizzleDocumentLinkScopes({
+          db,
+          fileAccess,
+          observer: createLinkScopeObserver(createNoopEventSink()),
+        }),
+        branches: { viewForWork: async () => ({ kind: "live" }) },
+      };
+      const routeResolve = (holderDocumentId?: string) =>
+        handleDocumentLinkResolveRequest(deps, {
+          projectId: p,
+          userId: u as never,
+          request: {
+            baseUri: null,
+            ...(holderDocumentId ? { holderDocumentId } : {}),
+            links: [{ ref: null, href: "manuscript://old" }],
+          },
+        });
+      expect((await routeResolve()).answers).toMatchObject([
+        { state: "document", document: { id: targetId } },
+      ]);
+      expect((await routeResolve(crypto.randomUUID())).answers).toEqual([
+        { state: "missing", uri: "manuscript://old" },
+      ]);
+
       const occupant = crypto.randomUUID();
       await db.insert(documents).values({
         id: occupant,
@@ -309,7 +369,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await r.resolve(input)).toMatchObject({ documentId: occupant });
     });
 
-    it("transports the prepared owners of a mixed catalog without resolving Work slugs again", async () => {
+    it("transports the prepared owners of a mixed catalog without resolving Work handles again", async () => {
       const db = database.current;
       const root = crypto.randomUUID();
       await db.insert(threads).values({
@@ -336,9 +396,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "",
       });
       const rows = [
-        { id: note, uri: "scratch://@/c1/note", workId: null, rootThreadId: root },
-        { id: await add("scratch", "named", b), uri: "scratch://@work-b/named", workId: b },
-        { id: await add("uploads", "seal", noWork), uri: "uploads://@/seal", workId: noWork },
+        { id: note, uri: "scratch://@c1/note", workId: null, rootThreadId: root },
+        { id: await add("scratch", "named", b), uri: "scratch://@w3/named", workId: b },
         { id: await add("manuscript", "chapter"), uri: "manuscript://chapter", workId: null },
         { id: await add("user", "personal"), uri: "user://personal", workId: null },
       ];
@@ -353,13 +412,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
         documentLinks: resolver(),
         fileAccess,
-        workAuthorityResolver: { ...works, bySlug: unexpectedLookup, noWork: unexpectedLookup },
+        workAuthorityResolver: { ...works, byHandle: unexpectedLookup, noWork: unexpectedLookup },
         linkScopes: createDrizzleDocumentLinkScopes({
           db,
           fileAccess,
-          membership: async () => ({ members: rows.map(({ id }) => id) }),
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
+        branches: { viewForWork: async () => ({ kind: "live" }) },
       };
       const result = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,
@@ -377,6 +436,84 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
+    it("answers an address-only link from the request's own Work branch, live first", async () => {
+      const db = database.current;
+      const live = await add("manuscript", "live");
+      const [{ contextSourceId } = { contextSourceId: "" }] = await db
+        .select({ contextSourceId: documents.contextSourceId })
+        .from(documents)
+        .where(eq(documents.id, live));
+      const hidden = async (name: string, branchId: string) => {
+        const id = crypto.randomUUID();
+        await db
+          .insert(documents)
+          .values({ id, contextSourceId, name, extension: "md", hidden: true });
+        await db
+          .insert(branchTreeChanges)
+          .values({ branchId, nodeId: id, nodeKind: "document", created: true });
+        return id;
+      };
+      const branchA = crypto.randomUUID();
+      const branchB = crypto.randomUUID();
+      await db.insert(branches).values([
+        { id: branchA, projectId: p, originWorkId: a, createdBy: u },
+        { id: branchB, projectId: p, originWorkId: b, createdBy: u },
+      ]);
+      const created = await hidden("created", branchA);
+      await hidden("live", branchA);
+      await hidden("elsewhere", branchB);
+      const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
+        listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
+      };
+      const deps: DocumentLinkRouteDeps = {
+        projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
+        documentLinks: resolver(),
+        fileAccess,
+        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+        linkScopes: createDrizzleDocumentLinkScopes({
+          db,
+          fileAccess,
+          observer: createLinkScopeObserver(createNoopEventSink()),
+        }),
+        branches: {
+          viewForWork: async (workId) =>
+            workId === a
+              ? { kind: "branch", branchId: branchA }
+              : workId === b
+                ? { kind: "branch", branchId: branchB }
+                : { kind: "live" },
+        },
+      };
+      const resolveIn = (workId: string) =>
+        handleDocumentLinkResolveRequest(deps, {
+          projectId: p,
+          userId: u as never,
+          request: {
+            workId,
+            baseUri: null,
+            links: ["created", "live", "elsewhere"].map((name) => ({
+              ref: null,
+              href: `manuscript://${name}`,
+            })),
+          },
+        });
+      expect((await resolveIn(a)).answers).toMatchObject([
+        {
+          state: "document",
+          inBranch: true,
+          branch: { branchId: branchA },
+          document: { id: created },
+        },
+        { state: "document", inBranch: false, document: { id: live } },
+        { state: "missing" },
+      ]);
+      // Work B's branch created only "elsewhere"; A's creates stay hidden from it.
+      expect((await resolveIn(b)).answers).toMatchObject([
+        { state: "missing" },
+        { state: "document", inBranch: false, document: { id: live } },
+        { state: "document", inBranch: true, branch: { branchId: branchB } },
+      ]);
+    });
     it("answers ref links through the route core: gone never carries a location", async () => {
       const db = database.current;
       const live = await add("manuscript", "live");
@@ -389,10 +526,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await db.insert(documents).values({ id, contextSourceId, name, extension: "" });
         return id;
       };
+      // The holder the request's base names: pinned, so its ahead answers read its bindings.
+      await sibling("holder");
       const deleted = await sibling("deleted");
       const discarded = await sibling("discarded");
       const secret = await sibling("secret");
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, deleted));
+      await db
+        .update(documents)
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
+        .where(eq(documents.id, deleted));
       const otherProject = crypto.randomUUID();
       const otherSource = crypto.randomUUID();
       const foreign = crypto.randomUUID();
@@ -432,9 +574,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         { aheadId: unsettled, projectId: p, scheme: "manuscript", path: "later" },
       ]);
-      // A discarded draft creation keeps its row but no manifest lists it.
-      const liveMembers = [live, deleted, secret];
-      const provisioned: unknown[] = [];
+      await db
+        .update(documents)
+        .set({ hidden: true, deletionReason: "discarded", deletedAt: new Date() })
+        .where(eq(documents.id, discarded));
+      // A discarded branch create is a tombstone, never an address occupant.
+      const provisioned: (string | null)[] = [];
       const deps: DocumentLinkRouteDeps = {
         projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
         documentLinks: resolver(),
@@ -445,12 +590,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               return new Map(ids.filter((id) => id !== secret).map((id) => [id, {} as never]));
             },
           },
-          membership: async (view) => {
-            provisioned.push(view);
-            return { members: view.workId === noWork ? [...liveMembers, discarded] : liveMembers };
-          },
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
+        branches: {
+          viewForWork: async (workId) => {
+            provisioned.push(workId);
+            return { kind: "live" };
+          },
+        },
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
         fileAccess: {
           async listAccess(_principal, ids) {
@@ -482,7 +629,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const liveDocument = {
         state: "document",
         document: { id: live, title: "live", scheme: "manuscript", path: "live" },
-        inDraft: false,
+        inBranch: false,
       };
       expect(response.answers).toMatchObject([
         liveDocument,
@@ -516,12 +663,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       for (const answer of response.answers)
         if (answer.state === "gone")
           expect(Object.keys(answer).filter((key) => key !== "settled")).toEqual(["state"]);
-      // A chat's lineage Scratch owner must not erase its No Work draft view.
+      // A chat's lineage Scratch owner must not erase its No Work branch view.
       const root = crypto.randomUUID();
       await db
         .insert(threads)
         .values({ id: root, projectId: p, rootThreadId: root, createdByUserId: u, ref: "c1" });
-      const noWorkDraft = await handleDocumentLinkResolveRequest(deps, {
+      provisioned.length = 0;
+      const noWorkBranch = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,
         userId: u as never,
         request: {
@@ -530,17 +678,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           links: [{ ref: `doc:${discarded}`, href: "manuscript://discarded" }],
         },
       });
-      expect(noWorkDraft.answers).toMatchObject([
-        { state: "document", document: { id: discarded }, inDraft: true },
-      ]);
-      // A Work of another project never reaches draft membership provisioning.
+      // The tombstone stays gone; the chat's links still read No Work's branch view.
+      expect(noWorkBranch.answers).toMatchObject([{ state: "gone" }]);
+      expect(provisioned).toEqual([noWork]);
+      // A Work of another project never reaches branch membership provisioning.
       const foreignWork = crypto.randomUUID();
       await db.insert(works).values({
         id: foreignWork,
         projectId: otherProject,
         createdByUserId: u,
         name: "Foreign",
-        slug: "foreign",
+        handle: "w4",
       });
       provisioned.length = 0;
       await expect

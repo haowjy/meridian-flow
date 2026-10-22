@@ -1,0 +1,59 @@
+{
+  "entries": [
+    {
+      "path": "apps/server/server/domains/context/tree/**",
+      "forms": ["read", "write"],
+      "reason": "The tree view and hidden-node lifecycle: the one owner of the hidden predicate"
+    },
+    {
+      "path": "apps/server/server/domains/context/adapters/context-fs/drizzle-tree-mutation-store.ts",
+      "forms": ["read", "write"],
+      "reason": "Live mover: CAS-inspects through the view, moves and deletes rows, enumerates subtrees including hidden contents (they move with their folder; absorb and split need them)"
+    },
+    {
+      "path": "apps/server/server/domains/context/adapters/context-fs/document-locations.ts",
+      "forms": ["read"],
+      "reason": "Namespace and moved-row locks, subtree enumeration: identity by id, no visibility answer"
+    },
+    {
+      "path": "apps/server/server/domains/context/adapters/document-link-history.ts",
+      "forms": ["read"],
+      "reason": "Previous-location lookup: a history row names the document; access by project ownership; hidden documents have no history rows until reveal"
+    },
+    {
+      "path": "apps/server/server/domains/projects/adapters/work-cascade.ts",
+      "forms": ["write"],
+      "reason": "Work-owned sources (scratch, uploads) only, never drafted, so never hidden: cascade soft-delete and restore, bumping location_version"
+    },
+    {
+      "path": "apps/server/server/domains/context/adapters/owner-lookup.ts",
+      "forms": ["read"],
+      "reason": "Lists chats that hold uploads: existence by chat-scoped source, uploads are never drafted, so never hidden"
+    },
+    {
+      "path": "apps/server/server/domains/projects/adapters/drizzle-work-purge.ts",
+      "forms": ["read"],
+      "reason": "Work purge: collects the stored objects of every row (live, hidden and deleted) in the sources it hard-deletes, for object-store cleanup; answers no visibility question"
+    },
+    {
+      "path": "apps/server/server/domains/projects/adapters/work-repository/drizzle.ts",
+      "forms": ["read"],
+      "reason": "Rows the Work cascade deleted, by deleted_by_work_id: history of Work-owned sources"
+    },
+    {
+      "path": "apps/server/server/domains/collab/adapters/drizzle-collab-lookups.ts",
+      "forms": ["read"],
+      "reason": "Yjs engine: a document's schema by id for a live or draft room the caller already holds; grants nothing"
+    },
+    {
+      "path": "apps/server/server/domains/collab/adapters/drizzle-document-activity.ts",
+      "forms": ["read"],
+      "reason": "Activity side effect keyed by an id from a committed edit; returns no document to anyone"
+    },
+    {
+      "path": "apps/server/server/domains/collab/adapters/drizzle-document-derivations.ts",
+      "forms": ["read", "write"],
+      "reason": "Certified derive: projection and links of any row by id under its generation/location CAS"
+    }
+  ]
+}

@@ -6,6 +6,7 @@ export * from "./account-skill-installs";
 export * from "./agent-definition-revisions";
 export * from "./agent-threads";
 export * from "./billing";
+export * from "./branches";
 export * from "./content";
 export * from "./context-catalog";
 export * from "./context-operation-receipts";

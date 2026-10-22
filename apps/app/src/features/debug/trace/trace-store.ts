@@ -153,11 +153,7 @@ export function filterTraceEntries(
     if (filters.direction && stream?.direction !== filters.direction) return false;
     if (!correlationNeedle) return true;
 
-    const haystack = [
-      record.correlation?.documentId,
-      record.correlation?.branchId,
-      stream?.streamId,
-    ]
+    const haystack = [record.correlation?.documentId, record.correlation?.draftId, stream?.streamId]
       .filter((value): value is string => typeof value === "string")
       .join("\n")
       .toLocaleLowerCase();

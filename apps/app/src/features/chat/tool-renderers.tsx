@@ -4,12 +4,20 @@ import {
   type JsonValue,
   meridianErrorFromStructuredToolOutput,
 } from "@meridian/contracts/protocol";
+import type { ToolView } from "@meridian/thread-client";
+import {
+  documentToolFailed,
+  sourcePath,
+  stringInput,
+  toolCommand,
+  toolInputObject,
+} from "@meridian/thread-client";
 import { ChevronRight, FileText, Folder } from "lucide-react";
 import { type ReactNode, useState } from "react";
-
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
+import { CommandTitle } from "./CommandTitle";
 import {
   type CommandExpand,
   descriptorFor,
@@ -18,13 +26,14 @@ import {
   toolActivityPhrase,
 } from "./command-descriptor";
 import { DocumentName } from "./DocumentName";
+import type { OwnerNames } from "./document-display-name";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
-import type { ToolView } from "./group-delivery-segments";
+import { namespaceRefusalCopy } from "./namespace-refusal-copy";
+import { useOwnerNames } from "./owner-names";
 import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
 import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
-import { copySourcePath, documentToolFailed, stringInput, toolInputObject } from "./tool-command";
 import {
   boundLabel,
   type CappedList,
@@ -59,20 +68,6 @@ function inputObject(tool: ToolView): Record<string, JsonValue> {
 
 function asString(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-/** A command and what it acted on, laid out as one line. */
-function CommandTitle({ verb, parameter }: { verb: ReactNode; parameter?: ReactNode }) {
-  return (
-    <span className="flex w-full min-w-0 items-baseline gap-[var(--chat-space-inline)]">
-      <span className="shrink-0">{verb}</span>
-      {parameter ? (
-        <span className="flex min-w-0 items-baseline font-normal text-muted-foreground">
-          {parameter}
-        </span>
-      ) : null}
-    </span>
-  );
 }
 
 /** A parameter the timeline shows as text rather than as a destination. */
@@ -221,7 +216,8 @@ function documentFailureStatus(tool: ToolView): string | null {
 }
 
 function copySource(tool: ToolView): string | null {
-  const source = copySourcePath(inputObject(tool));
+  if (toolCommand(tool) !== "copy") return null;
+  const source = sourcePath(inputObject(tool));
   return source ? documentDisplayName(source) : null;
 }
 
@@ -230,32 +226,34 @@ function copyNotFoundCopy(tool: ToolView, source: string, destination: string | 
   return destination ? t`Couldn't find ${source} or ${destination}.` : t`Couldn't find ${source}.`;
 }
 
+/** The document a failed call acted on: a move's is its source, not where it was going. */
 function documentFailureDocumentName(tool: ToolView): string | null {
-  const path = asString(inputObject(tool).path);
+  const input = inputObject(tool);
+  const path = toolCommand(tool) === "move" ? sourcePath(input) : asString(input.path);
   if (!path) return null;
   return documentDisplayName(path);
 }
 
 /**
- * A write refused because the model last read another version of the document
- * (live, or a Work's draft). It moved nothing and the model reads again on its
- * own, so the writer sees a routine step rather than a failure.
+ * A write held back because the passage changed since the AI last saw it. It
+ * moved nothing, and the refusal handed the AI the current text, so the writer
+ * sees a routine step rather than a failure.
  */
-function isRereadPause(tool: ToolView): boolean {
+function isCatchUpPause(tool: ToolView): boolean {
   return (
     documentToolFailed(tool) &&
     tool.toolName === "write" &&
-    documentFailureStatus(tool) === "read_required"
+    documentFailureStatus(tool) === "region_changed"
   );
 }
 
 /** Whether the row reports a failure to the writer. */
 export function toolRowFailed(tool: ToolView): boolean {
-  return documentToolFailed(tool) && !isRereadPause(tool);
+  return documentToolFailed(tool) && !isCatchUpPause(tool);
 }
 
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
-export function documentToolFailureCopy(tool: ToolView): string {
+export function documentToolFailureCopy(tool: ToolView, names?: OwnerNames): string {
   const name = documentFailureDocumentName(tool);
   const status = documentFailureStatus(tool);
   switch (status) {
@@ -272,6 +270,10 @@ export function documentToolFailureCopy(tool: ToolView): string {
       if (source) return copyNotFoundCopy(tool, source, name);
       return name ? t`Couldn't find ${name}.` : t`That document couldn't be found.`;
     }
+    case "ambiguous_path":
+      return name
+        ? t`Two of this Work's drafts share the path ${name}. Review the drafts to keep one.`
+        : t`Two of this Work's drafts share this path. Review the drafts to keep one.`;
     case "ambiguous_match":
       return name
         ? t`The requested passage in ${name} wasn't specific enough.`
@@ -286,12 +288,48 @@ export function documentToolFailureCopy(tool: ToolView): string {
   switch (status) {
     case "cant_undo_dependent":
       return t`That change can't be undone because later edits depend on it.`;
+    case "cant_undo_applied":
+      return t`That change can't be undone here because it was already applied to your manuscript.`;
+    case "cant_undo_discarded":
+      return t`That change can't be undone because it was discarded.`;
+    case "cant_undo_changed":
+      return t`That change can't be undone because the text changed afterwards.`;
+    case "cant_undo_elsewhere":
+      return t`That change can't be undone here because the chat now writes somewhere else.`;
+    case "cant_redo_applied":
+      return t`That change can't be redone here because it was already applied to your manuscript.`;
+    case "cant_redo_discarded":
+      return t`That change can't be redone because it was discarded.`;
+    case "cant_redo_changed":
+      return t`That change can't be redone because the text changed afterwards.`;
+    case "cant_redo_elsewhere":
+      return t`That change can't be redone here because the chat now writes somewhere else.`;
+    case "cant_redo_users_undo":
+      return t`That change can't be redone because you undid it.`;
+    case "insufficient_undo":
+      return t`There isn't enough left to undo.`;
+    case "insufficient_redo":
+      return t`There isn't enough left to redo.`;
+    case "nothing_to_revert":
+      return t`That change wasn't reverted because its text changed or is already gone.`;
+    case "work_archived":
+      return t`That change can't be made because this Work's drafts are archived.`;
+    case "permission_denied":
+      return name ? t`${name} can't be changed.` : t`That document can't be changed.`;
     case "partial_failure":
       return name
         ? t`Some changes to ${name} couldn't be completed.`
         : t`Some changes couldn't be completed.`;
-    case "invalid_write":
+    case "invalid_write": {
+      const refused = namespaceRefusalCopy(inputObject(tool), documentFailureRefusal(tool), names);
+      if (refused) return refused;
+      const reason =
+        documentFailureRejected(tool) === "removed"
+          ? removedWriteCopy(name, documentFailureRemoval(tool))
+          : rejectionCopy(documentFailureRejected(tool));
+      if (reason) return reason;
       return name ? t`That change couldn't be made in ${name}.` : t`That change couldn't be made.`;
+    }
     default:
       return name
         ? t`Something went wrong while changing ${name}.`
@@ -299,25 +337,157 @@ export function documentToolFailureCopy(tool: ToolView): string {
   }
 }
 
-function DocumentToolTitle({ tool }: { tool: ToolView }) {
-  const path = asString(inputObject(tool).path);
-  const descriptor = descriptorFor(tool);
+/** Why a `move` or `delete` was refused, from its typed result. */
+function documentFailureRefusal(tool: ToolView): string | null {
+  const result = tool.result;
+  if (result === null || typeof result !== "object" || Array.isArray(result)) return null;
+  return asString(result.refusal) ?? null;
+}
 
-  if (isRereadPause(tool)) {
-    const verb = t`Paused to reread`;
+/** The host's structured reason a staged write was rejected, when it gave one. */
+function documentFailureRejected(tool: ToolView): string | null {
+  const result = tool.result;
+  if (result === null || typeof result !== "object" || Array.isArray(result)) return null;
+  return asString(result.rejected) ?? null;
+}
+
+/**
+ * Who removed a refused write's document and how, when the host sent the
+ * record with a `removed` rejection. A named person or Work is named; anyone
+ * else reads passively.
+ */
+function documentFailureRemoval(tool: ToolView): {
+  by:
+    | { kind: "person" | "work"; name: string }
+    | { kind: "agent"; chat: string | null }
+    | { kind: "unfinished-reply" }
+    | null;
+  reason: "deleted" | "discarded";
+} {
+  const result = tool.result;
+  const removal =
+    result && typeof result === "object" && !Array.isArray(result) ? result.removal : null;
+  if (!removal || typeof removal !== "object" || Array.isArray(removal))
+    return { by: null, reason: "deleted" };
+  const actor = removal.actor;
+  const record = actor && typeof actor === "object" && !Array.isArray(actor) ? actor : null;
+  const name = (value: unknown) => (typeof value === "string" && value ? value : null);
+  const person = record?.kind === "user" ? name(record.displayName) : null;
+  const work = record?.kind === "work" ? name(record.name) : null;
+  return {
+    by: person
+      ? { kind: "person", name: person }
+      : work
+        ? { kind: "work", name: work }
+        : record?.kind === "agent"
+          ? { kind: "agent", chat: name(record.chatTitle) }
+          : record?.kind === "system" && record.cause !== "repair"
+            ? { kind: "unfinished-reply" }
+            : null,
+    reason: removal.reason === "discarded" ? "discarded" : "deleted",
+  };
+}
+
+/** A write refused because its document was removed before the reply saved it. */
+function removedWriteCopy(
+  name: string | null,
+  removal: ReturnType<typeof documentFailureRemoval>,
+): string {
+  const { by } = removal;
+  if (by?.kind === "unfinished-reply")
+    return name
+      ? t`${name} was removed when the reply that created it didn't finish, so this change wasn't made.`
+      : t`This document was removed when the reply that created it didn't finish, so this change wasn't made.`;
+  if (by?.kind === "person") {
+    const who = by.name;
+    return removal.reason === "discarded"
+      ? name
+        ? t`${who} discarded ${name} from the draft before this reply saved its change.`
+        : t`${who} discarded this document from the draft before this reply saved its change.`
+      : name
+        ? t`${who} deleted ${name} before this reply saved its change.`
+        : t`${who} deleted this document before this reply saved its change.`;
+  }
+  if (by?.kind === "work") {
+    const work = by.name;
+    return name
+      ? t`${name} was deleted with the Work ${work} before this reply saved its change.`
+      : t`This document was deleted with the Work ${work} before this reply saved its change.`;
+  }
+  if (by?.kind === "agent") {
+    const chat = by.chat;
+    return chat
+      ? name
+        ? t`The AI in ${chat} deleted ${name} before this reply saved its change.`
+        : t`The AI in ${chat} deleted this document before this reply saved its change.`
+      : name
+        ? t`The AI in a chat deleted ${name} before this reply saved its change.`
+        : t`The AI in a chat deleted this document before this reply saved its change.`;
+  }
+  return removal.reason === "discarded"
+    ? name
+      ? t`${name} was discarded from the draft before this reply saved its change.`
+      : t`This document was discarded from the draft before this reply saved its change.`
+    : name
+      ? t`${name} was deleted before this reply saved its change.`
+      : t`This document was deleted before this reply saved its change.`;
+}
+
+function rejectionCopy(rejected: string | null): string | null {
+  switch (rejected) {
+    case "discarded_draft":
+      return t`This draft was discarded, so the change wasn't kept. The AI will read it again.`;
+    case "discarded_document":
+      return t`This new document was discarded, so the change wasn't kept. The AI will read it again.`;
+    case "discarded_edit":
+      return t`The text it edited was discarded, so the change wasn't kept. The AI will read it again.`;
+    case "inverse":
+      return t`The text it edited was undone, so the change wasn't kept. The AI will read it again.`;
+    case "integration":
+      return t`The change didn't fit the current draft. The AI will read it again.`;
+    default:
+      return null;
+  }
+}
+
+function DocumentToolTitle({ tool }: { tool: ToolView }) {
+  const names = useOwnerNames();
+  const input = inputObject(tool);
+  const path = asString(input.path);
+  const descriptor = descriptorFor(tool);
+  const command = toolCommand(tool);
+
+  if (isCatchUpPause(tool)) {
+    // True whether the passage changed or the AI hadn't seen all of it: it got the text either way.
+    const verb = t`Got the latest text of`;
     return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
   }
   if (documentToolFailed(tool)) {
     const verb = descriptor.failureVerb();
-    return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
+    // A move that didn't run left its document where it was.
+    const subject = command === "move" ? (sourcePath(input) ?? path) : path;
+    return subject ? (
+      <CommandTitle verb={verb} parameter={<DocumentName path={subject} />} />
+    ) : (
+      verb
+    );
   }
 
-  const phrase = toolActivityPhrase(tool);
+  const phrase = toolActivityPhrase(tool, names);
   // A partial call has no settled path yet, so the row names no document —
   // and therefore offers no door onto one.
   if (tool.status !== "complete") return <PhraseTitle phrase={phrase} />;
   if (!path) return descriptor.pathlessTitle?.() ?? <PhraseTitle phrase={phrase} />;
-  return <CommandTitle verb={phrase.verb} parameter={<DocumentName path={path} />} />;
+  // A deleted document's old address may hold another document now: no door.
+  if (command === "delete") return <PhraseTitle phrase={phrase} />;
+  return (
+    <CommandTitle
+      verb={phrase.verb}
+      parameter={
+        <DocumentName path={path} name={command === "move" ? phrase.parameter : undefined} />
+      }
+    />
+  );
 }
 
 const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | null> = {
@@ -329,14 +499,19 @@ const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | nu
 };
 
 function documentExpand(tool: ToolView): ToolExpand | null {
-  // The next rows (the read, then the retried write) say what happened.
-  if (isRereadPause(tool)) return null;
+  // The next row (the retried write, or a read when the passage was too long) says what happened.
+  if (isCatchUpPause(tool)) return null;
   if (documentToolFailed(tool)) {
-    return () => (
-      <div className="text-compact text-destructive">{documentToolFailureCopy(tool)}</div>
-    );
+    return () => <DocumentFailureText tool={tool} />;
   }
   return COMMAND_EXPANDS[descriptorFor(tool).expand](tool);
+}
+
+function DocumentFailureText({ tool }: { tool: ToolView }) {
+  const names = useOwnerNames();
+  return (
+    <div className="text-compact text-destructive">{documentToolFailureCopy(tool, names)}</div>
+  );
 }
 
 function readPath(tool: ToolView): string | undefined {

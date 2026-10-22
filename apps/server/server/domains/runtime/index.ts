@@ -6,6 +6,7 @@ export type {
 } from "@meridian/contracts/threads";
 export type { WorkContextNotices } from "../projects/index.js";
 export { createContextImageAssetPort } from "./adapters/context-image-assets.js";
+export { createDrizzleObservationFrontiers } from "./adapters/drizzle/observation-frontiers.js";
 export { createDrizzleRuntimeDelivery } from "./adapters/drizzle/runtime-delivery.js";
 export { createDrizzleShownLinkStore } from "./adapters/drizzle/shown-links.js";
 export { createDrizzleHandoffStatusReader } from "./adapters/drizzle-handoff-status-reader.js";
@@ -13,6 +14,7 @@ export {
   createDrizzleRunClaim,
   type DrizzleRunClaimOptions,
 } from "./adapters/drizzle-run-claim.js";
+export { readRunStateAtHead } from "./adapters/drizzle-run-state.js";
 export { createDrizzleThreadLock } from "./adapters/drizzle-thread-lock.js";
 export {
   createInMemoryInbox,
@@ -23,6 +25,7 @@ export {
   type InMemoryRunClaimOptions,
   type InMemoryRunStarter,
 } from "./adapters/in-memory/loop-ports.js";
+export { createInMemoryObservationFrontiers } from "./adapters/in-memory/observation-frontiers.js";
 export { createInMemoryShownLinkStore } from "./adapters/in-memory/shown-links.js";
 export {
   type AdmissionPersistencePort,
@@ -86,13 +89,10 @@ export {
 } from "./loop/interrupts.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
 export { finalizeOrphanedTurns } from "./loop/orphaned-placeholder.js";
-export {
-  projectPendingInbox,
-  readPendingInbox,
-} from "./loop/pending-inbox.js";
 export * from "./loop/permissions/index.js";
 export type {
   ContextPart,
+  ExecutionId,
   HeldRunClaim,
   InboxMessage,
   InboxReader,
@@ -100,7 +100,6 @@ export type {
   MessageBody,
   MessageDraft,
   RunClaim,
-  RunId,
   RunStarter,
   ThreadPhase,
   ThreadStatus,
@@ -127,6 +126,7 @@ export {
   isDrainRun,
   NoPendingWakeError,
   type PreparedRun,
+  ReplyRetryPendingError,
   ReplyRetryUnavailableError,
   type RunOutcome,
   type RunTurnInput,
@@ -134,7 +134,11 @@ export {
   RuntimeShuttingDownError,
   type WriterRunTurnInput,
 } from "./loop/run-turn-port.js";
-export type { DeliveryProducer, RuntimeDelivery } from "./loop/runtime-delivery.js";
+export {
+  type DeliveryProducer,
+  HandBackConflictError,
+  type RuntimeDelivery,
+} from "./loop/runtime-delivery.js";
 export {
   isSkillsUri,
   listSkillDir,
@@ -154,10 +158,16 @@ export {
   renderWorkContext,
   type WorkContextReader,
 } from "./loop/work-context.js";
+export {
+  createWriteModeSwitchPort,
+  type WriteModeSwitchPort,
+  writeModeSwitchNotice,
+} from "./loop/write-mode-switch.js";
 export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversation-summarizer.js";
 export type { HandoffBriefStopper } from "./ports/handoff-briefs.js";
 export type { ImageAssetPort } from "./ports/image-asset.js";
 export { unavailableImageAssetPort } from "./ports/image-asset.js";
+export type { FrontierLookups, ObservationFrontiers } from "./ports/observation-frontiers.js";
 export type { ShownLink, ShownLinkShowing, ShownLinkStore } from "./ports/shown-links.js";
 export {
   appendSubagentActivity,

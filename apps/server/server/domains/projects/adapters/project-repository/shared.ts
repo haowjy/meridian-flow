@@ -9,11 +9,8 @@ const MAX_SLUG_BASE_LENGTH = 80;
 
 export const DEFAULT_PROJECT_TITLE = "Untitled Project";
 
-/** Ensures the project-scoped source that anchors its manifest/catalog identity. */
-export async function ensureProjectManifestSource(
-  db: Database,
-  projectId: ProjectId,
-): Promise<string> {
+/** Ensures the project-scoped manuscript source. */
+export async function ensureManuscriptSource(db: Database, projectId: ProjectId): Promise<string> {
   const tx = currentDrizzleDb(db);
   const [existing] = await tx
     .select({ id: contextSources.id })

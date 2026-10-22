@@ -205,7 +205,7 @@ it("address replacement neither prompts nor supersedes a pending writer navigati
   expect(
     await navigation.replaceIfCurrent(
       navigation.capture(),
-      address("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a?draft=draft-a"),
+      address("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a?item=draft-a"),
     ),
   ).toEqual({ kind: "superseded" });
   expect(request).toHaveBeenCalledOnce();

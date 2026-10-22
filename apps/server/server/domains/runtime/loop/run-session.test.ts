@@ -14,11 +14,16 @@ import { DEFAULT_LEASE_TTL_MS } from "./ports.js";
 import { sweepWakes } from "./sweep-wakes.js";
 
 async function fixture(configure?: (deps: OrchestratorDeps) => void) {
-  const journal = createInMemoryEventJournalWriter();
+  const repos = createInMemoryRepositories();
+  const journal = createInMemoryEventJournalWriter(repos.transactionOwner);
   const sink = createInMemoryEventSink();
   let calls = 0;
-  const repos = createInMemoryRepositories();
-  const thread = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+  const requests: string[] = [];
+  const thread = await repos.threads.create({
+    aiWriteMode: "direct",
+    userId: "user-1",
+    projectId: "project-1",
+  });
   const boundThreadIds = new Set([thread.id]);
   const harness = createRuntimeHarness({
     repos,
@@ -37,8 +42,9 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
   });
   deps.gateway = {
     ...deps.gateway,
-    async *stream() {
+    async *stream(request) {
       calls++;
+      requests.push(JSON.stringify(request.messages));
       yield {
         type: "end",
         result: {
@@ -64,6 +70,7 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
     journal,
     sink,
     calls: () => calls,
+    requests,
     prepare: () => runtime.prepare({ threadId: thread.id, userText: "hello" }),
   };
 }
@@ -147,7 +154,7 @@ describe("RunSession", () => {
       role: "user",
       origin: "writer",
     });
-    expect(await f.deps.runClaim.holder(f.thread.id)).toBe(run.runId);
+    expect(await f.deps.runClaim.holder(f.thread.id)).toBe(run.executionId);
 
     expect(await run.execute()).toMatchObject({ status: "error", turn: { status: "error" } });
     expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({
@@ -197,9 +204,11 @@ describe("RunSession", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
-  it("observes terminal fallback failure, settles the run, and releases", async () => {
+  it("abandons, leaving its row open, an execution whose terminal fallback failed; the next start settles it", async () => {
     const f = await fixture();
     const run = await f.prepare();
+    const listBlocks = f.deps.repos.blocks.listByThread;
+    const transaction = f.deps.repos.transaction;
     f.deps.repos.blocks.listByThread = async () => {
       throw new Error("history unavailable");
     };
@@ -211,8 +220,24 @@ describe("RunSession", () => {
       "execution.failed",
       "terminal_fallback.failed",
     ]);
+    // The release's wake is detached; with no switch step ahead of it, it races this read.
+    await f.backgroundTasks.drain();
     expect(f.runtime.getRunningTurn(f.thread.id)).toBeNull();
+    // Unlocked and asleep, but the execution is still open: its turn never went terminal.
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
+    const abandoned = await f.deps.runClaim.readOpenExecutionId(f.thread.id);
+    expect(abandoned).toEqual(expect.any(String));
+
+    f.deps.repos.blocks.listByThread = listBlocks;
+    f.deps.repos.transaction = transaction;
+    await (await f.prepare()).execute();
+    expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({ status: "error" });
+    expect(await f.deps.runClaim.readOpenExecutionId(f.thread.id)).toBeNull();
+    // The failed turn's `turn.error` copy is the writer's, never the model's.
+    const failed = await f.repos.turns.findById(run.executionTurnId);
+    expect(failed?.error).toEqual(expect.any(String));
+    expect(f.requests.length).toBeGreaterThan(0);
+    for (const request of f.requests) expect(request).not.toContain(failed?.error as string);
   });
 
   it("terminalizes admitted setup when post-setup cursor capture fails", async () => {
@@ -236,7 +261,7 @@ describe("RunSession", () => {
       const release = deps.runClaim.release;
       deps.runClaim.release = async (lease) => {
         if (++releases === 1) throw new Error("physical unlock failed");
-        await release(lease);
+        return release(lease);
       };
     });
     const run = await f.prepare();
@@ -280,6 +305,7 @@ describe("RunSession", () => {
       prevTurnId: null,
     });
     const child = await f.repos.threads.createSubagent({
+      aiWriteMode: "direct",
       userId: f.thread.userId,
       projectId: f.thread.projectId,
       parentThreadId: f.thread.id,
@@ -350,10 +376,12 @@ describe("RunSession", () => {
   ])("preserves descendant lifetime at parent completion (child parent: %s)", async (childParent) => {
     const f = await fixture();
     const fg = await f.deps.repos.threads.create({
+      aiWriteMode: "direct",
       userId: f.thread.userId,
       projectId: f.thread.projectId,
     });
     const bg = await f.deps.repos.threads.create({
+      aiWriteMode: "direct",
       userId: f.thread.userId,
       projectId: f.thread.projectId,
     });
@@ -410,7 +438,7 @@ describe("RunSession", () => {
       const release = deps.runClaim.release;
       deps.runClaim.release = async (lease) => {
         if (++releases === 2) throw new Error("backstop unavailable");
-        await release(lease);
+        return release(lease);
       };
     });
     const run = await f.prepare();

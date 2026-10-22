@@ -12,18 +12,18 @@
  * Reasoning rows pick up italic + `ink-subtle` so the assistant's "thoughts"
  * recede next to the upright prose of the voice surfaces around them.
  */
-import { type Block, blockPlainText } from "@meridian/contracts/protocol";
+import type { Block } from "@meridian/contracts/protocol";
 import { Clock, type LucideIcon, MessageSquareText } from "lucide-react";
 import { Markdown } from "@/rich-content/Markdown";
 import { ActivityRow } from "./ActivityRow";
-import { visibleReasoningText } from "./partition-turn";
 
 export type TurnBlockStepProps = {
   block: Block;
+  /** What the row says, decided by the view model; nothing draws when it is empty. */
+  body: string | null;
 };
 
-export function TurnBlockStep({ block }: TurnBlockStepProps) {
-  const body = stepBody(block);
+export function TurnBlockStep({ block, body }: TurnBlockStepProps) {
   if (!body) return null;
 
   const Icon = iconForBlock(block.blockType);
@@ -54,17 +54,4 @@ function iconForBlock(blockType: string): LucideIcon {
     default:
       return MessageSquareText;
   }
-}
-
-function stepBody(block: Block): string | null {
-  if (block.blockType === "reasoning" || block.blockType === "thinking") {
-    return visibleReasoningText(block);
-  }
-  const raw = block.textContent?.trim() || blockPlainText(block.blockType, block.content)?.trim();
-  if (raw) return raw;
-  if (block.content && typeof block.content === "object" && !Array.isArray(block.content)) {
-    const summary = (block.content as Record<string, unknown>).summary;
-    if (typeof summary === "string") return summary;
-  }
-  return null;
 }

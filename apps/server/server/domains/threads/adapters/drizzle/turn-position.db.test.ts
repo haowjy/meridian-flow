@@ -1,6 +1,8 @@
 /** PostgreSQL contract tests for serialized, write-once turn positions. */
+
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { noFailureRecorder } from "../../ports/event-journal.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -95,6 +97,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           repos,
           eventWriter: {
+            ...noFailureRecorder,
             async appendEvent() {
               return 1n;
             },

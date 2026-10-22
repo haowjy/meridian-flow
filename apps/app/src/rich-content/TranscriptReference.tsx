@@ -9,6 +9,7 @@
  * agree. `[[name]]` is text, never a link.
  */
 import { t } from "@lingui/core/macro";
+import { qualifyWrittenHref } from "@meridian/markup/links";
 import {
   createContext,
   type ReactNode,
@@ -68,6 +69,13 @@ export type TranscriptReferenceResolution =
 export const TranscriptReferenceContext = createContext<{
   resolutions?: ReadonlyMap<string, TranscriptReferenceResolution>;
   onOpen?: (documentId: string) => void;
+  canOpen?: (uri: string) => boolean;
+  /**
+   * The transcript's own chat handle. A message sent from a New chat names an upload bare until
+   * the server names the chat and rewrites the stored text; the referenced href is qualified here
+   * to the spelling the server's answer uses.
+   */
+  uploadsChat?: string;
 }>({});
 
 export function TranscriptReference({
@@ -83,7 +91,7 @@ export function TranscriptReference({
   "data-target-href"?: string;
   "data-authored-label"?: string;
 }) {
-  const { resolutions, onOpen } = useContext(TranscriptReferenceContext);
+  const { resolutions, onOpen, canOpen, uploadsChat } = useContext(TranscriptReferenceContext);
   const navigation = useContext(TranscriptLinkNavigationContext);
   const target = targetHref ? classifyLinkTarget(targetHref) : null;
   const trigger = useRef<HTMLSpanElement>(null);
@@ -94,13 +102,13 @@ export function TranscriptReference({
   const resolution =
     candidate &&
     candidate.documentId === documentId &&
-    (!candidate.available || candidate.uri === uri)
+    (!candidate.available || candidate.uri === (uri && qualifyWrittenHref(uri, uploadsChat)))
       ? candidate
       : null;
   const syntax = !documentId && target ? target : null;
   const syntaxFollowable = Boolean(syntax && navigation?.canFollow(syntax));
   const follow = documentId
-    ? resolution?.available && onOpen
+    ? resolution?.available && onOpen && (canOpen?.(resolution.uri) ?? true)
       ? () => onOpen(resolution.documentId)
       : undefined
     : navigation && syntax && syntaxFollowable
@@ -126,7 +134,13 @@ export function TranscriptReference({
   // ref, so it is never gone.
   const gone = Boolean(documentId) && resolution?.available === false;
   const missing =
-    chip?.state !== "dashed" ? undefined : gone ? t`No longer available` : t`Doesn't exist yet`;
+    chip?.state === "draft"
+      ? t`In a draft`
+      : chip?.state !== "dashed"
+        ? undefined
+        : gone
+          ? t`No longer available`
+          : t`Doesn't exist yet`;
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -137,6 +151,7 @@ export function TranscriptReference({
           tabIndex={0}
           aria-disabled={!follow}
           aria-description={missing}
+          title={chip?.state === "draft" ? missing : undefined}
           {...(chip ? linkChipAttributes(chip) : {})}
           onClick={follow}
           onKeyDown={(event) => {

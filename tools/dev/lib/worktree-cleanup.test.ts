@@ -24,7 +24,7 @@ function makeContext(overrides?: { eligible?: boolean; baseBranch?: string }): C
       kind: "pull-request",
       branch: "feature",
       plannedOid: "2222222222222222222222222222222222222222",
-      baseBranch,
+      pullRequestBase: baseBranch,
       repositoryOwner: "haowjy",
       pullRequestNumber: 42,
     });
@@ -122,6 +122,7 @@ describe("worktree cleanup resolver", () => {
 
     expect(plan.targets[0].actions.map((action) => action.kind)).toEqual([
       "stop-dev",
+      "stop-nx",
       "drop-database",
       "remove-worktree",
       "delete-branch",
@@ -190,7 +191,7 @@ describe("worktree cleanup resolver", () => {
             kind: "ancestry",
             branch: "feature",
             plannedOid: "2222222222222222222222222222222222222222",
-            baseBranch: "main",
+            containedBy: "refs/heads/main",
           },
         ],
       ]),
@@ -200,10 +201,20 @@ describe("worktree cleanup resolver", () => {
     expect(resolveTarget(context, { kind: "direct", value: "feature" }).branch).toBe("feature");
   });
 
-  it("refuses an unmerged branch with a base-agnostic, PR-aware message", () => {
+  it("refuses an unmerged branch with a containment-aware message", () => {
     const context = makeContext({ eligible: false });
     expect(() => resolveTarget(context, { kind: "direct", value: "feature" })).toThrow(
-      /current commit is not merged into 'main'.*exact merged pull request/s,
+      /current commit is not contained in another branch.*exact merged pull request/s,
+    );
+
+    const withReason = {
+      ...context,
+      eligibilityRefusalByBranch: new Map([
+        ["feature", "could not verify merged pull requests: gh unavailable"],
+      ]),
+    };
+    expect(() => resolveTarget(withReason, { kind: "direct", value: "feature" })).toThrow(
+      /could not verify merged pull requests: gh unavailable/,
     );
   });
 
@@ -226,7 +237,7 @@ describe("worktree cleanup resolver", () => {
             kind: "ancestry" as const,
             branch: "trunk",
             plannedOid: "2222222222222222222222222222222222222222",
-            baseBranch: "trunk",
+            containedBy: "refs/heads/mainline",
           },
         ],
       ]),
@@ -336,7 +347,6 @@ describe("worktree cleanup resolver", () => {
       resolveTarget(context, { kind: "direct", value: "feature" }),
     ]);
     const actionsRun: string[] = [];
-    let readinessChecks = 0;
 
     const result = await executeCleanupPlan(
       plan,
@@ -344,9 +354,8 @@ describe("worktree cleanup resolver", () => {
         eligible: true,
         evidence: plan.targets[0].eligibility,
       }),
-      () => {
-        readinessChecks += 1;
-        return readinessChecks === 1
+      (_target, action) => {
+        return action.kind !== "drop-database"
           ? { ready: true, evidence: { worktreePath: "/repo/wt/feature" } }
           : { ready: false, reasons: ["worktree is locked"] };
       },
@@ -361,6 +370,6 @@ describe("worktree cleanup resolver", () => {
       failedAction: { kind: "drop-database" },
       readinessFailure: "worktree is locked",
     });
-    expect(actionsRun).toEqual(["stop-dev"]);
+    expect(actionsRun).toEqual(["stop-dev", "stop-nx"]);
   });
 });

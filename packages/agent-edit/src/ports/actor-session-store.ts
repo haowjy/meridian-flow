@@ -7,8 +7,6 @@ export interface ActorSession {
   id: string;
   /** Which thread/agent this session represents. */
   threadId: string;
-  /** Documents initialized in this session’s runtime. */
-  documents: Set<string>;
 }
 
 /**

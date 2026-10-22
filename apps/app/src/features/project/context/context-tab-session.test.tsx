@@ -8,6 +8,8 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { AdmittedLiveDocument } from "./open-project-document";
 import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
 
+const reportError = vi.fn();
+
 const resourceReplica = vi.hoisted(() => ({
   keyForDocument: vi.fn(),
   openDocument: vi.fn(),
@@ -15,11 +17,12 @@ const resourceReplica = vi.hoisted(() => ({
 }));
 
 vi.mock("./account-feature-context", () => ({
+  useOptionalProjectContextAvailabilityCoordinator: () => null,
   useAccountResourceReplica: () => resourceReplica,
   useAccountResourceProjection: () => ({ records: [], snapshot: null, error: null }),
   useLiveDocumentSessionRegistry: () => ({
     whenRefusedRoomDropped: () => null,
-    observeBranchRoom: () => () => undefined,
+    observeDraftRoom: () => () => undefined,
   }),
 }));
 
@@ -50,6 +53,7 @@ function admission(boundSession: DocumentSession): AdmittedLiveDocument {
 describe("ContextTabSessionBoundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("reportError", reportError);
   });
 
   it("falls through a stale local-resource failure to authoritative server admission", async () => {
@@ -89,8 +93,8 @@ describe("ContextTabSessionBoundary", () => {
     const opener = {
       open: vi
         .fn()
-        .mockResolvedValueOnce({ kind: "unavailable" })
-        .mockResolvedValueOnce({ kind: "unavailable" })
+        .mockResolvedValueOnce({ kind: "unavailable", reason: "adoption-pending" })
+        .mockResolvedValueOnce({ kind: "unavailable", reason: "adoption-pending" })
         .mockResolvedValue({ kind: "opened", admission: admission(serverSession) }),
     };
     let advanceCatalog!: () => void;
@@ -120,13 +124,17 @@ describe("ContextTabSessionBoundary", () => {
     await withReactRoot(<Harness />, async () => {
       await act(async () => undefined);
       expect(observed.at(-1)).toMatchObject({ value: null, failed: true });
+      expect(reportError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining("adoption-pending") }),
+      );
       await act(async () => retry());
       await act(async () => undefined);
       expect(opener.open).toHaveBeenCalledTimes(2);
       expect(observed.at(-1)).toMatchObject({ value: null, failed: true });
       await act(async () => advanceCatalog());
       await act(async () => undefined);
-      expect(resourceReplica.openDocument).toHaveBeenCalledTimes(2);
+      // Retry redid the local probe (second call); the catalog advance redid it again.
+      expect(resourceReplica.openDocument).toHaveBeenCalledTimes(3);
       expect(opener.open).toHaveBeenCalledTimes(3);
       expect(observed.at(-1)).toEqual({ value: serverSession, failed: false });
     });

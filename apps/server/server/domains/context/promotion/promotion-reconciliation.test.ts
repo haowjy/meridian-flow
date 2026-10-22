@@ -1,7 +1,7 @@
 /** Promotion ordering and terminal compensation contracts. */
 
 import { describe, expect, it, vi } from "vitest";
-import { testWorkSlug } from "../../../test-support/work-slug.js";
+import { testWorkHandle } from "../../../test-support/work-handle.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { resolvedWorkAuthority } from "../../projects/domain/work-authority.js";
 import { createPromotionService } from "./promotion-service.js";
@@ -39,10 +39,10 @@ function harness(outcome: { kind: "definitely_not_committed" | "unknown"; error:
       async byId(_projectId, workId) {
         return resolvedWorkAuthority({
           workId,
-          workSlug: testWorkSlug("123e4567-e89b-12d3-a456-426614174000"),
+          workHandle: testWorkHandle("w1"),
         });
       },
-      async bySlug() {
+      async byHandle() {
         return null;
       },
       async noWork() {
@@ -92,7 +92,7 @@ describe("promotion terminal reconciliation", () => {
         async byId() {
           return null;
         },
-        async bySlug() {
+        async byHandle() {
           return null;
         },
         async noWork() {

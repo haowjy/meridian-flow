@@ -7,6 +7,7 @@ import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { bindDocumentAuthority } from "../../domains/collab/domain/document-handle.js";
 import type { CheckpointJournal } from "../../domains/collab/domain/ports/checkpoint-authority.js";
+import type { LiveWriterJournal } from "../../domains/collab/domain/ports/live-writer-journal.js";
 import { createHocuspocusPersistenceService } from "../../domains/collab/hocuspocus-persistence.js";
 import { admitWriterSync } from "../yjs-ws-handler.js";
 
@@ -16,7 +17,6 @@ describe("Yjs reconnect writer admission", () => {
   it("syncs without journaling the provider's contained replay pair", async () => {
     const liveDocument = tombstoneBearingDoc();
     const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const onLiveUpdatePersisted = vi.fn();
     let server: Server | undefined;
     let websocketProvider: HocuspocusProviderWebsocket | undefined;
@@ -118,8 +118,12 @@ function tombstoneBearingDoc(): Y.Doc {
   return doc;
 }
 
-function fakeJournal(): CheckpointJournal {
+function fakeJournal(): CheckpointJournal & LiveWriterJournal {
   return {
+    appendWriterUpdate: vi.fn(async () => ({
+      status: "appended" as const,
+      seq: 1,
+    })),
     reserveWriteOrdinal: async () => {
       throw new Error("Transport does not allocate edit ordinals");
     },

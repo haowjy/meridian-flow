@@ -25,14 +25,14 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
+import { type ArtifactRef, isArtifactRef } from "@meridian/contracts/interrupt";
 import { Pause } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ArtifactCard, ComponentResolvedSummary } from "./ArtifactCard";
-import { ArtifactGrid, isArtifactRef } from "./ArtifactGrid";
+import { ArtifactGrid } from "./ArtifactGrid";
 import type { ComponentBlockProps } from "./component-registry";
 import { InterruptResponseFeedback } from "./InterruptResponseFeedback";
 import {

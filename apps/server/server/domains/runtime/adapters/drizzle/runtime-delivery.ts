@@ -5,22 +5,25 @@ import { pendingPlaceholderPredicate } from "@meridian/database/schema/pending-p
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runAfterDrizzleCommit } from "../../../../shared/drizzle-transaction.js";
 import type { Lease } from "../../loop/ports.js";
+import type { DeliveryLeaseStore } from "../delivery-ports.js";
+import { createDrizzleHandBacks } from "../drizzle-hand-backs.js";
 import { createDrizzleInbox } from "../drizzle-inbox.js";
+import { markRunStateChanged } from "../drizzle-run-state.js";
 import { createDrizzleThreadLock } from "../drizzle-thread-lock.js";
-import { createDeliveryAdapter, type DeliveryLeaseStore } from "../runtime-delivery.js";
+import { createDeliveryAdapter } from "../runtime-delivery.js";
 
 export function createDrizzleRuntimeDelivery(
   db: Database,
   deps: Omit<
     Parameters<typeof createDeliveryAdapter>[0],
-    "inbox" | "leaseStore" | "threadLock" | "schedulePostCommit"
+    "inbox" | "handBacks" | "leaseStore" | "threadLock" | "schedulePostCommit"
   >,
 ) {
   const db_ = () => currentDrizzleDb(db);
   const ownedLease = (lease: Lease) =>
     and(
       eq(schema.threadRunLeases.threadId, lease.threadId),
-      eq(schema.threadRunLeases.runId, lease.runId),
+      eq(schema.threadRunLeases.executionId, lease.executionId),
       eq(schema.threadRunLeases.holderId, lease.holderId),
     );
   const leaseStore: DeliveryLeaseStore = {
@@ -43,6 +46,7 @@ export function createDrizzleRuntimeDelivery(
         )
         .returning({ turnId: schema.threadRunLeases.turnId });
       if (!bound) throw new Error("Cannot bind current turn after losing live run lease");
+      markRunStateChanged(lease.threadId);
     },
 
     async setAdoptedMessageIds(lease, messageIds) {
@@ -51,6 +55,7 @@ export function createDrizzleRuntimeDelivery(
         .set({ adoptedMessageIds: [...messageIds] })
         .where(and(ownedLease(lease), isNotNull(schema.threadRunLeases.turnId)))
         .returning({ turnId: schema.threadRunLeases.turnId });
+      if (rows.length > 0) markRunStateChanged(lease.threadId);
       return rows.length > 0;
     },
 
@@ -62,6 +67,7 @@ export function createDrizzleRuntimeDelivery(
           and(ownedLease(lease), eq(schema.threadRunLeases.adoptedMessageIds, [...expectedIds])),
         )
         .returning({ threadId: schema.threadRunLeases.threadId });
+      if (rows.length > 0) markRunStateChanged(lease.threadId);
       return rows.length > 0;
     },
     async clearOrphanedReceipt(threadId, turnId, expectedIds) {
@@ -76,19 +82,7 @@ export function createDrizzleRuntimeDelivery(
           ),
         )
         .returning({ threadId: schema.threadRunLeases.threadId });
-      return rows.length > 0;
-    },
-    async cancelThreadReceipt(threadId, turnId) {
-      const rows = await db_()
-        .update(schema.threadRunLeases)
-        .set({ cancelRequested: true })
-        .where(
-          and(
-            eq(schema.threadRunLeases.threadId, threadId),
-            eq(schema.threadRunLeases.turnId, turnId),
-          ),
-        )
-        .returning({ turnId: schema.threadRunLeases.turnId });
+      if (rows.length > 0) markRunStateChanged(threadId);
       return rows.length > 0;
     },
     async lockThreadReceipt(threadId) {
@@ -96,13 +90,19 @@ export function createDrizzleRuntimeDelivery(
         .select({
           ids: schema.threadRunLeases.adoptedMessageIds,
           turnId: schema.threadRunLeases.turnId,
-          runId: schema.threadRunLeases.runId,
+          executionId: schema.threadRunLeases.executionId,
           holderId: schema.threadRunLeases.holderId,
         })
         .from(schema.threadRunLeases)
         .where(and(eq(schema.threadRunLeases.threadId, threadId)))
         .for("update");
-      return row ? { ...row, lease: { threadId, runId: row.runId, holderId: row.holderId } } : null;
+      return row
+        ? {
+            ids: row.ids,
+            turnId: row.turnId,
+            lease: { threadId, executionId: row.executionId, holderId: row.holderId },
+          }
+        : null;
     },
     async lockReceipt(lease) {
       const [row] = await db_()
@@ -119,8 +119,9 @@ export function createDrizzleRuntimeDelivery(
   return createDeliveryAdapter({
     ...deps,
     inbox: createDrizzleInbox(db),
+    handBacks: createDrizzleHandBacks(db),
     leaseStore,
-    threadLock: createDrizzleThreadLock(db),
+    threadLock: createDrizzleThreadLock(db, deps.eventWriter),
     schedulePostCommit: runAfterDrizzleCommit,
   });
 }

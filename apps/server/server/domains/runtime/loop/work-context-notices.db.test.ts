@@ -2,19 +2,23 @@
 
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
+import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
+import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createDrizzleProjectWorkRepository, updateWorkTransition } from "../../projects/index.js";
 import { createDrizzleRepositoriesForTest } from "../../threads/adapters/drizzle/repositories.js";
+import { createDrizzleTopPrimaryChatResolver } from "../../threads/adapters/drizzle/top-primary-chat.js";
 import { rebindThreadWork } from "../../threads/domain/rebind-thread-work.js";
 import {
   classifyHistoryItem,
-  createDrizzleEventJournalWriter,
   hashPromptBakeContent,
   isSystemUpdateMetadata,
 } from "../../threads/index.js";
+import { noFailureRecorder } from "../../threads/ports/event-journal.js";
 import {
   THREAD_WORK_RACE as ids,
   resetThreadWorkRaceFixture,
@@ -34,6 +38,7 @@ else
     const db = createDb(url, { max: 6 });
     const repos = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
+      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),
@@ -43,9 +48,10 @@ else
       threads: repos.threads,
       threadWorks: repos.threadWorks,
       works,
+      topPrimaryChats: createDrizzleTopPrimaryChatResolver(db),
       readChainPermission: async () => "edit" as const,
     });
-    const eventWriter = createDrizzleEventJournalWriter(db);
+    const eventWriter = createQuietDrizzleJournalWriter(db);
     const runClaim = createDrizzleRunClaim(db);
     const delivery = () =>
       createTestDrizzleDelivery(db, { repos, workContext, eventWriter, runClaim });
@@ -139,7 +145,7 @@ else
       const [update] = await updates();
       if (!update) throw new Error("Missing update");
       const blocks = await repos.blocks.listByTurn(update.id);
-      expect(blocks[0]?.textContent).toContain('current: rebound-target: "Rebound target"');
+      expect(blocks[0]?.textContent).toContain('current: w3 "Rebound target"');
       expect(blocks[0]?.textContent).not.toContain("latest");
       expect(blocks[0]?.textContent).toContain("<system_update>");
       expect(await notices.selectPending(ids.threadId)).toEqual([]);
@@ -176,6 +182,7 @@ else
         workContext,
         runClaim,
         eventWriter: {
+          ...noFailureRecorder,
           async appendEvent(threadId, event) {
             if (event.type === "work_context.changed") throw new Error("crash before ack");
             return eventWriter.appendEvent(threadId, event);
@@ -225,7 +232,11 @@ else
 
     it("materializes at a held run boundary, ordered with messages, and excludes Work IDs from response ack", async () => {
       const notices = delivery();
-      const lease = await runClaim.startExecution(ids.threadId, crypto.randomUUID());
+      const lease = await runClaim.startExecution(
+        ids.threadId,
+        crypto.randomUUID(),
+        async () => {},
+      );
       if (!lease) throw new Error("Missing lease");
       const assistant = createLocalTurn({
         threadId: ids.threadId,
@@ -309,7 +320,7 @@ else
         expect(await runClaim.readRunningTurnId(ids.threadId)).toBe(noticeOnly.next.id);
         expect(await updates()).toHaveLength(2);
       } finally {
-        await runClaim.release(lease);
+        await releaseLeaseUnderLock(db, runClaim, lease);
       }
     });
 

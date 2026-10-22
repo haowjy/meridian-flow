@@ -26,8 +26,8 @@ function composed(settleWorkspace: () => Promise<void>) {
             tabInstanceId: "tab",
             documentId,
             scheme: "scratch" as const,
-            path: "/Draft.md",
-            name: "Draft.md",
+            path: "/Branch.md",
+            name: "Branch.md",
             workId: "work",
             editable: true as const,
             filetype: "markdown" as const,
@@ -38,15 +38,8 @@ function composed(settleWorkspace: () => Promise<void>) {
       }),
       commit: () => [],
       settleDraft: async () => ({ kind: "not-settled" as const }),
-      previewReviewTab: () => ({
-        kind: "not-consumed",
-        current: { tabs: [], selectedTabIdByWork: {} },
-      }),
-      closeReviewTab: () => ({
-        kind: "not-consumed" as const,
-        current: { tabs: [], selectedTabIdByWork: {} },
-      }),
       applyAvailability: settleWorkspace,
+      holdForDrafts: () => undefined,
     },
   });
   const availability = new ProjectContextAvailabilityCoordinator({
@@ -111,7 +104,12 @@ describe("project availability durable-local settlement", () => {
     const settleWorkspace = vi.fn(async () => undefined);
     const { availability, removal } = composed(settleWorkspace);
     const lifetime = removal.createLifetimeLease();
-    const deletion = { projectId, deletedDocumentIds: [documentId], generation: "9" };
+    const deletion = {
+      projectId,
+      deletedDocumentIds: [documentId],
+      generation: "9",
+      deletionVersion: "4",
+    };
     lifetime.suspend();
     await expect(availability.acceptCommittedDelete(deletion)).rejects.toThrow("unavailable");
     expect(settleWorkspace).not.toHaveBeenCalled();

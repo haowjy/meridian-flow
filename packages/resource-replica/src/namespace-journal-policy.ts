@@ -154,15 +154,16 @@ export function validateNamespaceJournal(input: {
       attempts.add(attempt.attemptId);
       if (
         (attempt.request.kind === "move" &&
-          ((attempt.request.body.sourceWorkId == null && attempt.request.sourceWorkSlug != null) ||
+          ((attempt.request.body.sourceWorkId == null &&
+            attempt.request.sourceWorkHandle != null) ||
             (attempt.request.body.destinationWorkId == null &&
-              attempt.request.destinationWorkSlug != null) ||
+              attempt.request.destinationWorkHandle != null) ||
             (attempt.request.body.sourceRootThreadId != null &&
               !attempt.request.sourceRootThreadRef) ||
             (attempt.request.body.destinationRootThreadId != null &&
               !attempt.request.destinationRootThreadRef))) ||
         (attempt.request.kind === "delete" &&
-          ((attempt.request.workId == null && attempt.request.workSlug != null) ||
+          ((attempt.request.workId == null && attempt.request.workHandle != null) ||
             (attempt.request.rootThreadId != null && !attempt.request.rootThreadRef)))
       )
         throw new Error("Namespace request Work authority is incomplete");
@@ -199,6 +200,7 @@ export function validateNamespaceJournal(input: {
         if (
           attempt.request.kind !== "create" ||
           (attempt.outcome.result.status !== "conflict" &&
+            attempt.outcome.result.status !== "joined" &&
             attempt.outcome.result.documentId !== attempt.request.body.documentId)
         )
           throw new Error("Create outcome does not match submitted identity");
@@ -246,7 +248,12 @@ export function validateNamespaceJournal(input: {
       if (previousIntent?.state !== "settled-locally" && !localDeletionAllowed)
         throw new Error("Local deletion requires proven never-submitted identity");
     }
-    if (intent.state === "unexecutable-after-terminal" && !input.terminal)
+    // Recorded history survives a later restore of the identity; only entering it needs terminal.
+    if (
+      intent.state === "unexecutable-after-terminal" &&
+      previousIntent?.state !== "unexecutable-after-terminal" &&
+      !input.terminal
+    )
       throw new Error("Non-executable namespace history requires terminal identity");
     const lastAttempt = intent.attempts.at(-1);
     if (intent.state === "submitted" && (!lastAttempt || lastAttempt.outcome))

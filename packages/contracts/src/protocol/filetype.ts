@@ -12,6 +12,7 @@
  * document's filetype for code files.
  */
 
+import { z } from "zod";
 import type { DocumentFileType } from "./http-types.js";
 
 /** ProseMirror schema backing a Yjs-tracked document. */
@@ -77,6 +78,10 @@ const FILETYPE_DISPOSITIONS = {
   image: { kind: "binary", fileType: "image" },
   binary: { kind: "binary", fileType: "binary" },
 } as const satisfies Record<Filetype, FiletypeDisposition>;
+
+export const filetypeSchema = z.enum(
+  Object.keys(FILETYPE_DISPOSITIONS) as [Filetype, ...Filetype[]],
+);
 
 const dispositionsByPersistedValue: Readonly<Record<string, FiletypeDisposition | undefined>> =
   FILETYPE_DISPOSITIONS;

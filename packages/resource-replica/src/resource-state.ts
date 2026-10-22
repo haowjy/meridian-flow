@@ -1,5 +1,6 @@
 /** Pure resource creation, placement, and conflict-remint decisions. */
 import { assertAvailabilityGeneration, storedFilename } from "@meridian/contracts/protocol";
+import { newerCanonicalObservation } from "./canonical-observation";
 import { owningLocationIntent, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type {
   NamespaceIntent,
@@ -22,6 +23,8 @@ export function reserveResourceDocument(input: {
   intentId: string;
   folderPath?: string;
   provisionalName?: string;
+  /** A named create is dispatchable at once: the writer chose where it goes. */
+  destination?: { value: ResourceDestination; eligibleAt: number };
 }): ResourceWrite {
   const resource: ResourceDescriptor = {
     handle: input.handle,
@@ -37,7 +40,7 @@ export function reserveResourceDocument(input: {
     canonical: null,
     lifecycle: { kind: "local" },
     aliases: {},
-    obligations: { createEligibility: { eligibleAt: null } },
+    obligations: { createEligibility: { eligibleAt: input.destination?.eligibleAt ?? null } },
   };
   const intent: NamespaceIntent = {
     projectId: input.projectId,
@@ -49,6 +52,7 @@ export function reserveResourceDocument(input: {
       kind: "create",
       folderPath: input.folderPath ?? "",
       ...(input.provisionalName ? { provisionalName: input.provisionalName } : {}),
+      ...(input.destination ? { destination: input.destination.value } : {}),
     },
     attempts: [],
     state: "pending",
@@ -168,7 +172,7 @@ export function remintCreateConflict(input: {
   if (
     !conflicted ||
     outcome?.kind !== "create" ||
-    outcome.result.status !== "conflict" ||
+    (outcome.result.status !== "conflict" && outcome.result.status !== "joined") ||
     record.resource.lifecycle.kind !== "local" ||
     record.resource.canonical !== null
   )
@@ -236,31 +240,6 @@ export function remintCreateConflict(input: {
   };
 }
 
-export function planSessionAdoptionGeneration(
-  record: ResourceRecord,
-  generation: string,
-): ResourceWrite | null {
-  assertAvailabilityGeneration(generation);
-  const adoption = record.resource.obligations.sessionAdoption;
-  if (!adoption) return null;
-  if (adoption.generation === generation) return null;
-  if (adoption.generation !== null) throw new Error("Session adoption generation is immutable");
-  return {
-    expectedRevision: record.resource.revision,
-    next: {
-      resource: {
-        ...record.resource,
-        revision: record.resource.revision + 1,
-        obligations: {
-          ...record.resource.obligations,
-          sessionAdoption: { ...adoption, generation },
-        },
-      },
-      intents: record.intents,
-    },
-  };
-}
-
 /** A cached acknowledged session can render locally before fresh remote admission completes. */
 export function planCachedSessionAdoption(input: {
   record: ResourceRecord;
@@ -289,7 +268,6 @@ export function planCachedSessionAdoption(input: {
             documentId: record.resource.identity.documentId,
             identityRevision: record.resource.identity.revision,
             exactDatabaseName: record.resource.content.databaseName,
-            generation: null,
           },
         },
       },
@@ -298,9 +276,13 @@ export function planCachedSessionAdoption(input: {
   };
 }
 
-export function acknowledgeSessionAdoption(record: ResourceRecord): ResourceWrite | null {
-  const adoption = record.resource.obligations.sessionAdoption;
-  if (!adoption || adoption.generation === null) return null;
+/** Settles the obligation; `generation` is the committed incarnation's, the one the resource now carries. */
+export function acknowledgeSessionAdoption(
+  record: ResourceRecord,
+  generation: string,
+): ResourceWrite | null {
+  assertAvailabilityGeneration(generation);
+  if (!record.resource.obligations.sessionAdoption) return null;
   if (record.resource.lifecycle.kind !== "acknowledged") return null;
   const { sessionAdoption: _completed, ...obligations } = record.resource.obligations;
   return {
@@ -311,7 +293,7 @@ export function acknowledgeSessionAdoption(record: ResourceRecord): ResourceWrit
         revision: record.resource.revision + 1,
         lifecycle: {
           kind: "acknowledged",
-          availabilityGeneration: adoption.generation,
+          availabilityGeneration: generation,
         },
         obligations,
       },
@@ -332,6 +314,7 @@ export function recordAcquiredResourceContent(input: {
 }): ResourceWrite | null {
   assertAvailabilityGeneration(input.generation);
   const { record } = input;
+  if (supersededTerminal(record, input.generation)) return null;
   if (record.resource.identity.documentId !== input.documentId)
     throw new Error("Acquired content does not match the current resource identity");
   if (record.resource.lifecycle.kind !== "acknowledged") return null;
@@ -370,7 +353,6 @@ export function recordAcquiredResourceContent(input: {
             documentId: record.resource.identity.documentId,
             identityRevision: record.resource.identity.revision,
             exactDatabaseName: input.databaseName,
-            generation: input.generation,
           },
         },
       },
@@ -379,15 +361,51 @@ export function recordAcquiredResourceContent(input: {
   };
 }
 
+/**
+ * A newer server observation already restored this document past the deletion generation; the
+ * deleted lineage's purge still runs against its old exact database, but the descriptor stays.
+ */
+function supersededTerminal(record: ResourceRecord, generation: string): boolean {
+  const revived = record.resource.revivedFrom;
+  return (
+    record.resource.lifecycle.kind !== "terminal" &&
+    revived !== undefined &&
+    BigInt(generation) <= BigInt(revived.generation)
+  );
+}
+
+/** The highest server version known to prove this deletion; null leaves the terminal versionless. */
+function terminalDeletionVersion(
+  record: ResourceRecord,
+  deletionVersion: string | null,
+): string | undefined {
+  const lifecycle = record.resource.lifecycle;
+  const versions = [
+    deletionVersion,
+    lifecycle.kind === "terminal" ? lifecycle.deletionVersion : undefined,
+  ].filter((version): version is string => typeof version === "string");
+  if (versions.length === 0) return undefined;
+  return versions.reduce((highest, version) =>
+    newerCanonicalObservation(version, highest) ? version : highest,
+  );
+}
+
+/**
+ * The editor's exact-ID terminal. `deletionVersion` is the namespace version of the exact-ID
+ * deletion evidence; the terminal holds it so stale catalog history can never revive it.
+ */
 export function publishResourceTerminal(input: {
   record: ResourceRecord;
   documentId: string;
   generation: string;
   transitionId: string;
   exactDatabaseName: string;
+  deletionVersion: string | null;
 }): ResourceWrite | null {
   assertAvailabilityGeneration(input.generation);
   const { record } = input;
+  const deletionVersion = terminalDeletionVersion(record, input.deletionVersion);
+  if (supersededTerminal(record, input.generation)) return null;
   if (
     record.resource.identity.documentId !== input.documentId ||
     record.resource.content.kind !== "exact" ||
@@ -417,6 +435,7 @@ export function publishResourceTerminal(input: {
             kind: "terminal",
             generation: input.generation,
             transitionId: input.transitionId,
+            ...(deletionVersion === undefined ? {} : { deletionVersion }),
           },
           obligations: {
             ...record.resource.obligations,
@@ -441,6 +460,7 @@ export function publishResourceTerminal(input: {
           kind: "terminal",
           generation: input.generation,
           transitionId: input.transitionId,
+          ...(deletionVersion === undefined ? {} : { deletionVersion }),
         },
         obligations: {
           cleanup: {
@@ -461,6 +481,7 @@ export function acknowledgeResourceTerminalCleanup(input: {
   exactDatabaseName: string;
 }): ResourceWrite | null {
   const { record } = input;
+  if (supersededTerminal(record, input.generation)) return null;
   if (
     record.resource.lifecycle.kind !== "terminal" ||
     record.resource.lifecycle.generation !== input.generation ||

@@ -1,135 +1,66 @@
 # domains/packages
 
-Owns Mars package parsing, import/export, definition editing, catalog projection,
-and skill-reference resolution. A package contains `mars.toml`, Agent Markdown,
-and skill directories with `SKILL.md` and supporting files.
+This domain parses and retains Mars packages, publishes immutable Agent
+definitions, and resolves skills and execution configuration. Keep four
+identities distinct: a source revision is the complete exportable snapshot, a
+definition revision is one compiled Agent, a catalog entry selects a revision,
+and a thread binding fixes a revision plus resolved configuration.
 
-Keep the identities distinct: a retained source revision is the complete
-exportable file snapshot; a definition revision is one compiled Agent within
-that snapshot; a catalog entry selects a definition revision for future chats;
-and a thread binding fixes a definition revision plus resolved configuration for
-one conversation. `agent_package_installations` records management head/history
-over retained source revisions. It is not a fifth content or execution owner.
+## Compilation and configuration
 
-## Source and compilation
+`mars.toml`, Agent Markdown, and skill files are parsed into a canonical source
+snapshot. Source checksums detect edited/pristine state; compiled-definition
+digests identify normalized Agent content. Both canonicalize object-key order
+while retaining list order. Unknown metadata is retained, but compilation is
+syntax validation only: runtime support, authorization, model resolution, and
+dependency binding happen in the retained configuration resolver.
 
-- `domain/mars-source.ts` reads TOML and Markdown frontmatter, preserves structured
-  Agent skills and field presence, and computes canonical source checksums.
-  Frontmatter must be a mapping. Agent mode defaults are resolved by consumers.
-- `domain/agent-definition-compiler.ts` validates declared configuration and emits
-  a presence-sensitive definition with a versioned digest. Flat skills normalize
-  to `skills.load`. Agent-specific body text becomes `systemPrompt`.
-- The canonical execution-knob schemas (effort value set + `max→xhigh` alias,
-  permission, tool-name alias fold, tool lists) live in
-  `@meridian/contracts/agents` (`execution-knobs.ts`). The compiler imports them
-  rather than re-declaring; authoring accepts the canonical effort set including
-  `xhigh`/`none`. `domain/agent-gateway-meta.ts` sources its accepted effort set
-  from the same constants and keeps only a private normalize helper.
-- `tools` (allow-list) and `disallowed-tools` are lists of tool names only;
-  the map form is refused. Mars aliases fold first (`Task` → `agent`), and no
-  alias may equal a Flow tool name. TOML overlays use `tools.allowed` and
-  `tools.disallowed`, each replacing its list; an explicit empty list clears
-  it. Access is `permission: read | edit` (default `edit`), never a tool:
-  `edit` and its aliases in `tools` are refused with a message naming
-  `permission`; in `disallowed-tools` they are ignored (D57).
-  Runtime support then refuses a `tools` name outside `TOOL_CATALOG` and
-  ignores an unknown `disallowed-tools` name, which denies nothing
-  ([runtime tools](../../runtime/.context/tools.md#permissions)).
-- Compilation is syntax validation. Runtime support, resource authorization,
-  model resolution, and dependency binding belong to the retained configuration resolver before conversation creation.
-  Unknown metadata is retained; acceptance does not establish its execution.
-- Source checksums and compiled-definition digests have different purposes.
-  Source checksums drive edited/pristine detection and include config overlays;
-  compiled digests identify normalized definition content. Both sort object keys
-  recursively and retain list order.
+Execution-knob schemas are canonical in `@meridian/contracts/agents`; this
+domain consumes them rather than redefining effort, permission, aliases, or
+tool-list shapes. `tools` and `disallowed-tools` are lists of names. Mars
+aliases fold before validation, `permission` is not a tool, and an unknown
+authoring allow-list name is refused while an unknown deny-list name denies
+nothing. Missing or ambiguous retained skill/target references refuse binding.
 
-## Retained definition storage
+## Retention and publication
 
-`domain/agent-source-revision.ts` derives compiled definitions from the retained
-file snapshot and TOML overlays. Source identity includes supporting files;
-compiled identity describes the Agent configuration. Binary/NUL-containing
-supporting files use base64 for JSONB storage.
+All Agent definitions and package skill files live in retained snapshots; there
+are no mutable operational Agent records. The revision store owns immutable
+source/definition rows, account/system catalog pointers, retained catalog
+membership, and fixed thread bindings. Catalog advancement requires an
+expected revision and retains old membership so a reserved first Send keeps
+its exact revision. Removal hides selection but leaves bound revisions
+readable; explicit restore names the retained revision.
 
-`domain/agent-configuration.ts` resolves the configured default model, skill/named-target identities, and presence-sensitive `tools` / `disallowed-tools` / `effort` over the retained package dependency graph. `retainedPackageSkillMaps` is the graph walk for every `skills/<slug>/SKILL.md` in that closure; runtime slash listing reuses it. `buildRetainedSkillResolver` re-exposes name-to-reference skill resolution over one package root's closure for invocation patches, which never consult mutable package installs or account rows. Missing or ambiguous Agent `load`/`available` references refuse binding; it never consults mutable package installs or account rows. Named-target resolution refuses `model-invocable: false` only; a pickable primary may also be a child spawn target. The picker still uses `mode`.
+`source-publication.ts` is the atomic owner for save, import, update, edit,
+restore, and system provisioning. It validates the complete retained graph,
+advances future-chat pointers, and commits installation history under one
+owner lock. A source collision refuses the complete import rather than
+silently renaming or partially applying it. Fetching happens outside the owner
+transaction.
 
-`ports/agent-revision-store.ts` owns immutable source/definition records,
-account/system catalog pointers, and fixed thread bindings.
-`adapters/drizzle-agent-revision-store.ts` persists them in the
-`agent-definition-revisions.ts` schema tables and joins the app's ambient
-transaction. Source installs deduplicate by coordinate/digest. Catalog creation
-is idempotent for the same revision; advancement requires an expected revision.
-The current catalog pointer and retained `agent_catalog_revisions` membership
-authorize exact selections. Pointer advancement retains the old membership in the
-same transaction, allowing a reserved first Send to keep its revision without
-authorizing unrelated account content. Removal hides selection while bound revisions remain readable. An explicit
-owner restore requires the retained revision; ordinary saves leave removed entries hidden. Catalog pages
-combine system and owned entries with a bounded name/keyset order.
+Account-installed skills are separate user-slash inventory, not package
+content, prompt-list entries, or replacements for retained skill files.
+Exports read retained files rather than reconstructing them from normalized
+definitions.
 
-The store is an internal persistence port. Callers authorize source/Project/thread
-access and runtime support before selecting or binding. Null catalog ownership
-is reserved for trusted system seeding. App services expose the revision port as
-`agentRevisions`. The hermetic adapter and thread repositories share one snapshot transaction
-owner in app composition. Either entry point commits or rolls back both stores;
-completed transaction frames reject escaped writes. Root creation resolves exact
-account/system selections and binds atomically. Shared runtime preparation reads
-the retained binding. Child creation consumes exact targets from the parent binding; an agent-less generic child (omitted or empty target) binds a null `definitionRevisionId` and no Agent revision. The generic identity vocabulary (`GENERIC_SUBAGENT_SLUG`, `GENERIC_SUBAGENT_NAME`, `GENERIC_AGENT_BODY`) lives in `@meridian/contracts/agents`. Root, child and derived-primary creation use the threads domain's atomic bound-conversation operation.
+## Thread and project boundaries
 
-`domain/bound-agent-catalog.ts` resolves exact primary selections and builds
-catalog pages from immutable revisions. Listing and resolution share the supplied
-host-support predicate. Publication uses one owner-scoped transaction boundary (system or account) and rejects
-cross-source logical-key collisions. Production startup seeds General through this
-boundary with an empty Agent-specific body (the shared host prompt remains
-authoritative) and a concrete configured default model. Changing that configured
-model publishes a new revision and retains the former one.
+Callers authorize source, Project, and thread access before selecting or
+binding. Root, child, fork, handoff, and derived-primary creation bind through
+the threads domain's atomic operation. A generic child has no definition
+revision and uses the host-owned generic identity; a named child consumes an
+exact target from its parent's retained binding. The store is an internal
+port, and app composition shares one transaction owner with thread
+repositories so a completed transaction cannot leak writes.
 
-Standalone `POST /api/agents` publishes personal source directly through this owner. Saves require the prior revision for advancement; conflicts roll back the source install. Runtime support can make a preserved definition unavailable without pretending its semantics execute.
+Project availability is a separate prospective-selection filter. Removing an
+entry hides it for that Project but does not delete source, change account
+ownership, or invalidate already-bound execution. Stable catalog-entry IDs are
+the exclusion keys, shared publication does not clear exclusions, and General
+is the only non-removable system entry. Routes authorize the Project before
+listing/removal; root, fork, and handoff selection pass the Project ID. Bound
+execution and same-ID creation recovery do not recheck prospective availability.
 
-## Source management
-
-`domain/source-publication.ts` is the atomic publication owner for standalone save,
-package import/update/edit/restore and trusted system provisioning. It installs
-immutable source, validates retained references, advances exact future-chat
-pointers and commits the installation head/history under the same owner lock.
-Removed entries remain hidden on ordinary publication. Source collisions refuse
-the complete import with an actionable rename diagnostic, preserving existing content.
-
-`agent_package_installations` is account/system management provenance: current
-edited source, upstream pristine source and fetch origin. Its history authorizes
-restore from owned source only, including definitions pruned from the current snapshot. It is never an execution lookup. All Agent definitions
-and package skill files live exclusively in retained snapshots; there are no mutable
-Agent records or operational link overrides.
-
-Account-installed skills live in `account_skill_installs` (unique per owner and
-slug). They are extra user-slash inventory for the account, not Agent package
-content, not a prompt-list entry, and not a rewrite of retained
-`skills/<slug>/SKILL.md`. Milestone 2 mutates them only through debug HTTP.
-
-`package-source.ts` materializes local/GitHub dependency graphs before writes,
-preserving supported files and binary data. Explicit downloaded provenance confines local dependencies to their fetched tree;
-URL spelling never grants local filesystem trust. `package-management.ts` imports and reconciles the
-retained graph. Updates keep locally edited entities and references unless reset. Keeping an edited
-Agent retains its dependency closure; incompatible upstream additions refuse atomic
-publication rather than silently changing those references;
-removed pristine definitions leave retained history but no future-chat selection.
-`definition-editing.ts` edits or restores one entity within that complete source.
-The skill-availability edit versions `skills.available` on the retained Agent.
-Prompt freeze and `skills://` visibility consume that declaration in the runtime domain.
-Slash listing walks system and owner installation heads with
-`retainedPackageSkillMaps`, then account installs; it is not the bound Agent
-package and not Agent `available`. `package-export.ts` exports retained files without reconstructing source
-from normalized definitions.
-
-Project-addressed management routes still authorize access to that Project; the
-owned package content belongs to the authenticated account and is reusable across
-Projects. Source fetching stays outside owner transactions. Production seeds
-General and configured first-party packages into the system catalog at startup,
-not during Project creation. General replaces the old `<none>` entry.
-
-## Project availability
-
-`project_agent_removals` excludes stable catalog-entry IDs from one Project's
-prospective list and primary selection admission. Shared publication/seeding never
-clears exclusions. General is the only non-removable system entry. Routes authorize
-the Project before listing/removal; root, handoff and fork selection pass its ID.
-Previously bound execution and same-ID creation recovery do not recheck prospective
-availability. Removal does not delete source or change account ownership.
+Project-addressed management routes authorize the Project, but owned package
+content belongs to the authenticated account and can be reused across Projects.

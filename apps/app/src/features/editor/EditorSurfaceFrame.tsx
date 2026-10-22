@@ -59,10 +59,14 @@ export function EditorSurfaceFrame({
     // The container the column insets answer to: the pane, not the viewport.
     <div className="@container flex min-h-0 flex-1 flex-col">
       {notices ? (
-        <div className={cn(editorColumnChrome, "flex shrink-0 flex-col gap-2 pt-3")}>{notices}</div>
+        // empty:hidden: a notice that has nothing to say (none yet, or dismissed)
+        // renders nothing, and the row must not keep its padding.
+        <div className={cn(editorColumnChrome, "flex shrink-0 flex-col gap-1.5 pt-2 empty:hidden")}>
+          {notices}
+        </div>
       ) : null}
       {toolbar ? (
-        <div className="flex h-9 shrink-0 items-center">
+        <div className="flex h-9 shrink-0 items-center [@media(pointer:coarse)]:h-11">
           {/* The toolbar's geometry is fixed (ten controls, one order), so a
               pane too narrow for it scrolls the row rather than dropping controls. */}
           <div
