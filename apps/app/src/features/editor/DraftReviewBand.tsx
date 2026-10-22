@@ -185,8 +185,8 @@ function ChangeListPopover({ header }: { header: ReviewHeaderModel }) {
   const [open, setOpen] = useState(false);
   const { view } = header;
   useEffect(() => {
-    if (view.finished || view.completing) setOpen(false);
-  }, [view.finished, view.completing]);
+    if (view.finished) setOpen(false);
+  }, [view.finished]);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>

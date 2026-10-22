@@ -26,8 +26,8 @@ export function MobileChangeSheet({
   >;
 }) {
   useEffect(() => {
-    if (open && (view.finished || view.completing)) onOpenChange(false);
-  }, [open, view.finished, view.completing, onOpenChange]);
+    if (open && view.finished) onOpenChange(false);
+  }, [open, view.finished, onOpenChange]);
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
