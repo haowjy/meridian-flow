@@ -1315,9 +1315,6 @@ export function createInMemoryAppServices(): AppServices {
     async headSeq() {
       return 0n;
     },
-    journalSeqForEventSeq(seq: bigint) {
-      return seq / 1000n;
-    },
     async readModelProjectionWatermark() {
       return 0n;
     },

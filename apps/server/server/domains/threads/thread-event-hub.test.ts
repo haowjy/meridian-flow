@@ -230,9 +230,6 @@ describe("thread event hub committed invalidations", () => {
     let blockRead = false;
     const blockingReader: EventJournalReader = {
       ...reader,
-      async headSeq(threadId) {
-        return reader.headSeq(threadId);
-      },
       async readAfter(threadId, afterSeq, limit) {
         if (blockRead) {
           blockRead = false;
