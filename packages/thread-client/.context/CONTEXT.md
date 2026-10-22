@@ -288,6 +288,7 @@ A join is classified against the request in flight (`R`) and the position (`P`):
 | State | Join | Effect |
 |---|---|---|
 | Request in flight | no cursor | cursor `P` if known, else `R`; waits; sends nothing |
+| Request in flight, `R` unknown | explicit cursor | **supersedes:** a new request from the oldest cursor |
 | Request in flight | cursor `>= R` | waits; the replay in flight carries it |
 | Request in flight | cursor `< R` | **supersedes:** a new request from the oldest cursor |
 | Lease active | no cursor, or cursor `>= P` | live from now; frames in `(P, cursor]` are skipped |
@@ -336,7 +337,12 @@ answered, so no backoff). Consumers recover missing history through snapshots; e
 client owns its resync policy. A callback that removes the subscription cancels the
 replacement request just installed.
 
-A cursorless `subscribe` keeps its meaning (replay from 0; `subscribed.after` is `"0"`).
+A cursorless `subscribe` starts at the server's current head, stated in
+`subscribed.after`; explicit `"0"` requests history. An explicit cursor joining an
+in-flight cursorless request supersedes it: an unknown head cannot promise the
+requested replay. Cursorless handlers joining an active lease start at its known
+position and receive no synthetic acknowledgment. Their durable projections must
+therefore acquire on mount as well as reconcile on real acknowledgments.
 `subscribed.state.resumeAfterSeq` is in journal units and is not a cursor.
 
 ## Thread socket deadlines
