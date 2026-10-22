@@ -205,7 +205,7 @@ function DockFileLine({
         </div>
       ) : null}
       {!summary && wholeDocument ? trouble : null}
-      <DraftCommandStatus itemKey={file.row.draft.itemKey} />
+      <DraftCommandStatus itemKey={file.row.draft.itemKey} item={file.row.draft} />
       {expanded && file.status !== "error" && !(summary && wholeDocument) ? (
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows

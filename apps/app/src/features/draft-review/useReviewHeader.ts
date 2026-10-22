@@ -16,6 +16,7 @@ import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useDraftReview } from "./DraftReviewProvider";
+import { isPathTaken } from "./deleted-drafts";
 import type { BranchCommandFailure } from "./review-command-types";
 import { nextReviewFile } from "./review-files";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
@@ -140,7 +141,10 @@ export function useReviewHeader({
     view,
     next,
     locked,
-    canApply: ready && view.items.length > 0,
+    canApply:
+      ready &&
+      view.items.length > 0 &&
+      !isPathTaken(files.find((row) => row.draft.itemKey === itemKey)?.draft),
     finished,
     completing,
     commandError,

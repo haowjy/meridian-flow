@@ -99,7 +99,7 @@ export function WorkChangeFile({
           </button>
         )}
       </div>
-      <DraftCommandStatus itemKey={file.draft.itemKey} />
+      <DraftCommandStatus itemKey={file.draft.itemKey} item={file.draft} />
       <DraftImagePreview
         target={previewing ? { projectId, workId, documentId: file.documentId, name } : null}
         onClose={() => setPreviewing(false)}
