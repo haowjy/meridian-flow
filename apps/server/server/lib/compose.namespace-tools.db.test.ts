@@ -169,7 +169,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(schema.documentEdits)
         .where(
           and(eq(schema.documentEdits.documentId, id), isNotNull(schema.documentEdits.treeChange)),
-        );
+        )
+        .orderBy(sql`(${schema.documentEdits.treeChange}->>'seq')::bigint`);
 
     it("moves at the call; undo by either path and redo walk it; A→B, B→C undoes back to A", async () => {
       const script = await start();
