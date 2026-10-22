@@ -88,6 +88,19 @@ export type WriteRejection =
   | "inverse"
   | "integration";
 
+/** Why a `move` or `delete` didn't run, for a host that words it itself. */
+export type NamespaceRefusal =
+  | "source_is_folder"
+  | "document_unresolved"
+  | "location_taken"
+  | "destination_missing"
+  | "stale_location"
+  | "already_at_destination"
+  | "file_type_conversion"
+  | "document_type_conversion"
+  | "mixed_modes"
+  | "unsupported";
+
 export interface AgentEditModelPayload {
   /** The document path the command read or changed, as the caller named it. */
   path?: string;
@@ -104,6 +117,8 @@ export interface AgentEditModelPayload {
   rejected?: WriteRejection;
   /** Who removed the document and how, beside `rejected: "removed"`, for the chat's card. */
   removal?: DocumentRemovalRecord;
+  /** Why a `move` or `delete` was refused. */
+  refusal?: NamespaceRefusal;
   /** Why a `permission_denied` result was refused (file-access §9). */
   reason?: PermissionDeniedReason;
   write?: {
@@ -118,6 +133,11 @@ export interface AgentEditModelPayload {
     from: string;
     blocks?: number;
   };
+  /**
+   * What a `move` or `delete` did to the whole document: where a move came from, as the model
+   * named it, and the Works whose drafts of a deleted document survive it (D79), by handle.
+   */
+  namespace?: { kind: "moved"; from: string } | { kind: "deleted"; survivingWorks?: string[] };
   read?: {
     format: "full" | "outline" | "edits";
     /** The whole document's block count; the text names it when the read returned fewer. */

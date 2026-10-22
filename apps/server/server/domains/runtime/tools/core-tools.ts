@@ -16,6 +16,7 @@ import {
   DOCUMENT_NAMES_DESCRIPTION,
   DocumentVersionSchema,
   modelResult,
+  PublishedWriteToolInputSchema,
   ReadToolInputSchema,
   renderAgentEditResult,
   WriteToolInputSchema,
@@ -248,7 +249,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
           DOCUMENT_NAMES_DESCRIPTION +
           "\n" +
           "Change documents. In draft mode your changes to a document go to its draft, except `scratch://`, which is always edited directly.",
-        inputSchema: modelToolSchema(WriteToolInputSchema),
+        inputSchema: modelToolSchema(PublishedWriteToolInputSchema),
       },
       input: WriteToolInputSchema,
       execution: { type: "server", handler: handlers.write },

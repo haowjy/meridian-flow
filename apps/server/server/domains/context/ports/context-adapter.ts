@@ -6,7 +6,11 @@
  */
 
 import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
-import type { ParsedDocumentFilename, RetractionCause } from "@meridian/contracts/protocol";
+import type {
+  InvalidOperationReason,
+  ParsedDocumentFilename,
+  RetractionCause,
+} from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type {
@@ -66,7 +70,7 @@ export type AdapterFault =
   | { code: "conflict"; occupantKind?: "file" | "folder" }
   | { code: "stale_source" }
   | { code: "stale_target" }
-  | { code: "invalid_operation"; message?: string; reason?: "ambiguous_path" }
+  | { code: "invalid_operation"; message?: string; reason?: InvalidOperationReason }
   | {
       code: "context_unavailable";
       reason: "work_archived" | "work_deleted" | "work_missing";

@@ -58,6 +58,7 @@ export {
 export type {
   DocumentCommandName,
   DocumentVersion,
+  NamespaceCommandName,
   ReadCommand,
   ReadToolInput,
   WriteCommand,
@@ -67,6 +68,7 @@ export type {
 export {
   DOCUMENT_NAMES_DESCRIPTION,
   DocumentVersionSchema,
+  PublishedWriteToolInputSchema,
   ReadCommandSchema,
   ReadToolInputSchema,
   WriteCommandSchema,
@@ -87,6 +89,7 @@ export {
   isAgentEditResultEnvelope,
   modelBlockItem,
   modelResult,
+  type NamespaceRefusal,
   type WriteRejection,
 } from "./tool/model-result.js";
 export { removedFile, survivingDraftNotice } from "./tool/removal-copy.js";

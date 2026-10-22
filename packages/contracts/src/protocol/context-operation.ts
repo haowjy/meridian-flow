@@ -6,6 +6,16 @@ import type {
   MoveContextEntryRequest,
 } from "./http-types.js";
 
+/**
+ * Why an operation can't run, when a caller words it: a path two nodes share, or a rename
+ * whose extension would change how the document is stored (a binary file to a text one or
+ * back), or which kind of text document it is.
+ */
+export type InvalidOperationReason =
+  | "ambiguous_path"
+  | "file_type_conversion"
+  | "document_type_conversion";
+
 export type ContextError =
   | { code: "operation_mismatch"; uri: string }
   | { code: "invalid_name"; uri: string; message: string }
@@ -15,7 +25,7 @@ export type ContextError =
   | { code: "conflict"; uri: string; occupantKind?: "file" | "folder" }
   | { code: "stale_source"; uri: string }
   | { code: "stale_target"; uri: string }
-  | { code: "invalid_operation"; uri: string; message?: string; reason?: "ambiguous_path" }
+  | { code: "invalid_operation"; uri: string; message?: string; reason?: InvalidOperationReason }
   | {
       code: "context_unavailable";
       uri: string;

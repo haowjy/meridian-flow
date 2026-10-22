@@ -49,6 +49,15 @@ revokes a replacement peer. A host's room read that finds its bound draft taken
 by a Discard throws `DocumentAccessLostError(reason)`, refused the same way.
 `dropStaged` may mutate only Buffered state. Create cleanup is eligible only for pre-commit discard.
 
+## Whole-document commands
+
+`move` (`{ from: { path }, path }`) and `delete` (`{ path }`) are on the `write` tool input
+(`WriteToolInputSchema`) but not the engine's `WriteCommandSchema`: they change where a
+document lives, so the host runs them and reports them through the same envelope, with a
+`namespace` fact (`moved from …`, `deleted`) and a typed `refusal` when refused. Neither path
+takes a `#fragment`. Until both work in draft mode too (D66), the tool publishes
+`PublishedWriteToolInputSchema`, which omits them; PR 3's drafted phase deletes it.
+
 ## Mutation and selector contracts
 
 A journal batch reports `staged` or `durable`; the owning attempt stores that
