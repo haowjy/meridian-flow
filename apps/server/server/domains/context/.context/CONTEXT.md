@@ -131,8 +131,9 @@ refused); a recursive delete, or a move to a source fewer branches may hold,
 first splits hidden contents into hidden twins at their old paths, so a
 writer's live folder operations never disturb a branch's hidden rows. Identity moves resolve a folder
 in the live view, then resolve it again under namespace locks; stale plans
-return `stale_target`, proven occupation returns a typed conflict, and absent,
-terminal, or denied identity destinations return `destination_missing`.
+return `stale_target`, while an occupied destination leaf sends the arrival to
+the next alias-aware free name and returns that actual path. An absent,
+terminal, or denied identity destination returns `destination_missing`.
 Location-only CAS tokens fence moves and deletes. A `createFolders` suffix is
 validated beneath the identity anchor in the same transaction; a missing
 anchor creates nothing. Folder deletes validate the supplied folder identity

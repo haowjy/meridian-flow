@@ -422,7 +422,7 @@ describe("canonical document naming laws", () => {
       ["copied", "toml"],
     ]);
   });
-  it("refuses file/folder clashes in both directions and at exact moves", async () => {
+  it("keeps create clashes distinct and gives exact moves a free name", async () => {
     const { fs } = createUntitledFs({});
     await fs.mkdir("Lore");
     expect(await fs.ensureTrackedDocument("Lore.md")).toMatchObject({
@@ -444,12 +444,12 @@ describe("canonical document naming laws", () => {
       workScopeId: null,
     });
     expect(await mover.commitWriterLocation(dispatch("Chapter"), dispatch("Lore"))).toMatchObject({
-      ok: false,
-      error: { code: "conflict" },
+      ok: true,
+      value: { destinationPath: "Lore (2)" },
     });
     expect(await mover.commitWriterLocation(dispatch("Lore"), dispatch("Chapter"))).toMatchObject({
-      ok: false,
-      error: { code: "conflict" },
+      ok: true,
+      value: { destinationPath: "Chapter" },
     });
   });
 });
@@ -532,7 +532,7 @@ describe("router through real ContextFS naming", () => {
     expect(await port.stat("manuscript://LICENSE")).toMatchObject({ ok: true });
   });
 
-  it("refuses folder document-alias claims, parent provisioning and CAS moves", async () => {
+  it("refuses create aliases and gives CAS moves an alias-aware free name", async () => {
     const { fs, port } = harness();
     await fs.mkdir("Lore.md");
     expect(await port.ensureTrackedDocument("manuscript://Lore")).toMatchObject({
@@ -548,11 +548,11 @@ describe("router through real ContextFS naming", () => {
     });
     expect(
       await port.commitWriterLocation("manuscript://Chapter", "manuscript://Lore"),
-    ).toMatchObject({ ok: false, error: { code: "conflict" } });
+    ).toMatchObject({ ok: true, value: { destinationPath: "Lore (2)" } });
     await fs.mkdir("Other");
     expect(
       await port.commitWriterLocation("manuscript://Other", "manuscript://Chapter.md"),
-    ).toMatchObject({ ok: false, error: { code: "conflict" } });
+    ).toMatchObject({ ok: true, value: { destinationPath: "Chapter.md" } });
   });
 
   it.each([

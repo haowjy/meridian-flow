@@ -214,6 +214,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
+    it("moves onto an occupied model path at the free name and reports where it landed", async () => {
+      const script = await start();
+      const { call } = await script.begin();
+      const moved = await call("write", {
+        command: "move",
+        from: { path: "ch1" },
+        path: "ch2",
+      });
+      expect(moved.isError, text(moved)).toBeFalsy();
+      expect(text(moved)).toContain("manuscript://ch2 (2)");
+      expect(await placement(CH1)).toMatchObject({ name: "ch2 (2)" });
+      expect(await placement(CH2)).toMatchObject({ name: "ch2" });
+    });
+
     it("deletes with the agent actor, and undo by the deleted path restores it", async () => {
       const script = await start();
       const { call } = await script.begin();
@@ -247,7 +261,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(text(await call("read", { path: "ch2" }))).toContain("Chapter two.");
     });
 
-    it("rolls a reply's move and delete back, reports the one it can't, and keeps another Work's draft", async () => {
+    it("rolls a reply's move and delete back at a free name and keeps another Work's draft", async () => {
       const script = await start();
       // w2's draft-mode chat drafts a change to ch2: a live delete leaves it alone (D79).
       await runtimes.script(script.runtime, OTHER).reply(async (call) => {
@@ -262,7 +276,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(text(deleted)).toContain(
         `Work "Polish" still has changes to it; applying them brings it back.`,
       );
-      // The writer makes a new ch2 before the reply fails: ch2's restore finds it taken.
+      // The writer makes a new ch2 before the reply fails: the restored document lands beside it.
       await db.insert(schema.documents).values({
         contextSourceId: SOURCE_ID,
         name: "ch2",
@@ -275,10 +289,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         THREAD as never,
       );
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
-      expect((await placement(CH2))?.deletedAt).not.toBeNull();
-      expect(rolledBack.skipped).toEqual([
-        expect.objectContaining({ documentId: CH2, cause: "location_taken" }),
-      ]);
+      expect(await placement(CH2)).toMatchObject({ name: "ch2 (2)", deletedAt: null });
+      expect(rolledBack.skipped).toEqual([]);
       const drafts = await db
         .select({ status: schema.documentDrafts.status })
         .from(schema.documentDrafts)
@@ -568,7 +580,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         row.tree?.op === "settle" ? [row.tree.settles.as] : [],
       );
 
-    it("Apply runs a drafted move or delete by the row it froze, held behind the Work's own move", async () => {
+    it("Apply runs a drafted move or delete by the row it froze and counts past an occupied name", async () => {
       const script = await start();
       const drafting = runtimes.script(script.runtime, OTHER);
       const draft = (args: Record<string, unknown>) =>
@@ -577,25 +589,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       const writer = review(script);
 
-      // Renumber ch1 → ch2 → ch3: ch1's move waits for ch2's, which vacates its destination.
+      // Review still reports the later lane's pending dependency, but the placement primitive lands.
       await draft({ command: "move", from: { path: "ch2" }, path: "ch3" });
       await draft({ command: "move", from: { path: "ch1" }, path: "ch2" });
       expect((await writer.item(CH1))?.conflict).toMatchObject({ code: "pending_item" });
-      expect(await writer.apply(CH1)).toMatchObject({ status: "held" });
-      expect(await placement(CH1)).toMatchObject({ name: "ch1" });
+      expect(await writer.apply(CH1)).toMatchObject({ status: "applied" });
+      expect(await placement(CH1)).toMatchObject({ name: "ch2 (2)" });
       expect(await writer.apply(CH2)).toMatchObject({ status: "applied" });
-      // A live rename since the draft: the draft wins and the result names the replaced name.
-      await script.reply(async (edit) => {
-        await edit("write", { command: "move", from: { path: "ch1" }, path: "chA" });
-      });
-      expect(await writer.apply(CH1)).toMatchObject({
-        status: "applied",
-        replaced: "manuscript://chA",
-      });
-      expect(await placement(CH1)).toMatchObject({ name: "ch2", deletedAt: null });
       expect(await settlements(CH1)).toEqual(["applied"]);
       const { call } = await drafting.begin();
-      expect(text(await call("write", { command: "undo", path: "ch2" }))).toContain("applied");
+      expect(text(await call("write", { command: "undo", path: "ch2 (2)" }))).toContain("applied");
 
       // A frozen click the model changed since answers changed; a delete after a live edit lands.
       await draft({ command: "move", from: { path: "ch3" }, path: "part1/ch3" });

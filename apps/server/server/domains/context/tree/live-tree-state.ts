@@ -89,7 +89,7 @@ export async function placementSources(
 }
 
 export type ReturnMoveOutcome =
-  | { kind: "moved" }
+  | { kind: "moved"; at: TreePlacement }
   | { kind: "location_taken" }
   | { kind: "folder_missing" }
   | { kind: "refused" };
@@ -135,10 +135,28 @@ export async function moveToPlacement(
   });
   if (!moved.ok)
     return moved.error.code === "conflict" ? { kind: "location_taken" } : { kind: "refused" };
-  await deps.arrivals?.settle(moved.value);
+  await deps.arrivals?.settle(moved.value.documentIds);
   await deps.catalog.refreshSources(
     [...new Set([sourceId, ...(fromSource ? [fromSource] : [])])],
     [input.documentId],
   );
-  return { kind: "moved" };
+  const [landed] = await tx
+    .select({
+      sourceId: documents.contextSourceId,
+      folderId: documents.folderId,
+      name: documents.name,
+      extension: documents.extension,
+    })
+    .from(documents)
+    .where(inArray(documents.id, [input.documentId]));
+  if (!landed) return { kind: "refused" };
+  return {
+    kind: "moved",
+    at: {
+      folderId: landed.folderId,
+      rootSourceId: landed.folderId ? null : landed.sourceId,
+      name: landed.name,
+      extension: landed.extension,
+    },
+  };
 }

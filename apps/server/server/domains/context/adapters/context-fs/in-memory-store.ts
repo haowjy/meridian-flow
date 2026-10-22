@@ -1,8 +1,10 @@
 import {
+  allocateFilename,
   folderDocumentName,
   parseDocumentFilename,
   type RetractionCause,
   renderFilename as renderDocumentFilename,
+  sameNamespaceName,
 } from "@meridian/contracts/protocol";
 /**
  * In-memory ContextFS persistence for tests and lightweight composition.
@@ -791,8 +793,8 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
     return this.atomic(async () => {
-      const destinationPath = normalizeTreePath(input.destinationPath);
-      const targetBasename = treeBasename(destinationPath);
+      let destinationPath = normalizeTreePath(input.destinationPath);
+      let targetBasename = treeBasename(destinationPath);
       if (!targetBasename || input.source.nodeId === CONTEXT_ROOT_DIRECTORY_ID) {
         return Err({ code: "invalid_operation" });
       }
@@ -822,9 +824,11 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       const targetToken =
         input.expectedTarget.state === "occupied" ? input.expectedTarget.token : null;
       if (targetToken) {
-        if (targetToken.kind !== input.source.kind) return Err({ code: "conflict" });
         if (targetToken.nodeId === input.source.nodeId) return Err({ code: "invalid_operation" });
-        if (!input.overwrite || input.source.kind === "directory") {
+        if (
+          input.overwrite &&
+          (targetToken.kind !== input.source.kind || input.source.kind === "directory")
+        ) {
           return Err({ code: "conflict" });
         }
       }
@@ -841,7 +845,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
 
       const previousLocations = memoryFileLocations(this.backing, input.source.sourceId);
       if (input.source.kind === "file") {
-        if (targetToken?.kind === "file") await this.runBeforeDestructiveWrite();
+        if (targetToken?.kind === "file" && input.overwrite) await this.runBeforeDestructiveWrite();
         await this.runBeforeDestructiveWrite();
         const sourceAfterHooks = await this.inspect(input.source.sourceId, input.source.path);
         if (!sameLocation(sourceAfterHooks, input.source)) return Err({ code: "stale_source" });
@@ -857,8 +861,10 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         const sourceRow = this.backing.documents.get(input.source.nodeId);
         if (!sourceRow || sourceRow.deletedAt !== null) return Err({ code: "stale_source" });
         const targetRow =
-          targetToken?.kind === "file" ? this.backing.documents.get(targetToken.nodeId) : null;
-        if (targetToken?.kind === "file") {
+          targetToken?.kind === "file" && input.overwrite
+            ? this.backing.documents.get(targetToken.nodeId)
+            : null;
+        if (targetToken?.kind === "file" && input.overwrite) {
           if (!targetRow || targetRow.deletedAt !== null) return Err({ code: "stale_target" });
         }
         const destParentId =
@@ -867,6 +873,35 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
               ? null
               : input.destinationParentToken.nodeId
             : this.ensureFolderPath(input.destinationSourceId, treePathSegments(targetParentPath));
+        const wanted = parseDocumentFilename(targetBasename);
+        if (!wanted.ok) return Err({ code: "invalid_operation" });
+        targetBasename = await allocateFilename(
+          { kind: "document", name: wanted.value.name, extension: wanted.value.extension },
+          (candidate) =>
+            [...this.backing.documents.values()]
+              .filter(
+                (row) =>
+                  row.id !== input.source.nodeId &&
+                  row.contextSourceId === input.destinationSourceId &&
+                  row.folderId === destParentId &&
+                  row.deletedAt === null,
+              )
+              .some((row) =>
+                sameNamespaceName(candidate, {
+                  kind: "document",
+                  filename: renderFilename(row.name, row.extension),
+                }),
+              ) ||
+            [...this.backing.folders.values()]
+              .filter(
+                (row) =>
+                  row.contextSourceId === input.destinationSourceId &&
+                  row.parentId === destParentId &&
+                  row.deletedAt === null,
+              )
+              .some((row) => sameNamespaceName(candidate, { kind: "folder", filename: row.name })),
+        );
+        destinationPath = [targetParentPath, targetBasename].filter(Boolean).join("/");
         if (
           hasOppositeEntry(
             this.backing,
@@ -911,7 +946,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
           input.destinationSourceId,
           previousLocations,
         );
-        return Ok({ movedNodeId: sourceRow.id });
+        return Ok({ movedNodeId: sourceRow.id, destinationPath });
       }
 
       const root = this.backing.folders.get(input.source.nodeId);
@@ -936,6 +971,33 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
             ? null
             : input.destinationParentToken.nodeId
           : this.ensureFolderPath(input.destinationSourceId, treePathSegments(targetParentPath));
+      targetBasename = await allocateFilename(
+        { kind: "folder", name: targetBasename },
+        (candidate) =>
+          [...this.backing.folders.values()]
+            .filter(
+              (row) =>
+                row.id !== input.source.nodeId &&
+                row.contextSourceId === input.destinationSourceId &&
+                row.parentId === destParentId &&
+                row.deletedAt === null,
+            )
+            .some((row) => sameNamespaceName(candidate, { kind: "folder", filename: row.name })) ||
+          [...this.backing.documents.values()]
+            .filter(
+              (row) =>
+                row.contextSourceId === input.destinationSourceId &&
+                row.folderId === destParentId &&
+                row.deletedAt === null,
+            )
+            .some((row) =>
+              sameNamespaceName(candidate, {
+                kind: "document",
+                filename: renderFilename(row.name, row.extension),
+              }),
+            ),
+      );
+      destinationPath = [targetParentPath, targetBasename].filter(Boolean).join("/");
       if (
         hasOppositeEntry(
           this.backing,
@@ -970,7 +1032,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         input.destinationSourceId,
         previousLocations,
       );
-      return Ok({ movedNodeId: movedRoot.id });
+      return Ok({ movedNodeId: movedRoot.id, destinationPath });
     });
   }
 

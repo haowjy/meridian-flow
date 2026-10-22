@@ -257,9 +257,11 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       const targetToken =
         input.expectedTarget.state === "occupied" ? input.expectedTarget.token : null;
       if (targetToken) {
-        if (targetToken.kind !== input.source.kind) return Err({ code: "conflict" });
         if (targetToken.nodeId === input.source.nodeId) return Err({ code: "invalid_operation" });
-        if (!input.overwrite || input.source.kind === "directory") {
+        if (
+          input.overwrite &&
+          (targetToken.kind !== input.source.kind || input.source.kind === "directory")
+        ) {
           return Err({ code: "conflict" });
         }
       }
@@ -276,10 +278,10 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
 
       const previousLocations = await readTreeLocations(this.db, input.source);
       const mutationIds = [
-        ...(input.source.sourceId !== input.destinationSourceId || targetToken
+        ...(input.source.sourceId !== input.destinationSourceId || (targetToken && input.overwrite)
           ? previousLocations.flatMap((entry) => (entry.kind === "file" ? [entry.id] : []))
           : []),
-        ...(targetToken?.kind === "file" ? [targetToken.nodeId] : []),
+        ...(targetToken?.kind === "file" && input.overwrite ? [targetToken.nodeId] : []),
       ];
       await lockDocuments(this.db, mutationIds);
       // Moved files and an overwrite victim, row-locked in id order: orders this move against
@@ -288,10 +290,12 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         ...previousLocations.flatMap((entry) =>
           entry.kind === "file" ? [entry.id as DocumentId] : [],
         ),
-        ...(targetToken?.kind === "file" ? [targetToken.nodeId as DocumentId] : []),
+        ...(targetToken?.kind === "file" && input.overwrite
+          ? [targetToken.nodeId as DocumentId]
+          : []),
       ]);
       await this.runBeforeDestructiveWrite();
-      if (targetToken?.kind === "file") {
+      if (targetToken?.kind === "file" && input.overwrite) {
         await this.removal.remove({
           documentIds: [targetToken.nodeId as DocumentId],
           reason: "deleted",
@@ -329,12 +333,21 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           .where(eq(documents.id, input.source.nodeId));
       }
       // What actually moved: a folder leaving its project left its hidden contents behind.
-      const linkUpdate = await this.settleMovedIn(input, moved.value);
+      const linkUpdate = await this.settleMovedIn(input, moved.value.documentIds);
       await this.catalogMutations?.refreshSources(
         [...new Set([input.source.sourceId, input.destinationSourceId])],
         [input.source.nodeId],
       );
-      return Ok({ movedNodeId: input.source.nodeId, linkUpdate });
+      return Ok({
+        movedNodeId: input.source.nodeId,
+        destinationPath: [
+          ...moved.value.target.dir,
+          moved.value.target.extension
+            ? renderDocumentFilename(moved.value.target.name, moved.value.target.extension)
+            : moved.value.target.name,
+        ].join("/"),
+        linkUpdate,
+      });
     });
   }
 

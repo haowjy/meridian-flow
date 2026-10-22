@@ -298,7 +298,10 @@ export class ContextFS implements ContextSchemeAdapter {
           return moved.ok
             ? Ok({
                 moved: moved.value.moved,
-                path: [...dir, renderFilename(name, extension)].join("/"),
+                path: [
+                  ...dir,
+                  renderFilename(moved.value.name ?? name, moved.value.extension ?? extension),
+                ].join("/"),
               })
             : moved;
         },
@@ -862,7 +865,7 @@ export class ContextFS implements ContextSchemeAdapter {
       return Ok({
         movedNodeId: committed.value.movedNodeId,
         ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
-        path: prepared.destinationPath,
+        path: committed.value.destinationPath,
       });
     }
     const source = prepared.source;
@@ -881,7 +884,7 @@ export class ContextFS implements ContextSchemeAdapter {
     return Ok({
       movedNodeId: committed.value.movedNodeId,
       ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
-      path: prepared.destinationPath,
+      path: committed.value.destinationPath,
     });
   }
 

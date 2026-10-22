@@ -85,7 +85,7 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
       await removal.remove({ documentIds, reason: "deleted", workId, at });
     },
     async cascadeRestore({ db, workId, projection }) {
-      projection.recountAfterCommit(await restoreWorkDocuments(db, workId));
+      projection.recountAfterCommit((await restoreWorkDocuments(db, workId)).workIds);
     },
   },
   {

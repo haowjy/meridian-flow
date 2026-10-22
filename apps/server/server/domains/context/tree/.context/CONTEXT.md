@@ -176,10 +176,16 @@ carries the writer's `restore` (D79). A living document answers
 `already_living`. Discards, Work cascades and deleted sources or projects
 answer `refused`: a Work's own Restore owns its cascade. It places the document
 through `placeLive` (placement's ancestry and one name-claim rule: a living
-folder at a path is reused, a deleted one restored), so a taken path answers
-`location_taken` and the savepoint rolls back every folder it restored. It
-settles arrivals and refreshes the catalog through ports its caller passes,
+folder at a path is reused, a deleted one restored). A taken leaf counts up to
+the free name; a document blocking an ancestor still answers `location_taken`.
+It settles arrivals and refreshes the catalog through ports its caller passes,
 and never touches a draft.
+
+Every arrival returns its actual free placement. Live moves, drafted moves and
+their inverses, restores, and Apply placements therefore count up rather than
+refusing a leaf-name collision. After a live write, `normalizeNames` makes
+hidden nodes yield in the same transaction; visible wins, then a hidden folder,
+then the earlier `(created_at, id)`.
 
 ## Lock and identity contracts
 
