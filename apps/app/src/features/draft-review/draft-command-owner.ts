@@ -376,7 +376,9 @@ export class DraftCommandOwner {
 
   forgetApplyFacts(projectId: string, documentId: string): void {
     const key = JSON.stringify([projectId, documentId]);
-    if (this.restoredDocuments.delete(key) || this.renamedDocuments.delete(key)) this.publish();
+    const restored = this.restoredDocuments.delete(key);
+    const renamed = this.renamedDocuments.delete(key);
+    if (restored || renamed) this.publish();
   }
 
   /** The writer moved on to `documentId`: every other document's Apply fact ends. */
