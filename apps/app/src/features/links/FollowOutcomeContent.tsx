@@ -59,10 +59,13 @@ function TargetLocation({
   outcome,
   projectId,
   scratchRootThreadId,
+  description = false,
 }: {
   outcome: LinkFollowOutcome;
   projectId: string | null;
   scratchRootThreadId: string | null;
+  /** The location itself describes a creatable missing target to assistive tech. */
+  description?: boolean;
 }) {
   const { address, target } = outcome;
   const parsed = address ? parseContextUri(address) : null;
@@ -78,24 +81,32 @@ function TargetLocation({
         : null;
   const lineageRef = lineageKey !== null;
   const chatTitle = useLineageTitle(projectId, lineageKey);
-  if (!address || !parsed?.ok)
-    return <p className="break-words text-ink-muted text-xs">{linkTargetLabel(target)}</p>;
+  const Location = description ? DialogDescription : "p";
+  if (!address || !parsed?.ok) {
+    return (
+      <Location className="break-words text-ink-muted text-xs">{linkTargetLabel(target)}</Location>
+    );
+  }
   const { scheme, path } = parsed.value;
   const folder = path.split("/").slice(0, -1).join("/");
   // A chat's Scratch is named by its chat, never by the first chat's handle.
   const location = lineageRef
     ? [chatTitle ? t`Scratch for ${chatTitle}` : t`Scratch`, folder].filter(Boolean).join("/")
     : documentLocation(scheme, folder);
-  if (!location) return null;
+  if (!location) {
+    return description ? (
+      <DialogDescription className="sr-only">{address}</DialogDescription>
+    ) : null;
+  }
   const Icon = schemeIcon(scheme);
   return (
-    <p
+    <Location
       title={lineageRef ? undefined : address}
       className="flex items-center gap-1.5 text-ink-muted text-xs"
     >
       <Icon aria-hidden className="size-3.5 shrink-0" />
       <span className="truncate">{location}</span>
-    </p>
+    </Location>
   );
 }
 
@@ -121,22 +132,23 @@ export function FollowOutcomeContent({
 
   return (
     <>
-      <DialogDescription>
-        {outcome.state === "checking" ? (
-          <Trans>Looking for the document this link names.</Trans>
-        ) : outcome.state === "failed" ? (
-          <Trans>The project could not be reached. The link itself is fine.</Trans>
-        ) : creation ? (
-          <Trans>Create it and this link opens it.</Trans>
-        ) : (
-          <Trans>It may have moved or been removed.</Trans>
-        )}
-      </DialogDescription>
+      {creation ? null : (
+        <DialogDescription>
+          {outcome.state === "checking" ? (
+            <Trans>Looking for the document this link names.</Trans>
+          ) : outcome.state === "failed" ? (
+            <Trans>The project could not be reached. The link itself is fine.</Trans>
+          ) : (
+            <Trans>It may have moved or been removed.</Trans>
+          )}
+        </DialogDescription>
+      )}
 
       <TargetLocation
         outcome={outcome}
         projectId={projectId}
         scratchRootThreadId={scratchRootThreadId}
+        description={creation !== null}
       />
 
       {failedToCreate ? (
