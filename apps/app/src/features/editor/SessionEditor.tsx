@@ -66,6 +66,8 @@ type SessionEditorProps = {
   identity: EditorMountIdentity;
   session: DocumentSession;
   surfaceOptions: EditorSurfaceOptions;
+  /** Review's addressed document record; live surfaces derive this from their catalog. */
+  holderUri?: string | null;
   /** An addressed construction receipt; null withdraws this editor's receipt. */
   onConstructed?: (editor: Editor | null) => void;
   /** The tab instance this editor serves; it claims that instance's focus-on-open intent. */
@@ -131,6 +133,7 @@ function ActiveSessionEditorView({
   onConstructed,
   focusKey,
   onReopen,
+  holderUri: reviewHolderUri,
   snapshot,
   evidenceDegraded,
 }: ActiveSessionEditorViewProps) {
@@ -221,12 +224,15 @@ function ActiveSessionEditorView({
   // This document's own address: what its relative links resolve against and
   // what a link inserted into it is spelled relative to. Null until the tree
   // carrying it arrives, or while it has no address yet, which spells full URIs.
-  const holderUri = useMemo(
+  const indexedHolderUri = useMemo(
     () =>
       linkableDocuments.documents.find((document) => document.documentId === documentId)?.uri ??
       null,
     [linkableDocuments, documentId],
   );
+  // A draft-only document is intentionally absent from the live link index. Its review row is
+  // the authority for its address, while live surfaces continue to follow catalog renames.
+  const holderUri = inReview ? (reviewHolderUri ?? null) : indexedHolderUri;
   const sharedReferenceCatalog = useReferenceBrowserCatalog(
     active ? projectId : null,
     active ? scope.workId : null,

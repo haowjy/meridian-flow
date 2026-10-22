@@ -53,6 +53,12 @@ than simulating it and calling it integrated. Stop the owned browser and stack.
 6. Type offline, reconnect, then reload with a held upload. Local text returns
    and eventually reaches server readback. An unopened, never-synced row offers
    no Discard. A previously synced held room can Discard while offline.
+7. Have a draft-mode reply create a still-hidden document containing an absolute
+   link and a relative link to a live document, plus a link to an unavailable
+   target. Open the document from the reply. Both live links open; the unavailable
+   target reports that it does not exist yet (and offers Create where applicable),
+   never “That link could not be checked.” Confirm each remote check sends the
+   draft holder's document id and its review-row address.
 
 ## Local Discard and its history
 

@@ -46,6 +46,9 @@ Scope drives link catalogs, completion, resolver registration, contextual create
 and link destinations. It is deliberately excluded from `EditorMountIdentity`:
 moving a holder must not destroy its collaborative editor or undo manager.
 Editor route Work and review Work remain separate authorities.
+Live holders take their address from the link catalog. Review holders take it
+from the draft review row, because a still-hidden created document is deliberately
+absent from the live catalog until Apply.
 
 The slash and `[[` catalogs are supplied as getters. They read labels and
 catalog contents when a menu opens, so locale changes do not remount the
