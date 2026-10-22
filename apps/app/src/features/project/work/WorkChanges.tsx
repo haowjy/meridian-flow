@@ -32,7 +32,10 @@ import {
   type CommandQuestion,
   RestoreQuestion,
 } from "@/features/draft-review/CommandNotice";
-import { isDeletedFromManuscript, isPathTaken } from "@/features/draft-review/deleted-drafts";
+import {
+  isDeletedFromManuscript,
+  isGroupApplyWithdrawn,
+} from "@/features/draft-review/deleted-drafts";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
@@ -178,13 +181,13 @@ export function WorkChanges({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              {files.every(
+              {!isGroupApplyWithdrawn(files.map((file) => file.draft)) &&
+              files.every(
                 (file) =>
-                  !isPathTaken(file.draft) &&
-                  ((!file.draft.hasDraft && file.draft.isNew) ||
-                    (file.draft.hasDraft &&
-                      (held[textRows.findIndex((row) => row.draft.itemKey === file.draft.itemKey)]
-                        ?.frame?.groups.length ?? 0) > 0)),
+                  (!file.draft.hasDraft && file.draft.isNew) ||
+                  (file.draft.hasDraft &&
+                    (held[textRows.findIndex((row) => row.draft.itemKey === file.draft.itemKey)]
+                      ?.frame?.groups.length ?? 0) > 0),
               ) ? (
                 <DropdownMenuItem
                   disabled={

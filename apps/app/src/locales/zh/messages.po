@@ -835,6 +835,10 @@ msgstr ""
 msgid "Back from {0}"
 msgstr ""
 
+#: src/features/editor/ManuscriptStateNotice.tsx
+msgid "Back in the manuscript"
+msgstr ""
+
 #: src/features/editor/SyncStatus.tsx
 msgid "Back online (all changes saved)"
 msgstr ""
@@ -1931,6 +1935,7 @@ msgid "Deleted a Work"
 msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
+#: src/features/editor/ManuscriptStateNotice.tsx
 msgid "Deleted from the manuscript"
 msgstr ""
 
@@ -1945,6 +1950,10 @@ msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
+msgstr ""
+
+#: src/features/editor/ManuscriptStateNotice.tsx
+msgid "Deleted, name taken"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -2949,6 +2958,10 @@ msgstr ""
 #: src/features/project/context/context-entry-name.ts
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Name is required"
+msgstr ""
+
+#: src/features/editor/ManuscriptStateNotice.tsx
+msgid "Name taken"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx

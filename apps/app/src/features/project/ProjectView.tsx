@@ -64,6 +64,7 @@ import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import {
   useAccountId,
   useContextRemovalCoordinator,
+  useDraftCommandOwner,
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
@@ -570,26 +571,34 @@ function HydratedReviewControllers({
     threadId: null,
   });
   const openEditorReview = useOpenEditorReview();
-  const port = useMemo<ReviewAddressPort>(
-    () =>
-      props.activeScreen !== "context"
-        ? {
-            write: (review) => useDockDocumentStore.getState().setDocumentReview(review),
-            admit: (target) =>
-              presentedReview.controller.enterInlineReview(target.documentId, target.itemKey),
-          }
-        : {
-            write: (review) =>
-              props.onSetEditorReviewItemKey(review?.itemKey ?? null, review?.changeId),
-            admit: openEditorReview,
-          },
-    [
-      props.activeScreen,
-      presentedReview.controller.enterInlineReview,
-      props.onSetEditorReviewItemKey,
-      openEditorReview,
-    ],
-  );
+  const draftCommands = useDraftCommandOwner();
+  const port = useMemo<ReviewAddressPort>(() => {
+    // A closed draft (Discard, here or on another device) has already ended its review; a
+    // draft-only address keeps naming it until settlement closes the tab, and admitting it
+    // again would re-open what the room owner just closed, every render.
+    const open =
+      (admit: ReviewAddressPort["admit"]): ReviewAddressPort["admit"] =>
+      (target) =>
+        draftCommands.state(target.itemKey).closed ? undefined : admit(target);
+    return props.activeScreen !== "context"
+      ? {
+          write: (review) => useDockDocumentStore.getState().setDocumentReview(review),
+          admit: open((target) =>
+            presentedReview.controller.enterInlineReview(target.documentId, target.itemKey),
+          ),
+        }
+      : {
+          write: (review) =>
+            props.onSetEditorReviewItemKey(review?.itemKey ?? null, review?.changeId),
+          admit: open(openEditorReview),
+        };
+  }, [
+    props.activeScreen,
+    presentedReview.controller.enterInlineReview,
+    props.onSetEditorReviewItemKey,
+    openEditorReview,
+    draftCommands,
+  ]);
   const scopedProps = { ...props, chatCommands, presentedReview, mobileDocumentRoute };
   return (
     <PresentedDocumentContext.Provider value={presented}>

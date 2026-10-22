@@ -234,10 +234,26 @@ otherwise, A's tabs are live tabs.
   the delete, then Apply all: the list asks again by name and the row says
   "This document was deleted from the manuscript. Apply again to bring it
   back." Create a new document at the deleted one's path: the row says another
-  document now has this name, and Apply all is not offered. Opening that
-  draft from the row still opens it draft-only, and the editor line names both
-  the delete and the taken name (the list item's `deletedLive` is independent
-  of `conflict`). The editor's change bar offers only Discard there.
+  document now has this name, and neither Work Files' "Apply all changes" nor
+  the chat dock's group Apply is offered (desktop and phone; Discard stays, and
+  the other rows keep their own Apply). Opening that draft from the row still
+  opens it draft-only, and the identity row says "Deleted, name taken"; its
+  popover names both the delete and the taken name (the list item's
+  `deletedLive` is independent of `conflict`). The editor's change bar offers
+  only Discard there.
+- The draft editor's manuscript state never moves the page. With a draft tab
+  open, `./mf doc rm` its document from another device: "Deleted from the
+  manuscript" appears in the identity row's free end (desktop) or the review
+  row (phone), and the heading's top is unchanged before and after
+  (`getBoundingClientRect().top`). A narrow slot shows the short label; the
+  button opens the full sentence. After Apply draft, reselecting the tab shows
+  "<title> is back in the manuscript." in the same place, with Dismiss.
+- B runs Work Files' Discard all while A holds a draft tab of a deleted document
+  or of a created document only the draft has: A's tab closes (the draft's
+  metadata answers `gone` once retired, without a content grant) and A's
+  Editor stays usable. Before the fix the created document's tab looped
+  ("Maximum update depth exceeded" in `EditorReviewIntentClaimant`) and the
+  project failed to load.
   A draft left with no changes (apply its only change from the editor, so the
   list is empty) whose document is then deleted from another device keeps its
   tab on the draft, across a reload too, and typing in it lists the document
