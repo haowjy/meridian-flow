@@ -22,7 +22,10 @@ import {
   recordFailure,
   unknownToEventPayload,
 } from "../observability/index.js";
-import { createOrchestratorEventProjector } from "./domain/orchestrator-event-projector.js";
+import {
+  createOrchestratorEventProjector,
+  PROJECTOR_RESET_EVENT_TYPES,
+} from "./domain/orchestrator-event-projector.js";
 import type { EventJournalReader, EventJournalWriter } from "./ports/index.js";
 
 const HOT_CACHE_LIMIT = 500;
@@ -188,7 +191,13 @@ export function createThreadEventHub(
   ): Promise<SequencedEventInternal[]> {
     const projector = createOrchestratorEventProjector();
     const replayed: SequencedEventInternal[] = [];
-    let cursor = 0n;
+    // A cursor can split a multi-frame row. Reconstruct that row from the last reset
+    // strictly before it, so both the remaining frames and their sub-indexes stay identical.
+    let cursor = await deps.journalReader.lastSeqBefore(
+      threadId,
+      journalSeqForEventSeq(afterEventSeq),
+      PROJECTOR_RESET_EVENT_TYPES,
+    );
     while (cursor < throughJournalSeq) {
       const entries = await deps.journalReader.readAfter(threadId, cursor, JOURNAL_PAGE_SIZE);
       if (entries.length === 0) break;
@@ -361,7 +370,5 @@ export function createThreadEventHub(
         await deps.journalReader.readModelProjectionWatermark(threadId),
       );
     },
-
-    journalSeqForEventSeq,
   };
 }

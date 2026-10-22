@@ -312,3 +312,225 @@ on a mock stack as above, look at the screenshots, and judge the screen against 
     (`window.__unB()`).
 - **Not a defect:** the handler errors a handler receives while offline (`WebSocket error`, `WebSocket closed`) are
   connection errors; the replay request itself did not fail.
+
+
+### SR-02: reconnect behind the warm event cache
+
+This checks the browser after missing more than the hub's 500 cached client
+events. A **journal row** is a stored server event; the stateful **projector**
+converts one row into one or more client events. Each client event's sequence
+number is `journal seq * 1000 + frame index`. The client's **cursor** is the
+last such number it received. A **warm hub** still has the chat loaded in the
+server process. The tail subscriber below keeps it loaded while the browser
+is offline; cold initialization is a separate, unchanged full-history read.
+
+Run from an owned mock worktree. Set `MF_APP_URL` and `MF_SERVER_URL` to its
+routes from `pnpm portless:list`; do not use another checkout's stack.
+The commands use `jq`, Node and `agent-browser`.
+
+```bash
+CHECK_ID="replay-seek-$(date +%s)"
+PROBE_DIR="$(mktemp -d "/tmp/$CHECK_ID.XXXXXX")"
+./mf thread create --title "$CHECK_ID" --json > "$PROBE_DIR/chat.json"
+T="$(jq -r .threadId "$PROBE_DIR/chat.json")"
+P="$(jq -r .projectId "$PROBE_DIR/chat.json")"
+./mf thread send "$T" seed --mock '[{"text":"Earlier completed reply."}]' --json
+./mf thread tail "$T" --timeout 5m --json > "$PROBE_DIR/tail.jsonl" &
+TAIL_PID=$!
+agent-browser --session "$CHECK_ID" open "$MF_APP_URL/api/auth/dev-login"
+agent-browser --session "$CHECK_ID" open "$MF_APP_URL/p/$P/chats/$T"
+agent-browser --session "$CHECK_ID" wait --text "Earlier completed reply."
+agent-browser --session "$CHECK_ID" screenshot "$PROBE_DIR/before.png"
+agent-browser --session "$CHECK_ID" set offline on
+
+node -e 'console.log(JSON.stringify([
+  {text:"After disconnect, part one.",toolCalls:[{name:"thread_ls",args:{depth:1}}]},
+  {text:"SEEK_START "+Array.from({length:750},(_,i)=>"seek"+i).join(" ")+" SEEK_END"}
+]))' > "$PROBE_DIR/mock.json"
+./mf thread send "$T" "Send while browser is offline"   --mock "@$PROBE_DIR/mock.json" --json > "$PROBE_DIR/send.jsonl"
+agent-browser --session "$CHECK_ID" set offline off
+agent-browser --session "$CHECK_ID" wait --text "SEEK_END"
+agent-browser --session "$CHECK_ID" screenshot "$PROBE_DIR/after.png"
+agent-browser --session "$CHECK_ID" eval '(() => {
+  const text = document.querySelector("[role=log]").innerText;
+  const words = text.match(/\bseek\d+\b/g) ?? [];
+  return {count:words.length, unique:new Set(words).size,
+    ordered:words.every((word,i)=>word==="seek"+i),
+    starts:(text.match(/SEEK_START/g)??[]).length,
+    ends:(text.match(/SEEK_END/g)??[]).length};
+})()'
+./mf thread view "$T" --full --json > "$PROBE_DIR/view.json"
+```
+
+Expect count and unique both 750, ordered true, starts and ends both 1.
+The completed send's `finalText` must contain the same ordered words. Expand
+the new reply's “1 step” fold and confirm one Thread ls tool item, matching
+the durable view. Send another message through the composer and confirm its
+reply appears. Inspect both screenshots and `agent-browser errors`.
+
+The mock emits each word as a separate chunk, so the entire offline reply
+exceeds the 500-event cache. Sending only after the browser is offline avoids
+racing the mock's unpaced burst. For the additional mid-reply variant, use
+SR-01's delayed tool continuation, disconnect after its first response, then
+send another 750-word reply while offline if necessary to exceed the cache.
+
+**Read-cost check.** Browser appearance proves delivery, not reduced reads.
+Temporarily count `rows.length` and record `afterSeq` in
+`adapters/drizzle/event-reader.ts`'s `readAfter`, immediately before its
+`return rows.map(mapJournalEntry)`. Keep counts scoped to the probe's thread.
+Warm the hub with a full `./mf thread events "$T" --since 0`, then replay
+after an older event number with `--since <cursor>`. Keep the tail alive.
+Exclude the initial full reconstruction from the second command's count.
+On the seeking path, its first payload read starts at the preceding terminal
+row, not zero. Without a prior terminal row it still starts at zero.
+
+Inspect lookup work separately using the owned database's normal connection
+setup. Replace the two placeholders in this query; `beforeJournalSeq` is the
+integer quotient of the client cursor divided by 1000:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT seq FROM event_journal
+WHERE thread_id = '<thread UUID>'
+  AND seq < <beforeJournalSeq>
+  AND event_type IN ('turn.completed', 'turn.cancelled', 'turn.error')
+ORDER BY seq DESC LIMIT 1;
+```
+
+The backward index scan may inspect the preceding unfinished reply; those
+rows are separate from payload rows returned to the projector. Do not report
+a constant-cost or latency improvement from payload counts alone.
+
+**Exact-event checks.** In a disposable hub or shared-socket probe, compare
+complete sequenced envelopes with full replay filtered strictly after the
+same cursor. Include text/reasoning/tool transitions, all three terminal
+types, a cursor inside a terminal row, sequence holes, zero and beyond-head.
+Project each whole row before filtering, so the event's frame index stays
+unchanged. These are lower-level checks, not a substitute for the browser run.
+
+**Cleanup.** Remove temporary instrumentation, stop the tail
+(`kill "$TAIL_PID"; wait "$TAIL_PID"`), close the named browser session,
+and remove `PROBE_DIR` after copying the relevant screenshots and findings
+into the work item's evidence.
+
+## SR-03: subscribe at the head without losing durable state
+
+- **Protects:** live-only subscribers do not replay settled history, while snapshot
+  subscribers retain every event after their explicit cursor. Trail receipts and
+  Work binding cannot rely on that omitted history to become current. A trail
+  records a reply's document edits; Work binding names the editing task that owns
+  the chat. A lease is the listener installed by an accepted subscription.
+- **Setup:** owned mock stack and authenticated browser, as above. Create a chat
+  with a settled reply and a document write through `./mf`; retain its thread ID.
+- **Socket checks:** inspect `/api/threads/ws` with an authenticated client.
+  Subscribe without `lastSeq`: `subscribed.after` is the current head and an idle
+  chat's `catchup` is empty. Subscribe with `lastSeq: "0"`: historical events are
+  returned. Subscribe at a saved nonzero cursor: the returned events exactly match
+  the full replay above that cursor. An empty chat acknowledges `after: "0"`.
+  A commit between head sampling and listener acquisition must still be delivered.
+- **Shared-client ordering:** attach a cursorless handler, then a handler with an
+  explicit zero or nonzero cursor before the first acknowledgment. The second join
+  must send a replacement subscribe naming the explicit cursor. Deliver the older
+  acknowledgment before the newer one, then repeat with it arriving late: required
+  backlog and held live frames arrive once, in sequence order.
+- **Browser race:** use network interception to hold the thread subscribe message
+  while permitting the initial trail-list read to complete. In another client,
+  finish a document write and rebind the chat to a named Work. Release the subscribe
+  at the new head. Expect a post-acknowledgment trail read and Work-binding read;
+  the settled receipt and new binding appear without reload. Repeat with the
+  acknowledgment arriving while the first reads are in flight: one coalesced
+  follow-up acquires the new state. A late hook mounting onto an active lease gets
+  no new acknowledgment, so its mount reads must suffice.
+- **Activity and history:** open a chat with a background child already running.
+  Its whole live-state acknowledgment must show current child activity. Settled
+  transcript text remains present from the snapshot. Reconnect and send a further
+  browser message; expect no duplicated text/tools and ordinary streaming.
+- **Request-ID boundary:** a subscribe with a 64-character `requestId` succeeds and
+  echoes that ID. Empty or 65-character IDs produce `bad_request` with no echoed ID.
+  Check unsubscribe, catalog subscribe/unsubscribe and interrupt response too:
+  malformed messages must not mutate their target or echo the invalid ID.
+- **Lifecycle failures:** hold or reject a cursorless head read. Unsubscribe, close
+  and replacement must invalidate the old request before it acquires a listener.
+  A current read failure returns `{ type: "error", requestId, threadId,
+  error: { code: "internal", retryable: true, ... } }`; a later request can succeed. Retired requests send no error or acknowledgment.
+- **Evidence:** record the acknowledged head, catchup counts and exact suffix
+  comparison; browser network ordering, screenshots of history, receipt, binding
+  and child activity; browser errors; and the subsequent send outcome. Cold server
+  initialization still reconstructs history internally; zero historical frames on
+  the wire does not prove zero database reads.
+
+### Holding the mount-read / subscribe interval
+
+Use an owned chat, not someone else's active work. This is development-only
+browser instrumentation; restore it below. Start with another chat open in the
+same project so the authenticated shared socket already exists. Create the target
+chat and a named Work through `./mf`, retaining their returned IDs:
+
+```bash
+./mf thread create --project "$P" --title 'Head acquisition probe' --json
+./mf api POST /api/projects/$P/works --data '{"name":"Head acquisition probe"}' --json
+```
+
+Set `P` to the project ID and `T` to the new chat ID in the browser console. Install
+this before navigating to the target. It holds target subscriptions and delays
+its first snapshot request, while allowing the mount trail/binding reads:
+
+```js
+const P = "<project-id>", T = "<thread-id>";
+const send0 = WebSocket.prototype.send, fetch0 = window.fetch;
+let held = [], reads = [], wire = [], hold = true, releaseSnapshot;
+const snapshotGate = new Promise(resolve => { releaseSnapshot = resolve; });
+WebSocket.prototype.send = function (raw) {
+  const frame = JSON.parse(raw);
+  if (frame.type === "subscribe" && frame.threadId === T) {
+    if (!this.probeListening) {
+      this.probeListening = true;
+      this.addEventListener("message", ({ data }) => {
+        const f = JSON.parse(data);
+        if (f.threadId === T) wire.push({ type: f.type, after: f.after, catchup: f.catchup?.length });
+      });
+    }
+    if (hold) { held.push([this, raw]); return; }
+  }
+  return send0.call(this, raw);
+};
+window.fetch = async (input, init) => {
+  const url = typeof input === "string" ? input : input.url ?? String(input);
+  if (url.includes(T + "/snapshot")) await snapshotGate;
+  const response = await fetch0(input, init);
+  if (url.includes("/change-trails") || url.endsWith("/threads") || url.endsWith("/works")) {
+    reads.push({ url, time: Date.now(), body: await response.clone().json() });
+  }
+  return response;
+};
+history.pushState({}, "", `/p/${P}/chats/${T}`);
+window.dispatchEvent(new PopStateEvent("popstate"));
+```
+
+1. Inspect `reads` until the target's `change-trails` answer has `shells: []`.
+   No target acknowledgment should appear in `wire`. Do not reload: that removes
+   the wrapper.
+2. In the shell, set `P`, `T`, and `W` to the project, chat, and named Work IDs.
+   Finish a unique document write, then rebind the idle chat:
+
+   ```bash
+   ./mf thread send "$T" 'Write the probe scene' --mock '[{"toolCalls":[{"name":"write","args":{"command":"create","path":"manuscript://HeadProbeScene","content":"Rain reached the gate."}}]},{"text":"Scene complete."}]' --json
+   ./mf api PUT /api/threads/$T/work --data "{\"workId\":\"$W\"}" --json
+   ```
+
+3. In the console, run `releaseSnapshot()`. Wait until `held` includes a subscribe
+   with the fresh nonzero `lastSeq`. The snapshot may already show the receipt
+   (`Edited 1 document`) and named Work; neither proves the trail read recovered.
+4. Release subscriptions: `hold = false; for (const [ws, raw] of held.splice(0)) send0.call(ws, raw)`.
+   Expect the current acknowledgment with zero catchup and no target event frames.
+   Then `reads` must contain a later trail answer with one shell and a later
+   project thread-list answer naming the new Work. This isolates acknowledgment
+   acquisition from replayed `turn_change_trail.settled` events. If catchup is
+   nonempty, the run does not prove that isolation; repeat with a fresh chat.
+5. Capture the visible receipt and Work name, the wire metadata and the read
+   ordering. Restore `WebSocket.prototype.send = send0; window.fetch = fetch0` and
+   reload to remove the diagnostic listener. Close the browser when finished.
+
+The browser screenshot proves preserved rendering; the empty catchup plus later
+HTTP answers prove acknowledgment acquisition. Record them separately. Link the
+result and screenshots from the PR at their committed evidence revision.
