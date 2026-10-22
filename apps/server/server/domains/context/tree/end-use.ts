@@ -8,12 +8,11 @@
  * there is one) and the namespaces; the Work's pending count follows at that transaction's
  * commit. Hidden nodes are tombstoned, never hard-deleted.
  */
-import type { BranchId, ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
+import type { BranchId, DocumentId, FolderId } from "@meridian/contracts";
 import type { RetractionCause } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
-import { lockDocumentNamespaces } from "../adapters/context-fs/document-locations.js";
 import type { DocumentRemoval } from "../ports/document-removal.js";
 import { dropDocumentRows } from "./branch-tree-store.js";
 import { lockDocuments, type RemovalInitiator, tombstoneFolders } from "./node-rows.js";
@@ -22,7 +21,6 @@ import type { NodeRef } from "./tree-view.js";
 import {
   isUnusedHiddenFolder,
   loadActiveBranchUses,
-  loadBranchCreatedDocuments,
   loadDocumentIdentityRows,
 } from "./tree-view-sql.js";
 
@@ -111,31 +109,6 @@ export async function tombstoneUnused(
   return { tombstoned, releasedObjects };
 }
 
-/** What an end of use touches: documents, and every source they sit in now or in a branch. */
-export type EndUseScope = {
-  documentIds: readonly DocumentId[];
-  sourceIds: readonly ContextSourceId[];
-};
-
-/**
- * What to lock for an end of use: each branch's created documents (all of them, or the
- * named ones) at their rows and at the branch's location, and other documents where they
- * sit now (an item's text, a node a read repairs).
- */
-export type EndUseRequest = {
-  branches?: readonly { branchId: BranchId; documentIds?: readonly DocumentId[] }[];
-  documentIds?: readonly DocumentId[];
-};
-
-/** The scope moved (a document changed source) between reading and locking it: start over. */
-export class EndUseScopeChangedError extends Error {
-  constructor() {
-    super("An end of use's scope changed while its namespaces were being locked");
-    this.name = "EndUseScopeChangedError";
-  }
-}
-
-/** The scope as it reads now, unlocked. */
 /**
  * Which of `ids` are hidden now, read in the caller's transaction. Under the caller's
  * document locks this is the visibility an end of use acts on (another Work's Apply may
@@ -147,52 +120,6 @@ export async function hiddenDocumentIds(
 ): Promise<ReadonlySet<DocumentId>> {
   const rows = await loadDocumentIdentityRows(currentDrizzleDb(db), [...new Set(ids)]);
   return new Set(rows.filter((row) => row.hidden).map((row) => row.id));
-}
-
-export async function readEndUseScope(db: Database, request: EndUseRequest): Promise<EndUseScope> {
-  const tx = currentDrizzleDb(db);
-  const documentIds = new Set<DocumentId>();
-  const sourceIds = new Set<ContextSourceId>();
-  for (const { branchId, documentIds: named } of request.branches ?? []) {
-    const only = named ? new Set(named) : null;
-    for (const row of await loadBranchCreatedDocuments(tx, branchId)) {
-      if (only && !only.has(row.id)) continue;
-      documentIds.add(row.id);
-      sourceIds.add(row.contextSourceId);
-    }
-  }
-  for (const row of await loadDocumentIdentityRows(tx, [...new Set(request.documentIds ?? [])])) {
-    documentIds.add(row.id);
-    sourceIds.add(row.contextSourceId);
-  }
-  return { documentIds: [...documentIds].sort(), sourceIds: [...sourceIds].sort() };
-}
-
-/**
- * The one verified acquisition every end of use takes, after the caller's Work and branch
- * locks (§14): the namespaces of exactly the sources read, then the scope read again; a
- * document that moved to a source not locked, or a new one, throws
- * `EndUseScopeChangedError`, so the caller aborts its transaction and rediscovers (no
- * namespace is ever taken while holding a document lock). Then the document locks, id
- * order. Once a source's namespace is held nothing moves out of it, so the scope holds.
- */
-export async function acquireEndUseScope(
-  db: Database,
-  request: EndUseRequest,
-): Promise<EndUseScope> {
-  const scope = await readEndUseScope(db, request);
-  await lockDocumentNamespaces(db, [], scope.sourceIds);
-  const again = await readEndUseScope(db, request);
-  const documents = new Set(scope.documentIds);
-  const sources = new Set(scope.sourceIds);
-  if (
-    !again.documentIds.every((id) => documents.has(id)) ||
-    !again.sourceIds.every((id) => sources.has(id))
-  ) {
-    throw new EndUseScopeChangedError();
-  }
-  await lockDocuments(db, scope.documentIds);
-  return scope;
 }
 
 /**

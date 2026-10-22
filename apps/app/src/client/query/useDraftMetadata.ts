@@ -1,5 +1,6 @@
 /** Addressed SQL metadata only. Empty active drafts remain open independently of the pending list. */
-import { useQueries } from "@tanstack/react-query";
+import type { DraftMetadataResponse } from "@meridian/contracts/branches";
+import { type QueryClient, useQueries } from "@tanstack/react-query";
 import { getDraftMetadata } from "@/client/api/branches-api";
 import type { DraftRef } from "@/features/draft-review/review-command-types";
 import { projectQueryKeys } from "./project-query-keys";
@@ -18,4 +19,12 @@ export function draftMetadataQueryOptions(draft: DraftRef) {
 }
 export function useDraftMetadata(drafts: readonly DraftRef[]) {
   return useQueries({ queries: drafts.map(draftMetadataQueryOptions) });
+}
+
+/** A read that starts now, so it cannot report a disposition older than the question. */
+export function fetchCurrentDraftMetadata(
+  queryClient: QueryClient,
+  draft: DraftRef,
+): Promise<DraftMetadataResponse> {
+  return queryClient.fetchQuery({ ...draftMetadataQueryOptions(draft), staleTime: 0 });
 }

@@ -81,6 +81,7 @@ import {
   type ContextPlacement,
   type CreatePlacement,
   createPlacement,
+  OUTLIVED_PATH_FAULT,
 } from "./create-placement.js";
 import { resolveCreateTarget } from "./create-target.js";
 import { LiveCreate } from "./live-create.js";
@@ -306,7 +307,8 @@ export class ContextFS implements ContextSchemeAdapter {
       view,
       joinPath(dir.join("/"), renderFilename(name, extension)),
     );
-    if (found.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
+    if (found.kind === "ambiguous")
+      return Err(found.outlived ? OUTLIVED_PATH_FAULT : AMBIGUOUS_PATH_FAULT);
     return Ok(found.kind === "found" ? found.node : null);
   }
 

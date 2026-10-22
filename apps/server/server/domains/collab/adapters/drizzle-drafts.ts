@@ -40,7 +40,10 @@ import {
   loadBranchHolder,
   loadDocumentOwner,
 } from "../../context/tree/branch-ownership.js";
-import { requireLivingDocument } from "../../context/tree/living-document.js";
+import {
+  requireDraftableDocument,
+  requireLivingDocument,
+} from "../../context/tree/living-document.js";
 import { isDrafted } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { Branches } from "../domain/branches.js";
@@ -175,10 +178,12 @@ export function createDrizzleDraftStore(
         throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
       await lockDocumentMutation(currentDrizzleDb(db), input.documentId);
-      await requireLivingDocument(currentDrizzleDb(db), input.documentId);
-      await testHook("draft.ensure.afterDocumentLock");
+      // An active Work draft is returned whatever became of the live document: it outlives a
+      // live delete (D79). Only a new draft needs a living document.
       const existing = await activeDocumentDraft(input.documentId, input.branchId);
       if (existing) return existing;
+      await requireLivingDocument(currentDrizzleDb(db), input.documentId);
+      await testHook("draft.ensure.afterDocumentLock");
       await assertDraftableInBranch(input.documentId, input.branchId);
       // A document create's ensure and a thread peer's racing root ensure get one draft.
       const [inserted] = await currentDrizzleDb(db)
@@ -305,7 +310,9 @@ export function createDrizzleDraftStore(
         throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
       await lockDocumentMutation(currentDrizzleDb(db), input.documentId);
-      await requireLivingDocument(currentDrizzleDb(db), input.documentId);
+      // A peer forks the Work draft: it needs a living document, or a Work draft that
+      // outlived a live delete of it.
+      await requireDraftableDocument(currentDrizzleDb(db), input.documentId, input.branchId);
       await testHook("draft.peer.afterDocumentLock");
       const existing = await findActiveThreadPeer(input.documentId, input.threadId);
       if (existing?.branchId === input.branchId) {

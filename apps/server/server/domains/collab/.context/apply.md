@@ -16,10 +16,34 @@ reading the winner. Pending commands are observations, not a second scheduler.
 
 `adapters/drizzle-apply-click.ts` owns the atomic storage operation. The Works
 boundary locks the Work and confirms the route's bound edit grants before the
-first write (the command claim). A hidden-create reveal verifies its tree namespace before taking live's
-mutation lock. A source moving during that acquisition rolls back and retries
-the transaction, without re-compiling the click. Ordinary text Apply takes only
-live's mutation lock, so unrelated tree changes do not serialize it. The append
+first write (the command claim). A hidden-create reveal or a deleted document's
+restore verifies its tree namespace (`acquireTreeScope`) before taking live's
+mutation lock. The scope comes from an unlocked tree read, so Apply re-reads under
+the lock: a delete that landed in between, or a source moving during the
+acquisition, rolls back and retries the transaction namespace-first (remembered
+for every later attempt), without re-compiling the click and never taking a
+namespace under a document lock. Ordinary text Apply takes only live's mutation
+lock, so unrelated tree changes do not serialize it.
+
+A document deleted live whose draft outlived the delete (D79) comes back only
+when the writer knew it was deleted: the click carries `restore: true` (a
+per-document Apply on an item showing the deleted state, or an Apply all for the
+documents its confirmation named). The check runs under the document lock, so a
+delete the writer's view did not show, however late it landed, answers
+`needs_restore`: nothing changes, the draft stays pending, and the client asks
+before sending a new click with `restore`. The answer is stored, so a replay
+returns it. With `restore`, `restoreDocument` clears the record and restores its
+folders in the same transaction, then the ordinary text merge runs against the
+deleted document's last text, which equals its review base. The result carries
+`restored: true`. A path another document took refuses `forbidden` (the item
+lists `path_taken`); a Work cascade, discard or deleted source answers `closed`
+(no record on the answer). The route authorizes a deleted item at its source through the
+draft destination (`restoreGrant`) instead of a live grant. When a delete commits
+after the route resolved the item, its authorization or the transaction's grant
+confirmation refuses the live grant, nothing is claimed, and the route runs the
+click once more (once), which resolves the item as deleted. Apply reads the
+addressed document's own lifecycle row for these decisions, never a branch-wide
+tree listing. The append
 door is the sole draft-row lock and active-state check: live preparation and its
 staged journal write precede it inside the same Work transaction. A late draft
 closure unwinds that whole transaction before answering `closed`, so no live

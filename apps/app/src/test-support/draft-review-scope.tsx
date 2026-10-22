@@ -57,6 +57,7 @@ export const listed = {
   binary: false,
   wholeItem: false,
   conflict: null,
+  deletedLive: false,
   itemKey: "draft-a",
   documentId: "document-a",
   documentName: "Chapter 12",

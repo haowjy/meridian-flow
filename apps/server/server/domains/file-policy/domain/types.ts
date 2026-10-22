@@ -136,6 +136,12 @@ export interface FileFacts {
   ownerChatThreadId?: ThreadId | null;
   /** The document, a folder above it, or its source is deleted. */
   deleted: boolean;
+  /**
+   * `deleted` is the document's own delete or its folder's, and `branchWork`'s branch has an
+   * active Work draft of it, which outlived that delete (D79): a draft destination in that
+   * branch stays open. Never set from the draft's pending effect.
+   */
+  survivingDraft?: boolean;
   scheme: ContextUriScheme;
   /** The document itself; null for a container. */
   self: FileNode | null;

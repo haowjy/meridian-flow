@@ -6,6 +6,10 @@ import {
   type DraftImagePreviewTarget,
   isDraftImagePath,
 } from "@/features/draft-review/DraftImagePreview";
+import {
+  isDeletedFromManuscript,
+  isGroupApplyWithdrawn,
+} from "@/features/draft-review/deleted-drafts";
 import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
@@ -116,21 +120,32 @@ export function useDraftDock({
     [openReviewFile, projectId, workId],
   );
 
+  // What Apply sends. A taken path anywhere in the dock withdraws Apply, as in Work Files.
+  const applyWithdrawn = isGroupApplyWithdrawn(files.map((file) => file.row.draft));
+  const applicable = applyWithdrawn
+    ? []
+    : actionableFiles.filter((file) => file.row.draft.hasDraft || file.row.draft.isNew);
+
+  /**
+   * Sends the strip's command. An Apply brings back only the deleted documents in `restore`;
+   * it resolves to the files a delete the strip hadn't shown yet held back (`needs-restore`).
+   */
   const send = useCallback(
-    (mode: "apply" | "discard") => {
-      const items = actionableFiles
-        .filter((file) => mode !== "apply" || file.row.draft.hasDraft || file.row.draft.isNew)
-        .map((file) => ({
-          draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
-          target: targetOfChanges(file.actionable),
-        }));
-      if (items.length === 0) return;
+    (mode: "apply" | "discard", restore: ReadonlySet<string> = new Set()) => {
+      const files = mode === "apply" ? applicable : actionableFiles;
+      const items = files.map((file) => ({
+        draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
+        target: targetOfChanges(file.actionable),
+      }));
+      if (items.length === 0) return Promise.resolve([]);
       // The runner hides every file's selection at the click and returns each as
       // its own command answers; the records carry the outcomes.
-      const batch = runner.batch(mode, items);
-      void batch.catch(() => {});
+      return runner.batch(mode, items, restore).then(
+        (outcomes) => files.filter((_file, index) => outcomes[index]?.kind === "needs-restore"),
+        () => [],
+      );
     },
-    [actionableFiles, runner],
+    [actionableFiles, applicable, runner],
   );
 
   const fileFailures = (file: DockFile): BranchCommandFailure[] => {
@@ -146,7 +161,7 @@ export function useDraftDock({
     changeCount: totalChanges(files),
     /** Unread previews keep the controls visible but disabled until their scope is known. */
     showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
-    canApply: actionableFiles.some(
+    canApply: applicable.some(
       (file) =>
         (!file.row.draft.hasDraft && file.row.draft.isNew) ||
         (reads[targets.findIndex((target) => target.itemKey === file.row.draft.itemKey)]?.frame
@@ -159,7 +174,9 @@ export function useDraftDock({
     review,
     imagePreview,
     closeImagePreview: () => setImagePreview(null),
-    apply: () => send("apply"),
-    discard: () => send("discard"),
+    /** The files Apply would bring back from a delete; more than one file asks first. */
+    deletedToApply: applicable.filter((file) => isDeletedFromManuscript(file.row.draft)),
+    apply: (restore: ReadonlySet<string>) => send("apply", restore),
+    discard: () => void send("discard"),
   };
 }

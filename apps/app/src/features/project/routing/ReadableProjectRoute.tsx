@@ -5,7 +5,7 @@ import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import {
   useCallback,
@@ -22,9 +22,10 @@ import {
 } from "@/client/api/projects-api";
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
-import { useDraftMetadata } from "@/client/query/useDraftMetadata";
+import { fetchCurrentDraftMetadata, useDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
+import { projectWorkBranchFiles } from "@/client/query/work-branch-files";
 import {
   type ContextTab,
   getContextTabs,
@@ -455,7 +456,25 @@ function ReadableProjectDestination({
       boundDocumentId,
     ],
   );
-  const editorDrafts = useWorkBranchDrafts(projectId, documentDestination ? workId : null);
+  const listedDrafts = useWorkBranchDrafts(projectId, documentDestination ? workId : null);
+  // The list omits an active draft with no effect; the addressed item's own metadata still
+  // says whether live holds its document, so a held no-effect draft keeps its draft-only host.
+  const addressedItem = closeMetadata?.data?.status === "active" ? closeMetadata.data.item : null;
+  const editorDrafts = useMemo(
+    () =>
+      !addressedItem ||
+      (listedDrafts.status !== "ready" && listedDrafts.status !== "empty") ||
+      listedDrafts.files?.some((file) => file.draft.itemKey === addressedItem.itemKey)
+        ? listedDrafts
+        : {
+            ...listedDrafts,
+            files: [
+              ...(listedDrafts.files ?? []),
+              ...projectWorkBranchFiles([addressedItem], null),
+            ],
+          },
+    [listedDrafts, addressedItem],
+  );
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
     reviewBoundAddressResult(addressBinding, documentLookup.data),
@@ -650,25 +669,37 @@ function ReadableProjectDestination({
       changeId: itemKey ? changeId : undefined,
     });
   }, []);
+  const queryClient = useQueryClient();
   useEffect(() => {
-    if (!address.itemKey || !closeState.closed || closeState.removed) return;
-    const current = latest.current;
-    if (!current.navigation) return;
-    const live = closeState.liveUri ? parseContextUri(closeState.liveUri) : null;
-    void current.navigation.replaceIfCurrent(current.navigation.capture(), {
-      ...current.address,
-      ...(live
-        ? {
-            destination: {
-              kind: "document",
-              scheme: live.scheme,
-              path: live.path.replace(/^\/+/, ""),
-            },
-          }
-        : {}),
-      itemKey: undefined,
-      changeId: undefined,
-    });
+    if (!closingRef || !closeState.closed || closeState.removed) return;
+    const itemKey = closingRef.itemKey;
+    let current = true;
+    // The address names the item; a newer draft of it may have replaced the closed one.
+    void draftCommands
+      .reconcileClosed(closingRef, () => fetchCurrentDraftMetadata(queryClient, closingRef))
+      .then((open) => {
+        const now = latest.current;
+        if (!current || open || !now.navigation || now.address.itemKey !== itemKey) return;
+        const closed = draftCommands.state(itemKey);
+        const live = closed.liveUri ? parseContextUri(closed.liveUri) : null;
+        void now.navigation.replaceIfCurrent(now.navigation.capture(), {
+          ...now.address,
+          ...(live
+            ? {
+                destination: {
+                  kind: "document",
+                  scheme: live.scheme,
+                  path: live.path.replace(/^\/+/, ""),
+                },
+              }
+            : {}),
+          itemKey: undefined,
+          changeId: undefined,
+        });
+      });
+    return () => {
+      current = false;
+    };
   }, [address.itemKey, closeState.closed, closeState.removed, closeState.liveUri]);
   const closeDestination = useCallback(
     (target: ContextRouteTarget | { kind: "clear" }, prepared: PreparedWorkspaceNavigation) => {

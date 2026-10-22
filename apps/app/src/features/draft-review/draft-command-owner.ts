@@ -10,7 +10,11 @@ import {
   recordRestorations,
   writeDiscardBlocks,
 } from "@meridian/agent-edit/diff";
-import type { ApplyClick, ThreadDraftListItem } from "@meridian/contracts/branches";
+import type {
+  ApplyClick,
+  DraftMetadataResponse,
+  ThreadDraftListItem,
+} from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
@@ -61,7 +65,10 @@ const EMPTY: DraftCommandState = {
 };
 export type CommandOutcome =
   | { kind: "blocked" }
-  | { kind: "done" }
+  /** `restored`: the document had been deleted from the manuscript and this Apply brought it back. */
+  | { kind: "done"; restored?: true }
+  /** The document was deleted and the click didn't say the writer knew: nothing changed. */
+  | { kind: "needs-restore" }
   | { kind: "change-refused"; code: string };
 type Binding = {
   session: DocumentSession;
@@ -71,6 +78,7 @@ type Binding = {
 };
 type Entry = {
   ref: DraftRef;
+  draftId: string;
   binding: Binding | null;
   queue: ApplyClickQueue;
   users: number;
@@ -104,6 +112,9 @@ export class DraftCommandOwner {
   private readonly listeners = new Set<() => void>();
   private readonly closingWorks = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
+  private readonly reconciling = new Map<string, Promise<boolean>>();
+  /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
+  private readonly restoredDocuments = new Set<string>();
   private active = true;
   private revision = 0;
   constructor(
@@ -126,8 +137,18 @@ export class DraftCommandOwner {
     };
   };
   snapshot = () => this.revision;
+  /**
+   * State follows the item's current draft generation. An item key (branch + document) outlives
+   * its drafts: discarding one item keeps the branch, and a later write mints a new draft under
+   * the same key. Each generation's record stays its own; only `bind` and `reconcileClosed`
+   * move the key to a newer one.
+   */
   state(itemKey: string): DraftCommandState {
-    return this.records.get(this.identities.get(itemKey) ?? itemKey) ?? EMPTY;
+    return this.records.get(this.generation(itemKey)) ?? EMPTY;
+  }
+  /** The draft the item's state currently follows; the key itself before any draft is known. */
+  generation(itemKey: string): string {
+    return this.identities.get(itemKey) ?? itemKey;
   }
   private publish() {
     this.revision++;
@@ -159,6 +180,7 @@ export class DraftCommandOwner {
     if (!entry) {
       const owned: Entry = {
         ref,
+        draftId: address.draftId,
         binding: null,
         users: 0,
         lease: null,
@@ -202,8 +224,12 @@ export class DraftCommandOwner {
               {
                 failure: shownRefusal({
                   code: "apply-refused",
-                  serverCode: answer.status === "refused" ? answer.reason : "gone",
-                  removal: answer.status === "closed" ? answer.removal : undefined,
+                  serverCode:
+                    answer.status === "refused"
+                      ? answer.reason
+                      : answer.status === "needs_restore"
+                        ? "needs_restore"
+                        : "gone",
                 }),
               },
               address.draftId,
@@ -271,7 +297,7 @@ export class DraftCommandOwner {
         connection?.kind === "reset" &&
         (connection.disposition === "closed" || connection.disposition === "removed")
       ) {
-        this.finishClose(entry.ref, connection.disposition);
+        this.finishClose(entry.ref, entry.draftId, connection.disposition);
       } else if (
         snapshot.status === "destroyed" ||
         connection?.kind === "reset" ||
@@ -287,59 +313,130 @@ export class DraftCommandOwner {
     else observe();
   }
 
-  /** Only the typed metadata `gone` answer enters here, never a failed read or list omission. */
+  /** Whether an Apply brought this document back from a delete (D79). */
+  wasRestored(projectId: string, documentId: string): boolean {
+    return this.restoredDocuments.has(JSON.stringify([projectId, documentId]));
+  }
+
+  forgetRestored(projectId: string, documentId: string): void {
+    if (this.restoredDocuments.delete(JSON.stringify([projectId, documentId]))) this.publish();
+  }
+
+  /** The writer moved on to `documentId`: every other document's mark ends. */
+  keepRestoredOnly(projectId: string, documentId: string): void {
+    const kept = JSON.stringify([projectId, documentId]);
+    let changed = false;
+    for (const key of this.restoredDocuments)
+      if (key !== kept) changed = this.restoredDocuments.delete(key) || changed;
+    if (changed) this.publish();
+  }
+
+  /**
+   * The drafts of one document that a surface holds open right now. A live delete leaves
+   * them active (D79), so their tabs stay; the review list lags, this does not.
+   */
+  boundDrafts(projectId: string, documentId: string): DraftRef[] {
+    return [...this.entries.values()].flatMap(({ ref, draftId, binding }) =>
+      binding &&
+      ref.projectId === projectId &&
+      ref.documentId === documentId &&
+      !this.records.get(draftId)?.closed
+        ? [ref]
+        : [],
+    );
+  }
+
+  /**
+   * Only the typed metadata `gone` answer enters here, never a failed read or list omission.
+   * It retires the generation known when it arrives: a draft bound while the answer resolves
+   * is a newer one, and stays open.
+   */
   metadataGone(ref: DraftRef): Promise<void> {
-    if (!this.active || this.state(ref.itemKey).closed) return Promise.resolve();
-    const pending = this.resolvingGone.get(ref.itemKey);
+    const id = this.generation(ref.itemKey);
+    if (!this.active || this.records.get(id)?.closed) return Promise.resolve();
+    const pending = this.resolvingGone.get(id);
     if (pending) return pending;
-    const entry = this.byItem.get(ref.itemKey);
+    const entry = this.entries.get(id);
     const lease = entry?.binding
       ? readDraftRoom(this.registry, entry.binding.session.roomKey)
       : null;
     if (entry) entry.users++;
-    this.setState(ref.itemKey, { checkingClose: true });
+    this.setState(ref.itemKey, { checkingClose: true }, id);
     const resolving = (async () => {
       const disposition = await this.lifecycle.resolveGone?.(ref);
       if (this.active && disposition)
-        this.finishClose(ref, disposition.disposition, disposition.liveUri);
+        this.finishClose(ref, id, disposition.disposition, disposition.liveUri);
     })()
       .catch(() => undefined)
       .finally(() => {
-        this.resolvingGone.delete(ref.itemKey);
-        if (this.active) this.setState(ref.itemKey, { checkingClose: false });
+        this.resolvingGone.delete(id);
+        if (this.active) this.setState(ref.itemKey, { checkingClose: false }, id);
         lease?.dispose();
-        const id = this.identities.get(ref.itemKey);
         if (entry) {
           entry.users--;
-          if (id) this.releaseIdle(id, entry);
+          this.releaseIdle(id, entry);
         }
       });
-    this.resolvingGone.set(ref.itemKey, resolving);
+    this.resolvingGone.set(id, resolving);
     return resolving;
   }
 
-  private finishClose(ref: DraftRef, disposition: "closed" | "removed", liveUri?: string) {
-    if (!this.active || this.state(ref.itemKey).closed) return;
-    const entry = this.byItem.get(ref.itemKey);
+  /**
+   * Whether the item is open after asking the server, for an item whose known generation is
+   * closed. A different active draft is a replacement under the same key: the item follows it.
+   * The closed generation's record (its unsent text, its queue) is kept, and a failed read
+   * leaves the item closed.
+   */
+  reconcileClosed(ref: DraftRef, read: () => Promise<DraftMetadataResponse>): Promise<boolean> {
+    if (!this.state(ref.itemKey).closed) return Promise.resolve(this.active);
+    const pending = this.reconciling.get(ref.itemKey);
+    if (pending) return pending;
+    const closedId = this.generation(ref.itemKey);
+    const reconcile = read()
+      .then((answer) => {
+        if (!this.active || answer.status !== "active" || answer.draftId === closedId) return false;
+        if (this.generation(ref.itemKey) === closedId) {
+          this.identities.set(ref.itemKey, answer.draftId);
+          this.publish();
+        }
+        return !this.state(ref.itemKey).closed;
+      })
+      .catch(() => false)
+      .finally(() => this.reconciling.delete(ref.itemKey));
+    this.reconciling.set(ref.itemKey, reconcile);
+    return reconcile;
+  }
+
+  private finishClose(
+    ref: DraftRef,
+    id: string,
+    disposition: "closed" | "removed",
+    liveUri?: string,
+  ) {
+    const record = this.records.get(id) ?? EMPTY;
+    if (!this.active || record.closed) return;
+    const entry = this.entries.get(id);
     const frame = entry?.binding?.runtime.projectNow();
     const unsentText =
-      disposition === "closed" &&
-      !this.state(ref.itemKey).hidden &&
-      entry?.binding?.session.hasUnacknowledgedEdits()
+      disposition === "closed" && !record.hidden && entry?.binding?.session.hasUnacknowledgedEdits()
         ? (frame?.doc.textBetween(0, frame.doc.content.size, "\n\n") ?? null)
         : null;
     if (disposition === "removed") this.lifecycle.removed?.(ref);
-    this.setState(ref.itemKey, {
-      closed: true,
-      checkingClose: false,
-      removed: disposition === "removed",
-      unsentText,
-      liveUri: liveUri ?? null,
-    });
+    this.setState(
+      ref.itemKey,
+      {
+        closed: true,
+        checkingClose: false,
+        removed: disposition === "removed",
+        unsentText,
+        liveUri: liveUri ?? null,
+      },
+      id,
+    );
     if (entry?.binding) for (const end of entry.binding.notices) end();
     entry?.queue.close();
-    const id = this.identities.get(ref.itemKey);
-    if (id) void this.registry.closeDraftRoom(draftRoomName(id)).catch(() => undefined);
+    if (id !== ref.itemKey)
+      void this.registry.closeDraftRoom(draftRoomName(id)).catch(() => undefined);
   }
 
   private releaseIdle(id: string, entry: Entry) {
@@ -381,15 +478,23 @@ export class DraftCommandOwner {
       })
       .then((answer): CommandOutcome => {
         this.reveals.delete(ref.itemKey);
-        return answer.status === "applied"
+        return answer.status === "applied" || answer.status === "landed"
           ? { kind: "done" }
           : { kind: "change-refused", code: answer.status === "refused" ? answer.reason : "gone" };
       });
     return { sent: true, outcome };
   }
 
-  /** No await before snapshot, group validation, O, P and acknowledgement barrier are frozen. */
-  apply(ref: DraftRef, target: ChangeTarget): { sent: boolean; outcome: Promise<CommandOutcome> } {
+  /**
+   * No await before snapshot, group validation, O, P and acknowledgement barrier are frozen.
+   * `restore` says the writer saw the document deleted from the manuscript and chose to bring
+   * it back; without it, a deleted document answers `needs-restore` and nothing changes.
+   */
+  apply(
+    ref: DraftRef,
+    target: ChangeTarget,
+    restore = false,
+  ): { sent: boolean; outcome: Promise<CommandOutcome> } {
     const entry = this.byItem.get(ref.itemKey);
     const binding = entry?.binding;
     if (
@@ -426,7 +531,7 @@ export class DraftCommandOwner {
     );
     const body: ApplyClick = {
       commandId: crypto.randomUUID(),
-      draftId: this.identities.get(ref.itemKey),
+      draftId: entry.draftId,
       snapshot: base64(Y.encodeSnapshotV2(Y.snapshot(binding.session.document))),
       groupIds: [...ids],
       baseViewDelta: baseViewDelta(
@@ -434,6 +539,7 @@ export class DraftCommandOwner {
         readBase(binding.session.document, schema),
         optimistic,
       ).map((patch) => ({ ...patch, blocks: patch.blocks.map((block) => block.toJSON()) })),
+      ...(restore ? { restore: true as const } : {}),
     };
     this.setState(ref.itemKey, { failure: null });
     const result = entry.queue.enqueue({
@@ -445,16 +551,20 @@ export class DraftCommandOwner {
     binding.runtime.projectNow();
     return {
       sent: true,
-      outcome: result.then((answer) =>
-        answer.status === "applied"
-          ? { kind: "done" }
-          : answer.status === "cancelled"
-            ? { kind: "blocked" }
-            : {
-                kind: "change-refused",
-                code: answer.status === "refused" ? answer.reason : "gone",
-              },
-      ),
+      outcome: result.then((answer): CommandOutcome => {
+        if (answer.status === "applied" && answer.restored) {
+          this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
+          this.publish();
+          return { kind: "done", restored: true };
+        }
+        if (answer.status === "applied" || answer.status === "landed") return { kind: "done" };
+        if (answer.status === "cancelled") return { kind: "blocked" };
+        if (answer.status === "needs_restore") return { kind: "needs-restore" };
+        return {
+          kind: "change-refused",
+          code: answer.status === "refused" ? answer.reason : "gone",
+        };
+      }),
     };
   }
 

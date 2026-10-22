@@ -36,10 +36,19 @@ kernel; they do not certify the replacement rebase scheduler.
   next synthetic rebase leaves the base equal to live.
 - A one-second 40-keys/s target and 520 total frames do not move the clicked cut.
   The runner prints the achieved rate rather than assuming it reached the target.
-- A removed document answers `closed` with its record. A hidden creation is
-  revealed in the transaction without replacing its identity.
+- A document deleted live keeps its active draft. A click without `restore`
+  answers `needs_restore`, changes nothing and replays the same answer; a click
+  with `restore` restores it, merges, answers `applied` with `restored: true`,
+  and the replay returns the same result. A delete between Apply's unlocked scope
+  guess and its lock (`apply.afterScopeGuess`) retries namespace-first and still
+  restores. A delete after compilation (`apply.beforeBoundary`) of a click sent
+  while the document was living answers `needs_restore`. A path a new document
+  took refuses `forbidden` and leaves it deleted. A branch that also holds an
+  unrelated hidden creation still reads the addressed document's own state and
+  restores it. A hidden creation is revealed
+  in the transaction without replacing its identity.
 - Ordinary text Apply completes while another transaction holds the source
-  namespace. Only hidden-create reveal needs that tree lock.
+  namespace. Only a hidden-create reveal or a restore needs that tree lock.
 - Two AI conversations applied in one click each retain only their own passage
   in durable owning-turn receipts. Rows cover independent paragraphs, a live
   move, a selected draft move, shared-paragraph authorship, deletion and an
