@@ -1,7 +1,14 @@
 # Document removal records
 
-This recipe covers removal records, which removals close drafts (a discard does, a
-live delete does not: D79), creation admission and server room retirement.
+This recipe covers removal records, which removals close drafts, creation
+admission and server room retirement. The two removals differ:
+
+- **A live delete** (a document's or folder's delete, a move's victim) changes
+  live only (D79). It closes the document's live rooms `4208` and no draft:
+  every active draft, its draft rooms and its pending parts stay, and the
+  drafting Work's branch keeps the document.
+- **A discarded creation** (Discard, reply retraction, repair) closes the
+  creation's drafts with it, then tombstones it; its draft rooms close `4208`.
 Run it on a disposable stack. Use `./mf` for server setup/readback and finish
 by deleting a document in the browser. The record lookup is owner-gated through
 `POST /api/projects/:projectId/context/availability`.
@@ -103,9 +110,12 @@ known-id denial can include its record without allowing content access.
    through the delete; removal-first, its creation refuses with
    `DocumentNotFoundError` carrying `removal`. A peer of an existing Work draft
    is created either way (the Work draft outlived the delete).
-4. Pull a peer whose ID sorts before its upstream while removing the document.
-   The pull holds the upstream shared row lock before its peer update lock;
-   removal must wait on parents before locking any peer, without a deadlock.
+4. Pull a peer whose ID sorts before its upstream while deleting the document
+   live: the delete locks no draft row, so the pull finishes without waiting on
+   it and the peer stays `active`. Then pull while Discarding a hidden creation
+   with a peer: the pull holds the upstream shared row lock before its peer
+   update lock, and the discard's close locks upstream Work drafts before peers,
+   so it waits on the parent before any peer, without a deadlock.
 5. Move over a drafted victim, and move opposite-direction multi-document
    folders whose path order reverses their document-ID order. Victim drafts
    stay active (the branch shows a `path_taken` clash); both moves finish. Also race folder
@@ -156,9 +166,21 @@ the tab/tree update without an error. Capture a screenshot outside this repo.
 
 Two tabs of one signed-in browser (A and B), plus `./mf doc rm` as another
 device. Every removal by a person names the actor from the record: "<name> deleted
-<title>." ("<title> was deleted." without a display name), never "you" or "elsewhere". The server closes a
-removed document's live and draft rooms with `4208` after the removal commits.
+<title>." ("<title> was deleted." without a display name), never "you" or "elsewhere".
+After the removal commits, a live delete closes the document's **live** rooms
+`4208` and leaves its draft rooms open; a discarded creation's draft rooms close
+`4208`.
 
+Each case names the destination A's tab is hosted on. A **live tab** shows the
+manuscript document itself; a **draft tab** shows it through A's Work draft
+(the Work has a draft of it, with pending changes or none). Unless a case says
+otherwise, A's tabs are live tabs.
+
+- A has a draft tab of a document (once with pending changes, once with none
+  left after a per-change Discard); B deletes it from Files. The tab stays,
+  its draft room stays connected (no `4208`) and typing saves; it shows the
+  deleted state instead of a removal chip. A live tab of the same document in
+  another Work closes as below.
 - A shows a document with a long one beside it; B deletes it from Files. A
   falls back to the long document and the tab strip's free end shows a dashed
   chip "<name> deleted <title>." ("<title> was deleted." without a name); nothing covers the text. B says
@@ -188,9 +210,14 @@ removed document's live and draft rooms with `4208` after the removal commits.
   from the draft." Reopen its review address: the pane says the
   same in place of "This destination is unavailable".
 - Apply during a removal: restart with `HOOK_PAUSE_AT=apply.beforeBoundary
-  HOOK_PAUSE_FILE=<file>`, touch the file, click Apply, `./mf doc rm` the
-  document, delete the file. The command answers `applied` with
-  `restored: true`: the document is back in the manuscript with the change.
+  HOOK_PAUSE_FILE=<file>`, touch the file, click Apply on a living document's
+  item, `./mf doc rm` the document, delete the file. The click did not know of
+  the delete, so it answers `needs_restore`: nothing changes, the document
+  stays deleted and the draft pending, and the review asks before restoring.
+  Confirm: the new click carries `restore` and answers `applied` with
+  `restored: true`, and the document is back in the manuscript with the change.
+  Apply all over a deleted document confirms first, naming it; a document
+  deleted after that confirmation answers `needs_restore` the same way.
 - A stale 4208 (an init script dispatching the close on the page's `/ws/yjs`
   socket while the document exists): the room reconnects within a few hundred
   ms and typing saves. A second stale 4208 on the same tab reconnects too.
@@ -198,11 +225,15 @@ removed document's live and draft rooms with `4208` after the removal commits.
   fails: the tab says "Access lost (not saving to the server)"; once lookups
   succeed (focus, online or the 60 s poll) the room reconnects and typing
   saves.
-- Discard a draft of an existing document open in a tab or the dock, then
-  `./mf doc rm` it: the removal's chip shows (the Discard left no mark).
+- Discard every change of an existing document's draft while it is open in a
+  live tab or the dock, then `./mf doc rm` it: the removal's chip shows (the
+  Discard left no mark). The same with a draft tab: the draft is still active
+  with no changes, so the tab stays writable as in the draft-tab case above.
 - B Discards a created document A reviews in the dock beside Chat: A's dock
   says "<name> discarded <title> from the draft." beside "Recent".
 - A folder delete closing several tabs reads "<name> deleted 3 documents
   (one, two, and three)." (names in the locale's list form).
-- A holds unsent text (block its `/ws/yjs` sockets, type), B deletes: A closes
-  with the notice and the unsent text is lost (a recorded divergence).
+- A holds unsent text in a live tab (block its `/ws/yjs` sockets, type), B
+  deletes: A closes with the notice and the unsent text is lost (a recorded
+  divergence). In a draft tab the room stays, so the text saves once the
+  sockets unblock.
