@@ -56,7 +56,6 @@ export const listed = {
   isNew: false,
   binary: false,
   wholeItem: false,
-  conflict: null,
   deletedLive: false,
   tree: null,
   itemKey: "draft-a",

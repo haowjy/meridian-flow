@@ -2,7 +2,6 @@
 
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
-import { isPathTaken } from "./deleted-drafts";
 import type { DraftChangesView } from "./draft-changes";
 import { useChangeItems } from "./draft-changes";
 import type { DraftRef } from "./review-command-types";
@@ -40,8 +39,7 @@ export function useDraftView(
     retry: read.retry,
     focused: null,
     canApply:
-      !isPathTaken(item) &&
-      (treeLine || (withoutText ? item?.isNew === true : (read.frame?.groups.length ?? 0) > 0)),
+      treeLine || (withoutText ? item?.isNew === true : (read.frame?.groups.length ?? 0) > 0),
     locked: controller.changesLocked || discarding || status !== "ready",
     apply: async (change) => {
       await controller.commandChange("apply", draft, targetOfChanges([change]));

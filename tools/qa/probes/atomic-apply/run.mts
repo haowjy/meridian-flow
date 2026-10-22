@@ -119,6 +119,7 @@ async function fixture(
   const room = await h.coordinator.readDraft(snapshot.draftId, async (doc) => clone(doc, client++));
   const apiStore = createDrizzleApplyClick(h.db, {
     workProjection: h.projection,
+    branches: h.branches,
     coordinator: h.coordinator,
     live: h.persistence.journal,
     liveCoordinator: {

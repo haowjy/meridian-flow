@@ -415,10 +415,6 @@ msgstr ""
 msgid "{names} is back in the manuscript."
 msgstr ""
 
-#: src/features/draft-review/DraftCommandStatus.tsx
-msgid "{occupant} still has that name. Apply its change first."
-msgstr ""
-
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{position} of {count}"
 msgstr ""
@@ -572,6 +568,10 @@ msgstr ""
 msgid "A chat you had open was deleted."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "A document blocks part of this location. Move or rename it, then apply again."
+msgstr ""
+
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
 #~ msgid "A file named {0} already exists in this location."
@@ -690,6 +690,19 @@ msgstr ""
 msgid "Add usage"
 msgstr ""
 
+#. placeholder {0}: renamed[0]
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Added as {0}."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Added as {name}."
+msgstr ""
+
+#: src/features/editor/ManuscriptStateNotice.tsx
+msgid "Added as {renamed}"
+msgstr ""
+
 #: src/features/chat/ChangeViewRows.tsx
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "After"
@@ -776,27 +789,6 @@ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "An entry named {name} already exists in this location."
-msgstr ""
-
-#: src/features/draft-review/DraftCommandStatus.tsx
-msgid "Another document"
-msgstr ""
-
-#: src/features/draft-review/ReviewMessageText.tsx
-msgid "Another document is already at this name. Rename or remove it, then apply again."
-msgstr ""
-
-#: src/features/chat/turn-receipt-copy.ts
-#~ msgid "Another document is at its location"
-#~ msgstr ""
-
-#: src/features/draft-review/DraftCommandStatus.tsx
-#: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Another document now has this name. Rename that document to apply this draft."
-msgstr ""
-
-#: src/features/draft-review/ReviewMessageText.tsx
-msgid "Another document this Work moves or deletes still has that name. Apply that one first, or apply all changes."
 msgstr ""
 
 #: src/client/query/work-update-failure.ts
@@ -2102,10 +2094,6 @@ msgstr ""
 msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
 msgstr ""
 
-#: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Deleted, name taken"
-msgstr ""
-
 #: src/features/chat/command-descriptor.ts
 msgid "Deleting"
 msgstr ""
@@ -3124,10 +3112,6 @@ msgstr ""
 #: src/features/project/context/context-entry-name.ts
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Name is required"
-msgstr ""
-
-#: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Name taken"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
