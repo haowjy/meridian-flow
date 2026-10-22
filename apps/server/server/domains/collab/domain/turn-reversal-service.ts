@@ -10,7 +10,7 @@ import {
   targetDocumentId,
 } from "../../file-policy/index.js";
 import type { TurnReversalAccess } from "../contracts.js";
-import type { TurnEditedDocumentId } from "./turn-live-lineage.js";
+import { type TurnEditedDocumentId, turnEditDestination } from "./turn-live-lineage.js";
 
 export type ThreadContextReversalResolver = {
   requireThreadOwner(input: {
@@ -27,8 +27,8 @@ export type TurnReversalServiceDeps = {
    * deleted has no path, but its Undo brings it back (D77). Display lineage filters these.
    */
   listTurnTargets(threadId: string, turnId: string): Promise<TurnEditedDocumentId[]>;
-  /** The writer's edit grant on each document, confirmed by the seams the reversal reaches. */
-  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
+  /** The writer's edit grant where each edit landed, confirmed by the seams the reversal reaches. */
+  fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
   threadContext: ThreadContextReversalResolver;
 };
 
@@ -54,7 +54,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
             turnId: command.turnId,
             direction: command.direction,
             actor: { type: "user", userId: command.userId },
-            documentIds: grants.map((grant) => targetDocumentId(grant.facts.target)),
+            documentIds: [...new Set(grants.map((grant) => targetDocumentId(grant.facts.target)))],
           }),
         );
         // A seam refused under its locks (archived meanwhile): nothing was reversed.
@@ -68,7 +68,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
       const documents = [
         ...reversed.documents,
         ...(await Promise.all(
-          denied.map(async (documentId) => ({
+          [...new Set(denied)].map(async (documentId) => ({
             uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
             status: "permission_denied" as const,
           })),
@@ -84,26 +84,32 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
 }
 
 /**
- * The writer's edit grant on each document a reversal would change. A live target the
- * document grant doesn't find (the turn deleted it) is authorized where its restore would
- * bring it back. A file the writer can't see is left out; one they can't edit (its Work is
- * archived) is reported as refused.
+ * The writer's edit grant on each document a reversal would change, at the destination its
+ * edit landed in: a draft-scoped edit at its Work's draft, so one whose draft outlived a live
+ * delete stays reversible (D79). A live target the document grant doesn't find (the turn
+ * deleted it) is authorized where its restore would bring it back. A file the writer can't
+ * see is left out; one they can't edit (its Work is archived) is reported as refused.
  */
 async function writerGrants(
-  fileAccess: Pick<FileAccess, "authorize">,
+  fileAccess: Pick<FileAccess, "authorize" | "authorizeAt">,
   userId: string,
   targets: readonly TurnEditedDocumentId[],
 ): Promise<{ grants: FileGrant<"edit">[]; refused: FileAccessDenied[] }> {
-  const grants = new Map<DocumentId, FileGrant<"edit">>();
+  const grants: FileGrant<"edit">[] = [];
   const refused: FileAccessDenied[] = [];
   const principal = { accountId: userId as UserId };
-  for (const { documentId, scope } of targets) {
-    if (grants.has(documentId)) continue;
-    let grant = await fileAccess.authorize(principal, { kind: "document", documentId }, "edit");
-    if (isFileAccessDenied(grant) && grant.reason === "not_found" && scope === "live")
+  for (const target of targets) {
+    const documentId = target.documentId as DocumentId;
+    let grant = await fileAccess.authorizeAt(
+      principal,
+      { kind: "document", documentId },
+      turnEditDestination(target),
+      "edit",
+    );
+    if (isFileAccessDenied(grant) && grant.reason === "not_found" && target.scope === "live")
       grant = await fileAccess.authorize(principal, { kind: "restore", documentId }, "edit");
-    if (!isFileAccessDenied(grant)) grants.set(documentId, grant);
+    if (!isFileAccessDenied(grant)) grants.push(grant as FileGrant<"edit">);
     else if (grant.reason !== "not_found") refused.push(grant);
   }
-  return { grants: [...grants.values()], refused };
+  return { grants, refused };
 }

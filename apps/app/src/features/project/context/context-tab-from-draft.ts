@@ -1,7 +1,8 @@
 /**
  * context-tab-from-draft — ContextTab synthesized from a work-draft group.
  *
- * Draft-only NEW documents have no context-tree entry until Apply, so the
+ * Draft-only documents (created by the draft, or deleted live while this draft
+ * still has them) have no context-tree entry until Apply, so the
  * route→tab auto-open (ContextPaneController → findContextFile) has nothing
  * to match and review lands on an empty pane (#153). The document itself is
  * real — its `documents` row and Yjs state exist from write time — only the
@@ -25,11 +26,12 @@ export function contextTabFromDraftGroup(group: {
   contextLocation?: Pick<ContextUri, "scheme" | "path"> | null;
   documentName?: string | null;
   /**
-   * Server flag for a draft-CREATED document. Gives the tab a review entry (draft-only) so
-   * the tab lifecycle can follow the draft's: cleared on Apply, closed on
-   * whole-draft Discard (the document never joins the tree).
+   * Live doesn't hold the document: the draft created it, or live deleted it and this
+   * draft still has it. Gives the tab a review entry (draft-only) so the tab lifecycle
+   * follows the draft's: cleared when Apply brings the document into the tree, closed
+   * when the draft leaves the Work's list.
    */
-  isNew?: boolean;
+  draftOnly?: boolean;
 }): Extract<ContextTab, { kind: "tracked" }> | null {
   const location = group.contextLocation;
   if (!location?.path) return null;
@@ -51,7 +53,7 @@ export function contextTabFromDraftGroup(group: {
     editable: true,
     filetype,
     schemaType: classification.schemaType,
-    ...(group.isNew
+    ...(group.draftOnly
       ? {
           reviews: {
             [group.workId]: { itemKey: group.itemKey, tabInstanceToken: crypto.randomUUID() },

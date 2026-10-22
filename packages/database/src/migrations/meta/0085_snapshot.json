@@ -1,6 +1,6 @@
 {
-  "id": "470cfe3f-73e3-4569-a3cc-24eb1606025d",
-  "prevId": "06543d1f-2444-4e0b-b33c-8932472f40ef",
+  "id": "7eecf8a9-055b-4172-80ae-1ea79960c52a",
+  "prevId": "59248c6c-9af8-450c-b1b9-5811f1a9a69b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5443,12 +5443,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "deleted_by_thread_id": {
-          "name": "deleted_by_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "hidden": {
           "name": "hidden",
           "type": "boolean",
@@ -5470,22 +5464,6 @@
           ],
           "isUnique": false,
           "where": "\"documents\".\"deleted_by_work_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "documents_deleted_by_thread_idx": {
-          "name": "documents_deleted_by_thread_idx",
-          "columns": [
-            {
-              "expression": "deleted_by_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"documents\".\"deleted_by_thread_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -5678,19 +5656,6 @@
           "tableTo": "works",
           "columnsFrom": [
             "deleted_by_work_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "documents_deleted_by_thread_id_threads_id_fk": {
-          "name": "documents_deleted_by_thread_id_threads_id_fk",
-          "tableFrom": "documents",
-          "tableTo": "threads",
-          "columnsFrom": [
-            "deleted_by_thread_id"
           ],
           "columnsTo": [
             "id"
@@ -5898,8 +5863,8 @@
           "method": "btree",
           "with": {}
         },
-        "folders_hidden_location": {
-          "name": "folders_hidden_location",
+        "folders_nonlive_location": {
+          "name": "folders_nonlive_location",
           "columns": [
             {
               "expression": "context_source_id",
@@ -5921,7 +5886,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"folders\".\"hidden\" AND \"folders\".\"deleted_at\" IS NULL",
+          "where": "(\"folders\".\"hidden\" AND \"folders\".\"deleted_at\" IS NULL) OR (NOT \"folders\".\"hidden\" AND \"folders\".\"deleted_at\" IS NOT NULL)",
           "concurrently": false,
           "method": "btree",
           "with": {}

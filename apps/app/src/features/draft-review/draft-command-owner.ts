@@ -61,7 +61,10 @@ const EMPTY: DraftCommandState = {
 };
 export type CommandOutcome =
   | { kind: "blocked" }
-  | { kind: "done" }
+  /** `restored`: the document had been deleted from the manuscript and this Apply brought it back. */
+  | { kind: "done"; restored?: true }
+  /** The document was deleted and the click didn't say the writer knew: nothing changed. */
+  | { kind: "needs-restore" }
   | { kind: "change-refused"; code: string };
 type Binding = {
   session: DocumentSession;
@@ -104,6 +107,8 @@ export class DraftCommandOwner {
   private readonly listeners = new Set<() => void>();
   private readonly closingWorks = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
+  /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
+  private readonly restoredDocuments = new Set<string>();
   private active = true;
   private revision = 0;
   constructor(
@@ -202,8 +207,12 @@ export class DraftCommandOwner {
               {
                 failure: shownRefusal({
                   code: "apply-refused",
-                  serverCode: answer.status === "refused" ? answer.reason : "gone",
-                  removal: answer.status === "closed" ? answer.removal : undefined,
+                  serverCode:
+                    answer.status === "refused"
+                      ? answer.reason
+                      : answer.status === "needs_restore"
+                        ? "needs_restore"
+                        : "gone",
                 }),
               },
               address.draftId,
@@ -285,6 +294,39 @@ export class DraftCommandOwner {
     // subscribe publishes synchronously, including an already retired session.
     if (entry.binding !== binding) stopSession();
     else observe();
+  }
+
+  /** Whether an Apply brought this document back from a delete (D79). */
+  wasRestored(projectId: string, documentId: string): boolean {
+    return this.restoredDocuments.has(JSON.stringify([projectId, documentId]));
+  }
+
+  forgetRestored(projectId: string, documentId: string): void {
+    if (this.restoredDocuments.delete(JSON.stringify([projectId, documentId]))) this.publish();
+  }
+
+  /** The writer moved on to `documentId`: every other document's mark ends. */
+  keepRestoredOnly(projectId: string, documentId: string): void {
+    const kept = JSON.stringify([projectId, documentId]);
+    let changed = false;
+    for (const key of this.restoredDocuments)
+      if (key !== kept) changed = this.restoredDocuments.delete(key) || changed;
+    if (changed) this.publish();
+  }
+
+  /**
+   * The drafts of one document that a surface holds open right now. A live delete leaves
+   * them active (D79), so their tabs stay; the review list lags, this does not.
+   */
+  boundDrafts(projectId: string, documentId: string): DraftRef[] {
+    return [...this.entries.values()].flatMap(({ ref, binding }) =>
+      binding &&
+      ref.projectId === projectId &&
+      ref.documentId === documentId &&
+      !this.state(ref.itemKey).closed
+        ? [ref]
+        : [],
+    );
   }
 
   /** Only the typed metadata `gone` answer enters here, never a failed read or list omission. */
@@ -388,8 +430,16 @@ export class DraftCommandOwner {
     return { sent: true, outcome };
   }
 
-  /** No await before snapshot, group validation, O, P and acknowledgement barrier are frozen. */
-  apply(ref: DraftRef, target: ChangeTarget): { sent: boolean; outcome: Promise<CommandOutcome> } {
+  /**
+   * No await before snapshot, group validation, O, P and acknowledgement barrier are frozen.
+   * `restore` says the writer saw the document deleted from the manuscript and chose to bring
+   * it back; without it, a deleted document answers `needs-restore` and nothing changes.
+   */
+  apply(
+    ref: DraftRef,
+    target: ChangeTarget,
+    restore = false,
+  ): { sent: boolean; outcome: Promise<CommandOutcome> } {
     const entry = this.byItem.get(ref.itemKey);
     const binding = entry?.binding;
     if (
@@ -434,6 +484,7 @@ export class DraftCommandOwner {
         readBase(binding.session.document, schema),
         optimistic,
       ).map((patch) => ({ ...patch, blocks: patch.blocks.map((block) => block.toJSON()) })),
+      ...(restore ? { restore: true as const } : {}),
     };
     this.setState(ref.itemKey, { failure: null });
     const result = entry.queue.enqueue({
@@ -445,16 +496,20 @@ export class DraftCommandOwner {
     binding.runtime.projectNow();
     return {
       sent: true,
-      outcome: result.then((answer) =>
-        answer.status === "applied"
-          ? { kind: "done" }
-          : answer.status === "cancelled"
-            ? { kind: "blocked" }
-            : {
-                kind: "change-refused",
-                code: answer.status === "refused" ? answer.reason : "gone",
-              },
-      ),
+      outcome: result.then((answer): CommandOutcome => {
+        if (answer.status === "applied" && answer.restored) {
+          this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
+          this.publish();
+          return { kind: "done", restored: true };
+        }
+        if (answer.status === "applied") return { kind: "done" };
+        if (answer.status === "cancelled") return { kind: "blocked" };
+        if (answer.status === "needs_restore") return { kind: "needs-restore" };
+        return {
+          kind: "change-refused",
+          code: answer.status === "refused" ? answer.reason : "gone",
+        };
+      }),
     };
   }
 

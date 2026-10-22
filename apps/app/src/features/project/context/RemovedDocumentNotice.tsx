@@ -147,6 +147,28 @@ export function removalSentence(documents: readonly Removal[]): string {
   );
 }
 
+/**
+ * A draft that outlived its document's delete (D79), in the draft's own editor: who deleted it,
+ * in the removal notice's voice, and what Apply does about it.
+ */
+export function deletedFromManuscriptSentence(
+  title: string,
+  record: DocumentRemovalRecord | null,
+): string {
+  const voice = voiceOf(record);
+  if (voice.kind === "person") {
+    const { name } = voice;
+    return t`${name} deleted ${title} from the manuscript. Applying brings it back.`;
+  }
+  if (voice.kind === "agent") {
+    const { chat } = voice;
+    return chat
+      ? t`The AI in ${chat} deleted ${title} from the manuscript. Applying brings it back.`
+      : t`The AI in a chat deleted ${title} from the manuscript. Applying brings it back.`;
+  }
+  return t`${title} was deleted from the manuscript. Applying brings it back.`;
+}
+
 /** What a chip says when only a short sentence fits: the count and what happened. */
 function shortRemovalSentence(documents: readonly Removal[]): string {
   const count = documents.length;
@@ -171,42 +193,6 @@ function shortRemovalSentence(documents: readonly Removal[]): string {
 export function RemovedDocumentSentence({ documents }: { documents: readonly Removal[] }) {
   useLingui();
   return <>{removalSentence(documents)}</>;
-}
-
-/**
- * Why a draft can't be applied: its document was removed. Apply never revives
- * a removed document, so there is nothing to try again.
- */
-export function RemovedDocumentApplyRefusal({ record }: { record: DocumentRemovalRecord | null }) {
-  useLingui();
-  return <>{applyRefusal(voiceOf(record))}</>;
-}
-
-function applyRefusal(voice: RemovalVoice): string {
-  switch (voice.kind) {
-    case "person": {
-      const { name } = voice;
-      return voice.reason === "discarded"
-        ? t`${name} discarded this document from the draft, so this draft can't be applied.`
-        : t`${name} deleted this document, so this draft can't be applied.`;
-    }
-    case "work": {
-      const { name } = voice;
-      return t`This document was deleted with the Work ${name}, so this draft can't be applied.`;
-    }
-    case "agent": {
-      const { chat } = voice;
-      return chat
-        ? t`The AI in ${chat} deleted this document, so this draft can't be applied.`
-        : t`The AI in a chat deleted this document, so this draft can't be applied.`;
-    }
-    case "unfinished-reply":
-      return t`This document was removed when the reply that created it didn't finish, so this draft can't be applied.`;
-    case "anonymous":
-      return voice.reason === "discarded"
-        ? t`This document was discarded from the draft, so this draft can't be applied.`
-        : t`This document was deleted, so this draft can't be applied.`;
-  }
 }
 
 const EMPTY_NOTICE: RemovedNoticeSnapshot = { shown: [], waiting: [], version: 0 };

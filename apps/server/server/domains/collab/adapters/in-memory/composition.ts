@@ -140,6 +140,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const lineage = createTurnLiveLineageReadModel({
     store: createInMemoryTurnLiveLineageStore(journal),
     resolveDocumentUri: async (documentId) => documentId,
+    resolveLastDocumentUri: async (documentId) => documentId,
   });
   const responseFinalizer = createResponseWriteFinalizer({
     agentEdit,

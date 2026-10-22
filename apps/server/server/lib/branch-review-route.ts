@@ -125,6 +125,7 @@ const ApplyClickBody = z
       }),
     ),
     groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
+    restore: z.literal(true).optional(),
   })
   .refine((body) => Boolean(body.snapshot) === Boolean(body.draftId));
 const DiscardBody = z.strictObject(Base);
@@ -472,7 +473,7 @@ async function commandIngress(
 export async function handleApplyClickRequest(
   deps: BranchRouteServices,
   input: CommandScope & { documentId: DocumentId; request: unknown },
-  /** Set on the one re-run after a live delete overtook the grants this click took. */
+  /** Set on the one re-run after a live delete overtook this click's admission. */
   overtaken = false,
 ): Promise<ApplyClickAnswer> {
   const work = await requireBranchWorkIdentity(deps, input);
@@ -521,8 +522,7 @@ export async function handleApplyClickRequest(
       grant.facts.projectId === input.projectId
     ) {
       const removed = await deps.documentSync.roomRemoval({ documentId: input.documentId });
-      if (removed)
-        return (await lookup()) ?? { status: "closed", commandId, removal: removed.removal };
+      if (removed) return (await lookup()) ?? { status: "closed", commandId };
     }
     return refuse(
       grant.facts?.branchWork?.deleted || grant.facts?.ownerWork?.deleted
@@ -544,12 +544,21 @@ export async function handleApplyClickRequest(
   // A document deleted live has no live grant to give: Apply restores it, authorized at its
   // source through the draft's destination (`restoreGrant`), as Discard authorizes it.
   const deletedLive = item?.item.deletedLive ?? false;
+  // A live delete that committed after the item resolved, at authorization or at the grants'
+  // confirmation: nothing was claimed, so the click runs once more, resolves the item as
+  // deleted and authorizes its restore (D79). Every other denial is final.
+  const denied = (denial: FileAccessDenied | undefined): Promise<ApplyClickAnswer> =>
+    denial?.facts?.deleted && !deletedLive && !overtaken
+      ? handleApplyClickRequest(deps, input, true)
+      : denial
+        ? deniedAnswer(denial)
+        : refuse("not_found");
   for (const target of [
     { kind: "draft" as const, documentId: input.documentId, workId: input.workId },
     ...(item?.item.isNew || deletedLive ? [] : [documentTarget(input.documentId)]),
   ]) {
     const grant = await deps.fileAccess.authorize({ accountId: input.userId }, target, "edit");
-    if (isFileAccessDenied(grant)) return deniedAnswer(grant);
+    if (isFileAccessDenied(grant)) return denied(grant);
     grants.push(grant);
   }
   if (item && deletedLive) grants.push(await restoreGrant(deps, input, item.item));
@@ -561,13 +570,7 @@ export async function handleApplyClickRequest(
       envelope,
     }),
   );
-  if (result.ok) return result.value;
-  const denial = result.refusal.refused[0];
-  // A live delete committed after this click took its live grant: nothing was claimed, so
-  // the click runs once more and now authorizes, and restores, the deleted document (D79).
-  if (denial?.facts?.deleted && !deletedLive && !overtaken)
-    return handleApplyClickRequest(deps, input, true);
-  return denial ? deniedAnswer(denial) : refuse("not_found");
+  return result.ok ? result.value : denied(result.refusal.refused[0]);
 }
 
 /** An item the branch no longer holds, as a 200 body status. */
@@ -667,6 +670,7 @@ export function toWireItem(
     documentName: item.documentName,
     contextLocation: reviewContextLocation(item.path),
     conflict: item.conflict,
+    deletedLive: item.deletedLive,
     actorThreads: item.actorThreadIds.map((threadId) => ({
       threadId,
       title: threadTitles.get(threadId) ?? null,

@@ -3,7 +3,6 @@ import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
-import { RemovedDocumentApplyRefusal } from "@/features/project/context/RemovedDocumentNotice";
 import type { BranchCommandFailure, ServerRefusal } from "./review-command-types";
 
 /** The refusals the writer can act on, worded here (not by the server) from the server's code. */
@@ -28,6 +27,8 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This change belongs with others. Select all of them and try again.`;
     case "gone":
       return msg`That change is no longer in the draft.`;
+    case "needs_restore":
+      return msg`This document was deleted from the manuscript. Apply again to bring it back.`;
     default:
       return undefined;
   }
@@ -35,7 +36,7 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
 
 /** Holds and stale answers are complete sentences; a lead line like "Couldn't apply" would misstate them. */
 function answersAlone(serverCode: string | undefined): boolean {
-  return serverCode === "path_taken" || serverCode === "stale" || serverCode === "deleted_live";
+  return serverCode === "path_taken" || serverCode === "stale" || serverCode === "needs_restore";
 }
 
 /**
@@ -45,16 +46,8 @@ function answersAlone(serverCode: string | undefined): boolean {
  * comes from the failure's code. The one renderer for a whole-draft and a
  * per-change refusal.
  */
-function RefusalReason({ serverCode, serverReason, removal }: Partial<ServerRefusal>) {
+function RefusalReason({ serverCode, serverReason }: Partial<ServerRefusal>) {
   const { i18n } = useLingui();
-  // Apply never revives a removed document: the record says who removed it, and nothing to retry.
-  if (serverCode === "deleted_live")
-    return (
-      <>
-        {" "}
-        <RemovedDocumentApplyRefusal record={removal ?? null} />
-      </>
-    );
   const known = serverCode ? knownRefusal(serverCode) : undefined;
   const reason = known
     ? i18n._(known)
@@ -63,7 +56,7 @@ function RefusalReason({ serverCode, serverReason, removal }: Partial<ServerRefu
 }
 
 export function ReviewMessageText({
-  failure: { code, serverCode, serverReason, removal },
+  failure: { code, serverCode, serverReason },
 }: {
   failure: BranchCommandFailure;
 }) {
@@ -72,7 +65,7 @@ export function ReviewMessageText({
       return (
         <>
           {answersAlone(serverCode) ? null : <Trans>Couldn't apply this draft.</Trans>}
-          <RefusalReason serverCode={serverCode} serverReason={serverReason} removal={removal} />
+          <RefusalReason serverCode={serverCode} serverReason={serverReason} />
         </>
       );
     case "discard-unknown":

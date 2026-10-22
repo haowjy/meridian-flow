@@ -30,7 +30,7 @@ Journal and receipt signal triggers still run inside an append's draft row
 hold. `change_trail_owners` retains JIT off and primary-key journal lookups;
 migration 0076 removes push-journal, placement and settlement ownership reads.
 Apply explicitly signals all selected member owners. A tree entry (a move,
-delete, restore or settlement) has no parts: migration 0084 makes `change_trail_owners` follow
+delete, restore or settlement) has no parts: migration 0085 makes `change_trail_owners` follow
 `tree_change.targets` and `tree_change.settles`, and the receipt trigger fire for it, so a card
 Undo of a move dirties the turn that made it. The merged 0075–0081
 migration series preserves historical Apply evidence, completes conversion
