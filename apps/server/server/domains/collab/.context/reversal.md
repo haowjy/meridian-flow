@@ -10,7 +10,12 @@ immutable journal edit; it never rewrites a target row or marks it reversed.
 accepts only `{ scope: "turn", target: turnId, direction }`; authorization
 precedes inverse planning. One action may cover several documents, but each
 inverse edit transitions one target edit and carries restoration aliases.
-Dry-run and execution choose one destination view per document.
+Each text step lands where its original did, live or its draft: one turn may
+reverse a document's live and draft text together, each on its own view, inside
+the one ordered stream. The card admits only the (document, branch)
+destinations the writer's grants cover (`InverseDestination`); a refused draft
+beside an allowed live edit is left out, not the whole document. The model
+inverts only in the version it writes to.
 
 Redo is preferred when the latest unconsumed Undo has a reapplicable part;
 otherwise an invertible active part offers Undo. Effective action state is
