@@ -1,6 +1,8 @@
 /** The real Markdown component under production React; timing includes layout. */
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
+import { type MarkdownStreamSnapshot, markdownCodec } from "@meridian/markup";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { Markdown } from "../src/rich-content/Markdown";
@@ -23,6 +25,20 @@ const stats = (samples: number[]) => {
     p50: sorted[Math.floor(sorted.length * 0.5)],
     p95: sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))],
   };
+};
+const diagnosticCodec = markdownCodec({ schema: buildDocumentSchema() });
+const fullParseFallbacks = (chunks: readonly string[], initial = "") => {
+  let source = initial;
+  let snapshot: MarkdownStreamSnapshot | null = null;
+  const reasons: Record<string, number> = {};
+  for (const chunk of chunks) {
+    source += chunk;
+    snapshot = diagnosticCodec.stream(snapshot, source);
+    if (snapshot.fullParseReason) {
+      reasons[snapshot.fullParseReason] = (reasons[snapshot.fullParseReason] ?? 0) + 1;
+    }
+  }
+  return reasons;
 };
 export async function runMarkdownBench(interval: number) {
   const host = document.getElementById("root");
@@ -56,6 +72,27 @@ export async function runMarkdownBench(interval: number) {
       setTimeout(resolve, Math.max(0, interval - (performance.now() - start))),
     );
   }
+  const streamUpdates = async (chunks: readonly string[], initial = "") => {
+    const samples: number[] = [];
+    let current = initial;
+    for (const chunk of chunks) {
+      const start = performance.now();
+      current += chunk;
+      samples.push(commit([current], true));
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.max(0, interval - (performance.now() - start))),
+      );
+    }
+    return stats(samples);
+  };
+  const worstCaseTokenUpdateMs = {
+    paragraph: await streamUpdates(Array.from({ length: 300 }, (_, index) => `word${index} `)),
+    list: await streamUpdates(Array.from({ length: 300 }, (_, index) => `- item ${index}\n`)),
+    openCode: await streamUpdates(
+      Array.from({ length: 300 }, (_, index) => `value${index} `),
+      "```ts\n",
+    ),
+  };
   const mounts = (sources: string[]) => {
     const samples: number[] = [];
     for (let i = 0; i < 10; i++) {
@@ -69,6 +106,16 @@ export async function runMarkdownBench(interval: number) {
     tokens: tokens.length,
     words: long.split(/\s+/).length,
     tokenUpdateMs: stats(updates),
+    worstCaseTokenUpdateMs,
+    fullParseFallbacks: {
+      ordinary: fullParseFallbacks(tokens),
+      paragraph: fullParseFallbacks(Array.from({ length: 300 }, (_, index) => `word${index} `)),
+      list: fullParseFallbacks(Array.from({ length: 300 }, (_, index) => `- item ${index}\n`)),
+      openCode: fullParseFallbacks(
+        Array.from({ length: 300 }, (_, index) => `value${index} `),
+        "```ts\n",
+      ),
+    },
     transcriptMountMs: mounts(transcript),
     longReplyMountMs: mounts([long]),
   };

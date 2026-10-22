@@ -52,12 +52,14 @@ export function createMarkdownStreamer(parseDocument: ParseDocument) {
     activeTree: MdastRoot,
     activeSource: string,
     activeOffset: number,
+    activeBlockCount: number,
     options: MarkdownStreamOptions,
     fullParse: boolean,
     fullParseReason: MarkdownStreamSnapshot["fullParseReason"],
   ): MarkdownStreamSnapshot => {
     let displaySource = source;
     let blocks = canonical;
+    const openCode = openCodeNode(canonical.slice(-activeBlockCount), activeSource);
     if (options.repair) {
       const repair = trailingTextRange(activeTree, activeSource.length);
       if (repair) {
@@ -74,7 +76,6 @@ export function createMarkdownStreamer(parseDocument: ParseDocument) {
         }
       }
     }
-    const openCode = openCodeNode(blocks, displaySource);
     const snapshot: MarkdownStreamSnapshot = Object.freeze({
       source,
       displaySource,
@@ -106,6 +107,7 @@ export function createMarkdownStreamer(parseDocument: ParseDocument) {
       parsed.tree,
       source,
       0,
+      parsed.blocks.length,
       options,
       true,
       reason,
@@ -166,6 +168,7 @@ export function createMarkdownStreamer(parseDocument: ParseDocument) {
       parsedSuffix.tree,
       suffix,
       cut,
+      activeBlocks.length,
       options,
       false,
       null,

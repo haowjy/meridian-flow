@@ -1,15 +1,17 @@
 /** Static and streaming Markdown: the canonical codec's document nodes rendered without an editor. */
-import { markdownCodec, type PresentationSourceRun } from "@meridian/markup";
+import {
+  type MarkdownStreamSnapshot,
+  markdownCodec,
+  type PresentationSourceRun,
+} from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Mark as PMMark, Node as PMNode } from "@tiptap/pm/model";
-import { createElement, Fragment, memo, type ReactNode, useMemo } from "react";
-import remend from "remend";
+import { createElement, Fragment, memo, type ReactNode, useMemo, useRef } from "react";
 
 import { browserPictureSource } from "@/core/editor/images";
 import { classifyLinkTarget } from "@/core/editor/links";
 import { DocumentCodeBlock } from "./DocumentCodeBlock";
 import { createDocumentCache } from "./document-cache";
-import { splitMarkdownBlocks } from "./markdown-blocks";
 import {
   boundedRanges,
   type MarkdownReferenceOccurrence,
@@ -21,7 +23,7 @@ import { SkillToken } from "./SkillToken";
 import { TranscriptReference } from "./TranscriptReference";
 
 const codec = markdownCodec({ schema: buildDocumentSchema() });
-const settledBlocks = createDocumentCache<PMNode[]>();
+const settledSnapshots = createDocumentCache<MarkdownStreamSnapshot>();
 
 type Presentation = {
   source: string;
@@ -55,7 +57,6 @@ function renderLink(mark: PMMark, content: ReactNode): ReactNode {
 function children(
   node: PMNode,
   breaks: boolean,
-  throttle: boolean,
   presentation?: Presentation,
   path: number[] = [],
   openCode: PMNode | null = null,
@@ -67,7 +68,7 @@ function children(
     if (!link) {
       result.push(
         <Fragment key={index}>
-          {renderDocumentNode(child, breaks, throttle, presentation, [...path, index], openCode)}
+          {renderDocumentNode(child, breaks, presentation, [...path, index], openCode)}
         </Fragment>,
       );
       continue;
@@ -87,7 +88,6 @@ function children(
           {renderDocumentNode(
             part.mark(part.marks.filter((mark) => mark.type.name !== "link")),
             breaks,
-            throttle,
             labelPresentation,
             [...path, index],
             openCode,
@@ -132,7 +132,6 @@ function children(
 function renderDocumentNode(
   node: PMNode,
   breaks = false,
-  throttle = false,
   presentation?: Presentation,
   path: number[] = [],
   openCode: PMNode | null = null,
@@ -179,7 +178,7 @@ function renderDocumentNode(
     }
     return content;
   }
-  const content = children(node, breaks, throttle, presentation, path, openCode);
+  const content = children(node, breaks, presentation, path, openCode);
   const alignment = node.attrs.align ? { textAlign: node.attrs.align } : undefined;
   switch (node.type.name) {
     case "doc":
@@ -205,7 +204,9 @@ function renderDocumentNode(
     case "horizontal_rule":
       return <hr />;
     case "code_block":
-      return <DocumentCodeBlock node={node} throttle={throttle} diagrams={node !== openCode} />;
+      return (
+        <DocumentCodeBlock node={node} throttle={node === openCode} diagrams={node !== openCode} />
+      );
     case "image": {
       const src = browserPictureSource(String(node.attrs.src));
       if (!src) return node.attrs.alt ?? "";
@@ -251,57 +252,21 @@ function renderDocumentNode(
   }
 }
 
-function lastCodeBlock(blocks: readonly PMNode[]): PMNode | null {
-  let last: PMNode | null = null;
-  for (const block of blocks) {
-    if (block.type.name === "code_block") last = block;
-    block.descendants((node) => {
-      if (node.type.name === "code_block") last = node;
-      return node.type.name !== "code_block";
-    });
-  }
-  return last;
-}
-
-// Source strings, not PM nodes, are the memo boundary: settled blocks never parse
-// or highlight again as their tail grows. Fragments keep all DOM blocks siblings.
 const MarkdownBlock = memo(function MarkdownBlock({
-  source,
+  node,
   breaks,
-  repair,
-  throttle,
-  openFence,
+  openCode,
 }: {
-  source: string;
+  node: PMNode;
   breaks: boolean;
-  repair: boolean;
-  throttle: boolean;
-  openFence: boolean;
+  openCode: PMNode | null;
 }) {
-  // An open fence's remaining lines are code: an unclosed fence already parses as
-  // code to its container's end, and remend would "repair" literal text inside a
-  // tilde fence. Lines before the opener are complete, so nothing needs repair.
-  const blocks = useMemo(
-    () =>
-      repair && !openFence
-        ? codec.parse(remend(source, { links: false, images: false, katex: false })).blocks
-        : repair
-          ? codec.parse(source).blocks
-          : settledBlocks(source, () => codec.parse(source).blocks),
-    [source, repair, openFence],
-  );
-  const openCode = openFence ? lastCodeBlock(blocks) : null;
-  return blocks.map((node, index) => (
-    <Fragment key={index}>
-      {renderDocumentNode(node, breaks, throttle, undefined, [], openCode)}
-    </Fragment>
-  ));
+  return renderDocumentNode(node, breaks, undefined, [], openCode);
 });
 
 function StaticTranscript({
   source,
   breaks,
-  openFence,
   references,
   skills,
 }: {
@@ -309,9 +274,9 @@ function StaticTranscript({
   breaks: boolean;
   references: readonly MarkdownReferenceOccurrence[];
   skills: readonly MarkdownSkillOccurrence[];
-  openFence: boolean;
 }) {
-  const { blocks, sourceMap } = useMemo(() => codec.parseWithSourceMap(source), [source]);
+  const { sourceMap } = useMemo(() => codec.parseWithSourceMap(source), [source]);
+  const snapshot = useMemo(() => codec.stream(null, source), [source]);
   const presentation = useMemo(() => {
     const runs = new Map<string, PresentationSourceRun[]>();
     for (const run of sourceMap) {
@@ -325,10 +290,9 @@ function StaticTranscript({
       skills: boundedRanges(skills, source.length),
     };
   }, [source, sourceMap, references, skills]);
-  const openCode = openFence ? lastCodeBlock(blocks) : null;
-  return blocks.map((node, index) => (
+  return snapshot.blocks.map((node, index) => (
     <Fragment key={index}>
-      {renderDocumentNode(node, breaks, false, presentation, [index], openCode)}
+      {renderDocumentNode(node, breaks, presentation, [index], snapshot.openCode)}
     </Fragment>
   ));
 }
@@ -348,27 +312,26 @@ export function DocumentMarkdown({
   references?: readonly MarkdownReferenceOccurrence[];
   skills?: readonly MarkdownSkillOccurrence[];
 }) {
-  const { blocks, openFence } = useMemo(() => splitMarkdownBlocks(source), [source]);
+  const settled = useMemo(
+    () => (streaming ? null : settledSnapshots(source, () => codec.stream(null, source))),
+    [source, streaming],
+  );
+  const previous = useRef<MarkdownStreamSnapshot | null>(null);
+  const snapshot = useMemo(() => {
+    if (!streaming) return null;
+    const next = codec.stream(previous.current, source, { repair: true });
+    previous.current = next;
+    return next;
+  }, [source, streaming]);
+  const blocks = snapshot?.blocks ?? settled?.blocks ?? [];
+  const openCode = snapshot?.openCode ?? settled?.openCode ?? null;
   return (
     <div className={className}>
       {!streaming && (references.length > 0 || skills.length > 0) ? (
-        <StaticTranscript
-          openFence={openFence}
-          source={source}
-          breaks={breaks}
-          references={references}
-          skills={skills}
-        />
+        <StaticTranscript source={source} breaks={breaks} references={references} skills={skills} />
       ) : (
-        blocks.map((block, index) => (
-          <MarkdownBlock
-            key={index}
-            source={block}
-            breaks={breaks}
-            repair={streaming && index === blocks.length - 1}
-            throttle={streaming && openFence && index === blocks.length - 1}
-            openFence={openFence && index === blocks.length - 1}
-          />
+        blocks.map((node, index) => (
+          <MarkdownBlock key={index} node={node} breaks={breaks} openCode={openCode} />
         ))
       )}
     </div>
