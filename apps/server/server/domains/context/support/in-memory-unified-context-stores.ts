@@ -11,8 +11,8 @@ import {
   findInMemoryContextDocumentsById,
   InMemoryContextDocumentStore,
   type InMemoryContextDocumentStoreBacking,
-  InMemoryContextTreeMutationStore,
 } from "../adapters/context-fs/in-memory-store.js";
+import { InMemoryContextTreeMutationStore } from "../adapters/context-fs/in-memory-tree-mutation-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "../ports/context-port.js";
 import type { ContextTreeMutationStore } from "../ports/context-tree-mutation-store.js";
 

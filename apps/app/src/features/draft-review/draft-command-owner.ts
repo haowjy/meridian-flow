@@ -10,8 +10,6 @@ import {
   blocksEqual,
   composeGroups,
   readApplyRecord,
-  recordRestorations,
-  writeDiscardBlocks,
 } from "@meridian/agent-edit/diff";
 import { parseDraftItemKey } from "@meridian/contracts";
 import type {
@@ -21,7 +19,6 @@ import type {
 } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import {
   applyDraftClick,
@@ -36,6 +33,7 @@ import {
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
 import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./apply-click-queue";
+import { startDraftDiscardSession } from "./draft-discard-session";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
 import type { ChangeTarget, ReviewChange, TextTarget } from "./review-model";
@@ -73,10 +71,12 @@ export type CommandOutcome =
       kind: "done";
       /** The document had been deleted from the manuscript and this Apply brought it back. */
       restored?: true;
-      /** Final paths for documents that could not take their requested name. */
-      renamed?: string[];
-      /** Branch tree rows this click settled, including their final allocated path. */
-      appliedTrees?: { itemKey: string; renamed?: string }[];
+      /** Per-item facts committed by this click. */
+      applied?: {
+        itemKey: string;
+        transition?: { from: string | null; to: string | null };
+        renamed?: string;
+      }[];
     }
   /** The document was deleted and the click didn't say the writer knew: nothing changed. */
   | { kind: "needs-restore" }
@@ -106,8 +106,8 @@ type Entry = {
   unwatchLease(): void;
 };
 export type CapturedApply = {
-  /** Enqueues the already-frozen click. A preceding click may have settled its tree cut. */
-  dispatch(options?: { omitTree?: boolean }): {
+  /** Releases the already-queued click to send. A preceding click may have settled its tree cut. */
+  release(options?: { omitTree?: boolean; cancel?: boolean }): {
     sent: boolean;
     outcome: Promise<CommandOutcome>;
   };
@@ -118,7 +118,6 @@ export type DiscardNotice = {
   undo?: () => Promise<void>;
   end(): void;
 };
-const EDITOR_DISCARD_ORIGIN = Symbol("editor-draft-discard");
 /**
  * A refusal the screen already explains reverts silently (offer only what
  * applies): an archived Work removes its commands and shows its own notice with
@@ -139,10 +138,16 @@ function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>):
       return "gone";
   }
 }
-const sameClicks = <T>(before: readonly T[], now: readonly T[]) =>
-  before.length === now.length && before.every((click, index) => now[index] === click);
 const base64 = (bytes: Uint8Array) =>
   btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
+
+function sendBarrier() {
+  let release!: (value: { omitTree?: boolean; cancel?: boolean }) => void;
+  const promise = new Promise<{ omitTree?: boolean; cancel?: boolean }>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
 
 export class DraftCommandOwner {
   private readonly items = new Map<string, Item>();
@@ -549,22 +554,14 @@ export class DraftCommandOwner {
           this.renamedDocuments.set(JSON.stringify([ref.projectId, documentId]), item.renamed.path);
       }
       if (answer.restored || answer.applied.some((item) => item.renamed)) this.publish();
-      const renamed = answer.applied.flatMap((item) => (item.renamed ? [item.renamed.path] : []));
-      const appliedTrees = answer.applied.flatMap((item) =>
-        item.tree
-          ? [
-              {
-                itemKey: item.itemKey,
-                ...(item.renamed ? { renamed: item.renamed.path } : {}),
-              },
-            ]
-          : [],
-      );
       return {
         kind: "done",
         ...(answer.restored ? { restored: true as const } : {}),
-        ...(renamed.length ? { renamed } : {}),
-        ...(appliedTrees.length ? { appliedTrees } : {}),
+        applied: answer.applied.map((item) => ({
+          itemKey: item.itemKey,
+          ...(item.transition ? { transition: item.transition } : {}),
+          ...(item.renamed ? { renamed: item.renamed.path } : {}),
+        })),
       };
     }
     if (answer.status === "landed") return { kind: "done" };
@@ -589,7 +586,7 @@ export class DraftCommandOwner {
      */
     requested?: { revision: string | null },
   ): { sent: boolean; outcome: Promise<CommandOutcome> } {
-    return this.captureApply(ref, target, restore, requested)?.dispatch() ?? this.blockedApply();
+    return this.captureApply(ref, target, restore, requested)?.release() ?? this.blockedApply();
   }
 
   /**
@@ -629,7 +626,7 @@ export class DraftCommandOwner {
 
   private capturedOutcome(outcome: CommandOutcome): CapturedApply {
     return {
-      dispatch: () => ({ sent: false, outcome: Promise.resolve(outcome) }),
+      release: () => ({ sent: false, outcome: Promise.resolve(outcome) }),
     };
   }
 
@@ -653,19 +650,25 @@ export class DraftCommandOwner {
       patched: [],
       acknowledged: Promise.resolve(),
     };
+    const barrier = sendBarrier();
+    this.setState(ref.itemKey, { hidden: true, failure: null }, id);
+    const queued = this.item(ref)
+      .queue.enqueue(frozen, barrier.promise)
+      .then((answer) => {
+        this.setState(ref.itemKey, { hidden: false }, id);
+        return this.settled(ref, id, answer);
+      });
+    let released = false;
     return {
-      dispatch: ({ omitTree = false } = {}) => {
-        if (omitTree) return this.blockedApply();
-        this.setState(ref.itemKey, { hidden: true, failure: null }, id);
-        const outcome = this.item(ref)
-          .queue.enqueue(frozen)
-          .then((answer) => {
-            // Hidden only while in flight: the caller drops what applied from the list, and a later
-            // move of the same document comes back under the same item key.
-            this.setState(ref.itemKey, { hidden: false }, id);
-            return this.settled(ref, id, answer);
-          });
-        return { sent: true, outcome };
+      release: ({ omitTree = false, cancel = false } = {}) => {
+        if (!released) {
+          released = true;
+          barrier.release({ omitTree, cancel: cancel || omitTree });
+        }
+        return {
+          sent: !cancel && !omitTree,
+          outcome: cancel || omitTree ? Promise.resolve({ kind: "done" }) : queued,
+        };
       },
     };
   }
@@ -716,22 +719,42 @@ export class DraftCommandOwner {
       ...(tree ? { tree: { revision: tree.revision } } : {}),
     };
     const acknowledged = binding.session.whenCurrentChangesAcknowledged();
+    const barrier = sendBarrier();
+    this.setState(ref.itemKey, { failure: null });
+    const result = entry.item.queue.enqueue(
+      { body, optimistic, patched, acknowledged },
+      barrier.promise,
+    );
+    binding.runtime.projectNow();
+    const outcome = result.then((answer) => this.settled(ref, entry.draftId, answer));
+    let released = false;
     return {
-      dispatch: ({ omitTree = false } = {}) => {
-        this.setState(ref.itemKey, { failure: null });
-        const result = entry.item.queue.enqueue({
-          body: omitTree && body.tree ? { ...body, tree: undefined } : body,
-          optimistic,
-          patched,
-          acknowledged,
-        });
-        binding.runtime.projectNow();
-        return {
-          sent: true,
-          outcome: result.then((answer) => this.settled(ref, entry.draftId, answer)),
-        };
+      release: ({ omitTree = false, cancel = false } = {}) => {
+        if (!released) {
+          released = true;
+          barrier.release({ omitTree, cancel });
+        }
+        return { sent: !cancel, outcome: cancel ? Promise.resolve({ kind: "done" }) : outcome };
       },
     };
+  }
+
+  /** Releases a captured batch in server order while every intent remains owner-held. */
+  async releaseBatch(
+    items: readonly { itemKey: string; command: CapturedApply | null }[],
+  ): Promise<CommandOutcome[]> {
+    const settledTrees = new Set<string>();
+    const outcomes: CommandOutcome[] = [];
+    for (const { itemKey, command } of items) {
+      const omitTree = settledTrees.has(itemKey);
+      const outcome = await (command?.release({ omitTree }).outcome ??
+        Promise.resolve<CommandOutcome>({ kind: "blocked" }));
+      outcomes.push(outcome);
+      if (outcome.kind === "done")
+        for (const item of outcome.applied ?? [])
+          if (item.transition) settledTrees.add(item.itemKey);
+    }
+    return outcomes;
   }
 
   /** The caller selects history ownership, never whether an editor happens to be mounted. */
@@ -741,186 +764,19 @@ export class DraftCommandOwner {
     surface: "editor" | "dock",
     onNoticeEnd?: () => void,
   ): { notice: DiscardNotice; outcome: Promise<CommandOutcome> } | null {
-    const entry = this.byItem.get(ref.itemKey);
-    const binding = entry?.binding;
-    if (
-      !this.active ||
-      !entry ||
-      !binding?.runtime.state().ready ||
-      this.state(ref.itemKey).discarding
-    )
-      return null;
-    const frame =
-      surface === "editor" ? binding.runtime.projectNow() : binding.runtime.state().frame;
-    if (!frame) return null;
-    if (
-      target.kind === "groups" &&
-      (!blocksEqual(frame.diff.base.blocks, target.frame.diff.base.blocks) ||
-        !blocksEqual(frame.diff.draft.blocks, target.frame.diff.draft.blocks))
-    ) {
-      this.setState(ref.itemKey, {
-        failure: { code: "discard-refused", serverCode: "review_updated" },
-      });
-      return null;
-    }
-    const ids = target.kind === "draft" ? frame.groups.map((group) => group.id) : target.groupIds;
-    if (!ids.length || ids.some((id) => !frame.groups.some((group) => group.id === id)))
-      return null;
-    const editor = surface === "editor" ? binding.runtime.editor("editor") : null;
-    if (surface === "editor" && !editor) return null;
-    const doc = binding.session.document;
-    const fragment = doc.getXmlFragment("prosemirror");
-    const wholeClick = !editor && target.kind === "draft";
-    const queued = wholeClick ? this.textClicks(entry) : [];
-    let changed = false;
-    const onTextChange = () => {
-      changed = true;
-    };
-    // A whole click includes unprojected typing without scanning the document's history at the click.
-    if (wholeClick) doc.on("update", onTextChange);
-    if (!editor)
-      for (const surface of ["editor", "dock"] as const) {
-        const attached = binding.runtime.editor(surface);
-        if (attached) yUndoPluginKey.getState(attached.state)?.undoManager.stopCapturing();
-      }
-    const origin = editor ? EDITOR_DISCARD_ORIGIN : {};
-    const history: Y.UndoManager = editor
-      ? yUndoPluginKey.getState(editor.state).undoManager
-      : new Y.UndoManager(fragment, { trackedOrigins: new Set(), captureTimeout: 0 });
-    // Direct writes are not binding repairs, but still belong in the chosen history.
-    history.addTrackedOrigin(origin);
-    recordRestorations(history);
-    history.stopCapturing();
-    const write = (): CommandOutcome => {
-      doc.off("update", onTextChange);
-      if (!this.active || entry.binding !== binding || this.state(ref.itemKey).closed)
-        return { kind: "blocked" };
-      const current = binding.runtime.projectNow();
-      // A paint opportunity is not a lock: never overwrite typing or a peer write that arrived meanwhile.
-      if (
-        !current ||
-        (wholeClick
-          ? changed || !sameClicks(queued, this.textClicks(entry))
-          : !blocksEqual(frame.diff.base.blocks, current.diff.base.blocks) ||
-            !blocksEqual(frame.diff.draft.blocks, current.diff.draft.blocks))
-      ) {
-        this.setState(ref.itemKey, {
-          failure: { code: "discard-refused", serverCode: "review_updated" },
-        });
-        return { kind: "change-refused", code: "review_updated" };
-      }
-      const cut = wholeClick ? current : frame;
-      const selected = wholeClick ? cut.groups.map((group) => group.id) : ids;
-      const blocks = applySpanPatches(
-        cut.diff.draft.blocks,
-        composeGroups(cut.doc.type.schema, cut, selected, "discard"),
-        "draft",
-      );
-      doc.transact(() => writeDiscardBlocks(fragment, cut.doc.type.schema, blocks), origin);
-      history.stopCapturing();
-      binding.runtime.projectNow();
-      return { kind: "done" };
-    };
-    if (editor) {
-      const outcome = write();
-      return { notice: { kind: "discarded", end() {} }, outcome: Promise.resolve(outcome) };
-    }
-    const lease = readDraftRoom(this.registry, binding.session.roomKey);
-    entry.users++;
-    let active = true;
-    let pending = true;
-    let settle!: (outcome: CommandOutcome) => void;
-    const outcome = new Promise<CommandOutcome>((resolve) => {
-      settle = resolve;
+    return startDraftDiscardSession({
+      ref,
+      target,
+      surface,
+      onNoticeEnd,
+      entry: this.byItem.get(ref.itemKey),
+      registry: this.registry,
+      active: () => this.active,
+      state: () => this.state(ref.itemKey),
+      setState: (state) => this.setState(ref.itemKey, state),
+      textClicks: (entry) => this.textClicks(entry as Entry),
+      releaseIdle: (entry) => this.releaseIdle(entry as Entry),
     });
-    const finish = (answer: CommandOutcome) => {
-      doc.off("update", onTextChange);
-      this.setState(ref.itemKey, { discarding: null });
-      settle(answer);
-    };
-    const commit = () => {
-      if (!pending) return;
-      pending = false;
-      cancelAnimationFrame(paintFrame);
-      document.removeEventListener("visibilitychange", onVisibility);
-      try {
-        const answer = write();
-        finish(answer);
-        if (answer.kind !== "done") end();
-      } catch {
-        this.setState(ref.itemKey, { failure: { code: "discard-unknown" } });
-        finish({ kind: "change-refused", code: "discard-unknown" });
-        end();
-      }
-      release();
-    };
-    let released = false;
-    const release = () => {
-      if (pending || active || released) return;
-      released = true;
-      history.destroy();
-      lease.dispose();
-      entry.users--;
-      this.releaseIdle(entry);
-    };
-    const end = () => {
-      if (!active) return;
-      active = false;
-      binding.notices.delete(end);
-      // Leaving ends Undo, not the accepted edit or its paint opportunity.
-      release();
-      onNoticeEnd?.();
-    };
-    binding.notices.add(end);
-    this.setState(ref.itemKey, {
-      discarding: (change) => change.frame?.diff === frame.diff && ids.includes(change.id),
-      failure: null,
-    });
-    let paintFrame = 0;
-    const onVisibility = () => {
-      if (document.visibilityState === "hidden") commit();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    // The notice is returned before React commits it. Allow that commit, then a
-    // full paint opportunity before the indivisible write. Hidden pages drain directly.
-    if (document.visibilityState === "hidden") setTimeout(commit, 0);
-    else
-      paintFrame = requestAnimationFrame(() => {
-        paintFrame = requestAnimationFrame(() => {
-          paintFrame = requestAnimationFrame(commit);
-        });
-      });
-    return {
-      outcome,
-      notice: {
-        kind: "discarded",
-        itemKey: ref.itemKey,
-        end,
-        undo: () => {
-          if (
-            !active ||
-            !this.active ||
-            entry.binding !== binding ||
-            this.state(ref.itemKey).closed
-          ) {
-            end();
-            return Promise.resolve();
-          }
-          if (pending) {
-            pending = false;
-            cancelAnimationFrame(paintFrame);
-            document.removeEventListener("visibilitychange", onVisibility);
-            finish({ kind: "done" });
-          } else {
-            history.undo();
-            binding.runtime.projectNow();
-          }
-          const acknowledged = binding.session.whenCurrentChangesAcknowledged();
-          end();
-          return acknowledged;
-        },
-      },
-    };
   }
 
   retry(itemKey: string) {
