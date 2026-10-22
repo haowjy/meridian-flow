@@ -891,14 +891,15 @@ export async function loadFolderIdentityRows(
 /**
  * Whether a hidden, live folder is unused: nothing live under it, hidden or not (no
  * non-deleted document or folder), which includes every branch's created documents
- * (§12.2 step 5), and no branch's drafted move places a document in it.
+ * (§12.2 step 5), and no branch holds it for a drafted move (`branch_tree_folders`: every
+ * folder a move placed a document in, until that branch's entries on it settle).
  */
 export async function isUnusedHiddenFolder(db: DrizzleDb, folderId: FolderId): Promise<boolean> {
   const [row] = await currentDrizzleDb(db).execute<{ unused: boolean }>(sql`
     SELECT (f.hidden AND f.deleted_at IS NULL
       AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.folder_id = f.id AND d.deleted_at IS NULL)
       AND NOT EXISTS (SELECT 1 FROM folders c WHERE c.parent_id = f.id AND c.deleted_at IS NULL)
-      AND NOT EXISTS (SELECT 1 FROM branch_tree_changes m WHERE m.moved_folder_id = f.id)
+      AND NOT EXISTS (SELECT 1 FROM branch_tree_folders h WHERE h.folder_id = f.id)
     ) AS unused
     FROM folders f WHERE f.id = ${folderId}::uuid`);
   return row?.unused === true;

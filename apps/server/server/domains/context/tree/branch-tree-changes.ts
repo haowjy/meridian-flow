@@ -25,7 +25,6 @@ import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import {
-  pruneHiddenFolders,
   readBranchTreeFacts,
   settleBranchEntries,
   writeBranchTreeFacts,
@@ -170,8 +169,9 @@ export async function deleteInBranch(
 
 /**
  * The writer discards the branch's move or delete of a document (a tree line, or the tree half
- * of an item's Discard): the row keeps only a creation, its drafted entries are settled as
- * discarded, and the hidden folders only its move used go. False when it had neither.
+ * of an item's Discard): the row keeps only a creation, and its drafted entries are settled as
+ * discarded, which prunes every hidden folder they held that nothing else uses. False when it
+ * had neither.
  */
 export async function discardBranchTreeFacts(
   db: Database,
@@ -180,11 +180,6 @@ export async function discardBranchTreeFacts(
   await lockDocuments(db, [input.documentId]);
   const facts = await factsOf(db, input.branchId, input.documentId);
   if (!facts.moved && !facts.deleted) return { discarded: false };
-  await settleBranchEntries(db, {
-    branchId: input.branchId,
-    documentIds: [input.documentId],
-    settle: { as: "discarded", userId: input.userId },
-  });
   await writeBranchTreeFacts(db, {
     branchId: input.branchId,
     documentId: input.documentId,
@@ -192,7 +187,11 @@ export async function discardBranchTreeFacts(
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: null,
   });
-  await pruneHiddenFolders(db, [(facts.moved?.folderId ?? null) as FolderId | null]);
+  await settleBranchEntries(db, {
+    branchId: input.branchId,
+    documentIds: [input.documentId],
+    settle: { as: "discarded", userId: input.userId },
+  });
   return { discarded: true };
 }
 
