@@ -4848,8 +4848,8 @@ msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the 
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "This part is in another draft"
-msgstr ""
+#~ msgid "This part is in another draft"
+#~ msgstr ""
 
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "This project couldn’t load. It may be unavailable."

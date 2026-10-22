@@ -28,6 +28,7 @@ export async function readTurnEditTargets(
       treeDestination: sql<
         "live" | "draft" | null
       >`${documentEdits.treeChange}->'destination'->>'kind'`,
+      branchId: branches.id,
       workId: works.id,
       workHandle: works.handle,
       isNoWork: works.isNoWork,
@@ -77,11 +78,18 @@ export async function readTurnEditTargets(
       targets.set(`${row.documentId}:live`, { documentId: row.documentId, scope: "live" });
       continue;
     }
-    if (!row.workId) continue;
-    targets.set(`${row.documentId}:draft:${row.workId}`, {
+    if (!row.workId || !row.branchId) continue;
+    const key = `${row.documentId}:draft:${row.workId}`;
+    const known = targets.get(key);
+    if (known?.scope === "draft") {
+      if (!known.branchIds.includes(row.branchId)) known.branchIds.push(row.branchId);
+      continue;
+    }
+    targets.set(key, {
       documentId: row.documentId,
       scope: "draft",
       work: { id: row.workId as WorkId, handle: row.isNoWork ? null : row.workHandle },
+      branchIds: [row.branchId],
     });
   }
   return [...targets.values()].sort(

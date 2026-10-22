@@ -78,7 +78,6 @@ export type TurnInverseSkipCause =
   | "document_deleted"
   | "document_discarded"
   | "draft_archived"
-  | "other_draft"
   | "paragraph_removed"
   | "edited_since"
   /** Text in a document whose restore in the same reversal couldn't run. */
