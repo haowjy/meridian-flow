@@ -7,12 +7,11 @@
  *
  * Presentational: the rows never decide what a click means. `onSelect` is the
  * caller's (focus the change in the manuscript, or open the draft's review at
- * it). `standIn` is a state line (Applying, No changes left) that replaces the
- * rows while this stays mounted, so a change that arrives meanwhile still pulses
- * when the rows return. `touch` raises the rows and buttons to 44px.
+ * it). The rows stay mounted while commands run, so a change that arrives
+ * meanwhile still pulses. `touch` raises the rows and buttons to 44px.
  */
 import { t } from "@lingui/core/macro";
-import { type ReactNode, useMemo } from "react";
+import { useMemo } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type DraftChangesView, isWholeDocumentChange } from "./draft-changes";
@@ -23,14 +22,12 @@ import { useArrivedChanges } from "./useArrivedChanges";
 export function DocumentChangeRows({
   view,
   onSelect,
-  standIn = null,
   touch = false,
   showAttribution = false,
   documentName,
 }: {
   view: DraftChangesView;
   onSelect: (change: ReviewChange) => void;
-  standIn?: ReactNode;
   touch?: boolean;
   showAttribution?: boolean;
   /** Catalog name when these rows stand in for a listed file's header. */
@@ -44,7 +41,6 @@ export function DocumentChangeRows({
     view.documentId && view.itemKey ? `${view.documentId}:${view.itemKey}` : null,
   );
 
-  if (standIn) return standIn;
   if (view.status === "loading") {
     return (
       <div className="flex flex-col gap-1.5 px-2 py-1" aria-busy>
