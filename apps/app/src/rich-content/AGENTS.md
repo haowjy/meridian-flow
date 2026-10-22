@@ -11,14 +11,15 @@ Chat puts 8px between top-level blocks and keeps the owner-approved
 [chat rhythm][chat-rhythm] for headings: h1 and h2 open 24px above, smaller
 headings 16px, and the next block closes them at 8px.
 
-Static and streaming use the same source-keyed memoized block components. Only the
-live tail is repaired with remend and reparsed as tokens arrive. Blank lines outside
-fences delimit conservative render units; loose list/quote/indented continuations
-stay together. Link reference definitions (not checkboxes or ordinary bracketed text) and raw HTML outside fences retain whole-document parsing
-because later source can change earlier blocks. Open-fence highlights are throttled
-at 50ms; fresh text is always visible immediately. Settlement keeps the same DOM tree.
-Bounded source caches retain settled PM trees and code colors across virtual-row
-remounts (256 entries and 250,000 key characters each); live tails are not retained.
+Static and streaming use the same PM-node memoized block components. The markup
+codec owns the immutable streaming snapshot: it retains completed nodes, reparses
+the active suffix, patches earlier reference links when definitions arrive, and
+identifies the exact fence still open. Its narrow prose-tail repair never crosses
+code, inline code or HTML. Raw HTML is the one append case that reparses the whole
+source. Open-fence highlights are throttled at 50ms; fresh text is always visible
+immediately. Settlement keeps the same DOM tree. Bounded source caches retain
+settled PM trees and code colors across virtual-row remounts (256 entries and
+250,000 key characters each).
 
 Static user turns with occurrences parse once with the canonical codec's opt-in
 presentation source map. Exact complete link ranges grant reference identity;
@@ -28,8 +29,7 @@ is app-owned: never match displayed labels or store presentation schema attrs.
 No source map enters the streaming path.
 
 The walker handles the Markdown codec's nodes, not MDX figure/JSX editing views.
-Fence indentation is relative to the tracked list/quote container; literal delimiters
-inside code cannot close another container's fence. Chat images share the Editor's
+Chat images share the Editor's
 `browserPictureSource` allowlist; rejected sources show alt text without a fetch.
 
 Closed diagram fences use the Editor's provider catalog, render hook and sanitized

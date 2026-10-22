@@ -45,11 +45,25 @@ Preset-internal codec lists (`markdownBlockCodecs`, `markdownMarkCodecs`,
 package root. Tests or preset internals that need them import from sibling
 `markdown/index.js` / `mdx/index.js` modules instead.
 
-`MarkupCodec` exposes `parse`, `parseWithSpans`, `parseWithSourceMap`, `serialize`,
-`serializeBlock`, and `serializeBlocks`. Every serialize call takes the
+`MarkupCodec` exposes `parse`, `parseWithSpans`, `parseWithSourceMap`, `stream`,
+`serialize`, `serializeBlock`, and `serializeBlocks`. Every serialize call takes the
 `DocumentLinkScope` explicitly; nothing is captured at construction.
 `serializeBlock`/`serializeBlocks` return normalized block bodies without hash
 prefixes. Agent-edit owns any hash-prefixed adapter layer.
+
+`stream(previous, source, { repair })` is the Markdown presentation path for
+append-only replies. The immutable snapshot returns canonical PM blocks, retains
+the identity of unchanged completed nodes, and names the exact open fenced-code
+node from micromark events. Non-append edits reset it. The active suffix keeps two
+top-level nodes as parse context. Reference definitions are carried separately:
+when their first-wins normalized map changes, only retained blocks whose parsed
+links change receive replacement nodes. Raw HTML falls back to a whole-source
+parse because its block boundary can remain open across blank lines.
+
+Optional repair starts from the unrepaired canonical parse and considers only the
+last parser-positioned text region of a top-level paragraph or heading. It accepts
+an append-only completion only when preceding blocks and every code node remain
+unchanged. Inline code, links, HTML and container tails are not repair candidates.
 
 ## Presentation source map
 
@@ -93,7 +107,10 @@ normalize on first parse; canonical wire spelling then stabilizes.
 markdown/mdx plugins via `postParse`, not the builder; non-markdown format
 plugins do not inherit markdown-specific autolink behavior by default.
 Hooks receive the preprocessed source matching AST positions and run on internal
-reparses too. Only bare GFM autolink literals are demoted to prose; links whose
+reparses too. A preprocessor that changes length returns a prepared-source boundary
+map back to the caller's source. GFM table hard-break preparation uses canonical
+micromark code regions instead of recognizing fences itself. Only bare GFM autolink
+literals are demoted to prose; links whose
 source opens with `[` remain links even when their words equal their
 destination. Angle autolinks (`<kb://a.md>`) remain links in Markdown only;
 MDX ingress escapes them to literal text. Links without usable source positions

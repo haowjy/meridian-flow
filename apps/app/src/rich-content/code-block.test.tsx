@@ -1,13 +1,10 @@
 // @vitest-environment jsdom
-/** Streaming contracts: conservative grammar boundaries, visible tails and settlement identity. */
-import { markdownCodec } from "@meridian/markup";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+/** Streaming contracts: visible tails, code boundaries and settlement identity. */
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { StreamingText } from "@/features/chat/StreamingText";
 import { Markdown } from "./Markdown";
-import { splitMarkdownBlocks } from "./markdown-blocks";
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -30,42 +27,6 @@ function mount() {
     render: async (element: ReactNode) => act(async () => root.render(element)),
   };
 }
-
-it("keeps backward-affecting Markdown in the same parse unit", () => {
-  const codec = markdownCodec({ schema: buildDocumentSchema() });
-  const sources = [
-    "first\n\nsecond\n\nthird",
-    "\n\nfirst\n\nsecond",
-    "```ts\nconst n = 1;\n\nconst m = 2;\n```\n\nafter",
-    "```txt\n> ```\n\nhello\n```\n\nafter",
-    "```txt\n    ```\n\nhello\n```\n\nafter",
-    "- ```mermaid\n  graph TD\n  A --> B\n  ```\n\nafter",
-    "> - ```mermaid\n>   graph TD\n>   A --> B\n>   ```\n\nafter",
-    "- parent\n  - inner\n\n  ```mermaid\n  graph TD\n  A --> B\n  ```\n\nafter",
-    "````txt\n```\n\ncode\n  ````\n\nafter",
-    "```txt\n~~~\n\ncode\n```\n\nafter",
-    "~~~~ts\n```\n\ncode\n~~~~\n\nafter",
-    "- first\n\n  second paragraph\n\n  - nested\n\n- next\n\nafter",
-    "> first\n\n> second\n\nafter",
-    "| A | B |\n| --- | --- |\n| one | two |\n\nafter",
-    "[first][ref]\n\n[ref]: https://example.com\n\nafter",
-    "[ref]\n\n[ref]: https://example.com",
-    "<div>\n\ntext\n\n</div>\n\nafter",
-    "title\n---\n\nafter\n\n    indented\n\n    code",
-  ];
-  const json = (source: string) => codec.parse(source).blocks.map((node) => node.toJSON());
-  for (const source of sources) {
-    for (let end = 1; end <= source.length; end++) {
-      const prefix = source.slice(0, end);
-      expect(splitMarkdownBlocks(prefix).blocks.flatMap(json), prefix).toEqual(json(prefix));
-    }
-  }
-  expect(splitMarkdownBlocks("first\n\nsecond").blocks).toEqual(["first\n\n", "second"]);
-  expect(splitMarkdownBlocks("```ts\ncode\n\nmore").openFence).toBe(true);
-  expect(
-    splitMarkdownBlocks("settled\n\n```ts\nconst values = [1, 2];\n<div>").blocks,
-  ).toHaveLength(2);
-});
 
 it("repairs only the live tail without inventing links or tables", async () => {
   const { host, render } = mount();
@@ -122,13 +83,4 @@ it("shows every code append immediately and preserves blocks when the turn settl
   expect(host.querySelector('button[aria-label="Copy code"]')).not.toBeNull();
   await render(<StreamingText text={"```ts\nconst reset = 7;"} />);
   expect(host.querySelector("code")?.textContent).toBe("const reset = 7;");
-});
-
-it("tracks list-contained diagram closure and keeps checkboxes in settled units", () => {
-  const open = "- ```mermaid\n  graph TD\n  A --> B";
-  expect(splitMarkdownBlocks(open).openFence).toBe(true);
-  expect(splitMarkdownBlocks(`${open}\n  \`\`\``).openFence).toBe(false);
-  for (const first of ["- [x] first", "- [ ] first", "ordinary [brackets]"]) {
-    expect(splitMarkdownBlocks(`${first}\n\nsettled\n\ntail`).blocks).toHaveLength(3);
-  }
 });
