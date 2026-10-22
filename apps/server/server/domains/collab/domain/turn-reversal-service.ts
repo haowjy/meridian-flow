@@ -10,6 +10,7 @@ import {
   targetDocumentId,
 } from "../../file-policy/index.js";
 import type { TurnReversalAccess } from "../contracts.js";
+import type { InverseDestination } from "./turn-inverse-service.js";
 import { type TurnEditedDocumentId, turnEditDestination } from "./turn-live-lineage.js";
 
 export type ThreadContextReversalResolver = {
@@ -41,7 +42,11 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
     async reverseThreadContext(command) {
       await input.threadContext.requireThreadOwner(command);
       const targets = await input.listTurnTargets(command.threadId, command.turnId);
-      const { grants, refused } = await writerGrants(input.fileAccess, command.userId, targets);
+      const { grants, authorized, refused } = await writerGrants(
+        input.fileAccess,
+        command.userId,
+        targets,
+      );
       const denied = refused.map((denial) => targetDocumentId(denial.target));
       let reversed: ReversalOutcome = {
         status: command.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
@@ -54,7 +59,13 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
             turnId: command.turnId,
             direction: command.direction,
             actor: { type: "user", userId: command.userId },
-            documentIds: [...new Set(grants.map((grant) => targetDocumentId(grant.facts.target)))],
+            documentIds: [...new Set(authorized.map((target) => target.documentId))],
+            // Only where a grant holds: a refused draft beside an allowed live edit stays.
+            destinations: authorized.flatMap((target): InverseDestination[] =>
+              target.scope === "live"
+                ? [{ documentId: target.documentId, branchId: null }]
+                : target.branchIds.map((branchId) => ({ documentId: target.documentId, branchId })),
+            ),
           }),
         );
         // A seam refused under its locks (archived meanwhile): nothing was reversed.
@@ -94,8 +105,13 @@ async function writerGrants(
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt">,
   userId: string,
   targets: readonly TurnEditedDocumentId[],
-): Promise<{ grants: FileGrant<"edit">[]; refused: FileAccessDenied[] }> {
+): Promise<{
+  grants: FileGrant<"edit">[];
+  authorized: TurnEditedDocumentId[];
+  refused: FileAccessDenied[];
+}> {
   const grants: FileGrant<"edit">[] = [];
+  const authorized: TurnEditedDocumentId[] = [];
   const refused: FileAccessDenied[] = [];
   const principal = { accountId: userId as UserId };
   for (const target of targets) {
@@ -108,8 +124,10 @@ async function writerGrants(
     );
     if (isFileAccessDenied(grant) && grant.reason === "not_found" && target.scope === "live")
       grant = await fileAccess.authorize(principal, { kind: "restore", documentId }, "edit");
-    if (!isFileAccessDenied(grant)) grants.push(grant as FileGrant<"edit">);
-    else if (grant.reason !== "not_found") refused.push(grant);
+    if (!isFileAccessDenied(grant)) {
+      grants.push(grant as FileGrant<"edit">);
+      authorized.push(target);
+    } else if (grant.reason !== "not_found") refused.push(grant);
   }
-  return { grants, refused };
+  return { grants, authorized, refused };
 }

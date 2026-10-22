@@ -367,6 +367,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           steps.push({
             kind: "text",
             edit: { ...edit, actionId: stepActionId },
+            draftId: query.draftId,
             actionId: stepActionId,
             at,
           });
@@ -586,7 +587,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       const cuts = text.length
         ? { before: Y.encodeStateAsUpdate(policy.view), after: Y.encodeStateAsUpdate(scratch) }
         : {};
-      const plan = { document, draftId: query.draftId, steps, consumes, skips: [] };
+      const plan = { document, steps, consumes, skips: [] };
       const committed = preview
         ? { handles: [], updates: [] }
         : await store.commit({

@@ -155,8 +155,6 @@ export function skipCauseCopy(cause: TurnInverseSkipCause): string {
       return t`This file was discarded`;
     case "draft_archived":
       return t`This draft is archived`;
-    case "other_draft":
-      return t`This part is in another draft`;
     case "paragraph_removed":
       return t`Its paragraph was removed`;
     case "edited_since":

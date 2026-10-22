@@ -1,5 +1,6 @@
 /** Server-owned read-model for documents edited by one transcript turn. */
 
+import type { BranchId } from "@meridian/contracts";
 import type { TurnReceiptChip, TurnTreeLine } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { FileDestination } from "../../file-policy/index.js";
@@ -14,7 +15,13 @@ export type TurnEditedDocumentScope = "live" | "draft";
  */
 export type TurnEditedDocumentId =
   | { documentId: DocumentId; scope: "live" }
-  | { documentId: DocumentId; scope: "draft"; work: { id: WorkId; handle: string | null } };
+  | {
+      documentId: DocumentId;
+      scope: "draft";
+      work: { id: WorkId; handle: string | null };
+      /** The Work's branches the turn's edits landed in, for inverse admission. */
+      branchIds: BranchId[];
+    };
 
 export type TurnEditedDocument = TurnEditedDocumentId & { uri: string; tree?: TurnTreeLine };
 

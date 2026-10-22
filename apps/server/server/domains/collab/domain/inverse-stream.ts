@@ -16,9 +16,13 @@ import {
 } from "./tree-inverse.js";
 import type { InverseDocument } from "./turn-inverse-service.js";
 
-/** One step: the action its row joins, and `at`, its original's place on the history axis. */
+/**
+ * One step: the action its row joins, and `at`, its original's place on the history axis. A
+ * text step lands where its original did: live (`draftId` null) or that draft. One document's
+ * steps may land in both within one turn; they still run in this one order.
+ */
 export type InverseStep = { actionId: string; at: number } & (
-  | { kind: "text"; edit: ComputedInverseEdit }
+  | { kind: "text"; edit: ComputedInverseEdit; draftId: string | null }
   | { kind: "tree"; planned: PlannedTreeInverse }
 );
 

@@ -434,6 +434,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
       const kinds = (await treeEntries(CH1)).map((row) => row.tree?.destination.kind);
       expect(kinds).toEqual(["draft", "draft"]);
+
+      // The writer's card reverses the drafted move and delete with the draft text, in the
+      // branch only, and redoes them.
+      expect((await call("write", { command: "redo", path: "ch1" })).isError).toBeFalsy();
+      const card = (direction: "undo" | "redo") =>
+        script.runtime.ports.documentSync.reverseThreadContext({
+          threadId: OTHER.threadId as never,
+          userId: USER_ID as never,
+          direction,
+          turnId: OTHER.turnId as never,
+        });
+      const undone = await card("undo");
+      expect(undone.status, JSON.stringify(undone)).toBe("reversed");
+      expect(await branchRow(CH1)).toBeUndefined();
+      expect(await branchRow(CH2)).toBeUndefined();
+      expect(text(await call("read", { path: "ch2" }))).toContain("Chapter two.");
+      const redoneByCard = await card("redo");
+      expect(redoneByCard.status, JSON.stringify(redoneByCard)).toBe("reversed");
+      expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "ch1-old" });
+      expect(await branchRow(CH2)).toMatchObject({ deleted: true });
+      expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
+      expect((await placement(CH2))?.deletedAt).toBeNull();
     });
 
     it("a drafted delete of the branch's own creation undoes; a live delete keeps a Work's drafted move", async () => {
