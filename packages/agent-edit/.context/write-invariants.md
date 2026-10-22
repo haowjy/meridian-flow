@@ -6,9 +6,11 @@ coordinator; a room copy is a disposable per-call Y.Doc read from it.
 
 ## Identity and targeting
 
-- A block's durable identity is its Yjs item `{ clientID, clock }`. The
-  displayed hash is the shortest currently sibling-unique prefix and may
-  change width. Trail and navigation store the item tuple, not the prefix.
+- A block's canonical identity is its Yjs item `{ clientID, clock }`. Its model
+  address identity is the live origin item when the Work draft seed copied it,
+  otherwise that canonical identity. The displayed hash is the shortest
+  currently sibling-unique address prefix and may change width. Trail and
+  navigation store the canonical item tuple, not the prefix.
 - In-place block reorder is unsupported. A future move must delete the old
   item and insert a new one; position-based drag would silently rebind content
   to another block identity. Never wire a node's `draggable` or default DnD to
