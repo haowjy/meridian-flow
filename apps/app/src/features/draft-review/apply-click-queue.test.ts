@@ -62,7 +62,7 @@ it("retries a lost answer with the identical body at 1/2/4 seconds, then stalls 
   queue.destroy();
 });
 
-it("settles on the record before an answer, or waits for the record after an applied answer; a later ack never blocks a ready head", async () => {
+it("releases the head on the record before an answer and reports the answer's outcome, or waits for the record after an applied answer; a later ack never blocks a ready head", async () => {
   const answer = deferred<ApplyClickAnswer>();
   const laterAck = deferred<void>();
   const send = vi
@@ -76,14 +76,14 @@ it("settles on the record before an answer, or waits for the record after an app
   expect(send).toHaveBeenCalledTimes(1);
   queue.observe(["first"]);
   await flush();
-  expect(await result).toEqual({ status: "applied", commandId: "first" });
   expect(send).toHaveBeenCalledTimes(1);
   laterAck.resolve();
   await flush();
   expect(send).toHaveBeenCalledTimes(2);
   expect(queue.clicks).toHaveLength(1);
-  answer.resolve({ status: "refused", commandId: "first", reason: "malformed" });
-  await flush();
+  // Landed by the record; the late answer still says what the record can't.
+  answer.resolve({ status: "applied", commandId: "first", restored: true });
+  expect(await result).toEqual({ status: "applied", commandId: "first", restored: true });
   expect(queue.clicks[0].body.commandId).toBe("second");
   queue.observe(["first", "second"]);
   expect(queue.clicks).toHaveLength(0);
