@@ -23,7 +23,12 @@ export type TurnEditedDocumentId =
       branchIds: BranchId[];
     };
 
-export type TurnEditedDocument = TurnEditedDocumentId & { uri: string; tree?: TurnTreeLine };
+export type TurnEditedDocument = TurnEditedDocumentId & {
+  uri: string;
+  tree?: TurnTreeLine;
+  /** The current destination is gone; authorize this immutable target where it restores. */
+  removed?: true;
+};
 
 /**
  * One of a turn's own moves, deletes or restores of a document, in `seq` order: live, or in the
@@ -32,7 +37,7 @@ export type TurnEditedDocument = TurnEditedDocumentId & { uri: string; tree?: Tu
 export type TurnTreeEntry = {
   documentId: DocumentId;
   workId: WorkId | null;
-  op: "move" | "delete" | "restore";
+  op: "create" | "move" | "delete" | "restore";
   shownAt: string | null;
   landedAt: string | null;
 };
@@ -68,9 +73,14 @@ export function createTurnLiveLineageReadModel(deps: {
 }): TurnLiveLineageReadModel {
   return {
     async listLiveDocumentsForTurn(threadId, turnId) {
-      const documentIds = await deps.store.listLiveDocumentIdsForTurn(threadId, turnId);
+      const [documentIds, entries] = await Promise.all([
+        deps.store.listLiveDocumentIdsForTurn(threadId, turnId),
+        deps.store.listTreeEntriesForTurn(threadId, turnId),
+      ]);
       const documents = await resolveDocuments(
         documentIds.map((documentId) => ({ documentId, scope: "live" as const })),
+        new Map(),
+        createAddresses(entries),
       );
       return documents.filter(
         (document): document is LiveLineageDocument => document.scope === "live",
@@ -83,7 +93,7 @@ export function createTurnLiveLineageReadModel(deps: {
         deps.store.listTreeEntriesForTurn(threadId, turnId),
       ]);
       const lines = treeLines(entries);
-      const documents = await resolveDocuments(targets, lines);
+      const documents = await resolveDocuments(targets, lines, createAddresses(entries));
       return documents.map((document) => {
         const tree = lines.get(treeLineKey(document));
         return tree ? { ...document, tree } : document;
@@ -95,22 +105,41 @@ export function createTurnLiveLineageReadModel(deps: {
     },
   };
 
-  /** A live document the turn deleted keeps its row at the address it was deleted from. */
+  /** A removed live document keeps its row at its last address, including an undone create. */
   async function resolveDocuments(
     documentIds: readonly TurnEditedDocumentId[],
     lines: ReadonlyMap<string, TurnTreeLine> = new Map(),
+    createdAt: ReadonlyMap<string, string> = new Map(),
   ): Promise<TurnEditedDocument[]> {
     const documents = await Promise.all(
       documentIds.map(async (document): Promise<TurnEditedDocument | null> => {
-        const uri =
-          document.scope === "draft" || lines.get(treeLineKey(document))?.op === "delete"
-            ? await deps.resolveLastDocumentUri(document.documentId)
-            : await deps.resolveDocumentUri(document.documentId);
-        return uri ? { ...document, uri } : null;
+        const useLastAddress =
+          document.scope === "draft" || lines.get(treeLineKey(document))?.op === "delete";
+        if (useLastAddress) {
+          const uri = await deps.resolveLastDocumentUri(document.documentId);
+          if (uri) return { ...document, uri };
+          const removedAt = createdAt.get(treeLineKey(document));
+          return removedAt ? { ...document, uri: removedAt, removed: true } : null;
+        }
+        const uri = await deps.resolveDocumentUri(document.documentId);
+        if (uri) return { ...document, uri };
+        const removedAt =
+          (await deps.resolveLastDocumentUri(document.documentId)) ??
+          createdAt.get(treeLineKey(document));
+        return removedAt ? { ...document, uri: removedAt, removed: true } : null;
       }),
     );
     return documents.filter((document): document is TurnEditedDocument => document !== null);
   }
+}
+
+/** A create's recorded address survives even when it was drafted and never became live. */
+function createAddresses(entries: readonly TurnTreeEntry[]): ReadonlyMap<string, string> {
+  return new Map(
+    entries.flatMap((entry) =>
+      entry.op === "create" && entry.shownAt ? [[treeLineKey(entry), entry.shownAt]] : [],
+    ),
+  );
 }
 
 /** A document's tree line is per destination: live, or one Work's branch. */

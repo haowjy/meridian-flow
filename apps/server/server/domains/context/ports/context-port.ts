@@ -410,7 +410,7 @@ export interface ContextPort {
   /** Ensure a tracked text document row and empty Yjs document exist without replacing content. */
   ensureTrackedDocument(
     uri: string,
-    options?: ContextWriteOptions,
+    options?: import("./context-adapter.js").ContextEnsureTrackedOptions,
   ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>>;
 
   /**

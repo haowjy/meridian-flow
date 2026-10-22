@@ -250,14 +250,14 @@ export function createDrizzleDraftStore(
   async function ensureCreatedDocumentDraft(input: {
     documentId: DocumentId;
     branchId: BranchId;
-  }): Promise<void> {
+  }): Promise<DraftSnapshot> {
     if (!live) throw new Error("A created document's draft needs the collab live journal");
     const snapshot = await live.journal.read(input.documentId);
     const liveDoc = createCollabYDoc({ gc: false });
     try {
       if (snapshot.checkpoint) Y.applyUpdate(liveDoc, snapshot.checkpoint);
       for (const update of snapshot.updates) Y.applyUpdate(liveDoc, update.update);
-      await ensureDocumentDraft({ ...input, liveDoc });
+      return await ensureDocumentDraft({ ...input, liveDoc });
     } finally {
       liveDoc.destroy();
     }

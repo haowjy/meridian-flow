@@ -40,6 +40,16 @@ import type {
 /** The router resolves destination inheritance once; direct adapter callers may supply raw input. */
 export type ContextEnsureTrackedOptions = ContextWriteOptions & {
   parsedFilename?: ParsedDocumentFilename;
+  /** Records a newly created document in the same transaction as its tree placement. */
+  recordCreate?: (created: {
+    documentId: import("@meridian/contracts").DocumentId;
+    change:
+      | { destination: "live"; before: null }
+      | ({ destination: "draft"; branchId: import("@meridian/contracts").BranchId } & Pick<
+          import("@meridian/contracts").BranchTreeTransition,
+          "before" | "after"
+        >);
+  }) => Promise<void>;
 };
 
 /** What a scheme adapter supports. Checked by the router before dispatch. */

@@ -39,14 +39,16 @@ import type {
 } from "./turn-inverse-service.js";
 
 type Query = TurnInverseQuery & { model: true; draftId: string | null };
-/** One own edit on the stack: text parts, or one tree entry (a move or delete) with none. */
+/** One model-visible edit on the stack. A creation owns its initial text and tree placement. */
 type Entry = { id: string; handle: string; parts: StoredInversePart[]; tree?: TransitionEntry };
-const entryKeys = (entry: Entry) =>
-  entry.tree ? [treeKey(entry.tree.editId)] : entry.parts.map(key);
-const entryRows = (entry: Entry): { id: number; key: string }[] =>
-  entry.tree
-    ? [{ id: entry.tree.id, key: treeKey(entry.tree.editId) }]
-    : entry.parts.map((part) => ({ id: part.id, key: key(part) }));
+const entryKeys = (entry: Entry) => [
+  ...entry.parts.map(key),
+  ...(entry.tree ? [treeKey(entry.tree.editId)] : []),
+];
+const entryRows = (entry: Entry): { id: number; key: string }[] => [
+  ...entry.parts.map((part) => ({ id: part.id, key: key(part) })),
+  ...(entry.tree ? [{ id: entry.tree.id, key: treeKey(entry.tree.editId) }] : []),
+];
 function entries(document: InverseDocument, threadId: string): Entry[] {
   const map = new Map<string, Entry>();
   for (const row of document.tree)
@@ -75,7 +77,26 @@ function entries(document: InverseDocument, threadId: string): Entry[] {
     entry.parts.push(part);
     map.set(part.editId, entry);
   }
-  return [...map.values()].sort((a, b) => Number(b.handle.slice(1)) - Number(a.handle.slice(1)));
+  const ordered = [...map.values()].sort(
+    (a, b) => Number(b.handle.slice(1)) - Number(a.handle.slice(1)),
+  );
+  const mergedCreates = new Set<Entry>();
+  for (const [index, entry] of ordered.entries()) {
+    if (!entry.parts.length) continue;
+    const create = ordered[index + 1];
+    if (
+      create?.tree?.tree.op !== "create" ||
+      create.parts.length ||
+      Number(entry.handle.slice(1)) !== Number(create.handle.slice(1)) + 1 ||
+      entry.parts[0]?.turnId !== create.tree.turnId ||
+      entry.parts[0]?.responseId !== create.tree.responseId ||
+      entry.parts[0]?.editScopeId !== create.tree.editScopeId
+    )
+      continue;
+    entry.tree = create.tree;
+    mergedCreates.add(create);
+  }
+  return ordered.filter((entry) => !mergedCreates.has(entry));
 }
 function inspectionActions(
   history: StoredInversePart[],
@@ -354,8 +375,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         selection: InverseSelection[],
         kind: "undo" | "redo" | "revert",
         consumed: string[],
+        groupedActionId?: string,
       ) => {
-        const stepActionId = stepAction(kind);
+        const stepActionId = groupedActionId ?? stepAction(kind);
         const result = currentInspection().index.compute(selection, {
           actionId: stepActionId,
           allocateClient: allocateDocumentClient,
@@ -408,8 +430,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         handle: string,
         kind: "undo" | "redo" | "revert",
         consumed: string[],
+        groupedActionId?: string,
       ) => {
-        const stepActionId = stepAction(kind);
+        const stepActionId = groupedActionId ?? stepAction(kind);
         steps.push({ kind: "tree", planned, actionId: stepActionId, at: planned.entry.id });
         treeFacts.push({ handle, fact: treeInverseFact(planned) });
         simulation.recordTree(planned, { kind, actionId: stepActionId, consumes: consumed });
@@ -473,6 +496,31 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 message: `You have no edits to undo in ${document.uri}. Read it and make a new replace if needed.`,
               };
             if (entry.tree) {
+              if (entry.parts.length) {
+                const removed = removedText();
+                if (removed) return removed;
+                const current = currentInspection();
+                current.states(entry.parts);
+                for (const part of entry.parts) {
+                  const refused = policy.refusal(part, entry.handle, "undo", current);
+                  if (refused) return refused;
+                }
+                const groupedActionId = stepAction("undo");
+                apply(
+                  entry,
+                  [...entry.parts]
+                    .sort((a, b) => b.id - a.id)
+                    .map((part) => ({ part, direction: "invert" })),
+                  "undo",
+                  [],
+                  groupedActionId,
+                );
+                const planned = treePlan({ ...entry, tree: entry.tree }, "undo");
+                if ("status" in planned) return planned;
+                handles.push(entry.handle);
+                applyTree(planned, entry.handle, "undo", [], groupedActionId);
+                continue;
+              }
               const planned = treePlan({ ...entry, tree: entry.tree }, "undo");
               if ("status" in planned) return planned;
               handles.push(entry.handle);
@@ -544,7 +592,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 const planned = treePlan({ ...entry, tree: entry.tree }, "redo");
                 if ("status" in planned) return planned;
                 applyTree(planned, entry.handle, "redo", [action.id]);
-                continue;
+                if (!entry.parts.length) continue;
               }
               const removed = removedText();
               if (removed) return removed;

@@ -1,6 +1,6 @@
-# The model's move and delete
+# The model's create, move and delete
 
-Browser checks for the model's `write` `move` and `delete`: in an auto-apply chat, tool rows,
+Browser checks for the model's `write` `create`, `copy`, `move` and `delete`: in an auto-apply chat, tool rows,
 the turn card, its Undo, and a stopped reply's rollback (steps 1 to 4); in a draft-mode chat,
 the pending rows, the Work notice on the live document, Apply, Discard and the model's undo
 (steps 5 to 8). Run the stack with `MODEL_PROVIDER=mock` so `./mf mock script` drives the
@@ -98,6 +98,17 @@ With more than one file, the dock's Apply asks the same question in its footer
    the card expands with its draft outcome; Redo puts it in `arc2` again. Then script `move` ch4
    → ch4b, press the card's Undo, and Discard all of the Work: the card's Redo then says the
    change was discarded, not that it can't be restored.
+12. **Create is one reversible change.** In an auto-apply chat, script `create` of
+   `manuscript://new-chapter` with prose. The card counts the new document. Its Undo removes the
+   document; Redo restores the prose. After Undo, put another document at that path and press
+   Redo: the created document returns at the next free name, which the expanded card reports.
+   Then script a whole-document `copy` and, in a later model step, `undo` the copy's path. One
+   Undo removes the copy rather than leaving an empty document; Redo restores its content.
+13. **Draft create is one pending item.** In a draft-mode chat, script a nonempty `create`, then
+   an empty `create`. Each turn card counts its created document, and the dock and Work Files list
+   both. Undo each card: its draft closes and its row disappears from both lists. Redo creates a
+   fresh draft with the original content, or an empty draft for the empty create, and lists it
+   once. Apply and Discard remain available on the restored row.
 
 ## Last run
 
