@@ -30,7 +30,9 @@ and can miss root config changes. The pnpm dependency cache is independent.
 `check-pr-body.mjs` requires every template section and validates the structured
 `## Changelog` section through `pr-changelog.mjs`. `pnpm changelog` runs
 `build-changelog.mjs`, which uses that same parser to build Markdown or JSON from
-PRs merged into `main`; pass `--input <file>` to build from saved `gh` JSON. A
+PRs merged into `main`. GitHub results arrive in 50-PR pages; ranged builds stop
+once the pages pass their cutoff, while `--all` follows every page. Pass `--input
+<file>` to build from saved `gh` JSON. A
 malformed section fails the whole build and names its PR rather than silently
 omitting an entry, so consumers must check the exit status. Interactive Markdown
 uses `$PAGER` or `less -FRX`; pipes, redirects, JSON, and `--no-pager` print directly.
