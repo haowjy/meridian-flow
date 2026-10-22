@@ -5,6 +5,7 @@ PR bodies via `pnpm changelog`; PRs no longer edit this file.
 
 ## [Unreleased]
 
+- Undo and Redo now follow a model edit between the manuscript and its chat draft, reverse the parts that still exist, and keep a redone draft in that chat's draft dock.
 - Start cursorless chat subscriptions at the head; reconcile trails and Work binding without replaying history.
 - Reject thread socket request IDs longer than 64 characters.
 

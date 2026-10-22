@@ -4,6 +4,7 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { appendRestorationLinks } from "@meridian/agent-edit/diff";
 import {
   type ComputedInverseEdit,
   editHandle,
@@ -919,6 +920,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               view.clientID = client;
               try {
                 appendInverseRestorationFacts(view, computedPart.aliases);
+                if (step.draftId) appendRestorationLinks(view, computedPart.aliases);
               } finally {
                 view.clientID = planningClient;
               }

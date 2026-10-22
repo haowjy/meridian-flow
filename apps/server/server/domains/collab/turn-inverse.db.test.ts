@@ -8,6 +8,7 @@ import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { lockDocuments } from "../context/tree/node-rows.js";
+import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -110,6 +111,25 @@ it("typing inside restored text leaves Redo unavailable and does not delete the 
           eq(schema.documentDrafts.kind, "work_draft"),
         ),
       );
+    const pending = createDrizzleWorkBranchPendingStore(db);
+    expect(await pending.pendingThreadIds(documentDraft.id)).toEqual([]);
+    expect(
+      await view.collab.reverseTurn({
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        direction: "redo",
+        actor: { type: "user", userId: USER_ID },
+      }),
+    ).toMatchObject({ status: "reversed" });
+    expect(await pending.pendingThreadIds(documentDraft.id)).toEqual([THREAD_ID]);
+    expect(
+      await view.collab.reverseTurn({
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        direction: "undo",
+        actor: { type: "user", userId: USER_ID },
+      }),
+    ).toMatchObject({ status: "reversed" });
     const doc = new Y.Doc({ gc: false });
     try {
       Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
