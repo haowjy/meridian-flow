@@ -1,6 +1,7 @@
 /**
  * Atomic Apply: Work lock, command claim, committed live effect, prefix-authored base and trail.
- * A document deleted live comes back first (`restoreDocument`, D79), then the text merges.
+ * A document deleted live comes back first when the click carries the writer's `restore`
+ * (`restoreDocument`, D79), then the text merges.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
@@ -234,6 +235,14 @@ export function createDrizzleApplyClick(
                       treeScope = true;
                       throw new TreeScopeChangedError();
                     }
+                    // Only the writer's knowledge brings a document back: a delete their view
+                    // did not show leaves the click undone and the draft pending (D79). A
+                    // hidden tombstone is a discarded creation, never asked about.
+                    if (locked.deleted && !locked.hidden && !command.request.restore)
+                      return finish({
+                        status: "needs_restore",
+                        commandId: command.envelope.commandId,
+                      });
                     let restored = false;
                     if (locked.deleted) {
                       const outcome = await restoreDocument(

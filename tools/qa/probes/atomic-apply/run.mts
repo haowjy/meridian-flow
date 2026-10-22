@@ -727,14 +727,25 @@ try {
   const living = async (f: Awaited<ReturnType<typeof fixture>>) =>
     (await h.raw`select deleted_at is null as living from documents where id=${f.documentId}`)[0]
       .living;
+  const draftStatus = async (f: Awaited<ReturnType<typeof fixture>>) =>
+    (await h.raw`select status from document_drafts where id=${f.draftId}`)[0].status;
+  /** The click a writer sends knowing the document is deleted (D79). */
+  const restoring = (c: FrozenClick): FrozenClick => ({
+    ...c,
+    request: { ...c.request, restore: true },
+  });
   await row("a document deleted live: its draft stays, Apply restores it then merges", async () => {
     const f = await fixture(["Base."], ["Changed."]);
     await deleteLive(f);
-    assert.equal(
-      (await h.raw`select status from document_drafts where id=${f.draftId}`)[0].status,
-      "active",
-    );
-    const c = f.click();
+    assert.equal(await draftStatus(f), "active");
+    // A click that did not know of the delete changes nothing, and its replay says so again.
+    const unknowing = f.click();
+    const asked = await f.send(unknowing);
+    assert.deepEqual(asked, { status: "needs_restore", commandId: unknowing.request.commandId });
+    assert.deepEqual(await f.send(unknowing), asked);
+    assert.equal(await living(f), false);
+    assert.equal(await draftStatus(f), "active");
+    const c = restoring(f.click());
     const result = await applied(f, c);
     assert.equal(result.status === "applied" && result.restored, true, JSON.stringify(result));
     assert.equal(await living(f), true);
@@ -758,7 +769,7 @@ try {
       });
       let result: ApplyClickAnswer;
       try {
-        result = await applied(f);
+        result = await applied(f, restoring(f.click()));
       } finally {
         remove();
       }
@@ -776,7 +787,7 @@ try {
     await deleteLive(f);
     await h.raw`insert into documents (context_source_id, folder_id, name, extension)
       select context_source_id, ${folderId}, ${name}, ${extension} from documents where id=${f.documentId}`;
-    const c = f.click();
+    const c = restoring(f.click());
     assert.deepEqual(await f.send(c), {
       status: "refused",
       reason: "forbidden",
@@ -795,7 +806,12 @@ try {
       await h.raw`update documents set hidden=true where id=${created.documentId}`;
       await recordCreated(h.db, { branchId: f.branchId, documentId: created.documentId });
       await deleteLive(f);
-      const result = await applied(f);
+      const unknowing = f.click();
+      assert.deepEqual(await f.send(unknowing), {
+        status: "needs_restore",
+        commandId: unknowing.request.commandId,
+      });
+      const result = await applied(f, restoring(f.click()));
       assert.equal(result.status === "applied" && result.restored, true, JSON.stringify(result));
       assert.equal(await living(f), true);
       assert.deepEqual(await f.liveText(), ["Changed."]);
@@ -996,32 +1012,36 @@ try {
       }
     },
   );
-  await row("a delete after compilation overtakes the live grant; the click restores", async () => {
-    const f = await fixture(["Base."], ["Changed."]);
-    const c = f.click();
-    let once = true;
-    const remove = setTestHook("apply.beforeBoundary", async () => {
-      if (once) {
-        once = false;
-        await h.projection.mutate({ works: [f.workId] }, async () => {
-          await acquireTreeScope(h.db, { documentIds: [f.documentId] });
-          await createTestDocumentRemoval(h.db).remove({
-            documentIds: [f.documentId],
-            reason: "deleted",
-            userId: h.ids.user,
+  await row(
+    "a delete after compilation overtakes the live grant; the click asks first",
+    async () => {
+      const f = await fixture(["Base."], ["Changed."]);
+      const c = f.click();
+      let once = true;
+      const remove = setTestHook("apply.beforeBoundary", async () => {
+        if (once) {
+          once = false;
+          await h.projection.mutate({ works: [f.workId] }, async () => {
+            await acquireTreeScope(h.db, { documentIds: [f.documentId] });
+            await createTestDocumentRemoval(h.db).remove({
+              documentIds: [f.documentId],
+              reason: "deleted",
+              userId: h.ids.user,
+            });
           });
-        });
+        }
+      });
+      try {
+        const answer = await f.send(c);
+        assert.deepEqual(answer, { status: "needs_restore", commandId: c.request.commandId });
+        assert.equal(await living(f), false);
+        assert.equal(await draftStatus(f), "active");
+      } finally {
+        remove();
+        f.close();
       }
-    });
-    try {
-      const answer = await f.send(c);
-      assert.equal(answer.status === "applied" && answer.restored, true, JSON.stringify(answer));
-      assert.deepEqual(await f.liveText(), ["Changed."]);
-    } finally {
-      remove();
-      f.close();
-    }
-  });
+    },
+  );
   await row(
     "archived or deleted Work refuses fresh id but never replaces landed result",
     async () => {
