@@ -128,6 +128,22 @@ export function removalSentence(documents: readonly Removal[]): string {
   );
 }
 
+/**
+ * A draft that outlived its document's delete (D79), in the draft's own editor: who deleted it,
+ * in the removal notice's voice, and what Apply does about it.
+ */
+export function deletedFromManuscriptSentence(
+  title: string,
+  record: DocumentRemovalRecord | null,
+): string {
+  const voice = voiceOf(record);
+  if (voice.kind === "person") {
+    const { name } = voice;
+    return t`${name} deleted ${title} from the manuscript. Applying brings it back.`;
+  }
+  return t`${title} was deleted from the manuscript. Applying brings it back.`;
+}
+
 /** What a chip says when only a short sentence fits: the count and what happened. */
 function shortRemovalSentence(documents: readonly Removal[]): string {
   const count = documents.length;
