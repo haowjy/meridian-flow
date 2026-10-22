@@ -80,21 +80,31 @@ export function createDocumentRemoval(
         .where(inArray(documents.id, removed));
       await bumpLocationVersions(db, { documentIds: removed });
       // A Work cascade keeps hidden creations' tree uses: `restoreWorkDocuments` brings their
-      // membership back with the tombstone, while a revealed document needs none. Rows only
-      // say `created` today; PR 3's move and delete facts are a branch's pending intent, which
-      // a delete must keep as it keeps the drafts (D79).
+      // membership back with the tombstone, while a revealed document needs none. Any other
+      // removal ends each branch's creation of the document but keeps its moves and deletes,
+      // a branch's pending intent, as it keeps the drafts (D79, D80): Apply brings it back.
       const retired = input.workId
         ? living.filter((row) => !row.hidden).map((row) => row.id)
         : removed;
-      if (retired.length)
+      if (retired.length) {
+        const ofRetired = and(
+          eq(branchTreeChanges.nodeKind, "document"),
+          inArray(branchTreeChanges.nodeId, retired),
+        );
+        await tx
+          .update(branchTreeChanges)
+          .set({ created: false, updatedAt: now })
+          .where(and(ofRetired, eq(branchTreeChanges.created, true)));
         await tx
           .delete(branchTreeChanges)
           .where(
             and(
-              eq(branchTreeChanges.nodeKind, "document"),
-              inArray(branchTreeChanges.nodeId, retired),
+              ofRetired,
+              eq(branchTreeChanges.moved, false),
+              eq(branchTreeChanges.deleted, false),
             ),
           );
+      }
       const [record] = (await readRemovalRecords(tx, removed.slice(0, 1))).values();
       if (!record) throw new Error(`Removal of ${removed[0]} wrote no record`);
       deps.collab.registerRemoved(removed, record);
