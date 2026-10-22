@@ -27,9 +27,12 @@ export function readCall(path: string, version?: "draft" | "live"): string {
 export function renderAgentEditResult(result: AgentEditResultV1): string {
   const groups = result.blocks ?? [];
   const sections = [
-    [...(result.notice ? [result.notice] : []), statusLine(result), ...notes(result, groups)].join(
-      "\n",
-    ),
+    [
+      ...(result.notice ? [result.notice] : []),
+      ...pendingLine(result),
+      statusLine(result),
+      ...notes(result, groups),
+    ].join("\n"),
   ];
   if (result.message) sections.push(result.message);
   const outline = outlineFile(result);
@@ -56,7 +59,10 @@ function statusLine(result: AgentEditResultV1): string {
         : `copied: ${blockCount(count)} from ${result.copied.from}`,
     );
   }
-  if (result.namespace) facts.push(namespaceFact(result));
+  if (result.namespace)
+    facts.push(
+      result.namespace.kind === "moved" ? `moved from ${result.namespace.from}` : "deleted",
+    );
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
     const total = result.read.documentBlocks;
@@ -69,18 +75,20 @@ function statusLine(result: AgentEditResultV1): string {
   return facts.join("; ");
 }
 
-/** A drafted move or delete is pending until the writer applies it, and says so. */
-function namespaceFact(result: AgentEditResultV1): string {
+/**
+ * A drafted move or delete is pending until the user applies it: said first, before the status
+ * a model otherwise reads as done, and in terms of live, which every area shares.
+ */
+function pendingLine(result: AgentEditResultV1): string[] {
   const change = result.namespace;
-  if (!change) return "";
-  const drafted = result.destination === "draft";
-  if (change.kind === "moved")
-    return drafted
-      ? `moved from ${change.from} in this chat's draft; applying it moves it in the manuscript`
-      : `moved from ${change.from}`;
-  return drafted
-    ? "deleted in this chat's draft; applying it deletes it from the manuscript"
-    : "deleted";
+  if (!change || result.destination !== "draft") return [];
+  const what =
+    change.kind === "moved"
+      ? `moved only in this chat's draft; live still has it at ${change.from}`
+      : "deleted only in this chat's draft; it stays live";
+  return [
+    `not applied yet: ${what} until the user applies it. Tell the user it is waiting for their review.`,
+  ];
 }
 
 function blockCount(count: number): string {

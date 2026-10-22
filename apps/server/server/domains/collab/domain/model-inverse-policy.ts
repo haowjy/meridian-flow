@@ -133,8 +133,8 @@ function treeRefusal(cause: TreeInverseRefused): DocumentEditResult {
     cause.fault === "location_taken"
       ? `${cause.at ?? "its location"} is already taken. Use \`ls\` to check what is there. If it is a document, move or rename it before retrying. Otherwise, tell the user the location is blocked.`
       : cause.fault === "folder_missing"
-        ? "the document's original folder is gone. Tell the user it can't be restored here."
-        : `${treeFaultReason(cause.fault)}. Tell the user it can't be restored here.`;
+        ? "the destination folder is gone. Tell the user this change can't be reversed here."
+        : `${treeFaultReason(cause.fault)}. Tell the user this change can't be reversed here.`;
   return {
     status: `cant_${verb}_changed`,
     message: `Can't ${verb} ${cause.planned.entry.tree.shownAt ?? "this change"}: ${what}`,

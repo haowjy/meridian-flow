@@ -172,7 +172,7 @@ const MUTATION_BRANCHES = {
   },
   undo: {
     description:
-      "Undo count edits (default 1) to this document, newest first, all or nothing. Each edit can be redone separately. Refused if the user applied or discarded one, or anyone edited it since; then use revert.",
+      "Undo count edits (default 1) to this document, newest first, all or nothing. Also reverses a `move` or `delete` of this document; name it by its current path, or by its old path if it moved or was deleted. Each edit can be redone separately. Refused if the user applied or discarded one, or anyone edited it since; then use revert.",
     fields: { count: INVERSE_COUNT },
   },
   revert: {
@@ -198,7 +198,7 @@ const NAMESPACE_BRANCHES = {
   },
   delete: {
     description:
-      "Delete the whole document at `path`; to remove part of a document, use `remove`. Links to it stop resolving until it is restored.",
+      "Delete the whole document at `path`; to remove part of a document, use `remove`. `undo` with this path restores it. Links to it keep pointing at this document and work again only when it is restored, not when a new document takes the path.",
     fields: {},
   },
 } as const;

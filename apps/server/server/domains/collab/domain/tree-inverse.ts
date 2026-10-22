@@ -357,7 +357,7 @@ export function treeFaultReason(fault: TreeInverseFault): string {
     case "folder_missing":
       return "its folder is gone";
     case "superseded":
-      return "it was deleted again since";
+      return "it was deleted after this change";
     case "refused":
       return "it can't be restored here";
   }
