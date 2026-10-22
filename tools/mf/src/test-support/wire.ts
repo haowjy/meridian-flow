@@ -247,7 +247,7 @@ export class Wire {
               {
                 requestId: message.requestId,
                 threadId: message.threadId,
-                lastSeq: message.lastSeq ?? "0",
+                lastSeq: message.lastSeq ?? String(this.head),
               },
             ]
           : [];
