@@ -23,6 +23,9 @@ export function normalizeGfmTableHardBreaks(source: string): string {
 }
 
 export function prepareGfmTableHardBreaks(source: string): PreparedSource {
+  // No table hard-break spelling can exist without a backslash immediately
+  // before a line ending. Avoid a second tokenization on the ordinary parse path.
+  if (!source.includes("\\\n") && !source.includes("\\\r\n")) return originalSource(source);
   const lines = source.split("\n");
   const lineOffsets: number[] = [];
   let offset = 0;

@@ -60,6 +60,10 @@ it("keeps every streamed prefix equivalent to the canonical parse", () => {
       const prefix = source.slice(0, end);
       snapshot = codec.stream(snapshot, prefix);
       expect(nodesEqual(snapshot.blocks, codec.parse(prefix).blocks), prefix).toBe(true);
+      if (end > 0 && source.includes("]:") && !prefix.includes("<")) {
+        expect(snapshot.fullParseReason, prefix).not.toBe("non-append");
+        expect(snapshot.fullParseReason, prefix).not.toBe("html");
+      }
     }
   }
 

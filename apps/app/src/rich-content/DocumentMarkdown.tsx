@@ -33,6 +33,17 @@ type Presentation = {
 };
 const runKey = (kind: string, path: readonly number[]) => `${kind}:${path.join("/")}`;
 
+function ownsNode(block: PMNode, target: PMNode | null): boolean {
+  if (!target) return false;
+  if (block === target) return true;
+  let found = false;
+  block.descendants((node) => {
+    if (node === target) found = true;
+    return !found;
+  });
+  return found;
+}
+
 function renderLink(mark: PMMark, content: ReactNode): ReactNode {
   const target = classifyLinkTarget(String(mark.attrs.href));
   if (target?.kind === "external") {
@@ -290,9 +301,16 @@ function StaticTranscript({
       skills: boundedRanges(skills, source.length),
     };
   }, [source, sourceMap, references, skills]);
+  const openBlock = snapshot.blocks.findIndex((block) => ownsNode(block, snapshot.openCode));
   return snapshot.blocks.map((node, index) => (
     <Fragment key={index}>
-      {renderDocumentNode(node, breaks, presentation, [index], snapshot.openCode)}
+      {renderDocumentNode(
+        node,
+        breaks,
+        presentation,
+        [index],
+        index === openBlock ? snapshot.openCode : null,
+      )}
     </Fragment>
   ));
 }
@@ -325,13 +343,19 @@ export function DocumentMarkdown({
   }, [source, streaming]);
   const blocks = snapshot?.blocks ?? settled?.blocks ?? [];
   const openCode = snapshot?.openCode ?? settled?.openCode ?? null;
+  const openBlock = blocks.findIndex((block) => ownsNode(block, openCode));
   return (
     <div className={className}>
       {!streaming && (references.length > 0 || skills.length > 0) ? (
         <StaticTranscript source={source} breaks={breaks} references={references} skills={skills} />
       ) : (
         blocks.map((node, index) => (
-          <MarkdownBlock key={index} node={node} breaks={breaks} openCode={openCode} />
+          <MarkdownBlock
+            key={index}
+            node={node}
+            breaks={breaks}
+            openCode={index === openBlock ? openCode : null}
+          />
         ))
       )}
     </div>
