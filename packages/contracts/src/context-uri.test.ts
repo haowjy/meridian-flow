@@ -88,16 +88,30 @@ describe("parseContextUri", () => {
     }
   });
 
-  it("reserves the branch qualifier ~ until branches are addressable", () => {
-    for (const uri of [
-      "manuscript://~b7/Chapter 12",
-      "manuscript://~/b7/Chapter 12",
-      "scratch://~live/x",
-      "~rewrite/a",
-    ]) {
+  it("reserves the branch qualifier ~ and gives a concrete legal repair", () => {
+    const refusals = [
+      [
+        "manuscript://~b7/Chapter 1",
+        'Names cannot start with "~". Use manuscript://Chapter 1, or a name without "~".',
+      ],
+      [
+        "manuscript://~drafts/Chapter 1",
+        'Names cannot start with "~". Use manuscript://Chapter 1, or a name without "~".',
+      ],
+      ["scratch://~ideas", 'Names cannot start with "~". Use scratch://ideas.'],
+      ["scratch://@c19/~ideas", 'Names cannot start with "~". Use scratch://ideas.'],
+      [
+        "scratch://@c19/~drafts/idea",
+        'Names cannot start with "~". Use scratch://@c19/idea, or a name without "~".',
+      ],
+      ["scratch://~", 'Names cannot start with "~".'],
+      ["scratch://~~ideas", 'Names cannot start with "~".'],
+    ] as const;
+
+    for (const [uri, reason] of refusals) {
       expect(parseContextUri(uri, { barePathDefault: "manuscript" })).toMatchObject({
         ok: false,
-        error: { reason: expect.stringContaining('Names cannot start with "~"') },
+        error: { reason },
       });
     }
   });
