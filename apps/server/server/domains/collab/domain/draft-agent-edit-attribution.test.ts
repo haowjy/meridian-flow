@@ -56,6 +56,7 @@ function fixture(existingUpstream?: Y.Doc) {
       }),
       ensureThreadPeerDraft: async () => ({
         documentDraft: snapshot("peer"),
+        workDraft: snapshot("draft"),
       }),
       listActiveWorkDraftIds: async () => ["draft"],
       resolveWorkDraftForThread: async () => snapshot("draft"),

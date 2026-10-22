@@ -9,6 +9,7 @@ import type {
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
 import { boundDocumentAuthority } from "./document-handle.js";
 import { DraftNotFoundError } from "./draft-resolver.js";
+import { blockOriginsFromDraftSeed } from "./draft-store.js";
 import { liveRoom } from "./observation-rooms.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
@@ -43,7 +44,7 @@ export function createModelDocumentEdits(input: {
           });
         });
         draftId = documentDraft.draftId;
-        blockOrigins = originsOf(documentDraft.seed?.origins);
+        blockOrigins = blockOriginsFromDraftSeed(documentDraft.seed) ?? undefined;
       } else {
         try {
           const documentDraft = await input.drafts.resolveWorkDraftForThread(
@@ -51,7 +52,6 @@ export function createModelDocumentEdits(input: {
             request.threadId as ThreadId,
           );
           draftId = documentDraft.draftId;
-          blockOrigins = originsOf(documentDraft.seed?.origins);
         } catch (cause) {
           if (cause instanceof DraftNotFoundError) return null;
           throw cause;
@@ -113,16 +113,4 @@ function absentDraftInverse(command: { command: "undo" | "redo" | "revert"; file
         message: `Nothing is left to reverse in ${command.file}. Read it and make a new replace.`,
       };
   }
-}
-
-function originsOf(
-  origins: Readonly<Record<string, string>> | undefined,
-): BlockOriginMap | undefined {
-  if (!origins) return undefined;
-  return new Map(
-    Object.entries(origins).map(([target, origin]) => {
-      const [clientID, clock] = origin.split(":").map(Number);
-      return [target, { clientID, clock }];
-    }),
-  );
 }

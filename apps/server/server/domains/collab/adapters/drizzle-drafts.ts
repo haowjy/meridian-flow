@@ -304,7 +304,7 @@ export function createDrizzleDraftStore(
     documentId: DocumentId;
     threadId: ThreadId;
     branchId: BranchId;
-    liveDoc: () => Promise<Y.Doc | { doc: Y.Doc; room: string | null }>;
+    liveDoc: () => Promise<{ doc: Y.Doc; room: string | null }>;
   }): Promise<{ documentDraft: DraftSnapshot; workDraft: DraftSnapshot }> {
     type EnsuredPeer = { documentDraft: DraftSnapshot; workDraft: DraftSnapshot };
     const currentPeer = async (): Promise<EnsuredPeer | null> => {
@@ -396,8 +396,7 @@ export function createDrizzleDraftStore(
     // D12), so no step holds the branch row or a draft row before the Work; the peer follows.
     if (!(await activeDocumentDraft(input.documentId, input.branchId))) {
       // Taken before the root transaction: the snapshot holds its own connection.
-      const supplied = await input.liveDoc();
-      const live = supplied instanceof Y.Doc ? { doc: supplied, room: null } : supplied;
+      const live = await input.liveDoc();
       await runInRootDrizzleTransaction(db, () =>
         ensureDocumentDraft({
           documentId: input.documentId,

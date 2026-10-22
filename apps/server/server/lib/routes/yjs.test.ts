@@ -110,6 +110,7 @@ describe("Yjs draft handshake route guard", () => {
         listActiveWorkDraftIds: async () => ["draft_1"],
         ensureThreadPeerDraft: async () => ({
           documentDraft: { draftId: "thread-peer", upstreamDraftId: "draft_1" },
+          workDraft: { draftId: "draft_1", seed: null },
         }),
       },
     });

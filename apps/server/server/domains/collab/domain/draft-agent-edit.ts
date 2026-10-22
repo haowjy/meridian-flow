@@ -36,6 +36,7 @@ import { peerLossReason, ThreadPeerPullLost, type WorkDraftLookup } from "./draf
 import type { DraftResolver, ResolvedDraft } from "./draft-resolver.js";
 import { reconcileStagedDraftWrites } from "./draft-response-replay.js";
 import {
+  blockOriginsFromDraftSeed,
   DraftCasConflictError,
   DraftMissingError,
   type DraftSnapshot,
@@ -184,7 +185,7 @@ export function createDraftAgentEditCoordinator(input: {
   }
 
   function bindSeedAddresses(doc: Y.Doc, snapshot: DraftSnapshot): void {
-    const origins = seedAddresses(snapshot.seed);
+    const origins = blockOriginsFromDraftSeed(snapshot.seed);
     if (origins) bindBlockOrigins(doc, origins);
   }
 
@@ -229,7 +230,7 @@ export function createDraftAgentEditCoordinator(input: {
       const peerId =
         access?.pinnedDraftId ?? (await resolveThreadDraftId(input, docId as DocumentId));
       return underAccess(peerId, async (workDraftId) => {
-        const blockOrigins = seedAddresses(
+        const blockOrigins = blockOriginsFromDraftSeed(
           (await input.drafts.getDraft(workDraftId))?.seed ?? null,
         );
         const { result, write } = await drafts.prepareStagedRows(
@@ -296,21 +297,6 @@ export function createDraftAgentEditCoordinator(input: {
       );
     },
   };
-}
-
-function parseItemId(value: string): { clientID: number; clock: number } {
-  const [clientID, clock, extra] = value.split(":").map(Number);
-  if (!Number.isSafeInteger(clientID) || !Number.isSafeInteger(clock) || extra !== undefined)
-    throw new Error(`Invalid block item id ${value}`);
-  return { clientID, clock };
-}
-
-function seedAddresses(
-  seed: DraftSnapshot["seed"],
-): Map<string, { clientID: number; clock: number }> | null {
-  return seed
-    ? new Map(Object.entries(seed.origins).map(([target, origin]) => [target, parseItemId(origin)]))
-    : null;
 }
 
 /**

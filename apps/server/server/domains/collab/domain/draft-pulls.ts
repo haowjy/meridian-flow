@@ -22,7 +22,12 @@ import type { Branches } from "./branches.js";
 import { closedPinReason } from "./closed-pin-reason.js";
 import { boundDocumentAuthority } from "./document-handle.js";
 import type { DraftCoordinator } from "./draft-coordinator.js";
-import { DraftCasConflictError, type DraftSnapshot, DraftStaleUpdateError } from "./draft-store.js";
+import {
+  DraftCasConflictError,
+  type DraftSeedRecord,
+  type DraftSnapshot,
+  DraftStaleUpdateError,
+} from "./draft-store.js";
 import { liveRoom } from "./observation-rooms.js";
 import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import { runOutsideResponseTransaction } from "./response-transaction.js";
@@ -34,17 +39,17 @@ export type WorkDraftLookup = {
     threadId: ThreadId;
     branchId?: BranchId;
     /** Live as it stands, asked for only when the ensure makes a Work draft to seed. */
-    liveDoc: () => Promise<Y.Doc | { doc: Y.Doc; room: string | null }>;
+    liveDoc: () => Promise<{ doc: Y.Doc; room: string | null }>;
   }): Promise<{
     documentDraft: Pick<DraftSnapshot, "draftId" | "upstreamDraftId">;
-    workDraft?: Pick<DraftSnapshot, "draftId" | "seed">;
+    workDraft: Pick<DraftSnapshot, "draftId" | "seed">;
   }>;
 };
 
 export type EnsuredThreadPeer = {
   peerDraftId: string;
   upstreamDraftId: string;
-  seed?: DraftSnapshot["seed"];
+  seed: DraftSeedRecord | null;
 };
 
 export type DraftPullService = {
@@ -344,7 +349,7 @@ export function createDraftPullService(input: {
         return {
           peerDraftId: peer.draftId,
           upstreamDraftId,
-          seed: ensured.workDraft?.seed ?? null,
+          seed: ensured.workDraft.seed,
         };
       });
     },
