@@ -199,6 +199,8 @@ DB rollback/FK resets, not fresh module loading, isolate persisted state.
 
 Commit often, one self-contained change at a time.
 
+The PR body's `## Changelog` section holds the changelog entry; never edit `CHANGELOG.md`.
+
 A human merges product changes into `main` or `staging` unless explicitly
 instructing the agent to merge. Merges between working branches need no gate.
 Documentation-only changes commit directly to `main`; never open a PR only for

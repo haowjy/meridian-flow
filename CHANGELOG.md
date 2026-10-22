@@ -1,5 +1,8 @@
 # Changelog
 
+Entries through this change are preserved below. Later entries come from merged
+PR bodies via `pnpm changelog`; PRs no longer edit this file.
+
 ## [Unreleased]
 
 - Links inside a still-hidden draft document now resolve from that draft's own address, including relative links and unavailable targets; the “doesn't exist yet” card no longer explains Create (#876).
