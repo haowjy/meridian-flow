@@ -2,7 +2,8 @@
  * The living-document requirement: a document row exists and carries no tombstone. Every
  * write that may create or change a document's Yjs state proves it under the document's
  * mutation lock, which a removal also takes, so a removal that won the lock is seen here.
- * Its one exception is a draft that outlived a live delete (`survivingDraftDocuments`).
+ * Its one exception is a draft or a drafted move that outlived a live delete
+ * (`survivingDraftDocuments`).
  */
 import { DocumentNotFoundError } from "@meridian/agent-edit/integration";
 import type { BranchId, DocumentId, WorkId } from "@meridian/contracts";
@@ -66,10 +67,11 @@ export async function requireLivingDocument(
  * Which of `documentIds` are deleted yet keep an open draft destination in one branch (the
  * branch's id, or a Work's active branch): the deletion is the document's own or its
  * folder's (reason `deleted`; never a discard, a Work cascade or a deleted source), and the
- * branch has an active Work draft of it, which outlived the delete (D79). Admission's one
- * proof, for file facts and for draft creation under the document lock. It never reads
- * `has_effect`: a no-effect draft (an open tab, an Undo after Discard) stays writable, while
- * listing the document in the branch is the tree view's separate, pending-only question.
+ * branch has an active Work draft of it, which outlived the delete (D79), or moved it, which
+ * outlived it too (D80: Apply restores it where the branch put it). Admission's one proof, for
+ * file facts and for draft creation under the document lock. It never reads `has_effect`: a
+ * no-effect draft (an open tab, an Undo after Discard) stays writable, while listing the
+ * document in the branch is the tree view's separate, pending-only question.
  */
 export async function survivingDraftDocuments(
   db: DrizzleDb,
@@ -78,17 +80,19 @@ export async function survivingDraftDocuments(
 ): Promise<ReadonlySet<DocumentId>> {
   if (documentIds.length === 0) return new Set();
   const rows = await currentDrizzleDb(db).execute<{ id: string }>(sql`
-    SELECT d.id::text AS id FROM documents d
+    SELECT DISTINCT d.id::text AS id FROM documents d
     JOIN context_sources s ON s.id = d.context_source_id AND s.deleted_at IS NULL
-    JOIN document_drafts dd ON dd.document_id = d.id AND dd.kind = 'work_draft'
-      AND dd.status = 'active'
-    JOIN branches b ON b.id = dd.branch_id AND b.status = 'active'
+    JOIN branches b ON b.status = 'active'
+      AND ${"branchId" in branch ? sql`b.id = ${branch.branchId}::uuid` : sql`b.origin_work_id = ${branch.workId}::uuid`}
     WHERE d.id IN (${sql.join(
       documentIds.map((id) => sql`${id}::uuid`),
       sql`, `,
     )})
       AND ${deletedDocument}
-      AND ${"branchId" in branch ? sql`b.id = ${branch.branchId}::uuid` : sql`b.origin_work_id = ${branch.workId}::uuid`}`);
+      AND (EXISTS (SELECT 1 FROM document_drafts dd WHERE dd.document_id = d.id
+          AND dd.branch_id = b.id AND dd.kind = 'work_draft' AND dd.status = 'active')
+        OR EXISTS (SELECT 1 FROM branch_tree_changes c WHERE c.branch_id = b.id
+          AND c.node_kind = 'document' AND c.node_id = d.id AND c.moved AND NOT c.deleted))`);
   return new Set(rows.map((row) => row.id as DocumentId));
 }
 

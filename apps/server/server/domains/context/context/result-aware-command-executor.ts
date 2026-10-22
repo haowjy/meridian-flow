@@ -15,10 +15,14 @@ export interface ResultAwareCommandExecutor<TError> {
     scopes?: ContextCommandScopes,
     options?: ContextCommandOptions,
   ): Promise<Result<T, TError>>;
-  /** A command in a Work's branch, which the transaction makes (`ensure`) and locks. */
+  /**
+   * A command in a Work's branch, which the transaction makes (`ensure`) and locks, with the
+   * namespaces of `sourceIds` taken in key order with its own.
+   */
   runInBranch<T>(
     branch: ContextCommandBranch & { mode: "ensure" },
     operation: (branch: ContextCommandActiveBranch) => Promise<Result<T, TError>>,
+    sourceIds?: readonly string[],
   ): Promise<Result<T, TError>>;
   /**
    * A read that must hold nothing (a live create's discovery, contract §6.3 step 1), in
@@ -80,7 +84,7 @@ export function createResultAwareCommandExecutor<TError>(input: {
 
   return {
     run,
-    runInBranch(branch, operation) {
+    runInBranch(branch, operation, sourceIds) {
       return run(
         ({ branch: active }) => {
           // The transaction contract: an `ensure` command always resolves a branch.
@@ -88,7 +92,7 @@ export function createResultAwareCommandExecutor<TError>(input: {
           return operation(active);
         },
         undefined,
-        { branch },
+        { branch, ...(sourceIds?.length ? { sourceIds } : {}) },
       );
     },
     exclusive<T>(operation: () => Promise<T>): Promise<T> {

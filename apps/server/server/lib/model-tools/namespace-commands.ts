@@ -1,10 +1,11 @@
 /**
  * `write`'s `move` and `delete` (D25, D38): host commands that change where a whole document
- * lives, not what it says. Each runs when called (D66): live through the thread's live port, so
- * links follow a move (#694) and a delete keeps every Work's drafts (D79). Its tree entry
- * commits in the mutation's own transaction with a handle on the document's counter for this
- * chat, so `undo`, `redo` and `revert` walk it with the text edits (D76), and a reply's
- * rollback reverses it.
+ * lives, not what it says. Each runs when called (D66). Live, through the thread's live port,
+ * links follow a move (#694) and a delete keeps every Work's drafts (D79). In a draft-mode
+ * chat on drafted sources they are facts in the Work's branch and live is untouched until the
+ * writer applies them (D26). Either way the tree entry commits in the mutation's own
+ * transaction with a handle on the document's counter for this chat, so `undo`, `redo` and
+ * `revert` walk it with the text edits (D76), and a reply's rollback reverses it.
  */
 import type { WriteToolInput } from "@meridian/agent-edit/integration";
 import {
@@ -14,6 +15,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
 import { contextPortForThread } from "../../domains/context/context-port-resolution.js";
+import type { RecordedBranchTreeChange } from "../../domains/context/ports/branch-tree.js";
 import type {
   ContextError,
   ContextPort,
@@ -134,7 +136,7 @@ async function commitLive(
         ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
         ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
         op: input.command,
-        before,
+        change: { destination: "live", before },
         shownAt: source.uri,
       })
     ).handle;
@@ -168,6 +170,58 @@ async function commitLive(
     });
   const landed = await port.stat(input.path);
   return { handle: recorded, uri: landed.ok ? landed.value.uri : input.path };
+}
+
+/**
+ * The drafted move or delete: the branch's facts, through the chat's own (draft-placed) port,
+ * with its tree entry recorded in the same transaction. Never the mover; live is untouched.
+ */
+async function commitDrafted(
+  deps: ToolWiringDeps,
+  call: ToolCall,
+  input: NamespaceInput,
+  source: FileRef & { documentId: DocumentId },
+  ctx: ToolHandlerContext,
+): Promise<{ handle: string; uri: string } | WriteToolErrorOutput> {
+  const history = deps.documentSync.treeHistory();
+  const threadId = ctx.threadId as ThreadId;
+  const turnId = ctx.turnId ? (ctx.turnId as TurnId) : undefined;
+  let recorded: string | undefined;
+  const record = async (change: RecordedBranchTreeChange) => {
+    recorded = (
+      await history.recordAgentTreeChange({
+        documentId: source.documentId,
+        threadId,
+        ...(turnId ? { turnId } : {}),
+        ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+        op: input.command,
+        change: { destination: "draft", ...change },
+        shownAt: source.uri,
+      })
+    ).handle;
+  };
+  const command = {
+    documentId: source.documentId,
+    changedBy: { threadId, ...(turnId ? { turnId } : {}) },
+    record,
+  };
+  const changed = await call.context.port.changeInBranch(
+    input.command === "move"
+      ? { ...command, op: "move", sourceUri: source.uri, destinationUri: input.path }
+      : { ...command, op: "delete", uri: source.uri },
+  );
+  if (!changed.ok)
+    return namespaceContextRefusal(input.command, changed.error, {
+      path: source.uri,
+      ...(input.command === "move" ? { destination: input.path } : {}),
+    });
+  if (input.command === "move" && !changed.value.moved)
+    return namespaceRefusal(input.command, "already_at_destination", {
+      path: source.uri,
+      destination: input.path,
+    });
+  if (!recorded) throw new Error(`A drafted ${input.command} committed without its tree entry`);
+  return { handle: recorded, uri: changed.value.uri };
 }
 
 /**
@@ -206,26 +260,22 @@ export async function runNamespaceCommand(
       drafted ||= container.destination.kind === "draft";
     }
   }
-  // Drafted placement (PR 3's phase E) is not built yet; the model is not shown these commands
-  // until it is (D66), so only a scripted call can reach this.
-  if (drafted)
-    return writeToolError(
-      input.command,
-      `Can't ${input.command} a drafted document yet: this chat is in draft mode.`,
-      "internal_error",
-    );
   const result = await runWithEditGrants(deps.fileAccess, grants, () =>
-    commitLive(deps, call, input, source, ctx),
+    drafted
+      ? commitDrafted(deps, call, input, source, ctx)
+      : commitLive(deps, call, input, source, ctx),
   );
   if (!result.ok)
     return fileAccessDeniedError(input.command, firstRefusal(result.refusal), source.uri);
   if (isToolError(result.value)) return result.value;
   const { handle, uri } = result.value;
   recordTouchInBackground(deps, source.documentId, ctx);
+  // A drafted delete leaves live and every Work's drafts alone: nothing outlives anything.
   const survivingWorks =
-    input.command === "delete"
+    input.command === "delete" && !drafted
       ? await deps.documentSync.treeHistory().survivingDraftWorks(source.documentId)
       : [];
+  const destination = grant.destination;
   return {
     output: modelResult({
       command: input.command,
@@ -233,7 +283,8 @@ export async function runNamespaceCommand(
       phase: "committed",
       payload: {
         path: uri,
-        destination: "live",
+        destination: destination.kind,
+        ...(destination.kind === "draft" ? { draftWork: destination.workHandle ?? "/" } : {}),
         write: { id: handle },
         namespace:
           input.command === "move"

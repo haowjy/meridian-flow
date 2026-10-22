@@ -145,7 +145,7 @@ const conflictWithFile: BranchTreeFault = { code: "conflict", occupantKind: "fil
 export async function deleteInBranch(
   db: Database,
   input: { branchId: BranchId; documentId: DocumentId; changedBy: ChangedBy },
-): Promise<Result<BranchTreeChange, BranchTreeFault>> {
+): Promise<Result<BranchTreeChange, Extract<BranchTreeFault, { code: "not_found" }>>> {
   await lockDocuments(db, [input.documentId]);
   const view: TreeView = { kind: "branch", branchId: input.branchId };
   if ((await createTreeReader(db).findById(view, input.documentId)).kind !== "found")

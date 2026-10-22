@@ -175,8 +175,8 @@ export type AgentEditAccess = {
 
 export type AgentTreeHistory = {
   /**
-   * Records a model's live move or delete as a tree entry, in the tree mutation's own
-   * transaction, and returns its handle on the document's counter for this chat.
+   * Records a model's move or delete as a tree entry, in the tree mutation's own transaction,
+   * and returns its handle on the document's counter for this chat.
    */
   recordAgentTreeChange(input: {
     documentId: DocumentId;
@@ -184,8 +184,13 @@ export type AgentTreeHistory = {
     turnId?: TurnId;
     responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
     op: "move" | "delete";
-    /** The placement read before the mutation; the entry reads its `after` itself. */
-    before: import("@meridian/contracts").LiveTreeState;
+    change: /** Live: the placement read before the mutation; the entry reads its `after` itself. */
+      | { destination: "live"; before: import("@meridian/contracts").LiveTreeState }
+      /** Drafted: the branch row's facts on either side, as the branch write returned them. */
+      | ({ destination: "draft" } & Omit<
+          import("@meridian/contracts").BranchTreeTransition,
+          "destination"
+        > & { branchId: import("@meridian/contracts").BranchId });
     /** Where the model saw the document: the path it moved or deleted it from. */
     shownAt: string;
   }): Promise<{ handle: string }>;
