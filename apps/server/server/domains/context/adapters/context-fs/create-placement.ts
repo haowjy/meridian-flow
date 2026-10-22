@@ -136,7 +136,12 @@ function livePlacement(deps: CreatePlacementDeps): CreatePlacement {
           { kind: "empty" },
           { options },
         );
-        return created.ok ? Ok({ documentId: created.value.document.id, created: true }) : created;
+        if (!created.ok) return created;
+        await options?.recordCreate?.({
+          documentId: created.value.document.id as DocumentId,
+          change: { destination: "live", before: null },
+        });
+        return Ok({ documentId: created.value.document.id, created: true });
       });
     },
     writeBinary(path, options) {
@@ -204,6 +209,15 @@ function draftPlacement(
         });
         if (!created.ok) return Err(createFault(created.error));
         if (created.value.kind === "created") {
+          await options?.recordCreate?.({
+            documentId: created.value.documentId,
+            change: {
+              destination: "draft",
+              branchId: branch.id,
+              before: { row: false, created: false, moved: null, deleted: false },
+              after: { row: true, created: true, moved: null, deleted: false },
+            },
+          });
           return Ok({ documentId: created.value.documentId, created: true as boolean });
         }
         if (created.value.binary) return Err(binaryTrackedWriteFault(path));

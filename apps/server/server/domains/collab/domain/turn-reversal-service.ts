@@ -122,7 +122,7 @@ async function writerGrants(
       turnEditDestination(target),
       "edit",
     );
-    if (isFileAccessDenied(grant) && grant.reason === "not_found" && target.scope === "live")
+    if (isFileAccessDenied(grant) && grant.reason === "not_found")
       grant = await fileAccess.authorize(principal, { kind: "restore", documentId }, "edit");
     if (!isFileAccessDenied(grant)) {
       grants.push(grant as FileGrant<"edit">);

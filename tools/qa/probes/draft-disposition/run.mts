@@ -34,6 +34,7 @@ try {
     db: h.db,
     journal: h.persistence.journal,
     drafts: h.store,
+    initializeEmptyDocument: h.initializeEmptyDocument,
     coordinator: {
       async withDocument<T>(id: string, run: (doc: Y.Doc) => Promise<T>) {
         const doc = await h.liveDoc(id);

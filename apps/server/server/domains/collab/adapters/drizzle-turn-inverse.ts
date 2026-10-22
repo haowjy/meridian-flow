@@ -74,10 +74,12 @@ import {
 import { type DraftStore, materializeDraftRead } from "../domain/draft-store.js";
 import type { InverseStep } from "../domain/inverse-stream.js";
 import { liveRoom } from "../domain/observation-rooms.js";
+import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { ReversalConflictError } from "../domain/reversal-conflict.js";
 import {
+  isTransitionEntry,
   type PlannedTreeInverse,
   type StoredTreeEntry,
   sameBranchFacts,
@@ -105,7 +107,8 @@ import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";
 type Dependencies = {
   db: Database;
   journal: UpdateJournal;
-  drafts: DraftStore;
+  drafts: DraftStore & Pick<ApplicationDraftStore, "ensureCreatedDocumentDraft">;
+  initializeEmptyDocument(documentId: DocumentId): Promise<void>;
   coordinator: LiveDocumentCoordinator;
   draftCoordinator: Pick<DraftCoordinator, "deliverCommitted">;
   onDraftCommitted(draftId: string): void;
@@ -292,6 +295,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             .where(eq(documentYjsUpdates.documentId, documentId));
           heads.set(documentId, Number(head?.id ?? 0));
           const documentTree = tree.filter((row) => row.documentId === documentId);
+          const createdHere = documentTree.some(
+            (row) => isTransitionEntry(row) && row.tree.op === "create",
+          );
           const document: InverseDocument = {
             documentId,
             // A deleted document has no address: the model's path, or where it last stood.
@@ -313,16 +319,18 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             string,
             InverseDocument["drafts"] extends ReadonlyMap<string, infer D> ? D : never
           >();
-          for (const draftId of released ? [] : draftIds) {
+          for (const draftId of draftIds) {
             const read = await input.drafts.readDraftAt(draftId);
             const documentDraft = read?.documentDraft;
             if (
               !read ||
               documentDraft?.documentId !== documentId ||
-              documentDraft.status !== "active"
+              (documentDraft.status !== "active" && !createdHere)
             )
               continue;
-            const doc = materializeDraftRead(read, new Y.Doc({ gc: false }));
+            const doc = read.checkpoint
+              ? materializeDraftRead(read, new Y.Doc({ gc: false }))
+              : new Y.Doc({ gc: false });
             const [name] = documentDraft.workId
               ? await db()
                   .select({ handle: works.handle })
@@ -685,6 +693,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       planned.op,
       { before: expected, after: planned.after },
       userId,
+      planned.entry.tree.op === "create",
     );
     if (fault) throw new TreeFault(fault);
     const [after] = (await readLiveTreeStates(db(), [documentId])).values();
@@ -710,6 +719,41 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       .from(branches)
       .where(eq(branches.id, branchId));
     if (branch?.status !== "active") throw new TreeFault("refused");
+    if (planned.entry.tree.op === "create") {
+      if (planned.op === "delete") {
+        await input.removal.remove({
+          documentIds: [entry.documentId],
+          reason: "discarded",
+          ...(query.model ? { threadId: query.threadId } : {}),
+        });
+        return { destination: planned.destination, before: planned.before, after: planned.after };
+      }
+      if (planned.op !== "create")
+        throw new Error("A drafted create can only be removed or restored");
+      const restored = await restoreDocument(
+        input.db,
+        { documentId: entry.documentId, created: true },
+        { arrivals: input.arrivals, catalog: input.catalog },
+      );
+      if (restored.kind !== "restored") throw new TreeFault("refused");
+      await input.initializeEmptyDocument(entry.documentId);
+      const committed = await writeBackBranchFacts(input.db, {
+        branchId,
+        documentId: entry.documentId,
+        expected: planned.before,
+        facts: planned.after,
+        changedBy: { threadId: query.threadId, ...(query.turnId ? { turnId: query.turnId } : {}) },
+      });
+      if (!committed.ok) throw new TreeFault(committed.error);
+      entry.reopened.set(
+        branchId,
+        await input.drafts.ensureCreatedDocumentDraft({
+          documentId: entry.documentId,
+          branchId,
+        }),
+      );
+      return { destination: planned.destination, before: planned.before, after: committed.value };
+    }
     const committed = await writeBackBranchFacts(input.db, {
       branchId,
       documentId: entry.documentId,
@@ -806,11 +850,36 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     op: TreeChangeOp,
     { before, after }: Pick<LiveTreeTransition, "before" | "after">,
     userId: UserId | undefined,
+    created: boolean,
   ): Promise<TreeInverseFault | null> {
     const deps = { arrivals: input.arrivals, catalog: input.catalog };
     switch (op) {
+      case "create": {
+        if (!before || before.living) throw new Error("A create inverse starts from a removal");
+        if (!after.living) throw new Error("A create inverse ends at a placement");
+        const at = await restoreTarget(after.at);
+        if (!at) return "folder_missing";
+        const restored = await restoreDocument(
+          input.db,
+          {
+            documentId,
+            removal: {
+              time: new Date(before.removal.time),
+              locationVersion: BigInt(before.removal.locationVersion),
+            },
+            at,
+            created: true,
+          },
+          deps,
+        );
+        if (restored.kind !== "restored")
+          return restored.kind === "already_living" ? "superseded" : "refused";
+        await input.initializeEmptyDocument(documentId);
+        return null;
+      }
       case "move": {
-        if (!before.living || !after.living) throw new Error("A move inverse joins two placements");
+        if (!before?.living || !after.living)
+          throw new Error("A move inverse joins two placements");
         const moved = await moveToPlacement(
           input.db,
           { documentId, from: before.at, to: after.at },
@@ -823,7 +892,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             : moved.kind;
       }
       case "restore": {
-        if (before.living) throw new Error("A restore inverse starts from a removal");
+        if (!before || before.living) throw new Error("A restore inverse starts from a removal");
         if (!after.living) throw new Error("A restore inverse ends at a placement");
         const at = await restoreTarget(after.at);
         if (!at) return "folder_missing";
@@ -847,8 +916,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             : restored.kind;
       }
       case "delete": {
-        if (!before.living) throw new Error("A delete inverse starts from a placement");
-        await input.removal.remove({ documentIds: [documentId], reason: "deleted", userId });
+        if (!before?.living) throw new Error("A delete inverse starts from a placement");
+        await input.removal.remove({
+          documentIds: [documentId],
+          reason: created ? "discarded" : "deleted",
+          userId,
+        });
         const [source] = await placementSources(input.db, [before.at]);
         await input.catalog.refreshSources(source ? [source] : [], [documentId]);
         return null;
@@ -898,7 +971,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         const draft = drafts.get(step.draftId) ?? {
           draftId: step.draftId,
           revision: captured.documentDraft.revision,
-          view: captured.doc,
+          branchId: captured.documentDraft.branchId,
+          active: captured.documentDraft.status === "active",
+          // A redone creation gets a fresh draft seeded from empty live. Its closed predecessor
+          // supplies history and provenance, never the Yjs store whose items Undo deleted.
+          view: captured.documentDraft.status === "active" ? captured.doc : document.live,
           edits: [] as ComputedInverseEdit[],
           origins: new Map(),
         };
@@ -940,13 +1017,16 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       edits,
       updates: [],
       drafts,
-      live: !text.length || text.some((step) => !step.draftId),
+      live:
+        text.some((step) => !step.draftId) ||
+        plan.steps.some((step) => step.kind === "tree" && isLiveTransition(step.planned)),
       source: query.model ? "agent" : "writer",
       made: new Map(),
       living: document.treeStates.live?.living ?? document.removal === null,
       committed: [],
       stopped: false,
       reversed: new Map(),
+      reopened: new Map(),
     };
   }
 
@@ -985,6 +1065,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         cause: "not_restored",
       };
     }
+    if (draft && !draft.active) {
+      const reopened = entry.reopened.get(draft.branchId);
+      if (!reopened) throw new InverseAttemptMiss();
+      draft.draftId = reopened.draftId;
+      draft.revision = reopened.revision;
+      draft.active = true;
+    }
     if (draft && !draft.origins.size) await rewriteDraft(entry, draft, userId, query);
     const origins: EditOrigin[] = draft ? (draft.origins.get(step.edit) ?? []) : [];
     if (!draft)
@@ -1011,8 +1098,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       return { ...part, origin };
     });
     entry.committed.push(step.edit);
-    entry.updates.push(...parts.map((part) => ({ draftId: step.draftId, update: part.update })));
-    return recordStep(entry, step, { draftId: step.draftId, receipts }, kind, userId, query);
+    const landedDraftId = draft?.draftId ?? step.draftId;
+    entry.updates.push(...parts.map((part) => ({ draftId: landedDraftId, update: part.update })));
+    return recordStep(entry, step, { draftId: landedDraftId, receipts }, kind, userId, query);
   }
 
   /**
@@ -1203,12 +1291,16 @@ type PlannedInverse = {
   stopped: boolean;
   /** Text parts and tree steps committed, by where they landed: a branch (its text draft or its tree facts), or null for live. */
   reversed: Map<BranchId | null, number>;
+  /** A redone drafted create's replacement draft, keyed by branch. */
+  reopened: Map<BranchId, import("../domain/draft-store.js").DraftSnapshot>;
 };
 
 /** A draft a plan's text lands in: the revision and view it was planned on, and its edits. */
 type PlannedDraft = {
   draftId: string;
   revision: number;
+  branchId: BranchId;
+  active: boolean;
   view: Y.Doc;
   edits: ComputedInverseEdit[];
   /** The journal origins per text step, once its one rewrite ran. */

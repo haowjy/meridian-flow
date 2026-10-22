@@ -179,6 +179,54 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(text(listedLive)).not.toContain("lore");
     });
 
+    it("the turn card removes a drafted creation and redo restores its text", async () => {
+      const script = await startWithChapter("Writer live content.");
+      const reply = await script.begin();
+      const created = await reply.call("write", {
+        command: "create",
+        path: "manuscript://new-chapter",
+        content: "The new chapter.",
+      });
+      expect(created.isError, text(created)).toBeFalsy();
+      const documentId = (created.metadata as { documentId?: unknown } | undefined)?.documentId;
+      if (typeof documentId !== "string") throw new Error("Create returned no document identity");
+      await reply.save();
+
+      const receipt = await script.runtime.ports.documentSync.listEditedDocumentsForTurn(
+        THREAD.threadId as never,
+        THREAD.turnId as never,
+      );
+      expect(receipt.map((document) => document.documentId)).toContain(documentId);
+
+      const reverse = (direction: "undo" | "redo") =>
+        script.runtime.ports.documentSync.reverseThreadContext({
+          threadId: THREAD.threadId as never,
+          userId: USER_ID as never,
+          direction,
+          turnId: THREAD.turnId as never,
+        });
+      expect(await reverse("undo")).toMatchObject({ status: "reversed" });
+      const [removed] = await db
+        .select({ deletedAt: schema.documents.deletedAt })
+        .from(schema.documents)
+        .where(eq(schema.documents.id, documentId));
+      expect(removed?.deletedAt).not.toBeNull();
+      expect(
+        (await db.select().from(schema.branchTreeChanges)).filter(
+          (row) => row.nodeId === documentId,
+        ),
+      ).toEqual([]);
+      expect(
+        (await db.select().from(schema.documentDrafts)).filter(
+          (row) => row.documentId === documentId && row.status === "active",
+        ),
+      ).toEqual([]);
+
+      const redone = await reverse("redo");
+      expect(redone).toMatchObject({ status: "reversed" });
+      expect(await script.text("new-chapter")).toContain("The new chapter.");
+    });
+
     // D62: auto-apply writes live, but an explicit `draft` still reads what the Work kept.
     it("reads a kept draft when asked for draft in auto-apply, and live otherwise", async () => {
       const script = await startWithChapter("Writer live content.");
