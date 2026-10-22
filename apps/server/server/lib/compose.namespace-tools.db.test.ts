@@ -2,7 +2,8 @@
  * The model's `move` and `delete` through the production-composed `write` tool (PR 3, D66,
  * D76, D77): each runs at the call and records a tree entry on the document's own stack, so
  * `undo`, `redo` and `revert` walk it with text, a reply's rollback reverses it, and the turn
- * card's Undo brings a deleted document back.
+ * card's Undo brings a deleted document back. In a draft-mode chat they are facts in the
+ * Work's branch and live is untouched (D26).
  */
 
 import type { DocumentId } from "@meridian/contracts";
@@ -25,6 +26,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { deleteDrizzleRows } = await import("../test-support/drizzle-reset.js");
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
     const { readRemovalRecords } = await import("../domains/context/tree/removal.js");
+    const { createTreeReader } = await import("../domains/context/tree/tree-view.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000d01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000d02";
@@ -352,6 +354,130 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(schema.changeTrailDirtyLog)
         .where(eq(schema.changeTrailDirtyLog.threadId, THREAD.threadId));
       expect(dirty.map((row) => row.turnId)).toContain(THREAD.turnId);
+    });
+
+    const branchOf = async (workId: string) => {
+      const [row] = await db
+        .select({ id: schema.branches.id })
+        .from(schema.branches)
+        .where(and(eq(schema.branches.originWorkId, workId), eq(schema.branches.status, "active")));
+      if (!row) throw new Error(`Work ${workId} has no active branch`);
+      return row.id as never;
+    };
+    const branchRow = async (documentId: string) =>
+      (
+        await db
+          .select()
+          .from(schema.branchTreeChanges)
+          .where(eq(schema.branchTreeChanges.nodeId, documentId))
+      )[0];
+
+    it("a draft-mode move and delete change only the Work's branch; undo and redo walk them", async () => {
+      const script = await start();
+      const drafting = runtimes.script(script.runtime, OTHER);
+      await drafting.reply(async (edit) => {
+        await edit("write", { command: "replace", path: "ch2", find: "two", content: "2" });
+      });
+      const { call } = await drafting.begin();
+      const moved = await call("write", {
+        command: "move",
+        from: { path: "ch1" },
+        path: "part1/ch1-old",
+      });
+      expect(moved.isError, text(moved)).toBeFalsy();
+      expect(text(moved)).toContain(
+        "moved from manuscript://ch1 in this chat's draft; applying it moves it in the manuscript",
+      );
+      expect(text(moved)).toContain("version: draft (w2)");
+      // Live is untouched; the branch has it at the new path, in a folder only it sees.
+      expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
+      expect(text(await call("read", { path: "part1/ch1-old" }))).toContain("Chapter one.");
+      expect((await call("read", { path: "ch1" })).isError).toBe(true);
+      expect(await script.text("ch1")).toContain("Chapter one.");
+      expect((await (await script.begin()).call("read", { path: "part1/ch1-old" })).isError).toBe(
+        true,
+      );
+      const tree = createTreeReader(db);
+      const branchId = await branchOf(OTHER_WORK_ID);
+      const [node] = await tree.treeState(branchId, [], [CH1 as DocumentId]);
+      expect(node).toMatchObject({
+        pending: true,
+        branch: { state: "moving", moved: true },
+        target: { path: "part1/ch1-old", uri: "manuscript://part1/ch1-old" },
+        from: { path: "ch1", uri: "manuscript://ch1" },
+      });
+
+      // The drafted delete hides the draft's text change too; its undo loses nothing.
+      const deleted = await call("write", { command: "delete", path: "ch2" });
+      expect(deleted.isError, text(deleted)).toBeFalsy();
+      expect(text(deleted)).toContain(
+        "deleted in this chat's draft; applying it deletes it from the manuscript",
+      );
+      expect((await placement(CH2))?.deletedAt).toBeNull();
+      expect((await call("read", { path: "ch2" })).isError).toBe(true);
+      expect(await branchRow(CH2)).toMatchObject({ deleted: true, moved: false });
+
+      // Undo by the path the model deleted it from brings it back in the branch only.
+      const restored = await call("write", { command: "undo", path: "ch2" });
+      expect(restored.isError, text(restored)).toBeFalsy();
+      expect(text(await call("read", { path: "ch2" }))).toContain("Chapter 2.");
+      expect(await branchRow(CH2)).toBeUndefined();
+      const redone = await call("write", { command: "redo", path: "ch2" });
+      expect(redone.isError, text(redone)).toBeFalsy();
+      expect((await call("read", { path: "ch2" })).isError).toBe(true);
+
+      // Undo by the old path of the move: the document follows live again.
+      const back = await call("write", { command: "undo", path: "ch1" });
+      expect(back.isError, text(back)).toBeFalsy();
+      expect(text(await call("read", { path: "ch1" }))).toContain("Chapter one.");
+      expect(await branchRow(CH1)).toBeUndefined();
+      expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
+      const kinds = (await treeEntries(CH1)).map((row) => row.tree?.destination.kind);
+      expect(kinds).toEqual(["draft", "draft"]);
+    });
+
+    it("a drafted delete of the branch's own creation undoes; a live delete keeps a Work's drafted move", async () => {
+      const script = await start();
+      const drafting = runtimes.script(script.runtime, OTHER);
+      await drafting.reply(async (create) => {
+        await create("write", { command: "create", path: "notes" });
+      });
+      const { call } = await drafting.begin();
+      const deletedNew = await call("write", { command: "delete", path: "notes" });
+      expect(deletedNew.isError, text(deletedNew)).toBeFalsy();
+      expect((await call("read", { path: "notes" })).isError).toBe(true);
+      const undone = await call("write", { command: "undo", path: "notes" });
+      expect(undone.isError, text(undone)).toBeFalsy();
+      expect((await call("read", { path: "notes" })).isError).toBeFalsy();
+
+      expect(
+        (await call("write", { command: "move", from: { path: "ch2" }, path: "ch2-old" })).isError,
+      ).toBeFalsy();
+      // The model in the direct chat deletes ch2 live: w2's move stays, and is a restore now.
+      const live = await (await script.begin()).call("write", { command: "delete", path: "ch2" });
+      expect(live.isError, text(live)).toBeFalsy();
+      expect((await placement(CH2))?.deletedAt).not.toBeNull();
+      expect(await branchRow(CH2)).toMatchObject({ moved: true, movedName: "ch2-old" });
+      const [node] = await createTreeReader(db).treeState(
+        await branchOf(OTHER_WORK_ID),
+        [],
+        [CH2 as DocumentId],
+      );
+      expect(node).toMatchObject({ pending: true, deleted: true, target: { path: "ch2-old" } });
+      expect(text(await call("read", { path: "ch2-old" }))).toContain("Chapter two.");
+
+      // A failed reply's rollback writes the branch's facts back.
+      const failing = await drafting.begin();
+      expect(
+        (await failing.call("write", { command: "move", from: { path: "ch1" }, path: "ch1-x" }))
+          .isError,
+      ).toBeFalsy();
+      await script.runtime.ports.documentSync.finalizeResponseRollback(
+        { providerResponseId: failing.responseId, editScopeId: failing.responseId },
+        OTHER as never,
+      );
+      expect(await branchRow(CH1)).toBeUndefined();
+      expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
     });
 
     it("refuses a draft-mode move between a drafted document and a live one (D45)", async () => {
