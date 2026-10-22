@@ -9,7 +9,12 @@ export function createDocumentAddressResolver(deps: {
   return {
     async resolveById(input) {
       const result = await deps.availability.lookup(
-        { projectId: input.projectId, documentIds: [input.documentId], view: input.view },
+        {
+          projectId: input.projectId,
+          documentIds: [input.documentId],
+          view: input.view,
+          admitDrafts: true,
+        },
         { userId: input.userId },
       );
       const document = result.resolutions[0];
