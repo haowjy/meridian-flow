@@ -320,7 +320,7 @@ it.each([
     await core.read({ ...command, format: "edits" }, liveContext);
     expect(await core.write({ ...command, command: direction }, liveContext)).toMatchObject({
       status: "success",
-      result: { message: expect.stringContaining("version: draft (w1)") },
+      result: { destination: "draft", draftWork: "w1" },
     });
     expect(await view.draftMarkdown(draftId)).toBe(
       direction === "undo" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Gamma.\n\nBlue.\n",

@@ -862,7 +862,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // The live write came after the keep switch; a draft-mode chat follows it to live.
       await expect(undoLast()).resolves.toMatchObject({
         status: "success",
-        result: { message: expect.stringContaining("version: live") },
+        result: { destination: "live" },
       });
       expect(await liveText(collab, KB_ID)).not.toContain("Live lore.");
       expect(await keptDraftText()).toContain("Pending lore.");

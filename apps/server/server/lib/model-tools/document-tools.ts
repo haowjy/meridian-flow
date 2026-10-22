@@ -191,8 +191,15 @@ function buildAgentWriteCommand(
 }
 
 /** Writes report where they landed; a drafted write names its Work. */
-function withDestination(outcome: WriteOutcome, destination: FileDestination): WriteOutcome {
+function withDestination(
+  outcome: WriteOutcome,
+  destination: FileDestination,
+  command: EngineWriteInput["command"],
+): WriteOutcome {
   if (outcome.isError) return outcome;
+  // Inverses can follow an edit away from the chat's current destination. Their owner reports
+  // the version actually changed, or deliberately leaves it unnamed when one command spans views.
+  if (command === "undo" || command === "redo" || command === "revert") return outcome;
   return {
     ...outcome,
     result: {
@@ -263,7 +270,10 @@ async function writeUnderGrant(
   if (written.isError) return { isError: true, output: written.result, evidence };
   // Showing and frontier are host-only: they leave here only as `evidence`.
   const { showing: _showing, frontier: _frontier, ...outcome } = written;
-  return { ...withDestination(outcome, grant.destination), evidence } as WriteOutcome & {
+  return {
+    ...withDestination(outcome, grant.destination, parsed.command),
+    evidence,
+  } as WriteOutcome & {
     isError: false;
     evidence: ResultEvidence;
   };

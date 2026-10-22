@@ -673,7 +673,20 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       const textDraftIds = new Set(
         steps.flatMap((step) => (step.kind === "text" ? [step.draftId] : [])),
       );
+      const destinationDraftIds = new Set(
+        steps.map((step) => {
+          if (step.kind === "text") return step.draftId;
+          const destination = step.planned.destination;
+          if (destination.kind === "live") return null;
+          return (
+            [...document.drafts.entries()].find(
+              ([, candidate]) => candidate.documentDraft.branchId === destination.branchId,
+            )?.[0] ?? calledDraftId
+          );
+        }),
+      );
       const [textDraftId] = textDraftIds;
+      const [destinationDraftId] = destinationDraftIds;
       const textView = textDraftIds.size === 1 ? plannedView(textDraftId ?? null) : undefined;
       const cuts = textView
         ? { before: textView.before, after: Y.encodeStateAsUpdate(textView.scratch) }
@@ -702,6 +715,14 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             : null,
         ...cuts,
         updates: committed.updates,
+        ...(destinationDraftIds.size === 1
+          ? destinationDraftId
+            ? {
+                destination: "draft" as const,
+                draftWork: document.drafts.get(destinationDraftId)?.name ?? "/",
+              }
+            : { destination: "live" as const }
+          : {}),
         ...(command.command === "revert" ? { writeId: committed.handles[0] } : {}),
         message: [
           command.command === "revert" && !reversesTree
@@ -710,9 +731,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           ...partial.map(
             (reason) => `not ${command.command === "undo" ? "undone" : "redone"}: ${reason}`,
           ),
-          ...([...textDraftIds].some((draftId) => draftId !== calledDraftId)
+          ...(destinationDraftIds.size > 1
             ? [
-                `${textDraftIds.size === 1 ? "version" : "versions"}: ${[...textDraftIds]
+                `versions: ${[...destinationDraftIds]
                   .map((draftId) => policy.version(draftId))
                   .join(", ")}`,
               ]
