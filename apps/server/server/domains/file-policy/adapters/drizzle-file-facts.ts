@@ -14,13 +14,7 @@ import type {
   WorkId,
 } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  contextSources,
-  documents as documentTable,
-  projects,
-  threads,
-  works,
-} from "@meridian/database/schema";
+import { contextSources, projects, threads, works } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
@@ -31,10 +25,10 @@ import {
 import { createBranches } from "../../collab/domain/branches.js";
 import { lineageHasLiveMember } from "../../context/index.js";
 import { branchMayHold, type SourceOwner } from "../../context/tree/branch-ownership.js";
-import { readBranchTreeFacts } from "../../context/tree/branch-tree-store.js";
 import { survivingDraftDocuments } from "../../context/tree/living-document.js";
 import { loadFolderChains } from "../../context/tree/tree-addresses.js";
 import {
+  branchDeletedDocuments,
   createTreeReader,
   identityDocuments,
   type TreeView,
@@ -165,7 +159,7 @@ function ownerOf(facts: BaseFacts): SourceOwner {
 function documentRows(
   db: Database,
   view: TreeView,
-  documents: ReturnType<typeof identityDocuments> | typeof documentTable = identityDocuments(view),
+  documents: ReturnType<typeof identityDocuments> = identityDocuments(view),
 ) {
   return currentDrizzleDb(db)
     .select({
@@ -253,13 +247,8 @@ async function loadBranchDeleted(
   view: TreeView,
 ): Promise<BaseFacts | null> {
   if (view.kind !== "branch" || !isUuid(documentId)) return null;
-  const facts = (await readBranchTreeFacts(currentDrizzleDb(db), [view.branchId], [documentId]))
-    .get(view.branchId)
-    ?.get(documentId);
-  if (!facts?.deleted) return null;
-  const [row] = await documentRows(db, view, documentTable)
-    .where(and(eq(documentTable.id, documentId), isNull(documentTable.deletedAt)))
-    .limit(1);
+  const deleted = branchDeletedDocuments(view);
+  const [row] = await documentRows(db, view, deleted).where(eq(deleted.id, documentId)).limit(1);
   if (!row || !isContextUriScheme(row.scheme)) return null;
   const chain = row.folderId
     ? ((await loadFolderChains(currentDrizzleDb(db), [row.folderId])).get(row.folderId) ?? [])

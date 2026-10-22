@@ -53,6 +53,7 @@ import {
 
 export type { DocumentCoordinates, NodeAddress } from "./tree-addresses.js";
 export {
+  branchDeletedDocuments,
   identityDocumentFields,
   identityDocuments,
   identityFolderFields,
