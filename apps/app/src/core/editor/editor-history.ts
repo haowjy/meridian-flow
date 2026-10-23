@@ -162,7 +162,7 @@ class MountedEditorHistory implements EditorHistoryHandle {
     stackItem.meta.set(HISTORY_META, entry);
     this.undo.push(entry);
     this.clearRedo();
-    this.changed();
+    // The editor transaction that created this Yjs item already refreshes toolbar state.
   };
 
   private readonly managerCleared = ({
@@ -177,7 +177,7 @@ class MountedEditorHistory implements EditorHistoryHandle {
       this.undo.splice(0, this.undo.length, ...this.undo.filter((entry) => entry.kind === "apply"));
     if (redoStackCleared)
       this.redo.splice(0, this.redo.length, ...this.redo.filter((entry) => entry.kind === "apply"));
-    this.changed();
+    queueMicrotask(() => this.changed());
   };
 
   private clearRedo(): void {
