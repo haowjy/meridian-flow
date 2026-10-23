@@ -80,7 +80,8 @@ barrier that drains that open.
 confirmed by a verified exact local copy or the first server sync, and local
 storage has replayed, is absent, or has detached at its one-second deadline.
 No timeout substitutes for confirmed content. A detached IndexedDB provider is
-fenced synchronously; its physical close cannot block a new room incarnation.
+fenced synchronously; a database-keyed close owner retains its physical close
+without quarantining the room or blocking a new room incarnation.
 The room socket starts with the session, while its Yjs provider attaches only
 after local storage settles, so SyncStep2 includes every byte that can replay.
 
