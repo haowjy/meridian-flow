@@ -5,12 +5,22 @@
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import { type EventSink, emitEvent } from "../../observability/index.js";
 
 export const MAX_UNJOURNALED_BYTES = 256 * 1024;
 export const MAX_BATCH_EVENTS = 256;
 
 type DeltaEvent = Extract<OrchestratorEvent, { type: "stream.delta" | "tool.output_delta" }>;
+
+type DeltaAdmission =
+  | { status: "accepted" }
+  | { status: "sealed" }
+  | { status: "full" }
+  | { status: "failed"; cause: unknown };
+
+const ACCEPTED = { status: "accepted" } as const;
+const SEALED = { status: "sealed" } as const;
+const FULL = { status: "full" } as const;
 
 export type DeltaJournal = ReturnType<typeof createDeltaJournal>;
 
@@ -170,13 +180,15 @@ export function createDeltaJournal(deps: DeltaJournalDeps) {
     admit(event);
   }
 
-  function tryPush(event: DeltaEvent): boolean {
-    if (failure !== undefined || sealed || !hasCapacity(event)) {
-      if (failure === undefined && !sealed) fullSince ??= performance.now();
-      return false;
+  function tryPush(event: DeltaEvent): DeltaAdmission {
+    if (failure !== undefined) return { status: "failed", cause: failure.cause };
+    if (sealed) return SEALED;
+    if (!hasCapacity(event)) {
+      fullSince ??= performance.now();
+      return FULL;
     }
     admit(event);
-    return true;
+    return ACCEPTED;
   }
 
   function seal(): void {
@@ -227,7 +239,5 @@ export function createDeltaJournal(deps: DeltaJournalDeps) {
     tryPush,
     seal,
     flush,
-    failurePayload: () =>
-      failure === undefined ? undefined : unknownToEventPayload(failure.cause),
   };
 }
