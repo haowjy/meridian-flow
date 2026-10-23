@@ -107,6 +107,11 @@ and then offers Redo; Redo reapplies N. For a mixed count, leave one newer edit 
 applied edit and run `undo` with `count: 2`; the result names the newer handle as `undone` and the
 older as `reverted`.
 
+In direct mode, edit a live file, then delete that file in the same chat. Run `undo` at the
+deleted path with `count: 2`. The command restores the file, reverses the earlier text edit in
+that restored file, and succeeds as one atomic command. Repeat with two count-1 Undos and confirm
+the final text is identical.
+
 To check destination routing, make one live edit, switch the chat to draft
 mode, and run Undo. The manuscript changes, the Work draft does not, and the
 result ends with `version: live`. Then make one draft edit, switch the chat to
