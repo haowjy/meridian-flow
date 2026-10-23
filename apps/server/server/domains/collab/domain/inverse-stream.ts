@@ -29,7 +29,7 @@ export type InverseStep = { actionId: string; at: number } & (
 /** Who a simulated row says made it, as the committed row will. */
 export type SimulatedRowIdentity = Pick<
   StoredTreeEntry,
-  "threadId" | "turnId" | "responseId" | "editScopeId" | "actor"
+  "threadId" | "turnId" | "responseId" | "editScopeId" | "toolCallId" | "actor"
 >;
 
 /**

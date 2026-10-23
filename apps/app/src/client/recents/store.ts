@@ -55,7 +55,7 @@ export type RecentIdentityUpdate = {
   path: string;
 };
 
-type Removal = { documentId: string; projectId: string };
+type Removal = { documentId: string; projectId: string; item?: AccountRecentItem };
 
 type PersistedRecents = {
   schemaVersion: typeof SCHEMA_VERSION;
@@ -171,9 +171,16 @@ function parsePersisted(raw: string | null): PersistedRecents | null {
     ? parsed.removed.flatMap((entry) => {
         if (!entry || typeof entry !== "object") return [];
         const removal = entry as Partial<Removal>;
-        return typeof removal.documentId === "string" && typeof removal.projectId === "string"
-          ? [{ documentId: removal.documentId, projectId: removal.projectId }]
-          : [];
+        if (typeof removal.documentId !== "string" || typeof removal.projectId !== "string")
+          return [];
+        const item = parseItem(removal.item);
+        return [
+          {
+            documentId: removal.documentId,
+            projectId: removal.projectId,
+            ...(item ? { item } : {}),
+          },
+        ];
       })
     : [];
   return {
@@ -325,7 +332,7 @@ export class DeviceAccountRecentsStore {
     const kept: AccountRecentItem[] = [];
     for (const item of state.items) {
       if (removedIds.has(item.documentId)) {
-        dropped.push({ documentId: item.documentId, projectId: item.projectId });
+        dropped.push({ documentId: item.documentId, projectId: item.projectId, item });
         changed = true;
         continue;
       }
@@ -337,7 +344,7 @@ export class DeviceAccountRecentsStore {
       const address = documentAddress(update.scheme, update.path);
       if (!address) {
         changed = true;
-        dropped.push({ documentId: item.documentId, projectId: item.projectId });
+        dropped.push({ documentId: item.documentId, projectId: item.projectId, item });
         continue;
       }
       if (item.name === update.name && sameAddress(item.address, address)) {
@@ -346,6 +353,15 @@ export class DeviceAccountRecentsStore {
       }
       changed = true;
       kept.push({ ...item, name: update.name, address });
+    }
+    for (const removal of [...state.removed]) {
+      const update = updates.get(removal.documentId);
+      if (!removal.item || !update || removal.projectId !== removal.item.projectId) continue;
+      const address = documentAddress(update.scheme, update.path);
+      if (!address) continue;
+      kept.push({ ...removal.item, name: update.name, address });
+      state.removed = state.removed.filter((entry) => entry !== removal);
+      changed = true;
     }
     if (!changed) return false;
     if (dropped.length > 0) state.removed = rememberRemovals(state.removed, dropped);

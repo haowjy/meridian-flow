@@ -95,8 +95,8 @@ import {
 type Dependencies = {
   db: Database;
   journal: UpdateJournal;
-  drafts: DraftStore & Pick<ApplicationDraftStore, "ensureCreatedDocumentDraft">;
-  initializeEmptyDocument(documentId: DocumentId): Promise<void>;
+  drafts: DraftStore &
+    Pick<ApplicationDraftStore, "restoreCreatedDocumentDraft" | "retireCreatedDocumentDraft">;
   coordinator: LiveDocumentCoordinator;
   draftCoordinator: Pick<DraftCoordinator, "deliverCommitted">;
   onDraftCommitted(draftId: string): void;
@@ -154,6 +154,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       turnId: edit.turnId,
       responseId: edit.responseId,
       editScopeId: edit.editScopeId,
+      toolCallId: edit.toolCallId,
       consumes: edit.consumes,
       actor: edit.actor,
       wId: edit.wId,
@@ -186,6 +187,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 turnId: edit.turnId,
                 responseId: edit.responseId,
                 editScopeId: edit.editScopeId,
+                toolCallId: edit.toolCallId,
                 actor: edit.actor,
                 wId: edit.wId,
                 kind: edit.kind,
@@ -621,7 +623,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 landing: {
                   documentId: entry.documentId,
                   handle: planned.entry.wId === null ? "" : editHandle(planned.entry.wId),
-                  action: planned.op === "restore" ? ("restored" as const) : ("moved" as const),
+                  action:
+                    planned.op === "restore" || planned.entry.tree.op === "create"
+                      ? ("restored" as const)
+                      : ("moved" as const),
                   requestedAt,
                   landedAt,
                 },
@@ -690,6 +695,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             turnId: query.turnId,
             responseId: query.responseIdentity?.providerResponseId,
             editScopeId: query.responseIdentity?.editScopeId,
+            toolCallId: query.toolCallId,
           }
         : { actor: kind === "rollback" ? ("system" as const) : ("human" as const) }),
       wId,

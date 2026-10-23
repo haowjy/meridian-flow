@@ -80,6 +80,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
         ...reversed.documents,
         ...(await Promise.all(
           [...new Set(denied)].map(async (documentId) => ({
+            documentId,
             uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
             status: "permission_denied" as const,
           })),
@@ -123,7 +124,12 @@ async function writerGrants(
       "edit",
     );
     if (isFileAccessDenied(grant) && grant.reason === "not_found")
-      grant = await fileAccess.authorize(principal, { kind: "restore", documentId }, "edit");
+      grant = await fileAccess.authorizeAt(
+        principal,
+        { kind: "restore", documentId },
+        turnEditDestination(target),
+        "edit",
+      );
     if (!isFileAccessDenied(grant)) {
       grants.push(grant as FileGrant<"edit">);
       authorized.push(target);

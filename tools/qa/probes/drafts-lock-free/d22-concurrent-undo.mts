@@ -83,7 +83,6 @@ function inverseService(harness: Harness, handle: string) {
     db: harness.db,
     journal: harness.persistence.journal,
     drafts: harness.store,
-    initializeEmptyDocument: harness.initializeEmptyDocument,
     coordinator: {
       withDocument: async <T,>(id: string, run: (doc: Y.Doc) => Promise<T>) => {
         const doc = await harness.liveDoc(id);

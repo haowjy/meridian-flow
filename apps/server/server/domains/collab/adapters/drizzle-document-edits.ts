@@ -25,6 +25,7 @@ export interface ReceiptWrite {
   turnId?: TurnId | null;
   responseId?: string | null;
   editScopeId?: string | null;
+  toolCallId?: string | null;
   actor: "agent" | "human" | "system";
   /** Reserved once by the logical model edit; never allocated at capture. */
   wId?: number;
@@ -52,6 +53,7 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       turnId: input.turnId,
       responseId: input.responseId,
       editScopeId: input.editScopeId,
+      toolCallId: input.toolCallId,
       actor: input.actor,
       actorUserId: input.actorUserId,
       kind: input.kind ?? "write",

@@ -5,6 +5,7 @@ PR bodies via `pnpm changelog`; PRs no longer edit this file.
 
 ## [Unreleased]
 
+- Undoing an AI-created document now removes it without discarding its history, later writer text, or another Work's draft; Redo restores the same document at a free name and reapplies only the text Undo removed. A partial model Undo consumes one requested edit while preserving its exact Redo parts. Create and later write calls in one reply stay separate edits. Recent documents disappear on Undo and return in their original recency on Redo, whose collision notice says “Restored as ‹name›”.
 - Apply all queues every frozen document in the account command owner before sending them in server order. A blocked dependency stays in Changes to review, reports its obstructed destination when applied, and no longer stops the selected move from landing at a free name. Apply reports the committed paths of other moves it settled. Duplicate uploads show their allocated names in the composer and sent message. Model Undo opens a moved document at the path where it landed.
 - Start cursorless chat subscriptions at the head; reconcile trails and Work binding without replaying history.
 - Reject thread socket request IDs longer than 64 characters.

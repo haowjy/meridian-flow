@@ -1,6 +1,7 @@
 /** Renders durable document and Work change receipts. */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   TreeReversalLanding,
   Turn,
@@ -8,6 +9,7 @@ import type {
   TurnReceiptChip,
   TurnTreeLine,
 } from "@meridian/contracts/protocol";
+import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isReversibleWorkReceipt } from "@meridian/contracts/works";
 import type { WorkReceipt } from "@meridian/thread-client";
 import { ChevronDown } from "lucide-react";
@@ -15,8 +17,11 @@ import { useEffect, useId, useState } from "react";
 import { type ReversalDirection, successfulWorkReversals } from "@/client/api/reverse-api";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
+import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
 import { DraftStatsLabel } from "@/features/draft-review/draft-stats";
+import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
+import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { cn } from "@/lib/utils";
 import { ChangeViewRows } from "./ChangeViewRows";
 import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
@@ -106,6 +111,8 @@ export function TurnEditsReceipt({
   const [commandRefusal, setCommandRefusal] = useState<ReversalRefusal | null>(null);
   const [outcomeNotices, setOutcomeNotices] = useState<string[] | null>(null);
   const turnMutation = useReverseTurnMutation(threadId);
+  const accountId = useOptionalAccountId();
+  const projectId = useProjectDocumentNavigationProjectId();
 
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
   // A part the refusal line already names (a blocked or missing folder, or a document gone
@@ -179,6 +186,44 @@ export function TurnEditsReceipt({
     setPending(true);
     try {
       const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
+      if (accountId && projectId) {
+        const liveCreates = documents.filter(
+          (document) =>
+            document.scope === "live" &&
+            outcome.documents.some(
+              (result) =>
+                result.documentId === document.documentId &&
+                result.created &&
+                result.status === "reversed" &&
+                result.destination?.kind === "live",
+            ),
+        );
+        if (direction === "undo") {
+          applyRecentAvailability(accountId, {
+            removed: liveCreates.map(({ documentId }) => ({ documentId, projectId })),
+            updates: [],
+          });
+        } else {
+          for (const document of liveCreates) {
+            const uri =
+              outcome.landings?.find((landing) => landing.documentId === document.documentId)
+                ?.landedAt ?? document.uri;
+            const parsed = parseContextUri(uri);
+            if (!parsed.ok || !isProjectContextTreeScheme(parsed.value.scheme)) continue;
+            applyRecentAvailability(accountId, {
+              removed: [],
+              updates: [
+                {
+                  documentId: document.documentId,
+                  name: documentDisplayName(uri),
+                  scheme: parsed.value.scheme,
+                  path: `/${parsed.value.path}`,
+                },
+              ],
+            });
+          }
+        }
+      }
       setActionSkips({ direction, skips: outcome.skips ?? [] });
       const undoneInDraft =
         direction === "undo" &&

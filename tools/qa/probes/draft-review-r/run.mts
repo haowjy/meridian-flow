@@ -394,7 +394,6 @@ try {
       db: h.db,
       journal: h.persistence.journal,
       drafts: h.store,
-      initializeEmptyDocument: h.initializeEmptyDocument,
       coordinator: liveCoordinator,
       draftCoordinator: coordinator,
       onDraftCommitted: (id) => effect.markDirty(id),

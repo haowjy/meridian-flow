@@ -32,6 +32,7 @@ export function createModelDocumentEdits(input: {
       path: request.command.file,
       turnId: request.context.turnId as TurnId | undefined,
       responseIdentity: request.context.responseIdentity,
+      toolCallId: request.context.tool_use_id,
     };
   }
   return {

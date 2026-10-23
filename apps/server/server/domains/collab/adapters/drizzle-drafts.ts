@@ -165,10 +165,14 @@ export function createDrizzleDraftStore(
     documentId: DocumentId;
     branchId: BranchId;
     liveDoc: Y.Doc;
+    /** Redo clones a closed predecessor whose Yjs identities its inverse still targets. */
+    preserveIdentity?: boolean;
   }): Promise<DraftSnapshot> {
     const current = await activeDocumentDraft(input.documentId, input.branchId);
     if (current) return current;
-    const seed = seedDraftState(input.liveDoc);
+    const seed = input.preserveIdentity
+      ? snapshotFromDoc(input.liveDoc)
+      : seedDraftState(input.liveDoc);
     // Creating a draft is a write the Work's lifecycle orders (decision D12): the branch's
     // Work is locked first, so an Archive either fences the new draft or committed before it.
     // Both fragments start equal at revision 0; live shares content, never Yjs items.
@@ -260,6 +264,43 @@ export function createDrizzleDraftStore(
       return await ensureDocumentDraft({ ...input, liveDoc });
     } finally {
       liveDoc.destroy();
+    }
+  }
+
+  async function retireCreatedDocumentDraft(input: {
+    documentId: DocumentId;
+    branchId: BranchId;
+  }): Promise<void> {
+    await deps.close.closeDrafts(
+      currentDrizzleDb(db),
+      { documentIds: [input.documentId], branchId: input.branchId },
+      "document_discarded",
+    );
+  }
+
+  async function restoreCreatedDocumentDraft(input: {
+    documentId: DocumentId;
+    branchId: BranchId;
+  }): Promise<DraftSnapshot> {
+    const [retained] = await selectDraft(currentDrizzleDb(db))
+      .where(
+        and(
+          eq(documentDrafts.documentId, input.documentId),
+          eq(documentDrafts.branchId, input.branchId),
+          eq(documentDrafts.kind, "work_draft"),
+          eq(documentDrafts.status, "closed"),
+        ),
+      )
+      .orderBy(desc(documentDrafts.updatedAt), desc(documentDrafts.id))
+      .limit(1);
+    if (!retained) return ensureCreatedDocumentDraft(input);
+    const read = await readDraftAt(currentDrizzleDb(db), retained.draftId);
+    if (!read) throw new Error(`Retained draft ${retained.draftId} vanished`);
+    const doc = materializeDraftRead(read, createCollabYDoc({ gc: false }));
+    try {
+      return await ensureDocumentDraft({ ...input, liveDoc: doc, preserveIdentity: true });
+    } finally {
+      doc.destroy();
     }
   }
 
@@ -681,6 +722,8 @@ export function createDrizzleDraftStore(
     },
 
     ensureCreatedDocumentDraft,
+    retireCreatedDocumentDraft,
+    restoreCreatedDocumentDraft,
     retractCreatedDocumentDraft,
 
     ensureThreadPeerDraft(input) {
@@ -739,6 +782,7 @@ async function recordAppendReceipts(
           ? (meta.authoringResponseId as import("@meridian/contracts").ModelResponseId)
           : undefined,
       editScopeId: typeof meta.editScopeId === "string" ? meta.editScopeId : undefined,
+      toolCallId: journal.toolCallId,
       actor: journal.source === "writer" ? "human" : journal.threadId ? "agent" : "system",
       actorUserId: journal.actorUserId as import("@meridian/contracts").UserId | null | undefined,
       receipts: group.parts.map((part, i) => ({

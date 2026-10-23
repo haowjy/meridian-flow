@@ -22,6 +22,16 @@ export type ApplicationDraftStore = DraftStore &
       documentId: DocumentId;
       branchId: BranchId;
     }): Promise<DraftSnapshot>;
+    /** End one branch's reversible create while retaining the draft bytes for Redo. */
+    retireCreatedDocumentDraft(input: {
+      documentId: DocumentId;
+      branchId: BranchId;
+    }): Promise<void>;
+    /** Restore a reversible create into a fresh active draft seeded from its retained draft. */
+    restoreCreatedDocumentDraft(input: {
+      documentId: DocumentId;
+      branchId: BranchId;
+    }): Promise<DraftSnapshot>;
     /**
      * Close the branch's draft on a document it created and that draft's thread peers,
      * unless any of them holds a journal row that isn't discarded (a contribution).

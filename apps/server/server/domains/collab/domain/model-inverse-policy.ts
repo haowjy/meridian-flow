@@ -91,7 +91,9 @@ function entries(document: InverseDocument, threadId: string): Entry[] {
       Number(entry.handle.slice(1)) !== Number(create.handle.slice(1)) + 1 ||
       entry.parts[0]?.turnId !== create.tree.turnId ||
       entry.parts[0]?.responseId !== create.tree.responseId ||
-      entry.parts[0]?.editScopeId !== create.tree.editScopeId
+      entry.parts[0]?.editScopeId !== create.tree.editScopeId ||
+      !entry.parts[0]?.toolCallId ||
+      entry.parts[0].toolCallId !== create.tree.toolCallId
     )
       continue;
     entry.tree = create.tree;
@@ -109,12 +111,21 @@ function inspectionActions(
     new Set(own.flatMap(entryKeys)),
   );
   const rolledBack = (part: StoredInversePart) => actions.rolledBack.has(key(part));
+  const modelConsumed = new Set(
+    actions.actions.flatMap((action) =>
+      action.parts.every((part) => part.actor === "agent") ? [...action.targets] : [],
+    ),
+  );
   return {
     actions,
     rolledBack,
-    top: own.find(
-      (entry) => !entryKeys(entry).every((k) => actions.byPart.has(k) || actions.rolledBack.has(k)),
-    ),
+    top: own.find((entry) => {
+      const keys = entryKeys(entry);
+      return (
+        !keys.some((key) => modelConsumed.has(key)) &&
+        !keys.every((key) => actions.byPart.has(key) || actions.rolledBack.has(key))
+      );
+    }),
     candidate: actions.actions.find(
       (action) =>
         !own.some((entry) =>
@@ -364,6 +375,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           turnId: query.turnId ?? null,
           responseId: query.responseIdentity?.providerResponseId ?? null,
           editScopeId: query.responseIdentity?.editScopeId ?? null,
+          toolCallId: query.toolCallId ?? null,
           actor: "agent",
         },
       }),
@@ -460,6 +472,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               turnId: query.turnId ?? null,
               responseId: query.responseIdentity?.providerResponseId ?? null,
               editScopeId: query.responseIdentity?.editScopeId ?? null,
+              toolCallId: query.toolCallId ?? null,
               actor: "agent",
               wId: null,
               origin: draftId
@@ -475,6 +488,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         }
         // Neither lineage visibility nor action state survives a scratch advance.
         invalidateInspections();
+        return result.edits.length > 0;
       };
       const applyTree = (
         planned: PlannedTreeInverse,
@@ -530,7 +544,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               status: "nothing_to_revert",
               message: `reverted: ${entry.handle} (0 of ${skipped.length} parts)\nnot reverted: ${skipped.join("\nnot reverted: ")}\nRead ${document.uri} for current text.`,
             };
-          apply(entry, selection.selection, "revert", []);
+          if (!apply(entry, selection.selection, "revert", []))
+            return {
+              status: "nothing_to_revert",
+              message: `Nothing is left to reverse in ${document.uri}. Read it and make a new replace.`,
+            };
         }
       } else
         for (let n = 0; n < (command.count ?? 1); n++) {
@@ -564,7 +582,14 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                   else return refused;
                 }
                 const groupedActionId = stepAction("undo");
-                if (selection.length) apply(entry, selection, "undo", [], draftId, groupedActionId);
+                if (
+                  selection.length &&
+                  !apply(entry, selection, "undo", [], draftId, groupedActionId)
+                )
+                  return {
+                    status: "cant_undo_changed",
+                    message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Read ${document.uri} for current text.`,
+                  };
                 const planned = treePlan({ ...entry, tree: entry.tree }, "undo");
                 if ("status" in planned) return planned;
                 handles.push(entry.handle);
@@ -607,7 +632,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Read ${document.uri} for current text.`,
               };
             handles.push(entry.handle);
-            apply(entry, selection, "undo", [], draftId);
+            if (!apply(entry, selection, "undo", [], draftId))
+              return {
+                status: "cant_undo_changed",
+                message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Read ${document.uri} for current text.`,
+              };
           } else {
             const action = currentInspection().candidate;
             if (!action && n > 0)
@@ -705,7 +734,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                   status: "cant_redo_changed",
                   message: `Can't redo ${entry.handle}: none of that edit remains unchanged. Read ${document.uri} for current text.`,
                 };
-              apply(entry, selection, "redo", [action.id], draftId);
+              if (!apply(entry, selection, "redo", [action.id], draftId))
+                return {
+                  status: "cant_redo_changed",
+                  message: `Can't redo ${entry.handle}: none of that edit remains unchanged. Read ${document.uri} for current text.`,
+                };
             }
             handles.push(...[...new Set(targets.map((target) => target.handle))]);
             consumes.push(action.id);

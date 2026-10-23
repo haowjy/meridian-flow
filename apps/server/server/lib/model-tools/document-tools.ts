@@ -460,6 +460,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
                         ? { turnId: ctx.turnId as import("@meridian/contracts").TurnId }
                         : {}),
                       ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+                      ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
                       op: "create",
                       change,
                       shownAt: parsed.path,

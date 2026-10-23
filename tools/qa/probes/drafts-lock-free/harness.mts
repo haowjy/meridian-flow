@@ -171,16 +171,6 @@ export async function openHarness(
       return { documentId, live };
     },
 
-    async initializeEmptyDocument(documentId: DocumentId) {
-      const doc = new Y.Doc({ gc: false });
-      try {
-        if (!(await persistence.seeds.seedInitialDocument(documentId, Y.encodeStateAsUpdate(doc))))
-          throw new Error(`Document ${documentId} already has live authority`);
-      } finally {
-        doc.destroy();
-      }
-    },
-
     async workArchived(workId: string): Promise<boolean> {
       const [row] =
         await raw`select archived_at is not null as archived from works where id=${workId}`;

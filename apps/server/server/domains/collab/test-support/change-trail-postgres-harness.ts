@@ -495,7 +495,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     db,
     journal: persistence.journal,
     drafts: draftStore,
-    initializeEmptyDocument: runtime.markdownDocuments.initializeEmptyDocument,
     coordinator: liveCoordinator,
     draftCoordinator,
     resolveDocumentUri,

@@ -95,8 +95,11 @@ A draft-created document is a real row with empty live content; its text lives
 in its draft until Apply. Live create may reveal a hidden candidate instead
 of inserting a twin. `document_forwards` preserves a client-minted ID when a
 create joins an existing draft document. Placement reveals targets and
-ancestors; end-of-use tombstones an unused row, releases its content storage,
-and prunes empty hidden ancestors. Closed draft identity rows remain.
+ancestors; terminal end-of-use tombstones an unused row, releases its content
+storage, and prunes empty hidden ancestors. A create Undo is reversible end of
+use: it tombstones only after the last branch use ends and retains content
+storage and the closed draft that Redo clones. Closed draft identity rows
+remain.
 
 `acquireTreeScope` (`mutation-scope.ts`) is the one verified acquisition for a
 tree mutation whose namespaces are discovered, not known: end of use, Discard,
