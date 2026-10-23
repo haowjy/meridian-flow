@@ -15,10 +15,7 @@ import { type Browser, chromium } from "@playwright/test";
 import tailwind from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { build } from "vite";
-import {
-  linguiMacroBabelPlugin,
-  markdownWorkerCharacterReferencePlugin,
-} from "../dev/vite-plugins";
+import { linguiMacroBabelPlugin } from "../dev/vite-plugins";
 import type { runMarkdownBench } from "./markdown";
 
 declare global {
@@ -38,9 +35,6 @@ try {
     logLevel: "error",
     resolve: { alias: { "@": path.join(app, "src") } },
     plugins: [linguiMacroBabelPlugin(), react(), tailwind()],
-    worker: {
-      plugins: () => [markdownWorkerCharacterReferencePlugin(path.resolve(app, "../.."))],
-    },
     build: {
       outDir: out,
       emptyOutDir: false,

@@ -10,11 +10,7 @@ import { defineConfig, loadEnv } from "vite";
 
 import { apiHttpDevProxyPlugin } from "./dev/api-http-dev-proxy-plugin";
 import { createPortlessHttpsAgent, resolvePortlessServerOrigin } from "./dev/portless-dev-helpers";
-import {
-  linguiMacroBabelPlugin,
-  markdownWorkerCharacterReferencePlugin,
-  markdownWorkerDevCharacterReferencePlugin,
-} from "./dev/vite-plugins";
+import { linguiMacroBabelPlugin } from "./dev/vite-plugins";
 import { readOptionalEnvString } from "./src/core/env";
 import {
   resolveApiDevOriginFallback,
@@ -78,12 +74,8 @@ export default defineConfig(({ mode }) => {
       },
       tsconfigPaths: true,
     },
-    worker: {
-      plugins: () => [markdownWorkerCharacterReferencePlugin(repoRoot)],
-    },
     plugins: [
       apiHttpDevProxyPlugin(apiDevOrigin, portlessHttpsAgent),
-      markdownWorkerDevCharacterReferencePlugin(repoRoot),
       linguiMacroBabelPlugin(),
       tailwindcss(),
       tanstackStart({

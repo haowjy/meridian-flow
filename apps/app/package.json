@@ -73,7 +73,6 @@
     "lowlight": "3.3.0",
     "lucide-react": "^1.21.0",
     "mermaid": "11.16.0",
-    "micromark-util-decode-string": "^2.0.1",
     "motion": "^12.42.0",
     "nitro": "catalog:",
     "radix-ui": "^1.6.0",
