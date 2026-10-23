@@ -80,6 +80,7 @@ export function createDeltaJournal(deps: DeltaJournalDeps) {
   let peakUnjournaledBytes = 0;
   let fullSince: number | null = null;
   let timeSpentFullMs = 0;
+  let flushToCommittedMs = 0;
   let summaryEmitted = false;
   const capacityWaiters = new Set<() => void>();
   const drainWaiters = new Set<() => void>();
@@ -184,30 +185,40 @@ export function createDeltaJournal(deps: DeltaJournalDeps) {
     notify(capacityWaiters);
   }
 
+  function emitSummary(startedAt: number): void {
+    flushToCommittedMs = Math.max(flushToCommittedMs, performance.now() - startedAt);
+    if (!sealed || summaryEmitted) return;
+    summaryEmitted = true;
+    emitEvent(deps.eventSink, {
+      level: "info",
+      source: "runtime.delta-journal",
+      name: "delta_journal.summary",
+      correlation: { threadId: deps.threadId },
+      payload: {
+        scope: deps.scope,
+        writes,
+        rows,
+        mergedDeltas,
+        peakUnjournaledBytes,
+        timeSpentFullMs,
+        flushToCommittedMs,
+        failed: failure !== undefined,
+      },
+    });
+  }
+
   async function flush(): Promise<void> {
     const startedAt = performance.now();
     while (writing || pending.length > 0) {
-      if (failure !== undefined) throw failure;
+      if (failure !== undefined) {
+        emitSummary(startedAt);
+        throw failure;
+      }
       await waitFor(drainWaiters);
     }
-    if (failure !== undefined) throw failure;
-    if (sealed && !summaryEmitted) {
-      summaryEmitted = true;
-      emitEvent(deps.eventSink, {
-        level: "info",
-        source: "runtime.delta-journal",
-        name: "delta_journal.summary",
-        correlation: { threadId: deps.threadId },
-        payload: {
-          scope: deps.scope,
-          writes,
-          rows,
-          mergedDeltas,
-          peakUnjournaledBytes,
-          timeSpentFullMs,
-          flushToCommittedMs: performance.now() - startedAt,
-        },
-      });
+    emitSummary(startedAt);
+    if (failure !== undefined) {
+      throw failure;
     }
   }
 
