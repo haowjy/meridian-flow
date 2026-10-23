@@ -172,7 +172,7 @@ const MUTATION_BRANCHES = {
   },
   undo: {
     description:
-      "Undo count edits (default 1) to this document, newest first. The requested count is all or nothing, but each selected edit reverses every content part that still applies. Creation, move, and delete are edits too; name a moved or deleted document by its old path. Each edit can be redone separately. Applied or discarded parts stay unchanged.",
+      "Undo count edits (default 1) to this document, newest first. The requested count is all or nothing, but each selected edit reverses every content part that still applies. Creation, move, and delete are edits too; name a moved or deleted document by its old path. Each edit can be redone separately. Applied text is reverted; applied tree changes and discarded parts stay unchanged.",
     fields: { count: INVERSE_COUNT },
   },
   revert: {
