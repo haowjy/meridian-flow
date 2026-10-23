@@ -1,6 +1,5 @@
 /** Static and streaming Markdown: the canonical codec's document nodes rendered without an editor. */
-import { markdownCodec, type PresentationSourceRun } from "@meridian/markup";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import type { PresentationSourceRun } from "@meridian/markup";
 import type { Mark as PMMark, Node as PMNode } from "@tiptap/pm/model";
 import {
   createElement,
@@ -15,13 +14,12 @@ import {
 import { browserPictureSource } from "@/core/editor/images";
 import { classifyLinkTarget } from "@/core/editor/links";
 import { DocumentCodeBlock } from "./DocumentCodeBlock";
-import { createDocumentCache } from "./document-cache";
+import { nodeAtPath } from "./markdown-parse-session";
 import {
-  configureMarkdownStreaming,
   releaseStreamingMarkdown,
   requestStreamingMarkdown,
   type StreamingMarkdownSnapshot,
-  settledStreamingMarkdown,
+  settledMarkdownDocument,
   streamingMarkdownSnapshot,
   subscribeStreamingMarkdown,
 } from "./markdown-stream-service";
@@ -35,12 +33,6 @@ import {
 import { SkillToken } from "./SkillToken";
 import { TranscriptReference } from "./TranscriptReference";
 
-const schema = buildDocumentSchema();
-const codec = markdownCodec({ schema });
-configureMarkdownStreaming(schema, (source) => codec.parseStreaming(source, { repair: true }));
-const settledSnapshots = createDocumentCache<StreamingMarkdownSnapshot>();
-const sourceMappedDocuments = createDocumentCache<ReturnType<typeof codec.parseWithSourceMap>>();
-
 type Presentation = {
   source: string;
   runs: ReadonlyMap<string, PresentationSourceRun[]>;
@@ -48,27 +40,6 @@ type Presentation = {
   skills: readonly MarkdownSkillOccurrence[];
 };
 const runKey = (kind: string, path: readonly number[]) => `${kind}:${path.join("/")}`;
-
-function ownsNode(block: PMNode, target: PMNode | null): boolean {
-  if (!target) return false;
-  if (block === target) return true;
-  let found = false;
-  block.descendants((node) => {
-    if (node === target) found = true;
-    return !found;
-  });
-  return found;
-}
-
-function parseSettled(source: string): StreamingMarkdownSnapshot {
-  const { blocks, openCode } = codec.parseStreaming(source, { repair: false });
-  return {
-    source,
-    blocks,
-    openCode,
-    openCodeBlock: blocks.findIndex((block) => ownsNode(block, openCode)),
-  };
-}
 
 function renderLink(mark: PMMark, content: ReactNode): ReactNode {
   const target = classifyLinkTarget(String(mark.attrs.href));
@@ -314,7 +285,9 @@ const MarkdownBlocks = memo(function MarkdownBlocks({
       key={index}
       node={node}
       breaks={breaks}
-      openCode={index === snapshot.openCodeBlock ? snapshot.openCode : null}
+      openCode={
+        snapshot.openCode?.block === index ? nodeAtPath(snapshot.blocks, snapshot.openCode) : null
+      }
     />
   ));
 });
@@ -332,20 +305,10 @@ function StaticTranscript({
   skills: readonly MarkdownSkillOccurrence[];
   streamId?: string;
 }) {
-  const parsed = sourceMappedDocuments(source, () => codec.parseWithSourceMap(source));
-  const snapshot = streamId ? settledStreamingMarkdown(streamId, source) : null;
-  const settled = reuseEqualSnapshot(
-    {
-      source,
-      blocks: parsed.blocks,
-      openCode: parsed.openCode,
-      openCodeBlock: parsed.blocks.findIndex((block) => ownsNode(block, parsed.openCode)),
-    },
-    snapshot,
-  );
+  const { snapshot: settled, sourceMap } = settledMarkdownDocument(source, streamId, true);
   const presentation = useMemo(() => {
     const runs = new Map<string, PresentationSourceRun[]>();
-    for (const run of parsed.sourceMap) {
+    for (const run of sourceMap) {
       const key = runKey(run.kind, [run.at.block, ...run.at.path]);
       runs.set(key, [...(runs.get(key) ?? []), run]);
     }
@@ -355,7 +318,7 @@ function StaticTranscript({
       references: boundedRanges(references, source.length),
       skills: boundedRanges(skills, source.length),
     };
-  }, [source, parsed.sourceMap, references, skills]);
+  }, [source, sourceMap, references, skills]);
   return settled.blocks.map((node, index) => (
     <Fragment key={index}>
       {renderDocumentNode(
@@ -363,7 +326,7 @@ function StaticTranscript({
         breaks,
         presentation,
         [index],
-        index === settled.openCodeBlock ? settled.openCode : null,
+        settled.openCode?.block === index ? nodeAtPath(settled.blocks, settled.openCode) : null,
       )}
     </Fragment>
   ));
@@ -390,9 +353,7 @@ export function DocumentMarkdown({
   const hasPresentation = !streaming && (references.length > 0 || skills.length > 0);
   const settled = useMemo(() => {
     if (streaming || hasPresentation) return null;
-    const parsed = settledSnapshots(source, () => parseSettled(source));
-    const previous = streamId ? settledStreamingMarkdown(streamId, source) : null;
-    return reuseEqualSnapshot(parsed, previous);
+    return settledMarkdownDocument(source, streamId, false).snapshot;
   }, [hasPresentation, source, streamId, streaming]);
   const snapshot = streaming ? live : settled;
   return (
@@ -437,44 +398,4 @@ function useStreamingMarkdown(
     if (active && streamId) requestStreamingMarkdown(streamId, source);
   }, [active, source, streamId]);
   return snapshot;
-}
-
-function reuseEqualSnapshot(
-  next: StreamingMarkdownSnapshot,
-  previous: StreamingMarkdownSnapshot | null,
-): StreamingMarkdownSnapshot {
-  if (!previous) return next;
-  const blocks = next.blocks.map((node, index) => {
-    const old = previous.blocks[index];
-    return old?.eq(node) ? old : node;
-  });
-  const openCode =
-    next.openCode && next.openCodeBlock >= 0
-      ? nodeAtPath(
-          blocks[next.openCodeBlock],
-          nodePath(next.blocks[next.openCodeBlock], next.openCode),
-        )
-      : null;
-  return { ...next, blocks, openCode };
-}
-
-function nodePath(node: PMNode | undefined, target: PMNode): number[] | null {
-  if (!node) return null;
-  if (node === target) return [];
-  for (let index = 0; index < node.childCount; index++) {
-    const path = nodePath(node.child(index), target);
-    if (path) return [index, ...path];
-  }
-  return null;
-}
-
-function nodeAtPath(node: PMNode | undefined, path: readonly number[] | null): PMNode | null {
-  if (!node || !path) return null;
-  let current = node;
-  for (const index of path) {
-    const child = current.maybeChild(index);
-    if (!child) return null;
-    current = child;
-  }
-  return current;
 }
