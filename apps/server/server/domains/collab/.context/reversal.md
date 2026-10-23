@@ -8,21 +8,17 @@ immutable journal edit; it never rewrites a target row or marks it reversed.
 
 `reverseThreadContext` is the whole-turn card command. Its authenticated POST
 accepts only `{ scope: "turn", target: turnId, direction }`. Capture resolves each
-immutable origin once: live, the active terminal of its draft successor chain, a
-retained terminal this attempt can restore, or gone. One turn may reverse a
+immutable origin once: live, its active draft, or gone. One turn may reverse a
 document's live and draft text together, each on that destination's captured
 view, inside one ordered stream. Planning, history and result presentation use
-that same resolved object; commit validates it or restores its exact source
-before writing the planned view.
+that same resolved object; commit validates it before writing the planned view.
 
-After selection, one admission call authorizes every content destination, tree
-branch and restore target. A restore grant also covers content that the same
-operation writes into the restored destination; an ordinary document grant
-cannot exist before restoration. Commit runs under those exact grants and
-confirms them after locking their combined Work set. The incoming content grant
-carries the caller identity only; it never chooses the inverse branch. A model
-inverse does not cross into another Work. A user card uses the same admission
-boundary.
+After selection, one admission call authorizes every content destination and
+tree branch. Commit runs under those exact grants and confirms them after
+locking their combined Work set. The incoming content grant carries the caller
+identity only; it never chooses the inverse branch. Undo and Redo land in the
+Work that owns the selected edit, including after the chat is rebound. A user
+card uses the same admission boundary.
 
 Redo is preferred when the latest unconsumed Undo has a reapplicable part;
 otherwise an invertible active part offers Undo. Effective action state is
@@ -43,8 +39,7 @@ cannot use a reconstruction endpoint, reversal table, or reserved client. A
 multi-edit Undo is all-or-nothing on stack availability, and Redo restores the
 last undone edit first; a count beyond what is available refuses with the
 available count and changes nothing. User-actuated entries refuse model stack
-commands, and a model Undo of a draft edit after the chat moved to a different
-Work refuses `cant_undo_elsewhere`. A card Undo names and skips a part whose draft
+commands. A card Undo names and skips a part whose draft
 was discarded (`expired`) or that a later writer edit depends on
 (`cant_undo_dependent`), and inverts the rest.
 A turn's edit targets include its create transition even when the document is empty. A create
@@ -65,12 +60,10 @@ helper scope: `response_id` keeps provider authorship and `edit_scope_id`
 selects the rotated scope.
 
 Part disposition is computed once for each resolved destination.
-`createDraftDispositionReader` reads receipts from the destination draft and its
-validated predecessors; Apply evidence in any generation wins. Otherwise an
-active or restorable lineage is pending and a gone lineage is discarded. A
+`createDraftDispositionReader` reads receipts from that draft. Apply evidence
+wins; otherwise an active draft is pending and a gone draft is discarded. A
 revision mismatch between evidence and planning recaptures the bounded attempt.
-Closed origins never stand in for a destination. A retained terminal is planned
-only with the create Redo that restores it; every other closed terminal is gone.
+Closed origins are gone and never stand in for a destination.
 
 Model Undo/Redo keep `cant_*_applied`. Review disposition is not inverse
 eligibility: an effective Undo that restores the review base has no shown change
@@ -132,8 +125,8 @@ or deleted its net tree line per destination (live, or the Work whose branch a d
 names) (`TurnTreeLine`: created, deleted, or moved from its first `shownAt` to its last move's
 `landedAt`), leaving out entries a rollback reversed. A removed one keeps its receipt row at its
 last or recorded create address, read through the same `restore` target. A drafted tree entry's
-inverse writes back the branch row's facts its entry recorded (an undo its `before`, a redo its
-`after`; `writeBackBranchFacts`) while the row still holds the state the plan started from, its
+inverse writes back the branch facts the plan selected (`writeBackBranchFacts`) while the row
+still holds the state the plan started from, its
 branch is active, a moved folder still stands and the branch's view has room; the attempt also
 locks that branch's Work and where the branch has the document. The routed branch is separate
 from a content `draftId`: a move-only document has no text draft, including a Scratch document
@@ -146,16 +139,12 @@ turn, response and edit scope: it removes the initial text, then the placement. 
 call in that response remains a separate edit. Redo restores the placement, then reapplies only
 the text parts Undo reversed. A live Undo uses an ordinary reversible removal, so the identity,
 Yjs history, later writer text and drafts remain available; Redo restores that retained state
-through `restoreDocument`, taking the next free name when necessary. A drafted Undo closes only
-the creating branch's draft and removes that branch's `created` fact. It tombstones the hidden
-identity only when no other branch still uses it, retaining the closed draft as the Redo source.
-Redo restores the identity or rejoins the still-living one, restores the branch facts and clones
-the exact retained draft named by the Undo row's `retiredDraftId` into a fresh active draft. The
-source revision, missing successor and empty branch occupancy are validated under the document
-lock. The source records the fresh draft as its successor. Immutable receipt origins keep naming
-the historical write while destination resolution follows the successor chain. Empty creates
-carry the same provenance in their tree row. A legacy row whose migration could not derive
-`retiredDraftId` resolves as gone rather than cloning a guessed draft.
+through `restoreDocument`, taking the next free name when necessary. A drafted Undo writes the
+branch's existing delete fact: `{ created: true, deleted: true }`. The document and its text are
+hidden in that branch, but its draft remains active and its identity is not tombstoned. Redo
+clears `deleted` on the same row and keeps writing the same draft. If another Work Applies the
+shared creation first, that reveal settles this branch's undone creation so it cannot become a
+pending delete of the now-live document. Empty creates use the same branch-fact cycle.
 
 ## Effects and failures
 

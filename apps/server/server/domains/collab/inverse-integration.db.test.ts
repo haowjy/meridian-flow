@@ -231,7 +231,7 @@ describe("inverse integration (postgres)", () => {
     expect(receipts(saved)).toEqual({ "w-lime": "success" });
   });
 
-  it("6.4: model undo after the chat's Work moved refuses elsewhere and touches nothing", async () => {
+  it("6.4: model undo after the chat's Work moved lands in the edit's Work", async () => {
     const { fixture, draftId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
     ]);
@@ -256,8 +256,8 @@ describe("inverse integration (postgres)", () => {
       await fixture.collab
         .agentEdit()
         .write({ command: "undo", file: "alpha.md", documentId: ALPHA_ID }, moved),
-    ).toMatchObject({ status: "cant_undo_elsewhere" });
-    expect(await fixture.draftMarkdown(draftId)).toBe("gold\n\nblue\n\ngreen\n");
+    ).toMatchObject({ status: "success" });
+    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
   });
 
   it("6.2: card Undo of a turn whose draft was discarded skips every part by name", async () => {
