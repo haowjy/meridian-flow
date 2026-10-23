@@ -22,7 +22,7 @@ type MarkdownBaseProps = {
   uploadsChat?: string;
 };
 
-export type MarkdownProps = MarkdownBaseProps &
+type MarkdownProps = MarkdownBaseProps &
   ({ mode: "streaming"; streamId: string } | { mode?: "static"; streamId?: string });
 
 export function Markdown({

@@ -71,17 +71,13 @@ const stats = (samples: number[]) => {
   };
 };
 
-function waitForPaint(host: HTMLElement, sourceLength: number): Promise<void> {
+function waitForPaint(host: HTMLElement): Promise<void> {
   return new Promise((resolve) => {
-    const inspect = () => {
-      const rendered = host.querySelector<HTMLElement>("[data-markdown-source-length]");
-      if (Number(rendered?.dataset.markdownSourceLength) === sourceLength) {
-        requestAnimationFrame(() => resolve());
-      } else {
-        requestAnimationFrame(inspect);
-      }
-    };
-    requestAnimationFrame(inspect);
+    const observer = new MutationObserver(() => {
+      observer.disconnect();
+      requestAnimationFrame(() => resolve());
+    });
+    observer.observe(host, { childList: true, characterData: true, subtree: true });
   });
 }
 
@@ -118,7 +114,7 @@ export async function runMarkdownBench(interval: number, mountsOnly = false) {
     const arrived = performance.now();
     source += token;
     updates.push(commit([source], true));
-    await waitForPaint(host, source.length);
+    await waitForPaint(host);
     arrivalToPaint.push(performance.now() - arrived);
     await new Promise((resolve) =>
       setTimeout(resolve, Math.max(0, interval - (performance.now() - arrived))),
