@@ -19,7 +19,7 @@ import type { BranchId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DocumentRemovals } from "../../context/ports/document-removal.js";
 import { FileEditRefusedError, runWithEditGrants } from "../../file-policy/edit-confirmation.js";
-import type { FileAccess, FileDestination, FileGrant } from "../../file-policy/index.js";
+import type { FileAccess, FileDestination, FileGrant, Principal } from "../../file-policy/index.js";
 import {
   asThreadPeerAgentEditCore,
   type LiveAgentEditCore,
@@ -31,6 +31,7 @@ import {
   type ThreadPeerAgentEditCore,
 } from "./agent-edit-cores.js";
 import { runBoundedAttempts } from "./draft-attempts.js";
+import { runWithInversePrincipal } from "./inverse-principal.js";
 import type {
   ResponseCommitParticipant,
   ResponseTransactionSettlement,
@@ -61,6 +62,18 @@ type ResponseRecord = ReplyRecord;
 
 /** A reply save's commit attempts (section 2.4): four, then the save fails as today. */
 const SAVE_ATTEMPTS = 4;
+
+function inversePrincipal(principal: Principal, destination: FileDestination): Principal {
+  return principal.agent && destination.kind === "draft"
+    ? {
+        ...principal,
+        agent: {
+          ...principal.agent,
+          branchWork: { id: destination.workId, handle: destination.workHandle },
+        },
+      }
+    : principal;
+}
 
 /** A miss the next attempt can resolve: a draft moved, or a buffer changed, since preparing. */
 function isSaveAttemptMiss(cause: unknown): boolean {
@@ -302,10 +315,15 @@ export function createThreadPeerCorePool(input: {
       ...(workDraftId ? { workDraftId } : {}),
     };
     // An edits read shows history, not the document: it records no frontier.
-    const outcome = await core.read(
-      command,
-      command.format === "edits" ? { ...routedContext, frontiers: undefined } : routedContext,
-    );
+    const readCore = () =>
+      core.read(
+        command,
+        command.format === "edits" ? { ...routedContext, frontiers: undefined } : routedContext,
+      );
+    const outcome =
+      command.format === "edits"
+        ? await runWithInversePrincipal(inversePrincipal(grant.principal, destination), readCore)
+        : await readCore();
     if (outcome.isError) return outcome;
     const read = outcome.result.read;
     // Results name the version actually read, which a reply's pin can choose.
@@ -400,7 +418,11 @@ export function createThreadPeerCorePool(input: {
       }
     };
     const outcome =
-      record && !immediateInverse ? await staged() : await commitNow(pinned?.grant ?? grant, call);
+      record && !immediateInverse
+        ? await staged()
+        : immediateInverse
+          ? await runWithInversePrincipal(inversePrincipal(grant.principal, destination), call)
+          : await commitNow(pinned?.grant ?? grant, call);
     const settled = oneEntry
       ? await settleOneEntry(command, documentId, outcome, oneEntry.editScopeId, given.frontiers)
       : outcome;

@@ -645,6 +645,13 @@
       "when": 1792717165164,
       "tag": "0097_draft_successor",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1792720765164,
+      "tag": "0098_inverse_retired_draft",
+      "breakpoints": true
     }
   ]
 }

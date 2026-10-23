@@ -20,7 +20,6 @@ import {
   createDrizzleFileFacts,
   createFileAccess,
   createOwnerFileGrants,
-  FileEditRefusedError,
   type FileGrant,
   isFileAccessDenied,
   type Principal,
@@ -361,8 +360,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scratch,
       );
 
-      await expect(undo).rejects.toBeInstanceOf(FileEditRefusedError);
-      await expect(undo).rejects.toMatchObject({ refused: [{ reason: "work_archived" }] });
+      await expect(undo).resolves.toMatchObject({ status: "permission_denied" });
       expect(await liveText(collab, SCRATCH_ID)).toContain("Agent notes.");
     });
 

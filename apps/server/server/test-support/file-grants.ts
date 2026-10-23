@@ -22,7 +22,17 @@ export function testFileGrant(
 ): FileGrant<"edit"> {
   const target = { kind: "document", documentId: documentId as DocumentId } as const;
   return {
-    principal: { accountId: "test-user" as UserId },
+    principal: {
+      accountId: "test-user" as UserId,
+      ...(destination.kind === "draft"
+        ? {
+            agent: {
+              chain: [],
+              branchWork: { id: destination.workId, handle: destination.workHandle },
+            },
+          }
+        : {}),
+    },
     facts: {
       target,
       projectId: "test-project" as ProjectId,
