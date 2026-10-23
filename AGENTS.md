@@ -22,9 +22,7 @@ smooth for both. Their writes land: never put approval gates, refusals, or
 "safety" friction in front of them. The user is protected by seeing what
 changed and being able to take it back. AI writes merge like any Yjs peer's,
 marks and receipts say who did what, and review makes conflicting changes easy
-to resolve. Undo, redo, and revert are the essential operations: they must work
-whenever the change still exists to reverse. Refuse a write only when it can't
-mean anything, such as when its target is gone. See the
+to resolve. See the
 [trust ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/trust-the-llm-mission.md).
 
 ## Engineering principles
