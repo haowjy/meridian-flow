@@ -57,49 +57,6 @@ function exactPersistenceName(accountId: string, persistenceId: string): string 
 
 type OrderedLocationOperation = { generation: number; tail: Promise<void> };
 
-type KnownDocument = { key: ResourceKey; record: ResourceRecord };
-export type KnownDocumentOpenResult =
-  | { kind: "missing" }
-  | { kind: "cancelled" }
-  | {
-      kind: "unavailable";
-      reason: Exclude<ResourceContentOpenResult, { kind: "opened" | "cancelled" }>["reason"];
-      key: ResourceKey;
-      record: ResourceRecord;
-    }
-  | {
-      kind: "opened";
-      key: ResourceKey;
-      record: ResourceRecord;
-      handle: Extract<ResourceContentOpenResult, { kind: "opened" }>["handle"];
-    };
-
-/** Recheck mutable Document ID ownership after opening exact content. */
-export async function openIdentityLinearized(input: {
-  read(): Promise<KnownDocument | null>;
-  open(key: ResourceKey): Promise<ResourceContentOpenResult>;
-}): Promise<KnownDocumentOpenResult> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const known = await input.read();
-    if (!known) return { kind: "missing" };
-    const opened = await input.open(known.key);
-    if (opened.kind === "cancelled") return opened;
-    const current = await input.read();
-    if (opened.kind === "opened") {
-      if (
-        current?.key.handle === known.key.handle &&
-        current.record.resource.identity.documentId === opened.handle.documentId
-      )
-        return { kind: "opened", ...current, handle: opened.handle };
-      opened.handle.release();
-    } else if (opened.reason !== "changed" && current?.key.handle === known.key.handle) {
-      return { ...opened, key: known.key, record: current.record };
-    }
-  }
-  const current = await input.read();
-  return current ? { kind: "unavailable", reason: "changed", ...current } : { kind: "missing" };
-}
-
 /** Preserve writer command order while reporting whether a completion still owns presentation. */
 export class ResourceLocationOperationQueue {
   private readonly operations = new Map<string, OrderedLocationOperation>();
@@ -386,19 +343,6 @@ export class AccountResourceReplica {
   ): Promise<{ key: ResourceKey; record: ResourceRecord } | null> {
     const record = await this.metadata.resolveAccessibleResource(projectId, documentId);
     return record ? { key: { handle: record.resource.handle }, record } : null;
-  }
-
-  /** Resolve identity and prove exact local content against one current metadata snapshot. */
-  async openKnownDocument(
-    projectId: string,
-    documentId: string,
-    participantId: string,
-    signal?: AbortSignal,
-  ): Promise<KnownDocumentOpenResult> {
-    return openIdentityLinearized({
-      read: () => this.readKnownDocument(projectId, documentId),
-      open: (key) => this.openDocument(projectId, key, participantId, signal),
-    });
   }
 
   async canAcquireRemoteDocument(projectId: string, documentId: string): Promise<boolean> {
