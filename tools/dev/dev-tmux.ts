@@ -163,7 +163,7 @@ async function verifyAndPublish({
     });
     throw new Error("dev session verification failed");
   };
-  const timeoutMs = alreadyRunning ? 5_000 : 20_000;
+  const timeoutMs = alreadyRunning ? 5_000 : plan.productionClient ? 60_000 : 20_000;
   const routes = waitForPortlessState(store, plan, timeoutMs);
   if (!routes.healthy) fail(`route checks failed: ${routes.errors.join("; ")}`, routes.lines);
   const readiness = await waitForDevReadiness({ origins: routes.origins, timeoutMs });
@@ -219,7 +219,12 @@ async function main(): Promise<void> {
     worktreePrefix: resolveCheckoutPortlessPrefix(repoRoot),
     createdAt: new Date().toISOString(),
   };
-  const plan = createDevSessionPlan({ repoRoot, session, force: options.restart });
+  const plan = createDevSessionPlan({
+    repoRoot,
+    session,
+    force: options.restart,
+    productionClient: options.productionClient,
+  });
   if (options.print) return printDryRun(plan, active?.command ?? plan.command.display);
   if (!store.hasCommandOnPath("tmux"))
     throw new Error("tmux is required but was not found on PATH. Install tmux and retry.");
