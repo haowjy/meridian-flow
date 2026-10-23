@@ -225,6 +225,7 @@ export class ContextRemovalCoordinator {
   private readonly notices: RemovedPresentationPort | null;
   private readonly drafts: BoundDraftsPort | null;
   private readonly appliedAvailability = new Map<string, AppliedAvailabilityCommand>();
+  private readonly terminalAvailability = new Map<string, ProjectDocumentAvailabilityCommand>();
   private readonly pendingSessionEffects = new Map<string, PendingSessionAvailabilityEffect>();
   private readonly sessionEffectRuns = new Map<
     string,
@@ -526,6 +527,27 @@ export class ContextRemovalCoordinator {
   reconcileDocumentAvailability(
     commands: readonly ProjectDocumentAvailabilityCommand[],
   ): ContextAvailabilityEffectReceipt {
+    return this.applyDocumentAvailability(commands, new Set());
+  }
+
+  /**
+   * A destination can install after the terminal command that raced its route.
+   * Reapply that exact command to the newly represented tab instead of leaving
+   * a post-removal tab outside the command's already-settled workspace batch.
+   */
+  reconcileInstalledTab(projectId: string, tab: ContextTab): void {
+    const key = `${projectId}/${tab.documentId}`;
+    const command = this.terminalAvailability.get(key);
+    if (command?.kind !== "terminal-remove") return;
+    void this.applyDocumentAvailability([command], new Set([tab.documentId])).localSettlement.catch(
+      (error: unknown) => reportError(error),
+    );
+  }
+
+  private applyDocumentAvailability(
+    commands: readonly ProjectDocumentAvailabilityCommand[],
+    reapplyDocumentIds: ReadonlySet<string>,
+  ): ContextAvailabilityEffectReceipt {
     const normalized = this.normalizeAvailabilityCommands(commands);
     if (normalized.length === 0) return this.emptyAvailabilityReceipt();
     if (this.unavailable()) throw new Error("Context removal authority is unavailable");
@@ -548,7 +570,8 @@ export class ContextRemovalCoordinator {
         if (previous.commandId !== command.commandId || previous.kind !== command.kind) {
           throw new Error(`Availability command collision for ${key}`);
         }
-        replayed.push(command);
+        if (reapplyDocumentIds.has(id)) committed.push(command);
+        else replayed.push(command);
       } else {
         committed.push(command);
       }
@@ -593,6 +616,11 @@ export class ContextRemovalCoordinator {
             commandId: record.commandId,
             kind: record.kind,
           });
+        }
+        for (const command of committed) {
+          const key = `${projectId}/${availabilityDocumentId(command)}`;
+          if (command.kind === "terminal-remove") this.terminalAvailability.set(key, command);
+          else this.terminalAvailability.delete(key);
         }
         if (route && routeSearch && settledPlan.routeSearch) {
           const nextRouteSearch = settledPlan.routeSearch;

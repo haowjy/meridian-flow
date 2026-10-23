@@ -59,7 +59,10 @@ import {
 } from "@/client/stores";
 import { useDockDocumentStore } from "../dock/dock-document-store";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
-import { useOptionalAccountResourceReplica } from "./account-feature-context";
+import {
+  useOptionalAccountResourceReplica,
+  useOptionalContextRemovalCoordinator,
+} from "./account-feature-context";
 import { contextTabFromFile, serverTabFromFile } from "./context-tab-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
@@ -319,6 +322,7 @@ type NavigationAdapterDependencies = {
     import("@/core/resources/account-resource-replica").AccountResourceReplica,
     "accountId" | "readProjectionState"
   > | null;
+  reconcileInstalledTab?: (projectId: string, tab: ContextTab) => void;
 };
 
 function identityForRecord(
@@ -548,12 +552,14 @@ export class ProjectDocumentNavigationAdapter {
           isCurrent: input.isCurrent,
           canCommit: input.canCommit,
           afterCommit: (installed) => {
-            if (installed?.tabInstanceId)
+            if (installed?.tabInstanceId) {
               this.dependencies.opener.replaceTransfer(
                 installed.tabInstanceId,
                 input.transfer,
                 "editor",
               );
+              this.dependencies.reconcileInstalledTab?.(input.projectId, installed);
+            }
           },
         },
       );
@@ -598,6 +604,7 @@ export function ProjectDocumentNavigationProvider({
 }) {
   const opener = useProjectDocumentLiveOpener();
   const resources = useOptionalAccountResourceReplica();
+  const removal = useOptionalContextRemovalCoordinator();
   const openContextRoute = useOpenContextRoute();
   const { openTab } = useContextTabsActions();
   useEffect(() => {
@@ -637,9 +644,11 @@ export function ProjectDocumentNavigationProvider({
         openRoute: openContextRoute,
         captureNavigation,
         resources,
+        reconcileInstalledTab: (installedProjectId, tab) =>
+          removal?.reconcileInstalledTab(installedProjectId, tab),
       }),
     }),
-    [openContextRoute, openTab, opener, projectId, captureNavigation, resources],
+    [openContextRoute, openTab, opener, projectId, captureNavigation, removal, resources],
   );
   useEffect(() => () => owner.adapter.dispose(), [owner]);
 
