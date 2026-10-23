@@ -1,8 +1,8 @@
 # Submission recovery follow-up
 
 - Give refused local retirement of a write-mode switch its own withdrawal
-  failure fact. Today driver.withdrawControl retains the switch and publishes a
-  new unsaved occurrence, but the row says "Couldn't switch" with Retry (Stop
+  failure fact. Today `driver.withdrawControl` retains the switch and publishes
+  a new unsaved occurrence, but the row says "Couldn't switch" with Retry (Stop
   remains available). If storage refuses deletion, recovery should retry the
-  withdrawal rather than post the switch. Predates F3a; accepted P3 in the F3a
-  structural/alignment sign-offs. Map the owner's fact to switch-withdraw-failed.
+  withdrawal rather than post the switch. Map that fact in `owner.ts` to
+  `switch-withdraw-failed`.

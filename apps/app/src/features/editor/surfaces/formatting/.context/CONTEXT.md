@@ -12,14 +12,26 @@ first.
 | link | Add link, opening the toolbar's own popover flow | `textMarkState(editor, "link")` |
 | clipboard | Cut, Copy, Paste, each with its shortcut | this module |
 
-Marks light when applied and reverse on the next press (law 6). Turn into
+Marks light when applied and reverse on the next press. Turn into
 checks the type the blocks already are and converts back to a paragraph when
 that type is chosen again; the check is a radio-style state display, so
 choosing the already-checked Paragraph is a no-op rather than a dead control.
 
 The submenu greys **as a whole** when every type refuses for one reason, which
 is the ordinary case (a table cell, a diagram, a mixed selection). Opening onto
-eight dead rows would satisfy the letter of law 5 and none of its point.
+eight dead rows would offer eight things that can't happen.
+
+## Right-click rungs
+
+Right-click has two rungs and one menu: `text-selection` for a sweep the
+pointer is inside, and `caret`, the ladder's floor, for every other right-click
+in prose. The caret rung moves the caret to the pointer synchronously before
+opening, so Turn into converts the block the writer aimed at. Code fences,
+objects, portalled chrome and read-only documents decline; the link and table
+surfaces keep their own claims. Shift+right-click belongs to the kernel, above
+the ladder. The keyboard twin (Menu key, Shift+F10) owns the selection door
+only: it declines wherever the `text-selection` rung declines and has no caret
+rung. In a table the menu carries the grips' own rows (`TableCaretMenuItems`).
 
 ## The two questions, and where each door asks them
 
@@ -32,8 +44,8 @@ opinion: non-empty, and a `TextSelection` or `AllSelection` rather than a
 
 `formattingOwnsContext` allows `document`, `table`, and `table-cell`. Two
 contexts are missing on purpose. An **object** has no text to format. A
-**source block** owns its own chrome (§5.3, law 4): a menu offering Heading
-over a fence is the F6 accident, and a menu offering nothing over one spends
+**source block** owns its own chrome: a menu offering Heading over a fence
+would rewrite the fence by accident, and a menu offering nothing over one spends
 the browser's menu for no gain.
 
 **The claim** additionally requires an editable document, `insideTextSelection`
@@ -58,8 +70,8 @@ rung, and it opens beside a native callout it has no way to suppress.
 
 **iOS Safari gives no such event for a long press on text.** The formatting
 menu is therefore absent there, and the OS callout (Copy, Look Up, Share)
-stands. Absent beats two menus over one gesture (law 5 prefers absent to dead,
-and ruling 11 protects the native surface). Reopening this needs a real iOS
+stands. No menu beats two menus over one gesture, and the native callout stays
+the writer's. Reopening this needs a real iOS
 Safari probe and a platform-valid way to suppress the callout once the gesture
 is claimed; nothing here should grow a timer again without both.
 

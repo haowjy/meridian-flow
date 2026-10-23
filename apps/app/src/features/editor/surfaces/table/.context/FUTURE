@@ -1,13 +1,13 @@
-- surfaces/table: grip drag-to-reorder with a jade drop line (§5.4). The verb
-  has two homes already (menu, Alt+Arrows), so the drag is the gesture half of
-  law 8, not a missing capability. Wait for M9's drop-line plugin rather than
-  building a second one.
+- surfaces/table: grip drag-to-reorder with a jade drop line. Row and column
+  moves already have two homes (the menu and Alt+Arrows), so the drag is the
+  gesture form of an existing verb, not a missing capability. Reuse the shared
+  drop-line plugin when it exists rather than building a second one.
 - surfaces/table: while the pointer is inside a nested table's hover zone the
-  outer table shows no chrome at all — one hover owner, and the inner reveal
-  holds it (`nestedCellKeepsReveal`, PR #495, load-bearing at every depth).
-  If writers want outer-row verbs reachable without first leaving the inner
-  zone, that is a design change to the one-owner model and needs a human
-  ruling before any code.
+  outer table shows no chrome at all: one hover owner, and the inner reveal
+  holds it (`nestedCellKeepsReveal`, needed at every depth). Making outer-row
+  verbs reachable without leaving the inner zone changes the one-owner model
+  and needs a design decision before any code.
 - surfaces/table: the table's own verbs (header row, placement, reset widths)
-  have no keyboard twin. §4 gives the table Tab, Alt+Arrows, Enter, and Esc and
-  no door to its menu; a twin needs a design call, not an invented binding.
+  have no keyboard twin. The table's keys are Tab, Alt+Arrows, Enter and Esc,
+  with no door to its menu; a twin needs a design decision, not an invented
+  binding.

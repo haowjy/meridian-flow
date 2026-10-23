@@ -17,8 +17,8 @@ fixture used by one suite belongs with that suite.
   clipping depend on its positioned, overflow boundary. A fake stable-layout
   marker is not an equivalent fixture.
 - Browser-only visibility, measured geometry, and clipping belong in a real
-  browser probe, not jsdom. There is no React-root tier: those chrome suites were
-  among the slowest files, and their claims moved to the manual recipe in
+  browser probe, not jsdom. There is no React-root test tier: project chrome is
+  checked by the manual recipe in
   [`docs/qa/project-chrome-manual.md`](../../../../docs/qa/project-chrome-manual.md).
   A claim that needs a React root is usually about what the writer sees, which a
   browser judges and jsdom cannot.

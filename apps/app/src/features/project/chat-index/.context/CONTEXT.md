@@ -1,5 +1,20 @@
 # Project chat index contracts
 
+## Layout
+
+The page reads top to bottom: "What will you write next?", the new-chat
+composer, then top-level project chats in one flat list by latest activity,
+grouped Today / Yesterday / Earlier, behind a title search and an All |
+Favorites filter. It reuses the Editor's Recently opened pieces
+(`recencyGroups`, `RecencyGroupLabel`, quiet failure). The whole pane scrolls as
+one; the search and filter row sticks once scrolled past. The list is
+virtualized (`ChatIndexList`, on `hooks/use-external-scroll-virtual-list`), so
+only rows near the viewport mount. `namedByChrome` hides the heading visually
+where the phone trail already reads `Chats`. The center header door
+(`ChatIndexButton.tsx`) wears the tab-chip grammar.
+
+## Feed
+
 `useProjectChatFeed` reads flat `{ items, nextCursor }` pages, keeps the
 previous filter/search page on screen (`placeholderData: keepPreviousData`)
 while the next settles, and memoizes the flattened, favorite-filtered `items`

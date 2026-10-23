@@ -22,3 +22,9 @@ page scrolling.
 `destroy()` is idempotent, restores `transform`, `transformOrigin`, and
 `willChange`, removes `data-panning`, releases captures, and makes API calls
 inert so late effects cannot touch a reused element.
+
+## Rejected: `svg-pan-zoom`
+
+`svg-pan-zoom` was tried and rejected: its pinch is broken (it predates Pointer
+Events) and it strips `viewBox`. Its `beforePan`/`beforeZoom` veto hooks have
+no use here that `minScale` and `maxScale` don't cover.

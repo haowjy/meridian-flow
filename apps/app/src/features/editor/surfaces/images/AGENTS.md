@@ -5,7 +5,7 @@ ingress has something to say outside the document.
 
 ## Mental model
 
-`ImageIngressRuntime` is the seam, and it is `ProjectLinkRuntime`'s twin — both
+`ImageIngressRuntime` is the seam, and it is `ProjectLinkRuntime`'s twin: both
 are ports the app registers on the running editor, mounted by `EditorView` and
 rendering nothing. It registers the upload and fetch-bytes ports. Anything the
 writer sees goes through the chrome host instead; a runtime that rendered a Radix
@@ -22,7 +22,7 @@ It is a chrome surface like any other: one entry in `chrome/chrome-surfaces.tsx`
 the editor as its only prop. It portals into the scroll pane
 (`[data-stable-layout-scroll]`) because both things it draws are measured against
 the manuscript's box, and it reads editability off the editor rather than taking
-it as a prop — `EditorView` knows nothing about this lane's surfaces.
+it as a prop: `EditorView` knows nothing about this surface.
 
 There is deliberately **no upload status here**. A picture arriving is a node in
 the manuscript, and everything about its progress, failure, and recovery belongs
@@ -40,4 +40,3 @@ to that node ([`core/editor/images`](../../../../core/editor/images/AGENTS.md)).
   project context tree stay on this side; the editor gets two functions.
 
 → [`../../../../core/editor/images/AGENTS.md`](../../../../core/editor/images/AGENTS.md)
-→ design of record: `editor-toolbar-split/interaction-model.md` §5.6

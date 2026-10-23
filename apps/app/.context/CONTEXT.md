@@ -205,16 +205,19 @@ in `src/lib/i18n.ts`. Use semantic tokens and the shared focus-ring,
 visually-hidden, live-region, and keyboard conventions described in
 [visual-conventions.md](visual-conventions.md). Announcements route through the
 one shared live region fed by `useAnnouncement()`, and shortcuts belong in one
-registry, not scattered `onKeyDown` handlers. The app's pointer cursor rule
-is a human ruling (a dense app of quiet controls should not make the writer click
-to learn what is clickable): one base-layer rule in `src/styles/globals.css`
-covers buttons, links, and summaries minus disabled and `aria-disabled`, and
-components add no cursor utility. Manuscript links remain text under the caret.
+registry, not scattered `onKeyDown` handlers.
+
+Clickable controls show the pointer cursor, because a dense app of quiet
+controls shouldn't make the writer click to learn what is clickable. One
+base-layer rule in `src/styles/globals.css` covers buttons, links and summaries,
+minus disabled and `aria-disabled`, and components add no cursor utility. This
+diverges from shadcn's defaults, so a shadcn refresh must keep it. Manuscript
+links stay text under the caret.
+
 Programmatic focus paints a ring only for keyboard input: navigation-focused
 screen headings never ring. `moveFocus` in `src/lib/focus-follow.ts` pairs with
-the app-wide focus-ring CSS for app-moved focus; Work archive focus uses it
-today so focus following a pointer command stays quiet.
-A shadcn refresh will try to take this back; it is a divergence we keep.
+the app-wide focus-ring CSS for app-moved focus; Work archive focus uses it so
+focus following a pointer command stays quiet.
 
 E2E fixtures may seed relational project/Work/thread/context shells through the
 authenticated API or SQL, but never write Yjs content or
