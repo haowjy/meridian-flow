@@ -40,6 +40,7 @@ it("separates main and two detached worktrees at the same commit", () => {
     writeDevSessionMetadata(first, {
       sessionName: session.sessionName,
       mode: "local",
+      clientBuild: "development",
       branch: "HEAD",
       worktreePrefix: prefix,
       command: "redacted launch command",
