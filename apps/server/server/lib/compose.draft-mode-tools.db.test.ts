@@ -179,7 +179,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(text(listedLive)).not.toContain("lore");
     });
 
-    it("the turn card removes a drafted creation and redo restores its text", async () => {
+    it("the turn card hides a drafted creation and redo reveals its retained text", async () => {
       const script = await startWithChapter("Writer live content.");
       const reply = await script.begin();
       const created = await reply.call("write", {
@@ -210,20 +210,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .select({ deletedAt: schema.documents.deletedAt })
         .from(schema.documents)
         .where(eq(schema.documents.id, documentId));
-      expect(removed?.deletedAt).not.toBeNull();
+      expect(removed?.deletedAt).toBeNull();
       expect(
         (await db.select().from(schema.branchTreeChanges)).filter(
           (row) => row.nodeId === documentId,
         ),
-      ).toEqual([]);
+      ).toEqual([expect.objectContaining({ created: true, deleted: true })]);
       expect(
         (await db.select().from(schema.documentDrafts)).filter(
           (row) => row.documentId === documentId && row.status === "active",
         ),
-      ).toEqual([]);
+      ).not.toEqual([]);
 
       const redone = await reverse("redo");
       expect(redone).toMatchObject({ status: "reversed" });
+      expect(
+        (await db.select().from(schema.branchTreeChanges)).filter(
+          (row) => row.nodeId === documentId,
+        ),
+      ).toEqual([expect.objectContaining({ created: true, deleted: false })]);
       expect(await script.text("new-chapter")).toContain("The new chapter.");
     });
 
