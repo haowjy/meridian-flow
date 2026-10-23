@@ -26,7 +26,6 @@ import {
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import {
-  type ChatCard,
   type ChatCards,
   type ChatReferenceScope,
   chatCards,
@@ -66,7 +65,7 @@ import {
 import { defaultThreadTitle, displayThreadTitle } from "@/lib/thread-title";
 import { prewarmMarkdownStreaming } from "@/rich-content/markdown-stream-service";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
-import { type ChatCardHandlers, ChatCardsProvider } from "./ChatCards";
+import { type ChatCardHandlers, ChatCardsProvider, sameChatCards } from "./ChatCards";
 import { ChatComposer } from "./ChatComposer";
 import { ChatContextNavigationProvider } from "./ChatContextNavigation";
 import { ChatSurface } from "./ChatSurface";
@@ -418,7 +417,7 @@ export function ChatView({
       normalized,
     ],
   );
-  const sharedCards = useShared(projectedFailureCards.cards, sameCards);
+  const sharedCards = useShared(projectedFailureCards.cards, sameChatCards);
   const sharedAnchoredTurnIds = useShared(projectedFailureCards.anchoredTurnIds, sameStringSet);
   const failureCards = useMemo<ChatCards>(
     () => ({ cards: sharedCards, anchoredTurnIds: sharedAnchoredTurnIds }),
@@ -712,58 +711,6 @@ export function ChatView({
       </TranscriptLinkNavigationContext.Provider>
     </ChatCardsProvider>
   );
-}
-
-function sameCards(left: readonly ChatCard[], right: readonly ChatCard[]): boolean {
-  const fields = {
-    key: "value",
-    failure: "failure",
-    copy: "value",
-    action: "value",
-    anchor: "anchor",
-    count: "value",
-    text: "value",
-    requestId: "value",
-  } satisfies Record<keyof ChatCard, "value" | "failure" | "anchor">;
-  return (
-    left.length === right.length &&
-    left.every((card, index) => {
-      const other = right[index];
-      if (!other) return false;
-      return (Object.keys(fields) as (keyof ChatCard)[]).every((field) => {
-        if (fields[field] === "anchor") return sameCardAnchor(card.anchor, other.anchor);
-        if (fields[field] === "failure") return sameFailure(card.failure, other.failure);
-        return card[field] === other[field];
-      });
-    })
-  );
-}
-
-function sameFailure(left: ChatCard["failure"], right: ChatCard["failure"]): boolean {
-  const fields = {
-    category: "value",
-    source: "value",
-    actionable: "value",
-    cause: "cause",
-  } satisfies Record<keyof ChatCard["failure"], "value" | "cause">;
-  const causeFields = {
-    code: "value",
-    reason: "value",
-    status: "value",
-  } satisfies Record<keyof ChatCard["failure"]["cause"], "value">;
-  return (Object.keys(fields) as (keyof ChatCard["failure"])[]).every((field) => {
-    if (fields[field] !== "cause") return left[field] === right[field];
-    return (Object.keys(causeFields) as (keyof ChatCard["failure"]["cause"])[]).every(
-      (causeField) => left.cause[causeField] === right.cause[causeField],
-    );
-  });
-}
-
-function sameCardAnchor(left: ChatCard["anchor"], right: ChatCard["anchor"]): boolean {
-  if (typeof left === "string" || typeof right === "string") return left === right;
-  if ("turn" in left) return "turn" in right && left.turn === right.turn;
-  if ("message" in left) return "message" in right && left.message === right.message;
-  return "queuedControl" in right && left.queuedControl === right.queuedControl;
 }
 
 function sameStringSet(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
