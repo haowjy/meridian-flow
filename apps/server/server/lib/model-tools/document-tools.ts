@@ -482,14 +482,13 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       context.resolution.uploadsOwner?.chatRef,
       inverse?.grant,
     );
-    // A drafted tree move can currently leave the document at live-only Scratch. Its path
-    // grants live content, but Undo/Redo still belongs to the Work branch that owns the move.
+    // A drafted tree move can show live Scratch content at a drafted path. Content writes stay
+    // live, but Undo/Redo still belongs to the Work branch that owns the tree move.
     if (
       inverse &&
       outcome.isError &&
       (outcome.output.status === "cant_undo_elsewhere" ||
         outcome.output.status === "cant_redo_elsewhere") &&
-      address.uri.startsWith("scratch://") &&
       principal.agent?.branchWork
     ) {
       const draftGrant = await deps.fileAccess.authorize(

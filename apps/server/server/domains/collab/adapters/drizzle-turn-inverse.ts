@@ -54,6 +54,7 @@ import {
   type DraftDispositionView,
 } from "../domain/draft-disposition.js";
 import { type DraftStore, materializeDraftRead } from "../domain/draft-store.js";
+import { currentInverseDraftId } from "../domain/inverse-draft-destination.js";
 import type { InverseStep } from "../domain/inverse-stream.js";
 import { liveRoom } from "../domain/observation-rooms.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
@@ -310,9 +311,16 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             string,
             InverseDocument["drafts"] extends ReadonlyMap<string, infer D> ? D : never
           >();
-          for (const draftId of draftIds) {
+          const queuedDraftIds = [...draftIds];
+          const readDraftIds = new Set<string>();
+          for (let i = 0; i < queuedDraftIds.length; i++) {
+            const draftId = queuedDraftIds[i];
+            if (!draftId || readDraftIds.has(draftId)) continue;
+            readDraftIds.add(draftId);
             const read = await input.drafts.readDraftAt(draftId);
             const documentDraft = read?.documentDraft;
+            if (documentDraft?.documentId === documentId && documentDraft.successorDraftId)
+              queuedDraftIds.push(documentDraft.successorDraftId);
             if (
               !read ||
               documentDraft?.documentId !== documentId ||
@@ -341,7 +349,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         destroyDocuments(documents);
         throw cause;
       }
-      return { ids, draftIds, documents, heads };
+      return {
+        ids,
+        draftIds: [...new Set(documents.flatMap((document) => [...document.drafts.keys()]))],
+        documents,
+        heads,
+      };
     });
     // The reader owns its own root snapshot. Do not nest it inside the capture above:
     // a single-connection caller would wait forever for its own read connection.
@@ -358,16 +371,22 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           if (!evidence || evidence.draft.revision !== draft.documentDraft.revision)
             throw new InverseAttemptMiss();
         }
-        document.history = document.history.map((part) => ({
-          ...part,
-          disposition:
-            part.origin.kind === "live"
-              ? "pending"
-              : (byPart.get(`${part.editId}:${part.ordinal}`) ??
-                (part.actor !== "agent" && views.get(part.origin.draftId)?.draft.status === "active"
+        document.history = document.history.map((part) => {
+          if (part.origin.kind === "live") return { ...part, disposition: "pending" };
+          const classified = byPart.get(`${part.editId}:${part.ordinal}`);
+          const currentDraftId = currentInverseDraftId(document, part.origin.draftId);
+          return {
+            ...part,
+            disposition:
+              classified === "applied"
+                ? classified
+                : currentDraftId !== part.origin.draftId ||
+                    (part.actor !== "agent" &&
+                      views.get(part.origin.draftId)?.draft.status === "active")
                   ? "pending"
-                  : "discarded")),
-        }));
+                  : (classified ?? "discarded"),
+          };
+        });
       }
       return captured;
     } catch (cause) {

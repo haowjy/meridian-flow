@@ -461,7 +461,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // Live is untouched; the branch has it at the new path, in a folder only it sees.
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
       expect(text(await call("read", { path: "part1/ch1-old" }))).toContain("Chapter one.");
-      expect((await call("read", { path: "ch1" })).isError).toBe(true);
+      expect(text(await call("read", { path: "ch1" }))).toContain("Chapter one.");
       expect(await script.text("ch1")).toContain("Chapter one.");
       expect((await (await script.begin()).call("read", { path: "part1/ch1-old" })).isError).toBe(
         true,

@@ -14,6 +14,7 @@ import type { BranchId } from "@meridian/contracts";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
+import { currentInverseDraftId } from "./inverse-draft-destination.js";
 import { type InverseStep, simulateInverse } from "./inverse-stream.js";
 import { draftRoom } from "./observation-rooms.js";
 import { ReversalConflictError } from "./reversal-conflict.js";
@@ -206,7 +207,10 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         status: `cant_${direction}_discarded` as const,
         message: `The user discarded ${handle}; it is already gone. ${follow}`,
       };
-      const draftId = part.origin.kind === "pending" ? part.origin.draftId : null;
+      const draftId =
+        part.origin.kind === "pending"
+          ? currentInverseDraftId(document, part.origin.draftId)
+          : null;
       const destinationDraft = draftId ? document.drafts.get(draftId) : undefined;
       if (destinationDraft?.frozen)
         return {
@@ -218,7 +222,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           status: `cant_${direction}_applied`,
           message: `The user applied ${handle} to the manuscript. ${follow}`,
         };
-      if (part.origin.kind === "pending" && !document.drafts.has(part.origin.draftId))
+      if (part.origin.kind === "pending" && !document.drafts.has(draftId as string))
         return discarded;
       if (draftId !== atDraftId)
         return {
@@ -311,7 +315,10 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       const states = inspection.states(entry.parts);
       for (const [i, part] of entry.parts.entries()) {
         const state = states[i];
-        const originDraft = part.origin.kind === "pending" ? part.origin.draftId : null;
+        const originDraft =
+          part.origin.kind === "pending"
+            ? currentInverseDraftId(document, part.origin.draftId)
+            : null;
         const kernelReason =
           state.state === "undone"
             ? "already removed"
@@ -415,7 +422,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     };
     const destinationOf = (parts: readonly StoredInversePart[]) => {
       const destinations = new Set(
-        parts.map((part) => (part.origin.kind === "pending" ? part.origin.draftId : null)),
+        parts.map((part) =>
+          part.origin.kind === "pending"
+            ? currentInverseDraftId(document, part.origin.draftId)
+            : null,
+        ),
       );
       if (destinations.size !== 1) throw new Error("One model edit spans multiple versions");
       return [...destinations][0] ?? null;

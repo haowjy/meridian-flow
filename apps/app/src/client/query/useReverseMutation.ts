@@ -37,6 +37,9 @@ export function useReverseTurnMutation(threadId: string) {
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
       void queryClient.invalidateQueries({
+        queryKey: threadQueryKeys.recentDocuments(threadId),
+      });
+      void queryClient.invalidateQueries({
         predicate: (query) =>
           query.queryKey[0] === projectQueryKeys.all[0] &&
           query.queryKey[2] === "works" &&

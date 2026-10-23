@@ -39,6 +39,12 @@ deleted facts for person-authorized removal history, never readable content.
 Neither does a Work's draft of a document it may
 not hold (`branchMayHold`: its project's, or its account's `user://`).
 
+A branch move changes the document's presented `scheme`, not its physical
+`contentScheme`. File policy routes content writes from the physical scheme
+until Apply moves the live identity: Scratch content stays live behind a
+proposed project path, while project content stays drafted behind a proposed
+Scratch path. The physical Scratch owner continues to cap delegation.
+
 ## Grants and service boundary
 
 `createFileAccess` is the only grant mint. A `FileGrant` carries principal,

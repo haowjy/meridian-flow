@@ -27,6 +27,8 @@ export type DraftSnapshot = {
   documentId: DocumentId;
   kind: DraftKind;
   upstreamDraftId: string | null;
+  /** The fresh draft that continues this closed draft after a restored create. */
+  successorDraftId: string | null;
   /** The branch this draft belongs to; a thread peer carries its upstream's. */
   branchId: BranchId;
   /** Derived: the branch's origin Work (`branches.origin_work_id`), null when it has none. */
