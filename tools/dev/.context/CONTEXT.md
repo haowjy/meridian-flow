@@ -1,8 +1,7 @@
 # tools/dev — development contracts
 
-This page records the safety boundaries for local databases, dev sessions,
-cleanup, and migrations. The scripts are implementation;
-this page keeps only contracts that cross them.
+Safety boundaries for local databases, dev sessions, cleanup and migrations
+that span more than one script.
 
 ## Environment and database
 
@@ -79,6 +78,11 @@ and backend port; ordinary startup refuses occupied names. Takeover uses
 Portless's route-locked `--force` registration, not a global proxy reset.
 Readiness requires positive route PIDs with cwd evidence inside this checkout,
 and exact configured backend ports, before HTTP probes may pass.
+
+`pnpm dev:stacks` reports each running stack's memory and idle time; it stops
+nothing unless given `--reap-idle <minutes> --yes`, because a stack belongs to
+the session that started it. Stopping a stack leaves its database and worktree
+alone. The measurement behind it is in the header of `dev-stacks.ts`.
 
 App boot smokes trust only a live spawned child and the exact shared route
 contract. A foreign listener or generic non-5xx response is not evidence of a
