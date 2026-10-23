@@ -32,7 +32,11 @@ The production-client profiler uses that same route-owner inventory in
 `scripts/profile-dev-stack.ts`: app-owned routes and built assets go to the
 built Nitro server, while server-owned HTTP and WebSocket paths go to the paired
 dev server. The built client is production code; the local Nitro runtime stays
-in development mode so dev login remains available.
+in development mode so dev login remains available. The launcher requires the
+dev-stack marker, a dev application environment, and a local Portless API
+origin before it can make that override. It owns the Nitro child, gateway, and
+upgraded sockets as one lifetime: any child, bind, gateway, or signal exit
+tears down the rest.
 
 ## State and transport seams
 

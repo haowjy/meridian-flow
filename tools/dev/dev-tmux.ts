@@ -129,6 +129,7 @@ function printDryRun(plan: DevSessionPlan, launchCommand: string): void {
   console.log("[dry-run] dev session plan");
   console.log(`session: ${plan.session.sessionName}`);
   console.log(`mode: ${plan.session.mode}`);
+  console.log(`client build: ${plan.session.clientBuild}`);
   console.log(`repo root: ${repoRoot}`);
   console.log(`branch: ${plan.session.branch}`);
   console.log(`metadata: ${path.join(repoRoot, ".meridian", "dev-session.json")}`);
@@ -163,7 +164,11 @@ async function verifyAndPublish({
     });
     throw new Error("dev session verification failed");
   };
-  const timeoutMs = alreadyRunning ? 5_000 : plan.productionClient ? 60_000 : 20_000;
+  const timeoutMs = alreadyRunning
+    ? 5_000
+    : plan.session.clientBuild === "production"
+      ? 60_000
+      : 20_000;
   const routes = waitForPortlessState(store, plan, timeoutMs);
   if (!routes.healthy) fail(`route checks failed: ${routes.errors.join("; ")}`, routes.lines);
   const readiness = await waitForDevReadiness({ origins: routes.origins, timeoutMs });
@@ -193,6 +198,7 @@ async function verifyAndPublish({
     headline: alreadyRunning ? "already running" : "started",
     sessionName: plan.session.sessionName,
     mode: plan.session.mode,
+    clientBuild: plan.session.clientBuild,
     routeLines: verified.lines,
   });
 }
@@ -205,6 +211,15 @@ async function main(): Promise<void> {
   const state = readDevSessionState(repoRoot);
   const previous = state.recorded;
   const active = options.restart ? null : state.active;
+  const requestedClientBuild = options.productionClient ? "production" : "development";
+  if (!options.stop && active && active.clientBuild !== requestedClientBuild) {
+    const restartCommand = options.productionClient
+      ? "pnpm dev:production-client --restart"
+      : "pnpm dev --restart";
+    throw new Error(
+      `the active session uses the ${active.clientBuild} client; run ${restartCommand} to use the ${requestedClientBuild} client`,
+    );
+  }
   const mode =
     active?.mode ??
     (options.restart && options.preserveModeOnRestart && !options.explicitModeFlag && previous
@@ -216,6 +231,10 @@ async function main(): Promise<void> {
     sessionName: identity.sessionName,
     branch: runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]),
     mode,
+    clientBuild:
+      options.restart && options.preserveModeOnRestart && !options.productionClient && previous
+        ? previous.clientBuild
+        : requestedClientBuild,
     worktreePrefix: resolveCheckoutPortlessPrefix(repoRoot),
     createdAt: new Date().toISOString(),
   };
@@ -223,7 +242,6 @@ async function main(): Promise<void> {
     repoRoot,
     session,
     force: options.restart,
-    productionClient: options.productionClient,
   });
   if (options.print) return printDryRun(plan, active?.command ?? plan.command.display);
   if (!store.hasCommandOnPath("tmux"))

@@ -17,7 +17,6 @@ const logPath = "logs/portless.log";
 
 export interface DevSessionPlan {
   readonly session: Omit<DevSessionMetadata, "command" | "externalRoutes">;
-  readonly productionClient: boolean;
   readonly command: DevSessionCommand;
   readonly sharedPorts: readonly SharedDevServicePorts[];
   readonly expectedPorts: Partial<Record<ExpectedServiceName, number>>;
@@ -161,7 +160,7 @@ function sharedPortsByService(
 
 function portlessCommandBody({
   mode,
-  productionClient,
+  clientBuild,
   sharedPorts,
   env,
   redacted,
@@ -169,7 +168,7 @@ function portlessCommandBody({
   force,
 }: {
   mode: DevMode;
-  productionClient: boolean;
+  clientBuild: DevSessionMetadata["clientBuild"];
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
   env: NodeJS.ProcessEnv;
   redacted: boolean;
@@ -184,8 +183,10 @@ function portlessCommandBody({
       serviceName === "app" || serviceName === "www" ? portsByService.get(serviceName) : undefined;
     const appPortFlag = servicePorts ? ` --app-port ${servicePorts.appBackendPort}` : "";
     const name = expectedPortlessName(serviceName, worktreePrefix);
-    const script = serviceName === "app" && productionClient ? "profile:dev-stack" : "dev";
-    return `${portlessEnvPrefix(env, redacted)}pnpm exec portless --name ${shellQuote(name)}${force ? " --force" : ""}${appPortFlag} pnpm --filter ${pkg} ${script}`;
+    const productionApp = serviceName === "app" && clientBuild === "production";
+    const script = productionApp ? "profile:dev-stack" : "dev";
+    const localStackEnv = productionApp ? "env APP_ENV=dev MERIDIAN_LOCAL_DEV_STACK=1 " : "";
+    return `${portlessEnvPrefix(env, redacted)}pnpm exec portless --name ${shellQuote(name)}${force ? " --force" : ""}${appPortFlag} ${localStackEnv}pnpm --filter ${pkg} ${script}`;
   });
 
   return `(${commands.map((command) => `${command} & sleep 2`).join("; ")}; wait)`;
@@ -193,7 +194,7 @@ function portlessCommandBody({
 
 function renderPortlessCommand({
   mode,
-  productionClient,
+  clientBuild,
   sharedPorts,
   env,
   internalApiOrigin,
@@ -202,7 +203,7 @@ function renderPortlessCommand({
   force,
 }: {
   mode: DevMode;
-  productionClient: boolean;
+  clientBuild: DevSessionMetadata["clientBuild"];
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
   env: NodeJS.ProcessEnv;
   internalApiOrigin: string;
@@ -216,7 +217,7 @@ function renderPortlessCommand({
     redacted,
   )} && unset PORTLESS_TAILSCALE PORTLESS_FUNNEL && ${portlessCommandBody({
     mode,
-    productionClient,
+    clientBuild,
     sharedPorts,
     env,
     redacted,
@@ -231,14 +232,14 @@ export function resolveInternalApiOrigin(worktreePrefix?: string): string {
 
 export function createDevSessionCommand({
   mode,
-  productionClient = false,
+  clientBuild = "development",
   sharedPorts,
   env = process.env,
   worktreePrefix,
   force = false,
 }: {
   mode: DevMode;
-  productionClient?: boolean;
+  clientBuild?: DevSessionMetadata["clientBuild"];
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
   env?: NodeJS.ProcessEnv;
   worktreePrefix?: string;
@@ -248,7 +249,7 @@ export function createDevSessionCommand({
   return {
     executable: renderPortlessCommand({
       mode,
-      productionClient,
+      clientBuild,
       sharedPorts,
       env,
       internalApiOrigin,
@@ -258,7 +259,7 @@ export function createDevSessionCommand({
     }),
     display: renderPortlessCommand({
       mode,
-      productionClient,
+      clientBuild,
       sharedPorts,
       env,
       internalApiOrigin,
@@ -282,12 +283,10 @@ export function sharedServiceNamesForMode(mode: DevMode): SharedDevServiceName[]
 export function createDevSessionPlan({
   repoRoot,
   session,
-  productionClient = false,
   force = false,
 }: {
   repoRoot: string;
   session: DevSessionPlan["session"];
-  productionClient?: boolean;
   force?: boolean;
 }): DevSessionPlan {
   const sharedPorts = resolveSharedDevServicePorts({
@@ -297,14 +296,13 @@ export function createDevSessionPlan({
   });
   return {
     session,
-    productionClient,
     sharedPorts,
     expectedPorts: Object.fromEntries(
       sharedPorts.map((entry) => [entry.service, entry.appBackendPort]),
     ),
     command: createDevSessionCommand({
       mode: session.mode,
-      productionClient,
+      clientBuild: session.clientBuild,
       sharedPorts,
       worktreePrefix: session.worktreePrefix,
       force,
