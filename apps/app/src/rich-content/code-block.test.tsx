@@ -30,16 +30,28 @@ function mount() {
 
 it("repairs only the live tail without inventing links or tables", async () => {
   const { host, render } = mount();
-  await render(<Markdown mode="streaming">{"**finished**\n\n**bol"}</Markdown>);
+  await render(
+    <Markdown mode="streaming" streamId="test-stream">
+      {"**finished**\n\n**bol"}
+    </Markdown>,
+  );
   expect(host.querySelectorAll("strong")[1]?.textContent).toBe("bol");
   const settled = host.querySelector("strong");
-  await render(<Markdown mode="streaming">{"**finished**\n\n[half](https://exam"}</Markdown>);
+  await render(
+    <Markdown mode="streaming" streamId="test-stream">
+      {"**finished**\n\n[half](https://exam"}
+    </Markdown>,
+  );
   expect(host.querySelector("strong")).toBe(settled);
   expect(host.querySelector("a")).toBeNull();
-  await render(<Markdown mode="streaming">{"**finished**\n\n| A | B |"}</Markdown>);
+  await render(
+    <Markdown mode="streaming" streamId="test-stream">
+      {"**finished**\n\n| A | B |"}
+    </Markdown>,
+  );
   expect(host.querySelector("table")).toBeNull();
   await render(
-    <Markdown mode="streaming">
+    <Markdown mode="streaming" streamId="test-stream">
       {"**finished**\n\n| A | B |\n| --- | --- |\n| one | two |"}
     </Markdown>,
   );
@@ -55,7 +67,11 @@ it("never repairs Markdown inside an open fence of either marker", async () => {
     "- item\n\n  ~~~\n  *literal",
     "> ~~~\n> *literal",
   ]) {
-    await render(<Markdown mode="streaming">{source}</Markdown>);
+    await render(
+      <Markdown mode="streaming" streamId="test-stream">
+        {source}
+      </Markdown>,
+    );
     expect(host.querySelector("code")?.textContent).toBe("*literal");
   }
 });
@@ -64,23 +80,23 @@ it("shows every code append immediately and preserves blocks when the turn settl
   vi.useFakeTimers();
   const { host, render } = mount();
   const first = "# Gate\n\n```ts\nconst n = 1;";
-  await render(<StreamingText text={first} />);
+  await render(<StreamingText streamId="test-stream" text={first} />);
   const heading = host.querySelector("h1");
   const pre = host.querySelector("pre");
   expect(pre).not.toBeNull();
   expect(host.querySelector(".hljs-keyword")?.textContent).toBe("const");
-  await render(<StreamingText text={`${first}\nconst next = 42;`} />);
+  await render(<StreamingText streamId="test-stream" text={`${first}\nconst next = 42;`} />);
   expect(host.querySelector("code")?.textContent).toBe("const n = 1;\nconst next = 42;");
   await act(async () => vi.advanceTimersByTime(50));
   expect(host.querySelectorAll(".hljs-number")[1]?.textContent).toBe("42");
   const complete = `${first}\nconst next = 42;\n\`\`\`\n\n**bold**`;
-  await render(<StreamingText text={complete} />);
+  await render(<StreamingText streamId="test-stream" text={complete} />);
   const html = host.querySelector(".document-prose")?.innerHTML;
-  await render(<StreamingText text={complete} streaming={false} />);
+  await render(<StreamingText streamId="test-stream" text={complete} streaming={false} />);
   expect(host.querySelector("h1")).toBe(heading);
   expect(host.querySelector("pre")).toBe(pre);
   expect(host.querySelector(".document-prose")?.innerHTML).toBe(html);
   expect(host.querySelector('button[aria-label="Copy code"]')).not.toBeNull();
-  await render(<StreamingText text={"```ts\nconst reset = 7;"} />);
+  await render(<StreamingText streamId="test-stream" text={"```ts\nconst reset = 7;"} />);
   expect(host.querySelector("code")?.textContent).toBe("const reset = 7;");
 });

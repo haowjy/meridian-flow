@@ -237,7 +237,11 @@ const TurnItemView = memo(function TurnItemView({
     // only ever rendered here, outside the Thinking fold.
     return (
       <div className="space-y-[var(--chat-space-row)]" data-turn-item-kind="text">
-        <StreamingText text={item.text} streaming={item.block.status === "partial"} />
+        <StreamingText
+          streamId={blockRenderKey(item.block)}
+          text={item.text}
+          streaming={item.block.status === "partial"}
+        />
       </div>
     );
   }

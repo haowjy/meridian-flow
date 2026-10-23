@@ -81,6 +81,7 @@ function CodeBlock({ node, throttle = false }: { node: PMNode; throttle?: boolea
       const tree = language
         ? lowlight.highlight(language, highlightSource)
         : lowlight.highlightAuto(highlightSource);
+      if (tree.children.length === 0 && highlightSource.length > 0) return highlightSource;
       return highlighted(tree, 0);
     };
     return throttle

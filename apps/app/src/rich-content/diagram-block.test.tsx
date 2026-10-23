@@ -17,10 +17,18 @@ it("shows the open source, draws on fence closure, and retains the diagram on se
   const root = createRoot(host);
   try {
     const open = "```mermaid\ngraph TD\nA --> B";
-    await act(async () => root.render(<Markdown mode="streaming">{open}</Markdown>));
+    await act(async () =>
+      root.render(
+        <Markdown mode="streaming" streamId="test-stream">
+          {open}
+        </Markdown>,
+      ),
+    );
     expect(host.querySelector("pre")?.textContent).toContain("A --> B");
     expect(renderDiagram).not.toHaveBeenCalled();
-    await act(async () => root.render(<Markdown mode="streaming">{`${open}\n\`\`\``}</Markdown>));
+    await act(async () =>
+      root.render(<Markdown mode="streaming" streamId="test-stream">{`${open}\n\`\`\``}</Markdown>),
+    );
     expect(host.querySelector("[data-diagram-preview] svg")).not.toBeNull();
     const svg = host.querySelector("svg");
     await act(async () => root.render(<Markdown>{`${open}\n\`\`\``}</Markdown>));
