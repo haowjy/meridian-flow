@@ -2,17 +2,13 @@
 
 import { markdownCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import {
-  type MarkdownWorkerRequest,
-  type MarkdownWorkerResponse,
-  nodePath,
-} from "./markdown-worker-protocol";
+import { MarkdownParseSession } from "./markdown-parse-session";
+import type { MarkdownWorkerRequest, MarkdownWorkerResponse } from "./markdown-worker-protocol";
 
 const codec = markdownCodec({ schema: buildDocumentSchema() });
-const states = new Map<string, { generation: number; sent: Map<string, string> }>();
+const states = new Map<string, { generation: number; session: MarkdownParseSession<unknown> }>();
 const pending = new Map<string, Extract<MarkdownWorkerRequest, { type: "parse" }>>();
 let scheduled = false;
-const HISTORY_LIMIT = 128;
 
 self.onmessage = (event: MessageEvent<MarkdownWorkerRequest>) => {
   const message = event.data;
@@ -52,39 +48,22 @@ function parse(request: Extract<MarkdownWorkerRequest, { type: "parse" }>): void
   try {
     let state = states.get(request.streamId);
     if (!state || state.generation !== request.generation) {
-      state = { generation: request.generation, sent: new Map() };
+      state = { generation: request.generation, session: new MarkdownParseSession() };
       states.set(request.streamId, state);
     }
     const result = codec.parseStreaming(request.source, { repair: true });
-    const keys: string[] = [];
-    const nodes: Record<string, unknown> = {};
-    for (const block of result.blocks) {
-      const json = JSON.stringify(block.toJSON());
-      const key = contentKey(json, state.sent);
-      keys.push(key);
-      if (!state.sent.has(key)) nodes[key] = block.toJSON();
-      state.sent.delete(key);
-      state.sent.set(key, json);
-    }
-
-    const current = new Set(keys);
-    const evicted: string[] = [];
-    for (const key of state.sent.keys()) {
-      if (state.sent.size <= current.size + HISTORY_LIMIT) break;
-      if (current.has(key)) continue;
-      state.sent.delete(key);
-      evicted.push(key);
-    }
+    const { update } = state.session.capture(
+      request.source,
+      result.blocks,
+      result.openCode,
+      (block) => block.toJSON(),
+    );
     post({
       type: "result",
       streamId: request.streamId,
       generation: request.generation,
       seq: request.seq,
-      source: request.source,
-      keys,
-      nodes,
-      evicted,
-      openCode: nodePath(result.blocks, result.openCode),
+      ...update,
     });
   } catch (error) {
     post({
@@ -95,24 +74,6 @@ function parse(request: Extract<MarkdownWorkerRequest, { type: "parse" }>): void
       message: error instanceof Error ? error.message : String(error),
     });
   }
-}
-
-function contentKey(json: string, sent: ReadonlyMap<string, string>): string {
-  const base = `${hash(json)}:${json.length}`;
-  for (let collision = 0; ; collision++) {
-    const key = collision === 0 ? base : `${base}:${collision}`;
-    const known = sent.get(key);
-    if (known === undefined || known === json) return key;
-  }
-}
-
-function hash(value: string): string {
-  let result = 0x811c9dc5;
-  for (let index = 0; index < value.length; index++) {
-    result ^= value.charCodeAt(index);
-    result = Math.imul(result, 0x01000193);
-  }
-  return (result >>> 0).toString(36);
 }
 
 function post(message: MarkdownWorkerResponse): void {

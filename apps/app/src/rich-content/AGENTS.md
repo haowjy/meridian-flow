@@ -11,21 +11,21 @@ Chat puts 8px between top-level blocks and keeps the owner-approved
 [chat rhythm][chat-rhythm] for headings: h1 and h2 open 24px above, smaller
 headings 16px, and the next block closes them at 8px.
 
-Static and streaming use the same PM-node memoized block components. The markup
-codec parses every received text-block source canonically. In a browser, a module
-worker owns that parse; SSR and tests use the same operation synchronously. Each
+Static and streaming use the same PM-node memoized block components. One document
+snapshot owner holds parse requests, identity reconciliation, settled caches and
+open-code paths. Its parse session runs through a module-worker adapter in the
+browser and a synchronous adapter for SSR, tests and worker failure. Each
 assistant text block uses its permanent render key as the stream identity. The
 worker coalesces queued updates per stream and sends content keys for every block,
-but JSON only for blocks that stream has not received. Its cache and the main
-thread's PM-node cache evict the same old keys while retaining every current
-block. An open fence travels as a descendant path, so identical and nested code
+but JSON only for blocks that stream has not received. An open fence always
+travels as a top-level block plus descendant path, so identical and nested code
 blocks remain distinct.
 
 The main thread ignores stale sequence and generation results, keeps the last
 completed render while a newer parse runs, and releases worker state when the text
-block settles or unmounts. Streaming settlement parses the same canonical full
-source once and reuses equal worker nodes by position, preserving mounted code
-and diagram components. Every settled text block is cached by its full source;
+block settles or unmounts. Streaming settlement reads the same snapshot owner
+and reuses equal worker nodes by position, preserving mounted code and diagram
+components. Every settled text block is cached by its full source;
 there is no blank-line splitter or inferred fence state. Open-fence highlights
 are throttled at 50ms. Bounded source caches retain settled PM trees and code
 colors across virtual-row remounts (256 entries and 250,000 key characters each).
@@ -35,9 +35,11 @@ and tests start in the synchronous path without reporting a failure.
 
 Static user turns with occurrences parse once with the canonical codec's opt-in
 presentation source map. Exact complete link ranges grant reference identity;
-skills must fit entirely inside one mapped text run outside code. Invalid,
-rewritten, cross-run, or mismatched ranges stay ordinary Markdown. Projection
-is app-owned: never match displayed labels or store presentation schema attrs.
+skills must fit entirely inside one mapped text run outside code. The codec maps
+an authorized original-source subrange to displayed text offsets; the app never
+decodes Markdown to reconstruct them. Invalid, rewritten, cross-run, or
+mismatched ranges stay ordinary Markdown. Projection is app-owned: never match
+displayed labels or store presentation schema attrs.
 No source map enters the worker streaming path.
 
 The walker handles the Markdown codec's nodes, not MDX figure/JSX editing views.

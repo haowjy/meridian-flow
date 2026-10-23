@@ -1,19 +1,21 @@
-/** Worker transport and bounded ProseMirror identity caches for streaming text blocks. */
+/** One owner for Markdown parse execution, identity reconciliation and settled snapshots. */
 
-import type { MarkdownStreamResult } from "@meridian/markup";
-import { Node as PMNode, type Schema } from "@tiptap/pm/model";
+import { markdownCodec, type PresentationSourceRun } from "@meridian/markup";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { Node as PMNode } from "@tiptap/pm/model";
+import { createDocumentCache } from "./document-cache";
 import {
-  type MarkdownWorkerRequest,
-  type MarkdownWorkerResponse,
-  nodeAtPath,
+  MarkdownParseSession,
+  type MarkdownSnapshot,
   nodePath,
-} from "./markdown-worker-protocol";
+  reconcileSnapshot,
+} from "./markdown-parse-session";
+import type { MarkdownWorkerRequest, MarkdownWorkerResponse } from "./markdown-worker-protocol";
 
-export type StreamingMarkdownSnapshot = {
-  source: string;
-  blocks: readonly PMNode[];
-  openCode: PMNode | null;
-  openCodeBlock: number;
+export type StreamingMarkdownSnapshot = MarkdownSnapshot<PMNode>;
+export type SettledMarkdownDocument = {
+  snapshot: StreamingMarkdownSnapshot;
+  sourceMap: readonly PresentationSourceRun[];
 };
 
 type StreamState = {
@@ -21,27 +23,20 @@ type StreamState = {
   seq: number;
   requestedSource: string;
   appliedSeq: number;
-  nodes: Map<string, PMNode>;
-  json: Map<string, string>;
+  session: MarkdownParseSession<PMNode>;
   snapshot: StreamingMarkdownSnapshot | null;
   listeners: Set<() => void>;
 };
 
-let schema: Schema | undefined;
-let parseStreaming: ((source: string) => MarkdownStreamResult) | undefined;
+const schema = buildDocumentSchema();
+const codec = markdownCodec({ schema });
 const states = new Map<string, StreamState>();
+const settledDocuments = createDocumentCache<StreamingMarkdownSnapshot>();
+const presentationDocuments = createDocumentCache<SettledMarkdownDocument>();
 let nextGeneration = 1;
 let worker: Worker | null | undefined;
 let synchronous = typeof Worker === "undefined" || import.meta.env.SSR;
 let reportedWorkerFailure = false;
-
-export function configureMarkdownStreaming(
-  documentSchema: Schema,
-  parse: (source: string) => MarkdownStreamResult,
-): void {
-  schema = documentSchema;
-  parseStreaming = parse;
-}
 
 /** Start the module worker while the chat shell is mounting, before its first reply. */
 export function prewarmMarkdownStreaming(): void {
@@ -81,6 +76,38 @@ export function streamingMarkdownSnapshot(streamId: string): StreamingMarkdownSn
   return states.get(streamId)?.snapshot ?? null;
 }
 
+export function settledMarkdownDocument(
+  source: string,
+  streamId: string | undefined,
+  withPresentation: boolean,
+): SettledMarkdownDocument {
+  const parsed = withPresentation
+    ? presentationDocuments(source, () => {
+        const result = codec.parseWithSourceMap(source);
+        return {
+          snapshot: {
+            source,
+            blocks: result.blocks,
+            openCode: nodePath(result.blocks, result.openCode),
+          },
+          sourceMap: result.sourceMap,
+        };
+      })
+    : {
+        snapshot: settledDocuments(source, () => {
+          const result = codec.parseStreaming(source, { repair: false });
+          return {
+            source,
+            blocks: result.blocks,
+            openCode: nodePath(result.blocks, result.openCode),
+          };
+        }),
+        sourceMap: [],
+      };
+  const live = streamId ? (states.get(streamId)?.snapshot ?? null) : null;
+  return { ...parsed, snapshot: reconcileSnapshot(parsed.snapshot, live) };
+}
+
 export function releaseStreamingMarkdown(streamId: string): void {
   const state = states.get(streamId);
   if (!state) return;
@@ -92,15 +119,6 @@ export function releaseStreamingMarkdown(streamId: string): void {
   } satisfies MarkdownWorkerRequest);
 }
 
-/** Reuse the worker's exact nodes across the live-to-settled render when possible. */
-export function settledStreamingMarkdown(
-  streamId: string,
-  source: string,
-): StreamingMarkdownSnapshot | null {
-  const snapshot = states.get(streamId)?.snapshot;
-  return snapshot?.source === source ? snapshot : null;
-}
-
 function stateFor(streamId: string): StreamState {
   const existing = states.get(streamId);
   if (existing) return existing;
@@ -109,8 +127,7 @@ function stateFor(streamId: string): StreamState {
     seq: 0,
     requestedSource: "\0",
     appliedSeq: 0,
-    nodes: new Map(),
-    json: new Map(),
+    session: new MarkdownParseSession(),
     snapshot: null,
     listeners: new Set(),
   };
@@ -154,81 +171,29 @@ function receive(message: MarkdownWorkerResponse): void {
     disableWorker(new Error(message.message));
     return;
   }
-
-  for (const key of message.evicted) {
-    state.nodes.delete(key);
-    state.json.delete(key);
-  }
-  for (const [key, json] of Object.entries(message.nodes)) {
-    if (!schema) throw new Error("Markdown streaming is not configured");
-    state.nodes.set(key, PMNode.fromJSON(schema, json));
-    // Worker responses already carry content keys. Keep JSON only for the
-    // synchronous fallback, whose cacheNode path compares serialized nodes.
-    if (synchronous) state.json.set(key, JSON.stringify(json));
-  }
   if (message.seq < state.appliedSeq) return;
-  const blocks = message.keys.map((key) => state.nodes.get(key));
-  if (blocks.some((node) => !node)) {
+  const snapshot = state.session.apply(message, (json) => PMNode.fromJSON(schema, json));
+  if (!snapshot) {
     const source = state.requestedSource;
     state.requestedSource = "\0";
     requestStreamingMarkdown(message.streamId, source);
     return;
   }
   state.appliedSeq = message.seq;
-  state.snapshot = {
-    source: message.source,
-    blocks: blocks as PMNode[],
-    openCode: nodeAtPath(blocks as PMNode[], message.openCode),
-    openCodeBlock: message.openCode?.block ?? -1,
-  };
+  state.snapshot = snapshot;
   notify(state);
 }
 
 function applySynchronous(state: StreamState, source: string): void {
-  if (!parseStreaming) throw new Error("Markdown streaming is not configured");
-  const result = parseStreaming(source);
-  const openCodePath = nodePath(result.blocks, result.openCode);
-  const keys = result.blocks.map((block) => cacheNode(state, block));
-  const current = new Set(keys);
-  for (const key of state.nodes.keys()) {
-    if (state.nodes.size <= current.size + 128) break;
-    if (current.has(key)) continue;
-    state.nodes.delete(key);
-    state.json.delete(key);
-  }
+  const result = codec.parseStreaming(source, { repair: true });
   state.appliedSeq = state.seq;
-  const blocks = keys.map((key) => state.nodes.get(key) as PMNode);
-  state.snapshot = {
+  state.snapshot = state.session.capture(
     source,
-    blocks,
-    openCode: nodeAtPath(blocks, openCodePath),
-    openCodeBlock: openCodePath?.block ?? -1,
-  };
+    result.blocks,
+    result.openCode,
+    (block) => block,
+  ).snapshot;
   notify(state);
-}
-
-function cacheNode(state: StreamState, block: PMNode): string {
-  const json = JSON.stringify(block.toJSON());
-  const base = `${hash(json)}:${json.length}`;
-  for (let collision = 0; ; collision++) {
-    const key = collision === 0 ? base : `${base}:${collision}`;
-    const known = state.json.get(key);
-    if (known === json) return key;
-    if (known === undefined) {
-      state.json.set(key, json);
-      state.nodes.set(key, block);
-      return key;
-    }
-  }
-}
-
-function hash(value: string): string {
-  let result = 0x811c9dc5;
-  for (let index = 0; index < value.length; index++) {
-    result ^= value.charCodeAt(index);
-    result = Math.imul(result, 0x01000193);
-  }
-  return (result >>> 0).toString(36);
 }
 
 function notify(state: StreamState): void {
