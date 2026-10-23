@@ -851,7 +851,7 @@ restart smoke check.
 
 - **Protects:** the region check and the one listing ([write architecture](../../packages/agent-edit/.context/write-architecture.md#the-region-check)).
   A write whose passage (targets ±1 block) changed by more than 10 words since the model saw it,
-  holds a block the model never saw in full, or lands in a room where the model has no frontier
+  holds a block the model never saw in full, or has no usable observation frontier
   is refused as `region_changed` with the passage's current text, records a frontier, and the
   next attempt lands. Creating a document or filling an empty one is never refused. Every
   result that shows document text lists, under `concurrent edits:`, blocks changed since the
@@ -895,22 +895,27 @@ restart smoke check.
      fork at `CUT` (`POST /api/threads/$T/fork` with `originTurnId`) and send `writemock C10-Fork`
      on the fork.
   4. First draft-mode write after a live read: a draft-mode thread on a new Work (body as in
-     RP-19 step 4) sends one reply that reads `W2-Draft`, then writes `Beta waited` →
-     `Beta paced` twice in two steps.
+     RP-19 step 4) reads `W2-Draft` in one response. The next response writes `Beta waited` →
+     `Beta paced`; the response after that replaces `Gamma held` → `Gamma watched` without
+     another read. Repeat with a second new document, citing the hashes from the first read as
+     each replace scope instead of using `find`.
 - **Expect:**
   1. The first write is `status: region_changed` with "Not applied: this passage changed since
      you last saw it. Current text:" and the three paragraphs; the second lands (`write: e1`, using the returned edit handle).
   2. The write lands at once.
   3. The write on the compacted thread is refused with current text; the same write on the fork
      lands.
-  4. The read says `version: draft` with no Work draft yet (it read live); the first write is
-     `region_changed` with current text, the second `success` staged and settled as
-     `draft (wN)` using the fixture’s returned Work handle; `./mf doc read` still shows live unchanged.
+  4. Each read says `version: draft` with no Work draft yet (it read live); the first write
+     and the next response's write both land, for the find-text and held-hash forms, and settle
+     as `draft (wN)` using the fixture's returned Work handle. `./mf doc read` still shows live
+     unchanged.
 - **Evidence:** each send NDJSON (`tool.completed` and `tool.settled` lines).
-- **Last run:** 2026-10-19 on `f8e5f62b94` (M2 W2; the tree that commit holds), the branch
-  worktree's own mock stack. All four passed. Evidence:
-  `work/concurrent-edit-design/m2/probe/w2-c10/` in the docs repository; the in-process
-  writer-edit exercises are in `m2/probe/w2-inprocess/results-raw.md`.
+- **Last run:** Step 4's find-text sequence passed on 2026-10-22 on `fix/draft-first-edit`:
+  the full read, first write and next-response write all succeeded, the two writes settled as
+  `e1` and `e2` in `draft (w3)`, and live stayed unchanged. Steps 1 to 3 passed on 2026-10-19
+  at `f8e5f62b94` (M2 W2; the tree that commit holds), on the branch worktree's own mock stack.
+  Evidence for steps 1 to 3: `work/concurrent-edit-design/m2/probe/w2-c10/` in the docs
+  repository; the in-process writer-edit exercises are in `m2/probe/w2-inprocess/results-raw.md`.
 
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md

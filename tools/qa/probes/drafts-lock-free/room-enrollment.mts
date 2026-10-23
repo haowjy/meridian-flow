@@ -245,6 +245,7 @@ async function seedDraft(harness: Harness, label: string) {
     documentId,
     branchId,
     liveDoc: live,
+    liveRoom: null,
   });
   return { draftId: documentDraft.draftId, documentId, live };
 }

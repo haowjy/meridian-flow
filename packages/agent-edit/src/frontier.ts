@@ -5,7 +5,12 @@
  * show in full ("unshown"). Pure Yjs; the host names rooms and stores frontiers.
  */
 import * as Y from "yjs";
-import { type BlockItemId, getBlockItemId, getTopLevelXmlBlocks } from "./model/block-hash.js";
+import {
+  type BlockItemId,
+  copyBlockOrigins,
+  getBlockItemId,
+  getTopLevelXmlBlocks,
+} from "./model/block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./model/prosemirror-fragment.js";
 
 export interface ObservationFrontier {
@@ -15,6 +20,35 @@ export interface ObservationFrontier {
   snapshot: Uint8Array;
   /** Block ids (`client:clock` of the top-level item), in document order. */
   unshown: readonly string[];
+}
+
+interface SeedFrontierProjection {
+  sourceRoom: string;
+  sourceSnapshot: Uint8Array;
+  targetRoom: string;
+  targetSnapshot: Uint8Array;
+  /** Target canonical item id -> source canonical item id. */
+  origins: ReadonlyMap<string, string>;
+}
+
+/** Project an observation only across the exact live cut that produced a Work draft seed. */
+export function projectSeedFrontier(
+  frontier: ObservationFrontier | null,
+  seed: SeedFrontierProjection,
+): ObservationFrontier | null {
+  if (!frontier || frontier.room !== seed.sourceRoom) return null;
+  const observed = decodeSnapshot(frontier.snapshot);
+  const source = decodeSnapshot(seed.sourceSnapshot);
+  if (!observed || !source || !Y.equalSnapshots(observed, source)) return null;
+  const targetBySource = new Map([...seed.origins].map(([target, origin]) => [origin, target]));
+  return {
+    room: seed.targetRoom,
+    snapshot: seed.targetSnapshot,
+    unshown: frontier.unshown.flatMap((origin) => {
+      const target = targetBySource.get(origin);
+      return target ? [target] : [];
+    }),
+  };
 }
 
 /**
@@ -355,6 +389,7 @@ export function createPlanningView(
   try {
     const roomCut = Y.snapshot(room);
     Y.createDocFromSnapshot(room, snapshot, view);
+    copyBlockOrigins(room, view);
     for (const update of ownUpdates) {
       if (Y.snapshotContainsUpdate(roomCut, update)) Y.applyUpdate(view, update);
     }

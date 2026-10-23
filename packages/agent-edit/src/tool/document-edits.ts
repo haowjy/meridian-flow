@@ -2,6 +2,7 @@
 import * as Y from "yjs";
 import { snapshotBlocks } from "../apply/echo.js";
 import { toDocHandle } from "../handles.js";
+import { bindBlockOrigins } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { ModelInverseCommand } from "../ports/document-edits.js";
 import { openCommandLinks } from "./command-links.js";
@@ -81,6 +82,10 @@ export function createDocumentEditCommands(deps: {
         throw new Error("Accepted inverse is missing its content cuts");
       Y.applyUpdate(before, result.before);
       Y.applyUpdate(after, result.after);
+      if (result.blockOrigins) {
+        bindBlockOrigins(before, result.blockOrigins);
+        bindBlockOrigins(after, result.blockOrigins);
+      }
       links = await openCommandLinks(deps.options, {
         documentId: address.documentId,
         docs: [before, after],

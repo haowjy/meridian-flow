@@ -30,18 +30,6 @@
   in-process/advisory lock model to checkpoint, tail and revision under [#934].
   Atomic Apply already installs its prepared room effects after root commit;
   do not reintroduce settlement or mutate a warm room inside its transaction.
-- `domain/draft-agent-edit.ts` and `adapters/drizzle-drafts.ts`
-  (`ensureDocumentDraft`): a draft-mode chat's first text write to a document
-  with no Work draft yet is refused `region_changed` after a read (35 of 38
-  real-model cases after a drafted move, every mock run). The read finds no
-  Work draft and reads live (`thread-peer-core-pool.ts` resolves none), so the
-  model's frontier and block hashes are live's; the write then seeds a draft
-  with fresh client-1 items ("live shares content, never Yjs items"), whose
-  room has no frontier and whose hashes differ. Not a move bug. A fix must keep
-  "reads never create these records" (KB `branches-separate-from-works`):
-  candidate, since a seed is a deterministic function of live content, a
-  no-draft read renders the would-be seed and its frontier carries into the
-  draft room the write seeds from the same content. Owner decision needed.
 - Response-transaction integration: replace the duplicated `deferUntilCommit`
   declarations and participant layer with one unit-of-work port ([#935]).
 

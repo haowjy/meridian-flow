@@ -127,7 +127,7 @@ describe("thread-peer pool", () => {
             entered();
             await gate;
           }
-          return { peerDraftId: "peer-1", upstreamDraftId: "upstream-1" };
+          return { peerDraftId: "peer-1", upstreamDraftId: "upstream-1", seed: null };
         },
         commitThreadResponseAtomically: (operation) => operation(),
         attemptScope: (operation) => operation(),

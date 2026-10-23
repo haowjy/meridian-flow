@@ -65,8 +65,8 @@ EDIT=e1
 ./mf thread send "$T" revert --json --mock "$(mock "{\"command\":\"revert\",\"path\":\"$D\",\"edit\":\"$EDIT\"}" write)"
 ```
 
-In draft mode the first write into a fresh Work can answer `region_changed`; read again and repeat it. Take the
-handle from the result rather than assuming `e1`. A later `read` in the same chat shows the version the chat writes
+In draft mode the first write into a fresh Work lands from the live read. Take the handle from the result rather
+than assuming `e1`. A later `read` in the same chat shows the version the chat writes
 to (the live document, or the Work's draft), and that is the text to check. A second mocked write can stand in for
 the writer's edit; the browser steps use real typing.
 

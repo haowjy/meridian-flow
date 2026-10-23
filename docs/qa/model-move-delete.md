@@ -49,8 +49,8 @@ model.
 Setup: chapters `manuscript://ch1` to `ch5`; a Work "Ascension" (`w1`); a chat in it
 (`./mf thread create --work w1`) switched to draft mode, from the composer's write-mode menu or
 `./mf api POST /api/threads/<id>/controls --data '{"id":"<uuid>","control":{"kind":"write_mode","mode":"draft"}}'`.
-A `replace` in the same reply as a `read` of live ch1 answers `region_changed` once the
-draft forks; read the drafted path (`ch1-old`) in a later reply, then `replace`.
+A `replace` in the same reply as a `read` of live ch1 lands when the draft forks, using either
+the text it found or a block hash from that read.
 
 5. **Pending rows and the notice.** Script `move` ch1 → ch1-old, `delete` ch3, `move` ch5 →
    ch6, `move` ch4 → ch5, then (next reply) a `replace` in ch1-old. The live tree keeps ch1 to

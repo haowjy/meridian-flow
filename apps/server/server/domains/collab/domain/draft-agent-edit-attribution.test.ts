@@ -52,9 +52,11 @@ function fixture(existingUpstream?: Y.Doc) {
         draftId: "peer",
         status: "active",
         lifecycle: "active",
+        seed: null,
       }),
       ensureThreadPeerDraft: async () => ({
         documentDraft: snapshot("peer"),
+        workDraft: snapshot("draft"),
       }),
       listActiveWorkDraftIds: async () => ["draft"],
       resolveWorkDraftForThread: async () => snapshot("draft"),
