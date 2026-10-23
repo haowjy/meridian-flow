@@ -1,7 +1,8 @@
 /**
  * `thread view`: the chat transcript as the app's view model decides it. Hydrate the snapshot,
  * run `chatCards` and `viewTranscript` over its facts, and print rows and cards structurally
- * (text) or as the versioned `chatView: 2` envelope (its `cards` field is additive) (JSON). Nothing here decides a row or a card;
+ * (text) or as the versioned `chatView: 3` envelope (its delivery groups carry their stable id)
+ * (JSON). Nothing here decides a row or a card;
  * it only prints what the shared projections returned, and states `inputs`: what they were
  * computed from. `./mf` holds no local command state, so a card from one (a lost Retry, a failed
  * Stop, an unsent message) cannot appear here: only the cards durable facts give.
@@ -41,7 +42,7 @@ import { oneLine, truncate } from "../../core/output";
 import { viewOfLive } from "./run-state";
 import { asRecord, liveStatusLabel } from "./transcript";
 
-export const CHAT_VIEW_VERSION = 2;
+export const CHAT_VIEW_VERSION = 3;
 
 const TEXT_LIMIT = 1_500;
 

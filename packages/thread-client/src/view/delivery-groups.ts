@@ -4,6 +4,22 @@ import type { DeliveryEvent } from "./transcript-model";
 export type DeliveryGroup = { id: string; events: readonly DeliveryEvent[] };
 const cache = new WeakMap<object, DeliveryGroup>();
 
+function sameGroup(left: DeliveryGroup, right: DeliveryGroup): boolean {
+  const fields = {
+    id: "value",
+    events: "references",
+  } satisfies Record<keyof DeliveryGroup, "value" | "references">;
+  return (Object.keys(fields) as (keyof DeliveryGroup)[]).every((field) => {
+    if (fields[field] === "value") return left[field] === right[field];
+    const leftEvents = left.events;
+    const rightEvents = right.events;
+    return (
+      leftEvents.length === rightEvents.length &&
+      leftEvents.every((event, index) => event === rightEvents[index])
+    );
+  });
+}
+
 /** Merge only contiguous completion notices; any other delivery breaks a group. */
 export function groupDeliveryEvents(events: readonly DeliveryEvent[]): readonly DeliveryGroup[] {
   const groups: DeliveryEvent[][] = [];
@@ -17,13 +33,8 @@ export function groupDeliveryEvents(events: readonly DeliveryEvent[]): readonly 
     if (!first) throw new Error("Delivery groups are never empty");
     const id = first.turn.id;
     const previous = cache.get(first.turn);
-    if (
-      previous?.id === id &&
-      previous.events.length === events.length &&
-      previous.events.every((event, index) => event === events[index])
-    )
-      return previous;
     const group = { id, events };
+    if (previous && sameGroup(previous, group)) return previous;
     cache.set(first.turn, group);
     return group;
   });

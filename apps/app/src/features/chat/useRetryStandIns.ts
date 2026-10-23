@@ -36,7 +36,7 @@ import {
   reconcileRetries,
 } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { HttpResponseError, httpErrorStatus, retryAfterMs } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
@@ -152,12 +152,14 @@ export function useRetryStandIns(input: {
     return open;
   }, [refusals, storedTurns]);
   const localRef = useRef(local);
-  localRef.current = local;
   const storedRef = useRef(storedTurns);
-  storedRef.current = storedTurns;
   // Read at call time: callers pass fresh closures and copy each render.
   const optionsRef = useRef(input);
-  optionsRef.current = input;
+  useLayoutEffect(() => {
+    localRef.current = local;
+    storedRef.current = storedTurns;
+    optionsRef.current = input;
+  }, [input, local, storedTurns]);
   const queryClient = useQueryClient();
   const { dispatchRunState } = useThreadActions();
   const mounted = useRef(false);
@@ -249,7 +251,9 @@ export function useRetryStandIns(input: {
     [dispatchRunState, patch, refresh, threadId],
   );
   const sendRef = useRef(send);
-  sendRef.current = send;
+  useLayoutEffect(() => {
+    sendRef.current = send;
+  }, [send]);
 
   const retry = useCallback<RetryStandIns["retry"]>(
     (from, build) => {

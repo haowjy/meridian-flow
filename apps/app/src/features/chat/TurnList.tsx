@@ -290,28 +290,36 @@ export function TurnList({
       }
       const rowIndex = rowIndexOf(idx);
       const local = !row.inherited;
+      const writer = view.writer.get(row.turn.id);
+      const items = view.items.get(row.turn.id);
+      const queuedWriter = Boolean(writer && row.queued && local);
+      const compaction = row.kind === "compaction" && local;
+      const handoff = row.kind === "handoff-seed" && local;
+      const assistant = Boolean(items && row.response);
       return (
         <TranscriptRow
           row={row}
-          items={view.items.get(row.turn.id)}
-          writer={view.writer.get(row.turn.id)}
+          items={items}
+          writer={writer}
           threadId={threadId}
           uploadsChat={local ? uploadsChat : undefined}
           submissionRecovery={local ? submissionRecoveryByTurnId?.get(row.turn.id) : undefined}
-          queue={row.queued && local ? queue : null}
-          lastQueued={row.queued && row.turn.id === lastQueuedTurnId}
-          queuedCount={queuedCount}
+          queue={queuedWriter ? queue : null}
+          lastQueued={queuedWriter && row.turn.id === lastQueuedTurnId}
+          queuedCount={queuedWriter ? queuedCount : 0}
           isLatestAssistant={rowIndex === lastAssistantIdx}
           standIn={local && (isStandIn?.(row.turn.id) ?? false)}
-          stopping={local && (chatStop?.status === "pending" || chatStop?.status === "stopping")}
-          onStop={local ? chatStop?.stop : undefined}
-          brief={row.kind === "handoff-seed" && local ? brief : null}
-          destinationBusy={busy}
+          stopping={
+            compaction && (chatStop?.status === "pending" || chatStop?.status === "stopping")
+          }
+          onStop={compaction ? chatStop?.stop : undefined}
+          brief={handoff ? brief : null}
+          destinationBusy={handoff && busy}
           owners={row.inherited ? (inherited?.owners ?? null) : null}
-          onRespondToInterrupt={local ? onRespondToInterrupt : undefined}
-          changeTrail={local ? byTurnId.get(row.turn.id) : undefined}
+          onRespondToInterrupt={assistant && local ? onRespondToInterrupt : undefined}
+          changeTrail={assistant && local ? byTurnId.get(row.turn.id) : undefined}
           navigateToChange={navigateToChange}
-          threadUsage={local ? threadUsage : null}
+          threadUsage={assistant && local ? threadUsage : null}
         />
       );
     },
