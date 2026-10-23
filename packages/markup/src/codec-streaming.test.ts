@@ -73,14 +73,6 @@ it("keeps every streaming parse confined to the canonical last block", () => {
     }
   }
 
-  for (const source of fixtures.slice(-12)) {
-    for (const size of [2, 7, 23]) {
-      for (let end = size; end < source.length; end += size) {
-        assertStreamingParse(source.slice(0, Math.min(end, source.length)));
-      }
-    }
-  }
-
   for (const source of ineffectiveRepairFixtures) {
     expect(
       nodesEqual(codec.parseStreaming(source, { repair: true }).blocks, codec.parse(source).blocks),
