@@ -10,7 +10,8 @@ export const mockScriptCommand: CommandSpec = {
     match: { type: "string", description: "Only calls whose latest user message contains this" },
   },
   examples: [
-    `./mf mock script '[{"text":"Done."}]'`,
+    `./mf mock script '[{"sample":"critique","chunkDelayMs":30}]'`,
+    `./mf mock script '[{"lorem":{"words":10000},"chunkSize":512}]'`,
     "./mf mock script @tools/mf/fixtures/mock-write.json --match 'draft the scene'",
   ],
   async run(ctx) {
