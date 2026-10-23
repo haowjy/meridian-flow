@@ -26,7 +26,7 @@ ID. A document with no draft can still be an item and can still be applied.
 ## Lifecycle and Apply
 
 Work admission and reply writes still require the shared Work lifecycle boundary.
-The old server review, staged Apply, selective Discard and draft reset are gone.
+There is no server review, staged Apply, selective Discard or draft reset.
 Atomic Apply commits frozen clicked content into live and the review base
 together; see [Apply](apply.md). The browser owns room-derived review and local
 undoable text Discard. Per-document server Discard only ends a still-hidden creation's

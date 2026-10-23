@@ -42,7 +42,10 @@ execution starts only after commit.
   be reconstructed; run preparation lands it as a failed turn on the writer's
   message.
 - `threads.origin_turn_id` is `ON DELETE NO ACTION`: provenance is never nulled
-  to let a source turn be deleted.
+  to let a source turn be deleted. Work purge keeps a deleted Work whose turns
+  another Work's fork or handoff still inherits.
+- `threads.derivation_source_thread_id` records the chat the writer acted on,
+  independently of the cutoff owner; it is not a spawn-parent relationship.
 
 The handoff seed is a pending system seed, not an inbox control or run turn.
 Response rows on system seeds never supply prefix warmth or token baselines.
@@ -185,6 +188,21 @@ new row because the source journal is written in the same transaction. Work-only
 mutations may enqueue immutable inbox markers while holding Work rows; the
 thread FK's `KEY SHARE` does not conflict with `NO KEY UPDATE`.
 
+Work lifecycle guards (`shared/work-lifecycle-lock.ts`): a mutation whose
+validity depends on an active Work locks that Work row and rechecks lifecycle in
+the same transaction, so delete cannot commit between authorization and the
+dependent write. Stability guards (namespace and provisioning, membership,
+authority reads) take `FOR KEY SHARE` and stay compatible with each other and
+with activity updates; activity and projection mutations take `FOR NO KEY
+UPDATE`; lifecycle transitions take `FOR UPDATE`. Namespace mutation has its own
+exclusive guard. Derived threads take the stability guard after the source
+thread lock and before allocating the handle counter. Work delete and purge
+read the Work's chat forest, lock those threads, then the Work, and recheck, so
+a chat that joined meanwhile retries rather than escaping the cascade. A durable
+file write confirms its grants under the owning Work's row guard before any
+advisory or document lock; project-owned and No Work files lock no Work row.
+Named Work creation serializes handle minting through the project advisory lock.
+
 ## Ports and adapters
 
 | Port | Contract |
@@ -238,7 +256,9 @@ ports rather than adapter details.
   `(project_id, root_thread_id)` cascade FK would pull it into another
   conversation's deletion. A fork's up-edge is the owner of its cutoff turn
   (possibly inherited); a handoff's cutoff points to its source.
-- `threads.active_leaf_turn_id` anchors the visible-conversation walk. Hidden
+- `threads.active_leaf_turn_id` anchors the visible-conversation walk, and code
+  that needs the latest turn reads it, never timestamp order: two turns created in
+  the same millisecond are a normal production path. Hidden
   Work-context, inbox-message, compaction, and non-custom system turns are
   skipped; `subagent_update` and adopted inbox messages render inside the
   preceding assistant activity. Visibility keys on `metadata.kind`, not

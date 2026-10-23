@@ -31,6 +31,13 @@ level = min(person term, lifecycle term, agent term)
   `edit` chain may write another lineage by its canonical URI. The minimum
   across the chain wins.
 
+Agent refusals are `permission_denied` with reason `agent_read_only` or
+`uploads_read_only` (`@meridian/contracts` `protocol/file-access.ts`; wording in
+`server/lib/file-access-denial-copy.ts`). A `read` chain's system prompt says so
+(`runtime/tools/agent-thread-context.ts`). The built-in Critic,
+Continuity-checker and Reader-sim agents declare `permission: read`; the other
+built-ins take the default `edit`.
+
 `domain/policy.ts` is pure. `SOURCE_RULES` decides whether a source is drafted
 (Scratch and Uploads are never drafted) and the agent cap. File facts use the
 canonical branch resolver and the selected tree view; hidden identities outside

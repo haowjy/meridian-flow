@@ -38,7 +38,7 @@ Server rows bypass both writer authorship and agent freshness checks. Restoratio
 records in `__meridian_review_restored_v1` are writer-writable and checked only
 for integer, non-overlapping link and known-range bounds after integration;
 content kinds and tombstone text never certify them. Browser restoration
-certificates are no longer written into journal metadata.
+certificates are not written into journal metadata.
 
 Apply has one HTTP door per document: `draft/apply`. It compiles the frozen
 snapshot off-lock, then commits live, the prefix-authored review base and Apply
@@ -48,7 +48,7 @@ for the storage boundary and diagnostic timing contract. Work Apply all is a
 browser loop of per-document clicks; there is no settlement executor or recovery
 worker behind the route.
 
-The server preview route and review-cut/attribution/selection engine are deleted.
+The server has no preview route and no review-cut, attribution or selection engine; review is computed in the browser.
 The SQL-only addressed metadata GET resolves active drafts even when unlisted;
 it returns the stable room name without loading that room. Browser provenance reads use `domain/draft-provenance.ts`
 over the disposition store's repeatable-read capture, without a server diff.
@@ -145,8 +145,8 @@ live merge, provisioning or write admission. Inverse planning, immutable turn ta
 Do not reuse active-only `ReadReviewCut` for historical disposition.
 
 Receipt selection is `document_edit_parts.origin->>'draftId' = $draftId`,
-joined to `document_edits.actor = 'agent'`, latest first. The migrations lane
-must index that origin expression (not placement). No generation filter applies.
+joined to `document_edits.actor = 'agent'`, latest first. The partial index
+`document_edit_parts_pending_origin_idx` covers that origin expression (not placement). No generation filter applies.
 The part array keeps numeric receipt IDs and `editId`/`ordinal`; classification
 members index that same array. Conversation identity and reveal links roll
 subagents up to their nearest primary ancestor. Receipts survive deletion of their
@@ -249,7 +249,7 @@ no drafts.
 
 A Work draft is shared by every thread editing the same document in that Work.
 Thread peers retain their upstream draft identity for binding and retirement, but perform
-no content pull, catch-up or write. Draft reset and peer re-fork no longer exist.
+no content pull, catch-up or write. There is no draft reset or peer re-fork.
 
 Attribution is based on immutable journal provenance and dependency closure,
 not text similarity or block proximity. Writer rows retain their identity.
@@ -493,7 +493,7 @@ it fully rather than caching an incremental cut. It calls `rebase(base, live, dr
 and writes both fragments in one client-1 transaction, one `source: server` row.
 It takes neither a live lock nor a Work boundary, capture or revision predicate;
 background rebases keep archived drafts current. Server append events include
-`holdMs` and `serverRows` for the separate hold-time measurement lane.
+`holdMs` and `serverRows` for measuring hold time.
 
 Writer and agent admission runs `findLostEdits` against the committed prefix.
 Only hidden typing under a top-level block whose deletion is certified by a
