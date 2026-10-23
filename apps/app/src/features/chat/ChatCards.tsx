@@ -46,17 +46,62 @@ export function ChatCardsProvider({
 
 const NONE: readonly ChatCard[] = [];
 
-function sameAnchor(a: ChatCardAnchor, b: ChatCardAnchor): boolean {
+export function sameChatCardAnchor(a: ChatCardAnchor, b: ChatCardAnchor): boolean {
   if (typeof a === "string" || typeof b === "string") return a === b;
   if ("turn" in a) return "turn" in b && a.turn === b.turn;
   if ("message" in a) return "message" in b && a.message === b.message;
   return "queuedControl" in b && a.queuedControl === b.queuedControl;
 }
 
+export function sameChatCards(left: readonly ChatCard[], right: readonly ChatCard[]): boolean {
+  const fields = {
+    key: "value",
+    failure: "failure",
+    copy: "value",
+    action: "value",
+    anchor: "anchor",
+    count: "value",
+    text: "value",
+    requestId: "value",
+  } satisfies Record<keyof ChatCard, "value" | "failure" | "anchor">;
+  return (
+    left.length === right.length &&
+    left.every((card, index) => {
+      const other = right[index];
+      if (!other) return false;
+      return (Object.keys(fields) as (keyof ChatCard)[]).every((field) => {
+        if (fields[field] === "anchor") return sameChatCardAnchor(card.anchor, other.anchor);
+        if (fields[field] === "failure") return sameFailure(card.failure, other.failure);
+        return card[field] === other[field];
+      });
+    })
+  );
+}
+
+function sameFailure(left: ChatCard["failure"], right: ChatCard["failure"]): boolean {
+  const fields = {
+    category: "value",
+    source: "value",
+    actionable: "value",
+    cause: "cause",
+  } satisfies Record<keyof ChatCard["failure"], "value" | "cause">;
+  const causeFields = {
+    code: "value",
+    reason: "value",
+    status: "value",
+  } satisfies Record<keyof ChatCard["failure"]["cause"], "value">;
+  return (Object.keys(fields) as (keyof ChatCard["failure"])[]).every((field) => {
+    if (fields[field] !== "cause") return left[field] === right[field];
+    return (Object.keys(causeFields) as (keyof ChatCard["failure"]["cause"])[]).every(
+      (causeField) => left.cause[causeField] === right.cause[causeField],
+    );
+  });
+}
+
 /** The cards anchored at one place, in `chatCards` order. */
 export function useCardsAt(anchor: ChatCardAnchor): readonly ChatCard[] {
   const context = useContext(ChatCardsContext);
-  return context?.cards.filter((card) => sameAnchor(card.anchor, anchor)) ?? NONE;
+  return context?.cards.filter((card) => sameChatCardAnchor(card.anchor, anchor)) ?? NONE;
 }
 
 /** Every card at an anchor. A message card's Retry and Edit are the writer row's own recovery. */
