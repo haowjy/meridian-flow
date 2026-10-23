@@ -34,10 +34,12 @@ export function projectWorkBranchFiles(
       const movedFrom = draft.tree?.movedFrom;
       return {
         documentId: draft.documentId,
-        documentName: live
-          ? (documentTitleFromUri(live.uri) ?? draft.documentName)
-          : movedFrom
-            ? (documentTitleFromUri(movedFrom.path) ?? draft.documentName)
+        // The draft row owns a drafted move's current identity. The live catalog still names the
+        // old location until Apply, but review surfaces must agree with the open draft editor.
+        documentName: movedFrom
+          ? draft.documentName
+          : live
+            ? (documentTitleFromUri(live.uri) ?? draft.documentName)
             : draft.documentName,
         contextLocation: location
           ? { scheme: location.scheme, path: location.path }
