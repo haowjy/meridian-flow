@@ -183,6 +183,11 @@ else
         runClaim,
         eventWriter: {
           ...noFailureRecorder,
+          async appendEvents(threadId, events) {
+            let seq = 0n;
+            for (const event of events) seq = await this.appendEvent(threadId, event);
+            return seq;
+          },
           async appendEvent(threadId, event) {
             if (event.type === "work_context.changed") throw new Error("crash before ack");
             return eventWriter.appendEvent(threadId, event);

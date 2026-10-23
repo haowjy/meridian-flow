@@ -27,6 +27,7 @@ export const JOURNAL_ONLY_EVENT_TYPES = [
 ] as const;
 
 export interface EventJournalWriter {
+  appendEvents(threadId: ThreadId, events: readonly JournalEventEnvelope[]): Promise<bigint>;
   appendEvent(threadId: ThreadId, event: JournalEventEnvelope): Promise<bigint>;
 }
 
