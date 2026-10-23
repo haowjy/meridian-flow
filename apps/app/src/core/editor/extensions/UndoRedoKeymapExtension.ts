@@ -10,12 +10,26 @@
  * history exists — a standalone editor has no undo command to bind to.
  */
 import { Extension } from "@tiptap/core";
+import {
+  mountEditorHistory,
+  redoEditorHistory,
+  undoEditorHistory,
+  unmountEditorHistory,
+} from "../editor-history";
 
 export const UndoRedoKeymapExtension = Extension.create({
   name: "meridianUndoRedoKeymap",
   // Above the collaboration extension's own 1000, so these keys resolve here
   // first and no extension added later can quietly take them.
   priority: 1100,
+
+  onCreate() {
+    mountEditorHistory(this.editor);
+  },
+
+  onDestroy() {
+    unmountEditorHistory(this.editor);
+  },
 
   // Every binding consumes its key whether or not the stack had anything left.
   // Ownership that lapses on an empty stack is not ownership: the key would
@@ -25,15 +39,15 @@ export const UndoRedoKeymapExtension = Extension.create({
   addKeyboardShortcuts() {
     return {
       "Mod-z": () => {
-        this.editor.commands.undo();
+        undoEditorHistory(this.editor);
         return true;
       },
       "Mod-y": () => {
-        this.editor.commands.redo();
+        redoEditorHistory(this.editor);
         return true;
       },
       "Shift-Mod-z": () => {
-        this.editor.commands.redo();
+        redoEditorHistory(this.editor);
         return true;
       },
     };

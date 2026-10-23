@@ -30,6 +30,8 @@ export function DraftCommandStatus({
         <Trans>Retry</Trans>
       </button>
     </>
+  ) : state.unapplying ? (
+    <Trans>Undoing Apply</Trans>
   ) : state.applying ? (
     <Trans>Applying</Trans>
   ) : state.failure ? (

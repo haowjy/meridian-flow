@@ -7,6 +7,12 @@ import { type EditorState, TextSelection, type Transaction } from "@tiptap/pm/st
 import { CellSelection } from "@tiptap/pm/tables";
 
 import { type ChromeContext, chromeContextAt, resolveChromeContext } from "@/core/editor/chrome";
+import {
+  canRedoEditorHistory,
+  canUndoEditorHistory,
+  redoEditorHistory,
+  undoEditorHistory,
+} from "@/core/editor/editor-history";
 import { linkAttributesAtSelection } from "@/core/editor/links";
 
 import {
@@ -338,20 +344,22 @@ export function setToolbarAlignment(editor: Editor, value: ToolbarAlignmentValue
 /** Undo is the Yjs UndoManager's, shared with the Mod-z binding the editor owns. */
 export function undoDocument(editor: Editor): boolean {
   if (!canWrite(editor) || !hasCollaborativeHistory(editor)) return false;
-  return editor.chain().focus().undo().run();
+  editor.commands.focus();
+  return undoEditorHistory(editor);
 }
 
 export function redoDocument(editor: Editor): boolean {
   if (!canWrite(editor) || !hasCollaborativeHistory(editor)) return false;
-  return editor.chain().focus().redo().run();
+  editor.commands.focus();
+  return redoEditorHistory(editor);
 }
 
 export function canUndoDocument(editor: Editor | null): boolean {
-  return Boolean(editor && hasCollaborativeHistory(editor) && editor.can().undo());
+  return Boolean(editor && hasCollaborativeHistory(editor) && canUndoEditorHistory(editor));
 }
 
 export function canRedoDocument(editor: Editor | null): boolean {
-  return Boolean(editor && hasCollaborativeHistory(editor) && editor.can().redo());
+  return Boolean(editor && hasCollaborativeHistory(editor) && canRedoEditorHistory(editor));
 }
 
 function canWrite(editor: Editor): boolean {

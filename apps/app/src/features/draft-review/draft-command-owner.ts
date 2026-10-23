@@ -25,6 +25,7 @@ import {
   discardCreatedDraft,
   discardWorkDrafts,
   observeDraftClick,
+  unapplyDraftClick,
 } from "@/client/api/branches-api";
 import type { DocumentSession } from "@/core/editor/document-session";
 import {
@@ -32,6 +33,7 @@ import {
   type DraftRoomRegistry,
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
+import type { EditorHistoryActionResult, EditorHistoryHandle } from "@/core/editor/editor-history";
 import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./apply-click-queue";
 import { startDraftDiscardSession } from "./draft-discard-session";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
@@ -41,6 +43,7 @@ import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
 
 export type DraftCommandState = {
   applying: boolean;
+  unapplying: boolean;
   stalled: boolean;
   pending: boolean;
   hidden: boolean;
@@ -54,6 +57,7 @@ export type DraftCommandState = {
 };
 const EMPTY: DraftCommandState = {
   applying: false,
+  unapplying: false,
   stalled: false,
   pending: false,
   hidden: false,
@@ -104,6 +108,7 @@ type Entry = {
   users: number;
   lease: DraftRoomRead | null;
   unwatchLease(): void;
+  unapplying: Map<string, { frozen: FrozenApply; groupIds: Set<string>; observed: boolean }>;
 };
 export type CapturedApply = {
   /** Releases the already-queued click to send. A preceding click may have settled its tree cut. */
@@ -239,6 +244,7 @@ export class DraftCommandOwner {
         users: 0,
         lease: null,
         unwatchLease: () => {},
+        unapplying: new Map(),
       };
       this.entries.set(address.draftId, entry);
       this.byItem.set(ref.itemKey, entry);
@@ -278,9 +284,13 @@ export class DraftCommandOwner {
 
   /** The item's schedule, on the generation its state follows: the one publication path. */
   private publishQueue({ ref, queue }: Item) {
+    const unapplying = [...(this.items.get(ref.itemKey)?.rooms ?? [])].some(
+      (entry) => entry.unapplying.size > 0,
+    );
     this.setState(ref.itemKey, {
-      pending: queue.clicks.length > 0,
+      pending: queue.clicks.length > 0 || unapplying,
       applying: queue.applying,
+      unapplying,
       stalled: queue.clicks[0]?.stalled ?? false,
     });
   }
@@ -332,18 +342,30 @@ export class DraftCommandOwner {
     binding.runtime.setBaseProvider((_room, schema) => {
       const recorded = new Set(readApplyRecord(session.document).map((row) => row.commandId));
       let base: readonly PMNode[] = readBase(session.document, schema);
+      for (const pending of [...entry.unapplying.values()].reverse())
+        base = applyBase(schema, base, pending.frozen.patched, pending.frozen.optimistic);
       for (const click of this.textClicks(entry))
-        if (!recorded.has(click.body.commandId))
+        if (!recorded.has(click.body.commandId) && !entry.unapplying.has(click.body.commandId))
           base = applyBase(schema, base, click.optimistic, click.patched);
       return base;
     });
     const record = session.document.getArray(APPLY_RECORD_ROOT);
     const observe = () => {
       binding.runtime.invalidateBase();
-      entry.item.queue.observe(
-        entry.draftId,
-        readApplyRecord(session.document).flatMap((row) => (row.commandId ? [row.commandId] : [])),
-      );
+      const rows = readApplyRecord(session.document);
+      const recorded = new Set(rows.flatMap((row) => (row.commandId ? [row.commandId] : [])));
+      for (const [commandId, pending] of entry.unapplying) {
+        const targetedRecord = rows.some(
+          (row) =>
+            row.commandId === commandId &&
+            row.groupId !== undefined &&
+            pending.groupIds.has(row.groupId),
+        );
+        if (targetedRecord) pending.observed = true;
+        else if (pending.observed) entry.unapplying.delete(commandId);
+      }
+      this.publishQueue(entry.item);
+      entry.item.queue.observe(entry.draftId, recorded);
     };
     record.observeDeep(observe);
     let stopSession = () => {};
@@ -598,6 +620,7 @@ export class DraftCommandOwner {
     target: ChangeTarget,
     restore = false,
     requested?: { revision: string | null },
+    history?: EditorHistoryHandle | null,
   ): CapturedApply | null {
     if (!this.active || this.state(ref.itemKey).discarding) return null;
     // A tree cut already on its way is not sent twice; the same revision would answer `changed`.
@@ -614,7 +637,7 @@ export class DraftCommandOwner {
           entry?.binding?.runtime.state().ready && entry.binding.runtime.projectNow()?.groups.length
         ));
     if (textless) return tree ? this.captureTree(ref, tree, restore) : null;
-    return this.captureText(ref, target, restore, tree);
+    return this.captureText(ref, target, restore, tree, history);
   }
 
   private blockedApply() {
@@ -678,6 +701,7 @@ export class DraftCommandOwner {
     target: TextTarget,
     restore: boolean,
     tree: { revision: string | null } | undefined,
+    history?: EditorHistoryHandle | null,
   ): CapturedApply | null {
     const entry = this.byItem.get(ref.itemKey);
     const binding = entry?.binding;
@@ -721,10 +745,12 @@ export class DraftCommandOwner {
     const acknowledged = binding.session.whenCurrentChangesAcknowledged();
     const barrier = sendBarrier();
     this.setState(ref.itemKey, { failure: null });
-    const result = entry.item.queue.enqueue(
-      { body, optimistic, patched, acknowledged },
-      barrier.promise,
-    );
+    const frozen = { body, optimistic, patched, acknowledged } satisfies FrozenApply;
+    const result = entry.item.queue.enqueue(frozen, barrier.promise);
+    if (history)
+      this.captureApplyHistory(entry, frozen, result, history, (groupIds) =>
+        applySpanPatches(optimistic, composeGroups(schema, frame, groupIds, "apply"), "base"),
+      );
     binding.runtime.projectNow();
     const outcome = result.then((answer) => this.settled(ref, entry.draftId, answer));
     let released = false;
@@ -737,6 +763,110 @@ export class DraftCommandOwner {
         return { sent: !cancel, outcome: cancel ? Promise.resolve({ kind: "done" }) : outcome };
       },
     };
+  }
+
+  private captureApplyHistory(
+    entry: Entry,
+    original: FrozenApply,
+    initial: Promise<ApplyClickOutcome>,
+    history: EditorHistoryHandle,
+    patchFor: (groupIds: readonly string[]) => readonly PMNode[],
+  ): void {
+    let frozen = original;
+    let outcome = initial;
+    let unapplyCommandId: string | undefined;
+    const landedText = (answer: ApplyClickOutcome) =>
+      answer.status === "landed" || (answer.status === "applied" && answer.textEffect === true);
+    const fail = (serverCode: string) => {
+      entry.unapplying.delete(frozen.body.commandId);
+      entry.binding?.runtime.invalidateBase();
+      this.publishQueue(entry.item);
+      this.setState(entry.ref.itemKey, {
+        failure: { code: "unapply-refused", serverCode },
+      });
+    };
+    const reverse = async (): Promise<EditorHistoryActionResult> => {
+      const releaseQueue = entry.item.queue.hold();
+      try {
+        if (entry.item.queue.cancel(frozen.body.commandId)) return "done";
+        const answer = await outcome;
+        if (!landedText(answer)) return "discard";
+        const records = new Set(
+          entry.binding
+            ? readApplyRecord(entry.binding.session.document).map((row) => row.commandId)
+            : [],
+        );
+        entry.unapplying.set(frozen.body.commandId, {
+          frozen,
+          groupIds: new Set(frozen.body.groupIds),
+          observed: records.has(frozen.body.commandId),
+        });
+        entry.binding?.runtime.invalidateBase();
+        this.publishQueue(entry.item);
+        unapplyCommandId ??= crypto.randomUUID();
+        const commandId = unapplyCommandId;
+        for (const delay of [0, 250, 750, 1500]) {
+          if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+          try {
+            const result = await unapplyDraftClick(entry.ref, {
+              commandId,
+              applyCommandId: frozen.body.commandId,
+            });
+            if (result.status === "unapplied") {
+              const pending = entry.unapplying.get(frozen.body.commandId);
+              if (!result.reversedGroupIds.length) {
+                entry.unapplying.delete(frozen.body.commandId);
+                entry.binding?.runtime.invalidateBase();
+                this.publishQueue(entry.item);
+                return "discard";
+              }
+              frozen = {
+                ...frozen,
+                body: { ...frozen.body, groupIds: result.reversedGroupIds },
+                patched: patchFor(result.reversedGroupIds),
+              };
+              if (pending) {
+                pending.frozen = frozen;
+                pending.groupIds = new Set(result.reversedGroupIds);
+                entry.binding?.runtime.invalidateBase();
+              }
+              return "done";
+            }
+            if (result.status === "closed" || result.status === "refused") {
+              fail(result.status);
+              return "failed";
+            }
+          } catch {
+            // The immutable command id makes an unknown response safe to retry.
+          }
+        }
+        fail("unknown");
+        return "failed";
+      } finally {
+        releaseQueue();
+      }
+    };
+    const reapply = async (): Promise<EditorHistoryActionResult> => {
+      const commandId = crypto.randomUUID();
+      unapplyCommandId = undefined;
+      frozen = {
+        ...frozen,
+        body: { ...frozen.body, commandId, tree: undefined },
+        acknowledged: Promise.resolve(),
+      };
+      outcome = entry.item.queue.enqueue(frozen);
+      entry.binding?.runtime.invalidateBase();
+      const answer = await outcome;
+      if (landedText(answer)) return "done";
+      this.setState(entry.ref.itemKey, {
+        failure: {
+          code: "apply-refused",
+          serverCode: answer.status === "applied" ? "text_not_applied" : refusalCode(answer),
+        },
+      });
+      return "failed";
+    };
+    history.captureApply({ undo: reverse, redo: reapply });
   }
 
   /** Releases a captured batch in server order while every intent remains owner-held. */

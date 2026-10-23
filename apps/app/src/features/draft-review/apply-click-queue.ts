@@ -66,6 +66,7 @@ export class ApplyClickQueue {
   private readonly resolving = new Set<Click>();
   private retryTimer?: ReturnType<typeof setTimeout>;
   private feedbackTimer?: ReturnType<typeof setTimeout>;
+  private holds = 0;
   applying = false;
 
   constructor(
@@ -130,6 +131,28 @@ export class ApplyClickQueue {
     void this.dispatch(head);
   }
 
+  /** Cancel an unsent immutable command, including one whose UI release already resolved. */
+  cancel(commandId: string): boolean {
+    const click = this.clicks.find((candidate) => candidate.body.commandId === commandId);
+    if (!click || click.sent) return false;
+    this.clicks.splice(this.clicks.indexOf(click), 1);
+    click.finish({ status: "cancelled" });
+    this.moveOn();
+    return true;
+  }
+
+  /** Keep later clicks frozen while a landed click is being reversed. */
+  hold(): () => void {
+    this.holds++;
+    let held = true;
+    return () => {
+      if (!held) return;
+      held = false;
+      this.holds--;
+      this.moveOn();
+    };
+  }
+
   private isRecorded(click: Click): boolean {
     const { draftId, commandId } = click.body;
     return draftId !== undefined && (this.recorded.get(draftId)?.has(commandId) ?? false);
@@ -182,7 +205,8 @@ export class ApplyClickQueue {
     this.clearFeedbackIfIdle();
     this.port.changed();
     const next = this.clicks[0];
-    if (next && !this.request && !next.sent && !this.closed) void this.dispatch(next);
+    if (next && !this.request && !next.sent && !this.closed && !this.holds)
+      void this.dispatch(next);
   }
 
   destroy(): void {
@@ -196,7 +220,7 @@ export class ApplyClickQueue {
   }
 
   private async dispatch(click: Click): Promise<void> {
-    if (this.request || this.clicks[0] !== click || click.stalled) return;
+    if (this.request || this.clicks[0] !== click || click.stalled || this.holds) return;
     try {
       const [, released] = await Promise.all([click.acknowledged, click.release]);
       if (released.cancel) {
@@ -211,7 +235,7 @@ export class ApplyClickQueue {
       this.refuse(click);
       return;
     }
-    if (this.request || this.clicks[0] !== click) return;
+    if (this.request || this.clicks[0] !== click || this.holds) return;
     this.request = click;
     click.sent = true;
     click.inFlight = true;
@@ -229,7 +253,7 @@ export class ApplyClickQueue {
       // The record released it while the request was in flight (or the queue was destroyed).
       if (this.resolving.has(click)) this.complete(click);
       const next = this.clicks[0];
-      if (next) void this.dispatch(next);
+      if (next && !this.holds) void this.dispatch(next);
       return;
     }
     if (answer?.status === "applied") {
@@ -330,7 +354,7 @@ export class ApplyClickQueue {
     this.clearFeedbackIfIdle();
     this.port.changed();
     const next = this.clicks[0];
-    if (next && !this.request) void this.dispatch(next);
+    if (next && !this.request && !this.holds) void this.dispatch(next);
     return true;
   }
 

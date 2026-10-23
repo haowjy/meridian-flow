@@ -10,6 +10,8 @@ import type {
   DraftDiscardResponse,
   DraftMetadataResponse,
   ThreadDraftListResponse,
+  UnapplyClick,
+  UnapplyClickAnswer,
 } from "@meridian/contracts/branches";
 import {
   apiProjectDocumentBranchesPath,
@@ -19,6 +21,7 @@ import {
   apiProjectWorkDocumentDraftApplyPath,
   apiProjectWorkDocumentDraftDiscardPath,
   apiProjectWorkDocumentDraftPath,
+  apiProjectWorkDocumentDraftUnapplyPath,
 } from "@meridian/contracts/protocol";
 
 import { getJson, postJson } from "./http-client";
@@ -62,6 +65,13 @@ export function observeDraftClick(
   // Only the typed `none` answer proves absence. A 404 may be lost Work access, not an unclaimed id.
   return getJson<ApplyClickObservation>(
     apiProjectWorkBranchCommandPath(draft.projectId, draft.workId, body.commandId),
+    { signal: AbortSignal.timeout(10_000) },
+  );
+}
+export function unapplyDraftClick(draft: DraftAddress, body: UnapplyClick) {
+  return postJson<UnapplyClickAnswer>(
+    apiProjectWorkDocumentDraftUnapplyPath(draft.projectId, draft.workId, draft.documentId),
+    body,
     { signal: AbortSignal.timeout(10_000) },
   );
 }
