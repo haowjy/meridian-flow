@@ -518,8 +518,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
   });
   const applyClick = applyCommands.apply;
+  const unapplyClick = applyCommands.unapply;
   const branches = createWorkBranchReviewService({
     applyClick,
+    unapplyClick,
     branches: workBranches,
     reviewItems,
     identity,

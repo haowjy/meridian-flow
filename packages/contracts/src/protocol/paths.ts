@@ -155,6 +155,14 @@ export function apiProjectWorkDocumentDraftApplyPath(
   return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/apply`;
 }
 
+export function apiProjectWorkDocumentDraftUnapplyPath(
+  projectId: string,
+  workId: string,
+  documentId: string,
+): string {
+  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/unapply`;
+}
+
 export function apiProjectWorkDocumentDraftDiscardPath(
   projectId: string,
   workId: string,

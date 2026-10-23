@@ -14,14 +14,24 @@ import {
   REVIEW_BASE_FRAGMENT,
   readBlocks,
   rebase,
+  removeApplyRecords,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
 import type {
   AgentEditCodecFactory,
   AgentEditModel,
+  InversePart,
   UpdateJournal,
 } from "@meridian/agent-edit/integration";
-import { type BranchId, type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
+import { computeInverse } from "@meridian/agent-edit/integration";
+import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
+import {
+  type BranchId,
+  type DocumentId,
+  draftItemKey,
+  type EditOrigin,
+  type UserId,
+} from "@meridian/contracts";
 import type {
   AppliedReviewItem,
   ApplyClickAnswer,
@@ -35,10 +45,17 @@ import {
   branches,
   changeTrailDirtyLog,
   documentDrafts,
+  documentEditParts,
+  documentEdits,
   pushLineage,
 } from "@meridian/database/schema";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { and, eq, sql } from "drizzle-orm";
+import {
+  allocateDocumentClient,
+  buildDocumentSchema,
+  PROSEMIRROR_FRAGMENT_NAME,
+} from "@meridian/prosemirror-schema";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -76,15 +93,18 @@ import {
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
+import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { storedDocument } from "./document-loader.js";
 import { createApplyTreeOperations } from "./drizzle-apply-tree.js";
 import { claimCommandWithinTx, lookupCommand } from "./drizzle-branch-commands.js";
+import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 
 const applyTiming = new AsyncLocalStorage<{
   commandId: string;
   measured: (input: { commandId: string; holdMs: number }) => void;
 }>();
+const schema = buildDocumentSchema();
 
 /** Uses the append door's actual lock-to-root-commit time, not the server author's CPU time. */
 export function measureApplyAppend(detail: { holdMs: number }): void {
@@ -184,6 +204,38 @@ export function createDrizzleApplyClick(
       path: displayedPath(node, found.document.path),
     };
   }
+
+  async function editHistory(
+    documentId: DocumentId,
+  ): Promise<(InversePart & { origin: EditOrigin })[]> {
+    const rows = await currentDrizzleDb(db)
+      .select({
+        part: {
+          id: documentEditParts.id,
+          editId: documentEditParts.editId,
+          ordinal: documentEditParts.ordinal,
+          update: documentEditParts.update,
+          effect: documentEditParts.effect,
+          targets: documentEditParts.targets,
+          frontier: documentEditParts.frontier,
+          aliases: documentEditParts.aliases,
+          origin: documentEditParts.origin,
+        },
+        kind: documentEdits.kind,
+        actionId: documentEdits.actionId,
+      })
+      .from(documentEditParts)
+      .innerJoin(documentEdits, eq(documentEditParts.editId, documentEdits.id))
+      .where(eq(documentEdits.documentId, documentId))
+      .orderBy(documentEditParts.id);
+    return rows.map(({ part, kind, actionId }) => ({
+      ...part,
+      update: new Uint8Array(part.update),
+      kind,
+      actionId,
+    }));
+  }
+
   return {
     async loadBase(command) {
       const draftId = command.request.draftId;
@@ -212,6 +264,256 @@ export function createDrizzleApplyClick(
           .from(documentDrafts)
           .where(eq(documentDrafts.id, draftId));
         if (!row || row.status === "closed") return null;
+        throw cause;
+      }
+    },
+    async loadUnapply(command) {
+      const tx = currentDrizzleDb(db);
+      const rows = await tx
+        .select({
+          branchId: branchCommands.branchId,
+          ordinal: applyCommandEffects.ordinal,
+          groupId: applyCommandEffects.groupId,
+          draftId: applyCommandEffects.draftId,
+          documentId: applyCommandEffects.documentId,
+          liveUpdateSeq: applyCommandEffects.liveUpdateSeq,
+          baseBefore: applyCommandEffects.baseBefore,
+          baseAfter: applyCommandEffects.baseAfter,
+        })
+        .from(applyCommandEffects)
+        .innerJoin(branchCommands, eq(branchCommands.id, applyCommandEffects.commandId))
+        .where(
+          and(
+            eq(applyCommandEffects.commandId, command.request.applyCommandId),
+            eq(applyCommandEffects.documentId, command.documentId),
+            isNull(applyCommandEffects.unappliedBy),
+            eq(branchCommands.workId, command.workId),
+            eq(branchCommands.accountId, command.envelope.accountId),
+            eq(branchCommands.kind, "apply_click"),
+            eq(branchCommands.state, "done"),
+          ),
+        )
+        .orderBy(applyCommandEffects.ordinal);
+      const first = rows[0];
+      if (!first?.branchId || rows.some((row) => row.draftId !== first.draftId)) return null;
+      try {
+        const base = await deps.coordinator.loadBase(first.draftId);
+        if (
+          base.snapshot.status === "closed" ||
+          base.snapshot.documentId !== command.documentId ||
+          base.snapshot.branchId !== first.branchId
+        )
+          return null;
+        return {
+          base,
+          branchId: first.branchId,
+          effects: rows.map(({ ordinal, groupId, liveUpdateSeq, baseBefore, baseAfter }) => ({
+            ordinal,
+            groupId,
+            liveUpdateSeq,
+            baseBefore,
+            baseAfter,
+          })),
+        };
+      } catch (cause) {
+        const [draft] = await tx
+          .select({ status: documentDrafts.status })
+          .from(documentDrafts)
+          .where(eq(documentDrafts.id, first.draftId));
+        if (!draft || draft.status === "closed") return null;
+        throw cause;
+      }
+    },
+    async unapply(command, prepared) {
+      const commandId = command.envelope.commandId;
+      const closed = (): import("@meridian/contracts/branches").UnapplyClickResult => ({
+        status: "closed",
+        commandId,
+      });
+      try {
+        return await deps.workProjection.mutate(
+          { works: [command.workId] },
+          async (): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer> => {
+            const tx = currentDrizzleDb(db);
+            const found = await lookupCommand(tx, command.envelope);
+            if (found.kind === "done")
+              return found.commandKind === "unapply_click"
+                ? (found.result as import("@meridian/contracts/branches").UnapplyClickResult)
+                : { status: "conflict", commandId };
+            if (found.kind !== "none") return { status: found.kind, commandId };
+            if (
+              !(await claimCommandWithinTx(tx, {
+                ...command.envelope,
+                branchId: prepared.branchId,
+              }))
+            )
+              throw new BranchCommandExistsError(commandId);
+            const finish = async (
+              result: import("@meridian/contracts/branches").UnapplyClickResult,
+            ) => {
+              await tx
+                .update(branchCommands)
+                .set({ state: "done", result, completedAt: sql`clock_timestamp()` })
+                .where(eq(branchCommands.id, commandId));
+              return result;
+            };
+            if (!(await deps.branches.lockActive(prepared.branchId))) return finish(closed());
+            await lockDocumentMutation(tx, command.documentId);
+            const stillActive = await tx
+              .select({ ordinal: applyCommandEffects.ordinal })
+              .from(applyCommandEffects)
+              .where(
+                and(
+                  eq(applyCommandEffects.commandId, command.request.applyCommandId),
+                  isNull(applyCommandEffects.unappliedBy),
+                ),
+              );
+            const activeOrdinals = new Set(stillActive.map((row) => row.ordinal));
+            const effects = prepared.effects.filter((effect) => activeOrdinals.has(effect.ordinal));
+            if (!effects.length) return finish({ status: "refused", commandId });
+
+            const snapshot = await deps.live.read(command.documentId);
+            const live = storedDocument(snapshot);
+            try {
+              const history = await editHistory(command.documentId);
+              const bySeq = new Map<number, InversePart>();
+              for (const part of history) {
+                const value = part.origin;
+                if (value?.kind === "live") bySeq.set(value.seq, part);
+              }
+              const targeted = effects.flatMap((effect) => {
+                if (effect.liveUpdateSeq === null) return [];
+                const part = bySeq.get(effect.liveUpdateSeq);
+                return part ? [{ effect, part }] : [];
+              });
+              const inverse = computeInverse(
+                live,
+                history,
+                targeted.map(({ part }) => ({ part, direction: "invert" as const })),
+                { actionId: commandId, allocateClient: allocateDocumentClient },
+              );
+              const reversedEditIds = new Set(inverse.edits.map((edit) => edit.targetEditId));
+              const reversed = effects.filter(
+                (effect) =>
+                  effect.liveUpdateSeq === null ||
+                  targeted.some(
+                    ({ effect: candidate, part }) =>
+                      candidate.ordinal === effect.ordinal && reversedEditIds.has(part.editId),
+                  ),
+              );
+              const reversedWithLive = reversed.filter((effect) => effect.liveUpdateSeq !== null);
+              const skipped = effects.filter(
+                (effect) => !reversed.some((candidate) => candidate.ordinal === effect.ordinal),
+              );
+              const receipts: Parameters<typeof recordDocumentEdit>[1]["receipts"] = [];
+              for (const edit of inverse.edits) {
+                for (const part of edit.parts) {
+                  const provenance = captureMutationUpdates(live, () => {
+                    live.transact(() => {
+                      Y.applyUpdate(live, part.update);
+                      appendInverseRestorationFacts(live, part.aliases);
+                    });
+                  });
+                  const update = provenance.length
+                    ? Y.mergeUpdates([part.update, ...provenance])
+                    : part.update;
+                  const seq = await deps.live.append(
+                    command.documentId,
+                    update,
+                    { seq: 0, origin: "system" },
+                    snapshot.authority,
+                  );
+                  receipts.push({ ...part, update, origin: { kind: "live", seq } });
+                }
+              }
+              if (receipts.length)
+                await recordDocumentEdit(tx, {
+                  documentId: command.documentId,
+                  actor: "human",
+                  actorUserId: command.envelope.accountId,
+                  kind: "undo",
+                  actionId: commandId,
+                  receipts,
+                });
+
+              const groupIds = new Set(reversed.map((effect) => effect.groupId));
+              const write = deps.coordinator.prepareAppend(prepared.base, [], {
+                authorServerRows(prefix) {
+                  let row: Uint8Array | undefined;
+                  const capture = (bytes: Uint8Array) => {
+                    row = bytes;
+                  };
+                  prefix.on("update", capture);
+                  try {
+                    prefix.transact(() => {
+                      const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
+                      let current = readBlocks(fragment, schema);
+                      for (const effect of [...reversedWithLive].reverse())
+                        current = rebase(
+                          schema,
+                          effect.baseAfter.map((node) => schema.nodeFromJSON(node)),
+                          current,
+                          effect.baseBefore.map((node) => schema.nodeFromJSON(node)),
+                        ).blocks;
+                      writeBlocks(fragment, schema, current);
+                      removeApplyRecords(prefix, command.request.applyCommandId, groupIds);
+                    }, "unapply");
+                    if (!row) throw new Error("Un-Apply must remove its Apply records");
+                    return [row];
+                  } finally {
+                    prefix.off("update", capture);
+                  }
+                },
+              });
+              try {
+                await write.persist();
+                write.transfer();
+              } finally {
+                write.dispose();
+              }
+              if (reversed.length)
+                await tx
+                  .update(applyCommandEffects)
+                  .set({ unappliedBy: commandId })
+                  .where(
+                    and(
+                      eq(applyCommandEffects.commandId, command.request.applyCommandId),
+                      inArray(
+                        applyCommandEffects.ordinal,
+                        reversed.map((effect) => effect.ordinal),
+                      ),
+                      isNull(applyCommandEffects.unappliedBy),
+                    ),
+                  );
+              const answer: import("@meridian/contracts/branches").UnapplyClickResult = {
+                status: "unapplied",
+                commandId,
+                applyCommandId: command.request.applyCommandId,
+                reversedGroupIds: reversed.map((effect) => effect.groupId),
+                skippedGroupIds: skipped.map((effect) => effect.groupId),
+              };
+              await finish(answer);
+              deferUntilDrizzleCommit(async () => {
+                await deps.liveCoordinator.deliver(command.documentId);
+                await deps.onCommitted(command.documentId);
+              });
+              return answer;
+            } finally {
+              live.destroy();
+            }
+          },
+          { requireActive: true, seam: true },
+        );
+      } catch (cause) {
+        if (cause instanceof DraftStaleUpdateError) return closed();
+        if (cause instanceof WorkLifecycleUnavailableError)
+          throw new ApplyClickRefused(
+            cause.state === "archived"
+              ? "work_archived"
+              : cause.state === "deleted"
+                ? "work_deleted"
+                : "not_found",
+          );
         throw cause;
       }
     },
