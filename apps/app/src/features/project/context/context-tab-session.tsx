@@ -129,12 +129,25 @@ function ContextTabSession({
           if (projection.kind === "failed") {
             key = await resources.keyForDocument(projectId, resourceLookup.documentId);
           } else {
-            const snapshot =
-              projection.kind === "ready"
-                ? projection.snapshot
-                : await resources.whenProjectionReady(projectId, abort.signal);
-            const record = resourceForDocumentIdentity(snapshot.records, resourceLookup.documentId);
-            key = record ? { handle: record.resource.handle } : null;
+            let snapshot: ResourceProjectionSnapshot | null = null;
+            if (projection.kind === "ready") {
+              snapshot = projection.snapshot;
+            } else {
+              try {
+                snapshot = await resources.whenProjectionReady(projectId, abort.signal);
+              } catch {
+                if (abort.signal.aborted) return;
+              }
+            }
+            if (snapshot) {
+              const record = resourceForDocumentIdentity(
+                snapshot.records,
+                resourceLookup.documentId,
+              );
+              key = record ? { handle: record.resource.handle } : null;
+            } else {
+              key = await resources.keyForDocument(projectId, resourceLookup.documentId);
+            }
           }
         }
         if (abort.signal.aborted) return;
