@@ -18,6 +18,8 @@ const toolCallSchema = z.object({
  */
 export const mockModelStepSchema = z
   .object({
+    /** Provider-visible reasoning streamed word by word before assistant prose. */
+    reasoning: z.string().optional(),
     /** Assistant prose streamed word by word. */
     text: z.string().optional(),
     /** Tool calls the model makes in this response (after any text). */
@@ -31,12 +33,18 @@ export const mockModelStepSchema = z
       .optional(),
     /** Delay before the response starts. */
     delayMs: z.number().int().min(0).max(120_000).optional(),
+    /** Delay between streamed response chunks. */
+    chunkIntervalMs: z.number().int().min(0).max(120_000).optional(),
     /** How many model calls this step answers before the next step. */
     times: z.number().int().min(1).max(1_000).optional(),
   })
-  .refine((step) => step.text !== undefined || step.toolCalls || step.error, {
-    message: "a step needs text, toolCalls, or error",
-  });
+  .refine(
+    (step) =>
+      step.reasoning !== undefined || step.text !== undefined || step.toolCalls || step.error,
+    {
+      message: "a step needs reasoning, text, toolCalls, or error",
+    },
+  );
 
 export type MockModelStep = z.infer<typeof mockModelStepSchema>;
 

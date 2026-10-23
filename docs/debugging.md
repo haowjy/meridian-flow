@@ -301,16 +301,23 @@ Terminal record example (command-specific fields follow the reserved keys):
 Scripting the model: with `MODEL_PROVIDER=mock` (or no provider keys) and the
 debug gate open, the in-process mock model accepts queued replies through the
 `/api/debug/mock-model/script` route. A step replies with `text`, `toolCalls`
-(`[{name, args}]`), or an `error` (`{status, message}`), plus optional
-`delayMs` and `times` (how many model calls it answers, default 1). An `error`
-step without `times` is sticky: it answers every matching call, so gateway
-retries cannot slip past it and the matching run fails (verify with
-`./mf thread view`, not just a `send` exit code). Use
-`"times": 1` to test the gateway recovering on retry. `send --mock` scopes the
-script to that message, so concurrent threads cannot consume it, and removes
-it once the run settles; `./mf mock script|list|clear [--id]` manage the queue
-directly. Unscripted calls keep the mock's canned behavior. The gateway is the
-only retry layer: provider SDK clients run with `maxRetries: 0`.
+(`[{name, args}]`), or an `error` (`{status, message}`). Optional `reasoning`
+streams into the Thinking fold before `text`. `delayMs` waits before the
+response starts, while `chunkIntervalMs` waits between its word-sized stream
+chunks. `times` sets how many model calls the step answers (default 1). An
+`error` step without `times` is sticky: it answers every matching call, so
+gateway retries cannot slip past it and the matching run fails (verify with
+`./mf thread view`, not just a `send` exit code). Use `"times": 1` to test the
+gateway recovering on retry. `send --mock` scopes the script to that message,
+so concurrent threads cannot consume it, and removes it once the run settles;
+`./mf mock script|list|clear [--id]` manage the queue directly. Unscripted
+calls keep the mock's canned behavior. The gateway is the only retry layer:
+provider SDK clients run with `maxRetries: 0`.
+
+```bash
+./mf thread send <id> "continue" \
+  --mock '[{"reasoning":"Plan the scene first.","text":"The gate opened.","chunkIntervalMs":20}]'
+```
 
 Capture a run for later inspection. `--json` output is never truncated (only
 text mode shortens tool payloads), so redirect it and query with `jq`:

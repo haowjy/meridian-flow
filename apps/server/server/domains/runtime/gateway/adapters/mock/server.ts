@@ -152,17 +152,52 @@ function verticalSliceWriteContent(userText: string): string {
   return `# Chapter 1\n\nAcknowledged: ${userText}`;
 }
 
-function writeSse(res: import("node:http").ServerResponse, chunks: string[]): void {
+function writeSse(
+  res: import("node:http").ServerResponse,
+  chunks: string[],
+  chunkIntervalMs = 0,
+): void {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
     Connection: "keep-alive",
   });
-  for (const chunk of chunks) {
-    res.write(chunk);
+  if (chunkIntervalMs === 0) {
+    for (const chunk of chunks) {
+      res.write(chunk);
+    }
+    res.write("data: [DONE]\n\n");
+    res.end();
+    return;
   }
-  res.write("data: [DONE]\n\n");
-  res.end();
+
+  let index = 0;
+  let timer: NodeJS.Timeout | undefined;
+  const cleanup = () => {
+    if (timer) clearTimeout(timer);
+    timer = undefined;
+  };
+  const writeNext = () => {
+    timer = undefined;
+    if (res.destroyed) return;
+    const chunk = chunks[index];
+    if (chunk === undefined) {
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+    res.write(chunk);
+    index += 1;
+    if (index === chunks.length) {
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+    timer = setTimeout(writeNext, chunkIntervalMs);
+    timer.unref();
+  };
+  res.once("close", cleanup);
+  writeNext();
 }
 
 function writeSseLater(
@@ -569,6 +604,10 @@ function buildScriptedStreamChunks(
       ...(usage ? { usage } : {}),
     });
   const chunks: string[] = [];
+  const reasoningWords = step.reasoning ? step.reasoning.split(" ") : [];
+  reasoningWords.forEach((word, index) => {
+    chunks.push(chunk({ reasoning_content: index === 0 ? word : ` ${word}` }, null));
+  });
   const words = step.text ? step.text.split(" ") : [];
   words.forEach((word, index) => {
     chunks.push(chunk({ content: index === 0 ? word : ` ${word}` }, null));
@@ -597,8 +636,11 @@ function buildScriptedStreamChunks(
   chunks.push(
     chunk({}, toolCalls.length ? "tool_calls" : "stop", {
       prompt_tokens: promptTokens,
-      completion_tokens: Math.max(1, words.length),
-      total_tokens: promptTokens + Math.max(1, words.length),
+      completion_tokens: Math.max(1, reasoningWords.length + words.length),
+      total_tokens: promptTokens + Math.max(1, reasoningWords.length + words.length),
+      ...(reasoningWords.length
+        ? { completion_tokens_details: { reasoning_tokens: reasoningWords.length } }
+        : {}),
     }),
   );
   return chunks;
@@ -635,6 +677,7 @@ function writeScriptedResponse(
           input.requestCount,
           input.promptTokens,
         ),
+        step.chunkIntervalMs,
       );
       return;
     }
@@ -664,8 +707,13 @@ function writeScriptedResponse(
       }),
     );
   };
-  if (step.delayMs) setTimeout(respond, step.delayMs).unref();
-  else respond();
+  if (!step.delayMs) {
+    respond();
+    return;
+  }
+  const timer = setTimeout(respond, step.delayMs);
+  timer.unref();
+  res.once("close", () => clearTimeout(timer));
 }
 
 /**
