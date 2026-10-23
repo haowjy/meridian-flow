@@ -31,7 +31,9 @@ mock through real chat persistence and tools, not UI-injected fake rows.
    content. The final answer must follow the tool results. Repeat to exercise
    overwrite. Send an invalid `write` command in a separate scoped fixture and
    verify the refusal comes from the real tool validator.
-6. **Interrupt.** Queue `mock-interrupt.json` with a unique match, send that
+6. **Interrupt.** Create the `ask_user`-enabled agent and new chat using the
+   [debugging guide](../debugging.md#mock-provider-responses); General lacks that
+   tool. Queue `mock-interrupt.json` with a unique match, send that
    message in the browser, choose an option, and expect the fixture's final reply.
    Clear any unconsumed script by ID after the check.
 7. **Failure and retry.** `mock-recovery.json` must finish with the outline after

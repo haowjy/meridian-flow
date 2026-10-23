@@ -404,6 +404,19 @@ from the real runtime, not fabricated model output.
 - [Truncated response](../tools/mf/fixtures/mock-truncated.json): a partial sentence with the provider's length finish reason.
 - [Provider failure](../tools/mf/fixtures/mock-provider-error.json): a sticky failure. Inspect the failed reply, not only the send exit code.
 
+The General agent does not expose `ask_user`. To try the interrupt fixture,
+create a dev agent with that tool and open its new chat in the browser:
+
+```bash
+./mf api POST /api/agents --data '{"slug":"mock-interrupt-probe","content":"---\nname: Mock Interrupt Probe\nmode: primary\nmodel: mock-llm-v1\ntools: [ask_user]\n---\nFollow the writer."}' --json
+./mf thread create --agent mock-interrupt-probe --title 'Mock interrupt probe' --json
+./mf mock script @tools/mf/fixtures/mock-interrupt.json --match "interrupt probe"
+```
+
+Send `interrupt probe` in that chat, then choose an answer. Existing chats keep
+their bound agent definition, so use the newly created chat. A script can emit a
+call even when the agent lacks its tool; the real permission layer refuses it.
+
 To exercise another tool, replace `toolCalls` with its current name and
 arguments; invalid arguments exercise the real refusal path. Scripts do not
 interpret tool results or choose subsequent steps conditionally. For dynamic
