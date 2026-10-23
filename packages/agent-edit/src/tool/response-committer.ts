@@ -16,7 +16,6 @@ import {
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
-import type { CommitDetection } from "./commit-detection.js";
 import type { CopySummary } from "./copy-receipt.js";
 import {
   accessFor,
@@ -290,7 +289,6 @@ export function isResponseLifecycleError(error: unknown): error is ResponseLifec
 const ROOM_READ_ATTEMPTS = 4;
 
 export function createResponseCommitter(deps: {
-  detection: CommitDetection;
   coordinator: DocumentCoordinator;
   model: AgentEditModel;
   codec: AgentEditCodecFactory;

@@ -436,7 +436,16 @@ async function concurrentUpstreamJournalRows(
   accessedPeer?: string,
   bounds?: { after: number; through: number },
 ): Promise<DraftJournalRow[]> {
-  // A pinned or running access names the peer; only a free-standing read resolves it.
+  const workDraftId = access?.workDraftId;
+  if (workDraftId)
+    return input.draftCoordinator.readDraft(workDraftId, (_doc, _snapshot) =>
+      input.journalRows.listConcurrentJournalRows(workDraftId, {
+        documentId,
+        after: bounds?.after ?? 0,
+        through: bounds?.through ?? Number.MAX_SAFE_INTEGER,
+      }),
+    );
+  // A pinned or running access names the peer; only a legacy free-standing read resolves it.
   const peerId =
     access?.pinnedDraftId ??
     accessedPeer ??

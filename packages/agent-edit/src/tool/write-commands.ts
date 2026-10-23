@@ -732,7 +732,9 @@ export function createWriteCommands(deps: {
                   ...(attributionBridge ? { attributionBridge } : {}),
                   ...(context.interactionContext?.mode === "threadPeer"
                     ? { access: { pinnedDraftId: context.interactionContext.peerDraftId } }
-                    : {}),
+                    : context.workDraftId
+                      ? { access: { workDraftId: context.workDraftId } }
+                      : {}),
                 }) ?? Promise.resolve([]),
             }
           : {}),
