@@ -153,7 +153,7 @@ function notes(result: AgentEditResultV1): string[] {
     );
   if (result.unchanged) lines.push(UNCHANGED_NOTE);
   if (result.awarenessDegraded) {
-    lines.push("destructive awareness degraded after durable recovery; re-read required");
+    lines.push("the write landed, but concurrent changes could not be reported.");
   }
   return lines;
 }
