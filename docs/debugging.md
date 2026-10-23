@@ -399,23 +399,14 @@ from the real runtime, not fabricated model output.
 - [Large output](../tools/mf/fixtures/mock-large.json): 10,000 lorem words with paragraph breaks.
 - [Sample rotation](../tools/mf/fixtures/mock-samples.json): scene, critique, outline and Markdown on four model calls. Queue with `mock script`; `send --mock` removes unconsumed steps when that send finishes.
 - [Document tools](../tools/mf/fixtures/mock-tools.json): create/overwrite `scratch://Mock scene`, then read, list and search it, followed by a final answer. Uses the current chat's Scratch, not manuscript files.
-- [Human question](../tools/mf/fixtures/mock-interrupt.json): `ask_user` plus a final reply. Queue with `mock script --match` and answer in the browser. `send --mock` cleans up at an interrupt, so it would discard the follow-up step.
 - [Retry recovery](../tools/mf/fixtures/mock-recovery.json): one 503, then a successful outline. The gateway is the only retry layer; provider SDK clients use `maxRetries: 0`.
 - [Truncated response](../tools/mf/fixtures/mock-truncated.json): a partial sentence with the provider's length finish reason.
 - [Provider failure](../tools/mf/fixtures/mock-provider-error.json): a sticky failure. Inspect the failed reply, not only the send exit code.
 
-The General agent does not expose `ask_user`. To try the interrupt fixture,
-create a dev agent with that tool and open its new chat in the browser:
-
-```bash
-./mf api POST /api/agents --data '{"slug":"mock-interrupt-probe","content":"---\nname: Mock Interrupt Probe\nmode: primary\nmodel: mock-llm-v1\ntools: [ask_user]\n---\nFollow the writer."}' --json
-./mf thread create --agent mock-interrupt-probe --title 'Mock interrupt probe' --json
-./mf mock script @tools/mf/fixtures/mock-interrupt.json --match "interrupt probe"
-```
-
-Send `interrupt probe` in that chat, then choose an answer. Existing chats keep
-their bound agent definition, so use the newly created chat. A script can emit a
-call even when the agent lacks its tool; the real permission layer refuses it.
+`ask_user` is currently disabled for every agent pending its
+[rework](https://github.com/haowjy/meridian-flow/issues/601). A mock script does
+not bypass tool availability or permissions, so it cannot display that question
+UI. Calls to disabled tools exercise the real refusal path instead.
 
 To exercise another tool, replace `toolCalls` with its current name and
 arguments; invalid arguments exercise the real refusal path. Scripts do not
