@@ -17,7 +17,7 @@ export type OpenContextOptions = {
   /** The destination is a document the writer just made: its editor takes the caret once live. */
   focus?: true;
   /** Runs only after successful destination workspace installation. */
-  afterCommit?: () => void;
+  afterCommit?: (installed: ContextTab | undefined) => void;
   /** Persist an inline review in this Editor history entry. Omission opens live. */
   itemKey?: string;
   changeId?: string;

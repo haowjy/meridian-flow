@@ -107,6 +107,7 @@ export function createEditorDocumentCommand({
       );
       const tab = next.tab;
       if (!navigation.isCurrent(ticket)) return { kind: "superseded" };
+      let installedTab: ContextTab | undefined;
       const commit = () => {
         let selected = tab;
         if (preparedTab) {
@@ -117,6 +118,7 @@ export function createEditorDocumentCommand({
           if (installed.tab.kind === "tracked" && resolvedWorkId)
             admitDraftReview(installed.tab, resolvedWorkId);
           selected = installed.tab;
+          installedTab = installed.tab;
           if (options?.focus && installed.tab.tabInstanceId)
             armEditorFocus(installed.tab.tabInstanceId);
         }
@@ -144,7 +146,7 @@ export function createEditorDocumentCommand({
             : { kind: "superseded" };
         try {
           commit();
-          options?.afterCommit?.();
+          options?.afterCommit?.(installedTab);
           return { kind: "applied" };
         } catch (error) {
           return { kind: "failed", error, ticket: navigation.capture(), stage: "workspace-commit" };
@@ -161,7 +163,7 @@ export function createEditorDocumentCommand({
                 (member) => member.tabInstanceId === tab.tabInstanceId,
               )),
           commit,
-          afterCommit: options?.afterCommit,
+          afterCommit: () => options?.afterCommit?.(installedTab),
         },
       );
     } catch (error) {

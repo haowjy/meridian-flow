@@ -27,7 +27,7 @@ export type OpenBesideChat = (
   focus?: true,
   /** A draft-only review's address: the dock shows it by item identity, not by path. */
   review?: ReviewAddress,
-) => "opened" | "cancelled";
+) => { kind: "opened"; tab: ContextTab } | { kind: "cancelled" };
 
 export const BesideChatContext = createContext<OpenBesideChat | null>(null);
 

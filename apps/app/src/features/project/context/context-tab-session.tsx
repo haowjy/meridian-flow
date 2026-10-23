@@ -60,7 +60,6 @@ function ContextTabSession({
 }: ContextTabSessionProps & { onReopen: () => void }) {
   const resources = useAccountResourceReplica();
   const opener = useProjectDocumentLiveOpener();
-  const transferLifetime = useRef(0);
   const participant = useRef(`cached-server-tab:${crypto.randomUUID()}`);
   const resourceIdentity = resourceHandle ?? documentId;
   const resourceLookup = useMemo(
@@ -95,6 +94,7 @@ function ContextTabSession({
   useEffect(() => {
     if (!liveRoom) return;
     const abort = new AbortController();
+    const transferToken = tabInstanceId ? opener.transferToken(tabInstanceId, documentId) : null;
     setLocal((prior) => ({
       identity: resourceIdentity,
       documentId,
@@ -174,7 +174,7 @@ function ContextTabSession({
           return;
         }
         const previous = installedHandle.current;
-        if (tabInstanceId) opener.takeTransfer(tabInstanceId, documentId);
+        if (transferToken) opener.disposeTransfer(transferToken);
         installedHandle.current = result.handle;
         setLocal({
           identity: resourceIdentity,
@@ -202,11 +202,10 @@ function ContextTabSession({
     tabInstanceId,
   ]);
   useEffect(() => {
-    const lifetime = ++transferLifetime.current;
+    const transferToken = tabInstanceId ? opener.transferToken(tabInstanceId, documentId) : null;
     return () => {
       queueMicrotask(() => {
-        if (transferLifetime.current === lifetime && tabInstanceId)
-          opener.takeTransfer(tabInstanceId, documentId);
+        if (transferToken) opener.disposeTransfer(transferToken);
       });
     };
   }, [documentId, opener, tabInstanceId]);
