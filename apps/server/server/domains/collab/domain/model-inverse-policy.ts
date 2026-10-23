@@ -445,6 +445,13 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 message: `You have no edits to undo in ${document.uri}. Read it and make a new replace if needed.`,
               };
             if (entry.tree) {
+              if (entry.tree.tree.op === "create" && entry.tree.tree.destination.kind === "draft") {
+                const planned = treePlan({ ...entry, tree: entry.tree }, "undo");
+                if ("status" in planned) return planned;
+                handles.push(entry.handle);
+                applyTree(planned, entry.handle, "undo", []);
+                continue;
+              }
               if (entry.parts.length) {
                 const draftId = destinationOf(entry.parts);
                 const removed = removedText(draftId);

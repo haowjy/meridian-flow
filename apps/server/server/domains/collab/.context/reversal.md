@@ -135,14 +135,15 @@ authorized where its row is (file facts' branch-deleted fallback).
 
 A create transition precedes its initial text edit in the same per-document stream. Model Undo
 groups those adjacent entries only when both came from the same model tool call, in the same
-turn, response and edit scope: it removes the initial text, then the placement. A later write
-call in that response remains a separate edit. Redo restores the placement, then reapplies only
-the text parts Undo reversed. A live Undo uses an ordinary reversible removal, so the identity,
+turn, response and edit scope. A later write call in that response remains a separate edit. A
+live Undo removes the initial text, then the placement; Redo restores the placement, then
+reapplies only the text parts Undo reversed. A live Undo uses an ordinary reversible removal, so the identity,
 Yjs history, later writer text and drafts remain available; Redo restores that retained state
 through `restoreDocument`, taking the next free name when necessary. A drafted Undo writes the
 branch's existing delete fact: `{ created: true, deleted: true }`. The document and its text are
 hidden in that branch, but its draft remains active and its identity is not tombstoned. Redo
-clears `deleted` on the same row and keeps writing the same draft. If another Work Applies the
+clears `deleted` on the same row and keeps writing the same draft. Neither direction rewrites
+the draft text. If another Work Applies the
 shared creation first, that reveal settles this branch's undone creation so it cannot become a
 pending delete of the now-live document. Empty creates use the same branch-fact cycle.
 

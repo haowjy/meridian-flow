@@ -198,9 +198,22 @@ function prepare(
   const accepted = selected?.targets ?? new Set<string>();
   const consumes = selectedAction ? [selectedAction] : [];
   return documents.map((document) => {
-    const targets = document.history.filter(
-      (part) => inTurn(document, part) && (direction === "undo" || accepted.has(partKey(part))),
+    const selectedTrees = turnTree(document).filter(
+      (row) => direction === "undo" || accepted.has(treeKey(row.editId)),
     );
+    const hiddenCreateBranches = new Set(
+      selectedTrees.flatMap((row) =>
+        row.tree.op === "create" && row.tree.destination.kind === "draft"
+          ? [row.tree.destination.branchId]
+          : [],
+      ),
+    );
+    const targets = document.history.filter((part) => {
+      if (!inTurn(document, part) || (direction === "redo" && !accepted.has(partKey(part))))
+        return false;
+      const destination = document.destinationOf(part.origin);
+      return destination.kind !== "draft" || !hiddenCreateBranches.has(destination.branchId);
+    });
     const rolledBack = (part: StoredInversePart) => isRolledBack(document.history, part);
     const reversals =
       direction === "undo"
@@ -247,9 +260,7 @@ function prepare(
     const byEdit = new Map<string, StoredInversePart[]>();
     for (const part of targets) byEdit.set(part.editId, [...(byEdit.get(part.editId) ?? []), part]);
     const originals = [
-      ...turnTree(document)
-        .filter((row) => direction === "undo" || accepted.has(treeKey(row.editId)))
-        .map((row) => ({ at: row.id, row, parts: [] as StoredInversePart[] })),
+      ...selectedTrees.map((row) => ({ at: row.id, row, parts: [] as StoredInversePart[] })),
       ...[...byEdit.values()].map((parts) => ({
         at: Math.max(...parts.map((part) => part.id)),
         row: undefined,
