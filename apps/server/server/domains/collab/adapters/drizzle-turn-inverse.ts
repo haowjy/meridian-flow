@@ -763,7 +763,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   async function commitTreeStep(
     entry: PlannedInverse,
     step: Extract<InverseStep, { kind: "tree" }>,
-    kind: "undo" | "redo" | "revert" | "rollback",
+    _kind: "undo" | "redo" | "revert" | "rollback",
     userId: UserId | undefined,
     query: TurnInverseQuery,
   ): Promise<
@@ -798,7 +798,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 : null,
             ...(landedAt ? { landedAt } : {}),
           },
-          kind,
+          step.actionKind,
           userId,
           query,
         );
@@ -920,7 +920,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   async function commitTextStep(
     entry: PlannedInverse,
     step: Extract<InverseStep, { kind: "text" }>,
-    kind: "undo" | "redo" | "revert" | "rollback",
+    _kind: "undo" | "redo" | "revert" | "rollback",
     userId: UserId | undefined,
     query: TurnInverseQuery,
   ): Promise<string | TurnInverseSkip> {
@@ -973,7 +973,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       entry,
       step,
       { draftId: landedDraftId, branchId: draft?.branchId ?? null, receipts },
-      kind,
+      step.actionKind,
       userId,
       query,
     );

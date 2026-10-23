@@ -89,7 +89,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
         status: "work_archived",
         message: `This draft is archived. Write to an active draft or live version of ${document.uri}.`,
       };
-    if (part.origin.kind === "pending" && part.disposition === "applied")
+    if (direction === "undo" && part.origin.kind === "pending" && part.disposition === "applied")
       return {
         status: `cant_${direction}_applied`,
         message: `The user applied ${handle} to the manuscript. ${follow}`,
@@ -161,7 +161,11 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     const follow = "Check where it is with `ls`, then make a new move or delete if needed.";
     const row = entry.tree;
     const destination = row.tree.destination;
-    if (draft?.frozen)
+    const resolvedDestination =
+      destination.kind === "draft"
+        ? document.destinationForBranch(destination.branchId)
+        : queryDestination;
+    if (resolvedDestination.kind === "draft" && resolvedDestination.frozen)
       return {
         status: "work_archived",
         message: `This draft is archived. Write to an active draft or live version of ${document.uri}.`,
@@ -210,14 +214,15 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
               ? "edited since"
               : null;
       const reason =
-        (query.draftId && !draft) ||
-        (originDestination.kind === "draft" && originDestination.state === "gone")
-          ? "discarded"
-          : inspection.rolledBack(part)
-            ? "rolled back"
-            : kernelReason && part.disposition === "discarded"
-              ? "discarded"
-              : kernelReason;
+        originDestination.kind === "draft" && originDestination.frozen
+          ? "draft archived"
+          : originDestination.kind === "draft" && originDestination.state === "gone"
+            ? "discarded"
+            : inspection.rolledBack(part)
+              ? "rolled back"
+              : kernelReason && part.disposition === "discarded"
+                ? "discarded"
+                : kernelReason;
       if (reason) skipped.push(`part ${part.ordinal + 1}: ${reason}`);
       else selection.push({ part, direction: "invert" });
     }
