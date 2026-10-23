@@ -40,6 +40,17 @@ type YjsRoutePeer = {
 
 let gateway: YjsGateway | null = null;
 
+function emitOpenEvent(
+  sink: Parameters<typeof emitEvent>[0],
+  event: Parameters<typeof emitEvent>[1],
+): void {
+  try {
+    emitEvent(sink, event);
+  } catch {
+    // Upgrade diagnostics cannot decide whether an authenticated socket opens.
+  }
+}
+
 export function getYjsGateway(app: AppServices): YjsGateway {
   gateway ??= createYjsGateway(selectYjsGatewayServices(app));
   return gateway;
@@ -57,7 +68,7 @@ export const yjsWebSocketHandler = defineWebSocketHandler({
       eventSink,
       traceId,
     });
-    emitEvent(eventSink, {
+    emitOpenEvent(eventSink, {
       level: "info",
       source: "collab.open",
       name: "upgrade_auth",

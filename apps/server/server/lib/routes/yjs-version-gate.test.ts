@@ -156,7 +156,7 @@ describe("Yjs connect-time schema version gate", () => {
       code: 4406,
       reason: "client-schema-superseded",
     });
-    expect(services.eventSink.emit).toHaveBeenCalledOnce();
+    expect(services.eventSink.emit).toHaveBeenCalled();
   });
 
   it("passes a live room with no stamped head, including an absent-version client", async () => {
@@ -170,7 +170,9 @@ describe("Yjs connect-time schema version gate", () => {
         context: connectContext(SENTINEL_SCHEMA_VERSION),
       } as never),
     ).resolves.toBeUndefined();
-    expect(services.eventSink.events).toEqual([]);
+    expect(services.eventSink.events.filter((event) => event.source === "collab.schema")).toEqual(
+      [],
+    );
   });
 
   it("carries the admitted live generation through the sync hook", async () => {

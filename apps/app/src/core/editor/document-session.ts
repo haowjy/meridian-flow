@@ -823,7 +823,7 @@ export class DocumentSession {
     const close = this.persistenceKey
       ? detachedPersistenceCloseOwner.retire(this.persistenceKey, () => persistence.destroy())
       : persistence.destroy();
-    void close.catch((error) => reportError(error));
+    void close.catch((error) => globalThis.reportError?.(error));
     this.settleLocalStorage("detached");
   }
 

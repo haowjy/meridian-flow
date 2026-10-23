@@ -137,6 +137,17 @@ function openCorrelation(context: YjsConnectionContext, room?: ParsedYjsRoom) {
   };
 }
 
+function emitOpenEvent(
+  sink: Parameters<typeof emitEvent>[0],
+  event: Parameters<typeof emitEvent>[1],
+): void {
+  try {
+    emitEvent(sink, event);
+  } catch {
+    // Diagnostic delivery must never replace the collaboration outcome.
+  }
+}
+
 async function observeOpenStep<T>(input: {
   services: Pick<YjsGatewayServices, "eventSink">;
   context: YjsConnectionContext;
@@ -153,7 +164,7 @@ async function observeOpenStep<T>(input: {
     outcome = "failed";
     throw cause;
   } finally {
-    emitEvent(input.services.eventSink, {
+    emitOpenEvent(input.services.eventSink, {
       level: outcome === "ok" ? "info" : "warn",
       source: "collab.open",
       name: input.name,
@@ -641,7 +652,7 @@ export function createHocuspocus(
         const room = parseRoomOrDeny(documentName);
         if (type === messageYjsSyncStep1 && !context.firstSync) {
           context.firstSync = { startedAt: performance.now(), room, ended: false };
-          emitEvent(services.eventSink, {
+          emitOpenEvent(services.eventSink, {
             level: "info",
             source: "collab.open",
             name: "first_sync.start",
@@ -850,7 +861,7 @@ export function createYjsGateway(services: YjsGatewayServices) {
             const sync = context.firstSync;
             if (sync && !sync.ended && outgoingSyncType(data) === messageYjsSyncStep2) {
               sync.ended = true;
-              emitEvent(services.eventSink, {
+              emitOpenEvent(services.eventSink, {
                 level: outcome === "sent" ? "info" : "warn",
                 source: "collab.open",
                 name: "first_sync.end",
