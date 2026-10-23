@@ -19,6 +19,9 @@ kernel; they do not certify the replacement rebase scheduler.
 
 - Frozen text stays fixed while later typing remains pending; the Apply base
   and command record arrive in one row, without changing the draft prose.
+- Un-Apply reverses intact text groups, skips a group edited later in live, and
+  removes a null-live receipt without reopening a draft difference. Its durable
+  result replays under the same command id.
 - Malformed/overlapping deltas and unknown groups claim nothing; a different
   body under a landed id conflicts. A clicked key not yet durable refuses
   `unsynced`, then the same click lands once acknowledged.

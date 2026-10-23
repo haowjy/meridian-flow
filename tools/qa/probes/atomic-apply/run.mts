@@ -1,7 +1,11 @@
 /** Apply API-core probes over a scratch Postgres and the production command/append adapters. */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import type { ApplyClick, ApplyClickAnswer } from "@meridian/contracts/branches";
+import type {
+  ApplyClick,
+  ApplyClickAnswer,
+  UnapplyClickAnswer,
+} from "@meridian/contracts/branches";
 import { projects, works } from "@meridian/database";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
@@ -31,7 +35,10 @@ import {
   createFileAccess,
   createOwnerFileGrants,
 } from "../../../../apps/server/server/domains/file-policy/index.ts";
-import { handleApplyClickRequest } from "../../../../apps/server/server/lib/branch-review-route.ts";
+import {
+  handleApplyClickRequest,
+  handleUnapplyClickRequest,
+} from "../../../../apps/server/server/lib/branch-review-route.ts";
 import { runInDrizzleTransaction } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import { setTestHook } from "../../../../apps/server/server/shared/test-hooks.ts";
 import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.ts";
@@ -156,6 +163,28 @@ async function fixture(
     evidence: createDrizzleDraftDispositionStore(h.db),
     store: apiStore,
   });
+  const routeServices = {
+    projects: {
+      findById: async (id: string) =>
+        (await h.db.select().from(projects).where(eq(projects.id, id)))[0],
+    },
+    works: {
+      findById: async (id: string) => (await h.db.select().from(works).where(eq(works.id, id)))[0],
+    },
+    fileAccess,
+    documentSync: {
+      draftReview: {
+        applyClick: service.apply,
+        unapplyClick: service.unapply,
+        resolveItemByDocument: identity.resolveReviewItemByDocument,
+        lookupCommand: (key: CommandLookupKey) => commands.lookup(key),
+      },
+      roomRemoval: async ({ documentId }: { documentId: string }) => {
+        const removal = (await readRemovalRecords(h.db, [documentId])).get(documentId);
+        return removal ? { documentId, removal } : null;
+      },
+    },
+  } as never;
   const f = {
     ...work,
     ...document,
@@ -229,39 +258,22 @@ async function fixture(
       };
     },
     send(click: FrozenClick, changedDigest?: string): Promise<ApplyClickAnswer> {
-      return handleApplyClickRequest(
-        {
-          projects: {
-            findById: async (id: string) =>
-              (await h.db.select().from(projects).where(eq(projects.id, id)))[0],
-          },
-          works: {
-            findById: async (id: string) =>
-              (await h.db.select().from(works).where(eq(works.id, id)))[0],
-          },
-          fileAccess,
-          documentSync: {
-            draftReview: {
-              applyClick: service,
-              resolveItemByDocument: identity.resolveReviewItemByDocument,
-              lookupCommand: (key: CommandLookupKey) => commands.lookup(key),
-            },
-            roomRemoval: async ({ documentId }: { documentId: string }) => {
-              const removal = (await readRemovalRecords(h.db, [documentId])).get(documentId);
-              return removal ? { documentId, removal } : null;
-            },
-          },
-        } as never,
-        {
-          userId: h.ids.user,
-          projectId: h.ids.project,
-          workId: work.workId,
-          documentId: document.documentId,
-          request: changedDigest
-            ? { ...click.request, groupIds: ["changed-digest"] }
-            : click.request,
-        },
-      );
+      return handleApplyClickRequest(routeServices, {
+        userId: h.ids.user,
+        projectId: h.ids.project,
+        workId: work.workId,
+        documentId: document.documentId,
+        request: changedDigest ? { ...click.request, groupIds: ["changed-digest"] } : click.request,
+      });
+    },
+    unapply(click: FrozenClick, commandId = randomUUID()): Promise<UnapplyClickAnswer> {
+      return handleUnapplyClickRequest(routeServices, {
+        userId: h.ids.user,
+        projectId: h.ids.project,
+        workId: work.workId,
+        documentId: document.documentId,
+        request: { commandId, applyCommandId: click.request.commandId },
+      });
     },
     async durable(): Promise<Y.Doc> {
       const read = await h.store.readDraftAt(snapshot.draftId);
@@ -371,6 +383,68 @@ try {
       )[0].n,
       1,
     );
+    f.close();
+  });
+  await row("Un-Apply reverses intact groups and replays its durable result", async () => {
+    const f = await fixture(["The cat sat."], ["The big cat sat."]);
+    const click = f.click();
+    await applied(f, click);
+    const commandId = randomUUID();
+    const answer = await f.unapply(click, commandId);
+    assert.equal(answer.status, "unapplied", JSON.stringify(answer));
+    if (answer.status === "unapplied") {
+      assert.deepEqual(answer.reversedGroupIds, click.request.groupIds);
+      assert.deepEqual(answer.skippedGroupIds, []);
+    }
+    assert.deepEqual(await f.liveText(), ["The cat sat."]);
+    const durable = await f.durable();
+    assert.deepEqual(readApplyRecord(durable), []);
+    durable.destroy();
+    assert.deepEqual(await f.unapply(click, commandId), answer);
+    f.close();
+  });
+  await row("Un-Apply skips an edited group and reverses an intact peer", async () => {
+    const f = await fixture(
+      ["The cat sat.", "The dog slept."],
+      ["The big cat sat.", "The small dog slept."],
+    );
+    const click = f.click();
+    assert.equal(click.request.groupIds.length, 2);
+    await applied(f, click);
+    await f.liveWrite(["The very big cat sat.", "The small dog slept."]);
+    const answer = await f.unapply(click);
+    assert.equal(answer.status, "unapplied", JSON.stringify(answer));
+    if (answer.status === "unapplied") {
+      assert.equal(answer.reversedGroupIds.length, 1);
+      assert.equal(answer.skippedGroupIds.length, 1);
+    }
+    assert.deepEqual(await f.liveText(), ["The very big cat sat.", "The dog slept."]);
+    const durable = await f.durable();
+    assert.equal(readApplyRecord(durable).length, 1);
+    durable.destroy();
+    f.close();
+  });
+  await row("Un-Apply removes a null-live receipt without reopening a diff", async () => {
+    const f = await fixture(["The cat sat."], ["The big cat sat."]);
+    const click = f.click();
+    await f.liveWrite(["The big cat sat."]);
+    await applied(f, click);
+    const answer = await f.unapply(click);
+    assert.equal(answer.status, "unapplied", JSON.stringify(answer));
+    assert.deepEqual(await f.liveText(), ["The big cat sat."]);
+    const durable = await f.durable();
+    assert.deepEqual(readApplyRecord(durable), []);
+    assert.deepEqual(
+      readBlocks(durable.getXmlFragment(REVIEW_BASE_FRAGMENT), schema).map(
+        (block) => block.textContent,
+      ),
+      ["The big cat sat."],
+    );
+    assert.deepEqual(
+      readBlocks(durable.getXmlFragment("prosemirror"), schema).map((block) => block.textContent),
+      ["The big cat sat."],
+    );
+    durable.destroy();
     f.close();
   });
   await row(
