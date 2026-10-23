@@ -131,6 +131,10 @@ export function TurnList({
   const { rows } = view;
   const visibleTurns = useMemo(() => rows.map((row) => row.turn), [rows]);
   const lastAssistantIdx = findLastLocalAssistantIndex(rows);
+  // While a run is active, usage belongs to that live row. Once it settles,
+  // keep the final aggregate on the latest settled action row. This avoids
+  // moving the snapshot through historical model-step rows at each boundary.
+  const usageAssistantIdx = busy ? findLatestLocalLiveAssistantIndex(rows) : lastAssistantIdx;
   // Cancel queue and Send now sit on the last queued row; Cancel queue needs two to differ from the x.
   const { lastQueuedTurnId, queuedCount } = useMemo(() => {
     const queued = rows.filter((row) => row.queued);
@@ -319,10 +323,14 @@ export function TurnList({
           onRespondToInterrupt={assistant && local ? onRespondToInterrupt : undefined}
           changeTrail={assistant && local ? byTurnId.get(row.turn.id) : undefined}
           navigateToChange={assistant ? navigateToChange : undefined}
-          // Thread cache stats belong to the latest settled action row. Passing
-          // the aggregate snapshot to every historical reply makes each one
-          // observe live-tail usage updates and defeats the row memo boundary.
-          threadUsage={assistant && local && rowIndex === lastAssistantIdx ? threadUsage : null}
+          // Thread cache stats follow the active run, or the latest settled
+          // action row once no assistant row is live. Passing the snapshot to
+          // every historical model-step row defeats the row memo boundary.
+          threadUsage={
+            assistant && local && usageAssistantIdx !== null && rowIndex === usageAssistantIdx
+              ? threadUsage
+              : null
+          }
         />
       );
     },
@@ -597,4 +605,19 @@ function findLastLocalAssistantIndex(rows: readonly ViewRow[]): number {
     if (row.turn.role === "assistant" && isTerminalTurnStatus(row.turn.status)) return i;
   }
   return -1;
+}
+
+/** Index of the latest local assistant still running, if any. */
+function findLatestLocalLiveAssistantIndex(rows: readonly ViewRow[]): number | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (
+      row &&
+      !row.inherited &&
+      row.turn.role === "assistant" &&
+      !isTerminalTurnStatus(row.turn.status)
+    )
+      return i;
+  }
+  return null;
 }
