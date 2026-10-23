@@ -34,17 +34,25 @@ export type CompiledClick = {
   schema: import("prosemirror-model").Schema;
   optimistic: readonly PMNode[];
   patched: readonly PMNode[];
+  groups: CompiledApplyGroup[];
+  owners: readonly TrailOwner[];
+  effects: { side: "base" | "draft"; index: number; owners: readonly TrailOwner[] }[];
+};
+export type CompiledApplyGroup = {
+  groupId: string;
+  optimistic: readonly PMNode[];
+  patched: readonly PMNode[];
   record: ApplyEntry;
   owners: readonly TrailOwner[];
   effects: { side: "base" | "draft"; index: number; owners: readonly TrailOwner[] }[];
 };
-export interface ApplyClickStore {
+export interface ApplyCommandStore {
   loadBase(command: ApplyClickCommand): Promise<DraftBase | null>;
   /**
    * Applies exactly the click's cuts in one transaction: the tree cut first (the move, delete
    * or creation its frozen revision holds), then the text cut at the result.
    */
-  execute(
+  apply(
     command: ApplyClickCommand,
     prepared:
       | { kind: "text"; base: DraftBase; click: CompiledClick; tree?: TreeCut }
@@ -119,38 +127,23 @@ export function compileClick(
       { ...provenance, snapshot },
       { record: true },
     );
-    const members = new Set(
-      request.groupIds.flatMap((id) => classifications.get(id)?.members ?? []),
-    );
-    const owners = new Map<string, TrailOwner>();
-    for (const index of members) {
-      const part = provenance.parts[index];
-      if (part?.threadId && part.turnId)
-        owners.set(`${part.threadId}:${part.turnId}`, {
-          threadId: part.threadId,
-          turnId: part.turnId,
-        });
-    }
-    const effects: CompiledClick["effects"] = [];
-    const selectedHunks = new Map<import("@meridian/agent-edit/diff").Hunk, TrailOwner[]>();
-    for (const group of projection.groups) {
-      if (!request.groupIds.includes(group.id)) continue;
-      const groupOwners = (classifications.get(group.id)?.members ?? []).flatMap((index) => {
+    const compileGroup = (groupId: string): CompiledApplyGroup => {
+      const group = projection.groups.find((candidate) => candidate.id === groupId);
+      if (!group) throw new ApplyClickRefused("malformed");
+      const owners = new Map<string, TrailOwner>();
+      for (const index of classifications.get(groupId)?.members ?? []) {
         const part = provenance.parts[index];
-        return part?.threadId && part.turnId
-          ? [{ threadId: part.threadId, turnId: part.turnId }]
-          : [];
-      });
-      for (const h of group.hunks) selectedHunks.set(projection.diff.hunks[h.index], groupOwners);
-    }
-    const selectedPatches = composeHunks(
-      schema,
-      projection.diff,
-      selectedHunks.keys(),
-      "apply",
-      (h, blocks) => {
-        const owners = selectedHunks.get(h) ?? [];
-        for (const index of blocks) effects.push({ side: "draft", index, owners });
+        if (part?.threadId && part.turnId)
+          owners.set(`${part.threadId}:${part.turnId}`, {
+            threadId: part.threadId,
+            turnId: part.turnId,
+          });
+      }
+      const groupOwners = [...owners.values()];
+      const effects: CompiledApplyGroup["effects"] = [];
+      const hunks = group.hunks.map((hunk) => projection.diff.hunks[hunk.index]);
+      const patches = composeHunks(schema, projection.diff, hunks, "apply", (h, blocks) => {
+        for (const index of blocks) effects.push({ side: "draft", index, owners: groupOwners });
         const baseSide = projection.diff.base;
         const deleted = new Set<number>();
         for (let i = h.from; i < h.to; i++) {
@@ -161,15 +154,42 @@ export function compileClick(
           )
             deleted.add(index);
         }
-        for (const index of deleted) effects.push({ side: "base", index, owners });
-      },
+        for (const index of deleted) effects.push({ side: "base", index, owners: groupOwners });
+      });
+      return {
+        groupId,
+        optimistic,
+        patched: applySpanPatches(optimistic, patches, "base"),
+        record: {
+          ...applyRecordOf(classifications, [groupId]),
+          commandId: request.commandId,
+          groupId,
+        },
+        owners: groupOwners,
+        effects,
+      };
+    };
+    const groups = request.groupIds.map(compileGroup);
+    const owners = new Map(
+      groups.flatMap((group) =>
+        group.owners.map((owner) => [`${owner.threadId}:${owner.turnId}`, owner] as const),
+      ),
+    );
+    const effects = groups.flatMap((group) => group.effects);
+    const selectedPatches = composeHunks(
+      schema,
+      projection.diff,
+      projection.groups
+        .filter((group) => request.groupIds.includes(group.id))
+        .flatMap((group) => group.hunks.map((hunk) => projection.diff.hunks[hunk.index])),
+      "apply",
     );
     return {
       schema,
       optimistic,
       effects,
       patched: applySpanPatches(optimistic, selectedPatches, "base"),
-      record: { ...applyRecordOf(classifications, request.groupIds), commandId: request.commandId },
+      groups,
       owners: [...owners.values()],
     };
   } finally {
@@ -181,9 +201,9 @@ export function createApplyClickService(input: {
   identity: BranchReviewIdentity;
   commands: BranchCommands;
   evidence: DraftDispositionStore;
-  store: ApplyClickStore;
+  store: ApplyCommandStore;
 }) {
-  return async (command: ApplyClickCommand): Promise<ApplyClickAnswer> => {
+  const apply = async (command: ApplyClickCommand): Promise<ApplyClickAnswer> => {
     const commandId = command.envelope.commandId;
     const lookup = async (): Promise<ApplyClickAnswer | null> => {
       const found = await input.commands.lookup(command.envelope);
@@ -208,7 +228,7 @@ export function createApplyClickService(input: {
         if (!tree) throw new ApplyClickRefused("malformed");
         const resolved = await input.identity.resolveReviewItemByDocument(command);
         if (!resolved) throw new ApplyClickRefused("not_found");
-        return await input.store.execute(command, {
+        return await input.store.apply(command, {
           kind: "tree",
           branchId: resolved.branchId,
           tree,
@@ -242,7 +262,7 @@ export function createApplyClickService(input: {
       } finally {
         input.store.measured?.({ commandId, compileClickMs: performance.now() - start });
       }
-      const result = await input.store.execute(command, {
+      const result = await input.store.apply(command, {
         kind: "text",
         base,
         click,
@@ -259,4 +279,5 @@ export function createApplyClickService(input: {
       throw cause;
     }
   };
+  return { apply };
 }
