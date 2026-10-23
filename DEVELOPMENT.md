@@ -1,6 +1,6 @@
 # Development guide (v3)
 
-Setup and day-to-day workflow for the TypeScript monorepo on branch `h/v3`.
+Setup and day-to-day workflow for the TypeScript monorepo.
 
 See also [AGENTS.md](AGENTS.md), the PR body's `## Changelog` section, and [.cursor/rules/commit-phase-discipline.mdc](.cursor/rules/commit-phase-discipline.mdc).
 
@@ -80,15 +80,14 @@ Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docke
 | `pnpm bootstrap` | `direnv allow` (if installed) + ensure DB + migrate + apply-functions |
 | `pnpm dev:gc-dbs -- --yes` | Drop stale worktree and stopped managed-test databases; preserve live worktrees, active tests, reserved manual-test names, and reserved databases |
 
-### Pre-relaunch baseline reset
+### Resetting a dev database
 
-Migration history now starts at `0000_baseline`. **Existing dev databases that
-ran the old chain must be reset with `pnpm db:reset` from their owning checkout.**
-This destroys that checkout's local schema and data, then installs the baseline
-and post-migrate functions. Back up anything you need first. `pnpm db:migrate`
-does not upgrade an old-history database to this baseline. Do not reset someone
-else's database or a shared deployment; deployment rebuilds need separate
-coordination. Legacy users will arrive through a separate ETL, not this migration.
+Until launch, resetting a database is always an option. `pnpm db:reset`, run
+from the checkout that owns the database, destroys its schema and data, then
+installs the migrations from `0000_baseline` and the post-migrate functions.
+Back up anything you need first. `pnpm db:migrate` cannot upgrade a database
+whose migration history predates `0000_baseline`; reset it instead. Never reset
+someone else's database or a shared deployment.
 
 Against local Postgres, `pnpm test:db` creates and migrates a uniquely named
 template owned by that invocation and clones eight isolated worker databases
@@ -179,7 +178,7 @@ Branch history should replay verified work: **one plan phase or logical step →
 
 Prefer separate commits per package or layer when it helps review (e.g. `packages/database`, then `tools/dev`). Fold small review fixes into that phase's commit or an immediate follow-up.
 
-`git log --oneline` on `h/v3` should read like the plan: phase → verified commit → next phase.
+`git log --oneline` on the branch should read like the plan: phase → verified commit → next phase.
 
 ## Checks (manual)
 
@@ -213,28 +212,10 @@ fixed ports. It logs each remaining holder by PID and command, sends SIGTERM,
 waits briefly, and sends SIGKILL to stragglers. An uninspectable bound port still
 aborts startup with diagnostics.
 
-## Workstation: memory-safe ripgrep
+## Workstation: wrapped ripgrep
 
-`rg` on this machine is wrapped at `~/.local/bin/rg` to prevent OOM kills. A bare `rg` over a large codebase can mmap hundreds of GB of virtual address space and exhaust RAM (this happened — it killed a tmux session).
-
-The wrapper enforces:
-- `--no-mmap` — sequential reads instead of memory-mapped I/O, keeps VSZ low
-- `--max-filesize 500M` — skips files larger than 500 MB
-- `-j 4` — caps parallel search threads
-- cgroup limits via `systemd-run`: `MemoryHigh=6G`, `MemoryMax=10G`, `MemorySwapMax=4G`
-
-To bypass (e.g. searching a legitimately large file):
-```bash
-~/.local/bin/rg.real [flags] [pattern] [path]
-```
-
-Also recommended — install `earlyoom` as a system-wide backstop:
-```bash
-sudo apt install earlyoom
-# In /etc/default/earlyoom:
-# EARLYOOM_ARGS="-m 4,3 -s 10,5 --prefer '(^|/)(rg|ripgrep)$' --sort-by-rss -g -r 60"
-sudo systemctl enable --now earlyoom
-```
+On the maintainer's workstation, `rg` is a memory-capped wrapper; run
+`~/.local/bin/rg.real` to bypass it.
 
 ## Vite crashes with ENOSPC (file watchers)
 

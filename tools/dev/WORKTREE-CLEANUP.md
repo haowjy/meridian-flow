@@ -4,7 +4,7 @@ For when `pnpm dev:prune-worktrees -- --target <x> --dry-run` refuses a
 branch you believe is safe to remove. The tool only acts on proof: the commit
 contained in another surviving ref (the branch's own local and remote-tracking
 refs never count), or an exact merged-PR match, whichever base branch it merged
-into ([`tools/dev/AGENTS.md`](AGENTS.md)). When neither holds, it refuses — correctly,
+into ([`tools/dev/.context/CONTEXT.md`](.context/CONTEXT.md)). When neither holds, it refuses — correctly,
 on the evidence it has. This guide is for building better evidence by hand and
 recording that evidence in a manually verified cleanup plan, not for using a
 bare force override.
