@@ -46,6 +46,10 @@ the body "Read-only live document", suspends presence from the click that
 requests a review, and sets the binding owner id `mobile-project-document-host`.
 Everything else is the shared host.
 
+The route-owned phone presentation reuses the installed Editor tab's instance
+identity. An availability answer committed with that tab therefore reaches the
+phone's shared session boundary instead of starting a second lookup.
+
 The phone must stay on the shared session boundary. Only
 `ContextTabSessionBoundary` probes local content and holds the adoption-eligible
 lease that completes a stranded adoption; a phone that binds the live room itself
