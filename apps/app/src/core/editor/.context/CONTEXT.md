@@ -131,8 +131,12 @@ identity in anchors or holds.
 ## Editor policy seams
 
 - Disable TipTap's trailing node and local undo defaults where collaborative
-  behavior supplies the contract. The Yjs UndoManager and the dedicated keymap
-  own undo, including recovery from AI writes.
+  behavior supplies the contract. `editor-history.ts` is mounted with each
+  collaborative editor and orders Yjs stack items with editor-originated text
+  Apply commands. The dedicated keymap and toolbar both use it. Apply stops Yjs
+  capture on both sides, so nearby typing stays separate; async Apply reversals
+  serialize without disabling typing. Destroying the editor discards that
+  mounted history. Dock, Work, tree-only Apply, and title changes never enter it.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks

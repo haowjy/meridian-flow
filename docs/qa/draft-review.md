@@ -251,6 +251,42 @@ browser command owner with two independent 10-key/s room clients.
 
 [burst-harness]: https://github.com/haowjy/meridian-flow-docs/tree/main/work/diff-based-review/b/burst/harness
 
+## Editor Undo of Apply
+
+Run the stack with `pnpm dev` and the mock model. Use `./mf` to create a Work
+whose draft changes at least two separated passages and moves the document.
+Open that draft in the editor with Show changes on.
+
+1. Type immediately before a change, Apply that change, then type immediately
+   after it. Press Ctrl+Z three times. The last typing, the Apply, and the first
+   typing reverse in that order. Ctrl+Shift+Z restores them in the opposite
+   order. Repeat with the toolbar Undo and Redo controls.
+2. Apply both text and the move. Undo from the editor. The text returns as a
+   pending change immediately, while the document stays at its moved path. Redo
+   applies the same frozen text cut with no tree action.
+3. Apply a change and edit part of its landed live text from a second client.
+   Undo in the first editor. Untouched groups return pending; the edited group
+   stays as it is. Redo affects only the groups Undo reversed.
+4. Apply and press Undo before the request sends, including after releasing the
+   button while draft acknowledgement is held. Confirm no Apply or Un-Apply
+   command lands. Redo sends one new Apply.
+5. While an Apply answer is delayed or lost, press Undo and Redo repeatedly and
+   continue typing. Commands settle in order, typing remains enabled, and the
+   review never flashes back to the applied state before its authoritative room
+   update. Remount the editor during pending Un-Apply; the command settles, but
+   the old mounted history is gone.
+6. Refuse one Un-Apply response. The restored change shows the error and Retry;
+   retry uses the same command identity. Verify a chat-side Apply, a tree-only
+   Apply, and a delete-short-circuit Apply never enter editor history. Mount two
+   editors for the same draft and confirm each shortcut affects only the editor
+   where that Apply was captured.
+
+After each step, inspect the draft room and live document with `./mf`: reversed
+Apply records are absent, skipped records remain, a null live write leaves no
+pending diff after pull, and replaying either command id returns its stored
+result. Compact the live journal between one Apply and Undo and repeat the
+inspection; the durable effect receipt must still resolve.
+
 ## Quiet native typing at 50k words
 
 Open a 50,000-word draft with Show changes on and a focused change (so the

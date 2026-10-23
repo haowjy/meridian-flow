@@ -143,6 +143,12 @@ then the owner releases sends in server order; an earlier answer may omit a tree
 settled, but never recaptures later text or a later tree revision. The queue retains a
 `readDraftRoom` lease independently of React until terminal.
 
+An editor text Apply also gives that mounted editor's history an action over the
+frozen cut. Undo cancels it by command id while unsent. After send, Undo holds the
+item FIFO through the durable Un-Apply; later clicks cannot pass it. Redo is a new
+Apply command for only the text groups the server actually reversed, never the
+original tree cut. Work and dock callers pass no editor history handle.
+
 A deleted document (the list item's `deletedLive`, D79) is draft-only on every
 surface. Existence is its own fact, never read from a name conflict. If another document took
 its path, Apply restores it at the next free name, then merges. `apply(ref, target, restore)` sends
@@ -185,8 +191,12 @@ owner observes only hidden/closed lifecycle transitions. Listed-room snapshots
 combine stable text and per-item command records, including deferred Discard.
 Apply callbacks refresh discovery when the item's FIFO drains, not after every head.
 
-The base provider folds `applyBase` over unrecorded clicks in order; only the
-runtime caches that fold per schema and observes `review_base`. Base,
+The base provider folds `applyBase` over unrecorded clicks in order. Pending
+Un-Apply folds the frozen effect backward until removal of the targeted group
+records is observed; an HTTP answer alone cannot flash the applied state back.
+Failure removes that fold, restores the history action at its chronological
+position, and retains the same-id retry on the item. Typing remains enabled.
+Only the runtime caches that fold per schema and observes `review_base`. Base,
 record and queue changes invalidate it; typing only reprojects. Group targets
 must still describe equal base and prose at capture; a changed pre-click
 projection is refreshed and reported locally, never reinterpreted by its
