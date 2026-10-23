@@ -148,7 +148,7 @@ it.each([
     ).toMatchObject({ status: "partial", acceptedParts: 1 });
     expect(await text()).toBe("gold\n\npink\n\nblack\n");
     const edits = await core.read({ ...address, format: "edits" }, current);
-    expect(edits.result.message).toMatch(/e2 {2}this turn {2}changed.*undo: no \(changed\)/);
+    expect(edits.result.message).toMatch(/e2 {2}this turn {2}changed.*none/);
     expect(edits.result.message).not.toContain("undone by the user");
     expect(await core.write({ ...address, command: "undo" }, current)).toMatchObject({
       status: "cant_undo_changed",

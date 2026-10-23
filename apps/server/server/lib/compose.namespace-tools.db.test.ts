@@ -423,6 +423,35 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(schema.changeTrailDirtyLog)
         .where(eq(schema.changeTrailDirtyLog.threadId, THREAD.threadId));
       expect(dirty.map((row) => row.turnId)).toContain(THREAD.turnId);
+
+      // A compound Undo authorizes the restored live document for the older text step.
+      const compound = await runtimes
+        .script(script.runtime, { ...THREAD, turnId: NEXT_TURN })
+        .begin();
+      expect(
+        (
+          await compound.call("write", {
+            command: "replace",
+            path: "ch2",
+            find: "two",
+            content: "Two",
+          })
+        ).isError,
+      ).toBeFalsy();
+      await compound.save();
+      const deleting = await runtimes
+        .script(script.runtime, { ...THREAD, turnId: NEXT_TURN })
+        .begin();
+      expect(
+        (await deleting.call("write", { command: "delete", path: "ch2" })).isError,
+      ).toBeFalsy();
+      const restoredText = await deleting.call("write", {
+        command: "undo",
+        path: "ch2",
+        count: 2,
+      });
+      expect(restoredText.isError, text(restoredText)).toBeFalsy();
+      expect(await script.text("ch2")).toContain("Chapter two.");
     });
 
     const branchOf = async (workId: string) => {

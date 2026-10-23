@@ -100,12 +100,25 @@ Repeat **Two parts** with `undo` instead of `revert`. Expect `undone: e1 (1 of
 paragraph reversed. Redo restores that third-paragraph part without replacing
 the writer's first paragraph.
 
+In draft mode, Apply N, then read edit history. N is `applied` and offers `revert`. Run model
+Undo: it reports `reverted: e1`, restores the old text as a pending draft change, and leaves live
+unchanged. Repeat through the turn card: the control still says Undo, restores the old draft text,
+and then offers Redo; Redo reapplies N. For a mixed count, leave one newer edit pending over one
+applied edit and run `undo` with `count: 2`; the result names the newer handle as `undone` and the
+older as `reverted`.
+
+In direct mode, edit a live file, then delete that file in the same chat. Run `undo` at the
+deleted path with `count: 2`. The command restores the file, reverses the earlier text edit in
+that restored file, and succeeds as one atomic command. Repeat with two count-1 Undos and confirm
+the final text is identical.
+
 To check destination routing, make one live edit, switch the chat to draft
 mode, and run Undo. The manuscript changes, the Work draft does not, and the
 result ends with `version: live`. Then make one draft edit, switch the chat to
 auto-apply, and run Undo. The Work draft changes, the manuscript does not, and
-the result names that draft. Moving the chat from one Work to another still
-does not let its stack write into the former Work.
+the result names that draft. Moving the chat from one Work to another does not reroute its stack: Undo still lands in the
+active former Work that owns the edit. Archive that origin Work and read `format: "edits"` from
+the rebound chat; the line offers no command, and Undo returns `nothing_to_undo`.
 
 **Why auto-apply differs in "N deleted a sentence":** a live write stores its whole paragraph as deleted and
 reinserted text, so any later change in that paragraph, even to words N kept, skips the part. A draft write stores

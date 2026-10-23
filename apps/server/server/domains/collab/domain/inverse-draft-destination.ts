@@ -5,9 +5,17 @@ import type * as Y from "yjs";
 import type { DraftSnapshot } from "./draft-store.js";
 import type { InverseDocument } from "./turn-inverse-service.js";
 
-export type LiveInverseDestination = { kind: "live"; view: Y.Doc };
+export type LiveInverseDestination = {
+  kind: "live";
+  view: Y.Doc;
+  /** A live file owned by an archived or deleted Work is not writable. */
+  frozen: boolean;
+  /** Live removal does not close an active draft that survived it (D79). */
+  removed: boolean;
+};
 export type ActiveInverseDestination = {
   kind: "draft";
+  frozen: boolean;
   branchId: BranchId;
   draftId: string;
   revision: number;
@@ -16,6 +24,7 @@ export type ActiveInverseDestination = {
 };
 export type GoneInverseDestination = {
   kind: "draft";
+  frozen: boolean;
   branchId: BranchId;
   state: "gone";
 };
@@ -34,9 +43,11 @@ export type CapturedDraft = {
 export function createInverseDestinationResolver(
   document: InverseDocument,
   occupancy: ReadonlyMap<BranchId, string>,
+  branchAvailability: ReadonlyMap<BranchId, { frozen: boolean }>,
+  liveAvailability: { frozen: boolean; removed: boolean },
 ): Pick<InverseDocument, "destinationOf" | "destinationForBranch"> {
   const drafts = new Map<string, InverseDestination>();
-  const live: LiveInverseDestination = { kind: "live", view: document.live };
+  const live: LiveInverseDestination = { kind: "live", view: document.live, ...liveAvailability };
   const fromDraft = (draftId: string): InverseDestination => {
     const cached = drafts.get(draftId);
     if (cached) return cached;
@@ -50,13 +61,14 @@ export function createInverseDestinationResolver(
       row.status === "active"
         ? {
             kind: "draft",
+            frozen: captured.frozen,
             branchId: row.branchId,
             draftId: row.draftId,
             revision: row.revision,
             view: captured.doc,
             state: "active",
           }
-        : { kind: "draft", branchId: row.branchId, state: "gone" };
+        : { kind: "draft", frozen: captured.frozen, branchId: row.branchId, state: "gone" };
     drafts.set(draftId, destination);
     return destination;
   };
@@ -66,7 +78,14 @@ export function createInverseDestinationResolver(
     },
     destinationForBranch(branchId: BranchId) {
       const draftId = occupancy.get(branchId);
-      return draftId ? fromDraft(draftId) : { kind: "draft", branchId, state: "gone" };
+      return draftId
+        ? fromDraft(draftId)
+        : {
+            kind: "draft",
+            frozen: branchAvailability.get(branchId)?.frozen ?? true,
+            branchId,
+            state: "gone",
+          };
     },
   };
 }
