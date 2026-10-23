@@ -142,6 +142,14 @@ every unit and DB run and compares the **expanded case count per test file**
   touches only test files the incoming branch changed; any other line is growth
   no one declared. A plain run, or CI, then enforces the memory ceiling.
 
+- Peak memory is roughly `base + workers × module graph`: it tracks worker count
+  far more than file count, so deleting tests won't lower it. Measured on a
+  24-core host: unit 3.0 GB at 8 workers, 4.0 GB at 12, 6.7 GB and a flake at
+  24; DB 3.5 GB at 4 fork workers, 6.0 GB and a settlement flake at 8.
+- Contracts, markup and DB suites reuse worker module caches: no module or
+  global mocks there. Keep test data and connections instance-owned; DB
+  rollback/FK resets, not fresh module loading, isolate persisted state.
+
 ## Runtime verification
 
 Run from an owned checkout with dependencies installed:
