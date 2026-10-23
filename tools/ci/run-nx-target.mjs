@@ -15,7 +15,7 @@ if (options.includes("--staged")) {
     encoding: "utf8",
   })
     .split("\0")
-    .filter((file) => file && !/\.(md|mdc|markdown|txt|rst)$/i.test(file));
+    .filter((file) => file && !/(\.(md|mdc|markdown|txt|rst)$|(^|\/)\.context\/)/i.test(file));
   if (files.length === 0) {
     console.log(`No staged non-documentation paths. Skipping Nx target "${target}".`);
     process.exit(0);

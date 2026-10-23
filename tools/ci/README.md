@@ -35,8 +35,9 @@ Git index paths → documentation filter → Nx affected projects and consumers
                                          → configured typecheck targets
 ```
 
-The runner skips `.md`, `.mdc`, `.markdown`, `.txt` and `.rst` paths before
-starting Nx. It does not skip executable MDX. Git's NUL-delimited output and
+The runner skips `.md`, `.mdc`, `.markdown`, `.txt`, `.rst` and colocated
+`.context/` knowledge files (including extensionless `TODO` and `FUTURE`) before
+starting Nx. It does not skip executable MDX outside those knowledge directories. Git's NUL-delimited output and
 disabled rename detection preserve deleted paths and both rename endpoints.
 Nx receives paths on stdin, not a shell-expanded or comma-separated argument.
 A filename containing a newline selects all projects because Nx's stdin
@@ -59,15 +60,15 @@ configuration follows the project's normal dependency graph.
 
 ### Staged hook probe recipe
 
-Use an owned worktree with dependencies installed and an empty index. Save or
+Use an owned worktree with dependencies installed and no staged changes. Save or
 restore only your own probe edits. Run `pnpm exec lefthook run pre-commit` for the
 whole hook, or `pnpm typecheck:staged` to isolate typechecking.
 
-1. Stage an edit to root `AGENTS.md` and a package README. Expect a skip with no
+1. Stage an edit to root `AGENTS.md`, a package README and `.context/TODO`. Expect a skip with no
    Nx or TypeScript task. Repeat with an empty index and with unstaged source
    errors: selection must still skip. Unstage and restore the documentation.
 2. Stage a source change in `packages/contracts/src/`. Expect contracts and
-   its Nx consumers, including app and server, but not unrelated projects.
+   its dependent Nx projects, including app and server, but not yjs-inspect.
    Compare with:
 
    ```sh
