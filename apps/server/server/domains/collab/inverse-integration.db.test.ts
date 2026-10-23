@@ -6,12 +6,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import type * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
-import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
-import {
-  createDrizzleBranchStore,
-  createDrizzleBranchWriteBoundary,
-} from "./adapters/drizzle-branches.js";
-import { createBranches } from "./domain/branches.js";
+import { createDrizzleThreadWorksRepository } from "../threads/adapters/drizzle/thread-works-repository.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -236,15 +231,7 @@ describe("inverse integration (postgres)", () => {
       ["red", "gold"],
     ]);
     await seedSecondWork(fixture);
-    await createBranches({
-      store: createDrizzleBranchStore(db),
-      boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
-    }).ensureActiveForWrite({
-      workId: WORK_B_ID,
-      projectId: PROJECT_ID as never,
-      threadId: THREAD_ID as never,
-      userId: USER_ID as never,
-    });
+    await createDrizzleThreadWorksRepository(db).rebindPrimary(THREAD_ID, WORK_B_ID);
     const moved = {
       ...responseContext(await createResponse(db, 2)),
       grant: grantFor(ALPHA_ID, WORK_B_ID, "work-b"),
@@ -258,6 +245,23 @@ describe("inverse integration (postgres)", () => {
         .write({ command: "undo", file: "alpha.md", documentId: ALPHA_ID }, moved),
     ).toMatchObject({ status: "success" });
     expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
+    expect(
+      await fixture.collab
+        .agentEdit()
+        .write({ command: "redo", file: "alpha.md", documentId: ALPHA_ID }, moved),
+    ).toMatchObject({ status: "success" });
+    expect(await fixture.draftMarkdown(draftId)).toBe("gold\n\nblue\n\ngreen\n");
+    expect(
+      await fixture.collab
+        .agentEdit()
+        .write({ command: "revert", edit: "e1", file: "alpha.md", documentId: ALPHA_ID }, moved),
+    ).toMatchObject({ status: "success" });
+    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
+    expect(
+      (await db.select().from(schema.branches)).filter(
+        (branch) => branch.originWorkId === WORK_B_ID,
+      ),
+    ).toEqual([]);
   });
 
   it("6.2: card Undo of a turn whose draft was discarded skips every part by name", async () => {
