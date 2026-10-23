@@ -254,7 +254,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   function inverseDraftIds(
     query: TurnInverseQuery,
     parts: readonly { origin: EditOrigin }[],
-    tree: readonly StoredTreeEntry[],
+    _tree: readonly StoredTreeEntry[],
   ): string[] {
     return [
       ...new Set([
@@ -319,6 +319,23 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 )
             : [];
           const occupancy = new Map(activeRows.map((row) => [row.branchId, row.id]));
+          const branchOwners = branchIds.length
+            ? await db()
+                .select({
+                  branchId: branches.id,
+                  archivedAt: works.archivedAt,
+                  deletedAt: works.deletedAt,
+                })
+                .from(branches)
+                .innerJoin(works, eq(works.id, branches.originWorkId))
+                .where(inArray(branches.id, branchIds))
+            : [];
+          const branchAvailability = new Map(
+            branchOwners.map((owner) => [
+              owner.branchId,
+              { frozen: owner.archivedAt !== null || owner.deletedAt !== null },
+            ]),
+          );
           const document: InverseDocument = {
             documentId,
             // A deleted document has no address: the model's path, or where it last stood.
@@ -373,7 +390,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             });
           }
           document.drafts = drafts;
-          Object.assign(document, createInverseDestinationResolver(document, occupancy));
+          Object.assign(
+            document,
+            createInverseDestinationResolver(document, occupancy, branchAvailability),
+          );
         }
       } catch (cause) {
         destroyDocuments(documents);
@@ -621,7 +641,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     sequence: readonly { plan: PreparedDocumentInverse; step: InverseStep }[],
     query: TurnInverseQuery,
     userId: UserId | undefined,
-    kind: "undo" | "redo" | "revert" | "rollback",
+    _kind: "undo" | "redo" | "revert" | "rollback",
   ): Promise<FileGrant<"edit">[] | null> {
     const principal = query.principal ?? (userId ? { accountId: userId } : undefined);
     // Rollback runs inside the reply's already bound grants. Every interactive inverse supplies

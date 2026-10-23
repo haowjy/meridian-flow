@@ -8,6 +8,7 @@ import type { InverseDocument } from "./turn-inverse-service.js";
 export type LiveInverseDestination = { kind: "live"; view: Y.Doc };
 export type ActiveInverseDestination = {
   kind: "draft";
+  frozen: boolean;
   branchId: BranchId;
   draftId: string;
   revision: number;
@@ -16,6 +17,7 @@ export type ActiveInverseDestination = {
 };
 export type GoneInverseDestination = {
   kind: "draft";
+  frozen: boolean;
   branchId: BranchId;
   state: "gone";
 };
@@ -34,6 +36,7 @@ export type CapturedDraft = {
 export function createInverseDestinationResolver(
   document: InverseDocument,
   occupancy: ReadonlyMap<BranchId, string>,
+  branchAvailability: ReadonlyMap<BranchId, { frozen: boolean }>,
 ): Pick<InverseDocument, "destinationOf" | "destinationForBranch"> {
   const drafts = new Map<string, InverseDestination>();
   const live: LiveInverseDestination = { kind: "live", view: document.live };
@@ -50,13 +53,14 @@ export function createInverseDestinationResolver(
       row.status === "active"
         ? {
             kind: "draft",
+            frozen: captured.frozen,
             branchId: row.branchId,
             draftId: row.draftId,
             revision: row.revision,
             view: captured.doc,
             state: "active",
           }
-        : { kind: "draft", branchId: row.branchId, state: "gone" };
+        : { kind: "draft", frozen: captured.frozen, branchId: row.branchId, state: "gone" };
     drafts.set(draftId, destination);
     return destination;
   };
@@ -66,7 +70,14 @@ export function createInverseDestinationResolver(
     },
     destinationForBranch(branchId: BranchId) {
       const draftId = occupancy.get(branchId);
-      return draftId ? fromDraft(draftId) : { kind: "draft", branchId, state: "gone" };
+      return draftId
+        ? fromDraft(draftId)
+        : {
+            kind: "draft",
+            frozen: branchAvailability.get(branchId)?.frozen ?? true,
+            branchId,
+            state: "gone",
+          };
     },
   };
 }
