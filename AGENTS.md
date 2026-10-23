@@ -187,6 +187,10 @@ branch merges, into `main`, `staging`, or an integration branch):
    [tools/dev/AGENTS.md](tools/dev/AGENTS.md)).
 4. For a detached checkout the tool refuses, run `pnpm dev --stop` in it, then
    `git worktree remove` it, and drop its database with `pnpm dev:gc-dbs`.
+5. On `main` after the merge completes, remove the merged PR's screenshot
+   directory with `git rm -r .github/pr-assets/<dir>`, then commit. PR bodies
+   link each image at a commit, and that commit keeps it readable after the
+   files leave the tree.
 
 Run `pnpm dev:gc-dbs` after a batch of cleanups to drop databases that no worktree owns.
 Before you hand control back, check that nothing you started is still running.
