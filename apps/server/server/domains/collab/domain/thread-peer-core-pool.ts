@@ -63,18 +63,6 @@ type ResponseRecord = ReplyRecord;
 /** A reply save's commit attempts (section 2.4): four, then the save fails as today. */
 const SAVE_ATTEMPTS = 4;
 
-function inversePrincipal(principal: Principal, destination: FileDestination): Principal {
-  return principal.agent && destination.kind === "draft"
-    ? {
-        ...principal,
-        agent: {
-          ...principal.agent,
-          branchWork: { id: destination.workId, handle: destination.workHandle },
-        },
-      }
-    : principal;
-}
-
 /** A miss the next attempt can resolve: a draft moved, or a buffer changed, since preparing. */
 function isSaveAttemptMiss(cause: unknown): boolean {
   return cause instanceof DraftCasConflictError || cause instanceof ResponseAttemptStaleError;
@@ -322,7 +310,7 @@ export function createThreadPeerCorePool(input: {
       );
     const outcome =
       command.format === "edits"
-        ? await runWithInversePrincipal(inversePrincipal(grant.principal, destination), readCore)
+        ? await runWithInversePrincipal(grant.principal, readCore)
         : await readCore();
     if (outcome.isError) return outcome;
     const read = outcome.result.read;
@@ -421,7 +409,7 @@ export function createThreadPeerCorePool(input: {
       record && !immediateInverse
         ? await staged()
         : immediateInverse
-          ? await runWithInversePrincipal(inversePrincipal(grant.principal, destination), call)
+          ? await runWithInversePrincipal(grant.principal, call)
           : await commitNow(pinned?.grant ?? grant, call);
     const settled = oneEntry
       ? await settleOneEntry(command, documentId, outcome, oneEntry.editScopeId, given.frontiers)
