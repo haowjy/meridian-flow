@@ -65,7 +65,9 @@ Editor Undo sends an `unapply_click` command for the original Apply command. The
 Apply store loads the command's indexed effect rows, then reads only the target
 live receipts and their later dependency suffix under the document mutation lock.
 The command stores one full starting base plus bounded per-group deltas, rather
-than a full before/after document for every group. It uses the forward-inverse
+than a full before/after document for every group. A later Un-Apply rebuilds the
+complete delta chain before selecting effects that remain active, so an earlier
+partial reversal cannot remove the starting point or an intermediate delta. It uses the forward-inverse
 kernel directly against live history and folds only
 the successfully reversed groups out of the current review base. A group edited
 later in live is skipped. A null live receipt removes its Apply record without

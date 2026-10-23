@@ -111,17 +111,7 @@ class MountedEditorHistory implements EditorHistoryHandle {
       this.suppressManagerEvents = false;
     }
 
-    const remaining = new Set(stack);
-    stack.splice(
-      0,
-      stack.length,
-      ...original.filter((item) => !allowed.has(item) || remaining.has(item)),
-    );
-    source.splice(
-      0,
-      source.length,
-      ...source.filter((entry) => entry.kind === "apply" || remaining.has(entry.item)),
-    );
+    this.reconcileNativeSegment(source, stack, original, allowed);
 
     const generated = this.managerGenerated as StackItem | null;
     if (popped && generated) {
@@ -134,6 +124,23 @@ class MountedEditorHistory implements EditorHistoryHandle {
       generated.meta.set(HISTORY_META, moved);
       insert(direction === "undo" ? this.redo : this.undo, moved);
     }
+  }
+
+  /** Remove only items Yjs consumed from the segment it was allowed to traverse. */
+  private reconcileNativeSegment(
+    source: Entry[],
+    stack: StackItem[],
+    original: readonly StackItem[],
+    allowed: ReadonlySet<StackItem>,
+  ): void {
+    const remaining = new Set(stack);
+    const survives = (item: StackItem) => !allowed.has(item) || remaining.has(item);
+    stack.splice(0, stack.length, ...original.filter(survives));
+    source.splice(
+      0,
+      source.length,
+      ...source.filter((entry) => entry.kind === "apply" || survives(entry.item)),
+    );
   }
 
   private readonly managerAdded = ({ stackItem, type }: { stackItem: StackItem; type: string }) => {

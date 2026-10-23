@@ -37,22 +37,38 @@ type ApplyCommand = FrozenApply & {
   answer?: ApplyClickResult;
   inFlight?: boolean;
   reading?: boolean;
+  outcome: Promise<ApplyClickOutcome>;
   finish(result: ApplyClickOutcome): void;
 };
 export type UnapplyCommand = {
   kind: "unapply";
   body: UnapplyClick;
   draftId: string;
-  frozen: FrozenApply;
+  optimistic: readonly PMNode[];
+  patched: readonly PMNode[];
+  patchFor(groupIds: readonly string[]): readonly PMNode[];
+  selectionChanged(groupIds: readonly string[]): void;
   ready: Promise<boolean>;
   groupIds: Set<string>;
   sent: boolean;
   attempts: number;
   stalled: boolean;
   answer?: UnapplyClickResult;
+  outcome: Promise<UnapplyClickOutcome>;
   finish(result: UnapplyClickOutcome): void;
 };
 type Command = ApplyCommand | UnapplyCommand;
+
+export type ApplyCommandHandle = {
+  undo(): void;
+  redo(): void;
+};
+type ScheduledApplyHandle = ApplyCommandHandle & {
+  current: ApplyCommand;
+  reversal: Promise<UnapplyClickOutcome>;
+  replaySelection: string[];
+  pendingReplay: ApplyCommand | null;
+};
 
 export const APPLY_FEEDBACK_MS = 500;
 const RETRY_DELAYS = [1000, 2000, 4000];
@@ -98,53 +114,179 @@ export class ApplyClickQueue {
     release: Promise<{ cancel?: boolean; omitTree?: boolean }> = Promise.resolve({}),
   ): Promise<ApplyClickOutcome> {
     if (this.closed) return Promise.resolve({ status: "cancelled" });
-    const result = new Promise<ApplyClickOutcome>((finish) => {
-      const command: ApplyCommand = {
-        kind: "apply",
-        ...frozen,
-        release,
-        sent: false,
-        attempts: 0,
-        stalled: false,
-        closed: false,
-        finish,
-      };
-      this.commands.push(command);
-      void frozen.acknowledged.then(
-        () => {
-          if (!this.commands.includes(command)) return;
-          command.acknowledged = Promise.resolve();
-          if (this.commands[0] === command) void this.dispatch(command);
-        },
-        () => this.refuse(command),
-      );
-    });
+    const result = this.queueApply(frozen, release).outcome;
     this.startFeedback();
     this.port.changed();
     return result;
   }
 
-  enqueueUnapply(input: {
+  /** Own one Apply's command identity, reversal result, and text-only replay selection. */
+  enqueueHistory(input: {
+    frozen: FrozenApply;
+    release: Promise<{ cancel?: boolean; omitTree?: boolean }>;
+    patchFor(groupIds: readonly string[]): readonly PMNode[];
+    intent(): void;
+    applyRefused(answer: ApplyClickOutcome): void;
+    unapplyRefused(answer: UnapplyClickOutcome): void;
+  }): { outcome: Promise<ApplyClickOutcome>; handle: ApplyCommandHandle } {
+    const initial = this.queueApply(input.frozen, input.release);
+    this.startFeedback();
+    this.port.changed();
+    const landedText = (answer: ApplyClickOutcome) =>
+      answer.status === "landed" || (answer.status === "applied" && answer.textEffect === true);
+    let handle!: ScheduledApplyHandle;
+    handle = {
+      current: initial,
+      reversal: Promise.resolve({ status: "cancelled" }),
+      replaySelection: [...initial.body.groupIds],
+      pendingReplay: null,
+      undo: () => {
+        input.intent();
+        handle.pendingReplay = null;
+        if (this.cancel(handle.current.body.commandId)) {
+          handle.reversal = Promise.resolve({ status: "cancelled" });
+          return;
+        }
+        handle.replaySelection = [...handle.current.body.groupIds];
+        const inverse = this.queueUnapply({
+          body: {
+            commandId: crypto.randomUUID(),
+            applyCommandId: handle.current.body.commandId,
+          },
+          draftId: handle.current.body.draftId ?? "",
+          optimistic: handle.current.optimistic,
+          patched: handle.current.patched,
+          groupIds: handle.current.body.groupIds,
+          patchFor: input.patchFor,
+          ready: handle.current.outcome.then(landedText),
+          selectionChanged: (groupIds) => {
+            handle.replaySelection = [...groupIds];
+            const replay = handle.pendingReplay;
+            if (replay && !replay.sent) {
+              replay.body = { ...replay.body, groupIds: [...groupIds] };
+              replay.patched = input.patchFor(groupIds);
+            }
+          },
+        });
+        handle.reversal = inverse.outcome;
+        void inverse.outcome.then((answer) => {
+          if (answer.status !== "unapplied" && answer.status !== "cancelled")
+            input.unapplyRefused(answer);
+        });
+      },
+      redo: () => {
+        input.intent();
+        const ready = handle.reversal.then((answer) => {
+          if (answer.status !== "cancelled" && answer.status !== "unapplied")
+            throw new Error("Un-Apply did not land");
+        });
+        handle.current = this.queueApply({
+          body: {
+            ...handle.current.body,
+            commandId: crypto.randomUUID(),
+            groupIds: [...handle.replaySelection],
+            tree: undefined,
+          },
+          optimistic: handle.current.optimistic,
+          patched: input.patchFor(handle.replaySelection),
+          acknowledged: ready,
+        });
+        handle.pendingReplay = handle.current;
+        this.startFeedback();
+        this.port.changed();
+        void handle.current.outcome.then((answer) => {
+          if (!landedText(answer) && answer.status !== "cancelled") input.applyRefused(answer);
+        });
+      },
+    };
+
+    return {
+      outcome: initial.outcome,
+      handle,
+    };
+  }
+
+  /** Fold unresolved writer intents in the same order in which they are delivered. */
+  project(
+    draftId: string,
+    base: readonly PMNode[],
+    fold: (
+      base: readonly PMNode[],
+      before: readonly PMNode[],
+      after: readonly PMNode[],
+    ) => readonly PMNode[],
+  ): readonly PMNode[] {
+    let projected = base;
+    for (const command of this.commands) {
+      if (command.kind === "apply") {
+        if (command.body.draftId === draftId && !this.isRecorded(command))
+          projected = fold(projected, command.optimistic, command.patched);
+      } else if (command.draftId === draftId) {
+        projected = fold(projected, command.patched, command.optimistic);
+      }
+    }
+    return projected;
+  }
+
+  private queueApply(
+    frozen: FrozenApply,
+    release: Promise<{ cancel?: boolean; omitTree?: boolean }> = Promise.resolve({}),
+  ): ApplyCommand {
+    let finish!: (result: ApplyClickOutcome) => void;
+    const outcome = new Promise<ApplyClickOutcome>((resolve) => {
+      finish = resolve;
+    });
+    const command: ApplyCommand = {
+      kind: "apply",
+      ...frozen,
+      release,
+      sent: false,
+      attempts: 0,
+      stalled: false,
+      closed: false,
+      outcome,
+      finish,
+    };
+    this.commands.push(command);
+    void frozen.acknowledged.then(
+      () => {
+        if (!this.commands.includes(command)) return;
+        command.acknowledged = Promise.resolve();
+        if (this.commands[0] === command) void this.dispatch(command);
+      },
+      () => this.refuse(command),
+    );
+    return command;
+  }
+
+  private queueUnapply(input: {
     body: UnapplyClick;
     draftId: string;
-    frozen: FrozenApply;
+    optimistic: readonly PMNode[];
+    patched: readonly PMNode[];
+    groupIds: readonly string[];
+    patchFor(groupIds: readonly string[]): readonly PMNode[];
+    selectionChanged(groupIds: readonly string[]): void;
     ready: Promise<boolean>;
-  }): Promise<UnapplyClickOutcome> {
-    if (this.closed) return Promise.resolve({ status: "cancelled" });
-    const result = new Promise<UnapplyClickOutcome>((finish) => {
-      this.commands.push({
-        kind: "unapply",
-        ...input,
-        groupIds: new Set(input.frozen.body.groupIds),
-        sent: false,
-        attempts: 0,
-        stalled: false,
-        finish,
-      });
+  }): UnapplyCommand {
+    let finish!: (result: UnapplyClickOutcome) => void;
+    const outcome = new Promise<UnapplyClickOutcome>((resolve) => {
+      finish = resolve;
     });
+    const command: UnapplyCommand = {
+      kind: "unapply",
+      ...input,
+      groupIds: new Set(input.groupIds),
+      sent: false,
+      attempts: 0,
+      stalled: false,
+      outcome,
+      finish,
+    };
+    this.commands.push(command);
     this.port.changed();
     this.moveOn();
-    return result;
+    return command;
   }
 
   observe(draftId: string, rows: Iterable<string | { commandId: string; groupId?: string }>): void {
@@ -329,6 +471,8 @@ export class ApplyClickQueue {
     if (answer?.status === "unapplied") {
       command.answer = answer;
       command.groupIds = new Set(answer.reversedGroupIds);
+      command.patched = command.patchFor(answer.reversedGroupIds);
+      command.selectionChanged(answer.reversedGroupIds);
       this.port.changed();
       this.reconcileUnapply(command);
       return;
@@ -338,18 +482,6 @@ export class ApplyClickQueue {
       return;
     }
     this.scheduleRetry(command);
-  }
-
-  reviseApply(commandId: string, frozen: FrozenApply): void {
-    const command = this.commands.find(
-      (candidate): candidate is ApplyCommand =>
-        candidate.kind === "apply" && candidate.body.commandId === commandId && !candidate.sent,
-    );
-    if (!command) return;
-    command.body = frozen.body;
-    command.optimistic = frozen.optimistic;
-    command.patched = frozen.patched;
-    this.port.changed();
   }
 
   private reconcileUnapply(

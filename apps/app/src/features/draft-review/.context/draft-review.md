@@ -143,8 +143,10 @@ then the owner releases sends in server order; an earlier answer may omit a tree
 settled, but never recaptures later text or a later tree revision. The queue retains a
 `readDraftRoom` lease independently of React until terminal.
 
-An editor text Apply also gives that mounted editor's history an action over the
-frozen cut. Apply is a boundary between native Yjs segments. Undo moves the history
+An editor text Apply also gives that mounted editor's history the synchronous Undo
+and Redo callbacks of the schedule-owned command handle. The handle owns the current
+command identity, reversal outcome and text-only replay selection; mounted history
+owns none of that delivery state. Apply is a boundary between native Yjs segments. Undo moves the history
 cursor synchronously, cancels an unsent Apply, or immediately queues a projected
 Un-Apply intent in the item's command schedule. The schedule retries the targeted
 Apply before the inverse when its delivery is unknown and withholds later commands
@@ -196,8 +198,8 @@ owner observes only hidden/closed lifecycle transitions. Listed-room snapshots
 combine stable text and per-item command records, including deferred Discard.
 Apply callbacks refresh discovery when the item's FIFO drains, not after every head.
 
-The base provider folds `applyBase` over unrecorded clicks in order. Pending
-Un-Apply folds the frozen effect backward until removal of the targeted group
+The base provider folds `applyBase` over the schedule's unresolved Apply, Un-Apply
+and Redo intents in delivery order. Pending Un-Apply folds its effect backward until removal of the targeted group
 records is observed; an HTTP answer alone cannot flash the applied state back.
 Failure removes that fold, restores the history action at its chronological
 position, and retains the same-id retry on the item. Typing remains enabled.
