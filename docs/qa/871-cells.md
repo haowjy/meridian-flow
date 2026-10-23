@@ -91,10 +91,12 @@ No concurrent writer edit refuses the model write; the Yjs merge decides what su
 
 | Cell | Both modes |
 |---|---|
-| 1 | writer paragraph kept between the rewritten B and C; no `swept:` |
-| 2 | B rewritten, ` WRITER-W` kept as its suffix (the settled result still prints a `swept:` line for B; swept reporting is M3's) |
-| 3 | D and ` WRITER-D` gone; the result names it on a `swept:` line |
-| 4 | `WRITER-OUT` kept; it is outside the write's passage and listed under `concurrent edits:` |
+| 1 | writer paragraph kept between the rewritten B and C |
+| 2 | B rewritten, ` WRITER-W` kept as its suffix |
+| 3 | D and ` WRITER-D` gone (ancestor delete: the write removed the block holding the writer's text) |
+| 4 | `WRITER-OUT` kept; it is outside the write's passage and listed under `concurrent edits by the user` |
+
+No result prints a `swept:` line.
 
 No text duplicated anywhere. In draft mode the live document keeps the five original paragraphs
 (`./mf doc read`). Repeat cell 2 with a sentence longer than ten words: the write still lands,
