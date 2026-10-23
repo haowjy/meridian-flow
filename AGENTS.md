@@ -83,6 +83,12 @@ outside `packages/design-tokens`.
 **Comments.** File headers say what a file is for. Inline comments explain only
 hidden constraints, surprising invariants, and workarounds.
 
+**Writing.** Load and apply `/llm-writing` before writing or revising user-facing
+text or documentation: UI copy, guides, README files, AGENTS.md, .context/, KB
+pages, work artifacts, PR descriptions, and release notes. Apply
+`/information-hierarchy` to multi-section documents and UI surfaces with
+supporting detail: lead with what the reader needs, then disclose depth.
+
 **Writer-facing copy.** Separate facts with layout, typography, sentences, or
 parentheses, never `·`, `•`, `—`, or `|`. See the
 [copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/writer-copy-separation.md).
