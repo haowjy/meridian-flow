@@ -699,8 +699,8 @@ restart smoke check.
 - **Protects:** observation frontiers ([runtime document text](../../apps/server/server/domains/runtime/.context/document-text.md#observation-frontiers)). Each read or write result
   the model receives records at most one row, keyed by that result block; `room_key` is
   `draft:<workDraftId>` (the `document_drafts` row of kind `work_draft`, never the thread
-  peer) or `live:<documentId>:<authorityGeneration>`; `unshown` lists block ids that changed
-  since the previous frontier and were not shown in full. Lookup is the latest `recorded_seq`
+  peer) or `live:<documentId>:<authorityGeneration>`; `journal_position` is the room journal's
+  high-water mark at that cut. Lookup is the latest `recorded_seq`
   among the conversation's blocks. A fork finds inherited rows with no copy. A staged write
   records nothing; the step's save records on the write's block. An undo records in the version
   its inverse ran on. Host-only: the model request carries no frontier text.
@@ -825,15 +825,13 @@ restart smoke check.
      ```
 
 - **Expect:**
-  1. One `live:<documentId>:1` row, `unshown: []`, `blocks: 4` in the read result.
-  2. Same-thread partial read after restart: `unshown: []`, `blocks: 1 of 4`. Control thread:
-     `unshown` lists the other three block ids (`client:clock`).
-  3. Fork copies no rows (same count and `source_block_id` set before vs after). Fork partial read:
-     `unshown: []`.
+  1. One `live:<documentId>:1` row with a non-null `journal_position` and `blocks: 4` in the read result.
+  2. Same-thread partial read after restart records a later journal position and returns `blocks: 1 of 4`.
+  3. Fork copies no rows (same count and `source_block_id` set before vs after). Its partial read records its own cut.
   4. Read's `room_key` is `draft:<work_draft.id>`, not `draft:<thread_peer.id>`. Result `version: draft`.
   5. Write block: one row, `recorded_seq` greater than the same-step read, in both orders, with no
      seq consumed by the staged write. `tool.completed` then `tool.settled`.
-  6. Raw request text contains none of `frontier`, `snapshot`, `unshown`.
+  6. Raw request text contains none of `frontier`, `snapshot`, `journal_position`.
   7. Each undo block records one row: `live:<documentId>:<generation>` on `$WT`, and on `$DT`
      `draft:<work_draft.id>` (the draft the inverse ran on), never the thread peer.
 - **Evidence:** each send NDJSON, the SQL dumps, the fork body, `document_drafts` ids next to
@@ -849,7 +847,7 @@ restart smoke check.
 
 ## RP-20: Writes merge onto changed or partly read text and name concurrent authors
 
-- **Protects:** offline model writes and the attributed concurrent-change listing ([write architecture](../../packages/agent-edit/.context/write-architecture.md#offline-writes-merge)). A write plans on the model's latest view and merges onto the current Yjs room. Changed or unshown text never refuses it. A missing find or deleted block still returns `not_found`. Results group concurrent changes by `the user` or the model chat's permanent handle, capped at 8 KiB.
+- **Protects:** offline model writes and the attributed concurrent-change listing ([write architecture](../../packages/agent-edit/.context/write-architecture.md#offline-writes-merge)). A write plans on the model's latest view and merges onto the current Yjs room. Concurrent or partly read text never refuses it. A missing find or deleted block still returns `not_found`. Results group concurrent changes by `the user` or the model chat's permanent handle, capped at 8 KiB.
 - **Stack:** mock, with a browser for user typing. Use [#871 cells](871-cells.md) for the live and Work-draft concurrent-edit matrix.
 - **Steps:**
   1. In a live chat, read a chapter. Type into the target paragraph in the browser, then run a scripted replace based on the old text.

@@ -10,7 +10,6 @@ import {
   captureEditParts,
   isDocumentNotFoundError,
   SavePreconditionRefused,
-  unwrapDoc,
 } from "@meridian/agent-edit/integration";
 import type { DocumentAuthorityId, ModelResponseId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
@@ -47,11 +46,7 @@ import type {
 } from "../domain/ports/checkpoint-authority.js";
 import type { InitialDocumentSeeds } from "../domain/ports/initial-document-seeds.js";
 import type { LiveWriterJournal } from "../domain/ports/live-writer-journal.js";
-import {
-  insertionAttributions,
-  materializeCandidateProvenance,
-  materializeProvenanceForDoc,
-} from "../domain/provenance.js";
+import { insertionAttributions } from "../domain/provenance.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "../domain/stale-schema.js";
 import { resolveCheckpointCut } from "./checkpoint-capability.js";
 import { storedDocument } from "./document-loader.js";
@@ -685,87 +680,35 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       });
     },
 
-    async materializeDestructiveProvenance(input) {
-      const readDb = currentDrizzleDb(db as Database) as JournalDb;
-      const authorityHead = await readDocumentAuthorityHead(readDb, input.docId);
-      const rows = await readDb
-        .select({
-          authorityId: documentYjsUpdates.authorityId,
-          generation: documentYjsUpdates.authorityGeneration,
-          admissionSequence: documentYjsUpdates.admissionSequence,
-          batchOrdinal: documentYjsUpdates.batchOrdinal,
-          journalRowId: documentYjsUpdates.id,
-          originType: documentYjsUpdates.originType,
-          actorUserId: documentYjsUpdates.actorUserId,
-          update: documentYjsUpdates.updateData,
-        })
-        .from(documentYjsUpdates)
-        .where(
-          and(
-            eq(documentYjsUpdates.documentId, asDocumentId(input.docId)),
-            eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
-            eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
-          ),
-        )
-        .orderBy(
-          documentYjsUpdates.admissionSequence,
-          documentYjsUpdates.batchOrdinal,
-          documentYjsUpdates.id,
-        );
-      const [checkpoint] = await readDb
-        .select({
-          id: documentYjsCheckpoints.id,
-          authorityId: documentYjsCheckpoints.authorityId,
-          generation: documentYjsCheckpoints.authorityGeneration,
-          attributionManifest: documentYjsCheckpoints.attributionManifest,
-        })
-        .from(documentYjsCheckpoints)
-        .where(
-          and(
-            eq(documentYjsCheckpoints.documentId, asDocumentId(input.docId)),
-            eq(documentYjsCheckpoints.authorityId, authorityHead.authorityId),
-            eq(documentYjsCheckpoints.authorityGeneration, authorityHead.generation),
-          ),
-        )
-        .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
-        .limit(1);
-      const retainedAttributions = checkpoint
-        ? parseAttributionManifest(checkpoint.attributionManifest, {
-            authorityId: checkpoint.authorityId,
-            generation: checkpoint.generation,
-            checkpointId: String(checkpoint.id),
-          }).attributions
-        : [];
-      const before = materializeProvenanceForDoc({
-        doc: unwrapDoc(input.before),
-        rows: rows.map((row) => ({
-          ...row,
-          journalRowId: BigInt(row.journalRowId),
-          update: new Uint8Array(row.update),
-        })),
-        retainedAttributions,
-        fallbackBirthClass: input.fallbackProvenance ?? "writer_protected",
-      });
-      const afterCandidate = materializeCandidateProvenance(
-        unwrapDoc(input.afterCandidate),
-        before,
-      );
-      return {
-        before: before.map((run) => ({
-          target: run.target,
-          root: run.root,
-          provenance: run.birthClass,
-        })),
-        afterCandidate: afterCandidate.map((run) => ({
-          target: run.target,
-          root: run.root,
-          provenance: run.birthClass,
-        })),
-      };
-    },
-
     async reserveWriteOrdinal(documentId, threadId) {
       return reserveWriteOrdinal(db, { documentId, threadId });
+    },
+
+    async readUpdates(docId, after, through) {
+      if (after >= through) return [];
+      const readDb = currentDrizzleDb(db as Database) as JournalDb;
+      const rows = await readDb
+        .select({ update: journalTransportColumns, authorHandle: threads.ref })
+        .from(documentYjsUpdates)
+        .innerJoin(
+          documentYjsHeads,
+          and(
+            eq(documentYjsHeads.documentId, documentYjsUpdates.documentId),
+            eq(documentYjsHeads.authorityId, documentYjsUpdates.authorityId),
+            eq(documentYjsHeads.authorityGeneration, documentYjsUpdates.authorityGeneration),
+          ),
+        )
+        .leftJoin(turns, eq(turns.id, documentYjsUpdates.actorTurnId))
+        .leftJoin(threads, eq(threads.id, turns.threadId))
+        .where(
+          and(
+            eq(documentYjsUpdates.documentId, asDocumentId(docId)),
+            gt(documentYjsUpdates.id, after),
+            lte(documentYjsUpdates.id, through),
+          ),
+        )
+        .orderBy(asc(documentYjsUpdates.id));
+      return rows.map((row) => mapUpdate(row.update, "journal", row.authorHandle));
     },
 
     async read(docId, opts: JournalReadOptions = {}): Promise<JournalSnapshot> {

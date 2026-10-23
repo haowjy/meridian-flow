@@ -6,7 +6,7 @@ import {
   draftWriteJournal,
   threads,
 } from "@meridian/database/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gt, lte, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { DraftJournalRow, DraftReplayJournalReads } from "../domain/draft-journal.js";
 
@@ -78,6 +78,8 @@ export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJ
             eq(documentDrafts.documentId, options.documentId),
             eq(draftWriteJournal.draftId, draftId),
             eq(draftWriteJournal.status, "active"),
+            gt(draftWriteJournal.id, options.after),
+            lte(draftWriteJournal.id, options.through),
           ),
         )
         .orderBy(draftWriteJournal.id);

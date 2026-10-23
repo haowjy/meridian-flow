@@ -11,9 +11,10 @@ import {
   type DocumentAccess,
   DocumentAccessLostError,
   type DocumentCoordinator,
+  decodeSnapshot,
+  frontierBlockId,
+  frontierDelta,
   type JournalBatchAppendEntry,
-  type JournalReadOptions,
-  type JournalSnapshot,
   type StagedReconcile,
   type StagedRoomEntries,
   type StagedWriteSaveResult,
@@ -51,6 +52,7 @@ export function createDraftAgentEditCoordinator(input: {
   draftCoordinator: DraftCoordinator;
   drafts: DraftLookupWithSnapshots;
   journalRows: DraftReplayJournalReads;
+  liveJournal: Pick<UpdateJournal, "readUpdates">;
   /** The live→Work rebase at the tool boundary: every room read runs it first. */
   flushLivePull(documentId: DocumentId): Promise<void>;
   branches: Pick<Branches, "shareActive">;
@@ -189,7 +191,7 @@ export function createDraftAgentEditCoordinator(input: {
     async readRoom(docId, staged, access) {
       const peer = access?.pinnedDraftId;
       const read = async (workDraftId: string, bound: boolean) => {
-        const { doc, snapshot } = await drafts.copyDraft(workDraftId);
+        const { doc, snapshot, position } = await drafts.copyDraft(workDraftId);
         try {
           bindSeedAddresses(doc, snapshot);
           if (bound && snapshot.status !== "active")
@@ -200,6 +202,7 @@ export function createDraftAgentEditCoordinator(input: {
           return {
             doc,
             room: draftRoom(workDraftId),
+            position,
             kept: replay.keptEntries.flatMap((entry) =>
               entry.mutation?.writeId ? [entry.mutation.writeId] : [],
             ),
@@ -274,25 +277,113 @@ export function createDraftAgentEditCoordinator(input: {
      * The Work draft's rows (and anything the journal can't explain, as the writer's) that the
      * baseline, the view the writes planned on, doesn't contain: containment is the only skip.
      */
-    async concurrentUpdatesSince({ docId, doc, baselineDoc, access }) {
+    async concurrentUpdatesForReport({
+      docId,
+      doc,
+      baselineDoc,
+      access,
+      after,
+      through,
+      attributionBridge,
+    }) {
+      const projected = attributionBridge
+        ? await projectedSeedChanges(input.liveJournal, docId, attributionBridge)
+        : [];
       const rows = await concurrentUpstreamJournalRows(
         input,
         docId as DocumentId,
         access,
         accessedPeer.getStore(),
+        { after, through },
       );
       // `doc` is the save's cut, frozen: a row that landed after it is not reported.
       const cut = Y.snapshot(doc);
-      return partitionConcurrentUpdates(
-        baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null,
-        baselineDoc ? Y.snapshot(baselineDoc) : Y.emptySnapshot,
-        rows
-          .filter((row) => Y.snapshotContainsUpdate(cut, row.updateData))
-          .map((row) => ({ origin: originForJournalRow(row), update: row.updateData })),
-        Y.encodeStateAsUpdate(doc),
-      );
+      return [
+        ...projected,
+        ...partitionConcurrentUpdates(
+          baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null,
+          baselineDoc ? Y.snapshot(baselineDoc) : Y.emptySnapshot,
+          rows
+            .filter((row) => Y.snapshotContainsUpdate(cut, row.updateData))
+            .map((row) => ({ origin: originForJournalRow(row), update: row.updateData })),
+          Y.encodeStateAsUpdate(doc),
+        ),
+      ];
     },
   };
+}
+
+async function projectedSeedChanges(
+  journal: Pick<UpdateJournal, "readUpdates">,
+  docId: string,
+  bridge: NonNullable<
+    Parameters<
+      NonNullable<DocumentCoordinator["concurrentUpdatesForReport"]>
+    >[0]["attributionBridge"]
+  >,
+) {
+  if (!bridge.sourceCut) {
+    return bridge.unattributedTargets?.length
+      ? [
+          {
+            update: new Uint8Array(),
+            origin: { type: "unattributed" as const },
+            effects: { changed: bridge.unattributedTargets, removed: [] },
+          },
+        ]
+      : [];
+  }
+  const seed = new Y.Doc({ gc: false });
+  Y.applyUpdate(seed, bridge.sourceCut.state);
+  const snapshot = decodeSnapshot(bridge.sourceSnapshot);
+  if (!snapshot) return [];
+  const baseline = Y.createDocFromSnapshot(seed, snapshot, new Y.Doc({ gc: false }));
+  try {
+    const rows = (
+      await journal.readUpdates(docId, bridge.sourceCut.after, bridge.sourceCut.through)
+    ).map((entry) => ({
+      update: entry.update,
+      origin: entry.meta.origin.startsWith("agent:")
+        ? {
+            type: "agent" as const,
+            actorTurnId: entry.meta.actorTurnId ?? entry.meta.origin.slice("agent:".length),
+            ...(entry.meta.author ? { author: entry.meta.author } : {}),
+          }
+        : entry.meta.origin.startsWith("human:")
+          ? {
+              type: "human" as const,
+              userId: entry.meta.origin.slice("human:".length),
+            }
+          : { type: "unattributed" as const },
+    }));
+    const updates = partitionConcurrentUpdates(
+      Y.encodeStateAsUpdate(baseline),
+      Y.snapshot(baseline),
+      rows,
+      bridge.sourceCut.state,
+    );
+    return updates.flatMap((row) => {
+      const before = {
+        room: bridge.sourceRoom,
+        snapshot: Y.encodeSnapshotV2(Y.snapshot(baseline)),
+      };
+      Y.applyUpdate(baseline, row.update);
+      const effect = frontierDelta(baseline, before);
+      const changed = effect.changed.flatMap((id) => {
+        const target = bridge.targetBySource[id];
+        return target ? [target] : [];
+      });
+      const removed = effect.removed
+        .map(frontierBlockId)
+        .map((id) => bridge.targetBySource[id] ?? id);
+      return changed.length || removed.length
+        ? [{ update: new Uint8Array(), origin: row.origin, effects: { changed, removed } }]
+        : [];
+    });
+  } finally {
+    baseline.destroy();
+    seed.destroy();
+  }
 }
 
 /**
@@ -302,29 +393,7 @@ export function createDraftAgentEditCoordinator(input: {
 export function createDraftAgentEditJournal(input: {
   liveJournal: UpdateJournal;
 }): AgentEditJournal {
-  const materializeDestructiveProvenance = input.liveJournal.materializeDestructiveProvenance?.bind(
-    input.liveJournal,
-  );
   return {
-    read(_docId: string, _opts?: JournalReadOptions): Promise<JournalSnapshot> {
-      return Promise.resolve({ checkpoint: null, updates: [] });
-    },
-
-    readAttribution(docId: string): Promise<JournalSnapshot> {
-      return input.liveJournal.readAttribution?.(docId) ?? input.liveJournal.read(docId);
-    },
-
-    ...(materializeDestructiveProvenance
-      ? {
-          materializeDestructiveProvenance: (request) =>
-            materializeDestructiveProvenance({
-              ...request,
-              // Roots absent from the live document were born on this agent-owned draft.
-              fallbackProvenance: "agent",
-            }),
-        }
-      : {}),
-
     reserveWriteOrdinal(documentId, threadId) {
       return input.liveJournal.reserveWriteOrdinal(documentId, threadId);
     },
@@ -365,6 +434,7 @@ async function concurrentUpstreamJournalRows(
   documentId: DocumentId,
   access?: DocumentAccess,
   accessedPeer?: string,
+  bounds?: { after: number; through: number },
 ): Promise<DraftJournalRow[]> {
   // A pinned or running access names the peer; only a free-standing read resolves it.
   const peerId =
@@ -376,6 +446,8 @@ async function concurrentUpstreamJournalRows(
   return input.draftCoordinator.readDraft(upstreamDraftId, (_doc, _snapshot) =>
     input.journalRows.listConcurrentJournalRows(upstreamDraftId, {
       documentId,
+      after: bounds?.after ?? 0,
+      through: bounds?.through ?? Number.MAX_SAFE_INTEGER,
     }),
   );
 }
@@ -388,5 +460,7 @@ function originForJournalRow(row: DraftJournalRow): ConcurrentUpdateOrigin {
       ...(row.threadHandle ? { author: `agent (${row.threadHandle})` } : {}),
     };
   }
-  return { type: "human" as const, userId: row.actorUserId ?? "unknown" };
+  if (row.source === "writer")
+    return { type: "human" as const, userId: row.actorUserId ?? "unknown" };
+  return { type: "unattributed" as const };
 }

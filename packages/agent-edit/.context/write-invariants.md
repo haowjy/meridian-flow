@@ -23,9 +23,10 @@ coordinator; a room copy is a disposable per-call Y.Doc read from it.
   empty on the state its save reads.
 - `remove` structurally removes blocks and takes exactly one scope selector;
   empty-string `replace` remains text-span deletion. Scope addresses are
-  view-scoped while CRDT identity stays document-scoped. A write resolves its
-command against the model's view (what its request showed), never against
-text the model has not seen; a missing target is ordinary `not_found`. A wrong-target residual shows in the result receipt and is
+  view-scoped while CRDT identity stays document-scoped. A write normally resolves its
+  command against the model's view (what its request showed). If an unscoped find's
+  observed block disappeared, it resolves once against current text and keeps the normal
+  ambiguity check; a held deleted block remains `not_found`. A wrong-target residual shows in the result receipt and is
 recoverable through durable undo. Target uncertainty never becomes an approval
 or refusal gate on the writer's instruction.
 - Equal serialized content does not preserve Yjs identity, tombstones, or
@@ -50,14 +51,10 @@ never enters a view. `preOwnSnapshot`, the concurrency baseline,
 is the view before the write. The captured update applies to the room copy for
 the echo. Each captured segment takes a fresh client absent from both the view
 and the room copy, so parallel calls and write/undo/write in one reply never
-reuse a client. A write with no valid view is refused with the region's current
-text ([write-architecture.md](write-architecture.md#the-region-check)).
+reuse a client. A write with no valid frontier plans on the current room.
 
-Commit-time detection, on the state the save read, applies the updates the
-first write's view lacks one at a time with persisted origin so human/agent
-attribution survives restart; containment in the view is the only
-skip, the model's own earlier updates included. A session snapshot cannot
-substitute for that baseline.
+Concurrent attribution reads the host journal only between the stored observation
+position and the rendered cut. It is report-only and never supplies apply authority.
 
 Yjs convergence is not intent preservation. Concurrent character edits may
 produce mangled prose. Echoes inform the model, but the kernel never gates a

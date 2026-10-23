@@ -1,5 +1,5 @@
 {
-  "id": "05e8d2ea-8507-448a-a1aa-5079d7e5fc49",
+  "id": "87ed0622-da4f-4560-b3b7-8bc15efd3b2d",
   "prevId": "540a3089-0b9d-499d-8129-6c5422ed8bf6",
   "version": "7",
   "dialect": "postgresql",
@@ -1353,11 +1353,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "unshown": {
-          "name": "unshown",
-          "type": "jsonb",
+        "journal_position": {
+          "name": "journal_position",
+          "type": "bigint",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "recorded_seq": {
           "name": "recorded_seq",
@@ -9603,6 +9603,30 @@
           "primaryKey": false,
           "notNull": false
         },
+        "seed_live_snapshot": {
+          "name": "seed_live_snapshot",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seed_draft_snapshot": {
+          "name": "seed_draft_snapshot",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seed_live_state": {
+          "name": "seed_live_state",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seed_live_position": {
+          "name": "seed_live_position",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
         "has_effect": {
           "name": "has_effect",
           "type": "boolean",
@@ -9804,7 +9828,7 @@
         },
         "document_drafts_seed_record_shape": {
           "name": "document_drafts_seed_record_shape",
-          "value": "(\"document_drafts\".\"seed_origins\" IS NULL AND \"document_drafts\".\"seed_live_room\" IS NULL) OR (\"document_drafts\".\"kind\" = 'work_draft' AND \"document_drafts\".\"seed_origins\" IS NOT NULL AND \"document_drafts\".\"seed_live_room\" IS NOT NULL)"
+          "value": "((\"document_drafts\".\"seed_origins\" IS NULL AND \"document_drafts\".\"seed_live_room\" IS NULL AND \"document_drafts\".\"seed_live_snapshot\" IS NULL AND \"document_drafts\".\"seed_draft_snapshot\" IS NULL) OR (\"document_drafts\".\"kind\" = 'work_draft' AND \"document_drafts\".\"seed_origins\" IS NOT NULL AND \"document_drafts\".\"seed_live_room\" IS NOT NULL AND \"document_drafts\".\"seed_live_snapshot\" IS NOT NULL AND \"document_drafts\".\"seed_draft_snapshot\" IS NOT NULL)) AND ((\"document_drafts\".\"seed_live_state\" IS NULL AND \"document_drafts\".\"seed_live_position\" IS NULL) OR (\"document_drafts\".\"seed_live_state\" IS NOT NULL AND \"document_drafts\".\"seed_live_position\" IS NOT NULL))"
         },
         "document_drafts_owner_shape": {
           "name": "document_drafts_owner_shape",

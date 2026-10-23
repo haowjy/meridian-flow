@@ -33,7 +33,6 @@ export interface JournalEntry {
   nextSeq: number;
   nextWIdByThread: Map<string, number>;
   updates: StoredUpdate[];
-  attributionUpdates: StoredUpdate[];
   turnsByThread: Map<string, Set<string>>;
 }
 
@@ -107,11 +106,11 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     return this.readSync(docId, opts);
   }
 
-  async readAttribution(docId: string): Promise<JournalSnapshot> {
-    return {
-      checkpoint: null,
-      updates: this.entry(docId).attributionUpdates.map(copyPersistedUpdate),
-    };
+  async readUpdates(docId: string, after: number, through: number): Promise<PersistedUpdate[]> {
+    return this.entry(docId)
+      .updates.filter((update) => update.seq > after && update.seq <= through)
+      .sort((left, right) => left.seq - right.seq)
+      .map(copyPersistedUpdate);
   }
 
   async checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void> {
@@ -165,12 +164,6 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
       storedAt: copyDate(storedAt),
     };
     entry.updates.push(stored);
-    entry.attributionUpdates.push({
-      ...stored,
-      update: copyBytes(stored.update),
-      meta: { ...stored.meta },
-      storedAt: copyDate(stored.storedAt),
-    });
     return seq;
   }
 
@@ -236,12 +229,6 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
           meta: { ...update.meta },
           storedAt: copyDate(update.storedAt),
         })),
-        attributionUpdates: entry.attributionUpdates.map((update) => ({
-          seq: update.seq,
-          update: copyBytes(update.update),
-          meta: { ...update.meta },
-          storedAt: copyDate(update.storedAt),
-        })),
         turnsByThread: new Map(
           [...entry.turnsByThread].map(([threadId, turns]) => [threadId, new Set(turns)]),
         ),
@@ -283,7 +270,6 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
         nextSeq: 1,
         nextWIdByThread: new Map(),
         updates: [],
-        attributionUpdates: [],
         turnsByThread: new Map(),
       };
       this.data.set(docId, entry);

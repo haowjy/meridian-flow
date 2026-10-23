@@ -20,7 +20,6 @@ import * as Y from "yjs";
 import type { DocumentRemovals } from "../../context/ports/document-removal.js";
 import type { Branches } from "./branches.js";
 import { closedPinReason } from "./closed-pin-reason.js";
-import { boundDocumentAuthority } from "./document-handle.js";
 import type { DraftCoordinator } from "./draft-coordinator.js";
 import {
   DraftCasConflictError,
@@ -29,7 +28,6 @@ import {
   DraftStaleUpdateError,
 } from "./draft-store.js";
 import { liveRoom } from "./observation-rooms.js";
-import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import { runOutsideResponseTransaction } from "./response-transaction.js";
 
 export type WorkDraftLookup = {
@@ -39,7 +37,7 @@ export type WorkDraftLookup = {
     threadId: ThreadId;
     branchId?: BranchId;
     /** Live as it stands, asked for only when the ensure makes a Work draft to seed. */
-    liveDoc: () => Promise<{ doc: Y.Doc; room: string | null }>;
+    liveDoc: () => Promise<{ doc: Y.Doc; room: string | null; position?: number }>;
   }): Promise<{
     documentDraft: Pick<DraftSnapshot, "draftId" | "upstreamDraftId">;
     workDraft: Pick<DraftSnapshot, "draftId" | "seed">;
@@ -126,7 +124,6 @@ export type DraftPullDiagnostics = {
 
 export function createDraftPullService(input: {
   outsideTransaction<T>(operation: () => T): T;
-  liveCoordinator: Pick<LiveDocumentCoordinator, "withDocument">;
   draftCoordinator: DraftCoordinator;
   drafts: WorkDraftLookup;
   debounceMs?: number;
@@ -152,30 +149,39 @@ export function createDraftPullService(input: {
 
   async function liveSnapshot(
     documentId: DocumentId,
-  ): Promise<{ doc: Y.Doc; room: string | null }> {
+  ): Promise<{ doc: Y.Doc; room: string | null; position: number }> {
     // Releasing the room checkpoints it under the document's mutation lock. In
     // a caller's transaction that lock would outlive the snapshot and block the
     // root pull in `run` that the caller then waits on.
     const captured = await input
-      .outsideTransaction(() =>
-        input.liveCoordinator.withDocument(documentId, async (liveDoc) => {
-          const authority = boundDocumentAuthority(liveDoc);
-          return {
-            state: Y.encodeStateAsUpdate(liveDoc),
-            room: authority ? liveRoom(documentId, authority.generation) : null,
-          };
-        }),
-      )
+      .outsideTransaction(async () => {
+        const cut = await input.liveJournal.read(documentId);
+        const doc = new Y.Doc({ gc: false });
+        if (cut.checkpoint) Y.applyUpdate(doc, cut.checkpoint);
+        for (const row of cut.updates) Y.applyUpdate(doc, row.update);
+        const authority = cut.authority;
+        const state = Y.encodeStateAsUpdate(doc);
+        doc.destroy();
+        return {
+          state,
+          room: authority ? liveRoom(documentId, authority.generation) : null,
+          position: cut.persistenceWatermark ?? 0,
+        };
+      })
       .catch((cause: unknown) => {
         // A live side with no state yet (a hidden creation) is an empty upstream; a removed
         // document is not, and its pull fails by name.
         if (isDocumentNotFoundError(cause) && !cause.removal)
-          return { state: Y.encodeStateAsUpdate(new Y.Doc({ gc: false })), room: null };
+          return {
+            state: Y.encodeStateAsUpdate(new Y.Doc({ gc: false })),
+            room: null,
+            position: 0,
+          };
         throw cause;
       });
     const doc = new Y.Doc({ gc: false });
     Y.applyUpdate(doc, captured.state);
-    return { doc, room: captured.room };
+    return { doc, room: captured.room, position: captured.position };
   }
 
   const schema = buildDocumentSchema();
@@ -329,7 +335,7 @@ export function createDraftPullService(input: {
     ensureThreadPeer(inputPeer) {
       return runOutsideResponseTransaction(async () => {
         // An existing peer takes no live snapshot: it seeds only a Work draft the ensure makes.
-        let seed: { doc: Y.Doc; room: string | null } | undefined;
+        let seed: { doc: Y.Doc; room: string | null; position: number } | undefined;
         let ensured: Awaited<ReturnType<WorkDraftLookup["ensureThreadPeerDraft"]>>;
         try {
           ensured = await input.drafts.ensureThreadPeerDraft({

@@ -344,7 +344,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   });
   const draftPulls = createDraftPullService({
     outsideTransaction: runOutsideWrite,
-    liveCoordinator,
     draftCoordinator,
     drafts: draftStore,
     liveJournal: persistence.journal,
@@ -887,86 +886,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     );
   }
 
-  async function compactMixedProvenanceTwice(): Promise<{
-    retainedUpdateCount: number;
-    warmProvenance: string[];
-    coldProvenance: string[];
-    rebasedDraftProvenance: string[];
-  }> {
-    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
-    return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      const before = Y.encodeStateVector(doc);
-      replaceMarkdown(doc, "Agent-only passage.");
-      await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `agent:${TURN_ID}`,
-        actorTurnId: TURN_ID,
-        seq: 0,
-      });
-      await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-
-      const firstBlock = model.getBlocks(toDocHandle(doc))[0];
-      if (!firstBlock) throw new Error("compaction probe block is unavailable");
-      const beforeWriter = Y.encodeStateVector(doc);
-      model.applyTextEdit(toDocHandle(doc), firstBlock, { from: 0, to: 0 }, "Writer prefix. ");
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, beforeWriter), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-      await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-
-      const warm = await persistence.journal.materializeDestructiveProvenance?.({
-        docId: ALPHA_ID,
-        before: toDocHandle(doc),
-        afterCandidate: toDocHandle(doc),
-      });
-      const snapshot = await persistence.journal.read(ALPHA_ID);
-      const coldDoc = new Y.Doc({ gc: false });
-      if (snapshot.checkpoint) Y.applyUpdate(coldDoc, snapshot.checkpoint);
-      for (const update of snapshot.updates) Y.applyUpdate(coldDoc, update.update);
-      const cold = await persistence.journal.materializeDestructiveProvenance?.({
-        docId: ALPHA_ID,
-        before: toDocHandle(coldDoc),
-        afterCandidate: toDocHandle(coldDoc),
-      });
-      coldDoc.destroy();
-
-      const [checkpoint] = await db
-        .select({ id: schema.documentYjsCheckpoints.id })
-        .from(schema.documentYjsCheckpoints)
-        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
-        .orderBy(desc(schema.documentYjsCheckpoints.id))
-        .limit(1);
-      if (!checkpoint) throw new Error("compaction probe checkpoint is unavailable");
-      const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
-      const replaced = await replaceGeneration(db, {
-        documentId: ALPHA_ID,
-        checkpointId: checkpoint.id,
-        expectedGeneration: authorityHead.generation,
-      });
-      if (!replaced.ok) throw new Error(`compaction probe replacement failed: ${replaced.code}`);
-      const rebased = await persistence.journal.materializeDestructiveProvenance?.({
-        docId: ALPHA_ID,
-        before: toDocHandle(doc),
-        afterCandidate: toDocHandle(doc),
-        fallbackProvenance: "agent",
-      });
-      const retainedUpdateCount = (
-        await db
-          .select()
-          .from(schema.documentYjsUpdates)
-          .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
-      ).length;
-      return {
-        retainedUpdateCount,
-        warmProvenance: [...new Set(warm?.before.map((run) => run.provenance) ?? [])].sort(),
-        coldProvenance: [...new Set(cold?.before.map((run) => run.provenance) ?? [])].sort(),
-        rebasedDraftProvenance: [
-          ...new Set(rebased?.before.map((run) => run.provenance) ?? []),
-        ].sort(),
-      };
-    });
-  }
-
   async function seedAuthorityReplacementProbe(): Promise<number> {
     await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
@@ -1446,7 +1365,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     draftMarkdown: (draftId: string) =>
       draftCoordinator.readDraft(draftId, async (doc) => serializeMarkdown(doc)),
     seedWriterDocument,
-    compactMixedProvenanceTwice,
     compactAfterAuthorityReplacement,
     compactWhileAuthorityReplacementWaits,
     seedLiveCertifiedCarry,

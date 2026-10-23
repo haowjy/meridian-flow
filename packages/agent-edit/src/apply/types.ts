@@ -80,11 +80,14 @@ export type ApplyTransactionOrigin = unknown;
 export type ConcurrentUpdateOrigin =
   | AgentOrigin
   | { type: "human"; userId: string }
-  | { type: "system" };
+  | { type: "system" }
+  | { type: "unattributed" };
 
 export interface ConcurrentUpdate {
   update: Uint8Array;
   origin: ConcurrentUpdateOrigin;
+  /** Cross-room projections can name affected target blocks without replaying foreign Yjs ids. */
+  effects?: { changed: readonly string[]; removed: readonly string[] };
 }
 
 export interface ApplyEchoHunk {

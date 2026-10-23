@@ -27,8 +27,7 @@ export function partitionConcurrentUpdates(
     const target = yjsUpdateFromState(upstreamState);
     try {
       const residual = yjsDeltaUpdate(target, scratch);
-      if (residual)
-        updates.push({ update: residual, origin: { type: "human", userId: "unknown" } });
+      if (residual) updates.push({ update: residual, origin: { type: "unattributed" } });
     } finally {
       target.destroy();
     }

@@ -18,6 +18,7 @@ export type ApplicationDraftStore = DraftStore &
       liveDoc: Y.Doc;
       /** Addressable authority room, or intentional null for created/empty content. */
       liveRoom: string | null;
+      livePosition?: number;
     }): Promise<DraftSnapshot>;
     /** The branch's draft on its new document, from its durable live state, in the caller's transaction. */
     ensureCreatedDocumentDraft(input: {
@@ -41,7 +42,7 @@ export type ApplicationDraftStore = DraftStore &
       documentId: DocumentId;
       threadId: ThreadId;
       branchId: BranchId;
-      liveDoc: () => Promise<{ doc: Y.Doc; room: string | null }>;
+      liveDoc: () => Promise<{ doc: Y.Doc; room: string | null; position?: number }>;
     }): Promise<{ documentDraft: DraftSnapshot; workDraft: DraftSnapshot }>;
     /** The thread's primary Work's active draft on the document, as metadata. */
     resolveWorkDraftForThread(documentId: DocumentId, threadId: ThreadId): Promise<ResolvedDraft>;

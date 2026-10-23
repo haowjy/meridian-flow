@@ -101,11 +101,10 @@ describe("Yjs draft handshake route guard", () => {
     });
     const draftPulls = createDraftPullService({
       outsideTransaction: (operation) => operation(),
-      liveCoordinator: {
-        withDocument: async (_documentId, fn) => fn(live),
-      },
       draftCoordinator,
-      liveJournal: { read: async () => ({ checkpoint: Y.encodeStateAsUpdate(live), updates: [] }) },
+      liveJournal: {
+        read: async () => ({ checkpoint: Y.encodeStateAsUpdate(live), updates: [] }),
+      },
       drafts: {
         listActiveWorkDraftIds: async () => ["draft_1"],
         ensureThreadPeerDraft: async () => ({

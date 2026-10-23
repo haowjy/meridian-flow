@@ -30,9 +30,9 @@ change-trail persistence, and Hocuspocus admission. It composes
 - Keep the dependency one-way: collab may import agent-edit; agent-edit never
   imports server code. `composition.ts` wires required ports and providers;
   behavior belongs in domain services.
-- Admit novel writer content durably before Yjs apply, broadcast, or ack.
-  Treat Yjs merge as trusted: destructive evidence informs receipts and marks,
-  never a veto. Undo and redo are the reversal authority.
+- Admit novel user content durably before Yjs apply, broadcast, or ack.
+  Treat Yjs merge as trusted: concurrent attribution informs receipts, never a
+  veto. Undo and redo are the reversal authority.
 - Every server authority doc and every materialization of one is `gc: false`: draft
   and live docs, rooms (`yjs-ws-handler.ts`), clones and scratch docs. A rewrite never
   encodes a gc-on doc, and a client doc (gc on) is never the origin of a Yjs snapshot, since

@@ -10,7 +10,6 @@ import { createAgentEditCodecFactory } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";
 import { toRef } from "../handles.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
-import { applyConcurrentUpdates } from "../tool/commit-detection.js";
 import { applyEdits } from "./apply-edits.js";
 import { computeEcho, snapshotBlocks } from "./echo.js";
 import type { AgentOrigin, ApplyResult, ResolvedEdit } from "./types.js";
@@ -135,9 +134,7 @@ describe("mutation and echo composition", () => {
     );
 
     expectOk(result);
-    applyConcurrentUpdates(local, baseModel, codec, [
-      { update: remoteUpdate, origin: { type: "human", userId: "user-1" } },
-    ]);
+    Y.applyUpdate(local, remoteUpdate, { type: "human", userId: "user-1" });
     const echo = computeEcho({
       before,
       after: snapshotBlocks(local, baseModel, codec),

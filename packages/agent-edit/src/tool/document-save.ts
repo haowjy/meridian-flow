@@ -25,11 +25,10 @@ import type {
   AcceptedMutationReport,
   CommitDetection,
   CommitDetectionInput,
-  JournaledUpdate,
 } from "./commit-detection.js";
 import type { CopySummary } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import { loadConcurrent, observeRendered } from "./observation.js";
+import { type ListingSource, loadConcurrent, observeRendered } from "./observation.js";
 import { rejectedWriteResult, renderSettledReceipts } from "./receipt.js";
 import type {
   DocumentCommandName,
@@ -40,6 +39,8 @@ import type {
 import type { ObservationFailedDetail } from "./write-deps.js";
 
 /** One staged write of a reply, as its save keeps or refuses it and its receipt renders it. */
+export type JournaledUpdate = Pick<JournalBatchAppendEntry, "update" | "meta" | "mutation">;
+
 export interface StagedResponseUpdate extends JournaledUpdate {
   rejectionReason?: StagedWriteRejectionReason;
   documentLabel: string;
@@ -98,6 +99,7 @@ export interface SaveNowInput {
 /** A write saved at once: its report, and the room as the save left it. */
 export interface SavedNow extends AcceptedMutationReport {
   afterState: Uint8Array;
+  position?: number;
 }
 
 export interface DocumentSave {
@@ -191,13 +193,14 @@ export function createDocumentSave(deps: {
         save.blockOrigins,
         async (before, after) => {
           const links = await saveLinks(editScopeId, doc, after, save.blockOrigins);
-          const applied = await detection.reportAcceptedMutation(before, after, {
-            ...detectionInput(doc, links),
-            access: accessFor(doc.interactionContext),
-          });
+          const applied = await detection.reportAcceptedMutation(
+            before,
+            after,
+            detectionInput(doc, links),
+          );
           const document = renderedReceipts(doc, links, applied, after, save.blockOrigins);
           return save.room && recordingFrontier
-            ? await observeSave(doc, links, document, after, save.room, recordingFrontier)
+            ? await observeSave(doc, links, document, after, cut, save.room, recordingFrontier)
             : document;
         },
       );
@@ -235,16 +238,9 @@ export function createDocumentSave(deps: {
           { revision: null, awarenessDegraded: true, afterState: cut.afterState },
           saved.blockOrigins,
           async (before, after) => ({
-            ...(await detection.reportAcceptedMutation(before, after, {
-              docId: input.docId,
-              links: input.links,
-              preOwnSnapshot: input.preOwnSnapshot,
-              access,
-              actor: input.actor,
-              interactionContext: input.interactionContext,
-              ownWrites: [{ preOwnSnapshot: input.preOwnSnapshot, update: input.entry.update }],
-            })),
+            ...(await detection.reportAcceptedMutation(before, after, { links: input.links })),
             afterState: cut.afterState,
+            ...(cut.position === undefined ? {} : { position: cut.position }),
           }),
         );
       } finally {
@@ -287,19 +283,11 @@ export function createDocumentSave(deps: {
     }
   }
 
-  /** What a document's commit detection and sweep read: its writes against their views. */
+  /** What accepted-save revision reporting reads. */
   function detectionInput(doc: SavedDocument, links: CommandLinks): CommitDetectionInput {
-    const first = doc.updates[0];
-    const last = doc.updates.at(-1);
-    if (!first || !last) throw new Error(`Response document ${doc.docId} has no staged updates.`);
-    return {
-      docId: doc.docId,
-      links,
-      preOwnSnapshot: first.preOwnSnapshot,
-      interactionContext: doc.interactionContext,
-      actor: last.actor,
-      ownWrites: doc.updates.map(({ preOwnSnapshot, update }) => ({ preOwnSnapshot, update })),
-    };
+    if (!doc.updates.length)
+      throw new Error(`Response document ${doc.docId} has no staged updates.`);
+    return { links };
   }
 
   /** Each accepted write's receipt with its echo against the view it planned on. */
@@ -310,7 +298,7 @@ export function createDocumentSave(deps: {
     after: Y.Doc,
     blockOrigins?: BlockOriginMap,
   ): ResponseCommitDocumentResult {
-    const { lateSweep, revision } = applied;
+    const { revision } = applied;
     if (applied.awarenessDegraded) return degradedReceipts(doc, revision);
     try {
       return {
@@ -326,9 +314,8 @@ export function createDocumentSave(deps: {
               view.destroy();
             }
           });
-          return { before, after: rendered, links, lateSweep };
+          return { before, after: rendered, links };
         }),
-        ...(lateSweep ? { lateSweep } : {}),
       };
     } catch {
       return degradedReceipts(doc, revision);
@@ -346,17 +333,18 @@ export function createDocumentSave(deps: {
     links: CommandLinks,
     document: ResponseCommitDocumentResult,
     after: Y.Doc,
+    cut: SaveCut,
     room: string,
     recordingFrontier: FrontierLookup,
   ): Promise<ResponseCommitDocumentResult> {
     try {
       const accepted = document.receipts.slice(0, doc.updates.length);
-      const reportUpdates =
-        coordinator.concurrentUpdatesForReport ?? coordinator.concurrentUpdatesSince;
-      const source = {
+      const reportUpdates = coordinator.concurrentUpdatesForReport;
+      const source: ListingSource = {
         doc: after,
         model: deps.model,
         links,
+        ...(cut.position === undefined ? {} : { position: cut.position }),
         ownRemoved: new Set(
           doc.updates.flatMap((entry) =>
             entry.deletedBlocks.map((block) => `${block.clientID}:${block.clock}`),
@@ -368,12 +356,14 @@ export function createDocumentSave(deps: {
         ownActorTurnIds: new Set(doc.updates.map((entry) => entry.actor.turnId)),
         ...(reportUpdates
           ? {
-              loadConcurrent: (baselineDoc: Y.Doc) =>
+              loadConcurrent: ({ baseline, after: afterPosition, through, attributionBridge }) =>
                 reportUpdates({
                   docId: doc.docId,
                   doc: after,
-                  baselineDoc,
-                  sinceStateVector: Y.encodeStateVector(baselineDoc),
+                  baselineDoc: baseline,
+                  after: afterPosition,
+                  through,
+                  ...(attributionBridge ? { attributionBridge } : {}),
                   access: accessFor(doc.interactionContext),
                 }),
             }

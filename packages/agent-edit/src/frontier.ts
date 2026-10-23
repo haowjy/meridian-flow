@@ -1,8 +1,7 @@
 /**
  * Observation frontiers: what document state a model was shown. A frontier is
- * a Yjs snapshot of the document a result was rendered from plus the blocks
- * that changed since the model's previous frontier and that this result did not
- * show in full ("unshown"). Pure Yjs; the host names rooms and stores frontiers.
+ * a Yjs snapshot of the document a result was rendered from and the host journal
+ * position for that same cut. The host names rooms and owns journal positions.
  */
 import * as Y from "yjs";
 import {
@@ -18,15 +17,84 @@ export interface ObservationFrontier {
   room: string;
   /** `Y.encodeSnapshotV2` of the document the result was rendered from. */
   snapshot: Uint8Array;
-  /** Block ids (`client:clock` of the top-level item), in document order. */
-  unshown: readonly string[];
+  /** Host journal high-water mark at this cut. */
+  position?: number;
+}
+
+/** A lookup-resolved cut may carry a one-call bridge from a live observation into its draft seed. */
+export interface ResolvedObservationFrontier extends ObservationFrontier {
+  attributionBridge?: SeedAttributionBridge;
+}
+
+export interface SeedAttributionBridge {
+  sourceRoom: string;
+  sourceSnapshot: Uint8Array;
+  /** Available for seeds created after this feature; absent legacy seeds report conservatively. */
+  sourceCut?: { state: Uint8Array; after: number; through: number };
+  /** Source canonical item id -> target canonical item id. */
+  targetBySource: Readonly<Record<string, string>>;
+  /** Every revision-0 target when a legacy seed cannot explain the live-to-seed gap. */
+  unattributedTargets?: readonly string[];
+}
+
+interface SeedFrontierProjection {
+  sourceRoom: string;
+  sourceSnapshot: Uint8Array;
+  sourceAttribution?: { state: Uint8Array; position: number };
+  targetRoom: string;
+  targetSnapshot: Uint8Array;
+  targetPosition: number;
+  /** Target canonical item id -> source canonical item id. */
+  origins: ReadonlyMap<string, string>;
+}
+
+/**
+ * Project a live observation onto a Work draft's revision-0 seed. An exact source cut maps
+ * directly. When live advanced before seeding, revision 0 is still the planning base and the
+ * projected frontier carries the bounded source interval needed to attribute that gap.
+ */
+export function projectSeedFrontier(
+  frontier: ObservationFrontier | null,
+  seed: SeedFrontierProjection,
+): ResolvedObservationFrontier | null {
+  if (!frontier || frontier.room !== seed.sourceRoom) return null;
+  const observed = decodeSnapshot(frontier.snapshot);
+  const source = decodeSnapshot(seed.sourceSnapshot);
+  if (!observed || !source || !containsSnapshot(source, observed)) return null;
+  const targetBySource = new Map([...seed.origins].map(([target, origin]) => [origin, target]));
+  const exact = Y.equalSnapshots(observed, source);
+  const sourceCut =
+    frontier.position !== undefined &&
+    seed.sourceAttribution &&
+    frontier.position <= seed.sourceAttribution.position
+      ? {
+          state: seed.sourceAttribution.state,
+          after: frontier.position,
+          through: seed.sourceAttribution.position,
+        }
+      : null;
+  return {
+    room: seed.targetRoom,
+    snapshot: seed.targetSnapshot,
+    position: seed.targetPosition,
+    ...(!exact
+      ? {
+          attributionBridge: {
+            sourceRoom: seed.sourceRoom,
+            sourceSnapshot: frontier.snapshot,
+            targetBySource: Object.fromEntries(targetBySource),
+            ...(sourceCut ? { sourceCut } : { unattributedTargets: [...seed.origins.keys()] }),
+          },
+        }
+      : {}),
+  };
 }
 
 /**
  * A host's lookup of the model's latest frontier for a room. Never throws: an
  * unavailable frontier is `null`, the empty one.
  */
-export type FrontierLookup = (room: string) => Promise<ObservationFrontier | null>;
+export type FrontierLookup = (room: string) => Promise<ResolvedObservationFrontier | null>;
 
 /**
  * A call's lookups. `recording` chains what a result records (a sibling call's
@@ -80,18 +148,15 @@ export function frontierBlockId(id: { clientID: number; clock: number }): string
 
 /**
  * What `doc` holds that the model's previous frontier there doesn't: the one computation
- * behind a result's listing and the unshown it records. A block changed when some item in its
+ * behind a result's concurrent-change listing. A block changed when some item in its
  * subtree (children, text, formats, attribute entries including overwritten ones) is visible at
  * exactly one of the two cuts, so text typed and deleted in between changes nothing. An absent,
- * undecodable or uncontained `prev` is the empty snapshot: every block is unseen, and nothing
- * is listed as changed, since the model saw no earlier version to compare with.
+ * undecodable or uncontained `prev` has no comparable cut, so nothing is listed as changed.
  */
 export interface FrontierDelta {
   snapshot: Y.Snapshot;
   /** Every present top-level block id, in document order. */
   blocks: readonly string[];
-  /** Present blocks not seen in their current form: `prev.unshown ∪ changed`, or all of them. */
-  unseen: ReadonlySet<string>;
   /** Present blocks changed since a usable `prev`, in document order: what a result lists. */
   changed: readonly string[];
   /** Blocks visible at a usable `prev` and gone now. */
@@ -103,7 +168,7 @@ export function frontierDelta(doc: Y.Doc, prev: ObservationFrontier | null): Fro
   const blocks = getTopLevelXmlBlocks(doc).map((block) => frontierBlockId(getBlockItemId(block)));
   const previous = prev ? decodeSnapshot(prev.snapshot) : null;
   if (!prev || !previous || !containsSnapshot(snapshot, previous))
-    return { snapshot, blocks, unseen: new Set(blocks), changed: [], removed: [] };
+    return { snapshot, blocks, changed: [], removed: [] };
   const flipped = Y.equalSnapshots(previous, snapshot)
     ? new Map<string, Y.Item>()
     : changedBlocks(doc, previous, snapshot);
@@ -112,7 +177,6 @@ export function frontierDelta(doc: Y.Doc, prev: ObservationFrontier | null): Fro
   return {
     snapshot,
     blocks,
-    unseen: new Set([...prev.unshown.filter((id) => present.has(id)), ...changed]),
     changed,
     removed: [...flipped]
       .filter(([id]) => !present.has(id))
@@ -120,16 +184,16 @@ export function frontierDelta(doc: Y.Doc, prev: ObservationFrontier | null): Fro
   };
 }
 
-/** The frontier a result records: `unseen − shownInFull`, at the delta's cut. */
+/** The frontier a result records at the rendered cut. */
 export function recordedFrontier(
   room: string,
   delta: FrontierDelta,
-  shownInFull: ReadonlySet<string>,
+  position?: number,
 ): ObservationFrontier {
   return {
     room,
     snapshot: Y.encodeSnapshotV2(delta.snapshot),
-    unshown: delta.blocks.filter((id) => delta.unseen.has(id) && !shownInFull.has(id)),
+    ...(position === undefined ? {} : { position }),
   };
 }
 

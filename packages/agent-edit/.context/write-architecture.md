@@ -64,101 +64,21 @@ persisted restoration correspondence, never text or length guesses.
 
 ## Observation frontiers
 
-`src/frontier.ts` is pure Yjs and host-agnostic. A frontier is a snapshot of
-the doc a result was rendered from plus `unshown`: top-level block ids
-(`client:clock`) changed since the previous frontier and not shown in full.
-A block changed when an item in its subtree is visible at exactly one of the
-two cuts; given containment those items are exactly the clocks born before
-the previous cut and deleted since, plus the clocks born since and still
-visible, so the fold visits only those structs plus one `Y.snapshot` walk
-(about 4 ms at 440k structs). Containment needs every state-vector clock and
-every deleted range of the snapshot: a delete-only staged update allocates no
-clock, so the state vector alone accepts a refused staged deletion. An absent,
-undecodable or uncontained previous frontier is the empty snapshot: every block
-is unseen, and nothing is listed as changed (the model saw no earlier version
-to compare with).
+`src/frontier.ts` stores the exact gc-off Yjs snapshot a result rendered and the host journal position captured with that cut. Snapshot containment checks both state-vector clocks and delete ranges; a state vector alone misses delete-only changes. `planningSnapshot` validates the room and containment, and `createPlanningView` reconstructs that cut before replaying the reply's own accepted mutations.
 
-`planningSnapshot` validates the room and snapshot containment. `createPlanningView`
-constructs an explicit gc-off snapshot target and replays only supplied reply updates
-contained in the room copy. Either pending store, or a final view whose structs or
-deletions are not contained in that copy, invalidates the view. Every write
-plans on that view (`write-commands.ts` `withPlanDoc`). `frontierDelta` uses the same flipped-range walk.
+Every write plans on that view and merges its update into the current room. If no usable frontier exists, it plans on the current room. A Work draft's first write projects an exact live seed cut into revision 0. If live advanced between observation and seeding, revision 0 remains the planning base and the resolved cut carries the bounded live interval for attribution. The persisted frontier remains only the room, snapshot, and journal position; the live-to-draft bridge exists for that lookup only. Seed snapshots and immutable block origins make both cases possible; projection never gates the write. Legacy seeds without the added live state and position still plan from revision 0 and conservatively report its blocks as `unattributed`.
 
 ### The listing
 
-Every result that shows document text (a read, a recorded write echo, or a settled receipt) lists the blocks changed since the model's recording frontier, grouped as `the user` or by the model chat's permanent handle, in document order (`observation.ts` `observeRendered`). The listing and the
-recorded `unshown` are one computation over `frontierDelta`: listed blocks
-credit as shown in full; past `CONCURRENT_LISTING_MAX_BYTES` (8 KB) the rest are
-named by count ("N more blocks changed since you last saw them") and stay
-unshown. Blocks removed since the frontier are listed on one line by hash,
-without their old text; a write's own removals are named by its receipt and
-left out. A full read lists nothing. Only blocks that **changed** since a usable
-frontier are listed: a block `unshown` because the model never saw it (a
-partial or outline read, or a first contact with no frontier) stays unshown and
-unlisted, so successive partial reads don't carry the rest of the document.
-Echo context lines and truncated previews never credit by being shown; the listing carries them forward. A
-write does credit the blocks it wrote when every visible item in them (the
-block, its attributes, children, text and formats) is that write's own, by the
-structs its committed update created (`frontier.ts` `writtenOnlyBy`): the model
-sent that text itself, so a create's truncated preview doesn't refuse its next
-edit. A block holding any other author's visible item credits only when shown
-in full. A degraded echo credits nothing. A
-staged echo lists and records nothing: its settled receipt does, on the
-document's last accepted receipt, where the host records the frontier.
+Reads, immediate write echoes, and settled receipts share one host lookup. A cheap snapshot comparison skips it when there is no concurrent change. Otherwise the host reads only journal rows after the frontier position and through the rendered cut, without loading a reconstruction checkpoint. Work-draft journals use the same bounds; a projected first write also reads the live observation-to-seed interval. Missing or compacted rows leave an `unattributed` residual. Delete-only changes remain visible because comparison uses full snapshots. A reply's staged and already accepted updates are supplied as its own writes, so a later read does not report them as concurrent work.
+
+Concurrent blocks are grouped by evidenced author. Human journal rows render as `the user`; agent rows render as `agent (cN)` or `agent (pN)`, and as `agent` when their handle cannot be resolved. State no retained row explains renders as `unattributed`. The 8 KiB cap bounds rendered output. A changed block already shown in full is named by hash without repeating its body; removed blocks are named by hash. Full reads can therefore include hash-only groups for changed blocks they just displayed.
 
 ### Offline writes merge
 
-Every write plans on the latest usable observation frontier plus the reply's own mutations, then applies that update to the current room copy. An absent or
-invalid frontier plans on the current room. Neither concurrent changes nor
-partly read text refuse a write. A target that no longer resolves still returns
-`not_found`, because that write has no place to land. A Work draft's immutable
-seed origins keep copied live block hashes resolvable; no seed snapshot or
-frontier projection is stored.
+An unscoped find normally resolves on the planning view. If its observed block disappeared, the resolver tries the current document and preserves ambiguity checks; an explicitly held deleted block still returns `not_found`. A missing find, missing document, malformed selector, or ambiguous selector keeps its existing status. Concurrent changes and partially read text never refuse a write.
 
-The host names rooms; agent-edit carries the label. `readRoom` returns the
-room it read (`draft:<workDraftId>`, `live:<documentId>:<generation>`; `null`
-when the host has none) and nothing is resolved before the call. When the
-host passes `WriteContext.frontiers = { recording, planning }`, read results
-and write receipts carry a host-only `frontier` (`{ room, snapshot, unshown }`)
-from the doc they rendered, chained from `recording(room)`; `planning(room)` is
-the view a write plans on. An undo, redo or revert names the room its inverse
-committed into (`DocumentEditResult.room`) and the echo records there from the
-inverse's `after` cut. With `ResponseCommitOptions.recordingFrontier` each
-saved document's result carries one at the save's after-state, in the room the
-save committed into, crediting what its accepted receipts show. A write outside
-a reply records from its save's after state, merged into its room copy. A staged result records
-nothing: its save does. Shown in full: a read's rendered blocks (an outline
-read credits none) and `extent: full` changed blocks (never prefix context,
-copy edges or swept bodies). A result reported with `awarenessDegraded` still
-records, crediting nothing. A failure is reported through
-`onObservationFailed` and the result goes out without a frontier or a listing;
-`frontier` never reaches `AgentEditResultV1`.
-
-### The accepted save's report
-
-A save has three phases with separate owners: the host's durable append
-(`persist`, inside the caller's commit scope), the host's install or delivery
-after root commit, and agent-edit's report. Once `persist` succeeded the write
-is accepted: `document-save.ts` `reportAccepted` is the one reporting boundary
-for reply saves and immediate writes alike, and any failure in it (links,
-revision, detection, receipts, frontier) answers an accepted
-`awarenessDegraded` result, never an error. An error would leave the tool call
-uncached and invite the model to retry a write that already landed; a degraded
-result keeps its write identity for idempotency, and an immediate write still
-appends its own bytes to the reply's `ReplyMutations`. Ensuring a created
-document belongs to the durable phase.
-
-### Commit-time detection
-
-`commit-detection.ts` `reportAcceptedMutation(before, after)` is the same for
-both hosts and every save, on the append's cut, and never throws: it reads the updates the save's before state holds
-that the first write's view (`preOwnSnapshot`) doesn't contain, the only skip,
-and applies them one at a time to record which lineage each first made visible
-and who wrote it. That
-lineage is the swept classification's only input (until M3 replaces swept);
-nothing from it renders. The draft host reads its Work draft's journal rows for
-the generation, with no floor, and attributes the residual the journal can't
-explain to the writer.
+The host names rooms and records frontiers as `{ room, snapshot, position }`. `readRoom` returns the room and journal high-water mark for the same cut. Immediate echoes use the save cut's position, and settled receipts use the accepted append cut. A staged echo records nothing; its save records the frontier. Reporting failure never changes whether the write landed.
 
 ## CRDT and content boundaries
 

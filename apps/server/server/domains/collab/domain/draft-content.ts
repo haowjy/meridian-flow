@@ -21,6 +21,7 @@ import type { DraftSeedRecord } from "./draft-store.js";
 export function seedDraftState(
   live: Y.Doc,
   liveRoom: string | null,
+  livePosition: number,
 ): { state: Buffer; stateVector: Buffer; seed: DraftSeedRecord | null } {
   const schema = buildDocumentSchema();
   const blocks = readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
@@ -51,6 +52,12 @@ export function seedDraftState(
           ? {
               origins,
               liveRoom: sourceRoom,
+              liveSnapshot: Buffer.from(Y.encodeSnapshotV2(Y.snapshot(live))),
+              draftSnapshot: Buffer.from(Y.encodeSnapshotV2(Y.snapshot(draft))),
+              liveAttribution: {
+                state: Buffer.from(Y.encodeStateAsUpdate(live)),
+                position: livePosition,
+              },
             }
           : null,
     };
