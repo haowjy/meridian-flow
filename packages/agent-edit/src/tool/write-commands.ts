@@ -11,7 +11,6 @@ import { type BlockRef, toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import { getTopLevelXmlBlocks } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import type { DocumentAccess } from "../ports/document-coordinator.js";
 import { editHandle } from "../ports/update-journal.js";
 import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
@@ -701,18 +700,6 @@ export function createWriteCommands(deps: {
         links,
         ...own,
         ...(context.turnId ? { ownActorTurnIds: new Set([context.turnId]) } : {}),
-        ...(options.coordinator.concurrentUpdatesSince
-          ? {
-              loadConcurrent: (baselineDoc: Y.Doc) =>
-                options.coordinator.concurrentUpdatesSince?.({
-                  docId: documentId,
-                  doc: room.doc,
-                  baselineDoc,
-                  sinceStateVector: Y.encodeStateVector(baselineDoc),
-                  access: observationAccess(context),
-                }) ?? Promise.resolve([]),
-            }
-          : {}),
       },
       room.room,
       context.frontiers?.recording,
@@ -734,12 +721,6 @@ export function createWriteCommands(deps: {
       const id = options.model.getCanonicalBlockIdentity(target);
       return !live.has(`${id.clientID}:${id.clock}`);
     });
-  }
-
-  function observationAccess(context: WriteContext): DocumentAccess | undefined {
-    if (context.interactionContext?.mode === "threadPeer" && context.interactionContext.peerDraftId)
-      return { pinnedDraftId: context.interactionContext.peerDraftId };
-    return context.workDraftId ? { workDraftId: context.workDraftId } : undefined;
   }
 
   /** Host-only showing evidence for this document; none for utility, seed and import writes. */

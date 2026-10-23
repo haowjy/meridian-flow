@@ -351,6 +351,8 @@ export function createDocumentSave(deps: {
   ): Promise<ResponseCommitDocumentResult> {
     try {
       const accepted = document.receipts.slice(0, doc.updates.length);
+      const reportUpdates =
+        coordinator.concurrentUpdatesForReport ?? coordinator.concurrentUpdatesSince;
       const source = {
         doc: after,
         model: deps.model,
@@ -364,16 +366,16 @@ export function createDocumentSave(deps: {
           .filter((_, index) => !accepted[index]?.result.awarenessDegraded)
           .map((entry) => entry.update),
         ownActorTurnIds: new Set(doc.updates.map((entry) => entry.actor.turnId)),
-        ...(coordinator.concurrentUpdatesSince
+        ...(reportUpdates
           ? {
               loadConcurrent: (baselineDoc: Y.Doc) =>
-                coordinator.concurrentUpdatesSince?.({
+                reportUpdates({
                   docId: doc.docId,
                   doc: after,
                   baselineDoc,
                   sinceStateVector: Y.encodeStateVector(baselineDoc),
                   access: accessFor(doc.interactionContext),
-                }) ?? Promise.resolve([]),
+                }),
             }
           : {}),
       };

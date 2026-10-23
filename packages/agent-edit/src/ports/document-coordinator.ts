@@ -149,6 +149,14 @@ export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFou
  * call gets a document to render, plan from or record, and `prepareSave` the one way any write
  * lands, a reply's or one outside a reply alike. Neither serializes against other callers.
  */
+export interface ConcurrentUpdatesInput {
+  docId: string;
+  doc: Y.Doc;
+  baselineDoc?: Y.Doc;
+  sinceStateVector: Uint8Array;
+  access?: DocumentAccess;
+}
+
 export interface DocumentCoordinator {
   /**
    * A private copy of the room's committed state with `staged`'s surviving entries applied,
@@ -180,13 +188,10 @@ export interface DocumentCoordinator {
    * writes planned on) doesn't contain: containment is the only skip. Hosts that omit it have
    * the whole delta treated as the writer's.
    */
-  concurrentUpdatesSince?(input: {
-    docId: string;
-    doc: Y.Doc;
-    baselineDoc?: Y.Doc;
-    sinceStateVector: Uint8Array;
-    access?: DocumentAccess;
-  }): Promise<ConcurrentUpdate[]>;
+  concurrentUpdatesSince?(input: ConcurrentUpdatesInput): Promise<ConcurrentUpdate[]>;
+
+  /** Origin-aware rows for the model-facing concurrent-change account, when richer than detection. */
+  concurrentUpdatesForReport?(input: ConcurrentUpdatesInput): Promise<ConcurrentUpdate[]>;
 }
 
 /** How a caller reaches a host document. */
