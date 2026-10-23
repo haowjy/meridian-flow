@@ -139,6 +139,7 @@ import {
   recordCompactionSummary,
 } from "./compaction-phase.js";
 import { failCompactionSuccessor } from "./compaction-successor.js";
+import { createDeltaJournal } from "./delta-journal.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { decideForgetting, loadForgettingFacts } from "./forget-failed-attempt.js";
 import { CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
@@ -162,11 +163,7 @@ import {
   showsPartialToolActivityBeforeTarget,
 } from "./partial-tool-activity.js";
 import { missingToolRefusal, type ToolPolicy } from "./permissions/index.js";
-import {
-  appendEvent,
-  persistAndAppendEvents,
-  persistAndAppendTurnStartEvents,
-} from "./persistence.js";
+import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { InboxMessage, RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
 import {
@@ -2342,121 +2339,153 @@ async function executeLoop({
         >();
         iteration += 1;
         turnAccounting.recordIterationSpend(treeBudget);
-        for await (const event of gateway.stream(request)) {
-          if (isCancelled()) {
-            cancelRequested = true;
-          }
-
-          if (thread.kind === "subagent" && event.type === "tool_call.delta") {
-            let partialCall = partialToolCalls.get(event.id);
-            const firstDelta = partialCall === undefined;
-            if (!partialCall) {
-              partialCall = { toolName: event.name, arguments: "", targetRecorded: false };
-              partialToolCalls.set(event.id, partialCall);
-            } else if (event.name) {
-              // Some compatible providers split the tool name from the first
-              // arguments chunk; keep the newest nonempty canonical name.
-              partialCall.toolName = event.name;
+        const deltaJournal = createDeltaJournal({
+          threadId: input.threadId,
+          appendEvents: (threadId, events) => eventWriter.appendEvents(threadId, events),
+          eventSink,
+          scope: "model_request",
+        });
+        let streamFailure: { cause: unknown } | undefined;
+        try {
+          for await (const event of gateway.stream(request)) {
+            if (isCancelled()) {
+              cancelRequested = true;
             }
 
-            if (!partialCall.targetRecorded) {
-              partialCall.arguments += event.argumentsDelta;
-              const partialInput = parsePartialToolActivityInput(
-                partialCall.toolName,
-                partialCall.arguments,
-              );
-              const hasTarget = hasPartialToolActivityTarget(partialCall.toolName, partialInput);
-              if (
-                (firstDelta && showsPartialToolActivityBeforeTarget(partialCall.toolName)) ||
-                hasTarget
-              ) {
-                const currentTool = {
-                  toolCallId: event.id,
-                  toolName: partialCall.toolName,
-                  input: partialInput,
+            if (thread.kind === "subagent" && event.type === "tool_call.delta") {
+              let partialCall = partialToolCalls.get(event.id);
+              const firstDelta = partialCall === undefined;
+              if (!partialCall) {
+                partialCall = { toolName: event.name, arguments: "", targetRecorded: false };
+                partialToolCalls.set(event.id, partialCall);
+              } else if (event.name) {
+                // Some compatible providers split the tool name from the first
+                // arguments chunk; keep the newest nonempty canonical name.
+                partialCall.toolName = event.name;
+              }
+
+              if (!partialCall.targetRecorded) {
+                partialCall.arguments += event.argumentsDelta;
+                const partialInput = parsePartialToolActivityInput(
+                  partialCall.toolName,
+                  partialCall.arguments,
+                );
+                const hasTarget = hasPartialToolActivityTarget(partialCall.toolName, partialInput);
+                if (
+                  (firstDelta && showsPartialToolActivityBeforeTarget(partialCall.toolName)) ||
+                  hasTarget
+                ) {
+                  const currentTool = {
+                    toolCallId: event.id,
+                    toolName: partialCall.toolName,
+                    input: partialInput,
+                  };
+                  await appendSubagentActivityForToolChangeBestEffort({
+                    recordCurrentTool: () => deps.runClaim.setCurrentTool(input.lease, currentTool),
+                    currentTool,
+                    eventWriter,
+                    readActivity: (threadId) =>
+                      readThreadActivity(
+                        {
+                          threads: repos.threads,
+                          statusReader: deps.runClaim,
+                          executionReports: deps.repos.executionReports,
+                        },
+                        threadId,
+                      ),
+                    parentThreadId: thread.parentThreadId as ThreadId,
+                    childThreadId: thread.id,
+                    eventSink,
+                  });
+                  partialCall.targetRecorded = hasTarget;
+                  if (hasTarget) partialCall.arguments = "";
+                }
+              }
+            }
+
+            if (event.type === "start") {
+              streamModel = event.model;
+            }
+
+            const mapped = mapStreamEvent(event);
+            if (mapped) {
+              await deltaJournal.push(mapped);
+            }
+
+            if (event.type === "end" || event.type === "error") {
+              await deltaJournal.flush();
+            }
+            if (event.type === "end") {
+              result = event.result;
+            }
+            if (event.type === "error") {
+              if (cancelRequested) {
+                break;
+              }
+              if (event.code === "context_overflow") {
+                // Partial output from the rejected request is not a completed tool group.
+                // Keep its paid usage, but only prior completed responses remain in A.
+                if (event.result) {
+                  const paid = await persistModelResponse({
+                    deps,
+                    runInput: input,
+                    thread,
+                    currentTurn,
+                    result: { ...event.result, content: [], toolCalls: [], finishReason: "error" },
+                    requestMessageCount: request.messages.length,
+                    predictedCacheState,
+                    treeBudget,
+                    turnAccounting,
+                    blockSeq: 0,
+                    inboxAckIds: [],
+                  });
+                  currentTurn = paid.updatedTurn;
+                }
+                if (retriedContextOverflow) {
+                  return exitRun(false, {
+                    kind: "failed",
+                    reason: "context_window_exceeded",
+                    error: "Model context overflowed after compaction retry",
+                  });
+                }
+                continuation = { kind: "ordinary" };
+                retriedContextOverflow = true;
+                if (usableWindowTokens === null)
+                  throw new Error("Context overflow requires a resolved model");
+                forcedCompaction = {
+                  kind: "compact",
+                  trigger: "auto",
+                  knownTooLarge: true,
+                  fitLimitTokens: Math.min(usableWindowTokens, FLOW_ABSOLUTE_CEILING),
                 };
-                await appendSubagentActivityForToolChangeBestEffort({
-                  recordCurrentTool: () => deps.runClaim.setCurrentTool(input.lease, currentTool),
-                  currentTool,
-                  eventWriter,
-                  readActivity: (threadId) =>
-                    readThreadActivity(
-                      {
-                        threads: repos.threads,
-                        statusReader: deps.runClaim,
-                        executionReports: deps.repos.executionReports,
-                      },
-                      threadId,
-                    ),
-                  parentThreadId: thread.parentThreadId as ThreadId,
-                  childThreadId: thread.id,
-                  eventSink,
-                });
-                partialCall.targetRecorded = hasTarget;
-                if (hasTarget) partialCall.arguments = "";
+                return true;
               }
+              return exitRun(false, {
+                kind: "failed",
+                reason: event.code,
+                error: meridianErrorFromGateway(event.code, event.message, event.retryable),
+                ...(event.providerError ? { providerError: event.providerError } : {}),
+              });
             }
           }
-
-          if (event.type === "start") {
-            streamModel = event.model;
-          }
-
-          const mapped = mapStreamEvent(event);
-          if (mapped) {
-            await appendEvent(eventWriter, input.threadId, mapped);
-          }
-
-          if (event.type === "end") {
-            result = event.result;
-          }
-          if (event.type === "error") {
-            if (cancelRequested) {
-              break;
-            }
-            if (event.code === "context_overflow") {
-              // Partial output from the rejected request is not a completed tool group.
-              // Keep its paid usage, but only prior completed responses remain in A.
-              if (event.result) {
-                const paid = await persistModelResponse({
-                  deps,
-                  runInput: input,
-                  thread,
-                  currentTurn,
-                  result: { ...event.result, content: [], toolCalls: [], finishReason: "error" },
-                  requestMessageCount: request.messages.length,
-                  predictedCacheState,
-                  treeBudget,
-                  turnAccounting,
-                  blockSeq: 0,
-                  inboxAckIds: [],
-                });
-                currentTurn = paid.updatedTurn;
-              }
-              if (retriedContextOverflow) {
-                return exitRun(false, {
-                  kind: "failed",
-                  reason: "context_window_exceeded",
-                  error: "Model context overflowed after compaction retry",
-                });
-              }
-              continuation = { kind: "ordinary" };
-              retriedContextOverflow = true;
-              if (usableWindowTokens === null)
-                throw new Error("Context overflow requires a resolved model");
-              forcedCompaction = {
-                kind: "compact",
-                trigger: "auto",
-                knownTooLarge: true,
-                fitLimitTokens: Math.min(usableWindowTokens, FLOW_ABSOLUTE_CEILING),
-              };
-              return true;
-            }
-            return exitRun(false, {
-              kind: "failed",
-              reason: event.code,
-              error: meridianErrorFromGateway(event.code, event.message, event.retryable),
-              ...(event.providerError ? { providerError: event.providerError } : {}),
+        } catch (cause) {
+          streamFailure = { cause };
+          throw cause;
+        } finally {
+          deltaJournal.seal();
+          try {
+            await deltaJournal.flush();
+          } catch (flushError) {
+            // The flush is this stream scope's durable boundary. It replaces
+            // normal control flow, but never an error already in flight.
+            // biome-ignore lint/correctness/noUnsafeFinally: required failure precedence
+            if (streamFailure === undefined) throw flushError;
+            emitEvent(eventSink, {
+              level: "error",
+              source: "runtime.orchestrator",
+              name: "delta_journal.flush_failed",
+              correlation: { threadId: input.threadId, turnId: currentTurn.id },
+              payload: unknownToEventPayload(flushError),
             });
           }
         }

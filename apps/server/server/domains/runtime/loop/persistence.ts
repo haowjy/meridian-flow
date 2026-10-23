@@ -4,7 +4,7 @@
  * durable read-model events atomically. Owns the loop's single mutation +
  * journal + projection seam.
  *
- * Two write paths:
+ * Runtime events use two write paths:
  *
  * 1. **persistAndAppendEvents** — the transactional path used for events
  *    that carry durable authority (turn.created, model.response_received,
@@ -18,10 +18,9 @@
  *    This guarantees journal + read-model stay consistent — either both
  *    are committed or neither is.
  *
- * 2. **appendEvent** — the non-transactional path used for ephemeral
- *    transport events (stream.delta, tool.executing, tool.output_delta).
- *    These are appended to the journal for live fan-out/catch-up but do NOT
- *    trigger read-model projection (the read-model projector ignores them).
+ * 2. Journal-only transport events do not trigger read-model projection.
+ *    Runtime delta scopes send stream and tool-output deltas through the batch
+ *    writer; tool lifecycle events such as tool.executing append directly.
  *
  * Boundary: the read-model projector (`projectReadModelEvent`) is the
  * in-transaction transform from durable events to repository rows. It lives
@@ -30,7 +29,6 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { isClosingRow, type OrchestratorEvent, type Turn } from "@meridian/contracts/threads";
 import {
-  type EventJournalWriter,
   type LiveEventWriter,
   projectReadModelEvent,
   type ThreadRepositories,
@@ -155,20 +153,9 @@ async function projectAndAppendEvents<T>(
       event.turn.position = created.position;
       createdTurns.push(created);
     }
-    await deps.eventWriter.appendEvent(threadId, event);
+    await deps.eventWriter.appendEvents(threadId, [event]);
     await detectFailures(deps, threadId, event);
   }
   await options?.afterEvents?.(persisted.result);
   return { ...persisted, createdTurns };
-}
-
-// Non-transactional path: journal-only append for ephemeral transport
-// events that don't need read-model projection.
-export async function appendEvent(
-  writer: EventJournalWriter,
-  threadId: ThreadId,
-  event: OrchestratorEvent,
-): Promise<OrchestratorEvent> {
-  await writer.appendEvent(threadId, event);
-  return event;
 }
