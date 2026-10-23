@@ -26,6 +26,19 @@ cards / test subscriptions.
 
 ## First-time setup (main checkout)
 
+Clone with a blob filter, so screenshots, the lockfile and migration snapshots
+download only when something reads them:
+
+```bash
+git clone --filter=blob:limit=200k <repo-url>
+```
+
+That fetches about 100 MB, source history included, instead of the whole history
+(about 370 MB). The current tree's large files download on checkout, and an old
+image downloads on first read.
+
+Then, in the checkout:
+
 ```bash
 pnpm install
 cp .env.example .env          # fill in WorkOS keys, etc.
