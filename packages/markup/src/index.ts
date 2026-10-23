@@ -23,6 +23,7 @@ export {
 export { markdownCodec } from "./markdown/index.js";
 export { formatMarkdownLink } from "./markdown/marks/link.js";
 export { mdxCodec } from "./mdx/index.js";
+export { presentationTextRange } from "./presentation-source-map.js";
 export type {
   BlockCodec,
   BuildOptions,
@@ -30,12 +31,14 @@ export type {
   DocumentLinkScope,
   MarkAttrs,
   MarkCodec,
+  MarkdownStreamResult,
   MarkupCodec,
   OccurrenceSpan,
   ParseContext,
   ParsedContent,
   ParsedContentWithSpans,
   PMNode,
+  PresentationSourceRun,
   SerializeContext,
   SpelledHref,
 } from "./types.js";
