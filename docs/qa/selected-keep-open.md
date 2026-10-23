@@ -67,11 +67,10 @@ saved in `read.input`, the rewritten summary list and next model request.
   Explicit `format: "full"` qualifies; fragments, `in`, `around`, outlines,
   edits and explicit versions do not. Actual version-specific observation
   evidence remains unchanged.
-- Selected reads leave outside blocks unshown, even if unchanged full tail
-  copies remain visible. After compaction, type distinctive outside text through
-  the browser editor, then attempt an AI replacement there. Ordinary concurrent
-  text/region-change rules must preserve the writer's change. Selection-edge
-  writes may catch up an unshown neighbour before a subsequent attempt succeeds.
+- Selected reads credit only the rendered blocks. After compaction, type distinctive
+  outside text through the browser editor, then attempt an AI replacement there.
+  The write lands as a Yjs peer, preserves the user text, and reports its author in
+  the same successful receipt.
 - The exact JSON input labels the budget wrapper, final list and projected read.
   Reserve the whole candidate list before admitting results. Check zero room,
   exact fit, one token too small, skipped-large then small, and an oversized

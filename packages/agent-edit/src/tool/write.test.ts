@@ -2,7 +2,6 @@
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
-import type { UpdateJournal } from "../ports/update-journal.js";
 import {
   blockTexts,
   expectOutcome,
@@ -35,60 +34,6 @@ describe("write tool dispatch", () => {
         ],
       },
     ]);
-  });
-
-  it("reports degraded awareness when destructive reporting fails after append", async () => {
-    const transitions: string[] = [];
-    const ctx = harness(
-      { "chapter.md": "Writer protected." },
-      {
-        onResponseCommitterTransition: (event) => transitions.push(event.transition),
-        journalOverride: (journal) => {
-          const destructiveJournal: UpdateJournal = journal;
-          destructiveJournal.materializeDestructiveProvenance = async () => {
-            throw new Error("classification failed");
-          };
-          return journal;
-        },
-      },
-    );
-    await ctx.core.read({ file: "chapter.md" }, context);
-
-    const result = await ctx.core.write(
-      {
-        command: "replace",
-        file: "chapter.md",
-        find: "Writer protected.",
-        content: "Agent replacement.",
-      },
-      context,
-    );
-
-    expectOutcome(result, "success");
-    expect(outcomeText(result)).toContain("destructive awareness degraded");
-    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Agent replacement."]);
-    const staged = await ctx.core.write(
-      {
-        command: "replace",
-        file: "chapter.md",
-        find: "Agent replacement.",
-        content: "Accepted response text.",
-      },
-      {
-        ...context,
-        responseIdentity: { providerResponseId: "report-failure", editScopeId: "report-failure" },
-        turnId: "report-failure",
-      },
-    );
-    expectOutcome(staged, "success");
-    const committed = await ctx.core.commitResponse("report-failure");
-    expect(committed.documents[0].receipts).toMatchObject([
-      { writeId: staged.result.write?.id, result: { status: "success", awarenessDegraded: true } },
-    ]);
-    expect(transitions).not.toContain("recovery_succeeded");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Accepted response text."]);
-    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(2);
   });
 
   it("leaves no phantom runtime mutation when write ordinal reservation fails", async () => {

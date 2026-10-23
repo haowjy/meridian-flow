@@ -32,14 +32,6 @@ The `optimistic-updates` work item owns the profiles and verification specificat
   exclusion the inline image does. `core/editor/FigureNodeView.tsx`,
   `packages/prosemirror-schema`.
 
-- **Unify rendered-markdown (Streamdown) styling with the editor.**
-  ([#93](https://github.com/haowjy/meridian-flow/issues/93))
-  The `.prose-tokens` Streamdown surface (chat answers, helper results) and the
-  `.meridian-editor .ProseMirror` editor surface have drifted (code-block chrome
-  + syntax colors, inline code, tables, blockquote). Streamdown's Shiki
-  highlighting is currently inert. Read-only *documents* already match the editor
-  (they reuse it). `Markdown.tsx`, `globals.css`, `editor.css`,
-  `design-tokens/ink-jade.css`.
 
 ## E2E harness drift
 

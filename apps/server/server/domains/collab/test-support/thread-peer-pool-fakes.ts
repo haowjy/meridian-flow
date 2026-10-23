@@ -112,6 +112,7 @@ function fakeEnsures() {
     async (_input: { documentId: DocumentId; threadId: ThreadId; branchId?: BranchId }) => ({
       peerDraftId: `peer-${++ensured}`,
       upstreamDraftId: FAKE_UPSTREAM_ID,
+      seed: null,
     }),
   );
 }

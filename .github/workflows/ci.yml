@@ -46,8 +46,7 @@ jobs:
           node-version: 24.17.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Keep Nx outputs local to this runner. Project-scoped Nx inputs omit
-      # root config changes, so restoring outputs across runs is unsafe.
+      # Keep Nx outputs local to this runner; do not restore them across CI runs.
       - run: node tools/ci/run-check-group.mjs typecheck
 
   # Vitest partitions the same default projects into disjoint file sets.

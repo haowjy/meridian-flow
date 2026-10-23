@@ -31,6 +31,7 @@ try {
     documentId,
     branchId: work.branchId,
     liveDoc: live,
+    liveRoom: null,
   });
   live.destroy();
   const roomKey = draftRoomName(draft.draftId);

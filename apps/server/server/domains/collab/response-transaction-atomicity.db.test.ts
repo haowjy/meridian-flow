@@ -122,17 +122,6 @@ describe("change trail (postgres)", () => {
     expect(await harness.liveMarkdown(BETA_ID)).toContain("Agent beta.");
   });
 
-  it("retains mixed provenance across repeated compaction and generation replacement", async () => {
-    const harness = createHarness(db);
-
-    await expect(harness.compactMixedProvenanceTwice()).resolves.toEqual({
-      retainedUpdateCount: 0,
-      warmProvenance: ["agent", "writer_protected"],
-      coldProvenance: ["agent", "writer_protected"],
-      rebasedDraftProvenance: ["agent", "writer_protected"],
-    });
-  });
-
   it("does not compact a retired-generation suffix into the restored authority head", async () => {
     const harness = createHarness(db);
 

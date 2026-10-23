@@ -785,8 +785,8 @@ export const threadShownLinks = pgTable(
  * Observation frontiers: the document state the model was shown by one
  * transcript block (a tool result, or a writer turn's reference block whose
  * materialized read it is sent), per room. `snapshot` is a Yjs snapshot
- * (`encodeSnapshotV2`); `unshown` lists the block ids (`client:clock`) that
- * changed since the model's previous frontier and were not shown in full.
+ * (`encodeSnapshotV2`); `journal_position` is the host journal high-water mark
+ * captured with that cut.
  * `room_key` is `draft:<workDraftId>` or `live:<documentId>:<authorityGeneration>`.
  *
  * Keyed by the block's own id, so a fork that renders the inherited block
@@ -803,7 +803,7 @@ export const observationFrontiers = pgTable(
       .references(() => turnBlocks.id, { onDelete: "cascade" }),
     roomKey: text("room_key").notNull(),
     snapshot: byteaColumn("snapshot").notNull(),
-    unshown: jsonb("unshown").$type<string[]>().notNull(),
+    journalPosition: bigint("journal_position", { mode: "number" }),
     recordedSeq: bigint("recorded_seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
   },
   (table) => [

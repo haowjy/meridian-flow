@@ -184,6 +184,8 @@ export interface WriteContext {
   interactionContext?: InteractionContext;
   /** Host-routed: the Work draft a draft read bound to no peer reads (`DocumentAccess.workDraftId`). */
   workDraftId?: string;
+  /** Version requested at the routing boundary, independent of the view used to render links. */
+  documentVersion?: "live" | "draft";
   /** The writing thread's top chat handle: bare `uploads://` links written fresh are stored qualified to it. */
   uploadsChat?: string;
   /** True only when the host resolved this create to a previously missing document. */
@@ -239,7 +241,6 @@ export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;
   receipts: ResponseCommitWriteReceipt[];
-  lateSweep?: import("./commit-detection.js").DestructiveSweepReport;
   /**
    * Host-only, when the commit asked (`ResponseCommitOptions.recordingFrontier`):
    * the frontier at the save's after-state, crediting every accepted receipt and what the last

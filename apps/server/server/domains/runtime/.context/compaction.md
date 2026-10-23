@@ -116,8 +116,8 @@ Only admitted default-version whole reads (no fragment, `in`, `around`, or
 non-full format) authorize full-copy `reshown` elision. Explicit `format: full`
 counts as whole; explicit versions conservatively do not replace the thread's
 effective-version text. Partial reads leave unchanged full tail copies visible,
-but those pre-compaction copies credit nothing after C. Outside selected blocks
-remain unshown, so ordinary region-change checks still apply to later edits.
+but those pre-compaction copies credit nothing after C. Outside selected blocks receive no read credit; later writes still merge with their
+current Yjs state and report concurrent authors.
 A later compaction treats these blocks as ordinary prior history; recent
 selection does not inherit old read arguments.
 
