@@ -22,7 +22,11 @@
 import { lookupBlockHash } from "@meridian/agent-edit";
 import * as Y from "yjs";
 import type { OpenDocumentOutcome } from "@/features/project/context/open-project-document";
-import { showPassageInTarget, whenLiveEditor } from "./live-range-navigation-runtime";
+import {
+  showPassageInTarget,
+  waitForLiveRangeRetry,
+  whenLiveEditor,
+} from "./live-range-navigation-runtime";
 import { claimDocumentTarget } from "./reading-position-navigation";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
@@ -58,37 +62,33 @@ export async function navigateToPassage(input: {
     const waitSignal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
     const target = await whenLiveEditor(input.documentId, opened.placement, waitSignal);
     if (!target || cancelled()) return { kind: "unavailable" };
+    const targetSignal = AbortSignal.any([waitSignal, target.signal]);
     const session = target.session;
     if (!target.localContentReady)
       await Promise.race([
         session.waitForCurrentSync(timeoutMs),
         new Promise<void>((resolve) =>
-          waitSignal.addEventListener("abort", () => resolve(), { once: true }),
+          targetSignal.addEventListener("abort", () => resolve(), { once: true }),
         ),
       ]);
-    if (cancelled() || (!target.localContentReady && session.getSnapshot().status !== "synced"))
+    if (
+      cancelled() ||
+      target.signal.aborted ||
+      (!target.localContentReady && session.getSnapshot().status !== "synced")
+    )
       return { kind: "unavailable" };
 
     const show = input.showPassage ?? showPassageInTarget;
     const deadline = Date.now() + timeoutMs;
     do {
-      if (cancelled()) return { kind: "unavailable" };
+      if (cancelled() || target.signal.aborted) return { kind: "unavailable" };
       // Re-derived every attempt, against the live document: the editor may
       // still be mounting, and the block may go while we wait for it.
       const block = blockRangeForHash(session.document, input.anchor.blockHash);
       const landing = show(target, { block, term: input.anchor.term });
+      if (target.signal.aborted) return { kind: "unavailable" };
       if (landing) return { kind: landing.outcome };
-      await new Promise((resolve) => {
-        const timer = setTimeout(resolve, 25);
-        input.signal?.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timer);
-            resolve(undefined);
-          },
-          { once: true },
-        );
-      });
+      await waitForLiveRangeRetry(targetSignal);
     } while (Date.now() < deadline);
     return { kind: "unavailable" };
   } finally {

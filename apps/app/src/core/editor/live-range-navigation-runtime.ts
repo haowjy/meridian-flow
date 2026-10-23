@@ -11,7 +11,11 @@ export type LiveEditorTarget = {
   session: DocumentSession;
   localContentReady: boolean;
   container: LiveEditorContainer;
+  /** Registration lifetime. Retirement revokes every capability on this target. */
+  signal: AbortSignal;
 };
+
+type LiveEditorRegistration = Omit<LiveEditorTarget, "signal">;
 
 const targets = new Map<string, Map<LiveEditorContainer, LiveEditorTarget>>();
 const listeners = new Map<string, Set<() => void>>();
@@ -20,8 +24,16 @@ function targetKey(documentId: string, container: LiveEditorContainer): string {
   return `${documentId}:${container}`;
 }
 
-export function registerLiveRangeEditor(documentId: string, target: LiveEditorTarget): () => void {
+export function registerLiveRangeEditor(
+  documentId: string,
+  registration: LiveEditorRegistration,
+): () => void {
   const documentTargets = targets.get(documentId) ?? new Map();
+  const prior = documentTargets.get(registration.container);
+  const lifetime = new AbortController();
+  const target: LiveEditorTarget = { ...registration, signal: lifetime.signal };
+  retirements.set(target, lifetime);
+  if (prior) retireTarget(prior);
   documentTargets.set(target.container, target);
   targets.set(documentId, documentTargets);
   const key = targetKey(documentId, target.container);
@@ -29,9 +41,17 @@ export function registerLiveRangeEditor(documentId: string, target: LiveEditorTa
   return () => {
     const current = targets.get(documentId);
     if (current?.get(target.container) === target) current.delete(target.container);
+    retireTarget(target);
     if (current?.size === 0) targets.delete(documentId);
     for (const listener of listeners.get(key) ?? []) listener();
   };
+}
+
+const retirements = new WeakMap<LiveEditorTarget, AbortController>();
+
+function retireTarget(target: LiveEditorTarget): void {
+  retirements.get(target)?.abort();
+  retirements.delete(target);
 }
 
 export async function whenLiveEditor(
@@ -73,6 +93,7 @@ export function showLiveRangeInTarget(
   range: { start: Y.RelativePosition; end: Y.RelativePosition },
   boundary = false,
 ): { shown: boolean } {
+  if (target.signal.aborted || target.editor.isDestroyed) return { shown: false };
   const positions = relativeRangeToEditorPositions(target.editor, range);
   if (!positions) return { shown: false };
   const shown = boundary
@@ -88,6 +109,7 @@ export function showPassageInTarget(
     term: string;
   },
 ): { outcome: "landed" | "stale" } | null {
+  if (target.signal.aborted || target.editor.isDestroyed) return null;
   const blockRange = passage.block
     ? relativeRangeToEditorPositions(target.editor, passage.block)
     : null;
@@ -103,5 +125,23 @@ export function showPeerMarkerInTarget(
   target: LiveEditorTarget,
   changeId: string,
 ): { shown: boolean } {
-  return { shown: target.editor.commands.showPeerMarker(changeId) };
+  return {
+    shown:
+      !target.signal.aborted &&
+      !target.editor.isDestroyed &&
+      target.editor.commands.showPeerMarker(changeId),
+  };
+}
+
+export function waitForLiveRangeRetry(signal: AbortSignal, delayMs = 25): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timeout = setTimeout(finish, delayMs);
+    signal.addEventListener("abort", finish, { once: true });
+  });
 }

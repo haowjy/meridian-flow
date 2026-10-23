@@ -7,6 +7,7 @@ import type { OpenDocumentOutcome } from "@/features/project/context/open-projec
 import {
   showLiveRangeInTarget,
   showPeerMarkerInTarget,
+  waitForLiveRangeRetry,
   whenLiveEditor,
 } from "./live-range-navigation-runtime";
 import { claimDocumentTarget } from "./reading-position-navigation";
@@ -39,15 +40,16 @@ export async function navigateToTrailChange(input: {
     const waitSignal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
     const target = await whenLiveEditor(input.documentId, opened.placement, waitSignal);
     if (!target || cancelled()) return { kind: "could_not_open" };
+    const targetSignal = AbortSignal.any([waitSignal, target.signal]);
     const session = target.session;
     if (!target.localContentReady)
       await Promise.race([
         session.waitForCurrentSync(input.timeoutMs ?? 10_000),
         new Promise<void>((resolve) =>
-          input.signal?.addEventListener("abort", () => resolve(), { once: true }),
+          targetSignal.addEventListener("abort", () => resolve(), { once: true }),
         ),
       ]);
-    if (cancelled()) return { kind: "could_not_open" };
+    if (cancelled() || target.signal.aborted) return { kind: "could_not_open" };
     if (!target.localContentReady && session.getSnapshot().status !== "synced")
       return { kind: "could_not_open" };
 
@@ -58,9 +60,11 @@ export async function navigateToTrailChange(input: {
       const showMarker = input.showMarker ?? showPeerMarkerInTarget;
       const deadline = Date.now() + (input.timeoutMs ?? 10_000);
       do {
-        if (cancelled()) return { kind: "could_not_open" };
-        if (showMarker(target, input.change.changeId).shown) return { kind: "shown" };
-        await new Promise((resolve) => setTimeout(resolve, 25));
+        if (cancelled() || target.signal.aborted) return { kind: "could_not_open" };
+        const shown = showMarker(target, input.change.changeId).shown;
+        if (target.signal.aborted) return { kind: "could_not_open" };
+        if (shown) return { kind: "shown" };
+        await waitForLiveRangeRetry(targetSignal);
       } while (Date.now() < deadline);
       return { kind: "could_not_open" };
     }
@@ -96,7 +100,7 @@ export async function navigateToTrailChange(input: {
     const show = input.showRange ?? showLiveRangeInTarget;
     const deadline = Date.now() + (input.timeoutMs ?? 10_000);
     do {
-      if (cancelled()) return { kind: "could_not_open" };
+      if (cancelled() || target.signal.aborted) return { kind: "could_not_open" };
       if (
         input.change.navigation.kind === "live_block_range" &&
         !validateLiveBlockRange({ doc: session.document, target: input.change.navigation })
@@ -104,19 +108,9 @@ export async function navigateToTrailChange(input: {
         return { kind: "unavailable" };
       }
       const result = show(target, range, boundary);
-      if (cancelled()) return { kind: "could_not_open" };
+      if (cancelled() || target.signal.aborted) return { kind: "could_not_open" };
       if (result.shown) return { kind: "shown" };
-      await new Promise((resolve) => {
-        const timeout = setTimeout(resolve, 25);
-        input.signal?.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timeout);
-            resolve(undefined);
-          },
-          { once: true },
-        );
-      });
+      await waitForLiveRangeRetry(targetSignal);
     } while (Date.now() < deadline);
     return { kind: "could_not_open" };
   } finally {
