@@ -9,7 +9,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { type StopStatus, stopStatus } from "@meridian/thread-client";
-import { useCallback, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import { announce, useRunState } from "@/client/stores";
 import type { ChatHandBack } from "./useHandBack";
 
@@ -24,11 +24,13 @@ export function useChatStop(input: { threadId: string; handBack: ChatHandBack })
   const { operation, stopFacts } = handBack;
   const view = useRunState(threadId);
   const latest = useRef(view);
-  latest.current = view;
 
   const status = stopStatus(view, stopFacts);
   const pressed = useRef(status);
-  pressed.current = status;
+  useLayoutEffect(() => {
+    latest.current = view;
+    pressed.current = status;
+  }, [status, view]);
 
   const stop = useCallback(() => {
     // Ignored while Stopping: the request is out, or the cancel is landing.

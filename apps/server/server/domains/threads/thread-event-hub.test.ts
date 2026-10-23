@@ -83,6 +83,11 @@ function createCappedHub(
 ) {
   return createThreadEventHub({
     journalWriter: {
+      async appendEvents(threadId, events) {
+        let seq = 0n;
+        for (const event of events) seq = await this.appendEvent(threadId, event);
+        return seq;
+      },
       async appendEvent() {
         return 0n;
       },

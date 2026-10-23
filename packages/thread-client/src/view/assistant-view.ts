@@ -6,6 +6,7 @@
 import { type Block, blockPlainText, type Turn } from "@meridian/contracts/protocol";
 import type { SavedReportContentValue } from "@meridian/contracts/spawn";
 import type { WorkReceipt } from "@meridian/contracts/works";
+import { sameJson } from "../turns/same-turn";
 import { isImageBlock } from "./block-kind";
 import { componentBlockContent } from "./component-block-content";
 import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
@@ -58,6 +59,7 @@ export type AssistantView = {
 };
 
 const cache = new WeakMap<readonly Block[], AssistantView>();
+const itemCache = new WeakMap<Block, ViewItem>();
 
 /** Memoized by the turn's `blocks` array: an unchanged turn keeps its view, so React rows stay still. */
 export function viewAssistantTurn(turn: Pick<Turn, "blocks">): AssistantView {
@@ -67,7 +69,7 @@ export function viewAssistantTurn(turn: Pick<Turn, "blocks">): AssistantView {
   const direct = directResultsForTurn(blocks);
   const segments = groupDeliverySegments(blocks);
   const hidden = hiddenToolCallIds(segments);
-  const items = partitionTurn(segments, hidden).map((item) => viewItem(item, direct));
+  const items = partitionTurn(segments, hidden).map((item) => internItem(viewItem(item, direct)));
   const tools = segments.flatMap((segment) =>
     segment.kind === "tool" ? [segment.tool] : segment.kind === "tool-run" ? segment.tools : [],
   );
@@ -83,6 +85,148 @@ export function viewAssistantTurn(turn: Pick<Turn, "blocks">): AssistantView {
   };
   cache.set(turn.blocks, view);
   return view;
+}
+
+function internItem(item: ViewItem): ViewItem {
+  const anchor = firstBlock(item);
+  if (!anchor) return item;
+  const previous = itemCache.get(anchor);
+  if (previous && sameViewItem(previous, item)) return previous;
+  itemCache.set(anchor, item);
+  return item;
+}
+
+function firstBlock(item: ViewItem): Block | undefined {
+  if (item.kind !== "process") return item.block;
+  return item.runs[0]?.blocks[0];
+}
+
+function sameBlocks(left: readonly Block[], right: readonly Block[]): boolean {
+  return left.length === right.length && left.every((block, index) => block === right[index]);
+}
+
+function sameTool(left: ToolView, right: ToolView): boolean {
+  const fields = {
+    toolCallId: "value",
+    toolName: "value",
+    input: "json",
+    result: "json",
+    status: "value",
+    isError: "value",
+    message: "value",
+    streamedOutput: "value",
+    metadata: "json",
+    keyBlock: "reference",
+  } satisfies Record<keyof ToolView, "value" | "json" | "reference">;
+  return (Object.keys(fields) as (keyof ToolView)[]).every((field) =>
+    fields[field] === "json" ? sameJson(left[field], right[field]) : left[field] === right[field],
+  );
+}
+
+function sameRun(left: ViewRun, right: ViewRun): boolean {
+  if (left.kind !== right.kind || !sameBlocks(left.blocks, right.blocks)) return false;
+  if (left.kind === "reasoning" && right.kind === "reasoning") {
+    const fields = {
+      kind: "value",
+      blocks: "references",
+      texts: "json",
+    } satisfies Record<keyof typeof left, "value" | "references" | "json">;
+    return (Object.keys(fields) as (keyof typeof left)[]).every((field) => {
+      if (fields[field] === "references") return sameBlocks(left.blocks, right.blocks);
+      if (fields[field] === "json") return sameJson(left[field], right[field]);
+      return left[field] === right[field];
+    });
+  }
+  if (left.kind === "activity" && right.kind === "activity") {
+    const fields = {
+      kind: "value",
+      blocks: "references",
+      tools: "tools",
+    } satisfies Record<keyof typeof left, "value" | "references" | "tools">;
+    return (Object.keys(fields) as (keyof typeof left)[]).every((field) => {
+      if (fields[field] === "references") return sameBlocks(left.blocks, right.blocks);
+      if (fields[field] === "tools")
+        return (
+          left.tools.length === right.tools.length &&
+          left.tools.every((tool, index) => {
+            const other = right.tools[index];
+            return other ? sameTool(tool, other) : false;
+          })
+        );
+      return left[field] === right[field];
+    });
+  }
+  return false;
+}
+
+type ViewItemComparison = "value" | "reference" | "json" | "runs";
+
+function sameItemFields<T extends ViewItem>(
+  left: T,
+  right: T,
+  fields: Record<keyof T, ViewItemComparison>,
+): boolean {
+  return (Object.keys(fields) as (keyof T)[]).every((field) => {
+    const comparison = fields[field];
+    if (comparison === "json") return sameJson(left[field], right[field]);
+    if (comparison === "runs") {
+      const leftRuns = left[field] as ViewRun[];
+      const rightRuns = right[field] as ViewRun[];
+      return (
+        leftRuns.length === rightRuns.length &&
+        leftRuns.every((run, index) => {
+          const other = rightRuns[index];
+          return other ? sameRun(run, other) : false;
+        })
+      );
+    }
+    return left[field] === right[field];
+  });
+}
+
+function sameViewItem(left: ViewItem, right: ViewItem): boolean {
+  if (left.kind !== right.kind) return false;
+  switch (left.kind) {
+    case "process": {
+      if (right.kind !== "process") return false;
+      const fields = {
+        kind: "value",
+        runs: "runs",
+        visible: "value",
+        digest: "json",
+      } satisfies Record<keyof typeof left, ViewItemComparison>;
+      return sameItemFields(left, right, fields);
+    }
+    case "text": {
+      if (right.kind !== "text") return false;
+      const fields = {
+        kind: "value",
+        block: "reference",
+        text: "value",
+      } satisfies Record<keyof typeof left, ViewItemComparison>;
+      return sameItemFields(left, right, fields);
+    }
+    case "report": {
+      if (right.kind !== "report") return false;
+      const fields = {
+        kind: "value",
+        block: "reference",
+        report: "json",
+      } satisfies Record<keyof typeof left, ViewItemComparison>;
+      return sameItemFields(left, right, fields);
+    }
+    case "artifact": {
+      if (right.kind !== "artifact") return false;
+      const fields = {
+        kind: "value",
+        block: "reference",
+        direct: "json",
+        cardKind: "value",
+        text: "value",
+      } satisfies Record<keyof typeof left, ViewItemComparison>;
+      return sameItemFields(left, right, fields);
+    }
+  }
 }
 
 function lastProcessIndex(items: readonly ViewItem[]): number {

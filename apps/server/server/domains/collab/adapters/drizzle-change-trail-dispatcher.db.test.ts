@@ -114,6 +114,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("retries exactly once after a crash between claim and journal append", async () => {
       await seedOutbox([{ eventId: UPDATED_EVENT_ID, eventKind: "updated", version: 1 }]);
       const crashingWriter = {
+        appendEvents: vi.fn(async () => {
+          throw new Error("injected crash before journal append");
+        }),
         appendEvent: vi.fn(async () => {
           throw new Error("injected crash before journal append");
         }),
@@ -195,6 +198,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         firstAppendClaimed = resolve;
       });
       const blockingWriter = {
+        async appendEvents(
+          threadId: ThreadId,
+          events: Parameters<typeof journalWriter.appendEvents>[1],
+        ) {
+          let seq = 0n;
+          for (const event of events) seq = await this.appendEvent(threadId, event);
+          return seq;
+        },
         async appendEvent(
           threadId: ThreadId,
           event: Parameters<typeof journalWriter.appendEvent>[1],

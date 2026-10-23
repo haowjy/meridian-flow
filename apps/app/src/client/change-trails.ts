@@ -78,13 +78,42 @@ export function upsertTrailShell(state: TrailShellState, shell: ChangeTrailShell
   return { ...state, byId: { ...state.byId, [shell.trailId]: shell } };
 }
 
+function sameTrailShell(left: ChangeTrailShell, right: ChangeTrailShell): boolean {
+  return (
+    left.trailId === right.trailId &&
+    left.owner.kind === right.owner.kind &&
+    left.owner.threadId === right.owner.threadId &&
+    left.owner.turnId === right.owner.turnId &&
+    left.state === right.state &&
+    left.version === right.version &&
+    left.changeCount === right.changeCount &&
+    left.documentCount === right.documentCount &&
+    left.wordsAdded === right.wordsAdded &&
+    left.wordsRemoved === right.wordsRemoved &&
+    left.updatedAt === right.updatedAt &&
+    left.settledAt === right.settledAt &&
+    left.documents.length === right.documents.length &&
+    left.documents.every(
+      (document, index) =>
+        document.documentId === right.documents[index]?.documentId &&
+        document.title === right.documents[index]?.title,
+    )
+  );
+}
+
 export function reconcileTrailShells(
-  _state: TrailShellState,
+  state: TrailShellState,
   shells: ChangeTrailShell[],
 ): TrailShellState {
-  let next: TrailShellState = { byId: {}, gapPending: false };
-  for (const shell of shells) next = upsertTrailShell(next, shell);
-  return next;
+  const byId: Record<string, ChangeTrailShell> = {};
+  let unchanged = !state.gapPending && Object.keys(state.byId).length === shells.length;
+  for (const shell of shells) {
+    const previous = state.byId[shell.trailId];
+    byId[shell.trailId] = previous && sameTrailShell(previous, shell) ? previous : shell;
+    unchanged &&= byId[shell.trailId] === previous;
+  }
+  if (unchanged) return state;
+  return { byId, gapPending: false };
 }
 
 export async function listChangeTrailShells(threadId: string): Promise<ChangeTrailShell[]> {

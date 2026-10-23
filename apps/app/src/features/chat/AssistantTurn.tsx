@@ -88,18 +88,6 @@ function AssistantTurnComponent({
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
   const resolvedThreadId = threadId ?? turn.threadId;
-  const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, {
-    enabled: !isLive && !standIn,
-  });
-  const editedDocuments = useMemo(
-    () => dedupeTurnEditDocuments(liveLineage.documents ?? []),
-    [liveLineage.documents],
-  );
-  // Work mutations leave no document lineage; their receipts ride the turn's
-  // own tool results, so a Work-mutation-only turn still gets its Undo receipt.
-  // Gated on settlement like document lineage: a receipt is a record of a
-  // finished turn, and mid-stream it would offer Undo on a turn still writing.
-  const workReceipts = isLive ? NO_WORK_RECEIPTS : view.workReceipts;
 
   return (
     <div
@@ -125,17 +113,15 @@ function AssistantTurnComponent({
           </div>
         ) : null}
 
-        {hasTurnEditsReceiptContent(editedDocuments, changeTrail, workReceipts) ? (
-          <TurnEditsReceipt
-            threadId={resolvedThreadId}
-            turn={turn}
-            documents={editedDocuments}
-            receipt={liveLineage.receipt}
-            workReceipts={workReceipts}
-            changeTrail={changeTrail}
-            navigateToChange={navigateToChange}
-          />
-        ) : null}
+        <TurnLineageReceipt
+          threadId={resolvedThreadId}
+          turn={turn}
+          view={view}
+          isLive={isLive}
+          standIn={standIn}
+          changeTrail={changeTrail}
+          navigateToChange={navigateToChange}
+        />
 
         <AnchoredCards anchor={{ turn: turn.id }} />
       </div>
@@ -155,6 +141,49 @@ function AssistantTurnComponent({
 
 const NO_DELIVERIES: NonNullable<AssistantTurnProps["deliveries"]> = [];
 const NO_WORK_RECEIPTS: AssistantView["workReceipts"] = [];
+
+const TurnLineageReceipt = memo(function TurnLineageReceipt({
+  threadId,
+  turn,
+  view,
+  isLive,
+  standIn,
+  changeTrail,
+  navigateToChange,
+}: {
+  threadId: string;
+  turn: Turn;
+  view: AssistantView;
+  isLive: boolean;
+  standIn: boolean;
+  changeTrail?: ChangeTrailShell;
+  navigateToChange?: NavigateToTrailChange;
+}) {
+  const liveLineage = useTurnLiveLineage(threadId, turn.id, {
+    enabled: !isLive && !standIn,
+  });
+  const editedDocuments = useMemo(
+    () => dedupeTurnEditDocuments(liveLineage.documents ?? []),
+    [liveLineage.documents],
+  );
+  // Work mutations leave no document lineage; their receipts ride the turn's
+  // own tool results, so a Work-mutation-only turn still gets its Undo receipt.
+  // Gated on settlement like document lineage: a receipt is a record of a
+  // finished turn, and mid-stream it would offer Undo on a turn still writing.
+  const workReceipts = isLive ? NO_WORK_RECEIPTS : view.workReceipts;
+  return hasTurnEditsReceiptContent(editedDocuments, changeTrail, workReceipts) ? (
+    <TurnEditsReceipt
+      threadId={threadId}
+      turn={turn}
+      documents={editedDocuments}
+      receipt={liveLineage.receipt}
+      workReceipts={workReceipts}
+      changeTrail={changeTrail}
+      navigateToChange={navigateToChange}
+    />
+  ) : null;
+});
+TurnLineageReceipt.displayName = "TurnLineageReceipt";
 
 function InkDrop() {
   return (

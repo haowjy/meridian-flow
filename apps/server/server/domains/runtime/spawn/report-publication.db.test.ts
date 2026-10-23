@@ -605,6 +605,11 @@ else
         repos,
         eventWriter: {
           ...noFailureRecorder,
+          async appendEvents(threadId, events) {
+            let seq = 0n;
+            for (const event of events) seq = await this.appendEvent(threadId, event);
+            return seq;
+          },
           async appendEvent(threadId, event) {
             if (event.type === "agent.run_completed" && event.execution === ids.execution) {
               throw new Error("first publication unavailable");

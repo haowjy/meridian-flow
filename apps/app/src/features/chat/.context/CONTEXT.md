@@ -75,4 +75,13 @@ The chat's contracts, one page per concern.
 Durable change detail renders only through the owning turn receipt; the
 transcript does not add a conversation-wide aggregate record.
 
+`ChatView` orchestrates each thread-store frame, while stable rendering boundaries keep unrelated
+surfaces still. `ChatComposer` owns the chat draft and dock lifecycle. Transcript rows and assistant
+items receive interned view-model values and are memoized. Context values for failure cards,
+derivation actions, and subagent activity retain their reference until their own facts change; event
+callbacks and long-lived action adapters publish the latest committed render before paint. Render-time
+ref writes must not expose speculative scope or store actions to operations from the visible screen.
+Failure-card readers pass one anchor's cards through a memoized view, so a change at another anchor
+does not redraw the settled row.
+
 The invariants are in [`../AGENTS.md`](../AGENTS.md).

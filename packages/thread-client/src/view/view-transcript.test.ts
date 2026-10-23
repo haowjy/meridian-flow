@@ -1,6 +1,7 @@
 /** Guards the view model's seams: row identity versus render key, stand-in placement, queued writer rows, and which turns draw as items. */
 import type { Block, Turn } from "@meridian/contracts/protocol";
 import { expect, it } from "vitest";
+import { viewAssistantTurn } from "./assistant-view";
 import { OPTIMISTIC_TURN_ID_PREFIX } from "./optimistic-turn-id";
 import { viewTranscript } from "./view-transcript";
 
@@ -296,4 +297,90 @@ it("leaves a handed-back message out and keeps history and later sends", () => {
     activity: { awaitingSubagents: false },
   });
   expect(ids(view)).toEqual(["m1", "a1", "m3"]);
+});
+
+it("interns settled rows and items when an unrelated live tail changes", () => {
+  const writer = turn("u1", "user", null);
+  const settled = turn("a1", "assistant", "u1");
+  const nextWriter = turn("u2", "user", "a1");
+  const live = turn("a2", "assistant", "u2", { status: "streaming" });
+  const settledView = viewAssistantTurn(settled);
+  const first = viewTranscript({
+    turns: [writer, settled, nextWriter, live],
+    activity: { awaitingSubagents: false },
+  });
+  const changedLive = {
+    ...live,
+    blocks: [{ ...live.blocks[0], textContent: "a longer live tail" } as Block],
+  };
+  const second = viewTranscript({
+    turns: [writer, settled, nextWriter, changedLive],
+    activity: { awaitingSubagents: false },
+  });
+
+  expect(first.rows[1]).toBe(second.rows[1]);
+  expect(first.items.get("a1")).toBe(settledView);
+  expect(second.items.get("a1")).toBe(settledView);
+  expect(first.items.get("a1")?.items[0]).toBe(second.items.get("a1")?.items[0]);
+  expect(first.rows.at(-1)).not.toBe(second.rows.at(-1));
+});
+
+it("keeps delivery-group identity across tail growth but refreshes invocation-derived titles", () => {
+  const invocation = (title: string): Block => ({
+    ...turn("a1", "assistant", null).blocks[0],
+    id: "card",
+    blockType: "custom",
+    content: {
+      kind: "helper-result",
+      props: {
+        agentSlug: "critic",
+        agentName: "Critic",
+        parentTurnId: "a1",
+        toolCallId: "call-1",
+        childThreadId: "child-1",
+        deliveryMode: "background_notification",
+        execution: "execution-1",
+        startedAt: "2026-10-13T00:00:00.000Z",
+        terminalAt: null,
+        title,
+      },
+    },
+  });
+  const reply = turn("a1", "assistant", null, { blocks: [invocation("First title")] });
+  const completion = turn("d1", "system", "a1", {
+    blocks: [],
+    metadata: {
+      kind: "subagent_update",
+      handle: "p1",
+      execution: "execution-1",
+      outcome: "succeeded",
+      childThreadId: "child-1",
+      agentName: "Critic",
+    },
+  });
+  const writer = turn("u2", "user", "d1");
+  const tail = turn("a2", "assistant", "u2", { status: "streaming" });
+  const first = viewTranscript({
+    turns: [reply, completion, writer, tail],
+    activity: { awaitingSubagents: false },
+  });
+  const grown = viewTranscript({
+    turns: [
+      reply,
+      completion,
+      writer,
+      { ...tail, blocks: [{ ...tail.blocks[0], textContent: "grown" } as Block] },
+    ],
+    activity: { awaitingSubagents: false },
+  });
+  expect(first.rows[0]).toBe(grown.rows[0]);
+  expect(first.rows[0]?.deliveries).toBe(grown.rows[0]?.deliveries);
+  expect(first.rows[0]?.deliveries[0]?.id).toBe("d1");
+
+  const renamed = viewTranscript({
+    turns: [{ ...reply, blocks: [invocation("Changed title")] }, completion, writer, tail],
+    activity: { awaitingSubagents: false },
+  });
+  expect(renamed.rows[0]).not.toBe(first.rows[0]);
+  expect(renamed.rows[0]?.deliveries[0]?.events[0]?.title).toBe("Changed title");
 });

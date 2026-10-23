@@ -127,6 +127,11 @@ else
       let failSplit = boundary === "rollback";
       const splitWriter: typeof eventWriter = {
         ...noFailureRecorder,
+        async appendEvents(threadId, events) {
+          let seq = 0n;
+          for (const event of events) seq = await this.appendEvent(threadId, event);
+          return seq;
+        },
         async appendEvent(threadId, event) {
           if (
             failSplit &&
@@ -346,6 +351,8 @@ else
       // Risk: a failure logged for a settlement that never committed, or logged twice for one that retried.
       const emitted: FailureRecord[] = [];
       const logged = {
+        appendEvents: (...args: Parameters<typeof eventWriter.appendEvents>) =>
+          eventWriter.appendEvents(...args),
         appendEvent: (...args: Parameters<typeof eventWriter.appendEvent>) =>
           eventWriter.appendEvent(...args),
         recordFailure: (record: FailureRecord) =>
