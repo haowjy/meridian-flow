@@ -71,6 +71,8 @@ export type ApplyErrorCode = EditResolutionErrorCode | "partial_failure" | "inte
 export interface AgentOrigin {
   type: "agent";
   actorTurnId: string;
+  /** Permanent model-facing chat handle, resolved by the host (for example `c15`). */
+  author?: string;
 }
 
 export type ApplyTransactionOrigin = unknown;

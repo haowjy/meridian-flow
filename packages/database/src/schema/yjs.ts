@@ -71,11 +71,9 @@ export const documentDrafts = pgTable(
     closedCause: text("closed_cause").$type<"discarded" | "document_removed">(),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
-    /** Immutable live→draft block addresses and exact cuts captured when a Work draft is seeded. */
+    /** Immutable live→draft block addresses captured when a Work draft is seeded. */
     seedOrigins: jsonb("seed_origins").$type<Record<string, string>>(),
     seedLiveRoom: text("seed_live_room"),
-    seedLiveSnapshot: byteaColumn("seed_live_snapshot"),
-    seedDraftSnapshot: byteaColumn("seed_draft_snapshot"),
     /** Current visible effect against the review base in the retained text. */
     hasEffect: boolean("has_effect").notNull().default(true),
     /**
@@ -121,7 +119,7 @@ export const documentDrafts = pgTable(
     check("document_drafts_status_valid", sql`${table.status} IN ('active', 'closed')`),
     check(
       "document_drafts_seed_record_shape",
-      sql`(${table.seedOrigins} IS NULL AND ${table.seedLiveRoom} IS NULL AND ${table.seedLiveSnapshot} IS NULL AND ${table.seedDraftSnapshot} IS NULL) OR (${table.kind} = 'work_draft' AND ${table.seedOrigins} IS NOT NULL AND ${table.seedLiveRoom} IS NOT NULL AND ${table.seedLiveSnapshot} IS NOT NULL AND ${table.seedDraftSnapshot} IS NOT NULL)`,
+      sql`(${table.seedOrigins} IS NULL AND ${table.seedLiveRoom} IS NULL) OR (${table.kind} = 'work_draft' AND ${table.seedOrigins} IS NOT NULL AND ${table.seedLiveRoom} IS NOT NULL)`,
     ),
     check(
       "document_drafts_owner_shape",

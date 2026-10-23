@@ -1,10 +1,8 @@
 /** The one model-edit entry point: routes per document to live or a thread peer, saves each reply once. */
 import {
   type AgentEditCore,
-  type FrontierLookup,
   modelResult,
   parseDocumentAddress,
-  projectSeedFrontier,
   type ReadCommand,
   ResponseAttemptStaleError,
   type ResponseCommitAttempt,
@@ -52,7 +50,6 @@ import { type EnsuredThreadPeer, peerLossReason } from "./draft-pulls.js";
 import { DraftNotFoundError } from "./draft-resolver.js";
 import type { DraftSeedRecord } from "./draft-store.js";
 import { DraftCasConflictError } from "./draft-store.js";
-import { draftRoom } from "./observation-rooms.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import {
   pinStaged,
@@ -228,55 +225,12 @@ export function createThreadPeerCorePool(input: {
       seed,
       context: {
         ...context,
-        frontiers: projectedFrontiers(context.frontiers, [
-          { workDraftId: peer.upstreamDraftId, seed },
-        ]),
         interactionContext: {
           mode: "threadPeer" as const,
           peerDraftId: peer.peerDraftId,
           upstreamDraftId: peer.upstreamDraftId,
         },
       },
-    };
-  }
-
-  type FrontierProjection = { workDraftId: string; seed: DraftSeedRecord | null };
-
-  /** One projection door for both tool calls and their later response save. */
-  function projectedFrontiers(
-    frontiers: WriteContext["frontiers"],
-    projections: readonly FrontierProjection[],
-  ): WriteContext["frontiers"] {
-    if (!frontiers) return frontiers;
-    return {
-      ...frontiers,
-      recording: projectedLookup(frontiers.recording, projections),
-      ...(frontiers.planning ? { planning: projectedLookup(frontiers.planning, projections) } : {}),
-    };
-  }
-
-  function projectedLookup(
-    lookup: FrontierLookup,
-    projections: readonly FrontierProjection[],
-  ): FrontierLookup {
-    const byRoom = new Map(
-      projections.flatMap(({ workDraftId, seed }) =>
-        seed ? [[draftRoom(workDraftId), seed] as const] : [],
-      ),
-    );
-    if (!byRoom.size) return lookup;
-    return async (room) => {
-      const native = await lookup(room);
-      if (native) return native;
-      const seed = byRoom.get(room);
-      if (!seed) return null;
-      return projectSeedFrontier(await lookup(seed.liveRoom), {
-        sourceRoom: seed.liveRoom,
-        sourceSnapshot: seed.liveSnapshot,
-        targetRoom: room,
-        targetSnapshot: seed.draftSnapshot,
-        origins: new Map(Object.entries(seed.origins)),
-      });
     };
   }
 
@@ -624,16 +578,7 @@ export function createThreadPeerCorePool(input: {
     // Each saved document records in the room its save committed into.
     const saveOptions = {
       ...finalizeOptions(),
-      ...(options?.recordingFrontier
-        ? {
-            recordingFrontier: projectedLookup(
-              options.recordingFrontier,
-              [...record.documents.values()].flatMap(({ pin }) =>
-                pin ? [{ workDraftId: pin.upstreamDraftId, seed: pin.seed }] : [],
-              ),
-            ),
-          }
-        : {}),
+      ...(options?.recordingFrontier ? { recordingFrontier: options.recordingFrontier } : {}),
     };
     // The first attempt is prepared before the transaction opens, off every lock. One
     // that cannot be prepared yet (a document `confirm` will refuse) is prepared again

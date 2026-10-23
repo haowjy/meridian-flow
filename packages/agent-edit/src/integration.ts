@@ -19,7 +19,7 @@ export type {
   ObservationFrontier,
   ReplyMutations,
 } from "./frontier.js";
-export { createReplyMutations, projectSeedFrontier } from "./frontier.js";
+export { createReplyMutations } from "./frontier.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export * from "./index.js";

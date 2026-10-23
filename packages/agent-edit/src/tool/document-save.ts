@@ -29,7 +29,7 @@ import type {
 } from "./commit-detection.js";
 import type { CopySummary } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import { observeRendered } from "./observation.js";
+import { loadConcurrent, observeRendered } from "./observation.js";
 import { rejectedWriteResult, renderSettledReceipts } from "./receipt.js";
 import type {
   DocumentCommandName,
@@ -350,22 +350,37 @@ export function createDocumentSave(deps: {
     recordingFrontier: FrontierLookup,
   ): Promise<ResponseCommitDocumentResult> {
     try {
-      const prev = await recordingFrontier(room);
       const accepted = document.receipts.slice(0, doc.updates.length);
-      const { frontier, concurrent } = observeRendered(
-        {
-          doc: after,
-          model: deps.model,
-          links,
-          ownRemoved: new Set(
-            doc.updates.flatMap((entry) =>
-              entry.deletedBlocks.map((block) => `${block.clientID}:${block.clock}`),
-            ),
+      const source = {
+        doc: after,
+        model: deps.model,
+        links,
+        ownRemoved: new Set(
+          doc.updates.flatMap((entry) =>
+            entry.deletedBlocks.map((block) => `${block.clientID}:${block.clock}`),
           ),
-          written: doc.updates
-            .filter((_, index) => !accepted[index]?.result.awarenessDegraded)
-            .map((entry) => entry.update),
-        },
+        ),
+        written: doc.updates
+          .filter((_, index) => !accepted[index]?.result.awarenessDegraded)
+          .map((entry) => entry.update),
+        ownActorTurnIds: new Set(doc.updates.map((entry) => entry.actor.turnId)),
+        ...(coordinator.concurrentUpdatesSince
+          ? {
+              loadConcurrent: (baselineDoc: Y.Doc) =>
+                coordinator.concurrentUpdatesSince?.({
+                  docId: doc.docId,
+                  doc: after,
+                  baselineDoc,
+                  sinceStateVector: Y.encodeStateVector(baselineDoc),
+                  access: accessFor(doc.interactionContext),
+                }) ?? Promise.resolve([]),
+            }
+          : {}),
+      };
+      const prev = await recordingFrontier(room);
+      const updates = await loadConcurrent(source, prev);
+      const { frontier, concurrent } = observeRendered(
+        updates ? { ...source, concurrent: updates } : source,
         room,
         prev,
         accepted.map((receipt) => receipt.result),

@@ -7,10 +7,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import {
   type AgentEditJournal,
   bindBlockOrigins,
-  bytesEqual,
-  type ConcurrentUpdate,
   type ConcurrentUpdateOrigin,
-  cloneYDoc,
   type DocumentAccess,
   DocumentAccessLostError,
   type DocumentCoordinator,
@@ -21,8 +18,6 @@ import {
   type StagedRoomEntries,
   type StagedWriteSaveResult,
   type UpdateJournal,
-  yjsDeltaUpdate,
-  yjsUpdateFromState,
 } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
@@ -30,6 +25,7 @@ import * as Y from "yjs";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { DocumentRemovals } from "../../context/ports/document-removal.js";
 import type { Branches } from "./branches.js";
+import { partitionConcurrentUpdates } from "./concurrent-updates.js";
 import type { DraftCoordinator } from "./draft-coordinator.js";
 import type { DraftJournalRow, DraftReplayJournalReads } from "./draft-journal.js";
 import { peerLossReason, ThreadPeerPullLost, type WorkDraftLookup } from "./draft-pulls.js";
@@ -386,58 +382,11 @@ async function concurrentUpstreamJournalRows(
 
 function originForJournalRow(row: DraftJournalRow): ConcurrentUpdateOrigin {
   if (row.source === "agent") {
-    return { type: "agent" as const, actorTurnId: row.turnId ?? row.threadId ?? "unknown-agent" };
+    return {
+      type: "agent" as const,
+      actorTurnId: row.turnId ?? row.threadId ?? "unknown-agent",
+      ...(row.threadHandle ? { author: `agent (${row.threadHandle})` } : {}),
+    };
   }
   return { type: "human" as const, userId: row.actorUserId ?? "unknown" };
-}
-
-/**
- * Each row's effect on the baseline in order, then the residual the journal can't explain,
- * attributed to the writer.
- */
-function partitionConcurrentUpdates(
-  baselineState: Uint8Array | null,
-  baselineSnapshot: Y.Snapshot,
-  journalRows: readonly ConcurrentUpdate[],
-  upstreamState: Uint8Array,
-): ConcurrentUpdate[] {
-  // A state vector alone misses delete-only edits: compare structs and tombstones.
-  const rows = journalRows.filter((row) => !Y.snapshotContainsUpdate(baselineSnapshot, row.update));
-  if (rows.length === 0 && baselineState && bytesEqual(baselineState, upstreamState)) return [];
-  const scratch = new Y.Doc({ gc: false });
-  if (baselineState && baselineState.byteLength > 0) Y.applyUpdate(scratch, baselineState);
-  try {
-    const updates: ConcurrentUpdate[] = [];
-    for (const row of rows) {
-      const update = effectiveUpdateFromApplyingToScratch(scratch, row.update);
-      if (update) updates.push({ update, origin: row.origin });
-    }
-    const target = yjsUpdateFromState(upstreamState);
-    try {
-      const residual = yjsDeltaUpdate(target, scratch);
-      if (residual)
-        updates.push({ update: residual, origin: { type: "human", userId: "unknown" } });
-    } finally {
-      target.destroy();
-    }
-    return updates;
-  } finally {
-    scratch.destroy();
-  }
-}
-
-function effectiveUpdateFromApplyingToScratch(
-  scratch: Y.Doc,
-  update: Uint8Array,
-): Uint8Array | null {
-  const probe = cloneYDoc(scratch);
-  try {
-    Y.applyUpdate(probe, update);
-    const effective = yjsDeltaUpdate(probe, scratch);
-    if (!effective) return null;
-    Y.applyUpdate(scratch, effective);
-    return effective;
-  } finally {
-    probe.destroy();
-  }
 }

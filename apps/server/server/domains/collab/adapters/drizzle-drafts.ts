@@ -203,8 +203,6 @@ export function createDrizzleDraftStore(
             ? {
                 seedOrigins: seed.origins,
                 seedLiveRoom: seed.liveRoom,
-                seedLiveSnapshot: Buffer.from(seed.liveSnapshot),
-                seedDraftSnapshot: Buffer.from(seed.draftSnapshot),
               }
             : {}),
           hasEffect: false,

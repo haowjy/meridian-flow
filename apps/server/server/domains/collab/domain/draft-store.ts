@@ -26,8 +26,6 @@ export type DraftSeedRecord = {
   /** Draft canonical item id -> live canonical item id. */
   origins: Readonly<Record<string, string>>;
   liveRoom: string;
-  liveSnapshot: Uint8Array;
-  draftSnapshot: Uint8Array;
 };
 
 /** Hydrate the block-address context carried by an addressable live-to-draft seed. */

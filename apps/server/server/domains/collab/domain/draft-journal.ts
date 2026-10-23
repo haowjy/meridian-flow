@@ -12,6 +12,8 @@ export type DraftJournalRow = {
   toolCallId?: string | null;
   source: "agent" | "writer" | "server";
   threadId: ThreadId | null;
+  /** Permanent model-facing handle for agent rows. */
+  threadHandle?: string | null;
   turnId: TurnId | null;
   actorUserId: UserId | null;
   updateData: Uint8Array;

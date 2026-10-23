@@ -104,8 +104,6 @@ const draftColumns = {
   schemaVersion: documentDrafts.schemaVersion,
   seedOrigins: documentDrafts.seedOrigins,
   seedLiveRoom: documentDrafts.seedLiveRoom,
-  seedLiveSnapshot: documentDrafts.seedLiveSnapshot,
-  seedDraftSnapshot: documentDrafts.seedDraftSnapshot,
 };
 
 /**
@@ -147,12 +145,10 @@ export function mapDraft(row: DraftSelectRow): DraftSnapshot {
     hasEffect: row.hasEffect,
     schemaVersion: unpackCollabSchemaVersion(row.schemaVersion),
     seed:
-      row.seedOrigins && row.seedLiveRoom && row.seedLiveSnapshot && row.seedDraftSnapshot
+      row.seedOrigins && row.seedLiveRoom
         ? {
             origins: row.seedOrigins,
             liveRoom: row.seedLiveRoom,
-            liveSnapshot: row.seedLiveSnapshot,
-            draftSnapshot: row.seedDraftSnapshot,
           }
         : null,
   };
