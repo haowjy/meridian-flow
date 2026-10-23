@@ -2,11 +2,10 @@
 
 import { markdownCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import type { Node as PMNode } from "@tiptap/pm/model";
-import type {
-  MarkdownWorkerRequest,
-  MarkdownWorkerResponse,
-  OpenCodePath,
+import {
+  type MarkdownWorkerRequest,
+  type MarkdownWorkerResponse,
+  nodePath,
 } from "./markdown-worker-protocol";
 
 const codec = markdownCodec({ schema: buildDocumentSchema() });
@@ -114,26 +113,6 @@ function hash(value: string): string {
     result = Math.imul(result, 0x01000193);
   }
   return (result >>> 0).toString(36);
-}
-
-function nodePath(blocks: readonly PMNode[], target: PMNode | null): OpenCodePath {
-  if (!target) return null;
-  for (let block = 0; block < blocks.length; block++) {
-    const root = blocks[block];
-    if (!root) continue;
-    const found = descendantPath(root, target);
-    if (found) return { block, path: found };
-  }
-  return null;
-}
-
-function descendantPath(node: PMNode, target: PMNode): number[] | null {
-  if (node === target) return [];
-  for (let index = 0; index < node.childCount; index++) {
-    const path = descendantPath(node.child(index), target);
-    if (path) return [index, ...path];
-  }
-  return null;
 }
 
 function post(message: MarkdownWorkerResponse): void {

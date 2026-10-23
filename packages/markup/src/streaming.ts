@@ -13,6 +13,7 @@ interface ParsedStreamDocument {
   blocks: PMNode[];
   ranges: SourceBlock[];
   tree: MdastRoot;
+  preparedLength: number;
 }
 
 export function parseStreamingDocument(
@@ -24,7 +25,7 @@ export function parseStreamingDocument(
   const openCode = markdownOpenCode(canonical.blocks, source);
   if (!options.repair) return { blocks: canonical.blocks, openCode };
 
-  const tail = repairableTail(canonical.tree, source.length);
+  const tail = repairableTail(canonical.tree, canonical.preparedLength);
   const blockStart = canonical.ranges.at(-1)?.from;
   if (!tail || blockStart === undefined) return { blocks: canonical.blocks, openCode };
 
@@ -119,6 +120,7 @@ function repairIsSafe(canonical: readonly PMNode[], candidate: readonly PMNode[]
   const last = canonical.at(-1);
   const candidateLast = candidate.at(-1);
   if (!last || !candidateLast || last.eq(candidateLast)) return false;
+  if (!addsFormatting(last, candidateLast)) return false;
 
   const beforeCode = codeNodes(canonical);
   const afterCode = codeNodes(candidate);
@@ -126,4 +128,27 @@ function repairIsSafe(canonical: readonly PMNode[], candidate: readonly PMNode[]
     beforeCode.length === afterCode.length &&
     beforeCode.every((node, index) => afterCode[index]?.eq(node))
   );
+}
+
+function addsFormatting(before: PMNode, after: PMNode): boolean {
+  const available = formattingTokens(before);
+  for (const [token, count] of formattingTokens(after)) {
+    if ((available.get(token) ?? 0) < count) return true;
+  }
+  return false;
+}
+
+function formattingTokens(root: PMNode): Map<string, number> {
+  const tokens = new Map<string, number>();
+  root.descendants((node) => {
+    if (!node.isText) addToken(tokens, `node:${node.type.name}:${JSON.stringify(node.attrs)}`);
+    for (const mark of node.marks) {
+      addToken(tokens, `mark:${mark.type.name}:${JSON.stringify(mark.attrs)}:${node.textContent}`);
+    }
+  });
+  return tokens;
+}
+
+function addToken(tokens: Map<string, number>, token: string): void {
+  tokens.set(token, (tokens.get(token) ?? 0) + 1);
 }

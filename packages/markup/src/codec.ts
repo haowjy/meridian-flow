@@ -133,6 +133,7 @@ function buildMarkupCodec(
     sourceMap: PresentationSourceRun[];
     ranges: SourceBlock[];
     tree: MdastRoot;
+    preparedLength: number;
   } => {
     const prepared = preprocess(content);
     const source = prepared.value;
@@ -166,7 +167,7 @@ function buildMarkupCodec(
           ...blockOccurrenceSpans(node, child, source === content ? source : null, content.length),
         );
     }
-    return { blocks, spans, sourceMap, ranges, tree };
+    return { blocks, spans, sourceMap, ranges, tree, preparedLength: source.length };
   };
 
   const parseDocument = (
@@ -182,6 +183,7 @@ function buildMarkupCodec(
         sourceMap: [],
         ranges: [{ from: 0, to: content.length }],
         tree: { type: "root", children: [] } as MdastRoot,
+        preparedLength: content.length,
       };
     const parsed = parseTopLevel(content, { schema }, withSpans, withSourceMap, withRanges);
     return parsed.blocks.length > 0

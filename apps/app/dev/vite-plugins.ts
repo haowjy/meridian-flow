@@ -31,6 +31,9 @@ export function markdownWorkerDevCharacterReferencePlugin(repoRoot: string): Plu
   return {
     name: "markdown-worker-dev-character-reference-decoder",
     apply: "serve",
+    // Vite's dev dependency optimizer runs before the worker-only plugin pipeline,
+    // so the alias must also cover client and SSR resolution. Production stays
+    // worker-scoped through markdownWorkerCharacterReferencePlugin.
     config() {
       return {
         resolve: {
