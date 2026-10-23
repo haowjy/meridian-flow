@@ -359,6 +359,13 @@ export function createDrizzleApplyClick(
             };
             if (!(await deps.branches.lockActive(prepared.branchId))) return finish(closed());
             await lockDocumentMutation(tx, command.documentId);
+            const currentBase = await deps.coordinator.loadBase(prepared.base.snapshot.draftId);
+            if (
+              currentBase.snapshot.status === "closed" ||
+              currentBase.snapshot.documentId !== command.documentId ||
+              currentBase.snapshot.branchId !== prepared.branchId
+            )
+              return finish(closed());
             const stillActive = await tx
               .select({ ordinal: applyCommandEffects.ordinal })
               .from(applyCommandEffects)
@@ -405,6 +412,14 @@ export function createDrizzleApplyClick(
               const skipped = effects.filter(
                 (effect) => !reversed.some((candidate) => candidate.ordinal === effect.ordinal),
               );
+              if (!reversed.length)
+                return finish({
+                  status: "unapplied",
+                  commandId,
+                  applyCommandId: command.request.applyCommandId,
+                  reversedGroupIds: [],
+                  skippedGroupIds: skipped.map((effect) => effect.groupId),
+                });
               const receipts: Parameters<typeof recordDocumentEdit>[1]["receipts"] = [];
               for (const edit of inverse.edits) {
                 for (const part of edit.parts) {
@@ -437,7 +452,7 @@ export function createDrizzleApplyClick(
                 });
 
               const groupIds = new Set(reversed.map((effect) => effect.groupId));
-              const write = deps.coordinator.prepareAppend(prepared.base, [], {
+              const write = deps.coordinator.prepareAppend(currentBase, [], {
                 authorServerRows(prefix) {
                   let row: Uint8Array | undefined;
                   const capture = (bytes: Uint8Array) => {
