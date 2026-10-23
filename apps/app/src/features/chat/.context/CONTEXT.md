@@ -1,7 +1,6 @@
 # features/chat — Context map
 
-This directory's durable contracts are split by concern so turn rendering and
-draft-control changes can be understood independently.
+The chat's contracts, one page per concern.
 
 - [Turn composition](turn-composition.md) — the process/text/artifact render
   model, tool kinds, tool rendering, and positional keys.
@@ -21,6 +20,15 @@ draft-control changes can be understood independently.
 - [Draft review](../../draft-review/.context/draft-review.md) — room-derived text review, frozen Apply
   queues, local Discard history and draft-only tabs. `useDraftDock` scopes the
   chat's changes; projection and commands belong to `features/draft-review`.
+  The draft dock is this chat's changes only, and a chat with none shows no
+  dock. Apply and Discard act on this chat's projected groups per file; only a
+  new document is one whole-draft item. Each document name opens its own
+  review, and there is no summary-wide Review command: Work-wide lists and
+  Apply all stay on the Work page. Coarse-pointer targets are 44px. Inline
+  Apply uses frozen server clicks; text Discard uses caller-owned local
+  history. A draft-only tab is the document's one tab and settles in place.
+- [Failure cards](failure-cards.md) — the one projection behind every chat
+  failure, where each card anchors, its lifetime and the announcer.
 - [Compaction surfaces](compaction-surfaces.md) — divider rows, non-rendered compaction bookkeeping turns, a divider as a closing row, and optimistic writer
   controls (`/compact`, withdrawal).
 - [Fork and handoff](fork-and-handoff.md) — the turn actions, navigate-first
@@ -49,6 +57,11 @@ draft-control changes can be understood independently.
   Remote absence requires a server 404 before dissolution; failed reads and
   inconclusive requests retain the destination and rows. Composer
   clears when the journal accepts ownership, not when the network completes.
+  Composer drafts have one tab-local session owner and clear synchronously into
+  the journal on Send. Work selection is prospective context, not a separate
+  creation draft. Pending upload bytes don't persist; uploaded reference atoms
+  do. `CreationComposer` sends through the route-owned pane-aware command and
+  never writes a URL.
 
 - Transcript links follow through `useChatLinkFollowing.ts` over the shared
   [`features/links`](../../links/AGENTS.md) follower; its header holds chat's
@@ -62,4 +75,4 @@ draft-control changes can be understood independently.
 Durable change detail renders only through the owning turn receipt; the
 transcript does not add a conversation-wide aggregate record.
 
-See [`../AGENTS.md`](../AGENTS.md) for the working mental model and entry points.
+The invariants are in [`../AGENTS.md`](../AGENTS.md).

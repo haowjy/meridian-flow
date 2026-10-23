@@ -31,8 +31,20 @@ ownership.
 
 The finalizer covers commit, cancel, refusal, pointer loss, suppression, and
 unmount. It releases the hold and kernel token exactly once. Suppression is
-kernel-owned, and the lane adds no timer or independent pointer state. Touch
+kernel-owned, and this surface adds no timer or independent pointer state. Touch
 uses the same identity and seam calculation after its movement threshold.
+
+A picture travels by ProseMirror's own drag, landing between two words with
+the dropcursor; its paragraph's margin handle still moves the whole line to a
+block seam. ProseMirror's HTML5 drag is refused for block objects because
+re-parsing the dropped HTML turns a figure into a bare paragraph.
+
+The handle's menu (left or right click, the `grip` claim rung, both ending in
+one open call) offers Turn into only on text blocks, reusing the toolbar's
+`blockTypeRefusal` fence and greying with a reason when refused; a move with
+nowhere to go is absent. Alignment lives on the toolbar. A list, quote or table
+has no Turn into row, so the menu turns a paragraph into a list but never back;
+un-listing lives on the toolbar.
 
 ## Placement
 

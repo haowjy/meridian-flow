@@ -35,9 +35,9 @@ slot aborts it.
 - Selected state comes from object-selection decoration, not a node-view
   lifecycle prop. The table drop resolver is shared by dropcursor, node drag,
   and file drop, so a structural drop never manufactures a table column.
-- A picture is one object at one size wherever it stands (human ruling,
-  2026-07-30, the Docs/Word model). A big picture mid-sentence makes a tall line;
-  that is the answer, not a bug to cap. Never reintroduce a mid-sentence-only
+- A picture is one object at one size wherever it stands, as in Docs or Word.
+  A big picture mid-sentence makes a tall line; that is the answer, not a bug
+  to cap. Never reintroduce a mid-sentence-only
   decoration, class, or cap, or a size only one writer can see.
 - An empty-`src` slot with no live owner (a reload or redo left it) offers
   Remove, never Retry; a token with a live owner is a collaborator's upload and

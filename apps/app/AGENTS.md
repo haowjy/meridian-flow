@@ -1,14 +1,14 @@
 # @meridian/app
 
-Authenticated writing workspace. This is a thin React/TanStack Start shell over
-client contracts, stores, and server-owned runtime behavior; business logic stays
-in packages or server domains.
+The authenticated writing workspace: a thin React/TanStack Start shell over
+client contracts, stores and server-owned runtime behavior. Business logic
+lives in packages or server domains.
 
 ## Rules that shape the shell
 
-- Use Portless HTTPS routes for browser and end-to-end work; never hard-code raw
-  dev ports. Keep writer-facing vocabulary: projects, Works, chapters, context,
-  threads, agents, and turns.
+- Never hard-code dev ports; browser and end-to-end work use Portless routes.
+  Keep writer-facing vocabulary: projects, Works, chapters, context, threads,
+  agents and turns.
 - Components do not own provider/database logic. Use public client APIs and
   query/store seams. Server auth is WorkOS AuthKit; do not add an app-local auth
   adapter.
@@ -18,9 +18,10 @@ in packages or server domains.
   Works and threads have no offline contract yet. New persistent state picks a
   tier (content, continuity, workbench, preference, or cache) before it ships.
 - Navigate first once a public address exists. Persist and connect in the
-  background, and show failure on the destination rather than bouncing back. A
-  server-assigned public address stays P0 until a real neutral pending
-  destination exists; never mount a fabricated route just to navigate early.
+  background, and show failure on the destination rather than bouncing back.
+  Where only the server can assign the address, wait for it until a real
+  neutral pending destination exists; never mount a fabricated route just to
+  navigate early.
 - Define command authority, immediate state, rejection/ambiguity behavior,
   overlap and account fences, and reload promise before wiring mutations. Use
   TanStack Query for transient commands; no Meridian mutation wrapper, global
@@ -66,5 +67,5 @@ in packages or server domains.
   [components/app/link-chip](src/components/app/link-chip/AGENTS.md)
 - Test fixtures: [test-support](src/test-support/AGENTS.md)
 
-Server config, route grammar, transport, and detailed query/store contracts are
-in the context reference; do not restate them here.
+Server config, route grammar, transport and query/store contracts live in
+[.context/CONTEXT.md](.context/CONTEXT.md).

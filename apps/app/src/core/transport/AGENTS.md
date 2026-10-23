@@ -22,7 +22,7 @@ and only its empty-to-pending edge publishes. Every observer therefore sees
 pending writing by the first acknowledgement edge, before any server read
 caused by that send can end a draft review. Never move the registration after
 the provider, and never publish per update: sessions emit on edges only.
-Depth and the incident behind it: [`.context/CONTEXT.md`](.context/CONTEXT.md).
+Depth: [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
 ## Key rules
 
