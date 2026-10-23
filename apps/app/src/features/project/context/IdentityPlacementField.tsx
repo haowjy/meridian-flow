@@ -8,13 +8,8 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
-import {
-  type ContextOwner,
-  type ProjectContextTreeScheme,
-  storedFilename,
-} from "@meridian/contracts/protocol";
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Check, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -25,7 +20,7 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { cn } from "@/lib/utils";
 import { useAccountResourceReplica } from "./account-feature-context";
 import {
-  entryNameKey,
+  allocateContextEntryArrivalName,
   entryNameStemEnd,
   invalidContextEntryNameReason,
 } from "./context-entry-name";
@@ -46,13 +41,9 @@ import type { IdentityCommitOutcome, IdentityCommitTarget } from "./use-identity
 import { ValidationNote } from "./validation-note";
 
 type ExitReason = "escape" | "blur" | "commit";
-type LocalCollision = AnnotatedFileSuggestion | null;
 export type QueuedIdentityFailure = { kind: "error"; name: string };
 
-type IdentityNote =
-  | { kind: "local-collision"; collision: AnnotatedFileSuggestion; name: string }
-  | { kind: "error"; message: string }
-  | null;
+type IdentityNote = { kind: "error"; message: string } | null;
 
 export function IdentityPlacementField({
   projectId,
@@ -197,56 +188,12 @@ export function IdentityPlacementField({
   const liveReason = noteValue.trim()
     ? invalidContextEntryNameReason(noteValue.trim(), location.leaf)
     : null;
-  const localCollision = useMemo(
-    () =>
-      findCollision(
-        allEntries,
-        destination?.scheme ?? location.scheme,
-        destination?.folderPath ?? location.parentPath,
-        noteValue.trim(),
-        location.leaf,
-        location.path,
-      ),
-    [allEntries, destination, location, noteValue],
-  );
   const identityNote = deriveIdentityNote({
-    localCollision,
-    name: noteValue.trim(),
     validationReason: commitReason ?? liveReason,
     requestError,
   });
   const note =
-    identityNote?.kind === "local-collision" ? (
-      <ValidationNote
-        severity={{
-          level: "error",
-          message:
-            identityNote.collision.kind === "dir"
-              ? t`A folder named ${identityNote.name} already exists in this location.`
-              : t`A file named ${identityNote.name} already exists in this location.`,
-        }}
-        action={
-          identityNote.collision.kind !== "dir" ? (
-            <button
-              data-file-suggestion
-              type="button"
-              tabIndex={-1}
-              className="focus-ring ml-1.5 font-medium underline underline-offset-2"
-              onClick={() =>
-                onOpenExisting(
-                  identityNote.collision.scheme,
-                  identityNote.collision.path,
-                  ownerOfScheme(identityNote.collision.scheme),
-                )
-              }
-            >
-              <Trans>Open existing</Trans>
-            </button>
-          ) : undefined
-        }
-        className="m-1 mb-0"
-      />
-    ) : identityNote?.kind === "error" ? (
+    identityNote?.kind === "error" ? (
       <ValidationNote
         severity={{ level: "error", message: identityNote.message }}
         className="m-1 mb-0"
@@ -267,22 +214,21 @@ export function IdentityPlacementField({
       setNoteValue(value);
       return;
     }
-    if (
-      findCollision(
-        allEntries,
-        destination?.scheme ?? location.scheme,
-        destination?.folderPath ?? location.parentPath,
-        name,
-        location.leaf,
-        location.path,
-      )
-    ) {
-      setNoteValue(value || name);
-      return;
-    }
     await runCommit({
       destination: identityDestination(location, editorWorkId, destination ?? undefined),
-      name,
+      name: await allocateContextEntryArrivalName(
+        name,
+        folderChildren(
+          allEntries,
+          destination?.scheme ?? location.scheme,
+          destination?.folderPath ?? location.parentPath,
+        )
+          .filter((entry) => entry.entryId !== tab.documentId)
+          .map((entry) => ({ entryId: entry.entryId, name: entry.name, kind: entry.kind })),
+        "file",
+        location.leaf,
+      ),
+      typedName: name,
     });
   }
 
@@ -433,37 +379,13 @@ export function IdentityPlacementField({
   );
 }
 
-function findCollision(
-  entries: readonly AnnotatedFileSuggestion[],
-  scheme: ProjectContextTreeScheme,
-  folderPath: string,
-  typed: string,
-  currentName: string,
-  currentPath: string | null,
-): LocalCollision {
-  if (!typed) return null;
-  // The same name by the codec's spelling: `Chapter 12.md` finds `Chapter 12`.
-  const stored = storedFilename(typed, currentName);
-  const key = entryNameKey(stored.ok ? stored.name : typed);
-  return (
-    folderChildren(entries, scheme, folderPath).find(
-      (entry) => entryNameKey(entry.name) === key && entry.path !== currentPath,
-    ) ?? null
-  );
-}
-
 function deriveIdentityNote({
-  localCollision,
-  name,
   validationReason,
   requestError,
 }: {
-  localCollision: LocalCollision;
-  name: string;
   validationReason: string | null;
   requestError: string | null;
 }): IdentityNote {
-  if (localCollision) return { kind: "local-collision", collision: localCollision, name };
   if (validationReason) return { kind: "error", message: validationReason };
   if (requestError) return { kind: "error", message: requestError };
   return null;

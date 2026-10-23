@@ -1,5 +1,6 @@
 /** Postgres-backed coverage for promoting work-scoped scratch documents. */
 
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -542,7 +543,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ ok: false, error: { code: "operation_mismatch" } });
     });
 
-    it("returns a collision at the renamed identity rather than the obsolete path", async () => {
+    it("lands beside an occupied name at the renamed identity", async () => {
       const { projectId, workId, port } = await arrangeUntitled();
       const folderId = await destinationFolder(projectId);
       await port.commitWriterLocation("manuscript://Act 1", "manuscript://Renamed", {
@@ -565,8 +566,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         }),
       ).resolves.toMatchObject({
-        status: "conflict",
-        collision: { scheme: "manuscript", path: "Renamed/Untitled 1" },
+        status: "moved",
+        scheme: "manuscript",
+        path: "Renamed/Untitled 1 (2)",
       });
       await expect(port.stat("manuscript://Act 1")).resolves.toMatchObject({ ok: false });
     });
@@ -617,6 +619,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: folderId,
         contextSourceId: otherSourceId,
         name: "Destination",
+        documentAlias: folderDocumentName("Destination"),
       });
       await expect(
         port.commitWriterLocation("scratch://@w1/Untitled 1", "manuscript://Act 1/Untitled 1", {
@@ -1215,7 +1218,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("returns the exact existing folder locator instead of nesting into it", async () => {
+    it("lands an arriving folder beside the exact existing folder", async () => {
       const { workId, port } = await arrangeUntitled();
       await expect(port.mkdir(`scratch://@w1/Source/Children`)).resolves.toMatchObject({
         ok: true,
@@ -1236,18 +1239,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         }),
       ).resolves.toEqual({
-        status: "conflict",
-        collision: {
-          scheme: "manuscript",
-          path: "Act 1/Source",
-          authority: { kind: "project" },
-        },
+        status: "moved",
+        linkUpdate: { links: 0, documents: 0 },
+        scheme: "manuscript",
+        path: "Act 1/Source (2)",
+        name: "Source (2)",
       });
       await expect(port.list("manuscript://Act 1/Source")).resolves.toEqual({
         ok: true,
         value: { uri: "manuscript://Act 1/Source", entries: [] },
       });
-      await expect(port.list(`scratch://@w1/Source`)).resolves.toMatchObject({
+      await expect(port.list("manuscript://Act 1/Source (2)/Children")).resolves.toMatchObject({
         ok: true,
       });
     });

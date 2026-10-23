@@ -13,7 +13,7 @@
  * locks of every source involved (current and final) and the row locks §14 names.
  */
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
-import type { Filetype } from "@meridian/contracts/protocol";
+import { allocateFilename, type Filetype, folderDocumentName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, folders } from "@meridian/database/schema";
 import { eq, inArray } from "drizzle-orm";
@@ -30,6 +30,7 @@ import {
   type SplitFolder,
   type SplitPlan,
 } from "./folder-normalization.js";
+import { normalizeNames } from "./name-normalization.js";
 import { bumpLocationVersions, recordLocationHistory } from "./node-locations.js";
 import { ensureLiveFolderPath } from "./placement.js";
 import { chainPrefix, loadFolderChains } from "./tree-addresses.js";
@@ -79,6 +80,12 @@ type PlannedNode = {
 type PreparedMove = {
   nodes: ReadonlyMap<string, PlannedNode>;
   split: SplitPlan;
+  target: MoveTarget;
+};
+
+export type MoveNodeResult = {
+  documentIds: readonly DocumentId[];
+  target: MoveTarget;
 };
 
 function filenameOf(node: {
@@ -96,19 +103,25 @@ function filenameOf(node: {
 export async function moveNode(
   db: Database,
   move: NodeMove,
-): Promise<Result<readonly DocumentId[], MoveFault>> {
+): Promise<Result<MoveNodeResult, MoveFault>> {
   const prepared = await prepareMove(db, move);
   if (!prepared.ok) return prepared;
   const installed = await installMove(db, move, prepared.value);
   if (!installed.ok) return installed;
   const moving = [...prepared.value.nodes.values()].filter((node) => node.to !== null);
   await recordMove(db, moving);
-  return Ok(moving.filter((node) => node.kind === "document").map((node) => node.id as DocumentId));
+  return Ok({
+    documentIds: moving
+      .filter((node) => node.kind === "document")
+      .map((node) => node.id as DocumentId),
+    target: prepared.value.target,
+  });
 }
 
 /** No writes: the whole relocation plan, checked against the final path. */
 async function prepareMove(db: Database, move: NodeMove): Promise<Result<PreparedMove, MoveFault>> {
-  const { node: ref, to } = move;
+  const { node: ref } = move;
+  const to = await freeTarget(db, move);
   const current = await currentNode(db, ref);
   if (!current) return Err({ code: "stale_source", node: ref });
   const path = [...to.dir, filenameOf({ kind: ref.kind, ...to })].join("/");
@@ -167,7 +180,7 @@ async function prepareMove(db: Database, move: NodeMove): Promise<Result<Prepare
     });
   }
 
-  const free = await checkFinalPath(db, move, path, current.node.id);
+  const free = await checkFinalPath(db, { ...move, to }, path);
   if (!free.ok) return free;
 
   // The split, from the snapshot: original names and coordinates.
@@ -183,7 +196,34 @@ async function prepareMove(db: Database, move: NodeMove): Promise<Result<Prepare
     ),
     leaves: (folder) => nodes.get(folder)?.to != null,
   });
-  return Ok({ nodes, split });
+  return Ok({ nodes, split, target: to });
+}
+
+async function freeTarget(db: Database, move: NodeMove): Promise<MoveTarget> {
+  const desired =
+    move.node.kind === "document"
+      ? ({ kind: "document", name: move.to.name, extension: move.to.extension ?? "" } as const)
+      : ({ kind: "folder", name: move.to.name } as const);
+  const filename = await allocateFilename(desired, async ({ filename }) => {
+    const found = await createTreeReader(db).resolvePath(LIVE_TREE, {
+      contextSourceId: move.to.contextSourceId,
+      path: [...move.to.dir, filename].join("/"),
+      as: move.node.kind,
+    });
+    if (found.kind === "not_found") return false;
+    if (found.kind === "ambiguous") return true;
+    return (
+      (found.node.kind === "document" ? found.node.document.id : found.node.folder.id) !==
+      move.node.id
+    );
+  });
+  if (move.node.kind === "folder") return { ...move.to, name: filename };
+  const extension = move.to.extension ?? "";
+  return {
+    ...move.to,
+    name: extension ? filename.slice(0, -(extension.length + 1)) : filename,
+    extension,
+  };
 }
 
 /**
@@ -195,7 +235,6 @@ async function checkFinalPath(
   db: Database,
   move: NodeMove,
   path: string,
-  selfId: string,
 ): Promise<Result<void, MoveFault>> {
   const tree = createTreeReader(db);
   const segments = path.split("/");
@@ -206,13 +245,9 @@ async function checkFinalPath(
       path: segments.slice(0, length).join("/"),
       as: isFinal ? move.node.kind : "folder",
     });
-    if (found.kind === "not_found") break;
-    if (found.kind === "ambiguous") return Err({ code: "conflict", node: move.node });
-    const occupant = found.node.kind === "document" ? found.node.document.id : found.node.folder.id;
-    if (occupant === selfId) break;
-    if (isFinal || found.node.kind === "document") {
+    if (found.kind === "not_found" || isFinal) break;
+    if (found.kind === "ambiguous" || found.node.kind === "document")
       return Err({ code: "conflict", node: move.node });
-    }
   }
   return Ok(undefined);
 }
@@ -225,7 +260,8 @@ async function installMove(
 ): Promise<Result<void, MoveFault>> {
   await testHook("moves.beforeInstall");
   const tx = currentDrizzleDb(db);
-  const { node, to } = move;
+  const { node } = move;
+  const to = prepared.target;
   if (prepared.split.boundaries.length > 0) await applySplit(db, prepared.split);
   const ensured = await ensureLiveFolderPath(db, {
     contextSourceId: to.contextSourceId,
@@ -247,14 +283,22 @@ async function installMove(
         updatedAt: now,
       })
       .where(eq(documents.id, node.id));
+    await normalizeNames(db, [node]);
     return Ok(undefined);
   }
   await tx
     .update(folders)
-    .set({ contextSourceId: to.contextSourceId, parentId, name: to.name, updatedAt: now })
+    .set({
+      contextSourceId: to.contextSourceId,
+      parentId,
+      name: to.name,
+      documentAlias: folderDocumentName(to.name),
+      updatedAt: now,
+    })
     .where(eq(folders.id, node.id));
   await carrySource(db, prepared, move);
   await absorbAt(db, node.id);
+  await normalizeNames(db, [node]);
   return Ok(undefined);
 }
 

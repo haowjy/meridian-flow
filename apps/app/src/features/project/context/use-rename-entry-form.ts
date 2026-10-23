@@ -19,7 +19,11 @@ import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit"
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
-import { entryNameStemEnd, validateContextEntryName } from "./context-entry-name";
+import {
+  allocateContextEntryArrivalName,
+  entryNameStemEnd,
+  validateContextEntryName,
+} from "./context-entry-name";
 import { destinationOwner } from "./identity-location";
 
 export type UseRenameEntryFormOptions = {
@@ -76,10 +80,13 @@ export function useRenameEntryForm({
         noWork,
       );
       if (!authority) throw unavailable();
-      const destination = { parent: await resources.parentForEntry(projectId, entryId), name };
+      const destination = {
+        parent: await resources.parentForEntry(projectId, entryId),
+        name: await allocateContextEntryArrivalName(name, filteredSiblings, kind, currentName),
+      };
       if (kind === "folder") {
         return resources
-          .setFolderLocation(projectId, entryId, destination)
+          .setFolderLocation(projectId, entryId, destination, name)
           .catch(() => {
             throw unavailable();
           })
@@ -87,7 +94,7 @@ export function useRenameEntryForm({
       }
       const key = await resources.keyForDocument(projectId, entryId);
       if (!key) throw unavailable();
-      return (await resources.setLocation(projectId, key, destination)).operationId;
+      return (await resources.setLocation(projectId, key, destination, name)).operationId;
     },
   });
 
@@ -113,7 +120,7 @@ export function useRenameEntryForm({
     initialError: repairName
       ? t`That rename couldn't be completed. Choose another name or try again.`
       : undefined,
-    validate: (draft) => validateContextEntryName(draft, filteredSiblings, kind, currentName),
+    validate: (draft) => validateContextEntryName(draft, [], kind, currentName),
     onCommit: async (typed) => {
       // Typing the name it already has, another way (`Chapter 13.md`), is no change.
       if (kind === "file" && storedName(typed) === currentName) return onDone();

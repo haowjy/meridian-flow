@@ -638,6 +638,20 @@
       "when": 1792727279542,
       "tag": "0096_validate_bounded_concurrent_reporting",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1792727279543,
+      "tag": "0097_folder_document_alias",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1792727279544,
+      "tag": "0098_normalize_hidden_names",
+      "breakpoints": true
     }
   ]
 }

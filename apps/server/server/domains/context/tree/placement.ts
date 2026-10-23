@@ -1,7 +1,8 @@
 /**
  * Live placement (contract §6.3, §7): the one owner of bringing nodes into the live tree.
  * `placeLive` brings one node to a live location with its ancestors under the one
- * name-claim rule; `place` reveals hidden nodes through it, and the removal record's owner
+ * name-claim rule; `placeLiveCycle` installs a cycle before normalizing any member.
+ * `place` reveals hidden nodes through `placeLive`, and the removal record's owner
  * restores a deleted document through it (`restoreDocument`: no write brings a removed
  * document back as a side effect). `ensureLiveFolderPath` makes a live folder chain, revealing a hidden
  * folder at a path instead of making a twin. Both walk folders through `walkFolders`, the
@@ -12,15 +13,16 @@
  * source involved and the document locks of every target document.
  */
 import type { ContextSourceId, FolderId } from "@meridian/contracts";
+import { allocateFilename, folderDocumentName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { testHook } from "../../../shared/test-hooks.js";
-import { renderFilename } from "../context/paths.js";
 import { absorbAt, absorbHiddenFolder } from "./folder-normalization.js";
 import type { CreateFault } from "./hidden-node-types.js";
+import { normalizeNames } from "./name-normalization.js";
 import { bumpLocationVersions, claimDocumentLocation } from "./node-locations.js";
 import { insertFolder } from "./node-rows.js";
 import { loadFolderChains } from "./tree-addresses.js";
@@ -108,6 +110,7 @@ export async function ensureLiveFolderPath(
       // Another branch's hidden folder at the same path folds into the revealed one.
       await absorbAt(db, hidden);
     }
+    await normalizeNames(db, [{ kind: "folder", id: folderId }]);
     created.push(folderId);
     return folderId;
   });
@@ -135,10 +138,12 @@ export type PlaceResult = {
   placed: readonly NodeRef[];
   /** The sources the catalog refresh covers, with `placed` as its invalidated roots. */
   sourceIds: readonly ContextSourceId[];
+  /** Actual free locations each target claimed, in target order. */
+  landed: readonly PlaceTarget[];
 };
 
 export type PlaceFault =
-  | { code: "path_taken"; at: string; occupant: NodeRef }
+  | { code: "ancestor_taken"; at: string; occupant: NodeRef }
   | { code: "stale"; node: NodeRef };
 
 /**
@@ -152,17 +157,21 @@ export async function place(
 ): Promise<Result<PlaceResult, PlaceFault>> {
   const placed: NodeRef[] = [];
   const sourceIds = new Set<ContextSourceId>();
+  const landedTargets: PlaceTarget[] = [];
   for (const target of input.targets) {
     const stale = await revalidatePlacement(db, target);
     if (stale) return Err(stale);
     await testHook("place.afterRevalidate");
-    const landed = await placeLive(db, target, (parentId) => reveal(db, target, parentId));
+    const landed = await placeLive(db, target, (parentId, at) =>
+      reveal(db, { ...target, at }, parentId),
+    );
     if (!landed.ok) return landed;
     if (target.node.kind === "folder") await absorbAt(db, target.node.id);
     placed.push(...landed.value.ancestors, target.node);
     sourceIds.add(target.at.contextSourceId);
+    landedTargets.push({ ...target, at: landed.value.at });
   }
-  return Ok({ placed, sourceIds: [...sourceIds] });
+  return Ok({ placed, sourceIds: [...sourceIds], landed: landedTargets });
 }
 
 /**
@@ -177,30 +186,98 @@ export async function place(
 export async function placeLive(
   db: Database,
   target: PlaceTarget,
-  land: (parentId: FolderId | null) => Promise<void>,
-): Promise<Result<{ ancestors: readonly NodeRef[] }, PlaceFault>> {
+  land: (parentId: FolderId | null, at: LiveLocation) => Promise<void>,
+): Promise<Result<{ ancestors: readonly NodeRef[]; at: LiveLocation }, PlaceFault>> {
+  const prepared = await prepareLivePlacement(db, target);
+  if (!prepared.ok) return prepared;
+  const { ancestors, parentId, at, filename } = prepared.value;
+  await land(parentId, at);
+  await normalizeNames(db, [target.node]);
+  await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
+  return Ok({ ancestors, at });
+}
+
+/** Place a cycle without normalizing an intermediate overlap between its hidden members. */
+export async function placeLiveCycle(
+  db: Database,
+  targets: readonly PlaceTarget[],
+  land: (
+    placements: readonly {
+      target: PlaceTarget;
+      parentId: FolderId | null;
+      at: LiveLocation;
+    }[],
+  ) => Promise<void>,
+): Promise<Result<readonly LiveLocation[], PlaceFault>> {
+  const placed: {
+    target: PlaceTarget;
+    parentId: FolderId | null;
+    at: LiveLocation;
+    filename: string;
+  }[] = [];
+  for (const target of targets) {
+    const prepared = await prepareLivePlacement(db, target);
+    if (!prepared.ok) return prepared;
+    const { parentId, at, filename } = prepared.value;
+    placed.push({ target, parentId, at, filename });
+  }
+  await land(placed);
+  await normalizeNames(
+    db,
+    placed.map(({ target }) => target.node),
+  );
+  for (const { target, parentId, filename } of placed)
+    await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
+  return Ok(placed.map(({ at }) => at));
+}
+
+async function prepareLivePlacement(
+  db: Database,
+  target: PlaceTarget,
+): Promise<
+  Result<
+    {
+      ancestors: readonly NodeRef[];
+      parentId: FolderId | null;
+      at: LiveLocation;
+      filename: string;
+    },
+    PlaceFault
+  >
+> {
   const tree = createTreeReader(db);
   const ancestors = await placeAncestors(db, tree, target);
   if (!ancestors.ok) return ancestors;
   const { parentId } = ancestors.value;
-  const filename =
+  const desired =
     target.node.kind === "document"
-      ? renderFilename(target.at.name, target.at.extension ?? "")
-      : target.at.name;
-  const taken = pathTaken(
-    [...ancestors.value.path, filename].join("/"),
-    await tree.childAt(LIVE_TREE, {
-      contextSourceId: target.at.contextSourceId,
-      parentId,
-      filename,
-      as: target.node.kind,
-    }),
-    target.node,
+      ? ({
+          kind: "document",
+          name: target.at.name,
+          extension: target.at.extension ?? "",
+        } as const)
+      : ({ kind: "folder", name: target.at.name } as const);
+  const filename = await allocateFilename(desired, async ({ filename }) =>
+    Boolean(
+      ancestorTaken(
+        [...ancestors.value.path, filename].join("/"),
+        await tree.childAt(LIVE_TREE, {
+          contextSourceId: target.at.contextSourceId,
+          parentId,
+          filename,
+          as: target.node.kind,
+        }),
+        target.node,
+      ),
+    ),
   );
-  if (taken) return Err(taken);
-  await land(parentId);
-  await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
-  return Ok({ ancestors: ancestors.value.placed });
+  const extension = target.node.kind === "document" ? (target.at.extension ?? "") : undefined;
+  const at: LiveLocation = {
+    ...target.at,
+    parentFolderId: parentId,
+    name: extension ? filename.slice(0, -(extension.length + 1)) : filename,
+  };
+  return Ok({ ancestors: ancestors.value.placed, parentId, at, filename });
 }
 
 /** A hidden target's row at its final location, visible. */
@@ -229,11 +306,11 @@ async function reveal(db: Database, target: PlaceTarget, parentId: FolderId | nu
 }
 
 /** The fault for a live path something other than `self` holds, else null. */
-function pathTaken(
+function ancestorTaken(
   at: string,
   occupant: PathResolution<NodeRef>,
   self?: NodeRef,
-): Extract<PlaceFault, { code: "path_taken" }> | null {
+): Extract<PlaceFault, { code: "ancestor_taken" }> | null {
   if (occupant.kind === "not_found") return null;
   const other =
     occupant.kind === "found"
@@ -241,7 +318,7 @@ function pathTaken(
         ? undefined
         : occupant.node
       : occupant.nodes.find((node) => node.id !== self?.id);
-  return other ? { code: "path_taken", at, occupant: other } : null;
+  return other ? { code: "ancestor_taken", at, occupant: other } : null;
 }
 
 async function revalidatePlacement(
@@ -312,7 +389,7 @@ async function placeAncestors(
       parentId = holder.node.id;
       continue;
     }
-    const taken = pathTaken(path.join("/"), holder);
+    const taken = ancestorTaken(path.join("/"), holder);
     if (taken) return Err(taken);
     if (row.hidden && row.deleted) return Err({ code: "stale", node: { kind: "folder", id } });
     await updatePlacedFolder(db, row.id, {
@@ -323,6 +400,7 @@ async function placeAncestors(
     await claimDocumentLocation(db, contextSourceId, parentId, row.name);
     // A split may have left a hidden twin at a restored folder's path (§8.3).
     if (row.deleted) await absorbAt(db, row.id);
+    await normalizeNames(db, [{ kind: "folder", id: row.id }]);
     placed.push({ kind: "folder", id: row.id });
     parentId = row.id;
   }
@@ -344,7 +422,7 @@ async function updatePlacedFolder(
     .set({
       parentId: change.parentId,
       ...(change.contextSourceId ? { contextSourceId: change.contextSourceId } : {}),
-      ...(change.name ? { name: change.name } : {}),
+      ...(change.name ? { name: change.name, documentAlias: folderDocumentName(change.name) } : {}),
       ...(change.clear === "hidden" ? { hidden: false } : {}),
       ...(change.clear === "deleted" ? { deletedAt: null } : {}),
       updatedAt: new Date(),

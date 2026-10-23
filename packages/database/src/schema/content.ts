@@ -220,6 +220,8 @@ export const folders = pgTable(
       .references(() => contextSources.id, { onDelete: "cascade" }),
     parentId: uuid("parent_id").$type<FolderId>(),
     name: text("name").notNull(),
+    /** Canonical document spelling of the folder name, for indexed cross-kind claims. */
+    documentAlias: text("document_alias").notNull(),
     description: text("description"),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: createdAt(),
@@ -243,6 +245,9 @@ export const folders = pgTable(
       .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     index("folders_context_parent_active")
       .on(table.contextSourceId, table.parentId)
+      .where(sql`${table.deletedAt} IS NULL`),
+    index("folders_context_parent_alias_active")
+      .on(table.contextSourceId, table.parentId, table.documentAlias)
       .where(sql`${table.deletedAt} IS NULL`),
     // Hidden folders occupy no live path; nothing makes them unique.
     uniqueIndex("folders_context_parent_name_live")

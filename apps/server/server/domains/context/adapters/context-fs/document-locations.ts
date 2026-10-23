@@ -1,5 +1,5 @@
 /** Transactional namespace locks and live-path occupancy checks for context commands. */
-import { folderDocumentName } from "@meridian/contracts/protocol";
+import { documentPartsForNamespaceClaim, folderDocumentName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, projects, works } from "@meridian/database/schema";
@@ -211,6 +211,8 @@ export async function hasOppositeContextEntry(
     return siblings.some((row) => folderDocumentName(row.name) === filename);
   }
   const vd = visibleDocuments(LIVE_TREE);
+  const parts = documentPartsForNamespaceClaim({ kind: "folder", filename });
+  if (!parts) return false;
   const [row] = await tx
     .select({ id: vd.id })
     .from(vd)
@@ -218,7 +220,8 @@ export async function hasOppositeContextEntry(
       and(
         eq(vd.contextSourceId, sourceId as never),
         parentId === null ? isNull(vd.folderId) : eq(vd.folderId, parentId as never),
-        sql`CASE WHEN ${vd.extension} = '' THEN ${vd.name} ELSE ${vd.name} || '.' || ${vd.extension} END = ${folderDocumentName(filename)}`,
+        eq(vd.name, parts.name),
+        eq(vd.extension, parts.extension),
       ),
     )
     .limit(1);

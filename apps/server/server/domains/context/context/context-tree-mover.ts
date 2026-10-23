@@ -270,12 +270,12 @@ export class ContextTreeMover {
           const moved: ContextMoveResult = {
             movedNodeId: result.value.movedNodeId,
             ...(result.value.linkUpdate ? { linkUpdate: result.value.linkUpdate } : {}),
-            destinationPath: prepared.value.destinationPath,
+            destinationPath: result.value.path,
             ...(policy.target === "exact" && policy.destinationParent
               ? {
                   destinationUri: formatParsedContextUri(
                     destination.scheme,
-                    prepared.value.destinationPath,
+                    result.value.path,
                     parsedDestination.value.authority,
                   ),
                 }
@@ -546,10 +546,10 @@ export class ContextTreeMover {
   ): Result<void, ContextError> {
     if (source.nodeId === existingTarget.nodeId && source.sourceId === existingTarget.sourceId)
       return Ok(undefined);
-    if (source.kind !== existingTarget.kind) {
-      return Err({ code: "conflict", uri: destinationUri });
-    }
-    if (!options?.overwrite || source.kind === "directory") {
+    if (
+      options?.overwrite &&
+      (source.kind !== existingTarget.kind || source.kind === "directory")
+    ) {
       return Err({ code: "conflict", uri: destinationUri });
     }
     return Ok(undefined);

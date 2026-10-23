@@ -83,6 +83,7 @@ export function deriveIdentityCommitPlan(
   const desired = {
     destination: identityDestination(location, editorWorkId, target.destination),
     name: stored.ok ? stored.name : target.name.trim(),
+    ...(target.typedName ? { typedName: target.typedName } : {}),
   };
   if (tab.kind === "new") return { kind: "queue", desired };
 
@@ -143,10 +144,10 @@ export function useIdentityCommit({
                 ...authority,
               }));
       if (!parent) throw new Error("Destination folder is unavailable");
-      const ownership = await resources.setLocation(projectId, key, {
-        parent,
-        name: target.name.trim(),
-      });
+      const optimisticDestination = { parent, name: target.name.trim() };
+      const ownership = plan.desired.typedName
+        ? await resources.setLocation(projectId, key, optimisticDestination, plan.desired.typedName)
+        : await resources.setLocation(projectId, key, optimisticDestination);
       const folder = destination.folderPath.split("/").filter(Boolean).join("/");
       onCommitted(
         tab.documentId,

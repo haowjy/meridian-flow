@@ -14,6 +14,8 @@ import {
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
+import { formatParsedContextUri, parseContextUri } from "@meridian/contracts/context-uri";
+import { type ContextMoveResult, renderFilename } from "@meridian/contracts/protocol";
 import { contextPortForThread } from "../../domains/context/context-port-resolution.js";
 import type { RecordedBranchTreeChange } from "../../domains/context/ports/branch-tree.js";
 import type {
@@ -120,7 +122,7 @@ async function commitLive(
   });
   const history = deps.documentSync.treeHistory();
   const before = await history.liveState(source.documentId);
-  const landedAt = input.command === "move" ? await canonicalPath(call, input.path) : undefined;
+  const wantedAt = input.command === "move" ? await canonicalPath(call, input.path) : undefined;
   if (!before?.living)
     return namespaceRefusal(input.command, "stale_location", { path: source.uri });
   const origin = {
@@ -130,7 +132,7 @@ async function commitLive(
     turnId: ctx.turnId,
   };
   let recorded: string | undefined;
-  const record = async () => {
+  const record = async (landedAt?: string) => {
     recorded = (
       await history.recordAgentTreeChange({
         documentId: source.documentId,
@@ -153,7 +155,7 @@ async function commitLive(
     const deleted = await port.delete(source.uri, {
       expected: { kind: "file", documentId: source.documentId },
       origin,
-      inTransaction: record,
+      inTransaction: () => record(),
     });
     if (!deleted.ok) return refuse(deleted.error);
     if (!recorded) throw new Error("A delete committed without its tree entry");
@@ -162,7 +164,19 @@ async function commitLive(
   const moved = await port.commitWriterLocation(source.uri, input.path, {
     expected: { kind: "file", nodeId: source.documentId },
     origin,
-    inTransaction: record,
+    inTransaction: async (result: ContextMoveResult) => {
+      const wanted = wantedAt ? parseContextUri(wantedAt) : null;
+      const landedAt = result.destinationUri
+        ? result.destinationUri
+        : wanted?.ok
+          ? formatParsedContextUri(
+              wanted.value.scheme,
+              result.destinationPath,
+              wanted.value.authority,
+            )
+          : input.path;
+      await record(landedAt);
+    },
   });
   if (!moved.ok) return refuse(moved.error);
   // A destination naming the document where it already is moves nothing and records nothing.
@@ -171,8 +185,17 @@ async function commitLive(
       path: source.uri,
       destination: input.path,
     });
-  const landed = await port.stat(input.path);
-  return { handle: recorded, uri: landed.ok ? landed.value.uri : input.path };
+  const wanted = wantedAt ? parseContextUri(wantedAt) : null;
+  const uri = moved.value.destinationUri
+    ? moved.value.destinationUri
+    : wanted?.ok
+      ? formatParsedContextUri(
+          wanted.value.scheme,
+          moved.value.destinationPath,
+          wanted.value.authority,
+        )
+      : input.path;
+  return { handle: recorded, uri };
 }
 
 /**
@@ -189,9 +212,22 @@ async function commitDrafted(
   const history = deps.documentSync.treeHistory();
   const threadId = ctx.threadId as ThreadId;
   const turnId = ctx.turnId ? (ctx.turnId as TurnId) : undefined;
-  const landedAt = input.command === "move" ? await canonicalPath(call, input.path) : undefined;
+  const wantedAt = input.command === "move" ? await canonicalPath(call, input.path) : undefined;
   let recorded: string | undefined;
   const record = async (change: RecordedBranchTreeChange) => {
+    const moved = change.after.moved;
+    const wanted = wantedAt ? parseContextUri(wantedAt) : null;
+    const landedAt =
+      moved && wanted?.ok
+        ? formatParsedContextUri(
+            wanted.value.scheme,
+            [
+              ...wanted.value.path.split("/").slice(0, -1),
+              renderFilename(moved.name, moved.extension),
+            ].join("/"),
+            wanted.value.authority,
+          )
+        : undefined;
     recorded = (
       await history.recordAgentTreeChange({
         documentId: source.documentId,

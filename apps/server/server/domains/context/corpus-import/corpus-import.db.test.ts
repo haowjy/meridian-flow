@@ -1,7 +1,7 @@
 /** Corpus intake preserves writer titles and allocates against live KB names. */
 
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import { documents, projects, users } from "@meridian/database/schema";
+import { documents, projects, users, works } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
@@ -29,6 +29,9 @@ else
       await db
         .insert(projects)
         .values({ id: PROJECT, userId: USER, name: "Project", slug: "project" });
+      await db
+        .insert(works)
+        .values({ projectId: PROJECT, createdByUserId: USER, name: "No Work", isNoWork: true });
       const collab = createInMemoryCollabDomain();
       const catalog = createDrizzleContextCatalog(db);
       const contextPorts = createProductionUnifiedContextPortFactory({
@@ -119,6 +122,9 @@ else
         await db
           .insert(projects)
           .values({ id: projectId, userId: USER, name: "Batch", slug: projectId });
+        await db
+          .insert(works)
+          .values({ projectId, createdByUserId: USER, name: "No Work", isNoWork: true });
         const collab = createInMemoryCollabDomain();
         const catalog = createDrizzleContextCatalog(db);
         const contextPorts = createProductionUnifiedContextPortFactory({

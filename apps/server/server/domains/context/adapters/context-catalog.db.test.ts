@@ -1,5 +1,6 @@
 /** PostgreSQL proof for catalog transaction, replay, exclusion, and wake semantics. */
 
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextCatalogCommits,
@@ -226,7 +227,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const db = database.current;
       await seedProject(db, "catalog-invalidation");
       const folderId = "00000000-0000-4000-8000-000000000805";
-      await db.insert(folders).values({ id: folderId, contextSourceId: SOURCE_ID, name: "Arc" });
+      await db.insert(folders).values({
+        id: folderId,
+        contextSourceId: SOURCE_ID,
+        name: "Arc",
+        documentAlias: folderDocumentName("Arc"),
+      });
       await db.insert(documents).values({
         id: DOCUMENT_ID,
         contextSourceId: SOURCE_ID,

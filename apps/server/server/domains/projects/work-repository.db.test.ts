@@ -2,6 +2,7 @@
 
 import { setTimeout as delay } from "node:timers/promises";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -495,13 +496,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .returning();
       const [folder] = await db
         .insert(schema.folders)
-        .values({ contextSourceId: source.id, name: "Notes" })
+        .values({
+          contextSourceId: source.id,
+          name: "Notes",
+          documentAlias: folderDocumentName("Notes"),
+        })
         .returning();
       const [alreadyDeletedFolder] = await db
         .insert(schema.folders)
         .values({
           contextSourceId: source.id,
           name: "separately-deleted",
+          documentAlias: folderDocumentName("separately-deleted"),
           deletedAt: new Date("2025-01-01T00:00:00.000Z"),
         })
         .returning();
@@ -582,12 +588,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .returning();
         if (!source) throw new Error("Source fixture missing");
         const arriving = folderArrives ? schema.folders : schema.documents;
-        await db.insert(arriving).values({ contextSourceId: source.id, name: "Lore" });
+        if (folderArrives) {
+          await db.insert(schema.folders).values({
+            contextSourceId: source.id,
+            name: "Lore",
+            documentAlias: folderDocumentName("Lore"),
+          });
+        } else {
+          await db.insert(schema.documents).values({ contextSourceId: source.id, name: "Lore" });
+        }
         await works.softDelete(work.id);
         // A historical/raw writer can leave opposite-kind occupancy: restore must guard
         // both arriving tables before changing either one, not rely on their own indexes.
-        const occupied = folderArrives ? schema.documents : schema.folders;
-        await db.insert(occupied).values({ contextSourceId: source.id, name: "Lore" });
+        if (folderArrives) {
+          await db.insert(schema.documents).values({ contextSourceId: source.id, name: "Lore" });
+        } else {
+          await db.insert(schema.folders).values({
+            contextSourceId: source.id,
+            name: "Lore",
+            documentAlias: folderDocumentName("Lore"),
+          });
+        }
         await expect(works.restore(work.id)).rejects.toEqual(
           new WorkRestoreConflictError("content"),
         );

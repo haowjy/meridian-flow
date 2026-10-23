@@ -17,15 +17,8 @@ import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/work
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import { type ContextualOwner, type ProjectOwners, unknownWorkMessage } from "../owner-lookup.js";
-import type {
-  AdapterFault,
-  AdapterFileEntry,
-  AdapterFileRef,
-  AdapterSearchHit,
-  ContextSchemeAdapter,
-} from "../ports/context-adapter.js";
+import type { AdapterFault, ContextSchemeAdapter } from "../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../ports/context-command-transaction.js";
-import { ContextEntryConflictError } from "../ports/context-document-store.js";
 import type {
   ContextBinaryWriteResult,
   ContextCreateTrackedDocumentResult,
@@ -44,13 +37,12 @@ import type {
   ContextWriteBinaryOptions,
   ContextWriteOptions,
   ContextWriteResult,
-  FileEntry,
   FileRef,
   SearchResult,
   WriteProvenance,
 } from "../ports/context-port.js";
-import { adapterFaultToContextError } from "./adapter-fault.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "./context-tree-mover.js";
+import { callAdapter, toFileEntry, toFileRef, toSearchResult } from "./router-adapter-results.js";
 import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri.js";
 
 export interface ContextSourceBinding {
@@ -157,86 +149,6 @@ type SourceLocation = {
 
 function uriFor(scheme: ContextScheme, path: string, authority: CanonicalContextAuthority): string {
   return toCanonical(scheme, path, authority);
-}
-
-function toSearchResult(
-  scheme: ContextScheme,
-  authority: CanonicalContextAuthority,
-  hit: AdapterSearchHit,
-): SearchResult {
-  return {
-    uri: uriFor(scheme, hit.path, authority),
-    documentId: hit.documentId,
-    revision: hit.revision,
-    matches: hit.matches,
-    matchCount: hit.matchCount,
-    score: hit.score,
-    ...(hit.shown ? { shown: hit.shown } : {}),
-  };
-}
-
-function toFileRef(
-  scheme: ContextScheme,
-  authority: CanonicalContextAuthority,
-  ref: AdapterFileRef,
-  readonly: boolean,
-): FileRef {
-  const base = {
-    uri: uriFor(scheme, ref.path, authority),
-    documentId: ref.documentId,
-    sizeBytes: ref.sizeBytes,
-    updatedAt: ref.updatedAt,
-    readonly,
-  };
-  if (ref.kind === "binary") {
-    return {
-      ...base,
-      kind: "binary",
-      fileType: ref.fileType,
-      storageUrl: ref.storageUrl,
-      mimeType: ref.mimeType,
-    };
-  }
-  return {
-    ...base,
-    kind: "tracked",
-    filetype: ref.filetype,
-    schemaType: ref.schemaType,
-  };
-}
-
-function toFileEntry(
-  scheme: ContextScheme,
-  authority: CanonicalContextAuthority,
-  entry: AdapterFileEntry,
-  readonly: boolean,
-): FileEntry {
-  const { path, ...metadata } = entry;
-  return {
-    ...metadata,
-    uri: uriFor(scheme, path, authority),
-    readonly,
-  };
-}
-
-async function callAdapter<T>(
-  uri: string,
-  op: () => Promise<Result<T, AdapterFault>>,
-): Promise<Result<T, ContextError>> {
-  let result: Result<T, AdapterFault>;
-  try {
-    result = await op();
-  } catch (error) {
-    if (error instanceof ContextEntryConflictError)
-      return Err({ code: "conflict", uri, occupantKind: error.occupantKind });
-    return Err({
-      code: "io_error",
-      uri,
-      message: error instanceof Error ? error.message : String(error),
-    });
-  }
-  if (!result.ok) return Err(adapterFaultToContextError(result.error, uri));
-  return Ok(result.value);
 }
 
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
@@ -653,6 +565,25 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       createDocument(uri, options, (adapter, path) =>
         adapter.createTrackedDocument(path, markdown, options),
       ),
+
+    async createTrackedDocumentAtFreeName(uri, markdown, reserved, options) {
+      const resolved = await resolveMutation(uri, options?.origin);
+      if (!resolved.ok) return resolved;
+      const dispatched = fileDispatch(resolved.value);
+      if (!dispatched.ok) return dispatched;
+      const permission = dispatched.value.requireCreation(options?.documentId ? "intake" : "entry");
+      if (!permission.ok) return permission;
+      const { adapter, path, scheme, authority, canonical } = dispatched.value;
+      const created = await callAdapter(canonical, () =>
+        adapter.createTrackedDocumentAtFreeName(path, markdown, reserved, options),
+      );
+      return created.ok
+        ? Ok({
+            documentId: created.value.documentId,
+            uri: uriFor(scheme, created.value.path, authority),
+          })
+        : created;
+    },
 
     createBoundDocument: (uri, bound, options) =>
       createDocument(uri, options, (adapter, path) =>

@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextCatalogCommits,
@@ -84,7 +85,11 @@ else
         slug: "manuscript",
         scope: "project",
       });
-      await db.insert(folders).values({ contextSourceId: sourceId, name: "Lore.md" });
+      await db.insert(folders).values({
+        contextSourceId: sourceId,
+        name: "Lore.md",
+        documentAlias: folderDocumentName("Lore.md"),
+      });
       const fixtures = [
         ["chapter", "md", "markdown", "chapter"],
         ["notes", "txt", "text", "notes"],
@@ -153,6 +158,7 @@ else
       await db.insert(folders).values({
         contextSourceId: workSourceId,
         name: "Lore.md",
+        documentAlias: folderDocumentName("Lore.md"),
         deletedAt,
         deletedByWorkId: workId,
       });

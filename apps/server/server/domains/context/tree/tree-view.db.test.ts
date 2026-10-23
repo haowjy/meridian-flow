@@ -244,8 +244,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const ch1 = await scenario.seedLive("book/ch1");
       const ch2 = await scenario.seedLive("book/ch2");
       const ch3 = await scenario.seedLive("ch3");
-      // A taken name in the branch's view refuses; once vacated, it takes it.
-      expect(await move(ch1, "book/ch2")).toMatchObject({ ok: false, error: { code: "conflict" } });
+      // A taken name in the branch's view lands beside it; once vacated, the exact name is free.
+      expect(await move(ch1, "book/ch2")).toMatchObject({
+        ok: true,
+        value: { after: { moved: { name: "ch2 (2)" } } },
+      });
       expect((await move(ch2, "book/ch2b")).ok).toBe(true);
       expect((await move(ch1, "book/ch2")).ok).toBe(true);
       expect(await shownAt("book/ch1")).toBe("not_found");
@@ -370,7 +373,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await loadHiddenDocumentCandidates(db, at)).toEqual([]);
     });
 
-    it("names identity per view and states a branch's tree with its conflicts (T-1b)", async () => {
+    it("names identity per view and states allocated live arrivals (T-1b)", async () => {
       const db = database.current;
       const scenario = await branchTreeScenario(db);
       const tree = createTreeReader(db);
@@ -450,10 +453,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toMatchObject({ kind: "hidden", branch: { branchId: first.id } });
 
       // Tree state: every item at its row's location.
-      const liveIntro = await scenario.seedLive("intro");
       const intro = await scenario.seedHidden(ascension, "intro");
+      await scenario.seedLive("intro");
       const coast = await scenario.seedHidden(ascension, "maps/coast");
-      const maps = await scenario.seedLive("maps");
+      await scenario.seedLive("maps");
       const chapter = await scenario.seedHidden(ascension, "chapters/one");
       await reveal(chapter, ["chapters"]);
       await db.update(documents).set({ name: "chapter-one" }).where(eq(documents.id, chapter));
@@ -465,10 +468,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // Deleted with its folder; a new live folder of that name now holds its path.
       const replaced = await scenario.seedLive("saga/three");
       await softDelete(replaced, ["saga"]);
-      const occupant = await scenario.seedLive("saga/three");
+      await scenario.seedLive("saga/three");
       const tale = await scenario.seedLive("tale/four");
       await softDelete(tale, ["tale"]);
-      const taleFolder = await scenario.seedLiveFolder("tale/four");
+      await scenario.seedLiveFolder("tale/four");
       const quiet = await scenario.seedLive("notes");
 
       const state = new Map(
@@ -485,50 +488,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         hidden: true,
         binary: false,
         target: { path: "world/harbor" },
-        conflict: { kind: "none" },
       });
-      expect(state.get(intro)?.conflict).toEqual({
-        kind: "clash",
-        withNode: { kind: "document", id: liveIntro },
-        at: "intro",
-        uri: "manuscript://intro",
+      expect(state.get(intro)).toMatchObject({
+        target: { path: "intro (2)", uri: "manuscript://intro (2)" },
       });
-      expect(state.get(coast)?.conflict).toEqual({
-        kind: "clash",
-        withNode: { kind: "document", id: maps },
-        at: "maps",
-        uri: "manuscript://maps",
+      expect(state.get(coast)).toMatchObject({
+        target: { path: "maps (2)/coast", uri: "manuscript://maps (2)/coast" },
       });
       expect(state.get(chapter)).toMatchObject({
         hidden: false,
         deleted: false,
         target: { path: "chapters/chapter-one", uri: "manuscript://chapters/chapter-one" },
-        conflict: { kind: "none" },
       });
       expect(state.get(scene)).toMatchObject({
         origin: "created",
         deleted: true,
-        conflict: { kind: "deleted_live" },
       });
       expect(state.get(arc)).toMatchObject({
         origin: "edited",
         deleted: true,
         target: { path: "arc/two" },
-        conflict: { kind: "deleted_live" },
       });
-      expect(state.get(replaced)?.conflict).toEqual({
-        kind: "clash",
-        withNode: { kind: "document", id: occupant },
-        at: "saga/three",
-        uri: "manuscript://saga/three",
-      });
-      expect(state.get(tale)?.conflict).toEqual({
-        kind: "clash",
-        withNode: { kind: "folder", id: taleFolder },
-        at: "tale/four",
-        uri: "manuscript://tale/four",
-      });
-      expect(state.get(quiet)).toMatchObject({ origin: "edited", conflict: { kind: "none" } });
+      expect(state.get(replaced)).toMatchObject({ deleted: true });
+      expect(state.get(tale)).toMatchObject({ deleted: true });
+      expect(state.get(quiet)).toMatchObject({ origin: "edited" });
       // A tombstone is no longer the branch's item.
       expect(state.has(tomb)).toBe(false);
       expect(

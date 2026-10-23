@@ -81,6 +81,14 @@ function authorityForUpload(
       parsed.ok && parsed.value.authority.kind === "chat" ? parsed.value.authority.chatRef : null,
   };
 }
+
+/** Intake may allocate a free leaf name; the chip must spell the authoritative URI it received. */
+function uploadLabel(uri: UploadIntakeResult["uri"], fallback: string): string {
+  const parsed = parseContextUri(uri);
+  if (!parsed.ok) return fallback;
+  const name = parsed.value.path.split("/").at(-1);
+  return name || fallback;
+}
 export type ComposerUploadPort = Readonly<{
   intake: (input: {
     file: File;
@@ -498,7 +506,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             composerReferenceContent({
               ...ready,
               authority: authorityForUpload(scope, ready.uri),
-              label: file.name,
+              label: uploadLabel(ready.uri, file.name),
               imageCapable: imageCapable(ready.fileType),
               upload: {
                 intakeId,

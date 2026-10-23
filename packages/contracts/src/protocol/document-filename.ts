@@ -96,6 +96,44 @@ export function folderDocumentName(filename: string): string {
   return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : filename;
 }
 
+export type NamespaceNameClaim = {
+  kind: "document" | "folder";
+  filename: string;
+};
+
+/** The comparison name a node presents to a claim of the opposite kind. */
+export function namespaceName(claim: NamespaceNameClaim): string {
+  return claim.kind === "folder" ? folderDocumentName(claim.filename) : claim.filename;
+}
+
+/** The document row that could hold this namespace claim's document-facing alias. */
+export function documentPartsForNamespaceClaim(
+  claim: NamespaceNameClaim,
+): Pick<ParsedDocumentFilename, "name" | "extension"> | null {
+  const parsed = parseDocumentFilename(namespaceName(claim));
+  return parsed.ok ? { name: parsed.value.name, extension: parsed.value.extension } : null;
+}
+
+/** Documents and folders share aliases, while nodes of the same kind compare literally. */
+export function sameNamespaceName(left: NamespaceNameClaim, right: NamespaceNameClaim): boolean {
+  return left.kind === right.kind
+    ? left.filename === right.filename
+    : namespaceName(left) === namespaceName(right);
+}
+
+/** Smallest available name at or after `startSuffix`. Callers own the atomic claim. */
+export async function allocateFilename(
+  desired: { kind: "document"; name: string; extension: string } | { kind: "folder"; name: string },
+  isTaken: (candidate: NamespaceNameClaim) => boolean | Promise<boolean>,
+  startSuffix = 1,
+): Promise<string> {
+  for (let suffix = startSuffix; ; suffix += 1) {
+    const base = suffix === 1 ? desired.name : `${desired.name} (${suffix})`;
+    const filename = desired.kind === "document" ? renderFilename(base, desired.extension) : base;
+    if (!(await isTaken({ kind: desired.kind, filename }))) return filename;
+  }
+}
+
 /** Destination naming shared by optimistic clients and server commands.
  * Explicit registered suffixes state the type; other names keep the source extension.
  * Parsed parts accompany the full name so storage never infers the destination twice.

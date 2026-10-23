@@ -11,9 +11,8 @@
  */
 import type { BranchId } from "@meridian/contracts";
 import { type DraftItemKey, draftItemKey } from "@meridian/contracts";
-import type { DraftItemConflict } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { LIVE_TREE, type TreeReader, type TreeStateNode } from "../../context/tree/tree-view.js";
+import type { TreeReader, TreeStateNode } from "../../context/tree/tree-view.js";
 import type { WorkBranchDraftMetadata } from "./ports/work-branch-pending-store.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
 
@@ -33,8 +32,6 @@ export type DraftReviewItem = {
   documentName: string | null;
   /** Canonical URI in the branch's view (the last address for one deleted live). */
   path: string | null;
-  /** Eligibility only; existence is `deletedLive`, which a taken path doesn't hide. */
-  conflict: DraftItemConflict | null;
   /**
    * Deleted live (an edited document, or a revealed create): live no longer shows it, the
    * branch's view does while it has pending changes (D79). It authorizes through the
@@ -67,7 +64,7 @@ export interface BranchReviewItems {
 }
 
 export function createBranchReviewItems(deps: {
-  tree: Pick<TreeReader, "treeState" | "resolvePath">;
+  tree: Pick<TreeReader, "treeState">;
   /**
    * The branch's active `work_draft` drafts (only these documents' when given), each
    * metadata only.
@@ -96,42 +93,12 @@ export function createBranchReviewItems(deps: {
       documentIds,
     );
     const treeActors = await deps.treeActors(branchId, documentIds);
-    const resolved = await Promise.all(
-      nodes.map(async (node) => {
-        const evidence = draftOf.get(node.nodeId);
-        const item = toItem(branchId, node, evidence, treeActors.get(node.nodeId) ?? []);
-        item.conflict ??= await waitsFor(branchId, node);
-        return { item, listed: node.pending };
-      }),
-    );
-    return resolved.sort((a, b) => (a.item.path ?? "").localeCompare(b.item.path ?? ""));
-  }
-
-  /**
-   * A moving document whose destination live still gives another document this branch moves
-   * or deletes: its Apply waits for that item's (Apply all orders them; a swap stays held).
-   */
-  async function waitsFor(
-    branchId: BranchId,
-    node: TreeStateNode,
-  ): Promise<DraftReviewItem["conflict"]> {
-    if (node.branch?.state !== "moving") return null;
-    const found = await deps.tree.resolvePath(LIVE_TREE, {
-      contextSourceId: node.target.contextSourceId,
-      path: node.target.path,
-      as: "document",
+    const resolved = nodes.map((node) => {
+      const evidence = draftOf.get(node.nodeId);
+      const item = toItem(branchId, node, evidence, treeActors.get(node.nodeId) ?? []);
+      return { item, listed: node.pending };
     });
-    if (found.kind !== "found" || found.node.kind !== "document") return null;
-    const occupant = found.node.document.id;
-    if (occupant === node.nodeId) return null;
-    const [other] = await deps.tree.treeState(branchId, [], [occupant]);
-    return other?.nodeId === occupant && (other.branch?.moved || other.branch?.deleted)
-      ? {
-          code: "pending_item",
-          path: node.target.uri ?? node.target.path,
-          itemKey: draftItemKey(branchId, occupant),
-        }
-      : null;
+    return resolved.sort((a, b) => (a.item.path ?? "").localeCompare(b.item.path ?? ""));
   }
 
   return {
@@ -180,19 +147,8 @@ function toItem(
     hasDraft: !!evidence,
     documentName: documentTitleFromUri(path),
     path,
-    conflict: conflictOf(node),
     deletedLive,
     actorThreadIds: [...treeActorThreadIds],
     updatedAt: evidence?.updatedAt ?? new Date(),
   };
-}
-
-function conflictOf(node: TreeStateNode): DraftReviewItem["conflict"] {
-  switch (node.conflict.kind) {
-    case "clash":
-      return { code: "path_taken", path: node.conflict.uri ?? node.conflict.at };
-    case "deleted_live":
-    case "none":
-      return null;
-  }
 }

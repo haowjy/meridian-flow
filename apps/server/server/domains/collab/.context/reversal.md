@@ -88,8 +88,10 @@ undo restores the `before`. A later own entry that was undone does not block, so
 undo, undo returns to A. Applied or discarded comes only from a later settlement row naming
 the entry; an Apply names entries undone before it as discarded, so their redo refuses
 rather than proposing them again. History is read with folders a live folder absorbed since
-resolved to it (`withCurrentFolders`), and a reversal reports each destination it landed in:
-live, or the branch whose text draft or tree facts took it. The history writer (`recordDocumentEdit`) is the one place a transition's states
+resolved to it (`withCurrentFolders`), and commit resolves the absorber again before writing
+live placement or branch facts. A reversal reports each destination it landed in and, when its
+committed path differs from the recorded one, that path too: live, or the branch whose text
+draft or tree facts took it. The history writer (`recordDocumentEdit`) is the one place a transition's states
 are checked against its destination and op; readers trust the rows.
 
 Every inverse (model undo, redo and revert, the card, a reply's rollback) is one ordered
@@ -101,7 +103,7 @@ separately redoable actions, and a step that reverses an undo puts its edit back
 A removal an earlier step makes is `madeBy` that step until it runs; a restore planned after it
 carries the removal that step actually made, while an unrelated removal still refuses it. The
 commit runs the steps in planned order (the card and rollback merge documents newest first,
-redo oldest first), each tree step in its own savepoint: a fault (`location_taken`,
+redo oldest first), each tree step in its own savepoint: a fault (`ancestor_taken`,
 `folder_missing`, `superseded`) is a reported skip for the card and rollback, and live text of a
 document a skipped restore left removed is skipped with the rest of that document's text. A
 model inverse is all or nothing (`TreeInverseRefused`). A draft's text still commits as one
@@ -153,9 +155,9 @@ A card outcome reports committed destination per document. Draft Undo says that
 Apply is needed to change the manuscript. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`, `nothing_to_redo`,
 `cant_undo_dependent`, `expired`, or `partial` with HTTP 200; callers retain
-those outcomes and refresh the turn query. A reversal that reversed nothing because a move or
-delete met a taken location, a missing folder, or a document moved or deleted again answers
-`location_taken`, `folder_missing` or `superseded` (per document too), never `expired` or
+those outcomes and refresh the turn query. A reversal that reversed nothing because a document
+blocks an ancestor folder, the folder is missing, or the document moved or was deleted again
+answers `ancestor_taken`, `folder_missing` or `superseded` (per document too), never `expired` or
 `cant_undo_dependent`. Every skipped part carries a typed `cause` (`TurnInverseSkipCause`) and the
 app words it; a tree skip names the path its entry was shown at.
 

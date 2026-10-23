@@ -14,7 +14,7 @@ export function MobileChangeBar({
   canApply,
 }: {
   view: ReviewChangesView;
-  /** The review's Apply eligibility (`useReviewHeader`): a taken path withdraws it. */
+  /** The review's Apply eligibility (`useReviewHeader`): the selected review has a change. */
   canApply: boolean;
 }) {
   const item = view.items.find((candidate) => candidate.change.id === view.focused?.id);

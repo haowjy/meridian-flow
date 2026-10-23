@@ -318,7 +318,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(result).toEqual({
         ok: true,
-        value: { movedNodeId: DOC_ROLLBACK_SOURCE_ID, linkUpdate: { links: 0, documents: 0 } },
+        value: {
+          movedNodeId: DOC_ROLLBACK_SOURCE_ID,
+          destinationPath: "rollback-target",
+          linkUpdate: { links: 0, documents: 0 },
+        },
       });
       expect(targetAfter?.deletedAt).toBeInstanceOf(Date);
     });

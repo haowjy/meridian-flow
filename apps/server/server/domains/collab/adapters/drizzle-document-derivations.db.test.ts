@@ -1,5 +1,7 @@
 /** PostgreSQL races and recovery contracts for durable document derivation. */
+
 import { randomUUID } from "node:crypto";
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -550,7 +552,12 @@ describe("durable document derivations", () => {
     await runInDrizzleTransaction(db, async () => {
       await currentDrizzleDb(db)
         .insert(folders)
-        .values({ id: folderId, contextSourceId: sourceId, name: "moved" });
+        .values({
+          id: folderId,
+          contextSourceId: sourceId,
+          name: "moved",
+          documentAlias: folderDocumentName("moved"),
+        });
       await currentDrizzleDb(db)
         .update(documents)
         .set({ folderId })

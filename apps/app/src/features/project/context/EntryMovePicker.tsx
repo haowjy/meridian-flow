@@ -10,7 +10,7 @@ import type { TabOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { Button } from "@/components/ui/button";
 import { useAccountResourceReplica } from "./account-feature-context";
-import { moveEntryName, validateContextEntryName } from "./context-entry-name";
+import { allocateContextEntryArrivalName, moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import { destinationOwner } from "./identity-location";
 import { isFolderWithin } from "./menu-tree";
@@ -95,16 +95,6 @@ function OpenMovePicker({
     const destination = folder && source.folderFor(folder.id);
     if (!destination || isForbidden(destination) || folder.id === currentParentId || pending)
       return;
-    const collision = validateContextEntryName(
-      name,
-      destination.catalog.children(destination.entryId),
-      entry.kind,
-      entry.name,
-    );
-    if (collision?.level === "error") {
-      setError(collision.message);
-      return;
-    }
     setPending(true);
     setError(null);
     try {
@@ -127,15 +117,20 @@ function OpenMovePicker({
           destination.entryId === destination.catalog.root.entryId
             ? { kind: "root", scheme: destination.scheme, owner: authority }
             : { kind: "folder", folderId: destination.entryId },
-        name,
+        name: await allocateContextEntryArrivalName(
+          name,
+          destination.catalog.children(destination.entryId),
+          entry.kind,
+          entry.name,
+        ),
       };
       const result =
         entry.kind === "folder"
-          ? await resources.setFolderLocation(projectId, entry.id, location)
+          ? await resources.setFolderLocation(projectId, entry.id, location, name)
           : await (async () => {
               const key = await resources.keyForDocument(projectId, entry.id);
               if (!key) throw new Error(unavailable);
-              return resources.setLocation(projectId, key, location);
+              return resources.setLocation(projectId, key, location, name);
             })();
       if (result.operationId) onMoved(result.operationId);
       onOpenChange(false);

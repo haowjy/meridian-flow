@@ -245,7 +245,8 @@ export async function createLive(
       ...(id ? { id } : {}),
       ...(provisionalName ? { provisionalName } : {}),
     });
-    return documentId ? Ok({ kind: "inserted", documentId }) : Err({ code: "row_exists" });
+    if (!documentId) return Err({ code: "row_exists" });
+    return Ok({ kind: "inserted", documentId });
   }
   const placed = await place(db, {
     targets: [

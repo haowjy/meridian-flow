@@ -20,18 +20,6 @@ import { renderFilename } from "@meridian/contracts/protocol";
 
 export { renderFilename } from "@meridian/contracts/protocol";
 
-/** Smallest available writer name; callers own atomic claims and batch reservations. */
-export async function allocateFilename(
-  parts: { name: string; extension: string },
-  exists: (filename: string) => boolean | Promise<boolean>,
-): Promise<string> {
-  for (let suffix = 1; ; suffix += 1) {
-    const name = suffix === 1 ? parts.name : `${parts.name} (${suffix})`;
-    const filename = renderFilename(name, parts.extension);
-    if (!(await exists(filename))) return filename;
-  }
-}
-
 /** File output is the only place prose gains a suffix; persisted names stay unchanged. */
 export function exportFilename(name: string, extension: string, fileType: string): string {
   return renderFilename(name, fileType === "markdown" ? "md" : extension);
