@@ -45,6 +45,7 @@
     "apps/app/src/core/editor/document-session-teardown-owner.test.ts": 3,
     "apps/app/src/core/editor/document-session.test.ts": 10,
     "apps/app/src/core/editor/draft-room-pool.test.ts": 1,
+    "apps/app/src/core/editor/editor-history.test.ts": 1,
     "apps/app/src/core/editor/extensions/at-reference/at-reference-enter.test.ts": 2,
     "apps/app/src/core/editor/extensions/auto-pair/AutoPairExtension.test.ts": 7,
     "apps/app/src/core/editor/extensions/inline-review/decorations.test.ts": 8,
