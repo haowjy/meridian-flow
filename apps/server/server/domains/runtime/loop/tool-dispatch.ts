@@ -21,7 +21,7 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
-import { type EventSink, emitEvent } from "../../observability/index.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { readThreadActivity } from "../../threads/index.js";
 import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
 import type { ShownLinkStore } from "../ports/shown-links.js";
@@ -136,8 +136,7 @@ export async function dispatchToolCall(
     scope: "tool_call",
   });
   let outputDropped = false;
-  let outputSettled = false;
-  const dropOutput = (reason: "budget_full" | "write_failed" | "sealed") => {
+  const dropOutput = (reason: "budget_full" | "write_failed", failure?: { cause: unknown }) => {
     if (outputDropped) return;
     outputDropped = true;
     outputJournal.seal();
@@ -155,30 +154,32 @@ export async function dispatchToolCall(
         threadId: ctx.state.threadId,
         turnId: ctx.state.currentTurn.id,
         reason,
-        ...outputJournal.failurePayload(),
+        ...(failure ? unknownToEventPayload(failure.cause) : {}),
       },
     });
   };
   const drainOutput = async () => {
     try {
       await outputJournal.flush();
-    } catch {
-      dropOutput("write_failed");
+    } catch (cause) {
+      dropOutput("write_failed", { cause });
     }
   };
   const emitOutputDelta = (
     toolCallId: string,
     chunk: { stream: "stdout" | "stderr"; text: string },
   ) => {
-    if (outputSettled) return;
     const event: OrchestratorEvent = {
       type: "tool.output_delta",
       toolCallId,
       stream: chunk.stream,
       text: chunk.text,
     };
-    if (!outputJournal.tryPush(event)) {
-      dropOutput(outputJournal.failurePayload() ? "write_failed" : "budget_full");
+    const admission = outputJournal.tryPush(event);
+    if (admission.status === "full") {
+      dropOutput("budget_full");
+    } else if (admission.status === "failed") {
+      dropOutput("write_failed", admission);
     }
   };
 
@@ -319,7 +320,6 @@ export async function dispatchToolCall(
       },
     },
   );
-  outputSettled = true;
   outputJournal.seal();
   await drainOutput();
   if (ctx.state.signal?.aborted) {
