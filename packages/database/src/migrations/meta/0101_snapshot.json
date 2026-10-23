@@ -7593,6 +7593,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "document_edit_parts_live_origin_seq": {
+          "name": "document_edit_parts_live_origin_seq",
+          "columns": [
+            {
+              "expression": "((\"origin\"->>'seq')::bigint)",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"document_edit_parts\".\"origin\"->>'kind' = 'live'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -8791,23 +8807,23 @@
           "primaryKey": false,
           "notNull": false
         },
-        "base_before": {
-          "name": "base_before",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "base_after": {
-          "name": "base_after",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
         "unapplied_by": {
           "name": "unapplied_by",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "base_start": {
+          "name": "base_start",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "base_delta": {
+          "name": "base_delta",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
         }
       },
       "indexes": {
@@ -8828,21 +8844,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "apply_command_effects_live_seq": {
-          "name": "apply_command_effects_live_seq",
-          "columns": [
-            {
-              "expression": "live_update_seq",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}

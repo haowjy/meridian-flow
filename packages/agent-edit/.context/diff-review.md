@@ -207,8 +207,8 @@ restoration records remain unchanged.
 A frozen Apply click holds O (the optimistic base seen) and P (O with its selected
 groups applied). `applyBase(schema, committed, O, P)` returns P when O equals the
 committed base, otherwise the blocks of `rebase(schema, O, committed, P)`. Browser
-queue folds and server base writes use this same function. Apply records carry an
-optional `commandId`; conversion history has none.
+queue folds and server base writes use this same function. Apply records carry optional `commandId` and `groupId` fields; conversion
+history has neither.
 
 `baseViewDelta(schema, roomBase, O)` builds a single set of disjoint whole-block
 patches, never a chain of queued clicks. Its payload contains only replaced blocks.

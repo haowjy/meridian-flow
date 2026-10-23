@@ -1,7 +1,7 @@
 /**
  * The Apply record: which draft items an Apply moved into the review base.
  *
- * The server appends one entry per Apply to a server-owned root of the draft doc, as the reserved server
+ * The server appends one entry per applied group to a server-owned root of the draft doc, as the reserved server
  * client, in the same write that moves `review_base`. `base` holds the applied changes' non-base items
  * (their text is now the base's); `settled` holds the tombstones at their deletion points (those deletions
  * are now in the base). Entries are plain id ranges, so splits of an item never invalidate them.
