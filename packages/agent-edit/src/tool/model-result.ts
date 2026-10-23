@@ -26,7 +26,6 @@ export type WriteErrorStatus =
   | "insufficient_redo"
   | "nothing_to_revert"
   | "work_archived"
-  | "region_changed"
   | "binary_file"
   | "permission_denied"
   | "internal_error";
@@ -53,7 +52,7 @@ export interface AgentEditBlockItem {
 export type AgentEditBlockGroup =
   | {
       extent: "full";
-      relation: "document" | "changed" | "swept";
+      relation: "document" | "changed";
       items: AgentEditBlockItem[];
     }
   | {
@@ -64,13 +63,22 @@ export type AgentEditBlockGroup =
     };
 
 /**
- * Blocks changed since the model last saw them that the result doesn't show, in document
- * order until the listing's byte cap; removed ones by hash; what didn't fit by count.
+ * Changes since the model's prior frontier, grouped by author. A receipt that already echoes a
+ * block names only its hash; otherwise the listing includes its current text within the byte cap.
  */
-export interface AgentEditConcurrentListing {
+export interface AgentEditConcurrentGroup {
+  /** `the user` for a person, otherwise the model chat's permanent handle. */
+  author: string;
+  /** Current text not already rendered by the result. */
   blocks: AgentEditBlockItem[];
+  /** Changed blocks whose resulting text the normal receipt already renders. */
+  shown?: string[];
   removed?: string[];
   more?: number;
+}
+
+export interface AgentEditConcurrentListing {
+  groups: AgentEditConcurrentGroup[];
 }
 
 /**
@@ -238,7 +246,6 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "cant_redo_users_undo":
     case "nothing_to_revert":
     case "work_archived":
-    case "region_changed":
     case "binary_file":
     case "internal_error":
     case "reversed":

@@ -68,7 +68,7 @@ export function installJsdomLayoutFallbacks(target: JsdomTarget = globalThis): v
   }
 
   // jsdom ships `scrollTop`/`scrollLeft` but not the `scrollTo`/`scrollBy`
-  // methods. Streamdown's pinned code/table panes scroll themselves from a
+  // methods. Mounted scroll surfaces may scroll themselves from a
   // passive effect; with nothing laid out there is nowhere to scroll, so a
   // no-op is the honest answer and keeps the absence from throwing.
   if (target.Element) {

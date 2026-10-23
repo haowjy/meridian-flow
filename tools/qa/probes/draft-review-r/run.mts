@@ -56,7 +56,6 @@ const liveCoordinator = {
 };
 const pulls = createDraftPullService({
   outsideTransaction: runOutsideWrite,
-  liveCoordinator,
   draftCoordinator: coordinator,
   drafts: h.store,
   liveJournal: h.persistence.journal,
@@ -82,6 +81,7 @@ async function seed(label: string, content = [paragraph("Base words.")]) {
     ...seeded,
     branchId: work.branchId,
     liveDoc: seeded.live,
+    liveRoom: null,
   });
   const room = await coordinator.readDraft(draft.draftId, async (doc) => clone(doc));
   assert.ok([...Y.decodeStateVector(Y.encodeStateVector(room)).keys()].every((id) => id === 1));

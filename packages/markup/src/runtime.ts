@@ -1,8 +1,8 @@
 /** Hidden runtime threaded through codec contexts for helper dispatch. */
 
 import type { Node as PMNode, Schema } from "prosemirror-model";
-
 import type { MdastRoot } from "./ast.js";
+import type { InlineOrigin } from "./presentation-source-map.js";
 import type { BlockCodec, MarkCodec, ParseContext, SerializeContext } from "./types.js";
 
 /** Frozen remark-stringify options — the codec-wide determinism contract. */
@@ -25,6 +25,7 @@ export const MARKDOWN_STRINGIFY_OPTIONS = {
 
 export interface CodecRuntime {
   source: string;
+  inlineOrigins?: InlineOrigin[];
   schema: Schema;
   blocks: readonly BlockCodec[];
   blockMap: ReadonlyMap<string, BlockCodec>;

@@ -1,9 +1,9 @@
 @import "./inline-review.css";
 
 /**
- * Editor stylesheet — tokenized ProseMirror chrome for collaborative context
- * documents. Geometry and color are expressed through Ink & Jade variables so
- * the editor follows the app theme without embedding component logic.
+ * Editor-only ProseMirror chrome and decorations for collaborative documents.
+ * Shared document rules live in styles/document.css. Geometry and color use
+ * Ink & Jade variables so the editor follows the app theme.
  *
  * Long-form manuscript reading: a calm ~68ch measure and the shared
  * `prose-tokens` reading scale. The prose stays undecorated: the cinnabar
@@ -40,154 +40,12 @@
      and visually heavier than chat at the same font size. */
 }
 
-.meridian-editor .ProseMirror > * + * {
-  margin-top: 0.9em;
-}
-
 .meridian-editor .ProseMirror p.is-empty::before {
   float: left;
   height: 0;
   color: var(--color-muted-foreground);
   content: attr(data-placeholder);
   pointer-events: none;
-}
-
-.meridian-editor .ProseMirror blockquote {
-  border-left: 0.1875rem solid var(--color-border-focus);
-  color: var(--color-muted-foreground);
-  padding-left: 1rem;
-}
-
-/* Code typography (inline chip, pre/code sizing and resets) comes from
-   `prose-tokens` in globals.css — the ProseMirror root carries that class, so
-   the editor shares one canonical code treatment with chat markdown. Only the
-   editor-specific block-code CHROME lives here: in chat, Streamdown's wrapper
-   card provides the surface; in the editor, the pre itself must. */
-.meridian-editor .ProseMirror pre {
-  border: 1px solid var(--color-code-border);
-  border-radius: var(--radius-md);
-  background: var(--color-code-surface);
-  color: var(--color-code-foreground);
-  padding: 0.875rem 1rem;
-}
-
-/* highlight.js token colors — CodeBlockLowlight tags each token with a
-   `.hljs-<kind>` span on the inner <code>. We map those classes onto the
-   syntax tokens declared in design-tokens/ink-jade.css rather than importing
-   a vendor hljs theme (vendor themes ship raw hex and would break the no-raw-
-   color rule). Grouping by visual role keeps the rule count small: each
-   semantic family points at one token so the palette is easy to retune.
-   Selectors stay scoped to the editor so the same DOM in an unrelated surface
-   (rendered markdown, chat) doesn't inherit unintentionally. */
-.meridian-editor .ProseMirror pre code .hljs-keyword,
-.meridian-editor .ProseMirror pre code .hljs-selector-tag,
-.meridian-editor .ProseMirror pre code .hljs-literal,
-.meridian-editor .ProseMirror pre code .hljs-section,
-.meridian-editor .ProseMirror pre code .hljs-tag {
-  color: var(--color-syntax-keyword);
-}
-
-.meridian-editor .ProseMirror pre code .hljs-string,
-.meridian-editor .ProseMirror pre code .hljs-doctag,
-.meridian-editor .ProseMirror pre code .hljs-template-tag,
-.meridian-editor .ProseMirror pre code .hljs-template-variable,
-.meridian-editor .ProseMirror pre code .hljs-quote {
-  color: var(--color-syntax-string);
-}
-
-.meridian-editor .ProseMirror pre code .hljs-comment,
-.meridian-editor .ProseMirror pre code .hljs-meta,
-.meridian-editor .ProseMirror pre code .hljs-meta .hljs-keyword {
-  color: var(--color-syntax-comment);
-  font-style: italic;
-}
-
-.meridian-editor .ProseMirror pre code .hljs-number,
-.meridian-editor .ProseMirror pre code .hljs-regexp,
-.meridian-editor .ProseMirror pre code .hljs-symbol,
-.meridian-editor .ProseMirror pre code .hljs-bullet,
-.meridian-editor .ProseMirror pre code .hljs-link {
-  color: var(--color-syntax-number);
-}
-
-.meridian-editor .ProseMirror pre code .hljs-title,
-.meridian-editor .ProseMirror pre code .hljs-title.function_,
-.meridian-editor .ProseMirror pre code .hljs-function .hljs-title,
-.meridian-editor .ProseMirror pre code .hljs-selector-id,
-.meridian-editor .ProseMirror pre code .hljs-selector-class {
-  color: var(--color-syntax-function);
-  font-weight: 600;
-}
-
-.meridian-editor .ProseMirror pre code .hljs-attr,
-.meridian-editor .ProseMirror pre code .hljs-attribute,
-.meridian-editor .ProseMirror pre code .hljs-name,
-.meridian-editor .ProseMirror pre code .hljs-property,
-.meridian-editor .ProseMirror pre code .hljs-variable {
-  color: var(--color-syntax-attr);
-}
-
-.meridian-editor .ProseMirror pre code .hljs-built_in,
-.meridian-editor .ProseMirror pre code .hljs-type,
-.meridian-editor .ProseMirror pre code .hljs-class .hljs-title,
-.meridian-editor .ProseMirror pre code .hljs-params {
-  color: var(--color-syntax-builtin);
-}
-
-.meridian-editor .ProseMirror pre code .hljs-punctuation,
-.meridian-editor .ProseMirror pre code .hljs-operator,
-.meridian-editor .ProseMirror pre code .hljs-subst {
-  color: var(--color-syntax-punctuation);
-}
-
-.meridian-editor .ProseMirror pre code .hljs-emphasis {
-  font-style: italic;
-}
-
-.meridian-editor .ProseMirror pre code .hljs-strong {
-  font-weight: 700;
-}
-
-.meridian-editor .ProseMirror pre code .hljs-deletion {
-  color: var(--color-destructive);
-}
-
-.meridian-editor .ProseMirror pre code .hljs-addition {
-  color: var(--color-jade-text);
-}
-
-.meridian-editor .ProseMirror table {
-  width: 100%;
-  border-collapse: collapse;
-  overflow: hidden;
-  border-radius: var(--radius-md);
-}
-
-.meridian-editor .ProseMirror table[data-align] {
-  width: fit-content;
-  max-width: 100%;
-}
-
-.meridian-editor .ProseMirror .tableWrapper {
-  overflow-x: auto;
-}
-
-.meridian-editor .ProseMirror th,
-.meridian-editor .ProseMirror td {
-  position: relative;
-  border: 1px solid var(--color-border-subtle);
-  padding: 0.5rem 0.625rem;
-  vertical-align: top;
-}
-
-.meridian-editor .ProseMirror th {
-  background: var(--color-muted);
-  font-weight: 650;
-}
-
-.meridian-editor .ProseMirror img {
-  max-width: 100%;
-  border-radius: var(--radius-md);
 }
 
 /* A picture is a big glyph. Its bottom sits on the text baseline, so the words

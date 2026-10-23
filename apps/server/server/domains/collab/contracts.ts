@@ -302,7 +302,6 @@ export type ResponseWriteCommitDocument = {
   documentId: DocumentId;
   updateCount: number;
   receipts: ResponseCommitWriteReceipt[];
-  lateSweep?: import("@meridian/agent-edit/integration").DestructiveSweepReport;
   /** Host-only, when the save recorded one: the document's frontier at the save's after-state. */
   frontier?: ObservationFrontier;
 };

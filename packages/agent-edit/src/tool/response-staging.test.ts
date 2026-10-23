@@ -194,8 +194,8 @@ describe("response staging", () => {
     const receipt = committed.documents[0]?.receipts.at(-1)?.result;
     if (!receipt) throw new Error("missing settled receipt");
     const text = renderAgentEditResult(receipt);
-    expect(text).toContain("concurrent user content swept during commit; re-read required");
-    expect(text).toMatch(/swept: [0-9a-f]+\|Alpha para\. SAME\\_BLOCK\\_WRITER/);
+    expect(text).not.toContain("re-read required");
+    expect(text).toContain("Alpha AI edit. SAME\\_BLOCK\\_WRITER");
   });
 
   it("reports no sweep when a reply removes and replaces the writer's text it asked to", async () => {
@@ -218,7 +218,6 @@ describe("response staging", () => {
     const committed = await ctx.core.commitResponse("response-own-removal");
 
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Race", "Gamma AI edit."]);
-    expect(committed.documents[0]?.lateSweep).toBeUndefined();
     for (const receipt of committed.documents[0]?.receipts ?? []) {
       expect(renderAgentEditResult(receipt.result)).not.toContain("swept");
     }

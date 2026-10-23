@@ -1,6 +1,7 @@
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type * as Y from "yjs";
 import type { ConcurrentUpdate } from "../apply/types.js";
+import type { BlockOriginMap } from "../model/block-hash.js";
 
 /** Why a retired thread peer's staged writes did not land: a Discard, or the document's removal. */
 export type RetiredWriteReason = Exclude<
@@ -52,18 +53,24 @@ export interface StagedReconcile {
 export interface RoomRead extends StagedReconcile {
   doc: Y.Doc;
   room: string | null;
+  /** Journal high-water mark for `doc`, in the room's host-owned sequence. */
+  position?: number;
 }
 
 /** A document's state before a save's kept rows, and with them. */
 export interface SaveCut {
   beforeState: Uint8Array;
   afterState: Uint8Array;
+  /** Journal high-water mark of `afterState`. */
+  position?: number;
 }
 
 /** A save of one scope's entries: the kept and refused ones, and where they went. */
 export interface StagedWriteSaveResult extends StagedReconcile {
   /** The room the rows append into; null records no frontier when the host cannot name it. */
   room: string | null;
+  /** Immutable address context for every cut reconstructed from this save. */
+  blockOrigins?: BlockOriginMap;
   /**
    * The host's prepared write, always present. `no-effect` says there is nothing to persist,
    * and is valid only with no kept entries; the caller refuses it otherwise rather than
@@ -146,6 +153,18 @@ export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFou
  * call gets a document to render, plan from or record, and `prepareSave` the one way any write
  * lands, a reply's or one outside a reply alike. Neither serializes against other callers.
  */
+export interface ConcurrentUpdatesInput {
+  docId: string;
+  doc: Y.Doc;
+  baselineDoc?: Y.Doc;
+  /** Exclusive observed and inclusive rendered journal bounds. */
+  after: number;
+  through: number;
+  /** Optional live interval projected into a draft's revision-0 cut. */
+  attributionBridge?: import("../frontier.js").SeedAttributionBridge;
+  access?: DocumentAccess;
+}
+
 export interface DocumentCoordinator {
   /**
    * A private copy of the room's committed state with `staged`'s surviving entries applied,
@@ -171,19 +190,8 @@ export interface DocumentCoordinator {
     },
   ): Promise<StagedWriteSaveResult>;
 
-  /**
-   * Optional origin-aware description of the updates present in `doc` (the save's before
-   * state, frozen: the host reports only what it contains) that `baselineDoc` (the view the
-   * writes planned on) doesn't contain: containment is the only skip. Hosts that omit it have
-   * the whole delta treated as the writer's.
-   */
-  concurrentUpdatesSince?(input: {
-    docId: string;
-    doc: Y.Doc;
-    baselineDoc?: Y.Doc;
-    sinceStateVector: Uint8Array;
-    access?: DocumentAccess;
-  }): Promise<ConcurrentUpdate[]>;
+  /** One bounded, origin-aware lookup for the model-facing concurrent-change account. */
+  concurrentUpdatesForReport?(input: ConcurrentUpdatesInput): Promise<ConcurrentUpdate[]>;
 }
 
 /** How a caller reaches a host document. */

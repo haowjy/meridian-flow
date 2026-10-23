@@ -47,21 +47,3 @@ export function linguiMacroBabelPlugin(): Plugin {
     },
   };
 }
-
-/** Externalize shiki from SSR builds (WASM not bundleable in rolldown SSR). */
-export function shikiSsrExternalPlugin(): Plugin {
-  const SHIKI_RE = /^(shiki|@shikijs\/)/;
-  return {
-    name: "meridian-shiki-ssr-external",
-    enforce: "pre",
-    resolveId: {
-      filter: { id: SHIKI_RE },
-      handler(source) {
-        if (this.environment?.config.consumer === "server") {
-          return { id: source, external: true };
-        }
-        return null;
-      },
-    },
-  };
-}

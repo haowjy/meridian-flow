@@ -1430,6 +1430,7 @@ msgstr "Conversation compacted automatically"
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/command-descriptor.ts
 #: src/features/editor/SchemaNotices.tsx
+#: src/rich-content/DocumentCodeBlock.tsx
 msgid "Copied"
 msgstr "Copied"
 
@@ -1459,6 +1460,7 @@ msgstr "Copy {0} source"
 
 #: src/features/editor/surfaces/objects/CodeBlockChips.tsx
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
+#: src/rich-content/DocumentCodeBlock.tsx
 msgid "Copy code"
 msgstr "Copy code"
 
@@ -2417,8 +2419,8 @@ msgid "Goal: {0}. "
 msgstr "Goal: {0}. "
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Got the latest text of"
-msgstr "Got the latest text of"
+#~ msgid "Got the latest text of"
+#~ msgstr "Got the latest text of"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "grid"
@@ -4047,6 +4049,10 @@ msgstr "Show less"
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Show more"
 msgstr "Show more"
+
+#: src/rich-content/DocumentCodeBlock.tsx
+msgid "Show source"
+msgstr "Show source"
 
 #: src/features/draft-review/DocumentChanges.tsx
 msgid "Show the {count} changes"

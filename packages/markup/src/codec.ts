@@ -12,7 +12,15 @@ import { CodecParseError } from "./error.js";
 import { EMPTY_PARAGRAPH_SENTINEL, parseBlockAst } from "./helpers.js";
 import { blockOccurrenceSpans } from "./link-occurrences.js";
 import { attentionHandlers } from "./markdown/attention.js";
+import { originalOffset, originalSource, type PreparedSource } from "./prepared-source.js";
+import { blockSourceMap, sourceRange } from "./presentation-source-map.js";
 import { type CodecRuntime, MARKDOWN_STRINGIFY_OPTIONS, withRuntime } from "./runtime.js";
+import {
+  markdownOpenCode,
+  parseStreamingDocument,
+  type RepairTail,
+  repairableTail,
+} from "./streaming.js";
 import type {
   BuildOptions,
   CodecParseErrorLocation,
@@ -22,6 +30,7 @@ import type {
   MarkupPlugin,
   OccurrenceSpan,
   ParseContext,
+  PresentationSourceRun,
   SerializeContext,
 } from "./types.js";
 
@@ -85,8 +94,18 @@ function buildMarkupCodec(
     .use(remarkGfm)
     .use(remarkPlugins);
 
-  const preprocess = (content: string): string =>
-    preprocessors.reduce((current, hook) => hook(current), content);
+  const preprocess = (content: string): PreparedSource =>
+    preprocessors.reduce((current, hook) => {
+      const next = hook(current.value);
+      if (typeof next === "string") {
+        return next === current.value ? current : originalSource(next);
+      }
+      if (!next.originalOffsets) return { value: next.value };
+      return {
+        value: next.value,
+        originalOffsets: next.originalOffsets.map((offset) => originalOffset(current, offset)),
+      };
+    }, originalSource(content));
 
   const parsePreparedMarkdown = (source: string): MdastRoot => {
     try {
@@ -98,7 +117,8 @@ function buildMarkupCodec(
       throw toCodecParseError(error);
     }
   };
-  const parseMarkdown = (content: string): MdastRoot => parsePreparedMarkdown(preprocess(content));
+  const parseMarkdown = (content: string): MdastRoot =>
+    parsePreparedMarkdown(preprocess(content).value);
   const stringifyMarkdown = (root: MdastRoot): string =>
     stringifyProcessor.stringify(root as Parameters<typeof stringifyProcessor.stringify>[0]);
 
@@ -110,29 +130,75 @@ function buildMarkupCodec(
     content: string,
     baseCtx: ParseContext,
     withSpans: boolean,
-  ): { blocks: PMNode[]; spans: OccurrenceSpan[] } => {
-    const source = preprocess(content);
+    withSourceMap = false,
+    withRepairTail = false,
+  ): {
+    blocks: PMNode[];
+    spans: OccurrenceSpan[];
+    sourceMap: PresentationSourceRun[];
+    repairTail: RepairTail | null;
+  } => {
+    const prepared = preprocess(content);
+    const source = prepared.value;
     const runtime = makeRuntime(source);
     const ctx = withRuntime<ParseContext>({ schema: baseCtx.schema }, runtime);
+    if (withSourceMap) runtime.inlineOrigins = [];
     const tree = parsePreparedMarkdown(source);
     const blocks: PMNode[] = [];
     const spans: OccurrenceSpan[] = [];
-    for (const child of tree.children) {
+    const sourceMap: PresentationSourceRun[] = [];
+    let repairTail: RepairTail | null = null;
+    for (const [index, child] of tree.children.entries()) {
+      if (runtime.inlineOrigins) runtime.inlineOrigins.length = 0;
       const node = parseBlockAst(child, ctx);
       if (node === null) continue;
+      if (withSourceMap)
+        sourceMap.push(
+          ...blockSourceMap(
+            node,
+            blocks.length,
+            runtime.inlineOrigins ?? [],
+            source === content ? source : null,
+          ),
+        );
       blocks.push(node);
+      if (
+        withRepairTail &&
+        index === tree.children.length - 1 &&
+        repairableTail(child, source.length)
+      ) {
+        const from = originalOffset(prepared, sourceRange(child)?.from ?? 0);
+        repairTail = { from: physicalLineStart(content, from) };
+      }
       if (withSpans)
         spans.push(
           ...blockOccurrenceSpans(node, child, source === content ? source : null, content.length),
         );
     }
-    return { blocks, spans };
+    return { blocks, spans, sourceMap, repairTail };
   };
 
-  const parseDocument = (content: string, withSpans: boolean) => {
-    if (content.trim().length === 0) return { blocks: [schema.node("paragraph")], spans: [] };
-    const parsed = parseTopLevel(content, { schema }, withSpans);
-    return parsed.blocks.length > 0 ? parsed : { blocks: [schema.node("paragraph")], spans: [] };
+  const parseDocument = (
+    content: string,
+    withSpans: boolean,
+    withSourceMap = false,
+    withRepairTail = false,
+  ) => {
+    if (content.trim().length === 0)
+      return {
+        blocks: [schema.node("paragraph")],
+        spans: [],
+        sourceMap: [],
+        repairTail: null,
+      };
+    const parsed = parseTopLevel(content, { schema }, withSpans, withSourceMap, withRepairTail);
+    return parsed.blocks.length > 0
+      ? parsed
+      : {
+          ...parsed,
+          blocks: [schema.node("paragraph")],
+          repairTail: null,
+        };
   };
 
   const makeRuntime = (source: string): CodecRuntime => ({
@@ -184,7 +250,13 @@ function buildMarkupCodec(
     },
 
     parseWithSpans(content: string) {
-      return parseDocument(content, true);
+      const { blocks, spans } = parseDocument(content, true);
+      return { blocks, spans };
+    },
+
+    parseWithSourceMap(content: string) {
+      const { blocks, sourceMap } = parseDocument(content, false, true);
+      return { blocks, sourceMap, openCode: markdownOpenCode(blocks, content) };
     },
 
     serializeBlock(block: PMNode, links: DocumentLinkScope): string {
@@ -192,7 +264,17 @@ function buildMarkupCodec(
     },
 
     serializeBlocks,
+    parseStreaming(content, streamOptions = {}) {
+      return parseStreamingDocument(content, streamOptions, (source) =>
+        parseDocument(source, false, false, true),
+      );
+    },
   };
+}
+
+function physicalLineStart(source: string, offset: number): number {
+  const newline = source.lastIndexOf("\n", Math.max(0, offset - 1));
+  return newline === -1 ? 0 : newline + 1;
 }
 
 function toCodecParseError(error: unknown): CodecParseError {

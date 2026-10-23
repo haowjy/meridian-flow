@@ -161,10 +161,41 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return doc;
     }
 
+    function docWithParagraph(clientID: number): Y.Doc {
+      const doc = new Y.Doc({ gc: false });
+      doc.clientID = clientID;
+      doc.getXmlFragment("prosemirror").insert(0, [new Y.XmlElement("paragraph")]);
+      return doc;
+    }
+
     beforeEach(async () => {
       db = database.current;
       livePersistence = createDrizzleCollabPersistence(db);
       store = createDraftStore();
+    });
+
+    it("returns the winning seed record to both sides of a creation race", async () => {
+      const first = docWithParagraph(101);
+      const second = docWithParagraph(202);
+      const [left, right] = await Promise.all([
+        store.ensureDocumentDraft({
+          documentId: DOC_ID as never,
+          branchId: BRANCH_ID as never,
+          liveDoc: first,
+          liveRoom: `live:${DOC_ID}:1`,
+        }),
+        store.ensureDocumentDraft({
+          documentId: DOC_ID as never,
+          branchId: BRANCH_ID as never,
+          liveDoc: second,
+          liveRoom: `live:${DOC_ID}:2`,
+        }),
+      ]);
+
+      expect(right.draftId).toBe(left.draftId);
+      expect(right.seed).toEqual(left.seed);
+      expect(left.seed?.liveRoom).toMatch(/^live:.*:[12]$/u);
+      expect(Object.keys(left.seed?.origins ?? {})).toHaveLength(1);
     });
 
     it("reseeds a clean thread peer under the reassigned primary Work's draft", async () => {
@@ -173,7 +204,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         branchId: BRANCH_ID as never,
-        liveDoc: async () => live,
+        liveDoc: async () => ({ doc: live, room: null }),
       });
       await db.insert(works).values({
         id: NEXT_WORK_ID,
@@ -208,7 +239,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         branchId: NEXT_BRANCH_ID as never,
-        liveDoc: async () => live,
+        liveDoc: async () => ({ doc: live, room: null }),
       });
       const [oldRow, nextUpstream] = await Promise.all([
         db
@@ -262,6 +293,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         branchId: BRANCH_ID as never,
         liveDoc: base,
+        liveRoom: null,
       });
       const snapshot = await measuredStore.getDraft(documentDraft.draftId);
       if (!snapshot) throw new Error("missing batch target");
@@ -345,6 +377,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         branchId: BRANCH_ID as never,
         liveDoc: live,
+        liveRoom: null,
       });
     });
 
@@ -377,6 +410,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         branchId: BRANCH_ID as never,
         liveDoc: docWithText("live"),
+        liveRoom: null,
       });
       await runInDrizzleTransaction(db, async () => {
         await branchStore.lockActive(BRANCH_ID as never);
@@ -401,6 +435,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentId: DOC_ID as never,
             branchId: BRANCH_ID as never,
             liveDoc: docWithText("live"),
+            liveRoom: null,
           }),
           "a write boundary refuses the closed branch",
         )
@@ -440,6 +475,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         branchId: BRANCH_ID as never,
         liveDoc: docWithText("seed"),
+        liveRoom: null,
       });
       const row = (updateData: Uint8Array) => ({
         draftId: documentDraft.draftId,

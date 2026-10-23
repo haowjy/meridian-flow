@@ -3,7 +3,6 @@ import type { z } from "zod";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { DocumentNotFoundError, isDocumentNotFoundError } from "../ports/document-coordinator.js";
 import { ReadCommandSchema, WriteCommandSchema } from "./command-schema.js";
-import { createCommitDetection } from "./commit-detection.js";
 import { createDocumentEditCommands } from "./document-edits.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import type { InternalWriteResult } from "./internal-result.js";
@@ -80,14 +79,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const autoTurnCounter = { value: 0 };
   const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
   const journal = options.journal;
-  const detection = createCommitDetection({
-    links: options.links,
-    journal: options.journal,
-    coordinator: options.coordinator,
-    model: options.model,
-  });
   const responseCommitter = createResponseCommitter({
-    detection,
     coordinator: options.coordinator,
     model: options.model,
     codec: options.codec,

@@ -19,7 +19,6 @@ export type WriteErrorStatus =
   | "insufficient_redo"
   | "nothing_to_revert"
   | "work_archived"
-  | "region_changed"
   | "binary_file"
   | "permission_denied"
   | "internal_error";

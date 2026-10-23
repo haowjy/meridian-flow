@@ -53,6 +53,7 @@ function scenario() {
             branchId: FAKE_BRANCH_ID,
             peerDraftId: "peer-1",
             upstreamDraftId: FAKE_UPSTREAM_ID,
+            seed: null,
           },
         },
       ],

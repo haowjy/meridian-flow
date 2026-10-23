@@ -87,24 +87,21 @@ chat switcher before typing.
 
 ## Expect
 
-Every writer edit here is 1 or 2 words, under the region check's 10-word budget, so no write is
-refused; the merge decides what survives.
+No concurrent writer edit refuses the model write; the Yjs merge decides what survives.
 
 | Cell | Both modes |
 |---|---|
-| 1 | writer paragraph kept between the rewritten B and C; no `swept:` |
-| 2 | B rewritten, ` WRITER-W` kept as its suffix (the settled result still prints a `swept:` line for B; swept reporting is M3's) |
-| 3 | D and ` WRITER-D` gone; the result names it on a `swept:` line |
-| 4 | `WRITER-OUT` kept; it is outside the write's passage and listed under `concurrent edits:` |
+| 1 | writer paragraph kept between the rewritten B and C |
+| 2 | B rewritten, ` WRITER-W` kept as its suffix |
+| 3 | D and ` WRITER-D` gone (ancestor delete: the write removed the block holding the writer's text) |
+| 4 | `WRITER-OUT` kept; it is outside the write's passage and listed under `concurrent edits by the user` |
+
+No result prints a `swept:` line.
 
 No text duplicated anywhere. In draft mode the live document keeps the five original paragraphs
-(`./mf doc read`). To see the refusal, repeat cell 2 typing a sentence of more than ten words:
-the write returns `status: region_changed` with "Not applied: this passage changed since you last
-saw it. Current text:", the chat row reads "Got the latest text of" the document, and the next
-step's identical write lands. The refusal showed the model the writer's sentence, so that
-write replaces the whole block and the sentence goes with it: a passage the model has seen is
-the model's to overwrite. A write that should keep the sentence has to include it. (A passage the model hasn't seen
-all of says "Not applied: you haven't seen all of this passage yet. Current text:" instead.)
+(`./mf doc read`). Repeat cell 2 with a sentence longer than ten words: the write still lands,
+the normal receipt shows the resulting B block, and `concurrent edits by the user` names the
+user's contribution. A write based on a partial read lands by the same rule.
 
 Capture per cell the `tool.settled` line, `./mf thread view "$T" --last 2 --full --json`, the
 document text (auto-apply: `./mf doc read`; draft: the visible editor), and one screenshot of the

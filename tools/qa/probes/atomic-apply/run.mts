@@ -114,6 +114,7 @@ async function fixture(
     documentId: document.documentId,
     branchId: work.branchId,
     liveDoc: liveSeed,
+    liveRoom: null,
   });
   liveSeed.destroy();
   const room = await h.coordinator.readDraft(snapshot.draftId, async (doc) => clone(doc, client++));

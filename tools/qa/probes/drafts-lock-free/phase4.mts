@@ -244,6 +244,7 @@ export async function seedDraft(harness: Harness, label: string, text = "Base") 
     documentId,
     branchId: work.branchId,
     liveDoc: live,
+    liveRoom: null,
   });
   return { ...work, documentId, live, draftId: documentDraft.draftId };
 }
@@ -267,7 +268,6 @@ export async function rebaseLive(
     drafts: harness.store,
     liveJournal: harness.persistence.journal,
     draftCoordinator: coordinator,
-    liveCoordinator: {} as never,
   });
   try {
     await pulls.flushLivePull(documentId);
@@ -464,17 +464,6 @@ export async function openProjected(
     drafts: harness.store,
     liveJournal: harness.persistence.journal,
     draftCoordinator: coordinator,
-    liveCoordinator: {
-      async withDocument(documentId: string, fn: (doc: Y.Doc) => Promise<unknown>) {
-        const doc = await harness.liveDoc(documentId);
-        try {
-          return await fn(doc);
-        } finally {
-          doc.destroy();
-        }
-      },
-      recover: async () => {},
-    } as never,
   });
   projection = createDraftProjection({
     coordinator,

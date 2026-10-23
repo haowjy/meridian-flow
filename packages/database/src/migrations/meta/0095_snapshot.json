@@ -1,6 +1,6 @@
 {
-  "id": "68adba6b-0def-426b-9954-ca66d8c048d0",
-  "prevId": "acb612fd-0356-49fb-9774-a2e3b4402e15",
+  "id": "87ed0622-da4f-4560-b3b7-8bc15efd3b2d",
+  "prevId": "540a3089-0b9d-499d-8129-6c5422ed8bf6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1353,11 +1353,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "unshown": {
-          "name": "unshown",
-          "type": "jsonb",
+        "journal_position": {
+          "name": "journal_position",
+          "type": "bigint",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "recorded_seq": {
           "name": "recorded_seq",
@@ -5989,12 +5989,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "document_alias": {
-          "name": "document_alias",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "description": {
           "name": "description",
           "type": "text",
@@ -6083,34 +6077,6 @@
             },
             {
               "expression": "parent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"folders\".\"deleted_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "folders_context_parent_alias_active": {
-          "name": "folders_context_parent_alias_active",
-          "columns": [
-            {
-              "expression": "context_source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "parent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "document_alias",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -7832,7 +7798,7 @@
         },
         "document_edits_tree_change_valid": {
           "name": "document_edits_tree_change_valid",
-          "value": "\"document_edits\".\"tree_change\" IS NULL OR (\n        \"document_edits\".\"tree_change\"->>'op' IN ('create','move','delete','restore','settle')\n        AND \"document_edits\".\"tree_change\"->'destination'->>'kind' IN ('live','draft')\n        AND jsonb_typeof(\"document_edits\".\"tree_change\"->'seq') = 'number'\n        AND jsonb_typeof(\"document_edits\".\"tree_change\"->'targets') = 'array'\n        AND (\"document_edits\".\"tree_change\"->>'op' <> 'settle' OR \"document_edits\".\"tree_change\" ? 'settles')\n      )"
+          "value": "\"document_edits\".\"tree_change\" IS NULL OR (\n        \"document_edits\".\"tree_change\"->>'op' IN ('move','delete','restore','settle')\n        AND \"document_edits\".\"tree_change\"->'destination'->>'kind' IN ('live','draft')\n        AND jsonb_typeof(\"document_edits\".\"tree_change\"->'seq') = 'number'\n        AND jsonb_typeof(\"document_edits\".\"tree_change\"->'targets') = 'array'\n        AND (\"document_edits\".\"tree_change\"->>'op' <> 'settle' OR \"document_edits\".\"tree_change\" ? 'settles')\n      )"
         }
       },
       "isRLSEnabled": false
@@ -9625,6 +9591,42 @@
           "primaryKey": false,
           "notNull": true
         },
+        "seed_origins": {
+          "name": "seed_origins",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seed_live_room": {
+          "name": "seed_live_room",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seed_live_snapshot": {
+          "name": "seed_live_snapshot",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seed_draft_snapshot": {
+          "name": "seed_draft_snapshot",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seed_live_state": {
+          "name": "seed_live_state",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seed_live_position": {
+          "name": "seed_live_position",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
         "has_effect": {
           "name": "has_effect",
           "type": "boolean",
@@ -9823,6 +9825,10 @@
         "document_drafts_status_valid": {
           "name": "document_drafts_status_valid",
           "value": "\"document_drafts\".\"status\" IN ('active', 'closed')"
+        },
+        "document_drafts_seed_record_shape": {
+          "name": "document_drafts_seed_record_shape",
+          "value": "((\"document_drafts\".\"seed_origins\" IS NULL AND \"document_drafts\".\"seed_live_room\" IS NULL AND \"document_drafts\".\"seed_live_snapshot\" IS NULL AND \"document_drafts\".\"seed_draft_snapshot\" IS NULL) OR (\"document_drafts\".\"kind\" = 'work_draft' AND \"document_drafts\".\"seed_origins\" IS NOT NULL AND \"document_drafts\".\"seed_live_room\" IS NOT NULL AND \"document_drafts\".\"seed_live_snapshot\" IS NOT NULL AND \"document_drafts\".\"seed_draft_snapshot\" IS NOT NULL)) AND ((\"document_drafts\".\"seed_live_state\" IS NULL AND \"document_drafts\".\"seed_live_position\" IS NULL) OR (\"document_drafts\".\"seed_live_state\" IS NOT NULL AND \"document_drafts\".\"seed_live_position\" IS NOT NULL))"
         },
         "document_drafts_owner_shape": {
           "name": "document_drafts_owner_shape",

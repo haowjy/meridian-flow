@@ -603,6 +603,7 @@ function fakeJournal(): CheckpointJournal & LiveWriterJournal {
     append: vi.fn(async () => 1),
     appendBatch: vi.fn(async () => []),
     read: vi.fn(async () => ({ checkpoint: null, updates: [] })),
+    readUpdates: vi.fn(async () => []),
     captureCheckpoint: vi.fn(async (docId, authority) =>
       createInMemoryJournal().captureCheckpoint(docId, authority),
     ),

@@ -1,9 +1,4 @@
 // Explicit composition and low-level integration surface for agent-edit hosts.
-export {
-  classifyDestructiveSnapshotEffect,
-  type DestructiveEffect,
-  type DestructiveSnapshotInput,
-} from "./apply/destructive-classification.js";
 export type { BlockSnapshot } from "./apply/echo.js";
 export { snapshotBlocks } from "./apply/echo.js";
 export { overwriteWithAssigned } from "./apply/overwrite.js";
@@ -18,8 +13,16 @@ export type {
   FrontierLookups,
   ObservationFrontier,
   ReplyMutations,
+  ResolvedObservationFrontier,
+  SeedAttributionBridge,
 } from "./frontier.js";
-export { createReplyMutations } from "./frontier.js";
+export {
+  createReplyMutations,
+  decodeSnapshot,
+  frontierBlockId,
+  frontierDelta,
+  projectSeedFrontier,
+} from "./frontier.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export * from "./index.js";
@@ -36,7 +39,13 @@ export { assignLinkRefs } from "./links/assign-refs.js";
 export type { ShownLink } from "./links/correspondence.js";
 export type { LinkShowing } from "./links/shown.js";
 export type { BlockItemId } from "./model/block-hash.js";
-export { getBlockItemId } from "./model/block-hash.js";
+export {
+  type BlockOriginMap,
+  bindBlockOrigins,
+  blockItemIdKey,
+  getBlockItemId,
+  getTopLevelXmlBlocks,
+} from "./model/block-hash.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
 export type {
@@ -122,7 +131,6 @@ export type {
   Utf16Span,
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
-export type { DestructiveSweepReport } from "./tool/commit-detection.js";
 export {
   rejectedWriteExplanation,
   rejectedWriteResult,

@@ -12,6 +12,36 @@ export interface BlockItemId {
   clock: number;
 }
 
+/** Immutable seed-time names for draft blocks, keyed by their own canonical item id. */
+export type BlockOriginMap = ReadonlyMap<string, BlockItemId>;
+
+const originsByDocument = new WeakMap<Y.Doc, BlockOriginMap>();
+
+export function blockItemIdKey(id: BlockItemId): string {
+  return `${id.clientID}:${id.clock}`;
+}
+
+/** Bind one document copy to its Work draft's immutable block-address context. */
+export function bindBlockOrigins(doc: Y.Doc, origins: BlockOriginMap): void {
+  originsByDocument.set(doc, new Map(origins));
+}
+
+/** Preserve a source copy's address context on another copy of the same room. */
+export function copyBlockOrigins(source: Y.Doc, target: Y.Doc): void {
+  const origins = originsByDocument.get(source);
+  if (origins) originsByDocument.set(target, origins);
+}
+
+function blockIdentity(block: Y.XmlElement | BlockRef): BlockItemId {
+  const element = xmlElement(block);
+  const own = getBlockItemId(element);
+  return (element.doc && originsByDocument.get(element.doc)?.get(blockItemIdKey(own))) ?? own;
+}
+
+export function blockIdentityForItem(doc: Y.Doc, id: BlockItemId): BlockItemId {
+  return originsByDocument.get(doc)?.get(blockItemIdKey(id)) ?? id;
+}
+
 export type BlockHashLookup =
   | { ok: true; hash: string; block: Y.XmlElement }
   | { ok: false; reason: "not_found" }
@@ -31,7 +61,7 @@ export function getBlockItemId(block: Y.XmlElement | BlockRef): BlockItemId {
   return { clientID: item.id.client, clock: item.id.clock };
 }
 
-/** Display prefix derived from item identity, unique among current live siblings. */
+/** Display prefix derived from address identity, unique among current live siblings. */
 export function getBlockHash(block: Y.XmlElement | BlockRef): string {
   const siblings = siblingBlocks(block);
   const element = xmlElement(block);
@@ -57,7 +87,7 @@ export function lookupBlockHash(doc: Y.Doc, hash: string): BlockHashLookup {
 
   const matches: Y.XmlElement[] = [];
   for (const block of getTopLevelXmlBlocks(doc)) {
-    const fullHash = fullHashForItemId(getBlockItemId(block));
+    const fullHash = fullHashForItemId(blockIdentity(block));
     // Display hashes are flexible prefixes; resolve held old widths against immutable full hashes.
     if (fullHash.startsWith(normalized)) matches.push(block);
   }
@@ -80,7 +110,7 @@ function uniqueHashFor(target: Y.XmlElement, blocks: readonly Y.XmlElement[]): s
 
 /** Compute unique hashes for a set of blocks in one sorted pass. */
 function uniqueHashesForBlocks(blocks: readonly Y.XmlElement[]): string[] {
-  return uniqueHashesForIds(blocks.map(getBlockItemId));
+  return uniqueHashesForIds(blocks.map(blockIdentity));
 }
 
 /**
