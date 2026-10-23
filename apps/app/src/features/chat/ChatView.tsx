@@ -435,91 +435,68 @@ export function ChatView({
   const { operation: handBackOperation } = handBack;
   const { retry: retrySendNow, dismiss: dismissSendNow } = sendNow;
   const { open: openSettings } = settings;
-  const handleCardAction = useCommittedEvent(
-    (
-      action:
-        | { kind: "retry-reply" | "compaction" | "lost" | "brief-stop"; id: string }
-        | { kind: "hand-back-retry" | "hand-back-dismiss"; id: string }
-        | { kind: "control-retry" | "control-stop"; id: string }
-        | { kind: "send-now-retry" | "send-now-dismiss" | "add-usage" },
-    ) => {
-      const turnOf = (turnId: string) => turns.find((turn) => turn.id === turnId);
-      switch (action.kind) {
-        case "retry-reply": {
-          const turn = turnOf(action.id);
-          if (!turn) return;
-          // Retry leaves with this row's error; keep focus in the transcript and follow the new reply.
-          chatSurfaceRef.current
-            ?.querySelector<HTMLElement>('[role="log"]')
-            ?.focus({ preventScroll: true });
-          requestTailFollow();
-          retryReplyPress(turn);
-          return;
-        }
-        case "compaction": {
-          const turn = turnOf(action.id);
-          if (!turn) return;
-          const instructions = readCompactionFacts(turn).instructions;
-          requestTailFollow();
-          enqueueControl(instructions ? { kind: "compact", instructions } : { kind: "compact" });
-          return;
-        }
-        case "lost": {
-          const turn = turnOf(action.id);
-          if (!turn) return;
-          if (isHandoffSeed(turn)) retryBrief(turn);
-          else retryReplyPress(turn);
-          return;
-        }
-        case "brief-stop":
-          stopBrief(action.id);
-          return;
-        case "hand-back-retry":
-          void handBackOperation.retry(action.id);
-          return;
-        case "hand-back-dismiss":
-          handBackOperation.dismiss(action.id);
-          return;
-        case "send-now-retry":
-          retrySendNow();
-          return;
-        case "send-now-dismiss":
-          dismissSendNow();
-          return;
-        case "control-retry":
-          retryControl(action.id);
-          return;
-        case "control-stop": {
-          const control = queuedControls.find((candidate) => candidate.id === action.id);
-          if (control) withdrawControl(control);
-          return;
-        }
-        case "add-usage":
-          openSettings("usage");
-      }
-    },
+  const retryReplyCard = useCommittedEvent((turnId: string) => {
+    const turn = turns.find((candidate) => candidate.id === turnId);
+    if (!turn) return;
+    // Retry leaves with this row's error; keep focus in the transcript and follow the new reply.
+    chatSurfaceRef.current
+      ?.querySelector<HTMLElement>('[role="log"]')
+      ?.focus({ preventScroll: true });
+    requestTailFollow();
+    retryReplyPress(turn);
+  });
+  const retryCompactionCard = useCommittedEvent((turnId: string) => {
+    const turn = turns.find((candidate) => candidate.id === turnId);
+    if (!turn) return;
+    const instructions = readCompactionFacts(turn).instructions;
+    requestTailFollow();
+    enqueueControl(instructions ? { kind: "compact", instructions } : { kind: "compact" });
+  });
+  const retryLostCard = useCommittedEvent((turnId: string) => {
+    const turn = turns.find((candidate) => candidate.id === turnId);
+    if (!turn) return;
+    if (isHandoffSeed(turn)) retryBrief(turn);
+    else retryReplyPress(turn);
+  });
+  const retryBriefStopCard = useCommittedEvent((turnId: string) => stopBrief(turnId));
+  const retryHandBackCard = useCommittedEvent((requestId: string) => {
+    void handBackOperation.retry(requestId);
+  });
+  const dismissHandBackCard = useCommittedEvent((requestId: string) =>
+    handBackOperation.dismiss(requestId),
   );
+  const retrySendNowCard = useCommittedEvent(() => retrySendNow());
+  const dismissSendNowCard = useCommittedEvent(() => dismissSendNow());
+  const retryControlCard = useCommittedEvent((controlId: string) => retryControl(controlId));
+  const stopControlCard = useCommittedEvent((controlId: string) => {
+    const control = queuedControls.find((candidate) => candidate.id === controlId);
+    if (control) withdrawControl(control);
+  });
+  const addUsageCard = useCommittedEvent(() => openSettings("usage"));
   const cardHandlers = useMemo<ChatCardHandlers>(
     () => ({
-      retryReply: (id) => handleCardAction({ kind: "retry-reply", id }),
-      tryAgainCompaction: (id) => handleCardAction({ kind: "compaction", id }),
-      retryLost: (id) => handleCardAction({ kind: "lost", id }),
-      retryBriefStop: (id) => handleCardAction({ kind: "brief-stop", id }),
-      handBack: {
-        retry: (id) => handleCardAction({ kind: "hand-back-retry", id }),
-        dismiss: (id) => handleCardAction({ kind: "hand-back-dismiss", id }),
-      },
-      sendNow: {
-        retry: () => handleCardAction({ kind: "send-now-retry" }),
-        dismiss: () => handleCardAction({ kind: "send-now-dismiss" }),
-      },
-      control: {
-        retry: (id) => handleCardAction({ kind: "control-retry", id }),
-        stop: (id) => handleCardAction({ kind: "control-stop", id }),
-      },
-      addUsage: () => handleCardAction({ kind: "add-usage" }),
+      retryReply: retryReplyCard,
+      tryAgainCompaction: retryCompactionCard,
+      retryLost: retryLostCard,
+      retryBriefStop: retryBriefStopCard,
+      handBack: { retry: retryHandBackCard, dismiss: dismissHandBackCard },
+      sendNow: { retry: retrySendNowCard, dismiss: dismissSendNowCard },
+      control: { retry: retryControlCard, stop: stopControlCard },
+      addUsage: addUsageCard,
     }),
-    [handleCardAction],
+    [
+      addUsageCard,
+      dismissHandBackCard,
+      dismissSendNowCard,
+      retryBriefStopCard,
+      retryCompactionCard,
+      retryControlCard,
+      retryHandBackCard,
+      retryLostCard,
+      retryReplyCard,
+      retrySendNowCard,
+      stopControlCard,
+    ],
   );
 
   // Every decision about which rows the writer sees runs in the view model. A turn a card is
