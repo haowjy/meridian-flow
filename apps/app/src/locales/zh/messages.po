@@ -4365,8 +4365,8 @@ msgid "That change can't be redone here because it was already applied to your m
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone here because the chat now writes somewhere else."
-msgstr ""
+#~ msgid "That change can't be redone here because the chat now writes somewhere else."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone because it was discarded."
@@ -4385,8 +4385,8 @@ msgid "That change can't be undone here because it was already applied to your m
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be undone here because the chat now writes somewhere else."
-msgstr ""
+#~ msgid "That change can't be undone here because the chat now writes somewhere else."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change couldn't be made in {name}."
