@@ -270,38 +270,53 @@ export function createDrizzleDraftStore(
   async function retireCreatedDocumentDraft(input: {
     documentId: DocumentId;
     branchId: BranchId;
-  }): Promise<void> {
-    await deps.close.closeDrafts(
-      currentDrizzleDb(db),
-      { documentIds: [input.documentId], branchId: input.branchId },
-      "document_discarded",
-    );
-  }
-
-  async function restoreCreatedDocumentDraft(input: {
-    documentId: DocumentId;
-    branchId: BranchId;
-  }): Promise<DraftSnapshot> {
-    const [retained] = await selectDraft(currentDrizzleDb(db))
+  }): Promise<string | null> {
+    const [active] = await selectDraft(currentDrizzleDb(db))
       .where(
         and(
           eq(documentDrafts.documentId, input.documentId),
           eq(documentDrafts.branchId, input.branchId),
           eq(documentDrafts.kind, "work_draft"),
-          eq(documentDrafts.status, "closed"),
+          eq(documentDrafts.status, "active"),
         ),
       )
-      .orderBy(desc(documentDrafts.updatedAt), desc(documentDrafts.id))
       .limit(1);
-    if (!retained) return ensureCreatedDocumentDraft(input);
-    if (retained.successorDraftId) {
-      const successor = await readDraftAt(currentDrizzleDb(db), retained.successorDraftId);
-      if (successor?.documentDraft.status === "active") return successor.documentDraft;
-      throw new Error(`Retained draft ${retained.draftId} already has a closed successor`);
-    }
-    const read = await readDraftAt(currentDrizzleDb(db), retained.draftId);
-    if (!read) throw new Error(`Retained draft ${retained.draftId} vanished`);
-    const doc = materializeDraftRead(read, createCollabYDoc({ gc: false }));
+    await deps.close.closeDrafts(
+      currentDrizzleDb(db),
+      { documentIds: [input.documentId], branchId: input.branchId },
+      "document_discarded",
+    );
+    return active?.draftId ?? null;
+  }
+
+  async function restoreCreatedDocumentDraft(input: {
+    documentId: DocumentId;
+    branchId: BranchId;
+    sourceDraftId: string;
+    sourceRevision: number;
+  }): Promise<DraftSnapshot | null> {
+    const retained = await readDraftAt(currentDrizzleDb(db), input.sourceDraftId);
+    if (
+      retained?.documentDraft.documentId !== input.documentId ||
+      retained.documentDraft.branchId !== input.branchId ||
+      retained.documentDraft.kind !== "work_draft" ||
+      retained.documentDraft.status !== "closed" ||
+      retained.documentDraft.revision !== input.sourceRevision ||
+      retained.documentDraft.successorDraftId
+    )
+      return null;
+    const [occupied] = await selectDraft(currentDrizzleDb(db))
+      .where(
+        and(
+          eq(documentDrafts.documentId, input.documentId),
+          eq(documentDrafts.branchId, input.branchId),
+          eq(documentDrafts.kind, "work_draft"),
+          eq(documentDrafts.status, "active"),
+        ),
+      )
+      .limit(1);
+    if (occupied) return null;
+    const doc = materializeDraftRead(retained, createCollabYDoc({ gc: false }));
     try {
       const successor = await ensureDocumentDraft({
         ...input,
@@ -313,13 +328,14 @@ export function createDrizzleDraftStore(
         .set({ successorDraftId: successor.draftId })
         .where(
           and(
-            eq(documentDrafts.id, retained.draftId),
+            eq(documentDrafts.id, input.sourceDraftId),
             isNull(documentDrafts.successorDraftId),
             eq(documentDrafts.status, "closed"),
+            eq(documentDrafts.revision, input.sourceRevision),
           ),
         )
         .returning({ id: documentDrafts.id });
-      if (!linked) throw new Error(`Retained draft ${retained.draftId} continuation changed`);
+      if (!linked) return null;
       return successor;
     } finally {
       doc.destroy();

@@ -151,7 +151,7 @@ it.each([
     expect(edits.result.message).toMatch(/e2 {2}this turn {2}changed.*undo: no \(changed\)/);
     expect(edits.result.message).not.toContain("undone by the user");
     expect(await core.write({ ...address, command: "undo" }, current)).toMatchObject({
-      status: destination === "draft" ? "cant_undo_discarded" : "cant_undo_changed",
+      status: "cant_undo_changed",
       result: { message: expect.stringContaining("e2") },
     });
     expect(await text()).toBe("gold\n\npink\n\nblack\n");

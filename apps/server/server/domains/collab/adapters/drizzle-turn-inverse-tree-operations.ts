@@ -1,6 +1,5 @@
 /** Tree mutations used by the durable turn-inverse transaction orchestrator. */
 import {
-  type BranchId,
   type BranchTreeTransition,
   type ContextSourceId,
   type DocumentId,
@@ -32,6 +31,7 @@ import {
   loadDocumentIdentityRows,
   loadFolderIdentityRows,
 } from "../../context/tree/tree-view-sql.js";
+import type { RestorableInverseDestination } from "../domain/inverse-draft-destination.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
 import {
   type PlannedTreeInverse,
@@ -44,8 +44,14 @@ export type TreeOperationEntry = {
   documentId: DocumentId;
   made: Map<number, LiveTreeState>;
   living: boolean;
-  reopened: Map<BranchId, import("../domain/draft-store.js").DraftSnapshot>;
 };
+
+export type CommittedTreeOperation = {
+  transition: TreeTransition & { retiredDraftId?: string };
+  restored?: import("../domain/draft-store.js").DraftSnapshot;
+};
+
+export class DraftRestoreMiss extends Error {}
 
 export class TreeFault extends Error {
   constructor(readonly fault: TreeInverseFault) {
@@ -75,19 +81,16 @@ export function createTurnInverseTreeOperations(input: {
     return status?.kind === "visible" ? status.address.uri : null;
   }
 
-  function requested(planned: PlannedTreeInverse): string | null {
-    return planned.requestedAt;
-  }
-
   async function commit(
     entry: TreeOperationEntry,
     planned: PlannedTreeInverse,
     userId: UserId | undefined,
     query: TurnInverseQuery,
-  ): Promise<TreeTransition> {
+    restoration?: RestorableInverseDestination,
+  ): Promise<CommittedTreeOperation> {
     return isLiveTransition(planned)
-      ? commitLive(entry, planned, userId, query)
-      : commitBranch(entry, planned, query, userId);
+      ? { transition: await commitLive(entry, planned, userId, query) }
+      : commitBranch(entry, planned, query, userId, restoration);
   }
 
   async function commitLive(
@@ -121,7 +124,8 @@ export function createTurnInverseTreeOperations(input: {
     planned: BranchTreeTransition & PlannedTreeInverse,
     query: TurnInverseQuery,
     userId: UserId | undefined,
-  ): Promise<BranchTreeTransition> {
+    restoration?: RestorableInverseDestination,
+  ): Promise<CommittedTreeOperation> {
     const { branchId } = planned.destination;
     const [branch] = await db()
       .select({ status: branches.status })
@@ -130,7 +134,7 @@ export function createTurnInverseTreeOperations(input: {
     if (branch?.status !== "active") throw new TreeFault("refused");
     if (planned.entry.tree.op === "create") {
       if (planned.op === "delete") {
-        await input.drafts.retireCreatedDocumentDraft({
+        const retiredDraftId = await input.drafts.retireCreatedDocumentDraft({
           documentId: entry.documentId,
           branchId,
         });
@@ -157,13 +161,17 @@ export function createTurnInverseTreeOperations(input: {
             ended.tombstoned.map((node) => node.id),
           );
         return {
-          destination: planned.destination,
-          before: planned.before,
-          after: committed.value,
+          transition: {
+            destination: planned.destination,
+            before: planned.before,
+            after: committed.value,
+            ...(retiredDraftId ? { retiredDraftId } : {}),
+          },
         };
       }
       if (planned.op !== "create")
         throw new Error("A drafted create can only be removed or restored");
+      if (!restoration || restoration.branchId !== branchId) throw new TreeFault("refused");
       const restored = await restoreDocument(
         input.db,
         { documentId: entry.documentId, created: true },
@@ -179,14 +187,21 @@ export function createTurnInverseTreeOperations(input: {
         changedBy: { threadId: query.threadId, ...(query.turnId ? { turnId: query.turnId } : {}) },
       });
       if (!committed.ok) throw new TreeFault(committed.error);
-      entry.reopened.set(
+      const restoredDraft = await input.drafts.restoreCreatedDocumentDraft({
+        documentId: entry.documentId,
         branchId,
-        await input.drafts.restoreCreatedDocumentDraft({
-          documentId: entry.documentId,
-          branchId,
-        }),
-      );
-      return { destination: planned.destination, before: planned.before, after: committed.value };
+        sourceDraftId: restoration.source.draftId,
+        sourceRevision: restoration.source.revision,
+      });
+      if (!restoredDraft) throw new DraftRestoreMiss();
+      return {
+        transition: {
+          destination: planned.destination,
+          before: planned.before,
+          after: committed.value,
+        },
+        restored: restoredDraft,
+      };
     }
     const committed = await writeBackBranchFacts(input.db, {
       branchId,
@@ -196,7 +211,13 @@ export function createTurnInverseTreeOperations(input: {
       changedBy: { threadId: query.threadId, ...(query.turnId ? { turnId: query.turnId } : {}) },
     });
     if (!committed.ok) throw new TreeFault(committed.error);
-    return { destination: planned.destination, before: planned.before, after: committed.value };
+    return {
+      transition: {
+        destination: planned.destination,
+        before: planned.before,
+        after: committed.value,
+      },
+    };
   }
 
   async function applyLive(
@@ -306,5 +327,5 @@ export function createTurnInverseTreeOperations(input: {
       : null;
   }
 
-  return { address, requested, commit };
+  return { address, commit };
 }

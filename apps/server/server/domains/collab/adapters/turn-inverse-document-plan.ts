@@ -6,6 +6,7 @@ import { type BranchId, isLiveTransition, type LiveTreeState } from "@meridian/c
 import type { EditOrigin } from "@meridian/database";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import type { InverseDestination } from "../domain/inverse-draft-destination.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import type { PreparedDocumentInverse, TurnInverseQuery } from "../domain/turn-inverse-service.js";
 
@@ -14,22 +15,23 @@ export type PlannedInverse = {
   documentId: import("@meridian/contracts").DocumentId;
   edits: Map<ComputedInverseEdit, ComputedInverseEdit["parts"]>;
   updates: { draftId: string | null; update: Uint8Array }[];
-  drafts: Map<string, PlannedDraft>;
+  drafts: Map<InverseDestination, PlannedDraft>;
   live: boolean;
   source: "agent" | "writer";
   made: Map<number, LiveTreeState>;
   living: boolean;
   committed: ComputedInverseEdit[];
   stopped: boolean;
+  failedRestorations: Set<BranchId>;
   reversed: Map<BranchId | null, number>;
-  reopened: Map<BranchId, import("../domain/draft-store.js").DraftSnapshot>;
+  outcomes: { documentId: string; branchId: BranchId | null; draftId: string | null }[];
 };
 
 export type PlannedDraft = {
-  draftId: string;
+  destination: Exclude<InverseDestination, { kind: "live" } | { state: "gone" }>;
+  draftId: string | null;
   revision: number;
   branchId: BranchId;
-  active: boolean;
   view: Y.Doc;
   edits: ComputedInverseEdit[];
   origins: Map<ComputedInverseEdit, EditOrigin[]>;
@@ -41,25 +43,27 @@ export function planInverseDocument(
 ): PlannedInverse {
   const document = plan.document;
   const edits = new Map<ComputedInverseEdit, ComputedInverseEdit["parts"]>();
-  const drafts = new Map<string, PlannedDraft>();
+  const drafts = new Map<InverseDestination, PlannedDraft>();
   for (const step of plan.steps) {
     if (step.kind !== "text") continue;
     let view = document.live;
-    if (step.draftId) {
-      const captured = document.drafts.get(step.draftId);
-      if (!captured) throw new Error("A draft text step's draft was not captured");
-      const draft: PlannedDraft = drafts.get(step.draftId) ?? {
-        draftId: step.draftId,
-        revision: captured.documentDraft.revision,
-        branchId: captured.documentDraft.branchId,
-        active: captured.documentDraft.status === "active",
+    if (step.destination.kind === "draft") {
+      if (step.destination.state === "gone")
+        throw new Error("A gone destination cannot have a text step");
+      const destination = step.destination;
+      const draft: PlannedDraft = drafts.get(destination) ?? {
+        destination,
+        draftId: destination.state === "active" ? destination.draftId : null,
+        revision:
+          destination.state === "active" ? destination.revision : destination.source.revision,
+        branchId: destination.branchId,
         // A redone creation clones its closed predecessor, retaining the item identities that
         // its text inverse targets while giving the active draft a fresh lifecycle identity.
-        view: captured.doc,
+        view: destination.view,
         edits: [],
         origins: new Map(),
       };
-      drafts.set(step.draftId, draft);
+      drafts.set(destination, draft);
       draft.edits.push(step.edit);
       view = draft.view;
     }
@@ -75,7 +79,7 @@ export function planInverseDocument(
             view.clientID = client;
             try {
               appendInverseRestorationFacts(view, part.aliases);
-              if (step.draftId) appendRestorationLinks(view, part.aliases);
+              if (step.destination.kind === "draft") appendRestorationLinks(view, part.aliases);
             } finally {
               view.clientID = planningClient;
             }
@@ -96,14 +100,15 @@ export function planInverseDocument(
     updates: [],
     drafts,
     live:
-      text.some((step) => !step.draftId) ||
+      text.some((step) => step.destination.kind === "live") ||
       plan.steps.some((step) => step.kind === "tree" && isLiveTransition(step.planned)),
     source: query.model ? "agent" : "writer",
     made: new Map(),
     living: document.treeStates.live?.living ?? document.removal === null,
     committed: [],
     stopped: false,
+    failedRestorations: new Set(),
     reversed: new Map(),
-    reopened: new Map(),
+    outcomes: [],
   };
 }

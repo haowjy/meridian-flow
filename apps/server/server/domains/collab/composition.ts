@@ -291,7 +291,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const modelDocumentEdits = createModelDocumentEdits({
     service: () => turnInverse,
-    drafts,
   });
   const responseTransactionDiagnostics = createResponseTransactionDiagnostics(deps.eventSink);
   const runtime = createAgentEditRuntime({
@@ -421,6 +420,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     removal: deps.documentRemoval,
     arrivals: deps.arrivals,
     catalog: deps.catalogMutations,
+    fileAccess: deps.fileAccess,
   });
   const responseFinalizer = scopeResponseFinalizer(
     createResponseWriteFinalizer({
@@ -560,7 +560,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     turnInverse,
     resolveDocumentUri: documentUriResolver,
     listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,
-    fileAccess: deps.fileAccess,
     threadContext:
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });

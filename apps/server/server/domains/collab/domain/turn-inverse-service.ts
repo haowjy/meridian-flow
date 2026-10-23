@@ -25,10 +25,11 @@ import type {
 } from "@meridian/contracts/protocol";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
+import type { Principal } from "../../file-policy/index.js";
 import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
 import { effectiveActionIndex, isRolledBack, partKey } from "./inverse-actions.js";
-import { currentInverseDraftId } from "./inverse-draft-destination.js";
+import type { InverseDestination } from "./inverse-draft-destination.js";
 import { type InverseStep, simulateInverse } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import {
@@ -69,13 +70,15 @@ export type TurnInverseQuery = {
   documentIds?: DocumentId[];
   /** The path the model named, for a document no visible path holds (a deleted one). */
   path?: string;
+  /** Caller identity for destination admission; the incoming content grant never routes it. */
+  principal?: Principal;
   /**
    * The destinations the writer's card may reverse, each a document live (`branchId` null) or
    * in a branch; an edit that landed anywhere else is left out. Absent: every destination.
    */
-  destinations?: readonly InverseDestination[];
+  destinations?: readonly RequestedInverseDestination[];
 };
-export type InverseDestination = { documentId: DocumentId; branchId: BranchId | null };
+export type RequestedInverseDestination = { documentId: DocumentId; branchId: BranchId | null };
 export type InverseDocument = {
   documentId: DocumentId;
   uri: string;
@@ -93,6 +96,12 @@ export type InverseDocument = {
     string,
     { documentDraft: DraftSnapshot; doc: Y.Doc; name: string; frozen: boolean }
   >;
+  /** The sole captured destination resolution used by planning and presentation. */
+  destinationOf(origin: EditOrigin): InverseDestination;
+  /** The retained destination of a drafted create, including tree-only creates. */
+  destinationForCreate(create: TransitionEntry): InverseDestination;
+  /** The branch's independently active draft at capture, if any. */
+  occupancy(branchId: BranchId): string | null;
 };
 export type PreparedDocumentInverse = {
   document: InverseDocument;
@@ -134,6 +143,12 @@ export interface TurnInverseStore {
      * branch whose text draft or tree facts took them, null for live.
      */
     reversed: ReadonlyMap<DocumentId, ReadonlyMap<BranchId | null, number>>;
+    /** The destinations that actually committed, including freshly restored draft identities. */
+    outcomes: readonly {
+      documentId: DocumentId;
+      branchId: BranchId | null;
+      draftId: string | null;
+    }[];
   }>;
   describePart(
     document: InverseDocument,
@@ -159,12 +174,9 @@ function admits(
   let branchId: string | null;
   if ("tree" in row)
     branchId = row.tree.destination.kind === "draft" ? row.tree.destination.branchId : null;
-  else if (row.origin.kind !== "pending") branchId = null;
   else {
-    const draft = document.drafts.get(row.origin.draftId);
-    // A draft the capture didn't find is skipped as discarded, never written.
-    if (!draft) return true;
-    branchId = draft.documentDraft.branchId;
+    const destination = document.destinationOf(row.origin);
+    branchId = destination.kind === "draft" ? destination.branchId : null;
   }
   return query.destinations.some(
     (destination) =>
@@ -232,8 +244,7 @@ function prepare(
         : part
       )?.disposition ?? part.disposition;
     const liveIndex = prepareEditRoots(document.live, document.history);
-    const draftOf = (part: StoredInversePart) =>
-      part.origin.kind === "pending" ? currentInverseDraftId(document, part.origin.draftId) : null;
+    const destinationOf = (part: StoredInversePart) => document.destinationOf(part.origin);
     const skips: TurnInverseSkip[] = [];
     const simulation = simulateInverse(document, {
       rolledBack: index.rolledBack,
@@ -277,10 +288,10 @@ function prepare(
     ].sort((a, b) => (direction === "undo" ? b.at - a.at : a.at - b.at));
     const order: (
       | { kind: "tree"; planned: PlannedTreeInverse; at: number }
-      | { kind: "text"; editId: string; draftId: string | null; at: number }
+      | { kind: "text"; editId: string; destination: InverseDestination; at: number }
     )[] = [];
-    const selection = new Map<string | null, InverseSelection[]>();
-    const reopeningBranches = new Set<BranchId>();
+    const selection = new Map<InverseDestination, InverseSelection[]>();
+    const restoring = new Set<BranchId>();
     for (const { at, row, parts } of originals) {
       if (row) {
         if (simulation.rolledBack.has(treeKey(row.editId))) {
@@ -314,7 +325,7 @@ function prepare(
           planned.entry.tree.op === "create" &&
           planned.destination.kind === "draft"
         )
-          reopeningBranches.add(planned.destination.branchId);
+          restoring.add(planned.destination.branchId);
         order.push({ kind: "tree", planned, at });
         continue;
       }
@@ -324,12 +335,11 @@ function prepare(
           skip(part, "rolled_back");
           continue;
         }
-        const draftId = draftOf(part);
-        const draft = draftId ? document.drafts.get(draftId) : undefined;
+        const destination = destinationOf(part);
         // Parts in an active draft that outlived a live delete invert there (D79); parts that
         // landed live meet the removal unless an earlier step restores the document, and a
         // draft-text inverse never restores live.
-        if (!draftId && simulation.liveRemoved()) {
+        if (destination.kind === "live" && simulation.liveRemoved()) {
           skip(
             part,
             document.removal?.reason === "discarded" ? "document_discarded" : "document_deleted",
@@ -340,40 +350,52 @@ function prepare(
           skip(part, "applied");
           continue;
         }
-        if (draftId && !draft) {
-          skip(part, "discarded");
-          continue;
-        }
         if (
-          draft &&
-          draft.documentDraft.status !== "active" &&
-          !(direction === "redo" && reopeningBranches.has(draft.documentDraft.branchId))
+          destination.kind === "draft" &&
+          (destination.state === "gone" ||
+            (destination.state === "restorable" &&
+              !(direction === "redo" && restoring.has(destination.branchId))))
         ) {
           skip(part, "discarded");
           continue;
         }
-        if (draft?.frozen) {
+        const capturedDraft =
+          destination.kind === "draft" && destination.state === "active"
+            ? document.drafts.get(destination.draftId)
+            : destination.kind === "draft" && destination.state === "restorable"
+              ? document.drafts.get(destination.source.draftId)
+              : undefined;
+        if (capturedDraft?.frozen) {
           skip(part, "draft_archived");
           continue;
         }
-        selection.set(draftId, [
-          ...(selection.get(draftId) ?? []),
+        selection.set(destination, [
+          ...(selection.get(destination) ?? []),
           { part, direction: direction === "undo" ? "invert" : "reapply" },
         ]);
         chosen++;
       }
       if (chosen && parts[0])
-        order.push({ kind: "text", editId: parts[0].editId, draftId: draftOf(parts[0]), at });
+        order.push({
+          kind: "text",
+          editId: parts[0].editId,
+          destination: destinationOf(parts[0]),
+          at,
+        });
     }
     // Text never moves or deletes a document, so each destination's parts compute as one
     // selection in step order over that destination's view; one edit lands in one
     // destination. Review membership does not decide inverse eligibility, including rollback.
-    const computed = new Map(
-      [...selection].map(([draftId, parts]) => {
-        const draft = draftId ? document.drafts.get(draftId) : undefined;
-        const index = draft ? liveIndex.forView(draft.doc) : liveIndex;
+    const computed = new Map<
+      InverseDestination,
+      ReturnType<ReturnType<typeof prepareEditRoots>["compute"]>
+    >(
+      [...selection].map(([destination, parts]) => {
+        if (destination.kind === "draft" && destination.state === "gone")
+          throw new Error("A gone destination cannot be selected");
+        const index = destination.kind === "live" ? liveIndex : liveIndex.forView(destination.view);
         return [
-          draftId,
+          destination,
           index.compute(parts, { actionId, allocateClient: allocateDocumentClient }),
         ];
       }),
@@ -409,9 +431,11 @@ function prepare(
     const steps = order.flatMap((step): InverseStep[] => {
       if (step.kind === "tree") return [{ ...step, actionId }];
       const edit = computed
-        .get(step.draftId)
+        .get(step.destination)
         ?.edits.find((edit) => edit.targetEditId === step.editId);
-      return edit ? [{ kind: "text", edit, draftId: step.draftId, actionId, at: step.at }] : [];
+      return edit
+        ? [{ kind: "text", edit, destination: step.destination, actionId, at: step.at }]
+        : [];
     });
     return { document, steps, consumes, skips };
   });
