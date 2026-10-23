@@ -19,13 +19,32 @@ export function textSourceRange(ast: unknown, source: string, value: string): So
   return range && decodeString(source.slice(range.from, range.to)) === value ? range : null;
 }
 
+/** Resolve an authorized original-source subrange without reinterpreting Markdown in the host. */
+export function presentationTextRange(
+  run: PresentationSourceRun | undefined,
+  source: string,
+  range: SourceRange,
+): SourceRange | null {
+  if (run?.kind !== "text" || !run.source) return null;
+  if (range.from < run.source.from || range.to > run.source.to || range.to <= range.from)
+    return null;
+  const length = decodeString(source.slice(run.source.from, run.source.to)).length;
+  const decodedOffset = (at: number) =>
+    length - decodeString(source.slice(at, run.source?.to)).length;
+  const from = decodedOffset(range.from);
+  const to = decodedOffset(range.to);
+  if (to <= from) return null;
+  const offset = run.at.offset ?? 0;
+  return { from: offset + from, to: offset + to };
+}
+
 export function blockSourceMap(
   block: PMNode,
   blockIndex: number,
   origins: readonly InlineOrigin[],
-  originalSource: boolean,
+  source: string | null,
 ): PresentationSourceRun[] {
-  originalSource &&= block.type.name !== "table";
+  if (block.type.name === "table") source = null;
   const runs: PresentationSourceRun[] = [];
   let cursor = 0;
   let valid = true;
@@ -70,7 +89,7 @@ export function blockSourceMap(
         runs.push({
           kind: "text",
           at: { ...at, offset },
-          source: originalSource ? part.source : null,
+          source: source ? part.source : null,
         });
         offset += part.node.text?.length ?? 0;
       }
@@ -79,13 +98,13 @@ export function blockSourceMap(
         const spans = parts.map((part) => part.link);
         const first = spans[0];
 
-        const source =
-          originalSource && first && spans.every((span) => sameRange(span, first)) ? first : null;
+        const linkSource =
+          source && first && spans.every((span) => sameRange(span, first)) ? first : null;
         if (linkRun) {
           linkRun.at.count++;
-          linkRun.source = sameRange(linkRun.source, source) ? source : null;
+          linkRun.source = sameRange(linkRun.source, linkSource) ? linkSource : null;
         } else {
-          linkRun = { kind: "link", at, source };
+          linkRun = { kind: "link", at, source: linkSource };
           runs.push(linkRun);
         }
       }

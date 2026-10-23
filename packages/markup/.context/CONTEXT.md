@@ -72,6 +72,8 @@ code spans, or unrecognized conversion). Paths address a top-level
 block and descendant; `count` covers link siblings. Text `offset` addresses a
 subrun within a PM text node: equal marks can coalesce text whose original
 source had intervening delimiters. Those runs retain separate source authority.
+`presentationTextRange` lets a host supply an authorized original subrange and
+receive its PM text range without interpreting Markdown escapes or entities.
 No schema attrs, document mutations or extra parser are involved. Normal parsing
 does not collect provenance. Consumers must decline null or mismatched ranges,
 not infer identity from labels. This map is for static presentation, not writes
