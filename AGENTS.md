@@ -135,8 +135,8 @@ Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 ([docs/debugging.md](docs/debugging.md#set-up-and-debug-with-the-cli),
 [`./mf` drives shared client cores][mf-shared-cores]). Verification is a prober's
 browser run, with `agent-browser`, of what the writer sees. Every PR that changes
-anything a writer's experience runs through ends with one, screenshots in the PR,
-including server-only changes. `./mf` output never stands in for that run.
+anything on a writer's path ends with one, screenshots in the PR, server-only
+changes included. `./mf` output never stands in for that run.
 
 ## Build and test
 
@@ -149,12 +149,11 @@ the baseline deliberately with `TEST_BUDGET_UPDATE=1 pnpm test` when growth is
 intended. Never raise a worker count without measuring memory. Details:
 [tools/ci/README.md](tools/ci/README.md#test-budget-ratchet).
 
-Write few unit tests: a new test must protect a named risk that no KB decision
-and no probe already covers. A test whose only content is a decision already
-recorded in the knowledge base, or a step a browser recipe already drives,
-duplicates that decision rather than covering the code: delete it in the change
-that lands the decision that supersedes it, and prefer pruning a weaker
-duplicate to adding another layer. To verify a change, prefer probes,
+Write few unit tests. A new test must protect a named risk that no KB decision
+and no probe already covers. A test that only restates a recorded decision, or
+a step a browser recipe already drives, covers no code: delete it in the change
+that supersedes that decision, and prune a weaker duplicate rather than add
+another layer. To verify a change, prefer probes,
 end-to-end smoke scripts and written manual-testing steps in the
 [runtime probe catalog](docs/qa/README.md); add or update the recipe that
 covers what you changed.
