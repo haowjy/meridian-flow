@@ -251,11 +251,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           ),
         };
       };
-      const undoTextPlan = (entry: Entry) => {
-        return modelTextPlan(entry, "undo", {
-          liveRemoved: simulation.liveRemoved(),
-        });
-      };
       if (command.command === "revert") {
         const entry = own.find((entry) => entry.handle === command.edit);
         if (!entry)
@@ -297,60 +292,45 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           if (command.command === "undo") {
             const entry = undoEntries[n];
             if (!entry) throw new Error("Captured undo selection changed while planning");
-            if (entry.tree) {
-              if (entry.tree.tree.op === "create" && entry.tree.tree.destination.kind === "draft") {
-                const planned = treePlan({ ...entry, tree: entry.tree }, "undo");
-                if ("status" in planned) return planned;
-                handles.push(entry.handle);
-                applyTree(planned, entry.handle, "undo", []);
-                continue;
-              }
-              if (entry.parts.length) {
-                const textPlan = undoTextPlan(entry);
-                if ("status" in textPlan) return textPlan;
-                partial.push(...textPlan.omissions);
-                const groupedActionId = stepAction(textPlan.actionKind);
-                if (
-                  textPlan.selection.length &&
-                  !apply(
-                    entry,
-                    textPlan.selection,
-                    textPlan.actionKind,
-                    [],
-                    textPlan.destination,
-                    groupedActionId,
-                  )
+            const draftCreate =
+              entry.tree?.tree.op === "create" && entry.tree.tree.destination.kind === "draft";
+            let groupedActionId: string | undefined;
+            if (entry.parts.length && !draftCreate) {
+              const textPlan = modelTextPlan(entry, "undo", {
+                liveRemoved: simulation.liveRemoved(),
+              });
+              if ("status" in textPlan) return textPlan;
+              partial.push(...textPlan.omissions);
+              groupedActionId = stepAction(textPlan.actionKind);
+              if (!textPlan.selection.length && !entry.tree)
+                return {
+                  status: "cant_undo_changed",
+                  message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Read ${document.uri} for current text.`,
+                };
+              if (
+                textPlan.selection.length &&
+                !apply(
+                  entry,
+                  textPlan.selection,
+                  textPlan.actionKind,
+                  [],
+                  textPlan.destination,
+                  groupedActionId,
                 )
-                  return {
-                    status: "cant_undo_changed",
-                    message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Read ${document.uri} for current text.`,
-                  };
-                const planned = treePlan({ ...entry, tree: entry.tree }, "undo");
-                if ("status" in planned) return planned;
-                handles.push(entry.handle);
-                applyTree(planned, entry.handle, "undo", [], groupedActionId);
-                continue;
-              }
+              )
+                return {
+                  status: "cant_undo_changed",
+                  message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Read ${document.uri} for current text.`,
+                };
+            }
+            if (entry.tree) {
               const planned = treePlan({ ...entry, tree: entry.tree }, "undo");
               if ("status" in planned) return planned;
               handles.push(entry.handle);
-              applyTree(planned, entry.handle, "undo", []);
+              applyTree(planned, entry.handle, "undo", [], groupedActionId);
               continue;
             }
-            const textPlan = undoTextPlan(entry);
-            if ("status" in textPlan) return textPlan;
-            partial.push(...textPlan.omissions);
-            if (!textPlan.selection.length)
-              return {
-                status: "cant_undo_changed",
-                message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Read ${document.uri} for current text.`,
-              };
             handles.push(entry.handle);
-            if (!apply(entry, textPlan.selection, textPlan.actionKind, [], textPlan.destination))
-              return {
-                status: "cant_undo_changed",
-                message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Read ${document.uri} for current text.`,
-              };
           } else {
             const action = currentInspection().candidate;
             if (!action && n > 0)

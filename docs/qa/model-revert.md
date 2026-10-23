@@ -118,7 +118,7 @@ result ends with `version: live`. Then make one draft edit, switch the chat to
 auto-apply, and run Undo. The Work draft changes, the manuscript does not, and
 the result names that draft. Moving the chat from one Work to another does not reroute its stack: Undo still lands in the
 active former Work that owns the edit. Archive that origin Work and read `format: "edits"` from
-the rebound chat; the line offers no command, and Undo returns `work_archived`.
+the rebound chat; the line offers no command, and Undo returns `nothing_to_undo`.
 
 **Why auto-apply differs in "N deleted a sentence":** a live write stores its whole paragraph as deleted and
 reinserted text, so any later change in that paragraph, even to words N kept, skips the part. A draft write stores
