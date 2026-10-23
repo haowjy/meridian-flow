@@ -74,8 +74,10 @@ the text it found or a block hash from that read.
    live now has sect-notes in the manuscript and not in Scratch. Move `manuscript://ch2` to
    `scratch://@w1/ch2`: the branch sees it in Scratch while live keeps ch2 in the manuscript;
    Discard removes the row and leaves live unchanged.
-9. **Undo after Apply.** Script `undo` of `manuscript://ch1-old`: "Couldn't undo ch1-old";
-   the model reads `cant_undo_applied`.
+9. **Undo after Apply.** Apply a drafted text replacement and a drafted move. Script `undo` for
+   the text edit: it reports `reverted`, restores the old text as a pending draft change, and
+   leaves live unchanged. Script `undo` for the applied move: "Couldn't undo ch1-old"; the model
+   reads `cant_undo_applied`. Applied tree behavior is unchanged.
 
 With more than one file, the dock's Apply asks the same question in its footer
 ("Applying deletes ch2.") before it sends.
@@ -110,9 +112,10 @@ With more than one file, the dock's Apply asks the same question in its footer
    intact and reapplies the text parts Undo removed.
 13. **Draft create is one pending item.** In a draft-mode chat, script a nonempty `create`, then
    an empty `create`. Each turn card counts its created document, and the dock and Work Files list
-   both. Undo each card: its draft closes and its row disappears from both lists. Redo creates a
-   fresh draft with the original content, or an empty draft for the empty create, and lists it
-   once. Apply and Discard remain available on the restored row.
+   both. Undo each card: its row disappears from both lists, while the same active draft and
+   document identity remain hidden by the branch delete fact. Redo clears that fact and shows the
+   same draft with its original content (or the same empty draft), listed once. Apply and Discard
+   remain available on the restored row.
 
 ## Last run
 

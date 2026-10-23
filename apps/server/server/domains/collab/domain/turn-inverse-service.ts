@@ -1,9 +1,9 @@
 /** Writer receipt and failed-response policies over immutable forward-inverse parts. */
 import { randomUUID } from "node:crypto";
 import {
+  editHandle,
   type InversePart,
   type InverseSelection,
-  prepareEditRoots,
 } from "@meridian/agent-edit/integration";
 import type {
   BranchId,
@@ -23,25 +23,21 @@ import type {
   TurnInverseSkipCause,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
-import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { Principal } from "../../file-policy/index.js";
 import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
-import { effectiveActionIndex, isRolledBack, partKey } from "./inverse-actions.js";
+import { effectiveActionIndex, partKey } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import { type InverseStep, simulateInverse } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
+import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 import {
   isTransitionEntry,
-  latestTransition,
   type PlannedTreeInverse,
-  planTreeInverse,
   type StoredTreeEntry,
-  settlementOf,
   type TransitionEntry,
   type TreeStates,
-  treeChangedCause,
   treeKey,
 } from "./tree-inverse.js";
 
@@ -88,6 +84,8 @@ export type InverseDocument = {
     string,
     { documentDraft: DraftSnapshot; doc: Y.Doc; name: string; frozen: boolean }
   >;
+  /** Per-source scratch views reused while this capture describes history and skip excerpts. */
+  excerptViews: Map<Y.Doc, Y.Doc>;
   /** The sole captured destination resolution used by planning and presentation. */
   destinationOf(origin: EditOrigin): InverseDestination;
   /** The active draft in a tree step's branch, or a gone destination. */
@@ -214,7 +212,7 @@ function prepare(
       const destination = document.destinationOf(part.origin);
       return destination.kind !== "draft" || !hiddenCreateBranches.has(destination.branchId);
     });
-    const rolledBack = (part: StoredInversePart) => isRolledBack(document.history, part);
+    const rolledBack = (part: StoredInversePart) => index.rolledBack.has(partKey(part));
     const reversals =
       direction === "undo"
         ? targets.filter((part) => !rolledBack(part))
@@ -226,8 +224,6 @@ function prepare(
           )
         : part
       )?.disposition ?? part.disposition;
-    const liveIndex = prepareEditRoots(document.live, document.history);
-    const destinationOf = (part: StoredInversePart) => document.destinationOf(part.origin);
     const skips: TurnInverseSkip[] = [];
     const simulation = simulateInverse(document, {
       rolledBack: index.rolledBack,
@@ -240,6 +236,7 @@ function prepare(
         actor: kind === "rollback" ? "system" : "human",
       },
     });
+    const entryPlanner = createCapturedReversalPlanner(document, query);
     const skipTree = (row: StoredTreeEntry, cause: TurnInverseSkipCause) =>
       skips.push({
         kind: "tree",
@@ -269,7 +266,13 @@ function prepare(
     ].sort((a, b) => (direction === "undo" ? b.at - a.at : a.at - b.at));
     const order: (
       | { kind: "tree"; planned: PlannedTreeInverse; at: number }
-      | { kind: "text"; editId: string; destination: InverseDestination; at: number }
+      | {
+          kind: "text";
+          editId: string;
+          destination: InverseDestination;
+          actionKind: "undo" | "redo" | "revert" | "rollback";
+          at: number;
+        }
     )[] = [];
     const selection = new Map<InverseDestination, InverseSelection[]>();
     for (const { at, row, parts } of originals) {
@@ -278,25 +281,21 @@ function prepare(
           skipTree(row, "rolled_back");
           continue;
         }
-        const settled = settlementOf(row, document.tree);
-        if (settled) {
-          skipTree(row, settled === "applied" ? "applied" : "discarded");
-          continue;
-        }
-        const latest = latestTransition(row, simulation.tree, simulation.rolledBack);
-        if (latest.stands !== (direction === "undo")) {
-          skipTree(row, direction === "undo" ? "already_undone" : "already_redone");
-          continue;
-        }
-        const planned = planTreeInverse(
-          row,
-          direction === "undo" ? "invert" : "reapply",
-          latest.row,
+        const planned = entryPlanner.treePlan(
+          {
+            id: row.editId,
+            handle: row.wId === null ? "" : editHandle(row.wId),
+            parts: [],
+            tree: row,
+          },
+          direction,
+          simulation.tree,
           simulation.states,
-          simulation.nextStep(),
+          simulation.rolledBack,
+          simulation.nextStep,
         );
-        if (!planned) {
-          skipTree(row, treeChangedCause(simulation.states, row.tree.destination));
+        if ("cause" in planned) {
+          skipTree(row, planned.cause);
           continue;
         }
         simulation.recordTree(planned, { kind, actionId, consumes });
@@ -304,39 +303,40 @@ function prepare(
         continue;
       }
       let chosen = 0;
-      for (const part of parts) {
-        if (rolledBack(part)) {
-          skip(part, "rolled_back");
+      const inverseParts =
+        direction === "redo"
+          ? reversals.filter((inverse) =>
+              parts.some((part) =>
+                inverse.targets.some((target) => partKey(target) === partKey(part)),
+              ),
+            )
+          : undefined;
+      const entry = {
+        id: parts[0]?.editId ?? "",
+        handle: parts[0]?.wId === null ? "" : editHandle(parts[0]?.wId ?? 0),
+        parts,
+      };
+      const planned = entryPlanner.turnTextPlan(
+        entry,
+        direction,
+        kind,
+        query,
+        simulation.liveRemoved(),
+        inverseParts,
+      );
+      if (planned.cause) {
+        for (const part of parts) skip(part, planned.cause);
+        continue;
+      }
+      for (const { part, direction: partDirection } of planned.selection) {
+        const selectedPart = part as StoredInversePart;
+        if (rolledBack(selectedPart)) {
+          skip(selectedPart, "rolled_back");
           continue;
         }
-        const destination = destinationOf(part);
-        // Parts in an active draft that outlived a live delete invert there (D79); parts that
-        // landed live meet the removal unless an earlier step restores the document, and a
-        // draft-text inverse never restores live.
-        if (destination.kind === "live" && simulation.liveRemoved()) {
-          skip(
-            part,
-            document.removal?.reason === "discarded" ? "document_discarded" : "document_deleted",
-          );
-          continue;
-        }
-        if (disposition(part) === "applied") {
-          skip(part, "applied");
-          continue;
-        }
-        if (destination.kind === "draft" && destination.state === "gone") {
-          skip(part, "discarded");
-          continue;
-        }
-        const capturedDraft =
-          destination.kind === "draft" ? document.drafts.get(destination.draftId) : undefined;
-        if (capturedDraft?.frozen) {
-          skip(part, "draft_archived");
-          continue;
-        }
-        selection.set(destination, [
-          ...(selection.get(destination) ?? []),
-          { part, direction: direction === "undo" ? "invert" : "reapply" },
+        selection.set(planned.destination, [
+          ...(selection.get(planned.destination) ?? []),
+          { part: selectedPart, direction: partDirection },
         ]);
         chosen++;
       }
@@ -344,25 +344,17 @@ function prepare(
         order.push({
           kind: "text",
           editId: parts[0].editId,
-          destination: destinationOf(parts[0]),
+          destination: planned.destination,
+          actionKind: planned.actionKind as "undo" | "redo" | "revert" | "rollback",
           at,
         });
     }
     // Text never moves or deletes a document, so each destination's parts compute as one
     // selection in step order over that destination's view; one edit lands in one
     // destination. Review membership does not decide inverse eligibility, including rollback.
-    const computed = new Map<
-      InverseDestination,
-      ReturnType<ReturnType<typeof prepareEditRoots>["compute"]>
-    >(
+    const computed = new Map<InverseDestination, ReturnType<typeof entryPlanner.compute>>(
       [...selection].map(([destination, parts]) => {
-        if (destination.kind === "draft" && destination.state === "gone")
-          throw new Error("A gone destination cannot be selected");
-        const index = destination.kind === "live" ? liveIndex : liveIndex.forView(destination.view);
-        return [
-          destination,
-          index.compute(parts, { actionId, allocateClient: allocateDocumentClient }),
-        ];
+        return [destination, entryPlanner.compute(destination, parts, actionId)];
       }),
     );
     const classifiedKeys = new Set(
@@ -394,12 +386,21 @@ function prepare(
         skip(target, "edited_since");
     }
     const steps = order.flatMap((step): InverseStep[] => {
-      if (step.kind === "tree") return [{ ...step, actionId }];
+      if (step.kind === "tree") return [{ ...step, actionId, actionKind: kind }];
       const edit = computed
         .get(step.destination)
         ?.edits.find((edit) => edit.targetEditId === step.editId);
       return edit
-        ? [{ kind: "text", edit, destination: step.destination, actionId, at: step.at }]
+        ? [
+            {
+              kind: "text",
+              edit,
+              destination: step.destination,
+              actionId,
+              actionKind: step.actionKind,
+              at: step.at,
+            },
+          ]
         : [];
     });
     return { document, steps, consumes, skips };

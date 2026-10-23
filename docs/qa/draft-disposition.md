@@ -22,9 +22,9 @@ An assertion failure exits nonzero. No new test-suite case is registered.
 - Revert an AI insertion removed by writer typing: `nothing_to_revert`,
   “discarded” in the explanation, and no text reinserted.
 - Revert a deletion-only AI write before Discard: `success`, deleted words restored.
-- Undo an applied AI write: `cant_undo_applied`.
-- Revert that applied write: `success` in its originating draft, a pending review
-  change and pending inverse receipt, with the live manuscript unchanged.
+- Undo an applied AI write: `success`, reported as reverted in its originating
+  draft, with a pending review change and pending inverse receipt. The live
+  manuscript stays unchanged.
 - Discard all across five drafts: all drafts closed with cause `discarded`,
   immutable parts and journal statuses exactly unchanged. Non-applied receipts
   read discarded; historical Apply evidence still reads applied after close.
@@ -50,8 +50,8 @@ AI-edited documents using `./mf` and inspect that Work in the browser:
 1. Open the draft, remove an AI insertion by editing, then ask the same chat to
    revert its write. The reply must explain that it is discarded; no text returns.
 2. Make a deletion-only AI edit, then revert it before Discard. The words return.
-3. Apply an AI edit. Ask Undo (refused as applied), then revert; the draft shows
-   a pending change while a live manuscript view remains unchanged.
+3. Apply an AI edit. Ask Undo; the reply reports the edit as reverted. The draft
+   shows a pending change while a live manuscript view remains unchanged.
 4. Make pending edits in both documents and click Discard all. Both disappear
    from the Work's pending list without rewriting their receipt history.
 

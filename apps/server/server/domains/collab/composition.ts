@@ -152,7 +152,10 @@ type CollabDomainDeps = {
    * Confirms writes' grants under lock where they become durable (file-access
    * §5); the writer's turn undo also asks it for its grants.
    */
-  fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
+  fileAccess: Pick<
+    FileAccess,
+    "authorize" | "authorizeAt" | "confirmEdit" | "destinationAvailability"
+  >;
   /** How long a live AI write waits before merging into Work drafts; tests shorten it. */
   livePullDebounceMs?: number;
   /** Ahead-ref settlement at tracked creates and Apply completions (contract §9.3–9.4). */

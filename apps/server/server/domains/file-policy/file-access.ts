@@ -30,6 +30,11 @@ interface FileAccessDeps {
 }
 
 export interface FileAccess {
+  /** Captured destination lifecycle without caller-specific grants. */
+  destinationAvailability(
+    target: FileTarget,
+    destination: FileDestination,
+  ): Promise<{ frozen: boolean }>;
   /** Preflight: fast errors and UI state. Advisory for writes. */
   authorize<N extends FileNeed>(
     principal: Principal,
@@ -85,6 +90,15 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
   }
 
   return {
+    async destinationAvailability(target, destination) {
+      const facts = await deps.facts.load({
+        target,
+        ...(destination.kind === "draft" ? { branchWorkId: destination.workId } : {}),
+      });
+      if (!facts) return { frozen: false };
+      const work = destination.kind === "draft" ? facts.branchWork : facts.ownerWork;
+      return { frozen: work?.archived === true || work?.deleted === true };
+    },
     async authorize(principal, target, need) {
       const facts = await deps.facts.load(factsRequest(principal, target));
       if (!facts) return notFound(principal, target);
