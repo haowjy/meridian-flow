@@ -23,7 +23,7 @@ import { useCommittedEvent } from "./useCommittedEvent";
 import { useComposerSessionDraft } from "./useComposerSessionDraft";
 import { useDraftDock } from "./useDraftDock";
 
-export type ChatComposerProps = {
+type ChatComposerProps = {
   ref: Ref<ComposerHandle>;
   threadId: string;
   projectId: string;
