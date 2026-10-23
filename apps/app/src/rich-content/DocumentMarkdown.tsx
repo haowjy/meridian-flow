@@ -395,7 +395,7 @@ export function DocumentMarkdown({
   return (
     <div
       className={className}
-      data-markdown-source-length={snapshot?.source.length ?? source.length}
+      data-markdown-source-length={snapshot?.source.length ?? (streaming ? -1 : source.length)}
     >
       {hasPresentation ? (
         <StaticTranscript
