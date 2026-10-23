@@ -22,15 +22,83 @@ Unsupported chain syntax or a missing isolated/DB step fails explicitly.
 `check:db` stays local; CI's separate `db-tests` job provisions Postgres and
 forces the DB suite. Migration checks and the two app boot jobs are unchanged.
 
-Do not cache `.nx` outputs across Actions runs: Nx inputs are project-scoped
-and can miss root config changes. The pnpm dependency cache is independent.
+Do not cache `.nx` outputs across Actions runs. The pnpm dependency cache is
+independent. Local target caches include the shared configuration inputs below.
+
+## Staged typechecking
+
+`pnpm typecheck:staged` selects work from the Git index. `pnpm typecheck`,
+`pnpm check` and CI still select every project with a typecheck target.
+
+```text
+Git index paths → documentation filter → Nx affected projects and consumers
+                                         → configured typecheck targets
+```
+
+The runner skips `.md`, `.mdc`, `.markdown`, `.txt`, `.rst` and colocated
+`.context/` knowledge files (including extensionless `TODO` and `FUTURE`) before
+starting Nx. It does not skip executable MDX outside those knowledge directories. Git's NUL-delimited output and
+disabled rename detection preserve deleted paths and both rename endpoints.
+Nx receives paths on stdin, not a shell-expanded or comma-separated argument.
+A filename containing a newline selects all projects because Nx's stdin
+protocol cannot represent it.
+
+Nx owns dependency traversal and filters the result to projects exposing the
+requested target. Each target retains its tsconfig, cache and normal failure
+handling. `NX_EXCLUDE_PROJECTS` remains an explicit comma-separated override for
+both full and staged commands; normal hooks and CI do not set it.
+
+Selection is not snapshot validation: the index supplies paths, but Nx's graph
+and target commands read the working tree. Unstaged errors in selected projects
+can fail a commit. No files are hidden or stashed.
+
+`nx.json`'s `sharedConfiguration` input governs both broad selection and cache
+invalidation: root configuration files, package-manager settings, shared package
+tsconfigs, dependency patches and the target runner. Add future shared compiler
+or dependency inputs there, not to a second list in the hook. Project-local
+configuration follows the project's normal dependency graph.
+
+### Staged hook probe recipe
+
+Use an owned worktree with dependencies installed and no staged changes. Save or
+restore only your own probe edits. Run `pnpm exec lefthook run pre-commit` for the
+whole hook, or `pnpm typecheck:staged` to isolate typechecking.
+
+1. Stage an edit to root `AGENTS.md`, a package README and `.context/TODO`. Expect a skip with no
+   Nx or TypeScript task. Repeat with an empty index and with unstaged source
+   errors: selection must still skip. Unstage and restore the documentation.
+2. Stage a source change in `packages/contracts/src/`. Expect contracts and
+   its dependent Nx projects, including app and server, but not yjs-inspect.
+   Compare with:
+
+   ```sh
+   printf 'packages/contracts/src/index.ts\n' | pnpm nx show projects --affected --stdin --withTarget=typecheck --json
+   ```
+3. Introduce `export const probe: number = "wrong";` in a selected source file.
+   Expect a real TypeScript diagnostic and nonzero hook exit. Fix it and rerun;
+   expect success. Leave the error unstaged with another change in that same
+   project staged: expect failure because checks read the working tree.
+4. Stage a root tsconfig, `pnpm-workspace.yaml`, dependency patch or
+   `packages/tsconfig.package-base.json` change. Each must select all current
+   typecheck projects. Run twice to populate/reuse the cache, then change a
+   shared compiler option to an invalid value: cached successes must not hide
+   the compiler error. Restore it and confirm success.
+5. Stage a source deletion and then a cross-project rename. Both source and
+   destination projects and their consumers must participate. Repeat with
+   spaces and commas in filenames. Rename source to `.md`: the deleted source
+   endpoint must still trigger checks. Rename documentation within documentation:
+   expect a skip. Restore each probe before the next.
+6. Run `pnpm typecheck` with only documentation staged. Expect every project;
+   staged selection must not leak into full gates.
 
 ## PR body and changelog
 
 `check-pr-body.mjs` requires every template section and validates the structured
 `## Changelog` section through `pr-changelog.mjs`. `pnpm changelog` runs
 `build-changelog.mjs`, which uses that same parser to build Markdown or JSON from
-PRs merged into `main`; pass `--input <file>` to build from saved `gh` JSON. A
+PRs merged into `main`. GitHub results arrive in 50-PR pages; ranged builds stop
+once the pages pass their cutoff, while `--all` follows every page. Pass `--input
+<file>` to build from saved `gh` JSON. A
 malformed section fails the whole build and names its PR rather than silently
 omitting an entry, so consumers must check the exit status. Interactive Markdown
 uses `$PAGER` or `less -FRX`; pipes, redirects, JSON, and `--no-pager` print directly.

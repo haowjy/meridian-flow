@@ -45,11 +45,42 @@ Preset-internal codec lists (`markdownBlockCodecs`, `markdownMarkCodecs`,
 package root. Tests or preset internals that need them import from sibling
 `markdown/index.js` / `mdx/index.js` modules instead.
 
-`MarkupCodec` exposes only `parse`, `parseWithSpans`, `serialize`,
-`serializeBlock`, and `serializeBlocks`. Every serialize call takes the
+`MarkupCodec` exposes `parse`, `parseWithSpans`, `parseWithSourceMap`, `parseStreaming`,
+`serialize`, `serializeBlock`, and `serializeBlocks`. Every serialize call takes the
 `DocumentLinkScope` explicitly; nothing is captured at construction.
 `serializeBlock`/`serializeBlocks` return normalized block bodies without hash
 prefixes. Agent-edit owns any hash-prefixed adapter layer.
+
+`parseStreaming(source, { repair })` performs one canonical whole-source parse and
+reports its blocks plus the exact open fenced-code node from micromark events. It
+retains no prior source, parser checkpoint, definition state, or node identity;
+the presentation host owns transport and identity reuse.
+
+Optional repair runs `remend` from one tail descriptor derived while the prepared
+source, final AST child and parsed block still correspond. The descriptor carries
+only the original-source start of the repairable last prose block. The codec
+reparses the complete candidate and accepts it only when every
+earlier block and every code node is unchanged and the last rendered block
+changes. Inline code, links and HTML are not repair candidates. A repair that only
+adds visible delimiter text is rejected.
+
+## Presentation source map
+
+`parseWithSourceMap` returns the same blocks as `parse`, plus a transient sidecar
+for inline text and maximal link runs. Source ranges are exact original `[from,
+to)` offsets or null when provenance is unavailable (rewritten source, table
+conversion, inline normalization such as multiline container prefixes,
+code spans, or unrecognized conversion). Paths address a top-level
+block and descendant; `count` covers link siblings. Text `offset` addresses a
+subrun within a PM text node: equal marks can coalesce text whose original
+source had intervening delimiters. Those runs retain separate source authority.
+`presentationTextRange` lets a host supply an authorized original subrange and
+receive its PM text range without interpreting Markdown escapes or entities.
+No schema attrs, document mutations or extra parser are involved. Normal parsing
+does not collect provenance. Consumers must decline null or mismatched ranges,
+not infer identity from labels. This map is for static presentation, not writes
+or worker streaming. The result also identifies an open fenced-code node from
+that same parse. Existing enclosing `parseWithSpans` semantics remain separate.
 
 ## Round-trip guarantees
 
@@ -78,7 +109,10 @@ normalize on first parse; canonical wire spelling then stabilizes.
 markdown/mdx plugins via `postParse`, not the builder; non-markdown format
 plugins do not inherit markdown-specific autolink behavior by default.
 Hooks receive the preprocessed source matching AST positions and run on internal
-reparses too. Only bare GFM autolink literals are demoted to prose; links whose
+reparses too. A preprocessor that changes length returns a prepared-source boundary
+map back to the caller's source. GFM table hard-break preparation uses canonical
+micromark code regions instead of recognizing fences itself. Only bare GFM autolink
+literals are demoted to prose; links whose
 source opens with `[` remain links even when their words equal their
 destination. Angle autolinks (`<kb://a.md>`) remain links in Markdown only;
 MDX ingress escapes them to literal text. Links without usable source positions
