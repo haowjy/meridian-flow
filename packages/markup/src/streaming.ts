@@ -3,17 +3,15 @@
 import type { Node as PMNode } from "prosemirror-model";
 import remend from "remend";
 
-import type { MdastRoot } from "./ast.js";
 import { markdownSyntax } from "./markdown/syntax.js";
+import { sourceRange } from "./presentation-source-map.js";
 import type { MarkdownStreamOptions, MarkdownStreamResult } from "./types.js";
 
-export type SourceBlock = { from: number; to: number };
+export type RepairTail = { from: number };
 
 interface ParsedStreamDocument {
   blocks: PMNode[];
-  ranges: SourceBlock[];
-  tree: MdastRoot;
-  preparedLength: number;
+  repairTail: RepairTail | null;
 }
 
 export function parseStreamingDocument(
@@ -25,9 +23,8 @@ export function parseStreamingDocument(
   const openCode = markdownOpenCode(canonical.blocks, source);
   if (!options.repair) return { blocks: canonical.blocks, openCode };
 
-  const tail = repairableTail(canonical.tree, canonical.preparedLength);
-  const blockStart = canonical.ranges.at(-1)?.from;
-  if (!tail || blockStart === undefined) return { blocks: canonical.blocks, openCode };
+  const blockStart = canonical.repairTail?.from;
+  if (blockStart === undefined) return { blocks: canonical.blocks, openCode };
 
   const originalTail = source.slice(blockStart);
   const repairedTail = remend(originalTail, { links: false, images: false, katex: false });
@@ -42,20 +39,9 @@ export function parseStreamingDocument(
   return { blocks: candidate.blocks, openCode };
 }
 
-function astOffsets(node: unknown): SourceBlock | null {
-  if (!node || typeof node !== "object") return null;
-  const position = (
-    node as { position?: { start?: { offset?: number }; end?: { offset?: number } } }
-  ).position;
-  const from = position?.start?.offset;
-  const to = position?.end?.offset;
-  return typeof from === "number" && typeof to === "number" ? { from, to } : null;
-}
-
 /** The last source character must belong to ordinary prose, not an opaque inline construct. */
-function repairableTail(tree: MdastRoot, sourceLength: number): SourceBlock | null {
-  const block = tree.children.at(-1) as unknown;
-  if (!block || typeof block !== "object") return null;
+export function repairableTail(block: unknown, sourceLength: number): boolean {
+  if (!block || typeof block !== "object") return false;
   const typed = block as { type?: string; children?: unknown[] };
   if (
     typed.type !== "paragraph" &&
@@ -63,7 +49,7 @@ function repairableTail(tree: MdastRoot, sourceLength: number): SourceBlock | nu
     typed.type !== "blockquote" &&
     typed.type !== "list"
   ) {
-    return null;
+    return false;
   }
 
   let node: unknown = typed;
@@ -75,15 +61,14 @@ function repairableTail(tree: MdastRoot, sourceLength: number): SourceBlock | nu
       value.type === "html" ||
       value.type === "link"
     ) {
-      return null;
+      return false;
     }
     if (value.type === "text") {
-      const range = astOffsets(value);
-      return range?.to === sourceLength ? range : null;
+      return sourceRange(value)?.to === sourceLength;
     }
     node = value.children?.at(-1);
   }
-  return null;
+  return false;
 }
 
 function codeNodes(blocks: readonly PMNode[]): PMNode[] {

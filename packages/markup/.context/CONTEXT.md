@@ -56,8 +56,10 @@ reports its blocks plus the exact open fenced-code node from micromark events. I
 retains no prior source, parser checkpoint, definition state, or node identity;
 the presentation host owns transport and identity reuse.
 
-Optional repair runs `remend` from the parser-positioned start of the last prose
-block. The codec reparses the complete candidate and accepts it only when every
+Optional repair runs `remend` from one tail descriptor derived while the prepared
+source, final AST child and parsed block still correspond. The descriptor carries
+only the original-source start of the repairable last prose block. The codec
+reparses the complete candidate and accepts it only when every
 earlier block and every code node is unchanged and the last rendered block
 changes. Inline code, links and HTML are not repair candidates. A repair that only
 adds visible delimiter text is rejected.

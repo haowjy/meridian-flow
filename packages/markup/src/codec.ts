@@ -13,9 +13,14 @@ import { EMPTY_PARAGRAPH_SENTINEL, parseBlockAst } from "./helpers.js";
 import { blockOccurrenceSpans } from "./link-occurrences.js";
 import { attentionHandlers } from "./markdown/attention.js";
 import { originalOffset, originalSource, type PreparedSource } from "./prepared-source.js";
-import { blockSourceMap } from "./presentation-source-map.js";
+import { blockSourceMap, sourceRange } from "./presentation-source-map.js";
 import { type CodecRuntime, MARKDOWN_STRINGIFY_OPTIONS, withRuntime } from "./runtime.js";
-import { markdownOpenCode, parseStreamingDocument, type SourceBlock } from "./streaming.js";
+import {
+  markdownOpenCode,
+  parseStreamingDocument,
+  type RepairTail,
+  repairableTail,
+} from "./streaming.js";
 import type {
   BuildOptions,
   CodecParseErrorLocation,
@@ -126,14 +131,12 @@ function buildMarkupCodec(
     baseCtx: ParseContext,
     withSpans: boolean,
     withSourceMap = false,
-    withRanges = false,
+    withRepairTail = false,
   ): {
     blocks: PMNode[];
     spans: OccurrenceSpan[];
     sourceMap: PresentationSourceRun[];
-    ranges: SourceBlock[];
-    tree: MdastRoot;
-    preparedLength: number;
+    repairTail: RepairTail | null;
   } => {
     const prepared = preprocess(content);
     const source = prepared.value;
@@ -144,54 +147,57 @@ function buildMarkupCodec(
     const blocks: PMNode[] = [];
     const spans: OccurrenceSpan[] = [];
     const sourceMap: PresentationSourceRun[] = [];
-    const ranges: SourceBlock[] = [];
-    for (const child of tree.children) {
+    let repairTail: RepairTail | null = null;
+    for (const [index, child] of tree.children.entries()) {
       if (runtime.inlineOrigins) runtime.inlineOrigins.length = 0;
       const node = parseBlockAst(child, ctx);
       if (node === null) continue;
       if (withSourceMap)
         sourceMap.push(
-          ...blockSourceMap(node, blocks.length, runtime.inlineOrigins ?? [], source === content),
+          ...blockSourceMap(
+            node,
+            blocks.length,
+            runtime.inlineOrigins ?? [],
+            source === content ? source : null,
+          ),
         );
       blocks.push(node);
-      if (withRanges) {
-        const position = astOffsets(child);
-        const from = originalOffset(prepared, position?.from ?? 0);
-        ranges.push({
-          from: physicalLineStart(content, from),
-          to: originalOffset(prepared, position?.to ?? content.length),
-        });
+      if (
+        withRepairTail &&
+        index === tree.children.length - 1 &&
+        repairableTail(child, source.length)
+      ) {
+        const from = originalOffset(prepared, sourceRange(child)?.from ?? 0);
+        repairTail = { from: physicalLineStart(content, from) };
       }
       if (withSpans)
         spans.push(
           ...blockOccurrenceSpans(node, child, source === content ? source : null, content.length),
         );
     }
-    return { blocks, spans, sourceMap, ranges, tree, preparedLength: source.length };
+    return { blocks, spans, sourceMap, repairTail };
   };
 
   const parseDocument = (
     content: string,
     withSpans: boolean,
     withSourceMap = false,
-    withRanges = false,
+    withRepairTail = false,
   ) => {
     if (content.trim().length === 0)
       return {
         blocks: [schema.node("paragraph")],
         spans: [],
         sourceMap: [],
-        ranges: [{ from: 0, to: content.length }],
-        tree: { type: "root", children: [] } as MdastRoot,
-        preparedLength: content.length,
+        repairTail: null,
       };
-    const parsed = parseTopLevel(content, { schema }, withSpans, withSourceMap, withRanges);
+    const parsed = parseTopLevel(content, { schema }, withSpans, withSourceMap, withRepairTail);
     return parsed.blocks.length > 0
       ? parsed
       : {
           ...parsed,
           blocks: [schema.node("paragraph")],
-          ranges: [{ from: 0, to: content.length }],
+          repairTail: null,
         };
   };
 
@@ -264,16 +270,6 @@ function buildMarkupCodec(
       );
     },
   };
-}
-
-function astOffsets(node: unknown): SourceBlock | null {
-  if (!node || typeof node !== "object") return null;
-  const position = (
-    node as { position?: { start?: { offset?: number }; end?: { offset?: number } } }
-  ).position;
-  const from = position?.start?.offset;
-  const to = position?.end?.offset;
-  return typeof from === "number" && typeof to === "number" ? { from, to } : null;
 }
 
 function physicalLineStart(source: string, offset: number): number {
