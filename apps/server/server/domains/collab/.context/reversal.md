@@ -145,7 +145,8 @@ hidden in that branch, but its draft remains active and its identity is not tomb
 clears `deleted` on the same row and keeps writing the same draft. Neither direction rewrites
 the draft text. If another Work Applies the
 shared creation first, that reveal settles this branch's undone creation so it cannot become a
-pending delete of the now-live document. Empty creates use the same branch-fact cycle.
+pending delete of the now-live document, then the ordinary live pull rebases the now-visible
+document into every active Work draft. Empty creates use the same branch-fact cycle.
 
 ## Effects and failures
 
