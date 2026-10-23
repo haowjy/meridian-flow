@@ -38,7 +38,7 @@ import {
   viewTranscript,
   waitingWriterMessages,
 } from "@meridian/thread-client";
-import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react";
+import { type ReactNode, useCallback, useLayoutEffect, useMemo, useReducer, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
@@ -72,6 +72,7 @@ import {
   useChatNavigation,
 } from "@/features/project/routing/chat-navigation";
 import { defaultThreadTitle, displayThreadTitle } from "@/lib/thread-title";
+import { prewarmMarkdownStreaming } from "@/rich-content/markdown-stream-service";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { AnchoredCards, type ChatCardHandlers, ChatCardsProvider } from "./ChatCards";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
@@ -176,6 +177,10 @@ export function ChatView({
   useRegisterChatComposer(threadId, composerRef);
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
+
+  useLayoutEffect(() => {
+    if (active) prewarmMarkdownStreaming();
+  }, [active]);
 
   const controller = useMeridianAgent();
   const accountId = useAccountId();

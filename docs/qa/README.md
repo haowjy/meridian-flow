@@ -29,6 +29,7 @@ stack.
 - [Failure cards](failure-cards.md): the failed reply, refused and lost Retry, failed compaction, handoff brief and live-region clearing, driven in the browser with injected faults.
 - [Queue controls](queue-controls.md): QC-01 to QC-08, the queued look, the x, Cancel queue, Send now and every failure card, driven in the browser with injected faults.
 - [Browser state envelopes](browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
+- [Settled chat Markdown](chat-markdown.md): manuscript parity, list rhythm, highlighting and code copy.
 - [Chat session](chat-session.md): compare a chat in the browser with `./mf thread view --json` by row identity, kind, item kinds and text, the `cN` ref steps, and SY-01 to SY-07, the live-sync recipes (join, reload, navigate, another client's message, Stop, a held write-mode switch, a network gap).
 - [Chat submissions](chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
 - [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
