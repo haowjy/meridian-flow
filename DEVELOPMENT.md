@@ -154,8 +154,16 @@ Run once per checkout (main or worktree). Hooks in [lefthook.yml](lefthook.yml):
 
 | Hook | Runs |
 |------|------|
-| **pre-commit** | `pnpm biome check --staged` → `pnpm typecheck` |
-| **pre-push** | `pnpm --filter @meridian/database test` |
+| **pre-commit** | Staged Biome, staged migration lint, then `pnpm typecheck:staged` |
+| **pre-push** | Debug-probe checks, then `pnpm --filter @meridian/database test` |
+
+`typecheck:staged` skips documentation-only changes. Otherwise, Nx selects projects
+and dependent consumers from staged paths, including both ends of a rename and
+deleted paths. Shared configuration and dependency changes select the wider set.
+Selection reads the Git index; each project's configured check reads the working
+tree, including unstaged edits. It does not validate a staged snapshot or stash
+files. `pnpm typecheck`, `pnpm check` and CI retain full-project checks.
+See [selection and cache inputs](tools/ci/README.md#staged-typechecking).
 
 Verify: `pnpm exec lefthook run pre-commit` / `pre-push`. Do **not** use `git commit --no-verify` unless explicitly approved.
 
@@ -175,7 +183,7 @@ Prefer separate commits per package or layer when it helps review (e.g. `package
 
 ## Checks (manual)
 
-Same gates as hooks, useful before push:
+Full gates, beyond the staged selection used at commit time:
 
 ```bash
 pnpm lint

@@ -20,6 +20,7 @@
     "format": "biome check .",
     "format:write": "biome check --write .",
     "typecheck": "node tools/ci/run-nx-target.mjs typecheck",
+    "typecheck:staged": "node tools/ci/run-nx-target.mjs typecheck --staged",
     "test": "vitest run --passWithNoTests --pool=threads",
     "check": "pnpm lint && pnpm check:debug-probes && pnpm check:negative-space && pnpm check:tree-visibility && pnpm check:i18n && pnpm typecheck && pnpm test && pnpm check:graph && pnpm check:db",
     "portless:trust": "portless trust",
