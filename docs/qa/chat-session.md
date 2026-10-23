@@ -119,8 +119,9 @@ will grow, one per command. It holds the transcript comparison and the live-sync
   ./mf thread view c9                               # exit 3 (no such ref)
   ```
 
-- **Expect:** the exit codes in the comments. `./mf thread view c1 --json` carries `chatView: 2` and rows whose
-  `identity` is `{ turnId: renderKey, kind, occurrence: 0 }`.
+- **Expect:** the exit codes in the comments. `./mf thread view c1 --json` carries `chatView: 3`, rows whose
+  `identity` is `{ turnId: renderKey, kind, occurrence: 0 }`, and delivery groups shaped as
+  `{ id, events }`.
 
 ## Live sync (SY-01 to SY-07)
 

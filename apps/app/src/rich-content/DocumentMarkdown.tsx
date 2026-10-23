@@ -332,7 +332,7 @@ function StaticTranscript({
   ));
 }
 
-export function DocumentMarkdown({
+export const DocumentMarkdown = memo(function DocumentMarkdown({
   source,
   breaks = false,
   streaming = false,
@@ -371,7 +371,8 @@ export function DocumentMarkdown({
       )}
     </div>
   );
-}
+});
+DocumentMarkdown.displayName = "DocumentMarkdown";
 
 function useStreamingMarkdown(
   streamId: string | undefined,

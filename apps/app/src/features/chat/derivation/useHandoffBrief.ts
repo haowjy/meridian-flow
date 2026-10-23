@@ -87,13 +87,16 @@ export function useHandoffBrief(input: {
     [requestOf],
   );
 
-  return {
-    localSeeds: standIns.standIns,
-    canStop,
-    outcomes: standIns.outcomes,
-    stopFailures,
-    retry,
-    stop,
-    stopping: turnStop.stopping,
-  };
+  return useMemo(
+    () => ({
+      localSeeds: standIns.standIns,
+      canStop,
+      outcomes: standIns.outcomes,
+      stopFailures,
+      retry,
+      stop,
+      stopping: turnStop.stopping,
+    }),
+    [canStop, retry, standIns.outcomes, standIns.standIns, stop, stopFailures, turnStop.stopping],
+  );
 }

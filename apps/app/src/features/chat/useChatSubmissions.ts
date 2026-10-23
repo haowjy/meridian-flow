@@ -2,7 +2,7 @@
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { JournalSwitch } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useLayoutEffect, useReducer, useRef } from "react";
 import {
   CHAT_SUBMISSIONS_STORAGE_PREFIX,
   getChatSubmissionAccountId,
@@ -41,7 +41,9 @@ export function useChatSubmissions(
   const driver = useRef<ChatSubmissionOwner | null>(null);
   const [, render] = useReducer((value: number) => value + 1, 0);
   const latest = useRef({ actions, focusComposer, dissolveChat, deletion });
-  latest.current = { actions, focusComposer, dissolveChat, deletion };
+  useLayoutEffect(() => {
+    latest.current = { actions, focusComposer, dissolveChat, deletion };
+  }, [actions, deletion, dissolveChat, focusComposer]);
 
   useEffect(() => {
     const lifetime = new AbortController();

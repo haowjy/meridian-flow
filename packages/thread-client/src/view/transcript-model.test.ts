@@ -30,3 +30,36 @@ it("never groups a reply across a write-mode divider, even after a steer", () =>
   expect(model.partsByFinalTurnId.get("a")?.map((part) => part.id)).toEqual(["a"]);
   expect(model.partsByFinalTurnId.get("b")?.map((part) => part.id)).toEqual(["b"]);
 });
+
+it("reports cached malformed subagent claims on every build", () => {
+  const malformedUpdate = turn("notice", "system", {
+    metadata: { kind: "subagent_update", childThreadId: 42 },
+  });
+  const malformedCard = turn("reply", "assistant", {
+    blocks: [
+      {
+        id: "bad-card",
+        turnId: "reply",
+        responseId: null,
+        blockType: "custom",
+        sequence: 0,
+        content: { kind: "helper-result", props: { agentName: 42 } },
+        createdAt: "2026-10-23T00:00:00.000Z",
+      },
+    ],
+  });
+  const failures: unknown[] = [];
+  const build = () =>
+    buildTranscriptModel([malformedCard, malformedUpdate], false, null, (failure) =>
+      failures.push(failure),
+    );
+
+  build();
+  build();
+  expect(failures).toEqual([
+    { contract: "invocation_card", turnId: "reply", blockId: "bad-card" },
+    { contract: "subagent_update", turnId: "notice" },
+    { contract: "invocation_card", turnId: "reply", blockId: "bad-card" },
+    { contract: "subagent_update", turnId: "notice" },
+  ]);
+});

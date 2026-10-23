@@ -10,6 +10,7 @@ import type { Block, Turn, TurnStatus } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 
 import { isOptimisticTurnId } from "../view/optimistic-turn-id";
+import { sameBlock, sameTurn } from "./same-turn";
 
 export type ReconcileSnapshotTurnsOptions = {
   /**
@@ -35,30 +36,37 @@ function reconcileBlocks(
   server: readonly Block[],
   serverStatus: TurnStatus,
 ): Block[] {
-  if (isTerminalTurnStatus(serverStatus)) return [...server];
+  let reconciled: Block[];
+  if (isTerminalTurnStatus(serverStatus)) {
+    reconciled = [...server];
+  } else {
+    const serverSequences = new Set(server.map((block) => block.sequence));
+    const maxServerSequence = server.reduce((max, block) => Math.max(max, block.sequence), -1);
 
-  const serverSequences = new Set(server.map((block) => block.sequence));
-  const maxServerSequence = server.reduce((max, block) => Math.max(max, block.sequence), -1);
+    /**
+     * `sequence` is the block identity inside one turn. Server blocks replace
+     * the same sequence, but local blocks beyond a non-terminal snapshot's max
+     * sequence are the live tail that may have arrived before the snapshot head.
+     * Terminal server turns are fully authoritative and skip this path.
+     */
+    const localTail = local.filter(
+      (block) => !serverSequences.has(block.sequence) && block.sequence > maxServerSequence,
+    );
 
-  /**
-   * `sequence` is the block identity inside one turn. Server blocks replace
-   * the same sequence, but local blocks beyond a non-terminal snapshot's max
-   * sequence are the live tail that may have arrived before the snapshot head.
-   * Terminal server turns are fully authoritative and skip this path.
-   */
-  const localTail = local.filter(
-    (block) => !serverSequences.has(block.sequence) && block.sequence > maxServerSequence,
-  );
-
-  const bySequence = new Map<number, Block>();
-  for (const block of localTail) {
-    bySequence.set(block.sequence, block);
+    const bySequence = new Map<number, Block>();
+    for (const block of localTail) bySequence.set(block.sequence, block);
+    for (const block of server) bySequence.set(block.sequence, block);
+    reconciled = Array.from(bySequence.values()).sort((a, b) => a.sequence - b.sequence);
   }
-  for (const block of server) {
-    bySequence.set(block.sequence, block);
-  }
 
-  return Array.from(bySequence.values()).sort((a, b) => a.sequence - b.sequence);
+  const localBySequence = new Map(local.map((block) => [block.sequence, block]));
+  const shared = reconciled.map((block) => {
+    const localBlock = localBySequence.get(block.sequence);
+    return localBlock && sameBlock(localBlock, block) ? localBlock : block;
+  });
+  return shared.length === local.length && shared.every((block, index) => block === local[index])
+    ? (local as Block[])
+    : shared;
 }
 
 /**
@@ -81,12 +89,13 @@ export function reconcileSnapshotTurns(
   const reconciled: Turn[] = serverTurns.map((serverTurn) => {
     const localTurn = localById.get(serverTurn.id);
     if (!localTurn) return serverTurn;
-    return {
+    const nextTurn = {
       ...serverTurn,
       // Forgetting is write-once: an older snapshot never clears a stamp the store already holds.
       forgottenBy: localTurn.forgottenBy ?? serverTurn.forgottenBy,
       blocks: reconcileBlocks(localTurn.blocks, serverTurn.blocks, serverTurn.status),
     };
+    return sameTurn(localTurn, nextTurn) ? localTurn : nextTurn;
   });
 
   const reconciledIds = new Set(reconciled.map((turn) => turn.id));
@@ -123,5 +132,8 @@ export function reconcileSnapshotTurns(
     insertLocalOnlyTurn(localTurn, localIndex);
   });
 
-  return reconciled;
+  return reconciled.length === local.length &&
+    reconciled.every((turn, index) => turn === local[index])
+    ? local
+    : reconciled;
 }
