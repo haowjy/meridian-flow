@@ -30,7 +30,6 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { isClosingRow, type OrchestratorEvent, type Turn } from "@meridian/contracts/threads";
 import {
-  type EventJournalWriter,
   type LiveEventWriter,
   projectReadModelEvent,
   type ThreadRepositories,
@@ -155,20 +154,9 @@ async function projectAndAppendEvents<T>(
       event.turn.position = created.position;
       createdTurns.push(created);
     }
-    await deps.eventWriter.appendEvent(threadId, event);
+    await deps.eventWriter.appendEvents(threadId, [event]);
     await detectFailures(deps, threadId, event);
   }
   await options?.afterEvents?.(persisted.result);
   return { ...persisted, createdTurns };
-}
-
-// Non-transactional path: journal-only append for ephemeral transport
-// events that don't need read-model projection.
-export async function appendEvent(
-  writer: EventJournalWriter,
-  threadId: ThreadId,
-  event: OrchestratorEvent,
-): Promise<OrchestratorEvent> {
-  await writer.appendEvent(threadId, event);
-  return event;
 }
