@@ -22,9 +22,7 @@ const ACCEPTED = { status: "accepted" } as const;
 const SEALED = { status: "sealed" } as const;
 const FULL = { status: "full" } as const;
 
-export type DeltaJournal = ReturnType<typeof createDeltaJournal>;
-
-export type DeltaJournalDeps = {
+type DeltaJournalDeps = {
   threadId: ThreadId;
   appendEvents(threadId: ThreadId, events: readonly OrchestratorEvent[]): Promise<bigint>;
   eventSink: EventSink;
@@ -35,7 +33,7 @@ function stringBytes(value: unknown): number {
   return typeof value === "string" ? value.length * 2 : 0;
 }
 
-export function estimateDeltaEventBytes(event: DeltaEvent): number {
+function estimateDeltaEventBytes(event: DeltaEvent): number {
   return (
     64 +
     stringBytes("text" in event ? event.text : undefined) +
