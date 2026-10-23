@@ -32,6 +32,7 @@ const states = new Map<string, StreamState>();
 let nextGeneration = 1;
 let worker: Worker | null | undefined;
 let synchronous = typeof Worker === "undefined" || import.meta.env.SSR;
+let reportedWorkerFailure = false;
 
 export function configureMarkdownStreaming(
   documentSchema: Schema,
@@ -123,14 +124,20 @@ function workerForBrowser(): Worker | null {
       type: "module",
     });
     worker.onmessage = (event: MessageEvent<MarkdownWorkerResponse>) => receive(event.data);
-    worker.onerror = disableWorker;
-  } catch {
-    disableWorker();
+    worker.onerror = (event) =>
+      disableWorker(event.error ?? new Error(event.message || "Markdown worker failed to load"));
+    worker.onmessageerror = (event) => disableWorker(event);
+  } catch (error) {
+    disableWorker(error);
   }
   return worker ?? null;
 }
 
-function disableWorker(): void {
+function disableWorker(cause: unknown): void {
+  if (!reportedWorkerFailure) {
+    reportedWorkerFailure = true;
+    console.error("Markdown worker failed; using synchronous parsing.", cause);
+  }
   worker?.terminate();
   worker = null;
   synchronous = true;
@@ -143,7 +150,7 @@ function receive(message: MarkdownWorkerResponse): void {
   const state = states.get(message.streamId);
   if (!state || state.generation !== message.generation) return;
   if (message.type === "error") {
-    disableWorker();
+    disableWorker(new Error(message.message));
     return;
   }
 

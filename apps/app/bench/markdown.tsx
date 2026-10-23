@@ -17,6 +17,52 @@ const transcript = Array.from(
   { length: 50 },
   (_, index) => `${index % 2 ? "Reply" : "Question"} ${index}\n\n${section}`,
 );
+const storyFragments = [
+  "The ward stones answered one after another, turning the mountain path into a chain of pale green stars.",
+  "At the pavilion, the quartermaster compared the damaged seal with the copy hidden in the sect ledger.",
+  "Rain softened the training yard while the disciples argued about who had moved first and who had merely reacted.",
+  "Beyond the eastern wall, a spirit crane circled twice before dropping a narrow letter tied with silver thread.",
+  "The formation master erased one line of chalk, then asked everyone to reconsider what the diagram assumed.",
+  "No one mentioned the missing sword, but every answer bent around the empty place where it should have rested.",
+  "By dusk, the market lanterns reflected in the canal and made even ordinary bargains look like secret rites.",
+  "The healer counted three steady breaths, loosened the bandage, and waited for the hidden meridian to reveal itself.",
+  "A rumor from the northern pass arrived with exact names, impossible dates, and one detail only an eyewitness knew.",
+  "Inside the archive, dust covered the recent shelves while the oldest bamboo slips looked freshly handled.",
+  "The junior scribe recorded each contradiction without resolving it, trusting the pattern to emerge on a second reading.",
+  "When the bell sounded, the elders ended the debate but left the final seat conspicuously unclaimed.",
+] as const;
+
+const wordCount = (value: string) => value.trim().split(/\s+/).filter(Boolean).length;
+const distinctTranscript = Array.from({ length: 50 }, (_, index) => {
+  const targetWords = 100 + ((index * 337) % 1_371);
+  const title = ["Ash Gate", "Jade Ledger", "Silent Peak", "River Oath", "Glass Province"][
+    index % 5
+  ];
+  const protagonist = ["Mei", "Rin", "Tao", "Sera", "Jun"][index % 5];
+  const parts = [
+    `## ${title}: scene ${index + 1}`,
+    `The scene follows ${protagonist} after the ${["trial", "ambush", "council", "duel", "pilgrimage"][index % 5]}.`,
+    `> The witness remembers detail ${index + 3}, but not the promise made before it.`,
+  ];
+  let beat = 0;
+  while (wordCount(parts.join("\n\n")) < targetWords - 35) {
+    const fragment = storyFragments[(index * 5 + beat * 7) % storyFragments.length];
+    const reading = ["a warning", "an invitation", "a feint", "a debt", "a test"][
+      (index + beat) % 5
+    ];
+    parts.push(
+      `${fragment} ${protagonist} read moment ${beat + 1} as ${reading}, which changed the next choice in scene ${index + 1}.`,
+    );
+    beat++;
+  }
+  parts.push(
+    `- Recheck clue ${index + 1}\n- Follow the ${["river", "ridge", "caravan", "messenger"][index % 4]}\n- Keep the cost visible`,
+    `\`\`\`ts\nconst scene = { chapter: ${index + 1}, revision: ${beat} };\n\`\`\``,
+    `| Thread | Status |\n| --- | --- |\n| ${title} | ${index % 2 ? "open" : "turning"} |`,
+  );
+  return parts.join("\n\n");
+});
+const distinctTranscriptWordCounts = distinctTranscript.map(wordCount);
 const stats = (samples: number[]) => {
   const sorted = [...samples].sort((a, b) => a - b);
   return {
@@ -39,7 +85,7 @@ function waitForPaint(host: HTMLElement, sourceLength: number): Promise<void> {
   });
 }
 
-export async function runMarkdownBench(interval: number) {
+export async function runMarkdownBench(interval: number, mountsOnly = false) {
   const host = document.getElementById("root");
   if (!host) throw new Error("Missing bench root");
   let root = createRoot(host);
@@ -68,7 +114,7 @@ export async function runMarkdownBench(interval: number) {
   const updates: number[] = [];
   const arrivalToPaint: number[] = [];
   let source = "";
-  for (const token of tokens) {
+  for (const token of mountsOnly ? [] : tokens) {
     const arrived = performance.now();
     source += token;
     updates.push(commit([source], true));
@@ -91,14 +137,16 @@ export async function runMarkdownBench(interval: number) {
     }
     return stats(samples);
   };
-  const worstCaseTokenUpdateMs = {
-    paragraph: await streamUpdates(Array.from({ length: 300 }, (_, index) => `word${index} `)),
-    list: await streamUpdates(Array.from({ length: 300 }, (_, index) => `- item ${index}\n`)),
-    openCode: await streamUpdates(
-      Array.from({ length: 300 }, (_, index) => `value${index} `),
-      "```ts\n",
-    ),
-  };
+  const worstCaseTokenUpdateMs = mountsOnly
+    ? null
+    : {
+        paragraph: await streamUpdates(Array.from({ length: 300 }, (_, index) => `word${index} `)),
+        list: await streamUpdates(Array.from({ length: 300 }, (_, index) => `- item ${index}\n`)),
+        openCode: await streamUpdates(
+          Array.from({ length: 300 }, (_, index) => `value${index} `),
+          "```ts\n",
+        ),
+      };
   const mounts = (sources: string[]) => {
     const samples: number[] = [];
     for (let i = 0; i < 10; i++) {
@@ -116,6 +164,12 @@ export async function runMarkdownBench(interval: number) {
     textBlockCharacters: long.length,
     worstCaseTokenUpdateMs,
     transcriptMountMs: mounts(transcript),
+    distinctTranscriptMessages: distinctTranscript.length,
+    distinctTranscriptWords: {
+      min: Math.min(...distinctTranscriptWordCounts),
+      max: Math.max(...distinctTranscriptWordCounts),
+    },
+    distinctTranscriptMountMs: mounts(distinctTranscript),
     longReplyMountMs: mounts([long]),
   };
   root.unmount();

@@ -56,8 +56,10 @@ show their alt text without fetching an app-origin or disallowed URL.
 Performance: `pnpm --filter @meridian/app bench:markdown` streams one 30,381-character,
 5,071-word text block at 30 tokens/s. It reports synchronous main-thread React
 commits, forced layout, and arrival-to-next-paint delay after the matching worker
-result. It also measures 50-message and long-reply cold and cached mounts. Keep the
-fixture and cadence unchanged for comparisons; do not run checks concurrently.
+result. It also measures cold and cached mounts for both a repeated 50-message
+fixture and 50 distinct replies of 100 to 1,500 words, plus one long reply. Keep
+the fixtures and cadence unchanged for comparisons; alternate baseline and
+candidate runs on a shared host, and do not run checks concurrently.
 
 Focused contract checks:
 `pnpm --filter @meridian/app exec vitest run src/rich-content/document-markdown.test.tsx src/rich-content/code-block.test.tsx`.
