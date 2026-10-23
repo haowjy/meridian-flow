@@ -20,7 +20,7 @@ import {
   type StopFacts,
   type UnresolvedHandBack,
 } from "@meridian/thread-client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { postCommand } from "@/client/api/threads-api";
 import { composerSessionDraft } from "@/client/composer-drafts";
 import { useThreadActions } from "@/client/stores";
@@ -42,7 +42,9 @@ export function useHandBack(input: {
   const { threadId, accountId, scope } = input;
   const actions = useThreadActions();
   const latest = useRef({ actions, scope });
-  latest.current = { actions, scope };
+  useLayoutEffect(() => {
+    latest.current = { actions, scope };
+  }, [actions, scope]);
   const [revision, setRevision] = useState(0);
   const redraw = useCallback(() => setRevision((n) => n + 1), []);
 
