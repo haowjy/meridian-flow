@@ -52,6 +52,7 @@ import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import { markDocumentOpen } from "./document-open-performance";
+import { detachedPersistenceCloseOwner } from "./document-session-teardown-owner";
 import {
   commitContentInitialization,
   readContentInitialization,
@@ -238,6 +239,7 @@ export class DocumentSession {
   private readonly openAttemptId: string | undefined;
 
   private persistence: IndexeddbPersistence | null;
+  private readonly persistenceKey: string | null;
   private localPeers: LocalDocumentPeers | null = null;
   private initialization: Promise<void> | null = null;
   private transportProvider: DocumentSessionTransportProvider | null = null;
@@ -306,8 +308,10 @@ export class DocumentSession {
     this.localPresence = createLocalPresence(this.awareness);
     markDocumentOpen("session-created", { documentId: this.documentId });
     if (persistence.kind === "indexeddb") {
+      this.persistenceKey = persistence.key;
       this.persistence = new IndexeddbPersistence(persistence.key, this.document);
     } else {
+      this.persistenceKey = null;
       this.persistence = null;
     }
     this.transportAttachedPromise = new Promise((resolve) => {
@@ -816,7 +820,10 @@ export class DocumentSession {
     // y-indexeddb fences replay synchronously in destroy(), but its returned
     // promise can wait forever for a blocked open. The database owns that close;
     // room teardown and a later room incarnation must not await it.
-    void persistence.destroy().catch((error) => reportError(error));
+    const close = this.persistenceKey
+      ? detachedPersistenceCloseOwner.retire(this.persistenceKey, () => persistence.destroy())
+      : persistence.destroy();
+    void close.catch((error) => reportError(error));
     this.settleLocalStorage("detached");
   }
 

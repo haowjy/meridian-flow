@@ -254,10 +254,14 @@ function ReadableProjectDestination({
     localDocument.kind === "identity" ? localDocument.documentId : undefined;
   const localResourceHandle =
     localDocument.kind === "resolved" ? localDocument.owner.tab.resourceHandle : undefined;
-  const localPointer =
-    localDocumentId && localResourceHandle
-      ? { accountId: user.userId, projectId, resourceHandle: localResourceHandle }
-      : undefined;
+  const localPointer = localDocumentId
+    ? {
+        accountId: user.userId,
+        projectId,
+        documentId: localDocumentId,
+        ...(localResourceHandle ? { resourceHandle: localResourceHandle } : {}),
+      }
+    : undefined;
   useLayoutEffect(() => {
     if (localDocumentId && workId)
       void useContextTabsStore.getState().selectTab(projectId, workId, localDocumentId);

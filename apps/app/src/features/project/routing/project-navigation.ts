@@ -26,7 +26,12 @@ export type ProjectNavigationPort = {
 export type DisplayedProjectSelection = {
   work: AddressSelection;
   /** Existing local ownership pointer, never content or a new draft instance. */
-  local?: { accountId: string; projectId: string; resourceHandle: string };
+  local?: {
+    accountId: string;
+    projectId: string;
+    documentId: string;
+    resourceHandle?: string;
+  };
 };
 export type ProjectAddressReplacement =
   | { kind: "replaced" | "superseded" }
@@ -162,7 +167,7 @@ export function createProjectNavigation(
       href,
       projectAddressState(frozen, {
         ...entry.state,
-        meridianProjectSelection: shown.local ? { version: 2, ...shown.local } : undefined,
+        meridianProjectSelection: shown.local ? { version: 3, ...shown.local } : undefined,
       }),
     );
   }

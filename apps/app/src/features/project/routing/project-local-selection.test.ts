@@ -24,7 +24,7 @@ const input = {
   },
 };
 describe("local document history", () => {
-  it("keeps absent distinct from stale, foreign, malformed, pointers", () => {
+  it("falls back to address resolution for absent, foreign, or malformed pointers", () => {
     expect(resolveLocalDocumentSelection({ ...input, pointer: undefined }).kind).toBe("absent");
     for (const change of [
       { accountId: "other" },
@@ -32,17 +32,15 @@ describe("local document history", () => {
       { pointer: null },
       { pointer: { ...input.pointer, version: 1 } },
     ])
-      expect(resolveLocalDocumentSelection({ ...input, ...change }).kind).toBe("unavailable");
+      expect(resolveLocalDocumentSelection({ ...input, ...change }).kind).toBe("absent");
   });
-  it("keeps a missing tab as an identity-open claim", () => {
+  it("keeps missing ownership as an identity-open claim but rejects mismatched lineage", () => {
     expect(resolveLocalDocumentSelection({ ...input, tabs: [] })).toEqual({
       kind: "identity",
       documentId: "draft-a",
     });
-  });
-  it("rejects a resource lineage that no longer matches the document identity", () => {
     const reminted = { ...tab, documentId: "draft-b" };
-    expect(resolveLocalDocumentSelection({ ...input, tabs: [reminted] }).kind).toBe("unavailable");
+    expect(resolveLocalDocumentSelection({ ...input, tabs: [reminted] }).kind).toBe("absent");
   });
 });
 

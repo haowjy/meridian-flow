@@ -131,3 +131,29 @@ export class DocumentSessionTeardownOwner {
     if (sessions?.size === 0) this.byRoom.delete(entry.key);
   }
 }
+
+/** Owns physical IndexedDB closes without quarantining the logical room. */
+export class DetachedPersistenceCloseOwner {
+  private readonly byDatabase = new Map<string, Set<Promise<void>>>();
+
+  retire(databaseKey: string, close: () => Promise<void>): Promise<void> {
+    let attempt: Promise<void>;
+    try {
+      attempt = close();
+    } catch (error) {
+      attempt = Promise.reject(error);
+    }
+    const pending = this.byDatabase.get(databaseKey) ?? new Set<Promise<void>>();
+    pending.add(attempt);
+    this.byDatabase.set(databaseKey, pending);
+    void attempt
+      .finally(() => {
+        pending.delete(attempt);
+        if (pending.size === 0) this.byDatabase.delete(databaseKey);
+      })
+      .catch(() => undefined);
+    return attempt;
+  }
+}
+
+export const detachedPersistenceCloseOwner = new DetachedPersistenceCloseOwner();

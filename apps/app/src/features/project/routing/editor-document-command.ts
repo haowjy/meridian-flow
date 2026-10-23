@@ -220,9 +220,6 @@ export function prepareEditorDestination(
   // Every door commit records the identity it opened. The readable address is
   // presentation; history must not rediscover the document through that path.
   if (selected) {
-    const tabs = preparedTab
-      ? [...workspace.tabs.filter((tab) => !matchesTabInstance(tab, preparedTab)), preparedTab]
-      : workspace.tabs;
     const pointer = {
       version: 3,
       accountId: accountId,
@@ -230,19 +227,6 @@ export function prepareEditorDestination(
       documentId: selected.documentId,
       ...(selected.resourceHandle ? { resourceHandle: selected.resourceHandle } : {}),
     };
-    // Pointer identity is ready now; Editor Work membership waits for resolution.
-    const resolved = resolvedWorkId
-      ? resolveLocalDocumentSelection({
-          pointer,
-          accountId: accountId,
-          projectId,
-          workId: routeTargetForTab(selected, resolvedWorkId).workId,
-          hydrated: true,
-          tabs,
-        })
-      : null;
-    if (resolved && resolved.kind !== "resolved")
-      throw new Error("Document identity is unavailable");
     state = { meridianProjectSelection: pointer };
   }
   const destination: ProjectDestination = target.path

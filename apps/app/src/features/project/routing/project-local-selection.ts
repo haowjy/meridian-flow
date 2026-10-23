@@ -31,19 +31,20 @@ export function resolveLocalDocumentSelection(input: {
     ("resourceHandle" in pointer &&
       (typeof pointer.resourceHandle !== "string" || !pointer.resourceHandle))
   )
-    return { kind: "unavailable" } as const;
-  if (!input.hydrated || !input.workId) return { kind: "loading" } as const;
+    return { kind: "absent" } as const;
+  if (!input.hydrated) return { kind: "loading" } as const;
   const tab = input.tabs.find((candidate) => candidate.documentId === pointer.documentId);
   if (!tab) {
     if (
       "resourceHandle" in pointer &&
       input.tabs.some((candidate) => candidate.resourceHandle === pointer.resourceHandle)
     )
-      return { kind: "unavailable" } as const;
+      return { kind: "absent" } as const;
     return { kind: "identity", documentId: pointer.documentId } as const;
   }
   if ("resourceHandle" in pointer && tab.resourceHandle !== pointer.resourceHandle)
-    return { kind: "unavailable" } as const;
+    return { kind: "absent" } as const;
+  if (!input.workId) return { kind: "identity", documentId: pointer.documentId } as const;
   const owner = resolveWorkspaceRoute({
     tabs: input.tabs,
     selectedDocumentId: tab.documentId,
