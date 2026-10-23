@@ -4,7 +4,6 @@ import {
   editHandle,
   type InversePart,
   type InverseSelection,
-  prepareEditRoots,
 } from "@meridian/agent-edit/integration";
 import type {
   BranchId,
@@ -24,24 +23,21 @@ import type {
   TurnInverseSkipCause,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
-import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { Principal } from "../../file-policy/index.js";
 import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
-import { effectiveActionIndex, isRolledBack, partKey } from "./inverse-actions.js";
+import { effectiveActionIndex, partKey } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import { type InverseStep, simulateInverse } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 import {
   isTransitionEntry,
-  latestTransition,
   type PlannedTreeInverse,
   type StoredTreeEntry,
   type TransitionEntry,
   type TreeStates,
-  treeChangedCause,
   treeKey,
 } from "./tree-inverse.js";
 
@@ -216,7 +212,7 @@ function prepare(
       const destination = document.destinationOf(part.origin);
       return destination.kind !== "draft" || !hiddenCreateBranches.has(destination.branchId);
     });
-    const rolledBack = (part: StoredInversePart) => isRolledBack(document.history, part);
+    const rolledBack = (part: StoredInversePart) => index.rolledBack.has(partKey(part));
     const reversals =
       direction === "undo"
         ? targets.filter((part) => !rolledBack(part))
@@ -228,7 +224,6 @@ function prepare(
           )
         : part
       )?.disposition ?? part.disposition;
-    const liveIndex = prepareEditRoots(document.live, document.history);
     const skips: TurnInverseSkip[] = [];
     const simulation = simulateInverse(document, {
       rolledBack: index.rolledBack,
@@ -242,8 +237,6 @@ function prepare(
       },
     });
     const entryPlanner = createCapturedReversalPlanner(document, query);
-    const poppableEditIds =
-      direction === "undo" ? entryPlanner.poppableForTurn(query, kind === "rollback") : new Set();
     const skipTree = (row: StoredTreeEntry, cause: TurnInverseSkipCause) =>
       skips.push({
         kind: "tree",
@@ -301,20 +294,8 @@ function prepare(
           simulation.rolledBack,
           simulation.nextStep,
         );
-        if ("status" in planned) {
-          const cause: TurnInverseSkipCause = planned.status.endsWith("_applied")
-            ? "applied"
-            : planned.status.endsWith("_discarded")
-              ? "discarded"
-              : planned.status === "work_archived"
-                ? "draft_archived"
-                : latestTransition(row, simulation.tree, simulation.rolledBack).stands !==
-                    (direction === "undo")
-                  ? direction === "undo"
-                    ? "already_undone"
-                    : "already_redone"
-                  : treeChangedCause(simulation.states, row.tree.destination);
-          skipTree(row, cause);
+        if ("cause" in planned) {
+          skipTree(row, planned.cause);
           continue;
         }
         simulation.recordTree(planned, { kind, actionId, consumes });
@@ -335,37 +316,16 @@ function prepare(
         handle: parts[0]?.wId === null ? "" : editHandle(parts[0]?.wId ?? 0),
         parts,
       };
-      const planned = entryPlanner.textPlan(
+      const planned = entryPlanner.turnTextPlan(
         entry,
         direction,
-        (destination) =>
-          destination.kind === "draft" && destination.state === "gone"
-            ? entryPlanner.inspect()
-            : entryPlanner.inspect(destination.view),
-        {
-          inverseParts,
-          liveRemoved: simulation.liveRemoved(),
-          actionKind:
-            kind === "rollback"
-              ? "rollback"
-              : direction === "redo"
-                ? "redo"
-                : poppableEditIds.has(entry.id)
-                  ? "undo"
-                  : "revert",
-          classify: false,
-        },
+        kind,
+        query,
+        simulation.liveRemoved(),
+        inverseParts,
       );
-      if ("status" in planned) {
-        const cause: TurnInverseSkipCause =
-          planned.status === "work_archived"
-            ? "draft_archived"
-            : planned.status.endsWith("_discarded")
-              ? "discarded"
-              : document.removal?.reason === "discarded"
-                ? "document_discarded"
-                : "document_deleted";
-        for (const part of parts) skip(part, cause);
+      if (planned.cause) {
+        for (const part of parts) skip(part, planned.cause);
         continue;
       }
       for (const { part, direction: partDirection } of planned.selection) {
@@ -385,25 +345,16 @@ function prepare(
           kind: "text",
           editId: parts[0].editId,
           destination: planned.destination,
-          actionKind: planned.actionKind,
+          actionKind: planned.actionKind as "undo" | "redo" | "revert" | "rollback",
           at,
         });
     }
     // Text never moves or deletes a document, so each destination's parts compute as one
     // selection in step order over that destination's view; one edit lands in one
     // destination. Review membership does not decide inverse eligibility, including rollback.
-    const computed = new Map<
-      InverseDestination,
-      ReturnType<ReturnType<typeof prepareEditRoots>["compute"]>
-    >(
+    const computed = new Map<InverseDestination, ReturnType<typeof entryPlanner.compute>>(
       [...selection].map(([destination, parts]) => {
-        if (destination.kind === "draft" && destination.state === "gone")
-          throw new Error("A gone destination cannot be selected");
-        const index = destination.kind === "live" ? liveIndex : liveIndex.forView(destination.view);
-        return [
-          destination,
-          index.compute(parts, { actionId, allocateClient: allocateDocumentClient }),
-        ];
+        return [destination, entryPlanner.compute(destination, parts, actionId)];
       }),
     );
     const classifiedKeys = new Set(

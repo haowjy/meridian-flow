@@ -1,10 +1,8 @@
 /** Captured destination, stack, and eligibility facts shared by model reversal commands and history. */
 
-import {
-  type DocumentEditResult,
-  type InverseSelection,
-  prepareEditRoots,
-} from "@meridian/agent-edit/integration";
+import { type InverseSelection, prepareEditRoots } from "@meridian/agent-edit/integration";
+import type { TurnInverseSkipCause } from "@meridian/contracts/protocol";
+import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import {
@@ -48,16 +46,26 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       : queryDestination.view;
   const own = entries(document, query.threadId);
   const actions = inspectionActions(document.history, document.tree, own);
+  const poppableByTurn = new Map<string, Set<string>>();
   const inspections = new Map<Y.Doc, Inspection>();
   inspections.set(document.live, inspectionContext(liveIndex, actions));
-  for (const documentDraft of document.drafts.values()) {
-    const index = liveIndex.forView(documentDraft.doc);
-    inspections.set(documentDraft.doc, inspectionContext(index, actions));
-  }
   const inspect = (current = view) => {
-    const inspection = inspections.get(current);
-    if (!inspection) throw new Error("Missing immutable-view inspection");
+    let inspection = inspections.get(current);
+    if (!inspection) {
+      inspection = inspectionContext(liveIndex.forView(current), actions);
+      inspections.set(current, inspection);
+    }
     return inspection;
+  };
+  const compute = (
+    destination: InverseDestination,
+    selection: readonly InverseSelection[],
+    actionId: string,
+  ) => {
+    if (destination.kind === "draft" && destination.state === "gone")
+      throw new Error("A gone destination cannot be selected");
+    const index = destination.kind === "live" ? liveIndex : liveIndex.forView(destination.view);
+    return index.compute(selection, { actionId, allocateClient: allocateDocumentClient });
   };
   const version = (destination: InverseDestination) => {
     const draftId = draftIdOf(destination);
@@ -65,46 +73,39 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       ? `draft (${draftId ? (document.drafts.get(draftId)?.name ?? "unavailable") : "unavailable"})`
       : "live";
   };
+  type TextFailure = "draft_archived" | "document_deleted" | "discarded" | "changed";
+  type TextOmission = {
+    ordinal: number;
+    cause:
+      | "paragraph_removed"
+      | "already_removed"
+      | "edited_since"
+      | "draft_archived"
+      | "discarded"
+      | "rolled_back";
+  };
   function refusal(
     part: StoredInversePart,
-    handle: string,
     direction: "undo" | "redo",
     inspection: Inspection,
-  ): Exclude<DocumentEditResult, { status: "success" }> | null {
-    const follow = `Use revert on ${document.uri}, or read it and make a new replace.`;
-    const discarded = {
-      status: `cant_${direction}_discarded` as const,
-      message: `The user discarded ${handle}; it is already gone. ${follow}`,
-    };
+  ): TextFailure | null {
     const destination = document.destinationOf(part.origin);
-    if (destination.frozen)
-      return {
-        status: "work_archived",
-        message: `This draft is archived. Write to an active draft or live version of ${document.uri}.`,
-      };
-    if (destination.kind === "live" && destination.removed)
-      return {
-        status: "document_not_found",
-        message: "File not found. Read the project to find the right path.",
-      };
-    if (destination.kind === "draft" && destination.state === "gone") return discarded;
+    if (destination.frozen) return "draft_archived";
+    if (destination.kind === "draft" && destination.state === "gone") return "discarded";
     const state = inspection.states([part])[0];
     if (state.state !== (direction === "undo" ? "active" : "undone")) {
-      if (part.disposition === "discarded") return discarded;
-      return {
-        status: `cant_${direction}_changed`,
-        message: `Can't ${direction} ${handle}: none of that edit remains unchanged. Read ${document.uri} for current text.`,
-      };
+      if (part.disposition === "discarded") return "discarded";
+      return "changed";
     }
     return null;
   }
-  function changedReason(part: StoredInversePart, inspection: Inspection) {
+  function changedReason(part: StoredInversePart, inspection: Inspection): TextOmission["cause"] {
     const state = inspection.states([part])[0];
     return state.reasons.includes("inaccessible ancestor")
-      ? "paragraph replaced or removed"
+      ? "paragraph_removed"
       : state.state === "undone"
-        ? "already removed"
-        : "edited since";
+        ? "already_removed"
+        : "edited_since";
   }
 
   function textSelection(
@@ -114,7 +115,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     inverseParts: readonly StoredInversePart[] = [],
   ) {
     const selection: InverseSelection[] = [];
-    const partial: string[] = [];
+    const partial: TextOmission[] = [];
     for (const original of direction === "undo"
       ? [...entry.parts].sort((a, b) => b.id - a.id)
       : entry.parts) {
@@ -131,13 +132,11 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       const candidate = inverse
         ? { ...original, origin: inverse.origin, disposition: inverse.disposition }
         : original;
-      const refused = refusal(candidate, entry.handle, direction, inspection);
+      const refused = refusal(candidate, direction, inspection);
       if (!refused)
         selection.push({ part: original, direction: direction === "undo" ? "invert" : "reapply" });
-      else if (refused.status === `cant_${direction}_changed`)
-        partial.push(
-          `${entry.handle} part ${original.ordinal + 1}: ${changedReason(original, inspection)}`,
-        );
+      else if (refused === "changed")
+        partial.push({ ordinal: original.ordinal, cause: changedReason(original, inspection) });
       else return { selection, partial, refusal: refused };
     }
     return { selection, partial, refusal: null };
@@ -150,7 +149,6 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       inverseParts?: readonly StoredInversePart[];
       liveRemoved?: boolean;
       actionKind?: "undo" | "redo" | "revert" | "rollback";
-      classify?: boolean;
     } = {},
   ) {
     const destinationParts = direction === "redo" ? (options.inverseParts ?? []) : entry.parts;
@@ -160,43 +158,18 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     if (destinations.size !== 1) throw new Error("One model edit spans multiple versions");
     const [destination] = destinations;
     if (!destination) throw new Error("One model edit has no destination");
-    if (options.classify === false && destination.kind === "draft" && destination.state === "gone")
-      return {
-        status: `cant_${direction === "redo" ? "redo" : "undo"}_discarded` as const,
-        message: `The user discarded ${entry.handle}; it is already gone.`,
-      };
-    if (destination.frozen)
-      return {
-        status: "work_archived" as const,
-        message: `This draft is archived. Write to an active draft or live version of ${document.uri}.`,
-      };
+    if (destination.kind === "draft" && destination.state === "gone")
+      return { failure: "discarded" as const };
+    if (destination.frozen) return { failure: "draft_archived" as const };
     if (destination.kind === "live" && (options.liveRemoved ?? destination.removed))
-      return {
-        status: "document_not_found" as const,
-        message: "File not found. Read the project to find the right path.",
-      };
+      return { failure: "document_deleted" as const };
     const actionKind =
       options.actionKind ??
       (direction === "undo" &&
       entry.parts.some((part) => part.origin.kind === "pending" && part.disposition === "applied")
         ? "revert"
         : direction);
-    if (options.classify === false)
-      return {
-        destination,
-        actionKind,
-        selection: entry.parts.map(
-          (part): InverseSelection => ({
-            part,
-            direction: direction === "redo" ? ("reapply" as const) : ("invert" as const),
-          }),
-        ),
-        omissions: [],
-      };
-    const inspection =
-      destination.kind === "draft" && destination.state === "gone"
-        ? inspect()
-        : inspectAt(destination);
+    const inspection = inspectAt(destination);
     inspection.states(entry.parts);
     const selected =
       actionKind === "revert"
@@ -207,7 +180,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
             inspection,
             options.inverseParts,
           );
-    if ("refusal" in selected && selected.refusal) return selected.refusal;
+    if ("refusal" in selected && selected.refusal) return { failure: selected.refusal };
     return {
       destination,
       actionKind,
@@ -215,9 +188,56 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       omissions: "partial" in selected ? selected.partial : selected.skipped,
     };
   }
+  function turnTextPlan(
+    entry: Entry,
+    direction: "undo" | "redo",
+    kind: "undo" | "redo" | "rollback",
+    turn: TurnInverseQuery,
+    liveRemoved: boolean,
+    inverseParts: readonly StoredInversePart[] = [],
+  ) {
+    const destinationParts = direction === "redo" ? inverseParts : entry.parts;
+    const destinations = new Set(
+      destinationParts.map((part) => document.destinationOf(part.origin)),
+    );
+    if (destinations.size !== 1) throw new Error("One edit spans multiple versions");
+    const [destination] = destinations;
+    if (!destination) throw new Error("One edit has no destination");
+    if (destination.frozen) return { cause: "draft_archived" as const };
+    if (destination.kind === "draft" && destination.state === "gone")
+      return { cause: "discarded" as const };
+    if (destination.kind === "live" && liveRemoved)
+      return {
+        cause:
+          document.removal?.reason === "discarded"
+            ? ("document_discarded" as const)
+            : ("document_deleted" as const),
+      };
+    const actionKind =
+      kind === "rollback"
+        ? "rollback"
+        : direction === "redo"
+          ? "redo"
+          : poppableForTurn(turn, false).has(entry.id)
+            ? "undo"
+            : "revert";
+    return {
+      destination,
+      actionKind,
+      selection: entry.parts.map(
+        (part): InverseSelection => ({
+          part,
+          direction: direction === "redo" ? "reapply" : "invert",
+        }),
+      ),
+    };
+  }
   function poppableForTurn(turn: TurnInverseQuery, rollback: boolean) {
     const poppable = new Set<string>();
     if (rollback) return poppable;
+    const turnKey = `${turn.threadId}:${turn.turnId ?? ""}`;
+    const cached = poppableByTurn.get(turnKey);
+    if (cached) return cached;
     for (const entry of actions.stack) {
       const belongsToTurn =
         entry.parts.some(
@@ -231,6 +251,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       if (!belongsToTurn || appliedText || settledTree) break;
       poppable.add(entry.id);
     }
+    poppableByTurn.set(turnKey, poppable);
     return poppable;
   }
   function treePlan(
@@ -240,31 +261,17 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     states: InverseDocument["treeStates"],
     rolledBack: ReadonlySet<string>,
     step: () => number,
-  ): PlannedTreeInverse | Exclude<DocumentEditResult, { status: "success" }> {
-    const verb = direction === "revert" ? "undo" : direction;
-    const follow = "Check where it is with `ls`, then make a new move or delete if needed.";
+  ): PlannedTreeInverse | { cause: TurnInverseSkipCause } {
     const row = entry.tree;
     const destination = row.tree.destination;
     const resolvedDestination =
       destination.kind === "draft"
         ? document.destinationForBranch(destination.branchId)
         : document.destinationOf({ kind: "live", seq: 0 });
-    if (resolvedDestination.frozen)
-      return {
-        status: "work_archived",
-        message: `This draft is archived. Write to an active draft or live version of ${document.uri}.`,
-      };
+    if (resolvedDestination.frozen) return { cause: "draft_archived" };
     const settled = settlementOf(row, tree);
-    if (settled === "applied")
-      return {
-        status: `cant_${verb}_applied`,
-        message: `The user applied ${entry.handle} to the manuscript. ${follow}`,
-      };
-    if (settled === "discarded")
-      return {
-        status: `cant_${verb}_discarded`,
-        message: `The user discarded ${entry.handle}; it is already gone. ${follow}`,
-      };
+    if (settled === "applied") return { cause: "applied" };
+    if (settled === "discarded") return { cause: "discarded" };
     const latest = latestTransition(row, tree, rolledBack);
     const planned =
       latest.stands === (direction !== "redo")
@@ -277,13 +284,12 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
           )
         : null;
     if (planned) return planned;
-    return {
-      status: `cant_${verb}_changed`,
-      message: `${entry.handle} can't be ${verb === "undo" ? "undone" : "redone"}: the document was ${treeChangedCause(states, destination).replace("_", " ")} you ${verb === "undo" ? "made" : "undid"} it. ${follow}`,
-    };
+    if (latest.stands !== (direction !== "redo"))
+      return { cause: direction === "redo" ? "already_redone" : "already_undone" };
+    return { cause: treeChangedCause(states, destination) };
   }
   function revertSelection(entry: Entry, inspection = inspect()) {
-    const skipped: string[] = [];
+    const skipped: TextOmission[] = [];
     const selection: InverseSelection[] = [];
     const states = inspection.states(entry.parts);
     for (const [i, part] of entry.parts.entries()) {
@@ -291,24 +297,22 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       const originDestination = document.destinationOf(part.origin);
       const kernelReason =
         state?.state === "undone"
-          ? "already removed"
+          ? "already_removed"
           : state?.reasons.includes("inaccessible ancestor")
-            ? "paragraph replaced or removed"
+            ? "paragraph_removed"
             : state?.state !== "active"
-              ? "edited since"
+              ? "edited_since"
               : null;
       const reason = originDestination.frozen
-        ? "draft archived"
-        : originDestination.kind === "live" && originDestination.removed
-          ? "document deleted"
-          : originDestination.kind === "draft" && originDestination.state === "gone"
-            ? "discarded"
-            : inspection.rolledBack(part)
-              ? "rolled back"
-              : kernelReason && part.disposition === "discarded"
-                ? "discarded"
-                : kernelReason;
-      if (reason) skipped.push(`part ${part.ordinal + 1}: ${reason}`);
+        ? "draft_archived"
+        : originDestination.kind === "draft" && originDestination.state === "gone"
+          ? "discarded"
+          : inspection.rolledBack(part)
+            ? "rolled_back"
+            : kernelReason && part.disposition === "discarded"
+              ? "discarded"
+              : kernelReason;
+      if (reason) skipped.push({ ordinal: part.ordinal, cause: reason });
       else selection.push({ part, direction: "invert" });
     }
     return { selection, skipped };
@@ -317,8 +321,9 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     view,
     own,
     inspect,
+    compute,
     textPlan,
-    poppableForTurn,
+    turnTextPlan,
     treePlan,
     version,
     queryDestination,

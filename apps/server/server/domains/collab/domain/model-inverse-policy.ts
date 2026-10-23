@@ -14,7 +14,13 @@ import { FileEditRefusedError } from "../../file-policy/index.js";
 import { partKey as key } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import { type InverseStep, simulateInverse } from "./inverse-stream.js";
-import { plannedStepDestination, treeRefusal } from "./model-inverse-presentation.js";
+import {
+  plannedStepDestination,
+  textOmission,
+  textPlanRefusal,
+  treePlanRefusal,
+  treeRefusal,
+} from "./model-inverse-presentation.js";
 import {
   type Entry,
   entryKeys,
@@ -44,13 +50,14 @@ import type {
 } from "./turn-inverse-service.js";
 
 export function createModelInversePolicy(store: TurnInverseStore) {
+  type ModelPlanPreview = { status: "planned" };
   async function plan(
     document: InverseDocument | undefined,
     query: ModelInverseQuery,
     command: ModelInverseCommand,
     preview = false,
     preparedPolicy?: ReturnType<typeof createCapturedReversalPlanner>,
-  ): Promise<DocumentEditResult> {
+  ): Promise<DocumentEditResult | ModelPlanPreview> {
     if (!document)
       return {
         status: "document_not_found",
@@ -215,8 +222,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       const treePlan = (
         entry: Entry & { tree: TransitionEntry },
         direction: "undo" | "redo" | "revert",
-      ) =>
-        policy.treePlan(
+      ) => {
+        const decision = policy.treePlan(
           entry,
           direction,
           simulation.tree,
@@ -224,18 +231,30 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           currentInspection().actions.rolledBack,
           simulation.nextStep,
         );
+        if (!("cause" in decision)) return decision;
+        return treePlanRefusal(document.uri, entry.handle, direction, decision.cause);
+      };
+      const modelTextPlan = (
+        entry: Entry,
+        direction: "undo" | "redo" | "revert",
+        options: Parameters<typeof policy.textPlan>[3] = {},
+      ) => {
+        const planned = policy.textPlan(entry, direction, currentInspection, options);
+        if (planned.failure)
+          return textPlanRefusal(document.uri, entry.handle, direction, planned.failure);
+        return {
+          destination: planned.destination,
+          selection: planned.selection,
+          actionKind: planned.actionKind as "undo" | "redo" | "revert",
+          omissions: planned.omissions.map((omission) =>
+            textOmission(entry.handle, direction, omission),
+          ),
+        };
+      };
       const undoTextPlan = (entry: Entry) => {
-        const planned = policy.textPlan(entry, "undo", currentInspection, {
+        return modelTextPlan(entry, "undo", {
           liveRemoved: simulation.liveRemoved(),
         });
-        if (!("status" in planned) && planned.actionKind === "rollback")
-          throw new Error("A model Undo cannot plan rollback");
-        return "status" in planned
-          ? planned
-          : {
-              ...planned,
-              actionKind: planned.actionKind as "undo" | "redo" | "revert",
-            };
       };
       if (command.command === "revert") {
         const entry = own.find((entry) => entry.handle === command.edit);
@@ -256,7 +275,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           handles.push(entry.handle);
           applyTree(planned, entry.handle, "revert", []);
         } else {
-          const textPlan = policy.textPlan(entry, "revert", currentInspection, {
+          const textPlan = modelTextPlan(entry, "revert", {
             liveRemoved: simulation.liveRemoved(),
           });
           if ("status" in textPlan) return textPlan;
@@ -389,7 +408,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                     part.targets.some((target) => key(target) === key(original)),
                   ),
               );
-              const textPlan = policy.textPlan(entry, "redo", currentInspection, {
+              const textPlan = modelTextPlan(entry, "redo", {
                 inverseParts,
                 liveRemoved: simulation.liveRemoved(),
               });
@@ -442,24 +461,14 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       const cuts = textView
         ? { before: textView.before, after: Y.encodeStateAsUpdate(textView.scratch) }
         : {};
-      const plan = { document, steps, consumes, skips: [] };
-      const committed = preview
-        ? {
-            handles: [],
-            updates: [],
-            landings: [],
-            outcomes: [...plannedDestinations.values()].map(({ branchId, draftId }) => ({
-              documentId: document.documentId,
-              branchId,
-              draftId,
-            })),
-          }
-        : await store.commit({
-            query,
-            kind: command.command,
-            plans: [plan],
-            sequence: steps.map((step) => ({ plan, step })),
-          });
+      const inversePlan = { document, steps, consumes, skips: [] };
+      if (preview) return { status: "planned" };
+      const committed = await store.commit({
+        query,
+        kind: command.command,
+        plans: [inversePlan],
+        sequence: steps.map((step) => ({ plan: inversePlan, step })),
+      });
       const parts = text.reduce((n, edit) => n + edit.parts.length, 0);
       const destinations = new Map(
         committed.outcomes.map((outcome) => [outcome.branchId ?? "live", outcome]),
@@ -547,9 +556,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       command: ModelInverseCommand,
     ): Promise<DocumentEditResult> {
       try {
-        return await store.withCapturedDocuments(query, (documents) =>
-          plan(documents[0], query, command),
-        );
+        return await store.withCapturedDocuments(query, async (documents) => {
+          const result = await plan(documents[0], query, command);
+          if (result.status === "planned") throw new Error("Execution returned a plan preview");
+          return result;
+        });
       } catch (cause) {
         // Every attempt missed while the edit still applied: retryable, not a refusal.
         if (cause instanceof ReversalConflictError)
@@ -651,14 +662,14 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               index.rolledBack,
               () => 0,
             );
-          let command = "status" in reversal("revert") ? "none" : "revert";
-          if (entry.id === topEntry?.id && undo?.status === "success") command = "undo";
+          let command = "cause" in reversal("revert") ? "none" : "revert";
+          if (entry.id === topEntry?.id && undo?.status === "planned") command = "undo";
           else if (
             action?.targets.has(k) &&
             action.parts.every(
               (part) => part.actor === "agent" && part.threadId === query.threadId,
             ) &&
-            redo?.status === "success"
+            redo?.status === "planned"
           )
             command = "redo";
           return `${entry.handle}  ${turn(entry.tree.turnId)}  ${state}  ${treeEntrySummary(entry.tree)}  ${command}`;
@@ -704,7 +715,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               ? displayInspection(entry.parts[0] as StoredInversePart)
               : policy.inspect(destination.view),
           );
-          const revert = "status" in revertPlan ? 0 : revertPlan.selection.length;
+          const revert = "failure" in revertPlan ? 0 : revertPlan.selection.length;
           if (revert)
             command =
               revert === entry.parts.length
@@ -713,14 +724,14 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           const appliedOrigin = entry.parts.some(
             (part) => part.origin.kind === "pending" && part.disposition === "applied",
           );
-          if (entry.id === topEntry?.id && undo?.status === "success" && !appliedOrigin)
+          if (entry.id === topEntry?.id && undo?.status === "planned" && !appliedOrigin)
             command = "undo";
           else if (
             action &&
             entry.parts.some((part) => action.targets.has(key(part))) &&
             action.parts.every((part) => part.actor === "agent" && part.threadId === query.threadId)
           ) {
-            if (redo?.status === "success") command = "redo";
+            if (redo?.status === "planned") command = "redo";
           }
           const excerpt = store.describePart(document, entry.parts[0]);
           const summary =

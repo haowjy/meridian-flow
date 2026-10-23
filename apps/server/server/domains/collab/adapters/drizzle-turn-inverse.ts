@@ -257,7 +257,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   function inverseDraftIds(
     query: TurnInverseQuery,
     parts: readonly { origin: EditOrigin }[],
-    _tree: readonly StoredTreeEntry[],
   ): string[] {
     return [
       ...new Set([
@@ -278,7 +277,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const rows = await history(ids);
       const tree = await treeHistory(ids);
       const states = await treeStates(ids, tree);
-      const draftIds = inverseDraftIds(query, rows, tree);
+      const draftIds = inverseDraftIds(query, rows);
       const parts: StoredInversePart[] = rows.map((part) => ({
         ...part,
         disposition: "pending",
@@ -584,7 +583,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const treeRuns = sequence.flatMap(({ plan, step }) =>
         step.kind === "tree" ? [{ document: plan.document, planned: step.planned }] : [],
       );
-      const grants = await admitInverse(sequence, query, userId, kind);
+      const grants = await admitInverse(sequence, query, userId);
       const commit = () =>
         withLiveDocuments([...new Set(liveIds)].sort(), () =>
           scope.commit(() =>
@@ -626,7 +625,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                   if (!entry) throw new Error("A step's plan is not among the commit's plans");
                   const outcome =
                     step.kind === "tree"
-                      ? await commitTreeStep(entry, step, kind, userId, query)
+                      ? await commitTreeStep(entry, step, userId, query)
                       : await commitTextStep(entry, step, userId, query);
                   if (typeof outcome === "string") {
                     if (outcome) handles.push(outcome);
@@ -662,7 +661,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     sequence: readonly { plan: PreparedDocumentInverse; step: InverseStep }[],
     query: TurnInverseQuery,
     userId: UserId | undefined,
-    _kind: "undo" | "redo" | "revert" | "rollback",
   ): Promise<FileGrant<"edit">[] | null> {
     const principal = query.principal ?? (userId ? { accountId: userId } : undefined);
     // Rollback runs inside the reply's already bound grants. Every interactive inverse supplies
@@ -672,20 +670,23 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       string,
       { documentId: DocumentId; branchId: BranchId | null; restore: boolean }
     >();
+    const restoredLive = new Set<DocumentId>();
     for (const { plan, step } of sequence) {
       const documentId = plan.document.documentId;
       if (step.kind === "text") {
         const branchId = step.destination.kind === "draft" ? step.destination.branchId : null;
-        requirements.set(`${documentId}:${branchId ?? "live"}:content`, {
+        const restore = branchId === null && restoredLive.has(documentId);
+        requirements.set(`${documentId}:${branchId ?? "live"}:${restore ? "restore" : "content"}`, {
           documentId,
           branchId,
-          restore: false,
+          restore,
         });
         continue;
       }
       const branchId =
         step.planned.destination.kind === "draft" ? step.planned.destination.branchId : null;
       const restore = step.planned.op === "create" || step.planned.op === "restore";
+      if (branchId === null && restore) restoredLive.add(documentId);
       requirements.set(`${documentId}:${branchId ?? "live"}:${restore ? "restore" : "tree"}`, {
         documentId,
         branchId,
@@ -784,7 +785,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   async function commitTreeStep(
     entry: PlannedInverse,
     step: Extract<InverseStep, { kind: "tree" }>,
-    _kind: "undo" | "redo" | "revert" | "rollback",
     userId: UserId | undefined,
     query: TurnInverseQuery,
   ): Promise<
@@ -819,7 +819,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 : null,
             ...(landedAt ? { landedAt } : {}),
           },
-          step.actionKind,
           userId,
           query,
         );
@@ -865,7 +864,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     entry: PlannedInverse,
     step: InverseStep,
     committed: CommittedStep,
-    kind: "undo" | "redo" | "revert" | "rollback",
     userId: UserId | undefined,
     query: TurnInverseQuery,
   ): Promise<string> {
@@ -904,10 +902,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             editScopeId: query.responseIdentity?.editScopeId,
             toolCallId: query.toolCallId,
           }
-        : { actor: kind === "rollback" ? ("system" as const) : ("human" as const) }),
+        : {
+            actor: step.actionKind === "rollback" ? ("system" as const) : ("human" as const),
+          }),
       wId,
       actorUserId: userId,
-      kind,
+      kind: step.actionKind,
       actionId: step.actionId,
       consumes: entry.plan.consumes,
       receipts,
@@ -993,7 +993,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       entry,
       step,
       { draftId: landedDraftId, branchId: draft?.branchId ?? null, receipts },
-      step.actionKind,
       userId,
       query,
     );
@@ -1141,8 +1140,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
 /** A tree step's document and transition, for the locks the commit takes. */
 type TreeRun = { document: InverseDocument; planned: PlannedTreeInverse };
 
-/** A tree inverse the destination refused under the locks; its savepoint rolls back. */
-
 /** A commit attempt of an inverse: four, then one classification pass (section 2.4, F5). */
 const INVERSE_ATTEMPTS = 4;
 
@@ -1154,7 +1151,6 @@ type InverseCapture = {
   heads: Map<DocumentId, number>;
 };
 
-/** One plan as the commit runs it, and what its steps did so far. */
 /** What a step's payload committed, for `recordStep`: its text receipts, or its tree transition. */
 type CommittedStep =
   | { draftId: string | null; branchId: BranchId | null; receipts: ReceiptWrite["receipts"] }

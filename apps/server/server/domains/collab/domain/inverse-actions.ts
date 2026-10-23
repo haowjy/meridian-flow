@@ -10,14 +10,6 @@ export const partKey = (part: { editId: string; ordinal?: number }) =>
 type HistoryRow = StoredInversePart | StoredTreeEntry;
 const rowKey = (row: HistoryRow) => ("tree" in row ? treeKey(row.editId) : partKey(row));
 
-export function isRolledBack(history: readonly StoredInversePart[], part: StoredInversePart) {
-  return history.some(
-    (transition) =>
-      transition.kind === "rollback" &&
-      transition.targets.some((target) => partKey(target) === partKey(part)),
-  );
-}
-
 /** Consumption is per accepted part, and a rolled-back action has no stack effect. */
 export function effectiveActionIndex<Row extends HistoryRow>(
   history: readonly Row[],
