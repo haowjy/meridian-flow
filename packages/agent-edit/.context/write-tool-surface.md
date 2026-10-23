@@ -92,8 +92,6 @@ host tests cover placement, restoration, stack policy, and rollback.
 Successful edits expose immutable `e<N>` handles to model tools. `read(format:
 "edits")` pages those handles; undo/redo take counts and revert names one edit.
 The host owns policy and notices, and handles do not reach the writer card.
-`region_changed` is in the reversal statuses (`WriteErrorStatus`, contracts'
-`write-reversal.ts`) but no undo, redo or revert runs the region check. Revert
-needs none: it works by Yjs identity and skips any part edited since, listing it
+Document writes never refuse because text changed since the model saw it. Revert it works by Yjs identity and skips any part edited since, listing it
 by its 1-based immutable part ordinal and reason. Revert does not quote skipped
 text; the model uses ordinary `read` when it needs the passage.

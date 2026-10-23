@@ -44,8 +44,7 @@ container.
 
 ## Prepared writes and receipts
 
-Create, copy, and mutation commands share one `PreparedEdit` path. It runs the
-region check first (below), registers the refs the write minted, reserves a
+Create, copy, and mutation commands share one `PreparedEdit` path. It registers the refs the write minted, reserves a
 write identity, captures the before cut and ordered transaction parts,
 certifies each segment, then stages or submits one logical edit. The command
 submits merged `editParts`; host storage chooses journal row expansion. Receipt
@@ -83,15 +82,11 @@ to compare with).
 constructs an explicit gc-off snapshot target and replays only supplied reply updates
 contained in the room copy. Either pending store, or a final view whose structs or
 deletions are not contained in that copy, invalidates the view. Every write
-plans on that view (`write-commands.ts` `withPlanDoc`). `frontierDelta` and `changedWords` share the
-same flipped-range walk; word counts clip each string item to the flipped clock range.
+plans on that view (`write-commands.ts` `withPlanDoc`). `frontierDelta` uses the same flipped-range walk.
 
 ### The listing
 
-Every result that shows document text (a read, a recorded write echo, a settled
-receipt, a region refusal) lists under `concurrent edits:` the blocks changed
-since the model's recording frontier that it doesn't show in full, unlabelled,
-in document order (`observation.ts` `observeRendered`). The listing and the
+Every result that shows document text (a read, a recorded write echo, or a settled receipt) lists the blocks changed since the model's recording frontier, grouped as `the user` or by the model chat's permanent handle, in document order (`observation.ts` `observeRendered`). The listing and the
 recorded `unshown` are one computation over `frontierDelta`: listed blocks
 credit as shown in full; past `CONCURRENT_LISTING_MAX_BYTES` (8 KB) the rest are
 named by count ("N more blocks changed since you last saw them") and stay
@@ -101,8 +96,7 @@ left out. A full read lists nothing. Only blocks that **changed** since a usable
 frontier are listed: a block `unshown` because the model never saw it (a
 partial or outline read, or a first contact with no frontier) stays unshown and
 unlisted, so successive partial reads don't carry the rest of the document.
-The region check covers writes to it. Echo context lines and truncated previews
-never credit by being shown; the listing and the region check cover them. A
+Echo context lines and truncated previews never credit by being shown; the listing carries them forward. A
 write does credit the blocks it wrote when every visible item in them (the
 block, its attributes, children, text and formats) is that write's own, by the
 structs its committed update created (`frontier.ts` `writtenOnlyBy`): the model
@@ -112,39 +106,14 @@ in full. A degraded echo credits nothing. A
 staged echo lists and records nothing: its settled receipt does, on the
 document's last accepted receipt, where the host records the frontier.
 
-### The region check
+### Offline writes merge
 
-`region-check.ts` runs in `finishPreparedEdit` before anything is registered or
-reserved. The region is the targets' window on the view (`echo.ts` `windowOf`,
-the echo's ±1, overlaps merged; an insert's target is its anchor;
-`create(overwrite)` of a non-empty document targets every block); in the room
-copy it spans each window's surviving blocks and any top-level block inserted
-between them. A write is refused (`region_changed`) when the room has no valid
-planning frontier or the view is incomplete, when a region block is in the
-frontier's `unshown`, or when more than `REGION_CHANGE_BUDGET_WORDS` (10)
-changed words lie in the region between the view's cut and the room copy's.
-Its one sentence says which: "Not applied: you haven't seen all of this passage
-yet." for no frontier or an unshown region block, "Not applied: this passage
-changed since you last saw it." for changed words; both end "Current text:".
-Exempt (`Planned = "exempt"`, never `undefined`): creating a document,
-initializing an empty one, and every write when the host passes no lookups at
-all (a host that keeps no frontiers; utility, seed and import writes). A reply's
-model write whose lookups lack `planning` is a host bug and throws. A document
-this reply created (`ReplyMutations.created`, noted when a create lands in a
-missing or empty document) plans from the empty snapshot plus the reply's own
-mutations when the planning lookup has no usable frontier: the model knows it
-began empty, so create-then-edit in one reply lands, and anyone else's text in
-it still counts in the region check. Undo and redo are never refused. The
-refusal shows the region's blocks in full from the room copy and goes through
-the same recording as a read, so the next attempt proceeds unless the passage
-changes again. Past
-`REFUSAL_REGION_MAX_BYTES` (16 KB) it names the first and last block, asks for
-a read of that range, and records nothing. With no frontier and a target the
-room can't place (`not_found`, `ambiguous_match`) it says to read the document.
-A Work draft seed keeps the live cut, seed cut and block origins durably; when
-the request's live frontier is exactly that cut, the host projects it into the
-new draft for planning and recording. A native draft frontier wins. The host
-records whatever frontier a result carries, error or not.
+Every write plans on the latest usable observation frontier plus the reply's own mutations, then applies that update to the current room copy. An absent or
+invalid frontier plans on the current room. Neither concurrent changes nor
+partly read text refuse a write. A target that no longer resolves still returns
+`not_found`, because that write has no place to land. A Work draft's immutable
+seed origins keep copied live block hashes resolvable; no seed snapshot or
+frontier projection is stored.
 
 The host names rooms; agent-edit carries the label. `readRoom` returns the
 room it read (`draft:<workDraftId>`, `live:<documentId>:<generation>`; `null`

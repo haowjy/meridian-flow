@@ -56,18 +56,15 @@ rendered from; `unshown` lists blocks changed since the model's previous
 frontier and not shown in full (`@meridian/agent-edit/integration` computes
 both). Every write plans on the `planning` frontier of its room plus the
 reply's own writes ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/ai-writes-plan-on-what-the-model-was-shown.md)),
-and is refused with the passage's current text (`region_changed`) when that
-passage changed since the model saw it. Every result that shows document text
-lists, under `concurrent edits:`, the blocks changed since the model's frontier
-that it doesn't show; the listing and `unshown` are one computation in
-agent-edit ([write architecture](../../../../../../packages/agent-edit/.context/write-architecture.md#the-listing)).
+then merges that offline edit onto the current room. Concurrent changes never
+refuse the write. Every result that shows document text lists changes since the
+model's frontier, grouped as `the user` or by the model chat's permanent handle;
+the listing and `unshown` are one computation in agent-edit ([write architecture](../../../../../../packages/agent-edit/.context/write-architecture.md#the-listing)).
 
 - **What records.** Only results the model receives: reads, immediate write
   echoes, undo, redo and revert echoes, settled save receipts, and reference
   reads. A staged write's echo records nothing: the step's save replaces it
-  before the next request is built. A `region_changed` refusal that shows the
-  passage records like a read; other refusals, `format: "edits"` reads and copy
-  source reads record none. Dispatch records whatever frontier a result
+  before the next request is built. Refusals, `format: "edits"` reads and copy source reads record none. Dispatch records whatever frontier a result
   carries, error or not. A result reported with `awarenessDegraded` records
   a frontier that counts no block as shown in full: its snapshot advances and
   every changed block is unshown.
