@@ -3,6 +3,7 @@ import { renderAgentEditResult } from "@meridian/agent-edit";
 import {
   cloneYDoc,
   createAgentEditCodecFactory,
+  type ObservationFrontier,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
@@ -106,13 +107,19 @@ describe("draft concurrent attribution", () => {
     const f = fixture(ctx.liveDoc("chapter.md"));
     f.rows.push(f.row(Y.encodeStateAsUpdate(f.baseline)));
     ctx.coordinator.concurrentUpdatesSince = f.coordinator.concurrentUpdatesSince;
+    let frontier: ObservationFrontier | null = null;
     const context = {
       sessionId: "session",
       threadId: "thread-a",
       turnId: "turn-late",
       responseIdentity: { providerResponseId: "reply-late", editScopeId: "reply-late" },
+      frontiers: {
+        recording: async () => frontier,
+        planning: async () => frontier,
+      },
     };
-    await ctx.core.read({ file: "chapter.md" }, context);
+    const read = await ctx.core.read({ file: "chapter.md" }, context);
+    frontier = read.frontier ?? null;
     await ctx.core.write(
       { command: "replace", file: "chapter.md", in: 1, content: "Alpha AI edit." },
       context,
@@ -122,13 +129,15 @@ describe("draft concurrent attribution", () => {
       humanText(f.upstream, 0, { from: 11, to: 11 }, " WRITER");
       f.rows.push(f.row(Y.encodeStateAsUpdate(f.upstream, vector)));
     };
-    const saved = await ctx.core.commitResponse("reply-late");
+    const saved = await ctx.core.commitResponse("reply-late", {
+      recordingFrontier: async () => frontier,
+    });
     expect(blockTexts(f.upstream)).toEqual(["Alpha AI edit. WRITER", "Beta para."]);
     const receipt = saved.documents[0]?.receipts.at(-1)?.result;
     if (!receipt) throw new Error("Missing saved receipt");
-    expect(renderAgentEditResult(receipt)).toContain(
-      "concurrent user content swept during commit; re-read required",
-    );
+    const rendered = renderAgentEditResult(receipt);
+    expect(rendered).toContain("Alpha AI edit. WRITER");
+    expect(rendered).toContain("concurrent edits by the user:");
   });
 
   it("skips retained journal rows the baseline already contains", async () => {
