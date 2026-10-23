@@ -45,5 +45,18 @@ bootstrap. The `./mf` CLI lives in [`tools/mf`](../mf/AGENTS.md).
 - DB tests use owned databases and rollback/FK-ordered reset; never add per-case
   truncation or share a managed database between workers.
 
+- The dev server doesn't watch `node_modules`: pnpm hardlinks its shared store
+  into every worktree, so another worktree's install would restart this one's
+  server and kill in-flight replies
+  ([#817](https://github.com/haowjy/meridian-flow/issues/817)).
+- Dev stacks are the largest memory consumer on a shared host (measured
+  2026-10: 14.9 GB across six worktrees, one active stack 6.6 GB, against ~9 GB
+  for every test process). `pnpm dev:stacks` reports each stack's memory and
+  idle time; `--reap-idle <minutes> --yes` stops stale ones.
+- Prune a lane by containment in its integration branch or by its own merged
+  PR. Containment disappears when that ref is deleted: once an integration
+  branch is squash-merged and deleted without the lane having its own PR, only
+  a human who tracked the history can confirm the lane is safe to remove.
+
 See the context page for CLI output, DB lifecycle, cleanup evidence, and probe
 contracts.
