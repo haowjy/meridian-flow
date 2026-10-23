@@ -79,6 +79,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       apiHttpDevProxyPlugin(apiDevOrigin, portlessHttpsAgent),
+      markdownWorkerCharacterReferencePlugin(repoRoot),
       linguiMacroBabelPlugin(),
       tailwindcss(),
       tanstackStart({
