@@ -341,7 +341,7 @@ export function setToolbarAlignment(editor: Editor, value: ToolbarAlignmentValue
   return true;
 }
 
-/** Undo is the Yjs UndoManager's, shared with the Mod-z binding the editor owns. */
+/** Toolbar and keymap traverse the same mounted editor history. */
 export function undoDocument(editor: Editor): boolean {
   if (!canWrite(editor) || !hasCollaborativeHistory(editor)) return false;
   editor.commands.focus();

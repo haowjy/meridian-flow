@@ -5,13 +5,12 @@ import type { UndoManager } from "yjs";
 
 type StackItem = UndoManager["undoStack"][number];
 
-export type EditorHistoryActionResult = "done" | "discard" | "failed";
-export type EditorHistoryAction = {
-  undo(): Promise<EditorHistoryActionResult>;
-  redo(): Promise<EditorHistoryActionResult>;
+type EditorHistoryAction = {
+  undo(): void;
+  redo(): void;
 };
 export type EditorHistoryHandle = {
-  captureApply(action: EditorHistoryAction): { retry(): boolean };
+  captureApply(action: EditorHistoryAction): void;
 };
 
 type Entry =
@@ -33,9 +32,7 @@ class MountedEditorHistory implements EditorHistoryHandle {
   private sequence = 0;
   private suppressManagerEvents = false;
   private managerGenerated: StackItem | null = null;
-  private operation = Promise.resolve();
-  private redoGeneration = 0;
-  private readonly failed = new Map<Entry, "undo" | "redo">();
+  private active = true;
 
   constructor(private readonly editor: Editor) {
     const manager = yUndoPluginKey.getState(editor.state)?.undoManager;
@@ -46,111 +43,101 @@ class MountedEditorHistory implements EditorHistoryHandle {
   }
 
   destroy(): void {
+    this.active = false;
     this.manager.off("stack-item-added", this.managerAdded);
     this.manager.off("stack-cleared", this.managerCleared);
     this.undo.length = 0;
     this.redo.length = 0;
   }
 
-  captureApply(action: EditorHistoryAction): { retry(): boolean } {
+  captureApply(action: EditorHistoryAction): void {
+    if (!this.active) return;
     this.manager.stopCapturing();
-    const entry: Entry = { kind: "apply", sequence: ++this.sequence, action };
-    this.undo.push(entry);
+    this.undo.push({ kind: "apply", sequence: ++this.sequence, action });
     this.clearRedo();
-    this.manager.stopCapturing();
     this.changed();
-    return { retry: () => this.retry(entry) };
   }
 
   canUndo(): boolean {
-    return this.undo.length > 0;
+    return this.active && this.undo.length > 0;
   }
 
   canRedo(): boolean {
-    return this.redo.length > 0;
+    return this.active && this.redo.length > 0;
   }
 
   run(direction: "undo" | "redo"): boolean {
+    if (!this.active) return false;
     const source = direction === "undo" ? this.undo : this.redo;
-    const entry = direction === "undo" ? source.pop() : source.shift();
+    const entry = direction === "undo" ? source.at(-1) : source[0];
     if (!entry) return false;
-    const generation = this.redoGeneration;
+    if (entry.kind === "apply") {
+      source.splice(direction === "undo" ? source.length - 1 : 0, 1);
+      insert(direction === "undo" ? this.redo : this.undo, entry);
+      entry.action[direction]();
+    } else {
+      this.runNative(direction, source);
+    }
     this.changed();
-    this.schedule(entry, direction, source, generation);
     return true;
   }
 
-  private retry(entry: Entry): boolean {
-    const direction = this.failed.get(entry);
-    if (!direction) return false;
-    const source = direction === "undo" ? this.undo : this.redo;
-    const index = source.indexOf(entry);
-    if (index < 0) return false;
-    source.splice(index, 1);
-    this.changed();
-    this.schedule(entry, direction, source, this.redoGeneration);
-    return true;
-  }
-
-  private schedule(
-    entry: Entry,
-    direction: "undo" | "redo",
-    source: Entry[],
-    generation: number,
-  ): void {
-    this.operation = this.operation.then(async () => {
-      if (entry.kind === "yjs") {
-        this.suppressManagerEvents = true;
-        this.managerGenerated = null;
-        let popped: StackItem | null = null;
-        try {
-          popped = direction === "undo" ? this.manager.undo() : this.manager.redo();
-        } finally {
-          this.suppressManagerEvents = false;
-        }
-        const remaining = new Set(
-          direction === "undo" ? this.manager.undoStack : this.manager.redoStack,
-        );
-        source.splice(
-          0,
-          source.length,
-          ...source.filter(
-            (candidate) => candidate.kind === "apply" || remaining.has(candidate.item),
-          ),
-        );
-        const generated = this.managerGenerated as StackItem | null;
-        if (popped && generated) {
-          const known = popped.meta.get(HISTORY_META) as Entry | undefined;
-          const moved: Entry = {
-            kind: "yjs",
-            sequence: known?.sequence ?? entry.sequence,
-            item: generated,
-          };
-          generated.meta.set(HISTORY_META, moved);
-          insert(direction === "undo" ? this.redo : this.undo, moved);
-        }
-      } else {
-        let result: EditorHistoryActionResult = "failed";
-        try {
-          result = await entry.action[direction]();
-        } catch {
-          result = "failed";
-        }
-        if (result === "failed") {
-          insert(source, entry);
-          this.failed.set(entry, direction);
-        } else if (result === "done") {
-          this.failed.delete(entry);
-          const destination = direction === "undo" ? this.redo : this.undo;
-          if (direction === "redo" || generation === this.redoGeneration)
-            insert(destination, entry);
-        }
+  /** Let Yjs skip native no-ops, but never let that traversal cross an Apply boundary. */
+  private runNative(direction: "undo" | "redo", source: Entry[]): void {
+    const segment: Extract<Entry, { kind: "yjs" }>[] = [];
+    if (direction === "undo") {
+      for (let index = source.length - 1; index >= 0; index--) {
+        const entry = source[index];
+        if (!entry || entry.kind === "apply") break;
+        segment.push(entry);
       }
-      this.changed();
-    });
+    } else {
+      for (const entry of source) {
+        if (entry.kind === "apply") break;
+        segment.push(entry);
+      }
+    }
+    const allowed = new Set(segment.map((entry) => entry.item));
+    const stack = direction === "undo" ? this.manager.undoStack : this.manager.redoStack;
+    const original = [...stack];
+    stack.splice(0, stack.length, ...original.filter((item) => allowed.has(item)));
+
+    this.suppressManagerEvents = true;
+    this.managerGenerated = null;
+    let popped: StackItem | null = null;
+    try {
+      popped = direction === "undo" ? this.manager.undo() : this.manager.redo();
+    } finally {
+      this.suppressManagerEvents = false;
+    }
+
+    const remaining = new Set(stack);
+    stack.splice(
+      0,
+      stack.length,
+      ...original.filter((item) => !allowed.has(item) || remaining.has(item)),
+    );
+    source.splice(
+      0,
+      source.length,
+      ...source.filter((entry) => entry.kind === "apply" || remaining.has(entry.item)),
+    );
+
+    const generated = this.managerGenerated as StackItem | null;
+    if (popped && generated) {
+      const known = popped.meta.get(HISTORY_META) as Entry | undefined;
+      const moved: Entry = {
+        kind: "yjs",
+        sequence: known?.sequence ?? segment[0]?.sequence ?? ++this.sequence,
+        item: generated,
+      };
+      generated.meta.set(HISTORY_META, moved);
+      insert(direction === "undo" ? this.redo : this.undo, moved);
+    }
   }
 
   private readonly managerAdded = ({ stackItem, type }: { stackItem: StackItem; type: string }) => {
+    if (!this.active) return;
     if (this.suppressManagerEvents) {
       this.managerGenerated = stackItem;
       return;
@@ -162,7 +149,6 @@ class MountedEditorHistory implements EditorHistoryHandle {
     stackItem.meta.set(HISTORY_META, entry);
     this.undo.push(entry);
     this.clearRedo();
-    // The editor transaction that created this Yjs item already refreshes toolbar state.
   };
 
   private readonly managerCleared = ({
@@ -172,24 +158,22 @@ class MountedEditorHistory implements EditorHistoryHandle {
     undoStackCleared: boolean;
     redoStackCleared: boolean;
   }) => {
-    if (this.suppressManagerEvents) return;
-    // Draft reconciliation clears Yjs' native stacks after Apply settles. The
-    // mounted adapter owns the history lifetime, so repopulate native stacks
-    // from its chronological entries until this editor is actually unmounted.
-    if (undoStackCleared)
-      this.manager.undoStack.push(
-        ...this.undo.flatMap((entry) => (entry.kind === "yjs" ? [entry.item] : [])),
-      );
-    if (redoStackCleared)
-      this.manager.redoStack.push(
-        ...this.redo.flatMap((entry) => (entry.kind === "yjs" ? [entry.item] : [])),
-      );
+    if (!this.active || this.suppressManagerEvents) return;
+    if (undoStackCleared) this.removeMissing(this.undo, new Set(this.manager.undoStack));
+    if (redoStackCleared) this.removeMissing(this.redo, new Set(this.manager.redoStack));
     queueMicrotask(() => this.changed());
   };
 
+  private removeMissing(entries: Entry[], retained: Set<StackItem>): void {
+    entries.splice(
+      0,
+      entries.length,
+      ...entries.filter((entry) => entry.kind === "apply" || retained.has(entry.item)),
+    );
+  }
+
   private clearRedo(): void {
     this.redo.length = 0;
-    this.redoGeneration++;
     if (this.manager.redoStack.length > 0) {
       this.suppressManagerEvents = true;
       try {
@@ -201,7 +185,7 @@ class MountedEditorHistory implements EditorHistoryHandle {
   }
 
   private changed(): void {
-    if (this.editor.isDestroyed) return;
+    if (!this.active || this.editor.isDestroyed) return;
     this.editor.view.dispatch(this.editor.state.tr.setMeta(HISTORY_META, true));
   }
 }
