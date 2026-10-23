@@ -180,15 +180,11 @@ function writeSse(
   const writeNext = () => {
     timer = undefined;
     if (res.destroyed) return;
-    const chunk = chunks[index];
-    if (chunk === undefined) {
-      res.write("data: [DONE]\n\n");
-      res.end();
-      return;
+    if (index < chunks.length) {
+      res.write(chunks[index]);
+      index += 1;
     }
-    res.write(chunk);
-    index += 1;
-    if (index === chunks.length) {
+    if (index >= chunks.length) {
       res.write("data: [DONE]\n\n");
       res.end();
       return;
