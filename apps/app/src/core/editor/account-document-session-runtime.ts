@@ -62,6 +62,7 @@ function createCore(
         document,
         awareness,
         connectivityHints,
+        deferAttach: true,
       }),
   );
   return Object.freeze({

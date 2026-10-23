@@ -189,6 +189,7 @@ export class ProjectDocumentLiveOpener {
     if (prior) this.disposeTransfer(prior.token);
     const token = Object.freeze({ id: crypto.randomUUID(), tabInstanceId });
     this.transfers.set(tabInstanceId, { token, documentId, attempt });
+    markDocumentOpen("attempt-armed", { documentId, attemptId: attempt.attemptId, tabInstanceId });
     if (placement === "dock") this.dockTransfer = token;
     return token;
   }
@@ -200,8 +201,23 @@ export class ProjectDocumentLiveOpener {
 
   takeTransfer(tabInstanceId: string, documentId: string): OpenAttempt | null {
     const transfer = this.transfers.get(tabInstanceId);
-    if (!transfer || transfer.documentId !== documentId) return null;
+    if (!transfer || transfer.documentId !== documentId) {
+      markDocumentOpen("attempt-missed", {
+        documentId,
+        tabInstanceId,
+        armed: [...this.transfers.values()].map((candidate) => ({
+          documentId: candidate.documentId,
+          tabInstanceId: candidate.token.tabInstanceId,
+        })),
+      });
+      return null;
+    }
     this.transfers.delete(tabInstanceId);
+    markDocumentOpen("attempt-taken", {
+      documentId,
+      attemptId: transfer.attempt.attemptId,
+      tabInstanceId,
+    });
     if (this.dockTransfer === transfer.token) this.dockTransfer = null;
     return transfer.attempt;
   }

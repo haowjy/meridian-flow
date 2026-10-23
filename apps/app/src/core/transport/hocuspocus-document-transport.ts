@@ -60,6 +60,7 @@ import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/
 import type { Awareness } from "y-protocols/awareness";
 import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
+import { markDocumentOpen } from "@/core/editor/document-open-performance";
 import {
   type DocumentSessionAccess,
   type DocumentSessionConnectionState,
@@ -68,7 +69,6 @@ import {
   DRAFT_UPDATES_REFUSED,
   type ResetDisposition,
 } from "@/core/editor/document-session";
-
 import type { ConnectivityHintsPort } from "./connectivity-hints";
 import { buildSameOriginWsUrl } from "./dev-transport";
 import {
@@ -108,6 +108,7 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
     configuration: ConstructorParameters<typeof HocuspocusProviderWebsocket>[0],
     acknowledgement: ServerAcknowledgementTracker,
     handshakeUploadFirst: boolean,
+    private readonly onNativeOpen: () => void,
   ) {
     super(configuration);
     this.acknowledgement = acknowledgement;
@@ -119,6 +120,7 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   // 4.3 also clears retry cancellation on native open, before the first frame
   // settles the attempt. Keep it until resolution so retry-now can fence that loop.
   override async onOpen(event: Event) {
+    this.onNativeOpen();
     this.dropHeldUpdates();
     this.acknowledgement.beginConnection();
     const cancel = this.cancelWebsocketRetry;
@@ -310,6 +312,7 @@ export function createHocuspocusDocumentTransport({
     },
     acknowledgement,
     isDraftRoom(roomName),
+    () => markDocumentOpen("socket-open", { documentId: roomName }),
   );
   let currentState = mapStatus(websocket.status);
   // Only the server names a scope; until it does, the session keeps its own.

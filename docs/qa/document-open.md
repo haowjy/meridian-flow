@@ -1,4 +1,4 @@
-# Document open: commit first
+# Document open: cold-open pipeline
 
 This browser recipe checks that a document door commits its destination before
 content acquisition, and that the installed destination owns the one content
@@ -17,6 +17,13 @@ open. Run it on an owned mock stack with a fresh database and a named
 3. For phone runs, use CDP touch emulation as well as a 390 by 844 viewport.
    Assert `matchMedia(PHONE_SHELL_QUERY).matches`, the **Open navigation** phone
    control, and `MobileDocumentHost` after opening a document.
+
+The app keeps `doc-open:*` performance marks for `click`, `route-commit`,
+`attempt-decided`, `request-start`, `request-end`, `session-created`,
+`socket-open`, `local-settled`, `provider-attach`, `remote-ready`, and
+`content-confirmed`. Attempt marks include `attemptId`; readiness marks include
+their outcome or source. Availability responses expose `auth`, `lookup`, and
+`total` in `Server-Timing`.
 
 ## Destinations and ownership
 
@@ -62,6 +69,26 @@ open. Run it on an owned mock stack with a fresh database and a named
    projection and paints locally. A catalog-row click during cold hydration
    commits without availability. A chat link to a never-opened catalog document
    during hydration makes one POST and one admission.
+6. Close A's tab after opening A then B. Back recreates A by the history entry's
+   document identity without an address GET. Repeat with Forward and after
+   evicting the working set then reloading. Delete A and go Back: the destination
+   reports A removed and never opens a document now occupying A's former path.
+
+## Readiness failures
+
+1. Block the document socket past five seconds. The destination stays pending
+   and no `.ProseMirror` is constructed. Unblock it: first sync confirms content
+   and the editor binds.
+2. Hold a cold document's IndexedDB open beyond one second. `local-settled`
+   reports `detached`; `provider-attach` follows it, and first sync supplies the
+   content. Reopen while the physical close is still pending: teardown does not
+   refuse the new room.
+3. Repeat with a warm exact-local document. The local probe returns a server
+   verdict without awaiting the close, one replacement availability request
+   runs, and the editor binds after first sync.
+4. On reconnect, delay the socket after binding and type. The leave guard says
+   the change is unsaved until acknowledgement, then the exact text reaches the
+   server once.
 
 ## Keystrokes
 

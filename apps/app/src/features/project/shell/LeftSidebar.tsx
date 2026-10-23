@@ -11,9 +11,9 @@ import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { PanelLeftClose } from "lucide-react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
+import type { ServerContextTab } from "@/client/stores";
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
-import { serverTabFromFile } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
@@ -73,21 +73,18 @@ export function LeftSidebar({
     file: ContextFile,
     options?: { focus?: true },
   ) => {
-    if (placement.besideChat) {
-      const tab = serverTabFromFile(scheme, file, {});
-      if (tab) {
-        placement.commit(tab, undefined, options?.focus);
-        return;
-      }
-    }
     if (!file.editable) {
       onSelectContextPath(file.path, scheme);
       return;
     }
+    const beside = placement.besideChat
+      ? (tab: ServerContextTab, focus?: true) => placement.commit(tab, undefined, focus)
+      : undefined;
     void openDocument({
       documentId: file.documentId,
       known: { scheme, file, workId: editorWorkId },
       workId: editorWorkId ?? undefined,
+      beside,
       ...options,
     });
   };

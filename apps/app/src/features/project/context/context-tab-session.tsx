@@ -200,14 +200,6 @@ function ContextTabSession({
     resources,
     tabInstanceId,
   ]);
-  useEffect(() => {
-    const transferToken = tabInstanceId ? opener.transferToken(tabInstanceId, documentId) : null;
-    return () => {
-      queueMicrotask(() => {
-        if (transferToken) opener.disposeTransfer(transferToken);
-      });
-    };
-  }, [documentId, opener, tabInstanceId]);
   useEffect(
     () => () => {
       installedHandle.current?.release();
