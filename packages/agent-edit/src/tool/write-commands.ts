@@ -718,7 +718,7 @@ export function createWriteCommands(deps: {
         links,
         ...(room.position === undefined ? {} : { position: room.position }),
         ...(own?.ownRemoved ? { ownRemoved: own.ownRemoved } : {}),
-        ...(written.length ? { written } : {}),
+        ...(written.length ? { ownUpdates: written, written } : {}),
         ...(context.turnId ? { ownActorTurnIds: new Set([context.turnId]) } : {}),
         ...(options.coordinator.concurrentUpdatesForReport
           ? {

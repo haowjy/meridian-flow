@@ -39,6 +39,9 @@ export interface ListingSource {
   model: AgentEditModel;
   links?: ShownCommandLinks & { codec: AgentEditCodec };
   ownRemoved?: ReadonlySet<string>;
+  /** Every CRDT update contributed by this reply, whether or not its result rendered text. */
+  ownUpdates?: readonly Uint8Array[];
+  /** Reply updates whose complete text the result showed. */
   written?: readonly Uint8Array[];
   ownActorTurnIds?: ReadonlySet<string>;
   /** Host journal high-water mark for `doc`. */
@@ -212,26 +215,22 @@ function changeAuthors(
   const baseline = previousSnapshot ? YDocFromSnapshot(source.doc, previousSnapshot) : null;
   if (baseline) {
     try {
-      const own = new Y.Doc({ gc: false });
-      Y.applyUpdate(own, Y.encodeStateAsUpdate(baseline));
-      try {
-        for (const update of source.written ?? []) {
-          const effect = updateEffect(own, update, prev?.room ?? "");
-          effect.changed.forEach((id) => {
-            ownChanged.add(id);
-          });
-          effect.removed.map(frontierBlockId).forEach((id) => {
-            ownRemoved.add(id);
-          });
-        }
-      } finally {
-        own.destroy();
+      // Classify peers against the reply's offline branch, not its older observation. A host
+      // residual may combine both branches when attribution rows are missing; replaying the
+      // reply first makes its structs and tombstones no-ops without hiding a peer in the same block.
+      for (const update of source.ownUpdates ?? source.written ?? []) {
+        const effect = updateEffect(baseline, update, prev?.room ?? "");
+        effect.changed.forEach((id) => {
+          ownChanged.add(id);
+        });
+        effect.removed.map(frontierBlockId).forEach((id) => {
+          ownRemoved.add(id);
+        });
       }
       for (const item of source.concurrent ?? []) {
         const own =
-          (source.written ?? []).some((update) => bytesEqual(update, item.update)) ||
-          (item.origin.type === "agent" &&
-            source.ownActorTurnIds?.has(item.origin.actorTurnId) === true);
+          item.origin.type === "agent" &&
+          source.ownActorTurnIds?.has(item.origin.actorTurnId) === true;
         const effect = item.effects
           ? {
               changed: [...item.effects.changed],
@@ -305,10 +304,6 @@ function parseFrontierBlockId(id: string): { clientID: number; clock: number } {
 
 function YDocFromSnapshot(doc: Y.Doc, at: Y.Snapshot): Y.Doc {
   return Y.createDocFromSnapshot(doc, at, new Y.Doc({ gc: false }));
-}
-
-function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
-  return left.length === right.length && left.every((byte, index) => byte === right[index]);
 }
 
 function shownInFull(

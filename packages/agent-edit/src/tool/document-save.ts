@@ -328,6 +328,7 @@ export function createDocumentSave(deps: {
             entry.deletedBlocks.map((block) => `${block.clientID}:${block.clock}`),
           ),
         ),
+        ownUpdates: doc.updates.map((entry) => entry.update),
         written: doc.updates
           .filter((_, index) => !accepted[index]?.result.awarenessDegraded)
           .map((entry) => entry.update),
