@@ -9,7 +9,13 @@ passage's current text. Part numbers identify parts of the named edit, not curre
 `read` for the current passage.
 
 When every part is skipped the tool status is `nothing_to_revert`, and the chat's failed step reads "That change
-wasn't reverted because its text changed or is already gone." Undo and redo are separate commands, not covered here.
+wasn't reverted because its text changed or is already gone."
+
+Undo and Redo use the same part policy. If later typing replaced one part, the
+command reverses the parts that remain and lists each skipped part as `not
+undone` or `not redone`. It returns `cant_undo_changed` or `cant_redo_changed`
+only when no part remains. `count` still checks whole stack entries before it
+writes: requesting more entries than are available changes nothing.
 
 ## Setup
 
@@ -89,6 +95,18 @@ N is the model's first write.
 | Revert of a revert | the Plain case's revert; then revert the handle it printed | N's sentence is back |
 | Two parts | seed three paragraphs; one range replace over all three changes the first and third; then the first is edited | `reverted: e1 (1 of 2 parts)` and `not reverted: part 1: edited since`, without quoting the skipped passage |
 
+Repeat **Two parts** with `undo` instead of `revert`. Expect `undone: e1 (1 of
+2 parts)`, a `not undone` fact for part 1, and only the unchanged third
+paragraph reversed. Redo restores that third-paragraph part without replacing
+the writer's first paragraph.
+
+To check destination routing, make one live edit, switch the chat to draft
+mode, and run Undo. The manuscript changes, the Work draft does not, and the
+result ends with `version: live`. Then make one draft edit, switch the chat to
+auto-apply, and run Undo. The Work draft changes, the manuscript does not, and
+the result names that draft. Moving the chat from one Work to another still
+does not let its stack write into the former Work.
+
 **Why auto-apply differs in "N deleted a sentence":** a live write stores its whole paragraph as deleted and
 reinserted text, so any later change in that paragraph, even to words N kept, skips the part. A draft write stores
 only the words it changed ([#969](https://github.com/haowjy/meridian-flow/issues/969)).
@@ -124,6 +142,10 @@ visible together:
    Discard). After it, the pending change is gone.
 3. Auto-apply, Edited inside N, typing `brown` in the editor yourself: the text keeps `brown`, and expanding the
    chat's failed step shows "That change wasn't reverted because its text changed or is already gone."
+4. Draft mode, Two parts: type over the first changed paragraph, then let the
+   model run Undo. The first paragraph keeps the writer's text, the third
+   paragraph returns to its earlier text, and the tool row lists the skipped
+   part.
 
 Screenshot the editor with the chat for each step. Record the source commit, date, provider, commands and observed
 results in the work item; attach masked screenshots to the PR. Delete the run's fixture documents/chats/Works and

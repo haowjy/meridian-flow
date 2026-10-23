@@ -17,6 +17,7 @@ import {
   recordDocumentEdit,
 } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-edits.ts";
 import { createDrizzleTurnInverseService } from "../../../../apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts";
+import { createAllowAllFileAccess } from "../../../../apps/server/server/domains/file-policy/index.ts";
 import {
   currentDrizzleDb,
   runInRootDrizzleTransaction,
@@ -67,6 +68,7 @@ export async function seedModelLiveWrite(harness: Harness, label: string) {
     }
   });
   const inverse = createDrizzleTurnInverseService({
+    fileAccess: createAllowAllFileAccess(),
     onDraftCommitted: () => {},
     db: harness.db,
     journal: harness.persistence.journal,

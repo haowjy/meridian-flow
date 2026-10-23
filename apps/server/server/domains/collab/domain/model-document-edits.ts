@@ -10,6 +10,7 @@ import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
 import { boundDocumentAuthority } from "./document-handle.js";
 import { DraftNotFoundError } from "./draft-resolver.js";
 import { blockOriginsFromDraftSeed } from "./draft-store.js";
+import { currentInversePrincipal } from "./inverse-principal.js";
 import { liveRoom } from "./observation-rooms.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
@@ -68,6 +69,8 @@ export function createModelDocumentEdits(input: {
         path: request.command.file,
         turnId: request.context.turnId as TurnId | undefined,
         responseIdentity: request.context.responseIdentity,
+        toolCallId: request.context.tool_use_id,
+        principal: currentInversePrincipal(),
       },
       blockOrigins,
     };

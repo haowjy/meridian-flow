@@ -6,6 +6,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { ComputedInverseEdit } from "@meridian/agent-edit/integration";
+import type { InverseDestination } from "./inverse-draft-destination.js";
 import {
   advanceStates,
   type PlannedTreeInverse,
@@ -18,18 +19,18 @@ import type { InverseDocument } from "./turn-inverse-service.js";
 
 /**
  * One step: the action its row joins, and `at`, its original's place on the history axis. A
- * text step lands where its original did: live (`draftId` null) or that draft. One document's
+ * text step lands at its capture-resolved destination. One document's
  * steps may land in both within one turn; they still run in this one order.
  */
 export type InverseStep = { actionId: string; at: number } & (
-  | { kind: "text"; edit: ComputedInverseEdit; draftId: string | null }
+  | { kind: "text"; edit: ComputedInverseEdit; destination: InverseDestination }
   | { kind: "tree"; planned: PlannedTreeInverse }
 );
 
 /** Who a simulated row says made it, as the committed row will. */
 export type SimulatedRowIdentity = Pick<
   StoredTreeEntry,
-  "threadId" | "turnId" | "responseId" | "editScopeId" | "actor"
+  "threadId" | "turnId" | "responseId" | "editScopeId" | "toolCallId" | "actor"
 >;
 
 /**

@@ -531,7 +531,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
 
     async ensureTrackedDocument(
       uri: string,
-      options?: ContextWriteOptions,
+      options?: import("../ports/context-adapter.js").ContextEnsureTrackedOptions,
     ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>> {
       const resolved = await resolveMutation(uri, options?.origin);
       if (!resolved.ok) return resolved;

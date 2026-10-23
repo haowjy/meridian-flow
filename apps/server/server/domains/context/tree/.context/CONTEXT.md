@@ -58,7 +58,10 @@ its predicate is `folders_nonlive_location`'s, so a path slot reaches that index
 outlives (own or folder delete, reason `deleted`, no Work cascade); listing adds
 the pending effect, admission (`survivingDraftDocuments`) an active draft or the branch's move of it.
 The identity relations' diagnostic arms exclude a view's surviving rows, so each
-identity appears once. Availability lookups in a branch view follow the same
+identity appears once. Scratch content writes remain live, but a draft-mode Work reads its Scratch
+tree through the same branch view. A drafted Scratch↔drafted-source move therefore uses the ordinary
+`moved` facts, review, inverse, Apply and Discard paths instead of a Scratch-specific move path.
+Availability lookups in a branch view follow the same
 listing: a surviving document (and a deleted folder the view places it under)
 answers `available` at its deleted-at location, never `deleted`, so a review
 address opens its draft; live lookups still answer `deleted`. A new live node at a surviving document's path makes that
@@ -92,8 +95,11 @@ A draft-created document is a real row with empty live content; its text lives
 in its draft until Apply. Live create may reveal a hidden candidate instead
 of inserting a twin. `document_forwards` preserves a client-minted ID when a
 create joins an existing draft document. Placement reveals targets and
-ancestors; end-of-use tombstones an unused row, releases its content storage,
-and prunes empty hidden ancestors. Closed draft identity rows remain.
+ancestors; terminal end-of-use tombstones an unused row, releases its content
+storage, and prunes empty hidden ancestors. A drafted create's Undo is not end
+of use: it sets the branch row's `deleted` fact, so the node, its content
+storage and the branch's active draft stay for Redo. Closed draft identity rows
+remain.
 
 `acquireTreeScope` (`mutation-scope.ts`) is the one verified acquisition for a
 tree mutation whose namespaces are discovered, not known: end of use, Discard,

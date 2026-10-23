@@ -36,6 +36,7 @@ export type StoredTreeEntry = {
   turnId: TurnId | null;
   responseId: string | null;
   editScopeId: string | null;
+  toolCallId: string | null;
   actor: "agent" | "human" | "system";
   wId: number | null;
   kind: "write" | "undo" | "redo" | "revert" | "rollback";
@@ -84,6 +85,8 @@ export type PlannedTreeInverse = (PlannedLiveTransition | BranchTreeTransition) 
   entry: TransitionEntry;
   direction: "invert" | "reapply";
   op: TreeChangeOp;
+  /** The placement requested by this application, before free-name allocation. */
+  requestedAt: string | null;
 };
 
 /**
@@ -107,7 +110,9 @@ export class TreeInverseRefused extends Error {
 /** Every folder a recorded tree change's placements name. */
 export function treeChangeFolders(change: TreeChange): string[] {
   if (change.op === "settle") return [];
-  const states: (LiveTreeState | BranchTreeFacts)[] = [change.before, change.after];
+  const states: (LiveTreeState | BranchTreeFacts)[] = [change.before, change.after].filter(
+    (state): state is LiveTreeState | BranchTreeFacts => state !== null,
+  );
   return states.flatMap((state) => {
     const at = "living" in state ? (state.living ? state.at : null) : state.moved;
     return at?.folderId ? [at.folderId] : [];
@@ -129,7 +134,11 @@ export function withCurrentFolders(
   if (isLiveTransition(change)) {
     const live = (state: LiveTreeState): LiveTreeState =>
       state.living ? { living: true, at: place(state.at) } : state;
-    return { ...change, before: live(change.before), after: live(change.after) };
+    return {
+      ...change,
+      before: change.before ? live(change.before) : null,
+      after: live(change.after),
+    };
   }
   const facts = (state: BranchTreeFacts): BranchTreeFacts =>
     state.moved ? { ...state, moved: place(state.moved) } : state;
@@ -263,30 +272,42 @@ export function treeChangeFault(change: TreeChange): string | null {
       : "A settlement names the entries it ended and reverses none";
   const live = change.destination.kind === "live";
   const shaped = (state: unknown) =>
-    typeof state === "object" && state !== null && (live ? "living" in state : "row" in state);
+    live && change.op === "create" && state === null
+      ? true
+      : typeof state === "object" && state !== null && (live ? "living" in state : "row" in state);
   if (!shaped(change.before) || !shaped(change.after))
     return `A ${change.destination.kind} transition joins ${change.destination.kind} states`;
   if (isLiveTransition(change)) {
     const { before, after } = change;
     const fits =
-      change.op === "move"
-        ? before.living && after.living && !samePlacement(before.at, after.at)
-        : change.op === "delete"
-          ? before.living && !after.living
-          : !before.living && after.living;
+      change.op === "create"
+        ? !before?.living && after.living
+        : change.op === "move"
+          ? !!before && before.living && after.living && !samePlacement(before.at, after.at)
+          : change.op === "delete"
+            ? !!before && before.living && !after.living
+            : !!before && !before.living && after.living;
     return fits ? null : `A live ${change.op} can't join these states`;
   }
   const { before, after } = change;
   const fits =
-    change.op === "move"
-      ? !sameBranchFacts(before, after)
-      : change.op === "delete"
-        ? !before.deleted && after.deleted
-        : before.deleted && !after.deleted;
+    change.op === "create"
+      ? (!before.created && after.created) ||
+        (before.created && before.deleted && after.created && !after.deleted)
+      : change.op === "move"
+        ? !sameBranchFacts(before, after)
+        : change.op === "delete"
+          ? (!before.deleted && after.deleted) || (before.created && !after.created)
+          : before.deleted && !after.deleted;
   return fits ? null : `A drafted ${change.op} can't join these facts`;
 }
 
-const INVERSE_OP = { move: "move", delete: "restore", restore: "delete" } as const;
+const INVERSE_OP = {
+  create: "delete",
+  move: "move",
+  delete: "restore",
+  restore: "delete",
+} as const;
 
 /**
  * The transition that inverts (or reapplies) `entry`, from the state its latest transition left.
@@ -299,9 +320,28 @@ export function planTreeInverse(
   states: TreeStates,
   step: number,
 ): PlannedTreeInverse | null {
-  if (!holdsAfter(states, latest.tree)) return null;
+  const createExists =
+    direction === "invert" &&
+    entry.tree.op === "create" &&
+    (isLiveTransition(entry.tree)
+      ? states.live?.living === true
+      : branchFacts(states, entry.tree.destination.branchId).created);
+  if (!createExists && !holdsAfter(states, latest.tree)) return null;
   const op = direction === "invert" ? INVERSE_OP[entry.tree.op] : entry.tree.op;
-  const common = { step, entry, direction, op };
+  const common = {
+    step,
+    entry,
+    direction,
+    op,
+    requestedAt:
+      op === "delete"
+        ? null
+        : direction === "reapply" && entry.tree.op === "create"
+          ? latest.tree.shownAt
+          : direction === "invert"
+            ? entry.tree.shownAt
+            : (entry.tree.landedAt ?? entry.tree.shownAt),
+  };
   const { tree } = entry;
   // The state the destination holds, which `holdsAfter` matched: a removal still to be made
   // keeps naming the step that makes it.
@@ -311,20 +351,49 @@ export function planTreeInverse(
           ...common,
           destination: tree.destination,
           before: states.live,
-          after: direction === "invert" ? tree.before : tree.after,
+          after:
+            direction === "invert"
+              ? tree.op === "create"
+                ? {
+                    living: false,
+                    removal: { time: new Date(0).toISOString(), locationVersion: "0" },
+                  }
+                : (tree.before as LiveTreeState)
+              : tree.op === "create" && isLiveTransition(latest.tree)
+                ? (latest.tree.before as LiveTreeState)
+                : tree.after,
         }
       : null;
   return {
     ...common,
     destination: tree.destination,
     before: branchFacts(states, tree.destination.branchId),
-    after: direction === "invert" ? tree.before : tree.after,
+    after:
+      tree.op === "create"
+        ? direction === "invert"
+          ? {
+              ...branchFacts(states, tree.destination.branchId),
+              row: true,
+              created: true,
+              deleted: true,
+            }
+          : {
+              ...branchFacts(states, tree.destination.branchId),
+              row: true,
+              created: true,
+              deleted: false,
+            }
+        : direction === "invert"
+          ? tree.before
+          : tree.after,
   };
 }
 
 /** What a planned tree inverse did, in the model's words. */
 export function treeInverseFact(planned: Pick<PlannedTreeInverse, "op" | "direction">): string {
   switch (planned.op) {
+    case "create":
+      return "created again";
     case "move":
       return planned.direction === "invert" ? "moved back" : "moved again";
     case "restore":
@@ -338,6 +407,8 @@ export function treeInverseFact(planned: Pick<PlannedTreeInverse, "op" | "direct
 export function treeEntrySummary(entry: StoredTreeEntry): string {
   const at = entry.tree.shownAt ?? "";
   switch (entry.tree.op) {
+    case "create":
+      return `created ${at}`;
     case "move":
       return `moved from ${at}`;
     case "delete":

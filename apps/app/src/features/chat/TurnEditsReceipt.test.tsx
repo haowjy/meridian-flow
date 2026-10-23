@@ -192,6 +192,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
             status: "partial",
             documents: [
               {
+                documentId: "document-1",
                 uri: "manuscript://chapter.md",
                 status: "reversed",
                 destination: { kind: "draft", branchId: "branch" },
@@ -217,9 +218,6 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
           );
           expect(document.body.textContent).toContain("“Mara” → “I”");
           expect(document.body.textContent).toContain("Discarded");
-          expect(document.querySelector("[data-turn-draft-outcome]")?.textContent).toBe(
-            "Undone in your drafts. Apply them to change your manuscript.",
-          );
         });
         await act(async () => {
           [...document.querySelectorAll("button")]

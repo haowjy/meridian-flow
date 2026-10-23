@@ -61,12 +61,12 @@ handles select edits, and the command is all-or-nothing. `write move` and
 they run at the call, record a tree entry on the document's stack inside the
 mutation's own transaction, and mark the reply's scope as having writes
 (`treeWrite`), so a later save boundary rotates it. In an auto-apply chat they go
-through the live port. In a draft-mode chat on drafted sources they go through
-the chat's own port (`ContextPort.changeInBranch`): facts on the Work's branch
-row, never the mover, and live is untouched until the writer applies them (D26);
-a move between a drafted source and a live one refuses (D45). The writer applies
-or discards them like any pending change (`collab/.context/apply.md`); both are
-published once both modes work (D66). A path no
+through the live port. In a draft-mode chat their placement goes through the
+chat's branch (`ContextPort.changeInBranch`): facts live on the Work's branch
+row, never the mover, and live placement is untouched until the user applies
+them (D26). Content destination is independent: Scratch and upload content stays
+live while its placement can be drafted. The user applies or discards drafted
+placement like any pending change (`collab/.context/apply.md`). A path no
 visible document holds names, for undo/redo/revert only, the document this
 chat's latest move or delete took away from it (`inverse-address.ts`). Skills retain Mars
 filenames while `skills://` exposes the document codec's names.

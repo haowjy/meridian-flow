@@ -1,10 +1,12 @@
 /** Pure attempt-local text planning for one captured inverse document. */
+import { appendRestorationLinks } from "@meridian/agent-edit/diff";
 import type { ComputedInverseEdit } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import type { BranchId, LiveTreeState } from "@meridian/contracts";
+import { type BranchId, isLiveTransition, type LiveTreeState } from "@meridian/contracts";
 import type { EditOrigin } from "@meridian/database";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import type { InverseDestination } from "../domain/inverse-draft-destination.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import type { PreparedDocumentInverse, TurnInverseQuery } from "../domain/turn-inverse-service.js";
 
@@ -13,7 +15,7 @@ export type PlannedInverse = {
   documentId: import("@meridian/contracts").DocumentId;
   edits: Map<ComputedInverseEdit, ComputedInverseEdit["parts"]>;
   updates: { draftId: string | null; update: Uint8Array }[];
-  drafts: Map<string, PlannedDraft>;
+  drafts: Map<InverseDestination, PlannedDraft>;
   live: boolean;
   source: "agent" | "writer";
   made: Map<number, LiveTreeState>;
@@ -21,11 +23,14 @@ export type PlannedInverse = {
   committed: ComputedInverseEdit[];
   stopped: boolean;
   reversed: Map<BranchId | null, number>;
+  outcomes: { documentId: string; branchId: BranchId | null; draftId: string | null }[];
 };
 
 export type PlannedDraft = {
+  destination: Exclude<InverseDestination, { kind: "live" } | { state: "gone" }>;
   draftId: string;
   revision: number;
+  branchId: BranchId;
   view: Y.Doc;
   edits: ComputedInverseEdit[];
   origins: Map<ComputedInverseEdit, EditOrigin[]>;
@@ -37,21 +42,24 @@ export function planInverseDocument(
 ): PlannedInverse {
   const document = plan.document;
   const edits = new Map<ComputedInverseEdit, ComputedInverseEdit["parts"]>();
-  const drafts = new Map<string, PlannedDraft>();
+  const drafts = new Map<InverseDestination, PlannedDraft>();
   for (const step of plan.steps) {
     if (step.kind !== "text") continue;
     let view = document.live;
-    if (step.draftId) {
-      const captured = document.drafts.get(step.draftId);
-      if (!captured) throw new Error("A draft text step's draft was not captured");
-      const draft: PlannedDraft = drafts.get(step.draftId) ?? {
-        draftId: step.draftId,
-        revision: captured.documentDraft.revision,
-        view: captured.doc,
+    if (step.destination.kind === "draft") {
+      if (step.destination.state === "gone")
+        throw new Error("A gone destination cannot have a text step");
+      const destination = step.destination;
+      const draft: PlannedDraft = drafts.get(destination) ?? {
+        destination,
+        draftId: destination.draftId,
+        revision: destination.revision,
+        branchId: destination.branchId,
+        view: destination.view,
         edits: [],
         origins: new Map(),
       };
-      drafts.set(step.draftId, draft);
+      drafts.set(destination, draft);
       draft.edits.push(step.edit);
       view = draft.view;
     }
@@ -67,6 +75,7 @@ export function planInverseDocument(
             view.clientID = client;
             try {
               appendInverseRestorationFacts(view, part.aliases);
+              if (step.destination.kind === "draft") appendRestorationLinks(view, part.aliases);
             } finally {
               view.clientID = planningClient;
             }
@@ -86,12 +95,15 @@ export function planInverseDocument(
     edits,
     updates: [],
     drafts,
-    live: !text.length || text.some((step) => !step.draftId),
+    live:
+      text.some((step) => step.destination.kind === "live") ||
+      plan.steps.some((step) => step.kind === "tree" && isLiveTransition(step.planned)),
     source: query.model ? "agent" : "writer",
     made: new Map(),
     living: document.treeStates.live?.living ?? document.removal === null,
     committed: [],
     stopped: false,
     reversed: new Map(),
+    outcomes: [],
   };
 }

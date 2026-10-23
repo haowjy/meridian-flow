@@ -52,6 +52,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       threadId: "00000000-0000-4000-8000-000000000d0a",
       turnId: "00000000-0000-4000-8000-000000000d0b",
     };
+    const SCRATCH_SOURCE = "00000000-0000-4000-8000-000000000d0d";
+    const SCRATCH_NOTE = "00000000-0000-4000-8000-000000000d0e";
     const NEXT_TURN = "00000000-0000-4000-8000-000000000d0c";
     // Moves and deletes refresh the catalog after commit: real commits, no rollback suite.
     const db = createDb(DATABASE_URL, { max: 6 });
@@ -92,9 +94,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scope: "project",
         isPrimary: true,
       });
+      await db.insert(schema.contextSources).values({
+        id: SCRATCH_SOURCE,
+        workId: OTHER_WORK_ID,
+        name: "Scratch",
+        slug: "scratch",
+        scope: "work",
+      });
       await db.insert(schema.documents).values([
         { id: CH1, contextSourceId: SOURCE_ID, name: "ch1", extension: "", fileType: "markdown" },
         { id: CH2, contextSourceId: SOURCE_ID, name: "ch2", extension: "", fileType: "markdown" },
+        {
+          id: SCRATCH_NOTE,
+          contextSourceId: SCRATCH_SOURCE,
+          name: "sect-notes",
+          extension: "",
+          fileType: "markdown",
+        },
       ]);
       await db.insert(schema.threads).values({
         rootThreadId: THREAD.threadId,
@@ -146,6 +162,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       for (const [documentId, markdown] of [
         [CH1, "Chapter one."],
         [CH2, "Chapter two."],
+        [SCRATCH_NOTE, "Sect notes."],
       ] as const)
         await writeMarkdown(runtime.ports.documentSync, {
           documentId,
@@ -161,7 +178,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const placement = async (id: string) =>
       (
         await db
-          .select({ name: schema.documents.name, deletedAt: schema.documents.deletedAt })
+          .select({
+            name: schema.documents.name,
+            sourceId: schema.documents.contextSourceId,
+            deletedAt: schema.documents.deletedAt,
+          })
           .from(schema.documents)
           .where(eq(schema.documents.id, id))
       )[0];
@@ -440,7 +461,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // Live is untouched; the branch has it at the new path, in a folder only it sees.
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
       expect(text(await call("read", { path: "part1/ch1-old" }))).toContain("Chapter one.");
-      expect((await call("read", { path: "ch1" })).isError).toBe(true);
+      expect(text(await call("read", { path: "ch1" }))).toContain("Chapter one.");
       expect(await script.text("ch1")).toContain("Chapter one.");
       expect((await (await script.begin()).call("read", { path: "part1/ch1-old" })).isError).toBe(
         true,
@@ -655,6 +676,53 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       (await treeEntries(id)).flatMap((row) =>
         row.tree?.op === "settle" ? [row.tree.settles.as] : [],
       );
+
+    it("drafts a Scratch move into the manuscript and applies it", async () => {
+      const script = await start();
+      const drafting = runtimes.script(script.runtime, OTHER);
+      let result = "";
+      await drafting.reply(async (edit) => {
+        result = await edit("write", {
+          command: "move",
+          from: { path: "scratch://@w2/sect-notes" },
+          path: "manuscript://sect-notes",
+        });
+      });
+
+      expect(result).toContain("not applied yet");
+      expect(await placement(SCRATCH_NOTE)).toMatchObject({
+        name: "sect-notes",
+        sourceId: SCRATCH_SOURCE,
+        deletedAt: null,
+      });
+      expect(await review(script).item(SCRATCH_NOTE)).toMatchObject({
+        contextLocation: { scheme: "manuscript", path: "/sect-notes" },
+      });
+
+      const undoTurn = await drafting.begin();
+      const undone = await undoTurn.call("write", {
+        command: "undo",
+        path: "manuscript://sect-notes",
+      });
+      expect(undone.isError, text(undone)).toBeFalsy();
+      await undoTurn.save();
+      expect(await review(script).item(SCRATCH_NOTE)).toBeUndefined();
+
+      const redoTurn = await drafting.begin();
+      const redone = await redoTurn.call("write", {
+        command: "redo",
+        path: "scratch://@w2/sect-notes",
+      });
+      expect(redone.isError, text(redone)).toBeFalsy();
+      await redoTurn.save();
+
+      expect(await review(script).apply(SCRATCH_NOTE)).toMatchObject({ status: "applied" });
+      expect(await placement(SCRATCH_NOTE)).toMatchObject({
+        name: "sect-notes",
+        sourceId: SOURCE_ID,
+        deletedAt: null,
+      });
+    });
 
     it("Apply orders a move chain and swap, then reports a free name when a later arrival took its target", async () => {
       const script = await start();

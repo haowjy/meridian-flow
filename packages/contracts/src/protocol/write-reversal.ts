@@ -11,11 +11,9 @@ export type WriteErrorStatus =
   | "cant_undo_applied"
   | "cant_undo_discarded"
   | "cant_undo_changed"
-  | "cant_undo_elsewhere"
   | "cant_redo_applied"
   | "cant_redo_discarded"
   | "cant_redo_changed"
-  | "cant_redo_elsewhere"
   | "cant_redo_users_undo"
   | "insufficient_undo"
   | "insufficient_redo"
@@ -37,7 +35,10 @@ export type UndoRedoOutcome =
 export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
 
 export interface DocumentReversalResult {
+  documentId: string;
   uri: string;
+  /** This reversal removed or restored the document's creation. */
+  created?: boolean;
   /** Where it was reversed: live, or a branch's proposal (its text draft or its moves and deletes). */
   destination?: { kind: "live" } | { kind: "draft"; branchId: string };
   status: WriteStatus | TreeReversalFault;

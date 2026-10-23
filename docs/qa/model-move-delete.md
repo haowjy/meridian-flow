@@ -1,6 +1,6 @@
-# The model's move and delete
+# The model's create, move and delete
 
-Browser checks for the model's `write` `move` and `delete`: in an auto-apply chat, tool rows,
+Browser checks for the model's `write` `create`, `copy`, `move` and `delete`: in an auto-apply chat, tool rows,
 the turn card, its Undo, and a stopped reply's rollback (steps 1 to 4); in a draft-mode chat,
 the pending rows, the Work notice on the live document, Apply, Discard and the model's undo
 (steps 5 to 8). Run the stack with `MODEL_PROVIDER=mock` so `./mf mock script` drives the
@@ -67,12 +67,13 @@ the text it found or a block hash from that read.
    and ch5 → ch6 both land in dependency order from either row. Repeat with a swap: both land
    in one Apply transaction. Apply a drafted move after a new live document takes its target:
    the move lands at the next free name and the footer says "Added as <name>."
-8. **Mixed move.** Script `create` `scratch://@w1/sect-notes`, then `move` it to
-   `manuscript://sect-notes`: the row says "Couldn't move sect-notes" (the model reads D45's
-   refusal). Then `copy` it there and `delete` the scratch one: the dock lists sect-notes. The
-   other direction refuses alike: `move` `manuscript://ch2` to `scratch://@w1/ch2` reads the
-   same refusal. After both, `./mf` shows sect-notes still in scratch and ch2 still live at its
-   path, with no row in the dock for either move.
+8. **Scratch crossing.** Script `create` `scratch://@w1/sect-notes`, then `move` it to
+   `manuscript://sect-notes`. The result starts "not applied yet", the dock lists sect-notes at
+   its manuscript destination, and live still has it in Scratch. Script `undo` by either path:
+   the dock row disappears and the branch sees it in Scratch again. Redo the move and Apply it;
+   live now has sect-notes in the manuscript and not in Scratch. Move `manuscript://ch2` to
+   `scratch://@w1/ch2`: the branch sees it in Scratch while live keeps ch2 in the manuscript;
+   Discard removes the row and leaves live unchanged.
 9. **Undo after Apply.** Script `undo` of `manuscript://ch1-old`: "Couldn't undo ch1-old";
    the model reads `cant_undo_applied`.
 
@@ -98,6 +99,20 @@ With more than one file, the dock's Apply asks the same question in its footer
    the card expands with its draft outcome; Redo puts it in `arc2` again. Then script `move` ch4
    → ch4b, press the card's Undo, and Discard all of the Work: the card's Redo then says the
    change was discarded, not that it can't be restored.
+12. **Create is one reversible change.** In an auto-apply chat, script `create` of
+   `manuscript://new-chapter` with prose. The card counts the new document. Its Undo removes the
+   document; Redo restores the prose. After Undo, put another document at that path and press
+   Redo: the created document returns at the next free name, which the expanded card reports.
+   Then script a whole-document `copy` and, in a later model step, `undo` the copy's path. One
+   Undo removes the copy rather than leaving an empty document; Redo restores its content. Repeat
+   after the writer replaces one of the copy's paragraphs. Undo reports that skipped text part and
+   removes the document as the same edit. Redo restores the document with the writer's paragraph
+   intact and reapplies the text parts Undo removed.
+13. **Draft create is one pending item.** In a draft-mode chat, script a nonempty `create`, then
+   an empty `create`. Each turn card counts its created document, and the dock and Work Files list
+   both. Undo each card: its draft closes and its row disappears from both lists. Redo creates a
+   fresh draft with the original content, or an empty draft for the empty create, and lists it
+   once. Apply and Discard remain available on the restored row.
 
 ## Last run
 

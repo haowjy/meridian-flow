@@ -7,37 +7,43 @@ immutable journal edit; it never rewrites a target row or marks it reversed.
 ## Commands and policy
 
 `reverseThreadContext` is the whole-turn card command. Its authenticated POST
-accepts only `{ scope: "turn", target: turnId, direction }`; authorization
-precedes inverse planning. One action may cover several documents, but each
-inverse edit transitions one target edit and carries restoration aliases.
-Each text step lands where its original did, live or its draft: one turn may
-reverse a document's live and draft text together, each on its own view, inside
-the one ordered stream. The card admits only the (document, branch)
-destinations the writer's grants cover (`InverseDestination`); a refused draft
-beside an allowed live edit is left out, not the whole document. The model
-inverts only in the version it writes to.
+accepts only `{ scope: "turn", target: turnId, direction }`. Capture resolves each
+immutable origin once: live, its active draft, or gone. One turn may reverse a
+document's live and draft text together, each on that destination's captured
+view, inside one ordered stream. Planning, history and result presentation use
+that same resolved object; commit validates it before writing the planned view.
+
+After selection, one admission call authorizes every content destination and
+tree branch. Commit runs under those exact grants and confirms them after
+locking their combined Work set. The incoming content grant carries the caller
+identity only; it never chooses the inverse branch. Undo and Redo land in the
+Work that owns the selected edit, including after the chat is rebound. A user
+card uses the same admission boundary.
 
 Redo is preferred when the latest unconsumed Undo has a reapplicable part;
 otherwise an invertible active part offers Undo. Effective action state is
-indexed per immutable part. A partial writer Undo does not expose an older
-entry or mark the whole action undone. A rolled-back action has no stack
-impact, and repeated rollback does not append another inverse.
+indexed per immutable part. A model count consumes original actions: once a
+partial model Undo reverses any surviving part of an edit, the next count
+continues to the preceding edit; Redo retains the exact parts that were
+reversed. A rolled-back action has no stack impact, and repeated rollback does
+not append another inverse.
 
 The model owns one strict stack per thread/document. `write undo` and `write
 redo` accept a count; `write revert` creates a new edit at the current
-(destination) view, by Yjs identity only: a part edited since is skipped and
-listed by its 1-based immutable part ordinal and reason, without quoting old or
-current text. The model uses ordinary `read` for the passage; `read(format: "edits")` reads immutable parts through the
-host port. Model actions cannot use a reconstruction endpoint, reversal table,
-or reserved client. A multi-edit Undo is all-or-nothing and Redo restores the
+(destination) view. All three use Yjs identity: a part edited since is skipped
+and listed by its 1-based immutable part ordinal and reason, without quoting old
+or current text. Undo and Redo refuse `cant_*_changed` only when none of a text-only
+edit remains to reverse. The model uses ordinary `read` for the passage;
+`read(format: "edits")` reads immutable parts through the host port. Model actions
+cannot use a reconstruction endpoint, reversal table, or reserved client. A
+multi-edit Undo is all-or-nothing on stack availability, and Redo restores the
 last undone edit first; a count beyond what is available refuses with the
 available count and changes nothing. User-actuated entries refuse model stack
-commands, and a model Undo of a draft edit after the chat's Work moved refuses
-`cant_undo_elsewhere`. A card Undo names and skips a part whose draft was
-discarded (`expired`) or that a later writer edit depends on
+commands. A card Undo names and skips a part whose draft
+was discarded (`expired`) or that a later writer edit depends on
 (`cant_undo_dependent`), and inverts the rest.
-A turn's edit targets exclude tombstoned documents (`livingOrOutlivedSql`), so
-a discarded draft-created document is never an inverse target. A draft-scoped
+A turn's edit targets include its create transition even when the document is empty. A create
+that Undo removed stays addressable through that immutable target, so Redo can restore it. A draft-scoped
 edit of a document deleted live stays one (D79): each draft-scoped target names
 the Work its draft row's branch belongs to, and the card's lineage and Undo
 authorize it at that Work's draft destination (`turnEditDestination`), where
@@ -53,27 +59,27 @@ immutable parts, never equal text. Save and rollback take a
 helper scope: `response_id` keeps provider authorship and `edit_scope_id`
 selects the rotated scope.
 
-Part disposition comes from `createDraftDispositionReader`: Apply-record evidence
-wins; otherwise classification membership in an active draft is pending and the
-rest discarded. Inverse capture reads each origin draft once, including closed
-drafts, and matches receipts by edit id and ordinal. Active draft write admission
-is separate; a revision mismatch between the evidence and planning captures
-retries the bounded attempt. For a removed document, an active draft of it is planned on like any draft; the removal record decides only when no active draft exists.
+Part disposition is computed once for each resolved destination.
+`createDraftDispositionReader` reads receipts from that draft. Apply evidence
+wins; otherwise an active draft is pending and a gone draft is discarded. A
+revision mismatch between evidence and planning recaptures the bounded attempt.
+Closed origins are gone and never stand in for a destination.
 
 Model Undo/Redo keep `cant_*_applied`. Review disposition is not inverse
 eligibility: an effective Undo that restores the review base has no shown change
 and can read discarded. In an active draft the kernel decides Undo/Redo, Revert
 and failed-scope rollback eligibility; discarded disposition chooses the copy
-only when the kernel skips a part. Closed origin drafts refuse without planning.
+only when the kernel skips a part.
 Effective action consumption follows immutable receipts, regardless of whether
 those receipts currently contribute to review. Applied draft parts revert only
 in their active origin draft, leaving live untouched and making a pending change against base.
 Closed drafts are never writable. Runtime context reports a card action by turn
 and document, not model handle. There are no inverse holds or blocking flags.
 
-## Tree entries (moves and deletes)
+## Tree entries (creates, moves and deletes)
 
-A model's `move` or `delete` is a `document_edits` row with a `tree_change` and no parts
+A model's `create`, `copy`, `move` or `delete` is represented by a `document_edits` row with a
+`tree_change` and no parts
 (`domain/tree-inverse.ts`, PR 3). It keys as `editId:tree` in the same action index and takes
 its `seq` from the parts' id sequence, so one chronology orders text and tree across turns and
 writers. Its handle is on the same per-document, per-chat counter. It records the exact state
@@ -112,17 +118,36 @@ checkpoint rewrite, at its plan's first text step. Every tree inverse commits un
 re-reads the captured tree states (a mismatch is an attempt miss). Live moves back go through
 `moveToPlacement`, deletes back through `restoreDocument` naming the removal, redone deletes
 through `DocumentRemoval.remove`. A tree-only inverse has no text cuts, so the engine echoes no
-blocks. Turn targets include every document a turn moved or deleted, deleted or not;
+blocks. Turn targets include every document a turn created, moved or deleted, deleted or not;
 the card authorizes them from those targets, and a deleted one at its restore destination
-(file-policy's `restore` target). The turn lineage gives each document the turn moved or
-deleted its net tree line per destination (live, or the Work whose branch a drafted entry names) (`TurnTreeLine`: deleted, or moved from its first `shownAt` to its last
-move's `landedAt`), leaving out entries a rollback reversed; a deleted one keeps its row at the
-address it was deleted from, read through the same `restore` target. A drafted tree entry's
-inverse writes back the branch row's facts its entry recorded (an undo its `before`, a redo its
-`after`; `writeBackBranchFacts`) while the row still holds the state the plan started from, its
+(file-policy's `restore` target). The turn lineage gives each document the turn created, moved
+or deleted its net tree line per destination (live, or the Work whose branch a drafted entry
+names) (`TurnTreeLine`: created, deleted, or moved from its first `shownAt` to its last move's
+`landedAt`), leaving out entries a rollback reversed. A removed one keeps its receipt row at its
+last or recorded create address, read through the same `restore` target. A drafted tree entry's
+inverse writes back the branch facts the plan selected (`writeBackBranchFacts`) while the row
+still holds the state the plan started from, its
 branch is active, a moved folder still stands and the branch's view has room; the attempt also
-locks that branch's Work and where the branch has the document. A document the branch deleted is
+locks that branch's Work and where the branch has the document. The routed branch is separate
+from a content `draftId`: a move-only document has no text draft, including a Scratch document
+whose content stays live, but Undo and Redo still write its branch facts. A document the branch deleted is
 authorized where its row is (file facts' branch-deleted fallback).
+
+A create transition precedes its initial text edit in the same per-document stream. Model Undo
+groups those adjacent entries only when both came from the same model tool call, in the same
+turn, response and edit scope. A later write call in that response remains a separate edit. A
+live Undo removes the initial text, then the placement; Redo restores the placement, then
+reapplies only the text parts Undo reversed. A live Undo uses an ordinary reversible removal, so the identity,
+Yjs history, later writer text and drafts remain available; Redo restores that retained state
+through `restoreDocument`, taking the next free name when necessary. A drafted Undo writes the
+branch's existing delete fact: `{ created: true, deleted: true }`. The document and its text are
+hidden in that branch, but its draft remains active and its identity is not tombstoned. Redo
+clears `deleted` on the row's current facts, so a rename or move made while the create was
+undone survives, and keeps writing the same draft. Neither Undo nor Redo rewrites
+the draft text. If another Work Applies the
+shared creation first, that reveal settles this branch's undone creation so it cannot become a
+pending delete of the now-live document, then the ordinary live pull rebases the now-visible
+document into every active Work draft. Empty creates use the same branch-fact cycle.
 
 ## Effects and failures
 
@@ -151,8 +176,7 @@ the card and `internal_error` ("the document changed while reversing; try again"
 for model Undo, Redo and Revert, never an invented refusal. Delivery runs
 after the commit, outside the scope.
 
-A card outcome reports committed destination per document. Draft Undo says that
-Apply is needed to change the manuscript. The reverse endpoint may return
+A card outcome reports committed destination per document. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`, `nothing_to_redo`,
 `cant_undo_dependent`, `expired`, or `partial` with HTTP 200; callers retain
 those outcomes and refresh the turn query. A reversal that reversed nothing because a document

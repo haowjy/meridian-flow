@@ -21,7 +21,7 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
         .select({
           documentId: documentEdits.documentId,
           workId: branches.originWorkId,
-          op: sql<"move" | "delete" | "restore">`${documentEdits.treeChange}->>'op'`,
+          op: sql<"create" | "move" | "delete" | "restore">`${documentEdits.treeChange}->>'op'`,
           shownAt: sql<string | null>`${documentEdits.treeChange}->>'shownAt'`,
           landedAt: sql<string | null>`${documentEdits.treeChange}->>'landedAt'`,
         })

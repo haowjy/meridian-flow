@@ -421,6 +421,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     removal: deps.documentRemoval,
     arrivals: deps.arrivals,
     catalog: deps.catalogMutations,
+    fileAccess: deps.fileAccess,
   });
   const responseFinalizer = scopeResponseFinalizer(
     createResponseWriteFinalizer({
@@ -497,7 +498,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       removal: deps.documentRemoval,
       close: deps.draftClose,
       releaseObjects: (storageUrls) => deps.objects?.storageUrls(storageUrls) ?? Promise.resolve(),
-      onCommitted: (documentId) => runDocumentWriteHook({ documentId }, "collab.apply"),
+      onCommitted: async (documentId) => {
+        await draftPulls.flushLivePull(documentId);
+        await runDocumentWriteHook({ documentId }, "collab.apply");
+      },
       measured: (measurement) => {
         if (deps.eventSink)
           emitEvent(deps.eventSink, {
@@ -560,7 +564,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     turnInverse,
     resolveDocumentUri: documentUriResolver,
     listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,
-    fileAccess: deps.fileAccess,
     threadContext:
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });

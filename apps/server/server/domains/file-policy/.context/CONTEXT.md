@@ -46,6 +46,12 @@ deleted facts for person-authorized removal history, never readable content.
 Neither does a Work's draft of a document it may
 not hold (`branchMayHold`: its project's, or its account's `user://`).
 
+A branch move changes the document's presented `scheme`, not its physical
+`contentScheme`. File policy routes content writes from the physical scheme
+until Apply moves the live identity: Scratch content stays live behind a
+proposed project path, while project content stays drafted behind a proposed
+Scratch path. The physical Scratch owner continues to cap delegation.
+
 ## Grants and service boundary
 
 `createFileAccess` is the only grant mint. A `FileGrant` carries principal,
@@ -63,15 +69,18 @@ and lets a reply save the rest. Read agent-chain state fresh on every tool call;
 a Work switch or rebind must affect the next call.
 
 Targets are explicit: `document` for ordinary file access, `draft` for a
-Work-branch view, `container` for creates, and `restore` for a deleted document
-an inverse brings back: its facts are its own folder and source, live, without
-its own delete (a deleted folder or source above it still hides it), so a turn
-card's Undo or a model's undo by an old path is authorized where the document
-actually returns, not at the path it was shown at. A create in a folder needs both
-the container grant and the document grant it will write. Denials preserve a
-wire reason and the facts needed for allowed recovery; deleted reads are
-`not_found` (HTTP 404) and archived Work writes are `work_archived` (HTTP 403).
-People always write live; only an agent principal carries a branch Work.
+Work-branch view, `container` for creates, and `restore` for an identity an
+inverse brings back. A live restore reads the document's own folder and source
+without its own delete (a deleted folder or source above it still hides it), so
+an undo by an old path is authorized where the document actually returns, not
+at the path it was shown at. A restore checked at a draft destination may read
+the hidden physical identity after that branch's create was undone while
+another branch kept it alive; the destination Work still supplies its lifecycle
+and lock. A create in a folder needs both the container grant and the document
+grant it will write. Denials preserve a wire reason and the facts needed for
+allowed recovery; deleted reads are `not_found` (HTTP 404) and archived Work
+writes are `work_archived` (HTTP 403). People always write live; only an agent
+principal carries a branch Work.
 
 ## Route and seam rules
 

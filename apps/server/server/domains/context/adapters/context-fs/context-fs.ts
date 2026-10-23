@@ -356,10 +356,23 @@ export class ContextFS implements ContextSchemeAdapter {
     return Ok(found.kind === "found" ? found.node : null);
   }
 
+  /** A pending move keeps the live source address as an identity alias until Apply. */
+  private async findAddressedDocument(
+    view: TreeView,
+    path: string,
+  ): Promise<Result<ContextDocument | null, AdapterFault>> {
+    const visible = await this.findDocumentAt(view, path);
+    if (!visible.ok || visible.value || view.kind === "live") return visible;
+    const physical = await this.findDocumentAt(LIVE_TREE, path);
+    if (!physical.ok || !physical.value) return physical;
+    return (await this.store.findDocumentById(view, physical.value.id)) ? physical : Ok(null);
+  }
+
   async stat(path: string): Promise<Result<AdapterFileRef | null, AdapterFault>> {
     const parsed = parseDocumentPath(path);
     if (!parsed.ok) return parsed;
-    const found = await this.findDocumentAt(await this.readTreeView(), path);
+    const view = await this.readTreeView();
+    const found = await this.findAddressedDocument(view, path);
     if (!found.ok) return found;
     const doc = found.value;
     if (!doc || !parsed.value) return Ok(null);
@@ -401,7 +414,8 @@ export class ContextFS implements ContextSchemeAdapter {
   ): Promise<Result<{ content: string; documentId?: string } | null, AdapterFault>> {
     const parsed = parseDocumentPath(path);
     if (!parsed.ok) return parsed;
-    const found = await this.findDocumentAt(await this.readTreeView(), path);
+    const view = await this.readTreeView();
+    const found = await this.findAddressedDocument(view, path);
     if (!found.ok) return found;
     const doc = found.value;
     if (!doc) return Ok(null);

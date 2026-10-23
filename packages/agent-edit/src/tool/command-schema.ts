@@ -172,7 +172,7 @@ const MUTATION_BRANCHES = {
   },
   undo: {
     description:
-      "Undo count edits (default 1) to this document, newest first, all or nothing. Also reverses a `move` or `delete` of this document; name it by its current path, or by its old path if it moved or was deleted. Each edit can be redone separately. Refused if the user applied or discarded one, or anyone edited it since; then use revert.",
+      "Undo count edits (default 1) to this document, newest first. The requested count is all or nothing, but each selected edit reverses every content part that still applies. Creation, move, and delete are edits too; name a moved or deleted document by its old path. Each edit can be redone separately. Applied or discarded parts stay unchanged.",
     fields: { count: INVERSE_COUNT },
   },
   revert: {
@@ -182,7 +182,7 @@ const MUTATION_BRANCHES = {
   },
   redo: {
     description:
-      "Redo count edits (default 1), last undone first, all or nothing. Not after you edit this document again.",
+      "Redo count edits (default 1), last undone first. The requested count is all or nothing, but each selected edit restores every content part that still applies, including a document creation. Not after you edit this document again.",
     fields: { count: INVERSE_COUNT },
   },
 } as const;

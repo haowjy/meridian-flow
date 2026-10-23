@@ -147,6 +147,8 @@ export interface FileFacts {
    */
   survivingDraft?: boolean;
   scheme: ContextUriScheme;
+  /** The durable content source; branch moves change `scheme`, never this routing fact. */
+  contentScheme: ContextUriScheme;
   /** The document itself; null for a container. */
   self: FileNode | null;
   /** Nearest first: folders up to the source, the source, the owning Work, the project. */
