@@ -34,9 +34,11 @@ built Nitro server, while server-owned HTTP and WebSocket paths go to the paired
 dev server. The built client is production code; the local Nitro runtime stays
 in development mode so dev login remains available. The launcher requires the
 dev-stack marker, a dev application environment, and a local Portless API
-origin before it can make that override. It owns the Nitro child, gateway, and
-upgraded sockets as one lifetime: any child, bind, gateway, or signal exit
-tears down the rest.
+origin before it can make that override. It owns the Nitro child, gateway,
+proxied HTTP transactions, and upgraded sockets as one lifetime: any child,
+bind, gateway, or signal exit tears down the rest. Signal handling stays in
+place through teardown so a repeated signal accelerates child termination
+instead of escaping that lifetime.
 
 ## State and transport seams
 

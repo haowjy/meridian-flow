@@ -56,7 +56,9 @@ server-owned HTTP and WebSocket paths remain same-origin. Portless's
 `NODE_EXTRA_CA_CERTS` is mandatory for the Nitro SSR fetch and the gateway's
 HTTPS upstream. The persisted session identity records the client build, so
 reuse refuses a development/production mismatch and `pnpm dev:restart`
-preserves the running build as well as its transport mode.
+preserves the running build as well as its transport mode. Session metadata
+from before client-build identity existed reads as `development`; every new
+launch writes the field.
 
 `resolveCheckoutPortlessPrefix` owns hostname derivation for startup, `./mf`,
 and browser tests. Only the primary checkout gets bare names. Linked detached

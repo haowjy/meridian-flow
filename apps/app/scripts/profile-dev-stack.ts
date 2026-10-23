@@ -73,25 +73,49 @@ function proxyHttp(
   response: ServerResponse,
   origin: URL,
   changeOrigin: boolean,
+  resources: Set<() => void>,
 ): void {
   const target = new URL(request.url ?? "/", origin);
   const requestImpl = target.protocol === "https:" ? https.request : http.request;
+  let upstreamResponse: IncomingMessage | undefined;
+  let closed = false;
+  const release = () => {
+    if (closed) return;
+    closed = true;
+    resources.delete(close);
+    request.removeListener("aborted", close);
+    response.removeListener("close", close);
+    response.removeListener("finish", release);
+  };
+  const close = () => {
+    if (closed) return;
+    release();
+    upstream.destroy();
+    upstreamResponse?.destroy();
+    response.destroy();
+  };
   const upstream = requestImpl(
     target,
     {
       method: request.method,
       headers: proxyHeaders(request, target, changeOrigin),
     },
-    (upstreamResponse) => {
+    (receivedResponse) => {
+      upstreamResponse = receivedResponse;
       response.writeHead(
-        upstreamResponse.statusCode ?? 500,
-        upstreamResponse.statusMessage,
-        upstreamResponse.headers,
+        receivedResponse.statusCode ?? 500,
+        receivedResponse.statusMessage,
+        receivedResponse.headers,
       );
-      upstreamResponse.pipe(response);
+      receivedResponse.pipe(response);
     },
   );
+  resources.add(close);
+  request.once("aborted", close);
+  response.once("close", close);
+  response.once("finish", release);
   upstream.on("error", (error) => {
+    if (closed) return;
     if (!response.headersSent) {
       response.writeHead(502, { "content-type": "text/plain; charset=utf-8" });
     }
@@ -105,7 +129,7 @@ function proxyUpgrade(
   socket: Socket,
   head: Buffer,
   origin: URL,
-  connections: Set<() => void>,
+  resources: Set<() => void>,
 ): void {
   const target = new URL(request.url ?? "/", origin);
   const port = Number(target.port) || (target.protocol === "https:" ? 443 : 80);
@@ -119,11 +143,11 @@ function proxyUpgrade(
   const close = () => {
     if (closed) return;
     closed = true;
-    connections.delete(close);
+    resources.delete(close);
     socket.destroy();
     upstream.destroy();
   };
-  connections.add(close);
+  resources.add(close);
 
   socket.once("error", close);
   socket.once("close", close);
@@ -191,8 +215,8 @@ async function stopChild(child: ChildProcess, exit: Promise<ChildExit>): Promise
   await waitForChild(exit, 2_000);
 }
 
-async function closeGateway(gateway: http.Server, connections: Set<() => void>): Promise<void> {
-  for (const close of [...connections]) close();
+async function closeGateway(gateway: http.Server, resources: Set<() => void>): Promise<void> {
+  for (const close of [...resources]) close();
   await new Promise<void>((resolve, reject) => {
     gateway.close((error) => {
       if (error && (error as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING")
@@ -205,12 +229,12 @@ async function closeGateway(gateway: http.Server, connections: Set<() => void>):
 
 async function stopResources(
   gateway: http.Server,
-  connections: Set<() => void>,
+  resources: Set<() => void>,
   child: ChildProcess,
   childExit: Promise<ChildExit>,
 ): Promise<void> {
   const results = await Promise.allSettled([
-    closeGateway(gateway, connections),
+    closeGateway(gateway, resources),
     stopChild(child, childExit),
   ]);
   const errors = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
@@ -241,12 +265,12 @@ async function main(): Promise<void> {
     stdio: "inherit",
   });
   const appExit = observeChild(app);
-  const connections = new Set<() => void>();
+  const resources = new Set<() => void>();
 
   const gateway = http.createServer((request, response) => {
     const pathname = new URL(request.url ?? "/", "http://gateway.local").pathname;
     const serverOwned = getApiRouteOwner(pathname) === "server";
-    proxyHttp(request, response, serverOwned ? apiOrigin : appOrigin, serverOwned);
+    proxyHttp(request, response, serverOwned ? apiOrigin : appOrigin, serverOwned, resources);
   });
   gateway.on("upgrade", (request, socket, head) => {
     const pathname = new URL(request.url ?? "/", "http://gateway.local").pathname;
@@ -254,7 +278,7 @@ async function main(): Promise<void> {
       socket.destroy();
       return;
     }
-    proxyUpgrade(request, socket, head, apiOrigin, connections);
+    proxyUpgrade(request, socket, head, apiOrigin, resources);
   });
 
   const gatewayError = new Promise<Error>((resolve) => gateway.once("error", resolve));
@@ -262,11 +286,17 @@ async function main(): Promise<void> {
     gateway.listen(listenPort, "127.0.0.1", resolve);
   });
   let requestStop: (() => void) | undefined;
+  let signalCount = 0;
   const stopping = new Promise<void>((resolve) => {
     requestStop = resolve;
-    process.once("SIGINT", resolve);
-    process.once("SIGTERM", resolve);
   });
+  const handleSignal = () => {
+    signalCount += 1;
+    requestStop?.();
+    if (signalCount > 1 && app.exitCode === null && app.signalCode === null) app.kill("SIGKILL");
+  };
+  process.on("SIGINT", handleSignal);
+  process.on("SIGTERM", handleSignal);
 
   try {
     const startup = await Promise.race([
@@ -296,11 +326,12 @@ async function main(): Promise<void> {
     const { code, signal, error } = outcome.appExit;
     throw error ?? new Error(`Production app server exited (code=${code}, signal=${signal}).`);
   } finally {
-    if (requestStop) {
-      process.removeListener("SIGINT", requestStop);
-      process.removeListener("SIGTERM", requestStop);
+    try {
+      await stopResources(gateway, resources, app, appExit);
+    } finally {
+      process.removeListener("SIGINT", handleSignal);
+      process.removeListener("SIGTERM", handleSignal);
     }
-    await stopResources(gateway, connections, app, appExit);
   }
 }
 
