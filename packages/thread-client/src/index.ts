@@ -62,7 +62,7 @@ export {
 export type { AssistantView, ViewItem, ViewRun } from "./view/assistant-view";
 export { isImageBlock, isToolDeliveryBlock } from "./view/block-kind";
 export { componentBlockContent } from "./view/component-block-content";
-export { type DeliveryGroup, groupDeliveryEvents } from "./view/delivery-groups";
+export type { DeliveryGroup } from "./view/delivery-groups";
 export {
   type DeliverySegment,
   groupDeliverySegments,
@@ -75,8 +75,6 @@ export { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./view/optimistic
 export { replyDrawsNothing } from "./view/reply-draws-nothing";
 export { placeStandIns } from "./view/retry-stand-ins";
 export {
-  type CompletionFact,
-  type InvocationFact,
   type PersistedContractFailure,
   sameSubagentFacts,
   type TurnSubagentFacts,

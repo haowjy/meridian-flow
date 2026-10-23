@@ -22,6 +22,7 @@ export function DeliveryEventRows({ groups }: { groups: readonly DeliveryGroup[]
 
 function DeliveryGroupRow({ group }: { group: DeliveryGroup }) {
   const { events } = group;
+  const [expanded, setExpanded] = useSubagentDisclosure(`delivery:${group.id}`);
   const only = events[0];
   if (events.length === 1 && only) return <DeliveryEventRow {...only} />;
   const entries = events.map((event) => {
@@ -36,8 +37,6 @@ function DeliveryGroupRow({ group }: { group: DeliveryGroup }) {
   const list = (values: string[]) =>
     new Intl.ListFormat(i18n.locale, { style: "long", type: "conjunction" }).format(values);
   const childIds = entries.flatMap(({ run }) => (run.threadId ? [run.threadId] : []));
-  const key = `delivery:${group.id}`;
-  const [expanded, setExpanded] = useSubagentDisclosure(key);
   const summary =
     names.length > 3 || new Set(names).size < names.length ? (
       stopped.length ? (

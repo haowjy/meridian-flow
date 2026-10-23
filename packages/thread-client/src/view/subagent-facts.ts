@@ -36,6 +36,11 @@ const EMPTY_FACTS: TurnSubagentFacts = Object.freeze({
   failures: Object.freeze([]),
 });
 const cache = new WeakMap<Turn, TurnSubagentFacts>();
+const FACT_FIELDS = {
+  invocations: "invocations",
+  completion: "completion",
+  failures: "json",
+} satisfies Record<keyof TurnSubagentFacts, "invocations" | "completion" | "json">;
 
 export function turnSubagentFacts(turn: Turn): TurnSubagentFacts {
   const cached = cache.get(turn);
@@ -79,16 +84,12 @@ export function turnSubagentFacts(turn: Turn): TurnSubagentFacts {
 }
 
 export function sameSubagentFacts(left: TurnSubagentFacts, right: TurnSubagentFacts): boolean {
-  const fields = {
-    invocations: "invocations",
-    completion: "completion",
-    failures: "json",
-  } satisfies Record<keyof TurnSubagentFacts, "invocations" | "completion" | "json">;
-  void fields;
-  return (
-    left.invocations.length === right.invocations.length &&
-    left.invocations.every((fact, index) => fact.block === right.invocations[index]?.block) &&
-    sameJson(left.completion, right.completion) &&
-    sameJson(left.failures, right.failures)
-  );
+  return (Object.keys(FACT_FIELDS) as (keyof TurnSubagentFacts)[]).every((field) => {
+    if (FACT_FIELDS[field] === "invocations")
+      return (
+        left.invocations.length === right.invocations.length &&
+        left.invocations.every((fact, index) => fact.block === right.invocations[index]?.block)
+      );
+    return sameJson(left[field], right[field]);
+  });
 }

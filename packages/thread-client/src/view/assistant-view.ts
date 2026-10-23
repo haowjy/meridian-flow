@@ -125,16 +125,37 @@ function sameTool(left: ToolView, right: ToolView): boolean {
 
 function sameRun(left: ViewRun, right: ViewRun): boolean {
   if (left.kind !== right.kind || !sameBlocks(left.blocks, right.blocks)) return false;
-  if (left.kind === "reasoning" && right.kind === "reasoning")
-    return sameJson(left.texts, right.texts);
-  if (left.kind === "activity" && right.kind === "activity")
-    return (
-      left.tools.length === right.tools.length &&
-      left.tools.every((tool, index) => {
-        const other = right.tools[index];
-        return other ? sameTool(tool, other) : false;
-      })
-    );
+  if (left.kind === "reasoning" && right.kind === "reasoning") {
+    const fields = {
+      kind: "value",
+      blocks: "references",
+      texts: "json",
+    } satisfies Record<keyof typeof left, "value" | "references" | "json">;
+    return (Object.keys(fields) as (keyof typeof left)[]).every((field) => {
+      if (fields[field] === "references") return sameBlocks(left.blocks, right.blocks);
+      if (fields[field] === "json") return sameJson(left[field], right[field]);
+      return left[field] === right[field];
+    });
+  }
+  if (left.kind === "activity" && right.kind === "activity") {
+    const fields = {
+      kind: "value",
+      blocks: "references",
+      tools: "tools",
+    } satisfies Record<keyof typeof left, "value" | "references" | "tools">;
+    return (Object.keys(fields) as (keyof typeof left)[]).every((field) => {
+      if (fields[field] === "references") return sameBlocks(left.blocks, right.blocks);
+      if (fields[field] === "tools")
+        return (
+          left.tools.length === right.tools.length &&
+          left.tools.every((tool, index) => {
+            const other = right.tools[index];
+            return other ? sameTool(tool, other) : false;
+          })
+        );
+      return left[field] === right[field];
+    });
+  }
   return false;
 }
 
