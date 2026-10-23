@@ -128,7 +128,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           ? "already removed"
           : "edited since";
     }
-    /** The branch a draft-mode write lands in, for comparing a drafted tree entry's. */
     /**
      * Whether `entry` can be reversed in `direction` from the states `states` hold, judged by
      * state (D76): the planned transition, or the refusal.

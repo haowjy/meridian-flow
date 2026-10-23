@@ -377,7 +377,12 @@ export function planTreeInverse(
               created: true,
               deleted: true,
             }
-          : { ...tree.after, row: true, created: true, deleted: false }
+          : {
+              ...branchFacts(states, tree.destination.branchId),
+              row: true,
+              created: true,
+              deleted: false,
+            }
         : direction === "invert"
           ? tree.before
           : tree.after,

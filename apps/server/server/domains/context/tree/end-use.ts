@@ -66,8 +66,6 @@ export async function tombstoneUnused(
   documentIds: readonly DocumentId[],
   options: {
     keepFolders?: boolean;
-    /** A reversible create inverse keeps authority and closed-draft bytes for Redo. */
-    retainStorage?: boolean;
     actor: RemovalInitiator;
     removal: DocumentRemoval;
   },
@@ -83,7 +81,7 @@ export async function tombstoneUnused(
   if (ending.length === 0) return NOTHING_ENDED;
   const removed = await options.removal.remove({
     documentIds: ending.map((row) => row.id),
-    reason: options.retainStorage ? "deleted" : "discarded",
+    reason: "discarded",
     ...options.actor,
   });
   const tombstoned: NodeRef[] = removed.map((id) => ({ kind: "document" as const, id }));
