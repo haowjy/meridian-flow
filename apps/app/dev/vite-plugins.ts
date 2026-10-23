@@ -1,5 +1,25 @@
+import { realpathSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
 import * as babel from "@babel/core";
 import type { Plugin } from "vite";
+
+/** Resolve the parser's worker-safe entity decoder in Markdown worker bundles. */
+export function markdownWorkerCharacterReferencePlugin(repoRoot: string): Plugin {
+  const markupRequire = createRequire(
+    realpathSync(
+      path.join(repoRoot, "packages/markup/node_modules/mdast-util-from-markdown/package.json"),
+    ),
+  );
+  const workerDecoder = markupRequire.resolve("decode-named-character-reference");
+  return {
+    name: "markdown-worker-character-reference-decoder",
+    enforce: "pre",
+    resolveId(source: string) {
+      return source === "decode-named-character-reference" ? workerDecoder : undefined;
+    },
+  };
+}
 
 /**
  * Run `@lingui/babel-plugin-lingui-macro` over source files that import a
