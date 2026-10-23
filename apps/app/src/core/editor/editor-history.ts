@@ -11,7 +11,7 @@ export type EditorHistoryAction = {
   redo(): Promise<EditorHistoryActionResult>;
 };
 export type EditorHistoryHandle = {
-  captureApply(action: EditorHistoryAction): void;
+  captureApply(action: EditorHistoryAction): { retry(): boolean };
 };
 
 type Entry =
@@ -35,6 +35,7 @@ class MountedEditorHistory implements EditorHistoryHandle {
   private managerGenerated: StackItem | null = null;
   private operation = Promise.resolve();
   private redoGeneration = 0;
+  private readonly failed = new Map<Entry, "undo" | "redo">();
 
   constructor(private readonly editor: Editor) {
     const manager = yUndoPluginKey.getState(editor.state)?.undoManager;
@@ -51,12 +52,14 @@ class MountedEditorHistory implements EditorHistoryHandle {
     this.redo.length = 0;
   }
 
-  captureApply(action: EditorHistoryAction): void {
+  captureApply(action: EditorHistoryAction): { retry(): boolean } {
     this.manager.stopCapturing();
-    this.undo.push({ kind: "apply", sequence: ++this.sequence, action });
+    const entry: Entry = { kind: "apply", sequence: ++this.sequence, action };
+    this.undo.push(entry);
     this.clearRedo();
     this.manager.stopCapturing();
     this.changed();
+    return { retry: () => this.retry(entry) };
   }
 
   canUndo(): boolean {
@@ -73,6 +76,28 @@ class MountedEditorHistory implements EditorHistoryHandle {
     if (!entry) return false;
     const generation = this.redoGeneration;
     this.changed();
+    this.schedule(entry, direction, source, generation);
+    return true;
+  }
+
+  private retry(entry: Entry): boolean {
+    const direction = this.failed.get(entry);
+    if (!direction) return false;
+    const source = direction === "undo" ? this.undo : this.redo;
+    const index = source.indexOf(entry);
+    if (index < 0) return false;
+    source.splice(index, 1);
+    this.changed();
+    this.schedule(entry, direction, source, this.redoGeneration);
+    return true;
+  }
+
+  private schedule(
+    entry: Entry,
+    direction: "undo" | "redo",
+    source: Entry[],
+    generation: number,
+  ): void {
     this.operation = this.operation.then(async () => {
       if (entry.kind === "yjs") {
         this.suppressManagerEvents = true;
@@ -111,8 +136,11 @@ class MountedEditorHistory implements EditorHistoryHandle {
         } catch {
           result = "failed";
         }
-        if (result === "failed") insert(source, entry);
-        else if (result === "done") {
+        if (result === "failed") {
+          insert(source, entry);
+          this.failed.set(entry, direction);
+        } else if (result === "done") {
+          this.failed.delete(entry);
           const destination = direction === "undo" ? this.redo : this.undo;
           if (direction === "redo" || generation === this.redoGeneration)
             insert(destination, entry);
@@ -120,7 +148,6 @@ class MountedEditorHistory implements EditorHistoryHandle {
       }
       this.changed();
     });
-    return true;
   }
 
   private readonly managerAdded = ({ stackItem, type }: { stackItem: StackItem; type: string }) => {

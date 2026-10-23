@@ -35,9 +35,22 @@ export function DraftCommandStatus({
   ) : state.applying ? (
     <Trans>Applying</Trans>
   ) : state.failure ? (
-    <span className={state.failure.serverCode === "needs_restore" ? undefined : "text-destructive"}>
-      <ReviewMessageText failure={state.failure} />
-    </span>
+    <>
+      <span
+        className={state.failure.serverCode === "needs_restore" ? undefined : "text-destructive"}
+      >
+        <ReviewMessageText failure={state.failure} />
+      </span>
+      {state.failure.code === "unapply-refused" ? (
+        <button
+          type="button"
+          className="text-button [@media(pointer:coarse)]:min-h-11"
+          onClick={() => owner.retry(itemKey)}
+        >
+          <Trans>Retry</Trans>
+        </button>
+      ) : null}
+    </>
   ) : isDeletedFromManuscript(item) ? (
     <Trans>Deleted from the manuscript</Trans>
   ) : null;

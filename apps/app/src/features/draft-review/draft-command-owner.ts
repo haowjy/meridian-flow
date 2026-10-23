@@ -164,6 +164,7 @@ export class DraftCommandOwner {
   private readonly closingWorks = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
   private readonly reconciling = new Map<string, Promise<boolean>>();
+  private readonly unapplyRetries = new Map<string, () => boolean>();
   /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
   private readonly restoredDocuments = new Set<string>();
   /** Final paths allocated by Apply, until dismissed or another document shows. */
@@ -775,6 +776,7 @@ export class DraftCommandOwner {
     let frozen = original;
     let outcome = initial;
     let unapplyCommandId: string | undefined;
+    let retryHistory = () => false;
     const landedText = (answer: ApplyClickOutcome) =>
       answer.status === "landed" || (answer.status === "applied" && answer.textEffect === true);
     const fail = (serverCode: string) => {
@@ -784,8 +786,11 @@ export class DraftCommandOwner {
       this.setState(entry.ref.itemKey, {
         failure: { code: "unapply-refused", serverCode },
       });
+      this.unapplyRetries.set(entry.ref.itemKey, retryHistory);
     };
     const reverse = async (): Promise<EditorHistoryActionResult> => {
+      this.unapplyRetries.delete(entry.ref.itemKey);
+      this.setState(entry.ref.itemKey, { failure: null });
       const releaseQueue = entry.item.queue.hold();
       try {
         if (entry.item.queue.cancel(frozen.body.commandId)) return "done";
@@ -866,7 +871,8 @@ export class DraftCommandOwner {
       });
       return "failed";
     };
-    history.captureApply({ undo: reverse, redo: reapply });
+    const captured = history.captureApply({ undo: reverse, redo: reapply });
+    retryHistory = captured.retry;
   }
 
   /** Releases a captured batch in server order while every intent remains owner-held. */
@@ -913,6 +919,7 @@ export class DraftCommandOwner {
   }
 
   retry(itemKey: string) {
+    if (this.unapplyRetries.get(itemKey)?.()) return;
     this.items.get(itemKey)?.queue.retry();
   }
   /** Server-only lifecycle commands share this account owner, never the Apply-all route. */
@@ -1011,6 +1018,7 @@ export class DraftCommandOwner {
   }
   close() {
     this.active = false;
+    this.unapplyRetries.clear();
     for (const item of this.items.values()) item.queue.close();
   }
 }
