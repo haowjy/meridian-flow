@@ -11,6 +11,7 @@ import {
   type ResourceRecord,
   resourcePlacementForSnapshot,
 } from "@meridian/resource-replica";
+import { markDocumentOpen } from "@/core/editor/document-open-performance";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { DocumentSessionAuthorityError } from "@/core/editor/document-session-coordination-contract";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
@@ -107,6 +108,9 @@ export type ProjectDocumentLiveOpenRequest = {
 
 type ExactOpenResolution = ProjectContextIdentityResolution | { kind: "failed" | "malformed" };
 export type AvailableOpenResolution = Extract<ExactOpenResolution, { kind: "available" }>;
+export type OpenAttempt =
+  | { kind: "local-expected"; attemptId: string }
+  | { kind: "request"; attemptId: string; resolution: Promise<ExactOpenResolution> };
 export type TransferToken = { readonly id: string; readonly tabInstanceId: string };
 type TransferPlacement = "editor" | "dock";
 
@@ -114,7 +118,7 @@ type TransferPlacement = "editor" | "dock";
 export class ProjectDocumentLiveOpener {
   private readonly transfers = new Map<
     string,
-    { token: TransferToken; resolution: AvailableOpenResolution }
+    { token: TransferToken; documentId: string; attempt: OpenAttempt }
   >();
   private dockTransfer: TransferToken | null = null;
   constructor(
@@ -145,32 +149,61 @@ export class ProjectDocumentLiveOpener {
     }
   }
 
+  decide(
+    projectId: ProjectId,
+    documentId: DocumentId,
+    exactLocal: false,
+  ): Extract<OpenAttempt, { kind: "request" }>;
+  decide(projectId: ProjectId, documentId: DocumentId, exactLocal: true): OpenAttempt;
+  decide(projectId: ProjectId, documentId: DocumentId, exactLocal: boolean): OpenAttempt;
+  decide(projectId: ProjectId, documentId: DocumentId, exactLocal: boolean): OpenAttempt {
+    const attemptId = crypto.randomUUID();
+    if (exactLocal) {
+      markDocumentOpen("attempt-decided", { documentId, attemptId, kind: "local-expected" });
+      return { kind: "local-expected", attemptId };
+    }
+    return this.requestAttempt(projectId, documentId, attemptId);
+  }
+
+  private requestAttempt(
+    projectId: ProjectId,
+    documentId: DocumentId,
+    attemptId = crypto.randomUUID(),
+  ): Extract<OpenAttempt, { kind: "request" }> {
+    markDocumentOpen("attempt-decided", { documentId, attemptId, kind: "request" });
+    markDocumentOpen("request-start", { documentId, attemptId });
+    const resolution = this.resolveIdentity(projectId, documentId).finally(() =>
+      markDocumentOpen("request-end", { documentId, attemptId }),
+    );
+    return { kind: "request", attemptId, resolution };
+  }
+
   replaceTransfer(
     tabInstanceId: string,
-    resolution: AvailableOpenResolution | undefined,
+    documentId: string,
+    attempt: OpenAttempt,
     placement?: TransferPlacement,
   ): TransferToken | null {
     if (placement === "dock" && this.dockTransfer) this.disposeTransfer(this.dockTransfer);
     const prior = this.transfers.get(tabInstanceId);
     if (prior) this.disposeTransfer(prior.token);
-    if (!resolution) return null;
     const token = Object.freeze({ id: crypto.randomUUID(), tabInstanceId });
-    this.transfers.set(tabInstanceId, { token, resolution });
+    this.transfers.set(tabInstanceId, { token, documentId, attempt });
     if (placement === "dock") this.dockTransfer = token;
     return token;
   }
 
   transferToken(tabInstanceId: string, documentId: string): TransferToken | null {
     const transfer = this.transfers.get(tabInstanceId);
-    return transfer?.resolution.documentId === documentId ? transfer.token : null;
+    return transfer?.documentId === documentId ? transfer.token : null;
   }
 
-  takeTransfer(tabInstanceId: string, documentId: string): AvailableOpenResolution | null {
+  takeTransfer(tabInstanceId: string, documentId: string): OpenAttempt | null {
     const transfer = this.transfers.get(tabInstanceId);
-    if (!transfer || transfer.resolution.documentId !== documentId) return null;
+    if (!transfer || transfer.documentId !== documentId) return null;
     this.transfers.delete(tabInstanceId);
     if (this.dockTransfer === transfer.token) this.dockTransfer = null;
-    return transfer.resolution;
+    return transfer.attempt;
   }
 
   disposeTransfer(token: TransferToken): void {
@@ -188,15 +221,15 @@ export class ProjectDocumentLiveOpener {
 
   async open(
     input: ProjectDocumentLiveOpenRequest & {
-      attempt?: "first" | "retry";
-      resolution?: AvailableOpenResolution;
+      attempt?: OpenAttempt;
     },
   ): Promise<ProjectDocumentLiveOpenResult> {
     if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
       return { kind: "cancelled" };
+    const attempt = input.attempt ?? this.decide(input.projectId, input.documentId, false);
     const resolution =
-      input.attempt !== "retry" && input.resolution
-        ? input.resolution
+      attempt.kind === "request"
+        ? await attempt.resolution
         : await this.resolveIdentity(input.projectId, input.documentId);
     if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
       return { kind: "cancelled" };
@@ -310,7 +343,7 @@ export type OpenProjectDocument = (
 ) => Promise<OpenDocumentOutcome>;
 
 type NavigationAdapterDependencies = {
-  opener: Pick<ProjectDocumentLiveOpener, "resolveIdentity" | "replaceTransfer">;
+  opener: Pick<ProjectDocumentLiveOpener, "decide" | "replaceTransfer">;
   openTab(
     projectId: string,
     tab: ReturnType<typeof contextTabFromFile>,
@@ -386,6 +419,7 @@ export class ProjectDocumentNavigationAdapter {
       signal,
     }: OpenProjectDocumentRequest,
   ): Promise<OpenDocumentOutcome> {
+    markDocumentOpen("click", { documentId });
     const navigationIsCurrent =
       disposition === "current" ? this.dependencies.captureNavigation?.() : undefined;
     const token = disposition === "current" ? ++this.attempt : this.attempt;
@@ -423,9 +457,18 @@ export class ProjectDocumentNavigationAdapter {
           ) ?? undefined;
       }
 
-      let transfer: AvailableOpenResolution | undefined;
+      let attempt = this.dependencies.opener.decide(
+        projectId,
+        documentId,
+        record?.resource.content.kind === "exact",
+      );
       if (!identity) {
-        const resolution = await this.dependencies.opener.resolveIdentity(projectId, documentId);
+        const requested =
+          attempt.kind === "request"
+            ? attempt
+            : this.dependencies.opener.decide(projectId, documentId, false);
+        attempt = requested;
+        const resolution = await requested.resolution;
         if (!isCurrent()) return { kind: "cancelled" };
         if (resolution.kind !== "available") {
           return {
@@ -436,7 +479,6 @@ export class ProjectDocumentNavigationAdapter {
                 : "lookup-failed",
           };
         }
-        transfer = resolution;
         const scheme = schemeForEntry(resolution.entry);
         if (!scheme) return { kind: "refused", reason: "lookup-failed" };
         identity = {
@@ -466,7 +508,7 @@ export class ProjectDocumentNavigationAdapter {
         focus,
         isCurrent,
         canCommit,
-        transfer,
+        attempt,
       });
       if (committed.kind === "failed") return { kind: "refused", reason: "lookup-failed" };
       if (committed.kind === "no-viewer") return { kind: "refused", reason: "no-viewer" };
@@ -492,7 +534,7 @@ export class ProjectDocumentNavigationAdapter {
     focus?: true;
     isCurrent: () => boolean;
     canCommit: () => boolean;
-    transfer?: AvailableOpenResolution;
+    attempt: OpenAttempt;
   }): Promise<CommitResult> {
     const owner: ContextOwner = input.chatId
       ? { chatThreadId: input.chatId }
@@ -521,9 +563,15 @@ export class ProjectDocumentNavigationAdapter {
         if (placed.kind === "opened" && placed.tab.tabInstanceId)
           this.dependencies.opener.replaceTransfer(
             placed.tab.tabInstanceId,
-            input.transfer,
+            input.file.documentId,
+            input.attempt,
             "dock",
           );
+        if (placed.kind === "opened")
+          markDocumentOpen("route-commit", {
+            documentId: input.file.documentId,
+            attemptId: input.attempt.attemptId,
+          });
         return placed.kind === "opened"
           ? { kind: "applied", placement: "dock" }
           : { kind: "cancelled" };
@@ -552,10 +600,15 @@ export class ProjectDocumentNavigationAdapter {
           isCurrent: input.isCurrent,
           canCommit: input.canCommit,
           afterCommit: (installed) => {
+            markDocumentOpen("route-commit", {
+              documentId: input.file.documentId,
+              attemptId: input.attempt.attemptId,
+            });
             if (installed?.tabInstanceId) {
               this.dependencies.opener.replaceTransfer(
                 installed.tabInstanceId,
-                input.transfer,
+                input.file.documentId,
+                input.attempt,
                 "editor",
               );
               this.dependencies.reconcileInstalledTab?.(input.projectId, installed);

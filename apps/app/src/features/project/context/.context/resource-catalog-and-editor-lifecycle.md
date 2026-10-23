@@ -83,12 +83,11 @@ availability. Accepted navigation commits browser history and workspace state in
 one prepared operation. Returning to an empty Editor does not restore a closed
 document.
 
-When the resource boundary returns an exact initialized local session, it also
-returns verified-local readiness through `ContextTabSessionBoundary` and
-`ContextDocumentHost`. `EditorView` may bind that content without waiting for
-first server sync. Server-only sessions retain the first-sync horizon, and local
-readiness never claims remote acknowledgement; adoption and transport continue
-in the background on the same Y.Doc.
+When the resource boundary verifies an exact initialized local session, it
+confirms that content on the session itself. `EditorView` binds only after the
+session has confirmed content and settled local storage. Server-only sessions
+confirm content at first sync; confirmation never claims remote acknowledgement.
+Adoption and transport continue in the background on the same Y.Doc.
 
 A cached session is adopted into the registry at the document's current
 admission generation, which advances on any project mutation. Its persistence
@@ -108,10 +107,11 @@ A tab that loses its resource handle but keeps its document (a review launch
 re-opens it without one) keeps painting its cached session while the exact
 lookup re-probes; the boundary never drops to a skeleton for that identity flip.
 
-`ContextTabSessionBoundary` opens the ordinary live binding once its local
-session has been probed (`useLiveDocumentBinding`: open, bind, explicit retry).
-It takes a navigation lookup answer only when the answer was armed for its tab
-instance; local content winning discards that answer. It presents the live session in place of the cached one when that
+`ContextTabSessionBoundary` probes local content in parallel with the opener's
+one attempt (`useLiveDocumentBinding`: open, bind, explicit retry). It takes the
+attempt only when it was armed for its tab instance; local content winning
+discards a pending answer, and an exact-local expectation that fails starts one
+replacement request. It presents the live session in place of the cached one when that
 binding opens, and shows the session's own connection state. An availability
 recheck that returns terminal, deleted, or schema-mismatch releases the cached
 handle and its resource ownership lease rather than leaving the stale session

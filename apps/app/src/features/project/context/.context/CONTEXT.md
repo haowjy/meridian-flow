@@ -11,10 +11,12 @@ removal host. The selected-tab map is keyed by Work row id; project-scoped
 files retain the Editor's Work context.
 
 `ProjectDocumentNavigationAdapter` turns a known file identity into an Editor,
-dock, or background destination before content opens. An ID absent from the
-in-memory resource projection waits for one availability lookup; its available
-answer is consumed once by the installed tab instance. The destination alone
-opens local content, admits the live room, and presents Retry. Read-only Context
+dock, or background destination before content opens. At the click it creates
+one open attempt. A ready exact-local projection records that no request is
+needed; every other state starts the availability lookup before React commits.
+The attempt is consumed once by the installed tab instance while the local
+probe runs in parallel. The destination admits the live room and presents
+Retry. Read-only Context
 files still open viewer tabs without live Yjs admission. Background tabs do not
 carry lookup answers because they acquire content only when shown. Closing or
 replacing a destination discards its unconsumed answer.
@@ -116,9 +118,11 @@ TanStack query so reopening a signed preview can reuse its read.
 documents and navigates on click. It does not open a tab on mount. The tab
 strip's leading control (`showEditorRecents`) reaches it without closing a tab.
 The address requests a document; the displayed-props seam above decides what is visible
-while admission is pending or blocked. The address includes a local-document history
-pointer on `/editor`. Clearing that pointer leaves the working set intact, and
-Back returns to the document that was showing. Already on the chooser is a no-op.
+while admission is pending or blocked. Every door commit records a versioned
+document-identity pointer in history. Back, Forward, and reload bind the matching
+installed tab or recreate a missing tab by identity without resolving the readable
+address. A malformed or foreign pointer falls back to address resolution. Clearing
+the pointer leaves the working set intact. Already on the chooser is a no-op.
 Recording
 is not the navigation adapter's job: the document row materializes after the
 open intent, so a write there races persistence and is lost. The active editor

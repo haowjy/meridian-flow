@@ -2,8 +2,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type {
-  AvailableOpenResolution,
   LiveDocumentBinding,
+  OpenAttempt,
   ProjectDocumentLiveOpenResult,
 } from "./open-project-document";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
@@ -39,9 +39,9 @@ export function useLiveDocumentBinding({
   const opener = useProjectDocumentLiveOpener();
   const hostId = useRef(`${owner}:${++hostSequence}`);
   const attemptRef = useRef(0);
-  const firstResolution = useRef<{
+  const firstAttempt = useRef<{
     key: string;
-    value: AvailableOpenResolution | null;
+    value: OpenAttempt | null;
   } | null>(null);
   const [retryGeneration, setRetryGeneration] = useState(0);
   const [state, setState] = useState<LiveDocumentBindingState>(
@@ -58,12 +58,12 @@ export function useLiveDocumentBinding({
     let binding: LiveDocumentBinding | null = null;
     const bindingOwner = `${hostId.current}:attempt:${++attemptRef.current}`;
     const transferKey = `${tabInstanceId ?? "none"}:${documentId}`;
-    if (firstResolution.current?.key !== transferKey)
-      firstResolution.current = {
+    if (firstAttempt.current?.key !== transferKey)
+      firstAttempt.current = {
         key: transferKey,
         value: tabInstanceId ? opener.takeTransfer(tabInstanceId, documentId) : null,
       };
-    const initialResolution = firstResolution.current.value;
+    const initialAttempt = firstAttempt.current.value;
     setState({ kind: "opening", documentId });
     void (async () => {
       try {
@@ -72,8 +72,7 @@ export function useLiveDocumentBinding({
           projectId,
           documentId,
           signal: abort.signal,
-          attempt: retryGeneration === 0 ? "first" : "retry",
-          resolution: retryGeneration === 0 ? (initialResolution ?? undefined) : undefined,
+          attempt: retryGeneration === 0 ? (initialAttempt ?? undefined) : undefined,
         });
         // Account shutdown cancels the open without aborting this effect; that is teardown, not a failure.
         if (opened.kind === "cancelled") return;

@@ -217,26 +217,18 @@ export function prepareEditorDestination(
         ? eligible.find((tab) => contextTabMatchesRoute(tab, { ...target, workId: resolvedWorkId }))
         : undefined);
   const selected = preparedTab ?? tab;
-  // A locally created document keeps its stable selection even when its
-  // readable address is reused or its background placement is rejected.
-  if (
-    target.path === "" ||
-    (selected?.kind === "tracked" && selected.origin === "local-resource")
-  ) {
+  // Every door commit records the identity it opened. The readable address is
+  // presentation; history must not rediscover the document through that path.
+  if (selected) {
     const tabs = preparedTab
       ? [...workspace.tabs.filter((tab) => !matchesTabInstance(tab, preparedTab)), preparedTab]
       : workspace.tabs;
-    if (
-      !selected?.resourceHandle ||
-      (selected.kind !== "new" &&
-        !(selected.kind === "tracked" && selected.origin === "local-resource"))
-    )
-      throw new Error("Local document is unavailable");
     const pointer = {
-      version: 2,
+      version: 3,
       accountId: accountId,
       projectId,
-      resourceHandle: selected.resourceHandle,
+      documentId: selected.documentId,
+      ...(selected.resourceHandle ? { resourceHandle: selected.resourceHandle } : {}),
     };
     // Pointer identity is ready now; Editor Work membership waits for resolution.
     const resolved = resolvedWorkId
@@ -249,7 +241,8 @@ export function prepareEditorDestination(
           tabs,
         })
       : null;
-    if (resolved && resolved.kind !== "resolved") throw new Error("Local document is unavailable");
+    if (resolved && resolved.kind !== "resolved")
+      throw new Error("Document identity is unavailable");
     state = { meridianProjectSelection: pointer };
   }
   const destination: ProjectDestination = target.path

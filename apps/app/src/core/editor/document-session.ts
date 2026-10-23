@@ -51,6 +51,7 @@ import type { Editor } from "@tiptap/core";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import type * as Y from "yjs";
+import { markDocumentOpen } from "./document-open-performance";
 import {
   commitContentInitialization,
   readContentInitialization,
@@ -297,6 +298,7 @@ export class DocumentSession {
     this.markerStore = new SessionMarkerStore(ownUserId);
     this.awareness = new Awareness(this.document);
     this.localPresence = createLocalPresence(this.awareness);
+    markDocumentOpen("session-created", { documentId: this.documentId });
     if (persistence.kind === "indexeddb") {
       this.persistence = new IndexeddbPersistence(persistence.key, this.document);
     } else {
@@ -384,7 +386,10 @@ export class DocumentSession {
     void this.watchTransportSync(this.transportProvider);
     const provider = this.transportProvider;
     void this.localSettledPromise.then(() => {
-      if (!this.destroyed && provider === this.transportProvider) provider.attach?.();
+      if (!this.destroyed && provider === this.transportProvider) {
+        markDocumentOpen("provider-attach", { documentId: this.documentId });
+        provider.attach?.();
+      }
     });
     this.recomputeStatus();
     this.emit();
@@ -811,6 +816,7 @@ export class DocumentSession {
   private settleLocalStorage(outcome: LocalStorageOutcome): void {
     if (this.localStorageOutcome !== null) return;
     this.localStorageOutcome = outcome;
+    markDocumentOpen("local-settled", { documentId: this.documentId, outcome });
     this.resolveLocalSettled(outcome);
     this.recomputeStatus();
   }
@@ -839,6 +845,7 @@ export class DocumentSession {
     await provider.whenSynced;
     if (this.destroyed || provider !== this.transportProvider) return;
     this.transportInitialSyncComplete = true;
+    markDocumentOpen("remote-ready", { documentId: this.documentId });
     this.confirmContent("first-sync");
     if (provider.whenSynced) this.establishContentInitialization();
     clearClientSchemaReloadGuard(this.roomKey);
@@ -848,6 +855,7 @@ export class DocumentSession {
   private confirmContent(source: ContentSource): void {
     if (this.contentSource !== null) return;
     this.contentSource = source;
+    markDocumentOpen("content-confirmed", { documentId: this.documentId, source });
     this.resolveContentConfirmed(source);
     this.emit();
   }

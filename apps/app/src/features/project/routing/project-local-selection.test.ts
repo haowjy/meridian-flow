@@ -16,9 +16,10 @@ const input = {
   hydrated: true,
   tabs: [tab],
   pointer: {
-    version: 2,
+    version: 3,
     accountId: "account",
     projectId: "project",
+    documentId: "draft-a",
     resourceHandle: "resource-draft-a",
   },
 };
@@ -26,7 +27,6 @@ describe("local document history", () => {
   it("keeps absent distinct from stale, foreign, malformed, pointers", () => {
     expect(resolveLocalDocumentSelection({ ...input, pointer: undefined }).kind).toBe("absent");
     for (const change of [
-      { tabs: [] },
       { accountId: "other" },
       { projectId: "other" },
       { pointer: null },
@@ -34,13 +34,15 @@ describe("local document history", () => {
     ])
       expect(resolveLocalDocumentSelection({ ...input, ...change }).kind).toBe("unavailable");
   });
-  it("follows a reminted document through its stable resource handle", () => {
-    const reminted = { ...tab, documentId: "draft-b" };
-    expect(resolveLocalDocumentSelection({ ...input, tabs: [reminted] })).toMatchObject({
-      kind: "resolved",
-      documentId: "draft-b",
-      owner: { tab: reminted },
+  it("keeps a missing tab as an identity-open claim", () => {
+    expect(resolveLocalDocumentSelection({ ...input, tabs: [] })).toEqual({
+      kind: "identity",
+      documentId: "draft-a",
     });
+  });
+  it("rejects a resource lineage that no longer matches the document identity", () => {
+    const reminted = { ...tab, documentId: "draft-b" };
+    expect(resolveLocalDocumentSelection({ ...input, tabs: [reminted] }).kind).toBe("unavailable");
   });
 });
 

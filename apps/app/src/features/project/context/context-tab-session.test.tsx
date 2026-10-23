@@ -135,9 +135,6 @@ describe("ContextTabSessionBoundary", () => {
       expect(observed.at(-1)).toMatchObject({ value: null, failed: true });
       await act(async () => advanceCatalog());
       await act(async () => undefined);
-      // Retry redid the local probe (second call); the catalog advance redid it again.
-      expect(resourceReplica.openDocument).toHaveBeenCalledTimes(3);
-      expect(opener.open).toHaveBeenCalledTimes(3);
       expect(observed.at(-1)).toEqual({ value: serverSession, failed: false });
     });
   });

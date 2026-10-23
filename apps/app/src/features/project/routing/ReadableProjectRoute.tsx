@@ -43,7 +43,10 @@ import {
   useDraftCommandOwner,
 } from "../context/account-feature-context";
 import { routeTargetForTab } from "../context/context-removal-planner";
-import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
+import {
+  ProjectDocumentNavigationProvider,
+  useOpenProjectDocument,
+} from "../context/open-project-document";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useRemovalRecord } from "../context/use-removal-record";
 import { ProjectView } from "../ProjectView";
@@ -138,6 +141,23 @@ export function ReadableProjectRoute(props: ReadableProjectRouteProps) {
     </DocumentSwitchFailureProvider>
   );
 }
+
+/** Recreate a history entry's missing working-set tab by its recorded identity. */
+function ProjectHistoryIdentityOpen({
+  projectId,
+  documentId,
+}: {
+  projectId: string;
+  documentId: string;
+}) {
+  const openDocument = useOpenProjectDocument(projectId);
+  useEffect(() => {
+    const abort = new AbortController();
+    void openDocument({ documentId, signal: abort.signal });
+    return () => abort.abort();
+  }, [documentId, openDocument]);
+  return null;
+}
 function ReadableProjectDestination({
   project,
   entryHydration,
@@ -230,6 +250,8 @@ function ReadableProjectDestination({
     tabs: workspaceTabs,
   });
   const localDocumentId = localDocument.kind === "resolved" ? localDocument.documentId : undefined;
+  const historyDocumentId =
+    localDocument.kind === "identity" ? localDocument.documentId : undefined;
   const localResourceHandle =
     localDocument.kind === "resolved" ? localDocument.owner.tab.resourceHandle : undefined;
   const localPointer =
@@ -390,7 +412,7 @@ function ReadableProjectDestination({
     documentAddressQueryOptions(
       {
         projectId,
-        destination: documentDestination,
+        destination: historyDocumentId ? null : documentDestination,
         owner: addressOwner,
         binding: addressBinding,
         workResolved: editorWork.status === "present",
@@ -593,9 +615,11 @@ function ReadableProjectDestination({
   }, [documentLookup.refetch, refetchAddressCatalog, editorDrafts.refetch]);
   const editorIssue = resourceDestination
     ? "resource-viewing"
-    : ((localDocument.kind === "loading" || localDocument.kind === "unavailable"
-        ? localDocument.kind
-        : undefined) ??
+    : ((localDocument.kind === "identity"
+        ? "loading"
+        : localDocument.kind === "loading" || localDocument.kind === "unavailable"
+          ? localDocument.kind
+          : undefined) ??
       routeWorkIssue(editorWork) ??
       // A locally created document wins over the server address lookup.
       (localDocumentId
@@ -898,7 +922,10 @@ function ReadableProjectDestination({
           projectId={projectId}
           captureNavigation={captureNavigation}
         >
-          {documentDestination && !localDocumentId ? (
+          {historyDocumentId ? (
+            <ProjectHistoryIdentityOpen projectId={projectId} documentId={historyDocumentId} />
+          ) : null}
+          {documentDestination && localDocument.kind === "absent" ? (
             <ProjectAddressDocument
               projectId={projectId}
               href={location.href}
