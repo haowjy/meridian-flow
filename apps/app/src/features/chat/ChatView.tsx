@@ -26,6 +26,8 @@ import {
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import {
+  type ChatCard,
+  type ChatCards,
   type ChatReferenceScope,
   chatCards,
   hiddenWriterTurns,
@@ -39,7 +41,6 @@ import {
   waitingWriterMessages,
 } from "@meridian/thread-client";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useReducer, useRef } from "react";
-import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useLineage } from "@/client/query/useLineageTitle";
@@ -50,12 +51,7 @@ import {
   useThreadActions,
   useThreadStore,
 } from "@/client/stores";
-import {
-  Composer,
-  type ComposerChatCommand,
-  type ComposerHandle,
-  type ComposerSubmitEnvelope,
-} from "@/components/app/composer";
+import type { ComposerChatCommand, ComposerHandle } from "@/components/app/composer";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { LinkFollowDialog } from "@/features/links";
@@ -64,18 +60,14 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 import {
-  useCanOpenChatReference,
-  useOpenChatDocument,
-} from "@/features/project/context/open-chat-document";
-import {
   displayedChatThreadId,
   useChatNavigation,
 } from "@/features/project/routing/chat-navigation";
 import { defaultThreadTitle, displayThreadTitle } from "@/lib/thread-title";
 import { prewarmMarkdownStreaming } from "@/rich-content/markdown-stream-service";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
-import { AnchoredCards, type ChatCardHandlers, ChatCardsProvider } from "./ChatCards";
-import { ChatComposerToolbar } from "./ChatComposerToolbar";
+import { type ChatCardHandlers, ChatCardsProvider } from "./ChatCards";
+import { ChatComposer } from "./ChatComposer";
 import { ChatContextNavigationProvider } from "./ChatContextNavigation";
 import { ChatSurface } from "./ChatSurface";
 import { useOpenChatThread } from "./ChatThreadNavigation";
@@ -84,7 +76,6 @@ import { chatLineageId } from "./chat-scratch-owner";
 import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
 import { useRegisterChatComposer } from "./composer-insertion";
 import { composerRun } from "./composer-run";
-import { DraftDock } from "./DraftDock";
 import {
   canDeriveFrom,
   type TurnDerivation,
@@ -113,13 +104,13 @@ import { useChatLinkFollowing } from "./useChatLinkFollowing";
 import { useChatStop } from "./useChatStop";
 import { useChatSubmissions } from "./useChatSubmissions";
 import { useChatThreadSession } from "./useChatThreadSession";
-import { useComposerSessionDraft } from "./useComposerSessionDraft";
-import { useDraftDock } from "./useDraftDock";
+import { useCommittedEvent } from "./useCommittedEvent";
 import { useHandBack } from "./useHandBack";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { useQueueControls } from "./useQueueControls";
 import { useReplyRetry } from "./useReplyRetry";
 import { useSendNow } from "./useSendNow";
+import { useShared } from "./useShared";
 import { useThreadActivity } from "./useThreadActivity";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
@@ -169,8 +160,6 @@ export function ChatView({
   composerStrip,
   active = true,
 }: ChatViewProps) {
-  const openReferenceDocument = useOpenChatDocument(projectId);
-  const canOpenReference = useCanOpenChatReference();
   const actions = useThreadActions();
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
   const composerRef = useRef<ComposerHandle>(null);
@@ -184,7 +173,6 @@ export function ChatView({
 
   const controller = useMeridianAgent();
   const accountId = useAccountId();
-  const draft = useComposerSessionDraft(accountId, { kind: "chat", id: threadId });
   const accountSignal = useAccountEpochSignal();
   const openThread = useOpenChatThread();
   const navigation = useChatNavigation();
@@ -403,7 +391,7 @@ export function ChatView({
   );
   // Every chat failure the writer sees comes from here; the rest of this component draws and
   // announces what `chatCards` decided.
-  const failureCards = useMemo(
+  const projectedFailureCards = useMemo(
     () =>
       chatCards({
         threadId,
@@ -430,6 +418,12 @@ export function ChatView({
       normalized,
     ],
   );
+  const sharedCards = useShared(projectedFailureCards.cards, sameCards);
+  const sharedAnchoredTurnIds = useShared(projectedFailureCards.anchoredTurnIds, sameStringSet);
+  const failureCards = useMemo<ChatCards>(
+    () => ({ cards: sharedCards, anchoredTurnIds: sharedAnchoredTurnIds }),
+    [sharedAnchoredTurnIds, sharedCards],
+  );
   useChatCardAnnouncer(threadId, failureCards.cards, historySettled);
   const composerCards = useMemo(
     () => failureCards.cards.filter((card) => card.anchor === "composer"),
@@ -441,62 +435,92 @@ export function ChatView({
   const { operation: handBackOperation } = handBack;
   const { retry: retrySendNow, dismiss: dismissSendNow } = sendNow;
   const { open: openSettings } = settings;
-  const cardHandlers = useMemo<ChatCardHandlers>(() => {
-    const turnOf = (turnId: string) => turns.find((turn) => turn.id === turnId);
-    return {
-      retryReply: (turnId) => {
-        const turn = turnOf(turnId);
-        if (!turn) return;
-        // Retry leaves with this row's error; keep focus in the transcript and follow the new reply.
-        chatSurfaceRef.current
-          ?.querySelector<HTMLElement>('[role="log"]')
-          ?.focus({ preventScroll: true });
-        requestTailFollow();
-        retryReplyPress(turn);
-      },
-      // A failed compaction is retried by asking again: `/compact` with the instructions it had.
-      tryAgainCompaction: (turnId) => {
-        const turn = turnOf(turnId);
-        if (!turn) return;
-        const instructions = readCompactionFacts(turn).instructions;
-        requestTailFollow();
-        enqueueControl(instructions ? { kind: "compact", instructions } : { kind: "compact" });
-      },
-      retryLost: (turnId) => {
-        const turn = turnOf(turnId);
-        if (!turn) return;
-        if (isHandoffSeed(turn)) retryBrief(turn);
-        else retryReplyPress(turn);
-      },
-      retryBriefStop: stopBrief,
-      handBack: {
-        retry: (requestId) => void handBackOperation.retry(requestId),
-        dismiss: (requestId) => handBackOperation.dismiss(requestId),
-      },
-      sendNow: { retry: retrySendNow, dismiss: dismissSendNow },
-      control: {
-        retry: retryControl,
-        stop: (controlId) => {
-          const control = queuedControls.find((candidate) => candidate.id === controlId);
+  const handleCardAction = useCommittedEvent(
+    (
+      action:
+        | { kind: "retry-reply" | "compaction" | "lost" | "brief-stop"; id: string }
+        | { kind: "hand-back-retry" | "hand-back-dismiss"; id: string }
+        | { kind: "control-retry" | "control-stop"; id: string }
+        | { kind: "send-now-retry" | "send-now-dismiss" | "add-usage" },
+    ) => {
+      const turnOf = (turnId: string) => turns.find((turn) => turn.id === turnId);
+      switch (action.kind) {
+        case "retry-reply": {
+          const turn = turnOf(action.id);
+          if (!turn) return;
+          // Retry leaves with this row's error; keep focus in the transcript and follow the new reply.
+          chatSurfaceRef.current
+            ?.querySelector<HTMLElement>('[role="log"]')
+            ?.focus({ preventScroll: true });
+          requestTailFollow();
+          retryReplyPress(turn);
+          return;
+        }
+        case "compaction": {
+          const turn = turnOf(action.id);
+          if (!turn) return;
+          const instructions = readCompactionFacts(turn).instructions;
+          requestTailFollow();
+          enqueueControl(instructions ? { kind: "compact", instructions } : { kind: "compact" });
+          return;
+        }
+        case "lost": {
+          const turn = turnOf(action.id);
+          if (!turn) return;
+          if (isHandoffSeed(turn)) retryBrief(turn);
+          else retryReplyPress(turn);
+          return;
+        }
+        case "brief-stop":
+          stopBrief(action.id);
+          return;
+        case "hand-back-retry":
+          void handBackOperation.retry(action.id);
+          return;
+        case "hand-back-dismiss":
+          handBackOperation.dismiss(action.id);
+          return;
+        case "send-now-retry":
+          retrySendNow();
+          return;
+        case "send-now-dismiss":
+          dismissSendNow();
+          return;
+        case "control-retry":
+          retryControl(action.id);
+          return;
+        case "control-stop": {
+          const control = queuedControls.find((candidate) => candidate.id === action.id);
           if (control) withdrawControl(control);
-        },
+          return;
+        }
+        case "add-usage":
+          openSettings("usage");
+      }
+    },
+  );
+  const cardHandlers = useMemo<ChatCardHandlers>(
+    () => ({
+      retryReply: (id) => handleCardAction({ kind: "retry-reply", id }),
+      tryAgainCompaction: (id) => handleCardAction({ kind: "compaction", id }),
+      retryLost: (id) => handleCardAction({ kind: "lost", id }),
+      retryBriefStop: (id) => handleCardAction({ kind: "brief-stop", id }),
+      handBack: {
+        retry: (id) => handleCardAction({ kind: "hand-back-retry", id }),
+        dismiss: (id) => handleCardAction({ kind: "hand-back-dismiss", id }),
       },
-      addUsage: () => openSettings("usage"),
-    };
-  }, [
-    dismissSendNow,
-    enqueueControl,
-    handBackOperation,
-    openSettings,
-    queuedControls,
-    retryBrief,
-    retryControl,
-    retryReplyPress,
-    retrySendNow,
-    stopBrief,
-    turns,
-    withdrawControl,
-  ]);
+      sendNow: {
+        retry: () => handleCardAction({ kind: "send-now-retry" }),
+        dismiss: () => handleCardAction({ kind: "send-now-dismiss" }),
+      },
+      control: {
+        retry: (id) => handleCardAction({ kind: "control-retry", id }),
+        stop: (id) => handleCardAction({ kind: "control-stop", id }),
+      },
+      addUsage: () => handleCardAction({ kind: "add-usage" }),
+    }),
+    [handleCardAction],
+  );
 
   // Every decision about which rows the writer sees runs in the view model. A turn a card is
   // anchored on keeps its row.
@@ -529,8 +553,8 @@ export function ChatView({
     canOpen: openThread !== null,
   });
   const inheritedView = inherited.view;
-  const turnDerivation = useMemo<TurnDerivation | null>(() => {
-    if (!canDerive || !activeThread || !openThread) return null;
+  const forkTurn = useCommittedEvent((originTurnId: string) => {
+    if (!activeThread || !openThread) return;
     const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
     const base = {
       projectId,
@@ -539,54 +563,56 @@ export function ChatView({
       workId: activeWork?.id ?? activeThread.workId,
       aiWriteMode: activeThread.aiWriteMode,
     };
+    startDerivation(
+      {
+        ...base,
+        kind: "fork",
+        originTurnId,
+        agent: null,
+        agentName: activeThread.agentName,
+      },
+      {
+        ...deps,
+        source: activeThread,
+        inherited: optimisticForkPrefix({
+          source: activeThread,
+          sourceInherited: inheritedView,
+          localTurns: storedTurns,
+          cutoffTurnId: originTurnId,
+        }),
+        open: openThread,
+      },
+    );
+  });
+  const handoffTurn = useCommittedEvent(
+    (originTurnId: string, agent: Parameters<NonNullable<TurnDerivation>["handoff"]>[1]) => {
+      if (!activeThread || !openThread) return;
+      const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
+      const base = {
+        projectId,
+        sourceThreadId: threadId,
+        sourceTitle: activeThread.title,
+        workId: activeWork?.id ?? activeThread.workId,
+        aiWriteMode: activeThread.aiWriteMode,
+      };
+      startDerivation(
+        { ...base, kind: "handoff", originTurnId, agent, agentName: agent.name },
+        { ...deps, source: activeThread, inherited: null, open: openThread },
+      );
+    },
+  );
+  const turnDerivation = useMemo<TurnDerivation | null>(() => {
+    if (!canDerive || !activeThread || !openThread) return null;
     return {
       projectId,
       sourceAgent: {
         name: activeThread.agentName,
         definitionRevisionId: activeThread.agentDefinitionRevisionId,
       },
-      fork: (originTurnId) => {
-        startDerivation(
-          {
-            ...base,
-            kind: "fork",
-            originTurnId,
-            agent: null,
-            agentName: activeThread.agentName,
-          },
-          {
-            ...deps,
-            source: activeThread,
-            inherited: optimisticForkPrefix({
-              source: activeThread,
-              sourceInherited: inheritedView,
-              localTurns: storedTurns,
-              cutoffTurnId: originTurnId,
-            }),
-            open: openThread,
-          },
-        );
-      },
-      handoff: (originTurnId, agent) => {
-        startDerivation(
-          { ...base, kind: "handoff", originTurnId, agent, agentName: agent.name },
-          { ...deps, source: activeThread, inherited: null, open: openThread },
-        );
-      },
+      fork: forkTurn,
+      handoff: handoffTurn,
     };
-  }, [
-    accountId,
-    accountSignal,
-    actions,
-    activeThread,
-    activeWork?.id,
-    canDerive,
-    inheritedView,
-    openThread,
-    projectId,
-    storedTurns,
-    threadId,
-  ]);
+  }, [activeThread, canDerive, forkTurn, handoffTurn, openThread, projectId]);
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
@@ -605,26 +631,26 @@ export function ChatView({
   // auto-apply streams never light the dock.
   const generating =
     isStreaming && (latestAssistantTurn?.writeMode ?? activeThread?.aiWriteMode) === "draft";
-  const dock = useDraftDock({ threadId, generating, active });
+  const handleSubmit = useCommittedEvent(
+    async (envelope: Parameters<typeof submissions.submit>[0]) => {
+      replyRetry.clearRefused();
+      const recorded = await submissions.submit(envelope);
+      if (recorded) requestTailFollow();
+      return recorded;
+    },
+  );
 
-  async function handleSubmit(envelope: ComposerSubmitEnvelope) {
-    replyRetry.clearRefused();
-    const recorded = await submissions.submit(envelope);
-    if (recorded) requestTailFollow();
-    return recorded;
-  }
-
-  function handleStop() {
+  const handleStop = useCommittedEvent(() => {
     // A brief being written holds the chat with no run: its own Stop. Everything else, a reply,
     // a compaction, the gap between replies, is the chat's Stop, decided on the server, and
     // the waiting messages it hands back arrive in the composer.
     if (run?.kind === "placeholder") brief.stop(run.turn.id);
     else chatStop.stop();
-  }
+  });
+  const handleWriteModeChange = useCommittedEvent(controls.switchWriteMode);
 
-  const handleRespondToInterrupt = useCallback(
-    (request: InterruptRespondRequest) => controller.respondInterrupt(request),
-    [controller],
+  const handleRespondToInterrupt = useCommittedEvent((request: InterruptRespondRequest) =>
+    controller.respondInterrupt(request),
   );
 
   const links = useChatLinkFollowing({ projectId, activeThread, activeWork, active });
@@ -641,62 +667,28 @@ export function ChatView({
               title={pageTitle}
               surfaceRef={chatSurfaceRef}
               footer={
-                <div data-debug-composer={threadId}>
-                  <Composer
-                    cards={
-                      composerCards.length > 0 ? <AnchoredCards anchor="composer" /> : undefined
-                    }
-                    key={draft.key}
-                    initialDraft={draft.initialDraft}
-                    onDraftChange={draft.updateDraft}
-                    onOpenReference={(reference) => {
-                      if (!canOpenReference(reference.uri)) return;
-                      void openReferenceDocument({
-                        documentId: reference.documentId,
-                        disposition: "current",
-                      });
-                    }}
-                    ref={composerRef}
-                    variant="pinned"
-                    attached={
-                      <>
-                        {composerStrip ? (
-                          // The composer's own border and radius, open at the bottom: the
-                          // composer's top border is the strip's lower edge, so the two
-                          // read as one unit. Inset like the draft dock below it.
-                          <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
-                            {composerStrip}
-                          </div>
-                        ) : null}
-                        {/* The dock strip sits BEHIND (below) the composer — narrower via
-                        mx-2, top corners rounded, jade-tinted background. The composer
-                        always keeps its own border and overlaps the strip's edge. */}
-                        <DraftDock dock={dock} />
-                      </>
-                    }
-                    running={running}
-                    stopStatus={chatStop.status}
-                    referenceCatalog={referenceCatalog}
-                    availableSkills={availableSkills.skills}
-                    commands={chatCommands}
-                    uploadPort={uploadIntakePort}
-                    uploadScope={{ kind: "chat", projectId, chatId: topChat.chatId }}
-                    onSubmit={handleSubmit}
-                    onStop={handleStop}
-                    toolbarLeft={
-                      activeWork ? (
-                        <ChatComposerToolbar
-                          projectId={projectId}
-                          threadId={threadId}
-                          work={activeWork}
-                          agentName={composerAgentName}
-                          writeMode={controls.writeMode}
-                          onWriteModeChange={controls.switchWriteMode}
-                        />
-                      ) : undefined
-                    }
-                  />
-                </div>
+                <ChatComposer
+                  ref={composerRef}
+                  threadId={threadId}
+                  projectId={projectId}
+                  accountId={accountId}
+                  chatId={topChat.chatId}
+                  active={active}
+                  activeWork={activeWork}
+                  agentName={composerAgentName}
+                  running={running}
+                  stopStatus={chatStop.status}
+                  generating={generating}
+                  writeMode={controls.writeMode}
+                  onWriteModeChange={handleWriteModeChange}
+                  composerStrip={composerStrip}
+                  availableSkills={availableSkills.skills}
+                  referenceCatalog={referenceCatalog}
+                  chatCommands={chatCommands}
+                  hasComposerCards={composerCards.length > 0}
+                  onSubmit={handleSubmit}
+                  onStop={handleStop}
+                />
               }
             >
               <TurnDerivationProvider value={turnDerivation}>
@@ -735,4 +727,40 @@ export function ChatView({
       </TranscriptLinkNavigationContext.Provider>
     </ChatCardsProvider>
   );
+}
+
+function sameCards(left: readonly ChatCard[], right: readonly ChatCard[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((card, index) => {
+      const other = right[index];
+      if (!other) return false;
+      return (
+        card.key === other.key &&
+        card.copy === other.copy &&
+        card.action === other.action &&
+        card.count === other.count &&
+        card.text === other.text &&
+        card.requestId === other.requestId &&
+        sameCardAnchor(card.anchor, other.anchor) &&
+        card.failure.category === other.failure.category &&
+        card.failure.source === other.failure.source &&
+        card.failure.actionable === other.failure.actionable &&
+        card.failure.cause.code === other.failure.cause.code &&
+        card.failure.cause.reason === other.failure.cause.reason &&
+        card.failure.cause.status === other.failure.cause.status
+      );
+    })
+  );
+}
+
+function sameCardAnchor(left: ChatCard["anchor"], right: ChatCard["anchor"]): boolean {
+  if (typeof left === "string" || typeof right === "string") return left === right;
+  if ("turn" in left) return "turn" in right && left.turn === right.turn;
+  if ("message" in left) return "message" in right && left.message === right.message;
+  return "queuedControl" in right && left.queuedControl === right.queuedControl;
+}
+
+function sameStringSet(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+  return left.size === right.size && [...left].every((value) => right.has(value));
 }
