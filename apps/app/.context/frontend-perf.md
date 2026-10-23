@@ -32,9 +32,9 @@ editor or collaboration dependencies to the matching bucket.
 Chapter-length streaming is O(n) per token if the whole answer re-parses and
 the transcript re-layouts on every chunk.
 
-1. Keep the canonical renderer's source-keyed settled-block cache. Reparse only
-   the live tail at conservative blank-line boundaries; throttle open-fence
-   highlighting without delaying fresh text.
+1. Parse each live text block as one canonical document in a Web Worker. Reuse
+   the worker's final snapshot when that source settles, cache settled documents
+   by their full source, and preserve unchanged node instances across updates.
 2. Coalesce append-only text and reasoning deltas into one store update per
    animation frame (`StreamDeltaCoalescer`). Any other event, or a delta for a
    different message, flushes first.
