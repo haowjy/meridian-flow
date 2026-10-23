@@ -1,0 +1,51 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`assistant clipboard contract > code 1`] = `
+"<pre><code>const answer = 42;
+</code></pre>"
+`;
+
+exports[`assistant clipboard contract > link 1`] = `"<p><a href="https://example.com/">website</a></p>"`;
+
+exports[`assistant clipboard contract > lists 1`] = `
+"<ul>
+<li>first</li>
+<li>second</li>
+</ul>
+<ol>
+<li>one</li>
+<li>two</li>
+</ol>"
+`;
+
+exports[`assistant clipboard contract > mermaid 1`] = `
+"<pre><code>graph TD
+A --> B
+</code></pre>"
+`;
+
+exports[`assistant clipboard contract > paragraphs 1`] = `
+"<p>First paragraph.</p>
+<p>Second <strong>paragraph</strong>.</p>"
+`;
+
+exports[`assistant clipboard contract > reference 1`] = `"<p>Chapter one</p>"`;
+
+exports[`assistant clipboard contract > skill 1`] = `"<p>Use /outline now.</p>"`;
+
+exports[`assistant clipboard contract > table 1`] = `
+"
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>A</th><th>B</th></tr></thead><tbody><tr><td>one</td><td>two</td></tr></tbody></table>"
+`;

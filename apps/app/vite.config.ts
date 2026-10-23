@@ -10,13 +10,13 @@ import { defineConfig, loadEnv } from "vite";
 
 import { apiHttpDevProxyPlugin } from "./dev/api-http-dev-proxy-plugin";
 import { createPortlessHttpsAgent, resolvePortlessServerOrigin } from "./dev/portless-dev-helpers";
-import { linguiMacroBabelPlugin, shikiSsrExternalPlugin } from "./dev/vite-plugins";
+import { linguiMacroBabelPlugin } from "./dev/vite-plugins";
 import { readOptionalEnvString } from "./src/core/env";
 import {
   resolveApiDevOriginFallback,
   resolveApiDevOriginForAppHost,
 } from "./src/core/transport/dev-transport";
-import { APP_SSR_EXTERNAL, APP_SSR_NO_EXTERNAL } from "./src/server/ssr-no-external";
+import { APP_SSR_NO_EXTERNAL } from "./src/server/ssr-no-external";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const repoLogsDir = path.join(repoRoot, "logs");
@@ -75,7 +75,6 @@ export default defineConfig(({ mode }) => {
       tsconfigPaths: true,
     },
     plugins: [
-      shikiSsrExternalPlugin(),
       apiHttpDevProxyPlugin(apiDevOrigin, portlessHttpsAgent),
       linguiMacroBabelPlugin(),
       tailwindcss(),
@@ -92,7 +91,6 @@ export default defineConfig(({ mode }) => {
       ssr: {
         resolve: {
           noExternal: APP_SSR_NO_EXTERNAL,
-          external: APP_SSR_EXTERNAL,
         },
       },
     },
