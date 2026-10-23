@@ -5,7 +5,14 @@ import type * as Y from "yjs";
 import type { DraftSnapshot } from "./draft-store.js";
 import type { InverseDocument } from "./turn-inverse-service.js";
 
-export type LiveInverseDestination = { kind: "live"; view: Y.Doc };
+export type LiveInverseDestination = {
+  kind: "live";
+  view: Y.Doc;
+  /** A live file owned by an archived or deleted Work is not writable. */
+  frozen: boolean;
+  /** Live removal does not close an active draft that survived it (D79). */
+  removed: boolean;
+};
 export type ActiveInverseDestination = {
   kind: "draft";
   frozen: boolean;
@@ -37,9 +44,10 @@ export function createInverseDestinationResolver(
   document: InverseDocument,
   occupancy: ReadonlyMap<BranchId, string>,
   branchAvailability: ReadonlyMap<BranchId, { frozen: boolean }>,
+  liveAvailability: { frozen: boolean; removed: boolean },
 ): Pick<InverseDocument, "destinationOf" | "destinationForBranch"> {
   const drafts = new Map<string, InverseDestination>();
-  const live: LiveInverseDestination = { kind: "live", view: document.live };
+  const live: LiveInverseDestination = { kind: "live", view: document.live, ...liveAvailability };
   const fromDraft = (draftId: string): InverseDestination => {
     const cached = drafts.get(draftId);
     if (cached) return cached;

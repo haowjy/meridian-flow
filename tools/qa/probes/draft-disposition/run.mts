@@ -168,10 +168,8 @@ try {
   const liveBefore = await h.liveText(applied.documentId);
   const undoResult = await applied.command("undo");
   observe("undo applied", { status: undoResult.status, message: undoResult.message });
-  assert.equal(undoResult.status, "cant_undo_applied");
-  const appliedResult = await applied.command("revert");
-  observe("revert applied", { status: appliedResult.status, message: appliedResult.message });
-  assert.equal(appliedResult.status, "success");
+  assert.equal(undoResult.status, "success");
+  assert.match(undoResult.message, /reverted:/);
   assert.equal(await h.liveText(applied.documentId), liveBefore);
   assert.notEqual((await h.readDraft(applied.draftId)).text, liveBefore);
   const afterRevert = await read(applied.draftId);

@@ -119,7 +119,10 @@ type Dependencies = {
   removal: DocumentRemoval;
   arrivals?: Pick<DocumentArrivals, "settle">;
   catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
-  fileAccess: Pick<FileAccess, "authorizeAt" | "authorize" | "confirmEdit">;
+  fileAccess: Pick<
+    FileAccess,
+    "authorizeAt" | "authorize" | "confirmEdit" | "destinationAvailability"
+  >;
 };
 
 export function createDrizzleTurnInverseService(input: Dependencies) {
@@ -283,6 +286,20 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const documents: InverseDocument[] = [];
       const heads = new Map<DocumentId, number>();
       const removals = await readRemovalRecords(db(), ids);
+      const liveAvailability = new Map(
+        await Promise.all(
+          ids.map(
+            async (documentId) =>
+              [
+                documentId,
+                await input.fileAccess.destinationAvailability(
+                  { kind: "document", documentId },
+                  { kind: "live" },
+                ),
+              ] as const,
+          ),
+        ),
+      );
       try {
         for (const documentId of ids) {
           const removal = removals.get(documentId) ?? null;
@@ -351,6 +368,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             tree: documentTree,
             treeStates: states.get(documentId) ?? { live: null, branches: new Map() },
             drafts: new Map(),
+            excerptViews: new Map(),
             destinationOf: () => {
               throw new Error("Inverse destinations are resolved after draft capture");
             },
@@ -392,7 +410,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           document.drafts = drafts;
           Object.assign(
             document,
-            createInverseDestinationResolver(document, occupancy, branchAvailability),
+            createInverseDestinationResolver(document, occupancy, branchAvailability, {
+              frozen: liveAvailability.get(documentId)?.frozen ?? false,
+              removed: removal !== null,
+            }),
           );
         }
       } catch (cause) {
@@ -530,17 +551,17 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         destination.kind === "draft" && destination.state === "gone"
           ? document.live
           : destination.view;
-      const own = new Y.Doc({ gc: false });
-      try {
-        Y.applyUpdate(own, Y.encodeStateAsUpdate(doc));
-        Y.applyUpdate(own, part.update);
-        return {
-          before: textInRanges(own, part.effect.deleted),
-          after: textInRanges(own, part.effect.inserted),
-        };
-      } finally {
-        own.destroy();
+      let excerpt = document.excerptViews.get(doc);
+      if (!excerpt) {
+        excerpt = new Y.Doc({ gc: false });
+        Y.applyUpdate(excerpt, Y.encodeStateAsUpdate(doc));
+        document.excerptViews.set(doc, excerpt);
       }
+      Y.applyUpdate(excerpt, part.update);
+      return {
+        before: textInRanges(excerpt, part.effect.deleted),
+        after: textInRanges(excerpt, part.effect.inserted),
+      };
     },
     async commit({ plans, sequence, kind, userId, query }) {
       const attempt = attemptStorage.getStore();
@@ -606,7 +627,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                   const outcome =
                     step.kind === "tree"
                       ? await commitTreeStep(entry, step, kind, userId, query)
-                      : await commitTextStep(entry, step, kind, userId, query);
+                      : await commitTextStep(entry, step, userId, query);
                   if (typeof outcome === "string") {
                     if (outcome) handles.push(outcome);
                   } else if ("kind" in outcome) skips.push(outcome);
@@ -920,7 +941,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   async function commitTextStep(
     entry: PlannedInverse,
     step: Extract<InverseStep, { kind: "text" }>,
-    _kind: "undo" | "redo" | "revert" | "rollback",
     userId: UserId | undefined,
     query: TurnInverseQuery,
   ): Promise<string | TurnInverseSkip> {
@@ -1159,6 +1179,7 @@ class InverseAttemptMiss extends Error {
 
 function destroyDocuments(documents: readonly InverseDocument[]): void {
   for (const document of documents) {
+    for (const excerpt of document.excerptViews.values()) excerpt.destroy();
     document.live.destroy();
     for (const draft of document.drafts.values()) draft.doc.destroy();
   }
