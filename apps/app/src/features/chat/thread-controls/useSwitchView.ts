@@ -90,7 +90,9 @@ export function useSwitchView(input: {
   const { view, news, applied, spoken } = useRunStateSlice(threadId);
   useSingleHostWarning(threadId);
   const latest = useRef({ journal, projectId });
-  latest.current = { journal, projectId };
+  useLayoutEffect(() => {
+    latest.current = { journal, projectId };
+  }, [journal, projectId]);
 
   useLayoutEffect(
     () => dispatch(threadId, { type: "journal", switches: journal.pending }),
