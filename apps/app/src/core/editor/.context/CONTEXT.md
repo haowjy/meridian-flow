@@ -145,6 +145,9 @@ identity in anchors or holds.
   mutation origins or collaborative history. Change-trail navigation retains a
   session until item-ID validation and mounted-editor acceptance. Passage
   navigation uses block identity plus text, and refuses ambiguous fallback.
+  Both acquire one exact container registration; hiding, holding, replacing, or
+  destroying that editor revokes the target and ends the jump without
+  reacquiring another editor.
 - Search-passage navigation lands by block hash (from the block's immutable Yjs
   item id) plus the matched term, in three outcomes: the live block still holds
   the term (mark it there), the term occurs exactly once in the document (mark
