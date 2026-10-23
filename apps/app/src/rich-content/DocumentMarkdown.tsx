@@ -16,6 +16,7 @@ import { browserPictureSource } from "@/core/editor/images";
 import { classifyLinkTarget } from "@/core/editor/links";
 import { DocumentCodeBlock } from "./DocumentCodeBlock";
 import { createDocumentCache } from "./document-cache";
+import { splitMarkdownBlocks } from "./markdown-blocks";
 import {
   configureMarkdownStreaming,
   releaseStreamingMarkdown,
@@ -39,6 +40,7 @@ const schema = buildDocumentSchema();
 const codec = markdownCodec({ schema });
 configureMarkdownStreaming(schema, (source) => codec.parseStreaming(source, { repair: true }));
 const settledSnapshots = createDocumentCache<StreamingMarkdownSnapshot>();
+const settledBlocks = createDocumentCache<PMNode[]>();
 
 type Presentation = {
   source: string;
@@ -57,6 +59,32 @@ function ownsNode(block: PMNode, target: PMNode | null): boolean {
     return !found;
   });
   return found;
+}
+
+function lastCodeBlock(blocks: readonly PMNode[]): PMNode | null {
+  let last: PMNode | null = null;
+  for (const block of blocks) {
+    if (block.type.name === "code_block") last = block;
+    block.descendants((node) => {
+      if (node.type.name === "code_block") last = node;
+      return node.type.name !== "code_block";
+    });
+  }
+  return last;
+}
+
+function parseSettled(source: string): StreamingMarkdownSnapshot {
+  const split = splitMarkdownBlocks(source);
+  const blocks = split.blocks.flatMap((block) =>
+    settledBlocks(block, () => codec.parse(block).blocks),
+  );
+  const openCode = split.openFence ? lastCodeBlock(blocks) : null;
+  return {
+    source,
+    blocks,
+    openCode,
+    openCodeBlock: blocks.findIndex((block) => ownsNode(block, openCode)),
+  };
 }
 
 function renderLink(mark: PMMark, content: ReactNode): ReactNode {
@@ -379,15 +407,7 @@ export function DocumentMarkdown({
   const hasPresentation = !streaming && (references.length > 0 || skills.length > 0);
   const settled = useMemo(() => {
     if (streaming || hasPresentation) return null;
-    const parsed = settledSnapshots(source, () => {
-      const result = codec.parseStreaming(source);
-      return {
-        source,
-        blocks: result.blocks,
-        openCode: result.openCode,
-        openCodeBlock: result.blocks.findIndex((block) => ownsNode(block, result.openCode)),
-      };
-    });
+    const parsed = settledSnapshots(source, () => parseSettled(source));
     const previous = streamId ? settledStreamingMarkdown(streamId, source) : null;
     return reuseEqualSnapshot(parsed, previous);
   }, [hasPresentation, source, streamId, streaming]);
