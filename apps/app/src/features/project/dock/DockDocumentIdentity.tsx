@@ -75,16 +75,13 @@ function DockIdentityBody({
       onCloseDraftOnly={isDraftOnly(tab) ? closeDocument : undefined}
       // The dock follows a rename through the resource projection; it keeps no tab to patch.
       onCommitted={noopCommitted}
-      onOpenExisting={(scheme, path, owner) => {
+      onOpenExisting={() => {
         const claim = useDockDocumentStore.getState().claim();
-        openInEditor(
-          { scheme, path, ...owner },
-          {
-            afterCommit: () => {
-              if (useDockDocumentStore.getState().isCurrent(claim)) closeDocument();
-            },
+        openInEditor(tab, {
+          afterCommit: () => {
+            if (useDockDocumentStore.getState().isCurrent(claim)) closeDocument();
           },
-        );
+        });
       }}
     />
   );
