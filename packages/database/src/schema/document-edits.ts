@@ -106,6 +106,9 @@ export const documentEditParts = pgTable(
     index("document_edit_parts_pending_origin_idx")
       .on(sql`(${t.origin}->>'draftId')`)
       .where(sql`${t.origin}->>'kind' = 'pending'`),
+    index("document_edit_parts_live_origin_seq")
+      .on(sql`((${t.origin}->>'seq')::bigint)`)
+      .where(sql`${t.origin}->>'kind' = 'live'`),
     check("document_edit_parts_ordinal_valid", sql`${t.ordinal} >= 0`),
     check("document_edit_parts_origin_valid", sql`${t.origin}->>'kind' IN ('pending','live')`),
   ],

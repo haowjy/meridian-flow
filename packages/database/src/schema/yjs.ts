@@ -548,14 +548,14 @@ export const applyCommandEffects = pgTable(
     draftId: text("draft_id").notNull(),
     /** Null means live already held the group's text: Un-Apply removes no live or base text. */
     liveUpdateSeq: bigint("live_update_seq", { mode: "number" }),
-    /** Actual committed prefix effect, not the frozen optimistic intent. */
-    baseBefore: jsonb("base_before").$type<unknown[]>().notNull(),
-    baseAfter: jsonb("base_after").$type<unknown[]>().notNull(),
+    /** The command's base before its first group; stored once rather than once per group. */
+    baseStart: jsonb("base_start").$type<unknown[]>(),
+    /** This group's bounded change to the preceding committed base. */
+    baseDelta: jsonb("base_delta").$type<unknown[]>().notNull(),
     unappliedBy: uuid("unapplied_by").$type<BranchCommandId>(),
   },
   (table) => [
     primaryKey({ columns: [table.commandId, table.ordinal] }),
     uniqueIndex("apply_command_effects_group").on(table.commandId, table.groupId),
-    index("apply_command_effects_live_seq").on(table.liveUpdateSeq),
   ],
 );

@@ -31,15 +31,15 @@ import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 import type { TrailOwner } from "./trail-read-kernel.js";
 
 export type ApplyClickCommand = Parameters<CollabBranches["draftReview"]["applyClick"]>[0];
-export type UnapplyClickCommand = Parameters<CollabBranches["draftReview"]["unapplyClick"]>[0];
-export type StoredApplyEffect = {
+type UnapplyClickCommand = Parameters<CollabBranches["draftReview"]["unapplyClick"]>[0];
+type StoredApplyEffect = {
   ordinal: number;
   groupId: string;
   liveUpdateSeq: number | null;
   baseBefore: unknown[];
   baseAfter: unknown[];
 };
-export type PreparedUnapply = {
+type PreparedUnapply = {
   base: DraftBase;
   branchId: import("@meridian/contracts").BranchId;
   effects: StoredApplyEffect[];
@@ -52,13 +52,11 @@ export type CompiledClick = {
   owners: readonly TrailOwner[];
   effects: { side: "base" | "draft"; index: number; owners: readonly TrailOwner[] }[];
 };
-export type CompiledApplyGroup = {
+type CompiledApplyGroup = {
   groupId: string;
-  optimistic: readonly PMNode[];
   patched: readonly PMNode[];
   record: ApplyEntry;
   owners: readonly TrailOwner[];
-  effects: { side: "base" | "draft"; index: number; owners: readonly TrailOwner[] }[];
 };
 export interface ApplyCommandStore {
   loadBase(command: ApplyClickCommand): Promise<DraftBase | null>;
@@ -156,25 +154,10 @@ export function compileClick(
           });
       }
       const groupOwners = [...owners.values()];
-      const effects: CompiledApplyGroup["effects"] = [];
       const hunks = group.hunks.map((hunk) => projection.diff.hunks[hunk.index]);
-      const patches = composeHunks(schema, projection.diff, hunks, "apply", (h, blocks) => {
-        for (const index of blocks) effects.push({ side: "draft", index, owners: groupOwners });
-        const baseSide = projection.diff.base;
-        const deleted = new Set<number>();
-        for (let i = h.from; i < h.to; i++) {
-          const index = baseSide.blockOf[i];
-          if (
-            !blocks.length ||
-            (h.from <= baseSide.starts[index] && h.to >= baseSide.starts[index + 1])
-          )
-            deleted.add(index);
-        }
-        for (const index of deleted) effects.push({ side: "base", index, owners: groupOwners });
-      });
+      const patches = composeHunks(schema, projection.diff, hunks, "apply");
       return {
         groupId,
-        optimistic,
         patched: applySpanPatches(optimistic, patches, "base"),
         record: {
           ...applyRecordOf(classifications, [groupId]),
@@ -182,7 +165,6 @@ export function compileClick(
           groupId,
         },
         owners: groupOwners,
-        effects,
       };
     };
     const groups = request.groupIds.map(compileGroup);
@@ -191,14 +173,35 @@ export function compileClick(
         group.owners.map((owner) => [`${owner.threadId}:${owner.turnId}`, owner] as const),
       ),
     );
-    const effects = groups.flatMap((group) => group.effects);
+    const selected = projection.groups.filter((group) => request.groupIds.includes(group.id));
+    const ownerByHunk = new Map(
+      selected.flatMap((group) => {
+        const compiled = groups.find((candidate) => candidate.groupId === group.id);
+        return group.hunks.map((hunk) => [hunk.index, compiled?.owners ?? []] as const);
+      }),
+    );
+    const effects: CompiledClick["effects"] = [];
     const selectedPatches = composeHunks(
       schema,
       projection.diff,
-      projection.groups
-        .filter((group) => request.groupIds.includes(group.id))
-        .flatMap((group) => group.hunks.map((hunk) => projection.diff.hunks[hunk.index])),
+      selected.flatMap((group) => group.hunks.map((hunk) => projection.diff.hunks[hunk.index])),
       "apply",
+      (hunk, blocks) => {
+        const hunkIndex = projection.diff.hunks.indexOf(hunk);
+        const effectOwners = ownerByHunk.get(hunkIndex) ?? [];
+        for (const index of blocks) effects.push({ side: "draft", index, owners: effectOwners });
+        const baseSide = projection.diff.base;
+        const deleted = new Set<number>();
+        for (let offset = hunk.from; offset < hunk.to; offset++) {
+          const index = baseSide.blockOf[offset];
+          if (
+            !blocks.length ||
+            (hunk.from <= baseSide.starts[index] && hunk.to >= baseSide.starts[index + 1])
+          )
+            deleted.add(index);
+        }
+        for (const index of deleted) effects.push({ side: "base", index, owners: effectOwners });
+      },
     );
     return {
       schema,

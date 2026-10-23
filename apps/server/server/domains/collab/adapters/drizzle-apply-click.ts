@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import {
   appendApplyRecord,
   applyBase,
+  baseViewDelta,
   REVIEW_BASE_FRAGMENT,
   readBlocks,
   rebase,
@@ -25,13 +26,7 @@ import type {
 } from "@meridian/agent-edit/integration";
 import { computeInverse } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import {
-  type BranchId,
-  type DocumentId,
-  draftItemKey,
-  type EditOrigin,
-  type UserId,
-} from "@meridian/contracts";
+import { type BranchId, type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
 import type {
   AppliedReviewItem,
   ApplyClickAnswer,
@@ -45,8 +40,6 @@ import {
   branches,
   changeTrailDirtyLog,
   documentDrafts,
-  documentEditParts,
-  documentEdits,
   pushLineage,
 } from "@meridian/database/schema";
 import {
@@ -95,10 +88,11 @@ import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js"
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { storedDocument } from "./document-loader.js";
-import { createApplyTreeOperations } from "./drizzle-apply-tree.js";
+import { createApplyTreeOperations, liveLocation } from "./drizzle-apply-tree.js";
 import { claimCommandWithinTx, lookupCommand } from "./drizzle-branch-commands.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
+import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
 
 const applyTiming = new AsyncLocalStorage<{
   commandId: string;
@@ -205,37 +199,6 @@ export function createDrizzleApplyClick(
     };
   }
 
-  async function editHistory(
-    documentId: DocumentId,
-  ): Promise<(InversePart & { origin: EditOrigin })[]> {
-    const rows = await currentDrizzleDb(db)
-      .select({
-        part: {
-          id: documentEditParts.id,
-          editId: documentEditParts.editId,
-          ordinal: documentEditParts.ordinal,
-          update: documentEditParts.update,
-          effect: documentEditParts.effect,
-          targets: documentEditParts.targets,
-          frontier: documentEditParts.frontier,
-          aliases: documentEditParts.aliases,
-          origin: documentEditParts.origin,
-        },
-        kind: documentEdits.kind,
-        actionId: documentEdits.actionId,
-      })
-      .from(documentEditParts)
-      .innerJoin(documentEdits, eq(documentEditParts.editId, documentEdits.id))
-      .where(eq(documentEdits.documentId, documentId))
-      .orderBy(documentEditParts.id);
-    return rows.map(({ part, kind, actionId }) => ({
-      ...part,
-      update: new Uint8Array(part.update),
-      kind,
-      actionId,
-    }));
-  }
-
   return {
     async loadBase(command) {
       const draftId = command.request.draftId;
@@ -267,63 +230,7 @@ export function createDrizzleApplyClick(
         throw cause;
       }
     },
-    async loadUnapply(command) {
-      const tx = currentDrizzleDb(db);
-      const rows = await tx
-        .select({
-          branchId: branchCommands.branchId,
-          ordinal: applyCommandEffects.ordinal,
-          groupId: applyCommandEffects.groupId,
-          draftId: applyCommandEffects.draftId,
-          documentId: applyCommandEffects.documentId,
-          liveUpdateSeq: applyCommandEffects.liveUpdateSeq,
-          baseBefore: applyCommandEffects.baseBefore,
-          baseAfter: applyCommandEffects.baseAfter,
-        })
-        .from(applyCommandEffects)
-        .innerJoin(branchCommands, eq(branchCommands.id, applyCommandEffects.commandId))
-        .where(
-          and(
-            eq(applyCommandEffects.commandId, command.request.applyCommandId),
-            eq(applyCommandEffects.documentId, command.documentId),
-            isNull(applyCommandEffects.unappliedBy),
-            eq(branchCommands.workId, command.workId),
-            eq(branchCommands.accountId, command.envelope.accountId),
-            eq(branchCommands.kind, "apply_click"),
-            eq(branchCommands.state, "done"),
-          ),
-        )
-        .orderBy(applyCommandEffects.ordinal);
-      const first = rows[0];
-      if (!first?.branchId || rows.some((row) => row.draftId !== first.draftId)) return null;
-      try {
-        const base = await deps.coordinator.loadBase(first.draftId);
-        if (
-          base.snapshot.status === "closed" ||
-          base.snapshot.documentId !== command.documentId ||
-          base.snapshot.branchId !== first.branchId
-        )
-          return null;
-        return {
-          base,
-          branchId: first.branchId,
-          effects: rows.map(({ ordinal, groupId, liveUpdateSeq, baseBefore, baseAfter }) => ({
-            ordinal,
-            groupId,
-            liveUpdateSeq,
-            baseBefore,
-            baseAfter,
-          })),
-        };
-      } catch (cause) {
-        const [draft] = await tx
-          .select({ status: documentDrafts.status })
-          .from(documentDrafts)
-          .where(eq(documentDrafts.id, first.draftId));
-        if (!draft || draft.status === "closed") return null;
-        throw cause;
-      }
-    },
+    loadUnapply: (command) => loadPreparedUnapply(db, deps.coordinator, command),
     async unapply(command, prepared) {
       const commandId = command.envelope.commandId;
       const closed = (): import("@meridian/contracts/branches").UnapplyClickResult => ({
@@ -382,7 +289,13 @@ export function createDrizzleApplyClick(
             const snapshot = await deps.live.read(command.documentId);
             const live = storedDocument(snapshot);
             try {
-              const history = await editHistory(command.documentId);
+              const history = await loadUnapplyHistory(
+                db,
+                command.documentId,
+                effects.flatMap((effect) =>
+                  effect.liveUpdateSeq === null ? [] : [effect.liveUpdateSeq],
+                ),
+              );
               const bySeq = new Map<number, InversePart>();
               for (const part of history) {
                 const value = part.origin;
@@ -416,7 +329,6 @@ export function createDrizzleApplyClick(
                 return finish({
                   status: "unapplied",
                   commandId,
-                  applyCommandId: command.request.applyCommandId,
                   reversedGroupIds: [],
                   skippedGroupIds: skipped.map((effect) => effect.groupId),
                 });
@@ -486,24 +398,22 @@ export function createDrizzleApplyClick(
               } finally {
                 write.dispose();
               }
-              if (reversed.length)
-                await tx
-                  .update(applyCommandEffects)
-                  .set({ unappliedBy: commandId })
-                  .where(
-                    and(
-                      eq(applyCommandEffects.commandId, command.request.applyCommandId),
-                      inArray(
-                        applyCommandEffects.ordinal,
-                        reversed.map((effect) => effect.ordinal),
-                      ),
-                      isNull(applyCommandEffects.unappliedBy),
+              await tx
+                .update(applyCommandEffects)
+                .set({ unappliedBy: commandId })
+                .where(
+                  and(
+                    eq(applyCommandEffects.commandId, command.request.applyCommandId),
+                    inArray(
+                      applyCommandEffects.ordinal,
+                      reversed.map((effect) => effect.ordinal),
                     ),
-                  );
+                    isNull(applyCommandEffects.unappliedBy),
+                  ),
+                );
               const answer: import("@meridian/contracts/branches").UnapplyClickResult = {
                 status: "unapplied",
                 commandId,
-                applyCommandId: command.request.applyCommandId,
                 reversedGroupIds: reversed.map((effect) => effect.groupId),
                 skippedGroupIds: skipped.map((effect) => effect.groupId),
               };
@@ -820,7 +730,7 @@ export function createDrizzleApplyClick(
                           for (const group of click.groups) {
                             const groupMerge = rebase(
                               schema,
-                              group.optimistic,
+                              click.optimistic,
                               readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
                               group.patched,
                             );
@@ -854,8 +764,8 @@ export function createDrizzleApplyClick(
                       await testHook("apply.afterLive");
                       const baseEffects: {
                         groupId: string;
-                        before: unknown[];
-                        after: unknown[];
+                        start?: unknown[];
+                        delta: unknown[];
                       }[] = [];
                       const write = deps.coordinator.prepareAppend(base, [], {
                         authorServerRows(prefix) {
@@ -873,7 +783,7 @@ export function createDrizzleApplyClick(
                               const after = applyBase(
                                 schema,
                                 before,
-                                group.optimistic,
+                                click.optimistic,
                                 group.patched,
                               );
                               prefix.transact(() => {
@@ -884,8 +794,13 @@ export function createDrizzleApplyClick(
                               rows.push(row);
                               baseEffects.push({
                                 groupId: group.groupId,
-                                before: before.map((block) => block.toJSON()),
-                                after: after.map((block) => block.toJSON()),
+                                ...(baseEffects.length === 0
+                                  ? { start: before.map((block) => block.toJSON()) }
+                                  : {}),
+                                delta: baseViewDelta(schema, before, after).map((patch) => ({
+                                  ...patch,
+                                  blocks: patch.blocks.map((block) => block.toJSON()),
+                                })),
                               });
                             }
                             return rows;
@@ -917,8 +832,8 @@ export function createDrizzleApplyClick(
                             documentId: command.documentId,
                             draftId: base.snapshot.draftId,
                             liveUpdateSeq: liveEffect.seq,
-                            baseBefore: baseEffect.before,
-                            baseAfter: baseEffect.after,
+                            baseStart: baseEffect.start,
+                            baseDelta: baseEffect.delta,
                           };
                         }),
                       );
@@ -1062,15 +977,5 @@ export function createDrizzleApplyClick(
         });
       }
     },
-  };
-}
-
-/** Where the branch has a document, as a live location to restore it at. */
-function liveLocation(node: TreeStateNode) {
-  return {
-    contextSourceId: node.target.contextSourceId,
-    parentFolderId: node.target.parentFolderId,
-    name: node.target.name,
-    extension: node.target.extension,
   };
 }

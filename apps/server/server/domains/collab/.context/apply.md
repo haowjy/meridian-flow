@@ -62,14 +62,17 @@ base, record, lineage, trail and claim all roll back. Installation and live
 recovery wait for the root commit through the existing append lifetime.
 
 Editor Undo sends an `unapply_click` command for the original Apply command. The
-Apply store resolves those per-group receipts after the document mutation lock,
-uses the forward-inverse kernel directly against live history, and folds only
+Apply store loads the command's indexed effect rows, then reads only the target
+live receipts and their later dependency suffix under the document mutation lock.
+The command stores one full starting base plus bounded per-group deltas, rather
+than a full before/after document for every group. It uses the forward-inverse
+kernel directly against live history and folds only
 the successfully reversed groups out of the current review base. A group edited
 later in live is skipped. A null live receipt removes its Apply record without
 changing live or base. Tree effects are never selected. The inverse, base fold,
 record removal, effect settlement, and command result commit together; delivery
 and pull flushing begin only after that commit. This path does not use the
-model/turn reversal planner.
+model/turn reversal planner. Apply commands recorded before this effect table existed have no reversible receipts, so Un-Apply refuses them; there is no safe backfill for effects that were never captured.
 
 Trail changes compare the actual live before/after identities and visible
 content, with navigation built from the committed result. Owners are the

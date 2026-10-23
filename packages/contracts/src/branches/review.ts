@@ -111,7 +111,6 @@ export type UnapplyClickResult =
   | {
       status: "unapplied";
       commandId: BranchCommandId;
-      applyCommandId: BranchCommandId;
       reversedGroupIds: string[];
       skippedGroupIds: string[];
     }

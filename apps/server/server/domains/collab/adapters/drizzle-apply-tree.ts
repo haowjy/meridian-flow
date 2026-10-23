@@ -182,7 +182,7 @@ export function createApplyTreeOperations(input: {
   return { apply, settle, reveal };
 }
 
-function liveLocation(node: TreeStateNode) {
+export function liveLocation(node: TreeStateNode) {
   return {
     contextSourceId: node.target.contextSourceId,
     parentFolderId: node.target.parentFolderId,
