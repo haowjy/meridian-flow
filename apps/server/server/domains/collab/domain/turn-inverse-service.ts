@@ -133,7 +133,7 @@ export interface TurnInverseStore {
      * branch whose text draft or tree facts took them, null for live.
      */
     reversed: ReadonlyMap<DocumentId, ReadonlyMap<BranchId | null, number>>;
-    /** The destinations that actually committed, including freshly restored draft identities. */
+    /** The destinations that actually committed. */
     outcomes: readonly {
       documentId: DocumentId;
       branchId: BranchId | null;
