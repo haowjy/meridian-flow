@@ -318,7 +318,7 @@ export function TurnList({
           owners={row.inherited ? (inherited?.owners ?? null) : null}
           onRespondToInterrupt={assistant && local ? onRespondToInterrupt : undefined}
           changeTrail={assistant && local ? byTurnId.get(row.turn.id) : undefined}
-          navigateToChange={navigateToChange}
+          navigateToChange={assistant ? navigateToChange : undefined}
           threadUsage={assistant && local ? threadUsage : null}
         />
       );
@@ -490,7 +490,7 @@ const TranscriptRow = memo(function TranscriptRow({
   owners: InheritedView["owners"] | null;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   changeTrail?: ChangeTrailShell;
-  navigateToChange: ReturnType<typeof useChangeTrailNavigation>;
+  navigateToChange?: ReturnType<typeof useChangeTrailNavigation>;
   threadUsage: TurnListProps["threadUsage"];
 }) {
   const { turn } = row;
