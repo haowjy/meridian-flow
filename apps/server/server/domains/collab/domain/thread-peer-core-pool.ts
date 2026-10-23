@@ -242,7 +242,7 @@ export function createThreadPeerCorePool(input: {
 
   type FrontierProjection = { workDraftId: string; seed: DraftSeedRecord | null };
 
-  /** One projection door for both tool calls and their later response save. */
+  /** One projection door for tool calls and their later response save. */
   function projectedFrontiers(
     frontiers: WriteContext["frontiers"],
     projections: readonly FrontierProjection[],
@@ -273,8 +273,10 @@ export function createThreadPeerCorePool(input: {
       return projectSeedFrontier(await lookup(seed.liveRoom), {
         sourceRoom: seed.liveRoom,
         sourceSnapshot: seed.liveSnapshot,
+        ...(seed.liveAttribution ? { sourceAttribution: seed.liveAttribution } : {}),
         targetRoom: room,
         targetSnapshot: seed.draftSnapshot,
+        targetPosition: 0,
         origins: new Map(Object.entries(seed.origins)),
       });
     };

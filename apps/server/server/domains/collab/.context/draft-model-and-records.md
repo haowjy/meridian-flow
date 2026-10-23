@@ -81,9 +81,7 @@ No rewrite resets generations, accumulates discarded clocks or marks journal
 rows discarded through reset. Compaction folds the tail with unchanged content
 and leaves `updated_at`; the runtime schedules it after every committed append at 512 rows or
 2 MiB, only after its root commit. Work drafts seed two fresh client-1 fragments,
-`prosemirror` and `review_base`. In the same insert they retain the live room and
-snapshot, revision-zero draft snapshot and live-origin map for copied top-level blocks.
-The map never changes and a race loser reads the winner's record. The effect job compares their
+`prosemirror` and `review_base`. In the same insert they retain the live room, the live and draft seed snapshots, the paired live journal position and state, and the live-origin map for copied top-level blocks. Those cuts project a first draft write's live observation into revision 0 and attribute any observation-to-seed gap; they never gate the write. Rows created before the state-and-position pair existed still project to revision 0 and report the seed conservatively as unattributed. The map never changes and a race loser reads the winner's record. The effect job compares their
 blocks; a live commit rebases content through the same append finalizer.
 
 A draft's `lifecycle` (`active`, `archived`, `deleted`, `missing`) is read from

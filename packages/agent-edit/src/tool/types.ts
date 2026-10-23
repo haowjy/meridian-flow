@@ -241,7 +241,6 @@ export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;
   receipts: ResponseCommitWriteReceipt[];
-  lateSweep?: import("./commit-detection.js").DestructiveSweepReport;
   /**
    * Host-only, when the commit asked (`ResponseCommitOptions.recordingFrontier`):
    * the frontier at the save's after-state, crediting every accepted receipt and what the last

@@ -36,9 +36,6 @@ export const d23ArchivedDraftRebases: Probe = {
       drafts: harness.store,
       liveJournal: harness.persistence.journal,
       draftCoordinator: harness.coordinator,
-      liveCoordinator: {
-        withDocument: async (_id: string, run: (doc: typeof live) => unknown) => run(live),
-      } as never,
     });
     try {
       await harness.works.archive(workId);

@@ -71,6 +71,8 @@ export type ApplyErrorCode = EditResolutionErrorCode | "partial_failure" | "inte
 export interface AgentOrigin {
   type: "agent";
   actorTurnId: string;
+  /** Permanent model-facing chat handle, resolved by the host (for example `c15`). */
+  author?: string;
 }
 
 export type ApplyTransactionOrigin = unknown;
@@ -78,11 +80,14 @@ export type ApplyTransactionOrigin = unknown;
 export type ConcurrentUpdateOrigin =
   | AgentOrigin
   | { type: "human"; userId: string }
-  | { type: "system" };
+  | { type: "system" }
+  | { type: "unattributed" };
 
 export interface ConcurrentUpdate {
   update: Uint8Array;
   origin: ConcurrentUpdateOrigin;
+  /** Cross-room projections can name affected target blocks without replaying foreign Yjs ids. */
+  effects?: { changed: readonly string[]; removed: readonly string[] };
 }
 
 export interface ApplyEchoHunk {
