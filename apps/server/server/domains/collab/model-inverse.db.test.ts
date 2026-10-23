@@ -1,12 +1,21 @@
 /** Strict model stacks, immutable history and bounded receipts. */
 import { randomUUID } from "node:crypto";
+import {
+  appendApplyRecord,
+  applyRecordOf,
+  REVIEW_BASE_FRAGMENT,
+  readBlocks,
+  writeBlocks,
+} from "@meridian/agent-edit/diff";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import { allocateDocumentClient } from "@meridian/prosemirror-schema";
+import { allocateDocumentClient, buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
+import { createDraftDispositionReader } from "./domain/draft-disposition.js";
 import { createTurnReversalService } from "./domain/turn-reversal-service.js";
 import {
   ALPHA_ID,
@@ -204,6 +213,118 @@ describe("model document stack", () => {
       }
       expect(await view.draftMarkdown(draftId)).toBe("Alpha Azure.\n\nBlue.\n");
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
+    } finally {
+      harness.cancelScheduledPulls();
+      harness.destroyWarmState();
+    }
+  });
+  it("reverts applied text in a mixed count and reapplies an applied Undo through Redo", async () => {
+    const { harness, view, context, responseId } = await fixture();
+    try {
+      const core = view.collab.agentEdit();
+      const address = { documentId: ALPHA_ID, file: "alpha.md" };
+      await core.read(address, context);
+      expect(
+        await core.write(
+          { ...address, command: "replace", find: "Beta", content: "Gamma" },
+          context,
+        ),
+      ).toMatchObject({ status: "success", writeId: "e1" });
+      await harness.commit(responseId);
+      const draftId = await readDraftId(db, ALPHA_ID);
+      const pm = buildDocumentSchema();
+      const applyDraft = async (liveText: string) => {
+        const disposition = await createDraftDispositionReader(
+          createDrizzleDraftDispositionStore(db),
+        )(draftId);
+        if (!disposition) throw new Error("draft disposition missing");
+        const { doc, snapshot } = await view.draftCoordinator.copyDraft(draftId);
+        try {
+          doc.clientID = 1;
+          doc.transact(() => {
+            appendApplyRecord(
+              doc,
+              applyRecordOf(disposition.classifications, disposition.classifications.keys()),
+            );
+            writeBlocks(
+              doc.getXmlFragment(REVIEW_BASE_FRAGMENT),
+              pm,
+              readBlocks(doc.getXmlFragment("prosemirror"), pm),
+            );
+          });
+          await db
+            .update(schema.documentDrafts)
+            .set({
+              state: Buffer.from(Y.encodeStateAsUpdate(doc)),
+              stateVector: Buffer.from(Y.encodeStateVector(doc)),
+              revision: snapshot.revision + 1,
+              checkpointRevision: snapshot.revision + 1,
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.documentDrafts.id, draftId));
+          await view.draftCoordinator.deliverCommitted(draftId);
+        } finally {
+          doc.destroy();
+        }
+        await view.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+          const block = view.model.getBlocks(doc)[0];
+          if (!block) throw new Error("live block missing");
+          const before = Y.encodeStateVector(doc);
+          view.model.applyTextEdit(
+            doc,
+            block,
+            { from: 0, to: view.model.getText(block).length },
+            liveText,
+          );
+          const update = Y.encodeStateAsUpdate(doc, before);
+          if (update.length)
+            await view.persistence.journal.append(ALPHA_ID, update, { origin: "system", seq: 0 });
+        });
+      };
+
+      await applyDraft("Alpha Gamma.");
+      expect(
+        (
+          await createDraftDispositionReader(createDrizzleDraftDispositionStore(db))(draftId)
+        )?.parts.map((part) => part.disposition),
+      ).toContain("applied");
+      expect(await core.read({ ...address, format: "edits" }, context)).toMatchObject({
+        status: "success",
+        result: { message: expect.stringMatching(/e1.*applied.*revert/) },
+      });
+      const secondContext = {
+        ...context,
+        responseIdentity: { providerResponseId: responseId, editScopeId: randomUUID() },
+      };
+      await core.read(address, secondContext);
+      expect(await core.write({ ...address, command: "undo" }, secondContext)).toMatchObject({
+        status: "success",
+        result: { message: "reverted: e1" },
+      });
+      expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
+      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
+      expect(await core.write({ ...address, command: "redo" }, secondContext)).toMatchObject({
+        status: "nothing_to_redo",
+      });
+
+      expect(await core.write({ ...address, command: "undo" }, secondContext)).toMatchObject({
+        status: "success",
+        result: { message: expect.stringContaining("undone: e2") },
+      });
+      expect(await view.draftMarkdown(draftId)).toBe("Alpha Gamma.\n\nBlue.\n");
+      await applyDraft("Alpha Gamma.");
+      expect(await core.write({ ...address, command: "redo" }, secondContext)).toMatchObject({
+        status: "success",
+        result: { message: expect.stringContaining("redone: e2") },
+      });
+      expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
+      expect(
+        await core.write({ ...address, command: "undo", count: 2 }, secondContext),
+      ).toMatchObject({
+        status: "success",
+        result: { message: expect.stringMatching(/undone: e2\nreverted: e1/) },
+      });
+      expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
     } finally {
       harness.cancelScheduledPulls();
       harness.destroyWarmState();

@@ -394,12 +394,21 @@ function prepare(
         skip(target, "edited_since");
     }
     const steps = order.flatMap((step): InverseStep[] => {
-      if (step.kind === "tree") return [{ ...step, actionId }];
+      if (step.kind === "tree") return [{ ...step, actionId, actionKind: kind }];
       const edit = computed
         .get(step.destination)
         ?.edits.find((edit) => edit.targetEditId === step.editId);
       return edit
-        ? [{ kind: "text", edit, destination: step.destination, actionId, at: step.at }]
+        ? [
+            {
+              kind: "text",
+              edit,
+              destination: step.destination,
+              actionId,
+              actionKind: kind,
+              at: step.at,
+            },
+          ]
         : [];
     });
     return { document, steps, consumes, skips };
