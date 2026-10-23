@@ -21,7 +21,7 @@ import {
   createCollabYDoc,
   packCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
@@ -294,11 +294,33 @@ export function createDrizzleDraftStore(
       .orderBy(desc(documentDrafts.updatedAt), desc(documentDrafts.id))
       .limit(1);
     if (!retained) return ensureCreatedDocumentDraft(input);
+    if (retained.successorDraftId) {
+      const successor = await readDraftAt(currentDrizzleDb(db), retained.successorDraftId);
+      if (successor?.documentDraft.status === "active") return successor.documentDraft;
+      throw new Error(`Retained draft ${retained.draftId} already has a closed successor`);
+    }
     const read = await readDraftAt(currentDrizzleDb(db), retained.draftId);
     if (!read) throw new Error(`Retained draft ${retained.draftId} vanished`);
     const doc = materializeDraftRead(read, createCollabYDoc({ gc: false }));
     try {
-      return await ensureDocumentDraft({ ...input, liveDoc: doc, preserveIdentity: true });
+      const successor = await ensureDocumentDraft({
+        ...input,
+        liveDoc: doc,
+        preserveIdentity: true,
+      });
+      const [linked] = await currentDrizzleDb(db)
+        .update(documentDrafts)
+        .set({ successorDraftId: successor.draftId })
+        .where(
+          and(
+            eq(documentDrafts.id, retained.draftId),
+            isNull(documentDrafts.successorDraftId),
+            eq(documentDrafts.status, "closed"),
+          ),
+        )
+        .returning({ id: documentDrafts.id });
+      if (!linked) throw new Error(`Retained draft ${retained.draftId} continuation changed`);
+      return successor;
     } finally {
       doc.destroy();
     }

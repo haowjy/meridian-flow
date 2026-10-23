@@ -145,7 +145,10 @@ through `restoreDocument`, taking the next free name when necessary. A drafted U
 the creating branch's draft and removes that branch's `created` fact. It tombstones the hidden
 identity only when no other branch still uses it, retaining the closed draft as the Redo source.
 Redo restores the identity or rejoins the still-living one, restores the branch facts and clones
-the retained content into a fresh active draft. Empty creates have only the tree entry and follow
+the retained content into a fresh active draft. The closed draft records that fresh draft as its
+successor. Card and model inverse planning follow the branch-scoped successor chain to the active
+continuation while immutable receipt origins continue to name where the historical write landed;
+closed transport identities never reopen. Empty creates have only the tree entry and follow
 the same path. An undone draft create no longer contributes a pending review item.
 
 ## Effects and failures

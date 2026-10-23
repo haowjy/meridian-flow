@@ -56,6 +56,10 @@ export const documentDrafts = pgTable(
     upstreamDraftId: text("upstream_draft_id").references((): AnyPgColumn => documentDrafts.id, {
       onDelete: "set null",
     }),
+    /** The fresh active draft that continues this closed draft after create Redo. */
+    successorDraftId: text("successor_draft_id").references((): AnyPgColumn => documentDrafts.id, {
+      onDelete: "set null",
+    }),
     /**
      * The branch this document draft belongs to. A thread peer shares its upstream
      * document draft's branch.

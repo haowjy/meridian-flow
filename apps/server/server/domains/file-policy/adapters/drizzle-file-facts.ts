@@ -79,7 +79,11 @@ export function createDrizzleFileFacts(
             ? await loadPhysicalDocument(db, target.documentId)
             : null));
     if (!base) return null;
-    const facts: FileFacts = { ...base, target };
+    const physical =
+      target.kind === "container"
+        ? undefined
+        : (await loadPhysicalOwnership(db, [target.documentId])).get(target.documentId);
+    const facts: FileFacts = { ...base, ...physical, target };
     if (branchWorkId === undefined) return facts;
     const branchWork = await readWork(db, branchWorkId);
     // A Work's draft of a document it may not hold doesn't exist.
@@ -151,6 +155,8 @@ export function createDrizzleFileFacts(
           const facts = out.get(id);
           if (facts) out.set(id, { ...facts, survivingDraft: true });
         }
+      const physical = await loadPhysicalOwnership(db, [...out.keys()]);
+      for (const [id, facts] of out) out.set(id, { ...facts, ...physical.get(id) });
       return out;
     },
   };
@@ -206,6 +212,7 @@ type DocumentBaseRow = {
   projectId: ProjectId;
   ownerAccountId: UserId;
   projectDeletedAt: Date | null;
+  scheme: string;
 };
 
 function documentBase(
@@ -214,6 +221,8 @@ function documentBase(
   folders: readonly FolderRow[],
   ownDelete = true,
 ): Omit<BaseFacts, "scheme"> {
+  if (!isContextUriScheme(row.scheme))
+    throw new Error(`Document ${documentId} has an invalid source`);
   return {
     projectId: row.projectId,
     ownerAccountId: row.ownerAccountId as UserId,
@@ -225,6 +234,7 @@ function documentBase(
       (ownDelete && row.documentDeletedAt !== null) ||
       row.sourceDeletedAt !== null ||
       folders.some((folder) => folder.deleted),
+    contentScheme: row.scheme,
     self: { kind: "document", id: documentId },
     ancestors: [
       ...folders.map((folder): FileNode => ({ kind: "folder", id: folder.id })),
@@ -303,6 +313,55 @@ async function loadPhysicalDocument(
     ),
     scheme: row.scheme,
   };
+}
+
+type PhysicalOwnership = Pick<
+  FileFacts,
+  "contentScheme" | "ownerRootThreadId" | "ownerChatThreadId" | "ownerWork"
+>;
+
+/** Content ownership stays on the durable identity while a branch drafts a new tree location. */
+async function loadPhysicalOwnership(
+  db: Database,
+  documentIds: readonly DocumentId[],
+): Promise<Map<DocumentId, PhysicalOwnership>> {
+  const identities = await loadDocumentIdentityRows(currentDrizzleDb(db), documentIds);
+  const sourceIds = [...new Set(identities.map((identity) => identity.contextSourceId))];
+  const byDocument = new Map<DocumentId, PhysicalOwnership>();
+  if (sourceIds.length === 0) return byDocument;
+
+  const rows = await currentDrizzleDb(db)
+    .select({
+      sourceId: contextSources.id,
+      scheme: contextSources.slug,
+      rootThreadId: contextSources.rootThreadId,
+      chatThreadId: contextSources.chatThreadId,
+      work: {
+        id: works.id,
+        handle: works.handle,
+        isNoWork: works.isNoWork,
+        archivedAt: works.archivedAt,
+        deletedAt: works.deletedAt,
+      },
+    })
+    .from(contextSources)
+    .leftJoin(works, eq(works.id, contextSources.workId))
+    .where(inArray(contextSources.id, sourceIds));
+  const bySource = new Map<ContextSourceId, PhysicalOwnership>();
+  for (const row of rows) {
+    if (!isContextUriScheme(row.scheme)) continue;
+    bySource.set(row.sourceId, {
+      contentScheme: row.scheme,
+      ownerRootThreadId: row.rootThreadId,
+      ownerChatThreadId: row.chatThreadId,
+      ownerWork: row.work ? workFacts(row.work) : null,
+    });
+  }
+  for (const identity of identities) {
+    const ownership = bySource.get(identity.contextSourceId);
+    if (ownership) byDocument.set(identity.id, ownership);
+  }
+  return byDocument;
 }
 
 /**
@@ -403,6 +462,7 @@ async function loadContainer(
     // A missing source is provisioned by the create itself.
     deleted: !ownerLive,
     scheme,
+    contentScheme: scheme,
     self: null,
     ancestors: sourceAncestors(source?.id ?? null, work?.id ?? null, projectId),
   };

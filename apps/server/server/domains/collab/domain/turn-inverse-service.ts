@@ -28,6 +28,7 @@ import type * as Y from "yjs";
 import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
 import { effectiveActionIndex, isRolledBack, partKey } from "./inverse-actions.js";
+import { currentInverseDraftId } from "./inverse-draft-destination.js";
 import { type InverseStep, simulateInverse } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import {
@@ -232,7 +233,7 @@ function prepare(
       )?.disposition ?? part.disposition;
     const liveIndex = prepareEditRoots(document.live, document.history);
     const draftOf = (part: StoredInversePart) =>
-      part.origin.kind === "pending" ? part.origin.draftId : null;
+      part.origin.kind === "pending" ? currentInverseDraftId(document, part.origin.draftId) : null;
     const skips: TurnInverseSkip[] = [];
     const simulation = simulateInverse(document, {
       rolledBack: index.rolledBack,

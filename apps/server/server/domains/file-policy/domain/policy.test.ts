@@ -30,6 +30,7 @@ function file(
     self: { kind: "document", id: "doc" },
     ancestors: [{ kind: "project", id: PROJECT }],
     ...over,
+    contentScheme: over.contentScheme ?? scheme,
   };
 }
 

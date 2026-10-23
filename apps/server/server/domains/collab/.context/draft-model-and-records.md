@@ -17,7 +17,9 @@ draft ID, item key, or presented address interchangeably.
 | **command** | One idempotent writer Apply or Discard action. | `commandId` |
 | **presented address** | The writer's Work/item/change selection; it names no draft storage ID. | review selector |
 
-There is at most one active Work draft per `(documentId, branchId)`.
+There is at most one active Work draft per `(documentId, branchId)`. When create Redo clones
+retained content, the closed predecessor names the fresh active draft as its successor. That
+branch-local chain is inverse routing history, not a reopened room identity.
 Thread-peer bindings name that draft as their upstream; they hold no independently
 maintained document view. The server resolves
 every item key through the identity module; no caller accepts an ambiguous bare
