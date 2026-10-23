@@ -86,6 +86,7 @@ export function LeftSidebar({
     }
     void openDocument({
       documentId: file.documentId,
+      known: { scheme, file, workId: editorWorkId },
       workId: editorWorkId ?? undefined,
       ...options,
     });

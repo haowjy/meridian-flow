@@ -22,7 +22,10 @@ import { useAfterPaintRelease, usePaintPending } from "@/components/app/PaintHol
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
-import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
+import {
+  type LiveEditorContainer,
+  registerLiveRangeEditor,
+} from "@/core/editor/live-range-navigation-runtime";
 import { type EditorMountIdentity, useMountedEditor } from "@/core/editor/mounted-editor";
 import { useReadingPosition } from "@/core/editor/use-reading-position";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
@@ -73,6 +76,7 @@ type SessionEditorProps = {
   focusKey?: string;
   /** Reopens the room after the server refused its updates (draft review only). */
   onReopen?: () => void;
+  container: LiveEditorContainer;
 };
 
 export function SessionEditor(props: SessionEditorProps) {
@@ -135,6 +139,7 @@ function ActiveSessionEditorView({
   holderUri: reviewHolderUri,
   snapshot,
   evidenceDegraded,
+  container,
 }: ActiveSessionEditorViewProps) {
   const {
     className,
@@ -349,9 +354,14 @@ function ActiveSessionEditorView({
   }, [afterPaintRelease, active, editor, effectiveEditable, focusKey, inReview]);
 
   useEffect(() => {
-    if (!editor || inReview || held) return;
-    return registerLiveRangeEditor(documentId, editor);
-  }, [documentId, editor, inReview, held]);
+    if (!editor || inReview || !active) return;
+    return registerLiveRangeEditor(documentId, {
+      editor,
+      session,
+      localContentReady: surfaceOptions.localContentReady === true,
+      container,
+    });
+  }, [active, container, documentId, editor, inReview, session, surfaceOptions.localContentReady]);
 
   const constructionCallback = useRef(onConstructed);
   constructionCallback.current = onConstructed;
