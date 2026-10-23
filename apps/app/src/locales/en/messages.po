@@ -3782,6 +3782,8 @@ msgstr "Resume my documents on any device"
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/DraftCommandStatus.tsx
+#: src/features/draft-review/ReviewChangeBar.tsx
+#: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
@@ -5129,6 +5131,10 @@ msgstr "Undo didn't go through. Try again."
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Undo is no longer available."
 msgstr "Undo is no longer available."
+
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "Undo is waiting for confirmation."
+msgstr "Undo is waiting for confirmation."
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 msgid "Undoing Apply"
