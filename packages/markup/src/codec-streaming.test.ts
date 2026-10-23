@@ -52,6 +52,9 @@ const fixtures = [
 ] as const;
 
 const codec = markdownCodec({ schema });
+const ineffectiveRepairFixtures = ["[x](a_*foo", "[x](a__foo", "[x](a\\~~foo", "a_\\`foo"] as const;
+const openMermaid = "```mermaid\ngraph TD; A-->B\n";
+const tableThenBold = "| a | b |\n| - | - |\n| c\\\n d | e |\n\n**bold";
 
 it("keeps every streaming parse confined to the canonical last block", () => {
   const corpus = [
@@ -60,7 +63,9 @@ it("keeps every streaming parse confined to the canonical last block", () => {
     "\te\n1.\n\n--",
     "[**x**][q]\n\np\n\n> [q]:\n> /url",
     "| a | b |\n| - | - |\n| c\\\n d | e |\n\n[q]: /url\n\np\n\nlast\n\n[**x**][q]",
-    "[x](a_*foo",
+    ...ineffectiveRepairFixtures,
+    openMermaid,
+    tableThenBold,
   ];
   for (const source of corpus) {
     for (let end = 0; end <= source.length; end++) {
@@ -75,6 +80,16 @@ it("keeps every streaming parse confined to the canonical last block", () => {
       }
     }
   }
+
+  for (const source of ineffectiveRepairFixtures) {
+    expect(
+      nodesEqual(codec.parseStreaming(source, { repair: true }).blocks, codec.parse(source).blocks),
+    ).toBe(true);
+  }
+  expect(codec.parseStreaming(openMermaid, { repair: true }).openCode).not.toBeNull();
+  expect(
+    codec.parseStreaming(tableThenBold, { repair: true }).blocks.at(-1)?.firstChild?.marks,
+  ).toContainEqual(schema.marks.strong.create());
 }, 30_000);
 
 function assertStreamingParse(source: string): void {

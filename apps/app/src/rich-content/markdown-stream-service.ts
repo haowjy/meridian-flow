@@ -2,10 +2,11 @@
 
 import type { MarkdownStreamResult } from "@meridian/markup";
 import { Node as PMNode, type Schema } from "@tiptap/pm/model";
-import type {
-  MarkdownWorkerRequest,
-  MarkdownWorkerResponse,
-  OpenCodePath,
+import {
+  type MarkdownWorkerRequest,
+  type MarkdownWorkerResponse,
+  nodeAtPath,
+  nodePath,
 } from "./markdown-worker-protocol";
 
 export type StreamingMarkdownSnapshot = {
@@ -64,7 +65,7 @@ export function requestStreamingMarkdown(streamId: string, source: string): void
   }
   const target = workerForBrowser();
   if (!target) {
-    applySynchronous(state, source);
+    if (state.appliedSeq < state.seq) applySynchronous(state, source);
     return;
   }
   target.postMessage({
@@ -177,7 +178,7 @@ function receive(message: MarkdownWorkerResponse): void {
   state.snapshot = {
     source: message.source,
     blocks: blocks as PMNode[],
-    openCode: nodeAt(blocks as PMNode[], message.openCode),
+    openCode: nodeAtPath(blocks as PMNode[], message.openCode),
     openCodeBlock: message.openCode?.block ?? -1,
   };
   notify(state);
@@ -186,6 +187,7 @@ function receive(message: MarkdownWorkerResponse): void {
 function applySynchronous(state: StreamState, source: string): void {
   if (!parseStreaming) throw new Error("Markdown streaming is not configured");
   const result = parseStreaming(source);
+  const openCodePath = nodePath(result.blocks, result.openCode);
   const keys = result.blocks.map((block) => cacheNode(state, block));
   const current = new Set(keys);
   for (const key of state.nodes.keys()) {
@@ -195,11 +197,12 @@ function applySynchronous(state: StreamState, source: string): void {
     state.json.delete(key);
   }
   state.appliedSeq = state.seq;
+  const blocks = keys.map((key) => state.nodes.get(key) as PMNode);
   state.snapshot = {
     source,
-    blocks: keys.map((key) => state.nodes.get(key) as PMNode),
-    openCode: result.openCode,
-    openCodeBlock: result.blocks.findIndex((block) => ownsNode(block, result.openCode)),
+    blocks,
+    openCode: nodeAtPath(blocks, openCodePath),
+    openCodeBlock: openCodePath?.block ?? -1,
   };
   notify(state);
 }
@@ -226,28 +229,6 @@ function hash(value: string): string {
     result = Math.imul(result, 0x01000193);
   }
   return (result >>> 0).toString(36);
-}
-
-function nodeAt(blocks: readonly PMNode[], locator: OpenCodePath): PMNode | null {
-  if (!locator) return null;
-  let node: PMNode | undefined = blocks[locator.block];
-  if (!node) return null;
-  for (const index of locator.path) {
-    node = node.maybeChild(index) ?? undefined;
-    if (!node) return null;
-  }
-  return node;
-}
-
-function ownsNode(block: PMNode, target: PMNode | null): boolean {
-  if (!target) return false;
-  if (block === target) return true;
-  let found = false;
-  block.descendants((node) => {
-    if (node === target) found = true;
-    return !found;
-  });
-  return found;
 }
 
 function notify(state: StreamState): void {
