@@ -357,10 +357,7 @@ export function DocumentMarkdown({
   }, [hasPresentation, source, streamId, streaming]);
   const snapshot = streaming ? live : settled;
   return (
-    <div
-      className={className}
-      data-markdown-source-length={snapshot?.source.length ?? (streaming ? -1 : source.length)}
-    >
+    <div className={className}>
       {hasPresentation ? (
         <StaticTranscript
           source={source}
