@@ -18,11 +18,9 @@ export type WriteErrorStatus =
   | "cant_undo_applied"
   | "cant_undo_discarded"
   | "cant_undo_changed"
-  | "cant_undo_elsewhere"
   | "cant_redo_applied"
   | "cant_redo_discarded"
   | "cant_redo_changed"
-  | "cant_redo_elsewhere"
   | "cant_redo_users_undo"
   | "insufficient_undo"
   | "insufficient_redo"
@@ -234,11 +232,9 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "cant_undo_applied":
     case "cant_undo_discarded":
     case "cant_undo_changed":
-    case "cant_undo_elsewhere":
     case "cant_redo_applied":
     case "cant_redo_discarded":
     case "cant_redo_changed":
-    case "cant_redo_elsewhere":
     case "cant_redo_users_undo":
     case "nothing_to_revert":
     case "work_archived":
