@@ -10,6 +10,7 @@ import {
   headAdmitsClient,
   serverServesHead,
 } from "@meridian/prosemirror-schema";
+import * as decoding from "lib0/decoding";
 import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import {
@@ -48,6 +49,7 @@ export type YjsGatewayPeer = {
   request: Request;
   userId: UserId;
   traceId: string;
+  attemptId?: string;
   socket: WebSocketLike;
   close(code?: number, reason?: string): void;
 };
@@ -111,13 +113,74 @@ type YjsConnectionAdmission =
 type YjsConnectionContext = {
   userId: UserId;
   traceId: string;
+  attemptId?: string;
   clientSchemaVersion: CollabSchemaVersion;
   draftSyncState: Map<string, DraftHandshakeState>;
   admissionTarget?: YjsAdmissionTarget;
   access?: YjsRoomAccess;
   registration: YjsRoomRegistration;
   closeTransport(input: { code: number; reason: string }): void;
+  firstSync?: { startedAt: number; room: ParsedYjsRoom; ended: boolean };
 };
+
+function openCorrelation(context: YjsConnectionContext, room?: ParsedYjsRoom) {
+  const documentId = room
+    ? room.kind === "live"
+      ? room.documentId
+      : context.admissionTarget?.documentId
+    : undefined;
+  return {
+    traceId: context.traceId,
+    ...(context.attemptId ? { attemptId: context.attemptId } : {}),
+    ...(documentId ? { documentId } : {}),
+    ...(room?.kind === "draft" ? { draftId: room.draftId } : {}),
+  };
+}
+
+async function observeOpenStep<T>(input: {
+  services: Pick<YjsGatewayServices, "eventSink">;
+  context: YjsConnectionContext;
+  room: ParsedYjsRoom;
+  name: "admission" | "load" | "after_load" | "connected";
+  run(): Promise<T>;
+  details?: () => Record<string, unknown>;
+}): Promise<T> {
+  const startedAt = performance.now();
+  let outcome = "ok";
+  try {
+    return await input.run();
+  } catch (cause) {
+    outcome = "failed";
+    throw cause;
+  } finally {
+    emitEvent(input.services.eventSink, {
+      level: outcome === "ok" ? "info" : "warn",
+      source: "collab.open",
+      name: input.name,
+      correlation: openCorrelation(input.context, input.room),
+      payload: {
+        spanKind: "exclusive",
+        roomKind: input.room.kind,
+        outcome,
+        durationMs: performance.now() - startedAt,
+        ...input.details?.(),
+      },
+    });
+  }
+}
+
+function outgoingSyncType(frame: unknown): number | null {
+  if (!(frame instanceof Uint8Array)) return null;
+  try {
+    const decoder = decoding.createDecoder(frame);
+    decoding.readVarString(decoder);
+    const messageType = decoding.readVarUint(decoder);
+    if (messageType !== 0 && messageType !== 4) return null;
+    return decoding.readVarUint(decoder);
+  } catch {
+    return null;
+  }
+}
 
 export function clientSchemaVersionFromRequest(request: Request): CollabSchemaVersion {
   return clientSchemaVersionFromSubprotocolHeader(request.headers.get("sec-websocket-protocol"));
@@ -514,47 +577,54 @@ export function createHocuspocus(
         if (!userId) throw permissionDenied("permission-denied");
 
         const room = parseRoomOrDeny(documentName);
-        await withRemovalRefusal(services, room, userId, context, async () => {
-          const admission = await classifyYjsConnectionAdmission({
-            services,
-            room,
-            userId,
-            clientSchemaVersion: context.clientSchemaVersion,
-          });
-          if (admission.kind === "refused") {
-            refuseSchemaAdmission({
-              services,
-              roomKey: documentName,
-              ...admission,
-            });
-          }
-          context.admissionTarget = admission.target;
-          context.access = admission.access;
-          // Hocuspocus sends this as the authenticated scope: `readonly` or `read-write`.
-          connectionConfig.readOnly = admission.access.level === "read";
-          rooms.register(context.registration, admission.accessWorkIds);
-          // A Work change between admission and registration reached no room.
-          // Registered now, the room hears every later change; ask once more.
-          const settled = await findRoomAccess(services, userId, admission.fileTarget);
-          if (settled?.access.level !== admission.access.level) refuse(WS_CLOSE.ACCESS_CHANGED);
-
-          if (admission.target.kind === "draft") {
-            const target = admission.target;
-            // Do not delay room admission: a cold room may briefly render its persisted
-            // state before this pull arrives. A pull that commits while the room loads is
-            // brought in by the room's enrollment once Hocuspocus registers it.
-            void services.documentSync
-              .flushDraftLivePull(target.documentId)
-              .catch((cause: unknown) => {
-                emitEvent(services.eventSink, {
-                  level: "warn",
-                  source: "collab.hocuspocus",
-                  name: "draft_review.live_pull_failed",
-                  correlation: { documentId: target.documentId, draftId: target.draftId },
-                  payload: unknownToEventPayload(cause),
-                });
+        await observeOpenStep({
+          services,
+          context,
+          room,
+          name: "admission",
+          run: () =>
+            withRemovalRefusal(services, room, userId, context, async () => {
+              const admission = await classifyYjsConnectionAdmission({
+                services,
+                room,
+                userId,
+                clientSchemaVersion: context.clientSchemaVersion,
               });
-          }
+              if (admission.kind === "refused") {
+                refuseSchemaAdmission({
+                  services,
+                  roomKey: documentName,
+                  ...admission,
+                });
+              }
+              context.admissionTarget = admission.target;
+              context.access = admission.access;
+              // Hocuspocus sends this as the authenticated scope: `readonly` or `read-write`.
+              connectionConfig.readOnly = admission.access.level === "read";
+              rooms.register(context.registration, admission.accessWorkIds);
+              // A Work change between admission and registration reached no room.
+              // Registered now, the room hears every later change; ask once more.
+              const settled = await findRoomAccess(services, userId, admission.fileTarget);
+              if (settled?.access.level !== admission.access.level) refuse(WS_CLOSE.ACCESS_CHANGED);
+
+              if (admission.target.kind === "draft") {
+                const target = admission.target;
+                // Do not delay room admission: a cold room may briefly render its persisted
+                // state before this pull arrives. A pull that commits while the room loads is
+                // brought in by the room's enrollment once Hocuspocus registers it.
+                void services.documentSync
+                  .flushDraftLivePull(target.documentId)
+                  .catch((cause: unknown) => {
+                    emitEvent(services.eventSink, {
+                      level: "warn",
+                      source: "collab.hocuspocus",
+                      name: "draft_review.live_pull_failed",
+                      correlation: { documentId: target.documentId, draftId: target.draftId },
+                      payload: unknownToEventPayload(cause),
+                    });
+                  });
+              }
+            }),
         });
       });
     },
@@ -569,6 +639,16 @@ export function createHocuspocus(
         const userId = context.userId;
         if (!userId) throw permissionDenied("permission-denied");
         const room = parseRoomOrDeny(documentName);
+        if (type === messageYjsSyncStep1 && !context.firstSync) {
+          context.firstSync = { startedAt: performance.now(), room, ended: false };
+          emitEvent(services.eventSink, {
+            level: "info",
+            source: "collab.open",
+            name: "first_sync.start",
+            correlation: openCorrelation(context, room),
+            payload: { spanKind: "interval", roomKind: room.kind, outcome: "started" },
+          });
+        }
         await withRemovalRefusal(services, room, userId, context, async () => {
           const target = admittedTargetForSync(context, documentName);
           const access = context.access;
@@ -605,41 +685,59 @@ export function createHocuspocus(
     async onLoadDocument({ documentName, document, context }) {
       return runWithEventCorrelation({ traceId: context.traceId }, async () => {
         const room = parseRoomOrDeny(documentName);
-        await withRemovalRefusal(services, room, context.userId, context, async () => {
-          let state: Uint8Array | undefined;
-          try {
-            state =
-              room.kind === "live"
-                ? await services.documentSync.loadHocuspocusDocument(room.documentId, document)
-                : (await services.documentSync.loadHocuspocusDraftState(room.draftId))?.state;
-          } catch (cause) {
-            if (!isDocumentSchemaMajorMismatchError(cause)) throw cause;
-            refuseSchemaAdmission({
-              services,
-              roomKey: documentName,
-              documentId: cause.docId as DocumentId,
-              close: WS_CLOSE.DOCUMENT_SCHEMA_STALE,
-              clientSchemaVersion: context.clientSchemaVersion,
-              headSchemaVersion: cause.storedVersion,
-              serverSchemaVersion: cause.expectedVersion,
-            });
-          }
-          if (!state && room.kind === "draft") refuse(WS_CLOSE.DRAFT_CLOSED);
-          if (state) Y.applyUpdate(document, state);
-          if (room.kind === "live") services.documentSync.primeReservedNamespaceIndex(document);
+        let stateBytes = 0;
+        await observeOpenStep({
+          services,
+          context,
+          room,
+          name: "load",
+          details: () => ({ stateBytes }),
+          run: () =>
+            withRemovalRefusal(services, room, context.userId, context, async () => {
+              let state: Uint8Array | undefined;
+              try {
+                state =
+                  room.kind === "live"
+                    ? await services.documentSync.loadHocuspocusDocument(room.documentId, document)
+                    : (await services.documentSync.loadHocuspocusDraftState(room.draftId))?.state;
+              } catch (cause) {
+                if (!isDocumentSchemaMajorMismatchError(cause)) throw cause;
+                refuseSchemaAdmission({
+                  services,
+                  roomKey: documentName,
+                  documentId: cause.docId as DocumentId,
+                  close: WS_CLOSE.DOCUMENT_SCHEMA_STALE,
+                  clientSchemaVersion: context.clientSchemaVersion,
+                  headSchemaVersion: cause.storedVersion,
+                  serverSchemaVersion: cause.expectedVersion,
+                });
+              }
+              stateBytes = state?.byteLength ?? 0;
+              if (!state && room.kind === "draft") refuse(WS_CLOSE.DRAFT_CLOSED);
+              if (state) Y.applyUpdate(document, state);
+              if (room.kind === "live") services.documentSync.primeReservedNamespaceIndex(document);
+            }),
         });
       });
     },
-    async afterLoadDocument({ documentName, document }) {
+    async afterLoadDocument({ documentName, document, context }) {
       const room = parseRoomOrDeny(documentName);
-      if (room.kind === "live") {
-        await services.documentSync.validateHocuspocusDocument(room.documentId, document);
-        return;
-      }
-      // Not awaited: Hocuspocus registers the room only after this hook returns.
-      services.documentSync.enrollHocuspocusDraftRoom({
-        draftId: room.draftId,
-        document,
+      await observeOpenStep({
+        services,
+        context,
+        room,
+        name: "after_load",
+        run: async () => {
+          if (room.kind === "live") {
+            await services.documentSync.validateHocuspocusDocument(room.documentId, document);
+            return;
+          }
+          // Not awaited: Hocuspocus registers the room only after this hook returns.
+          services.documentSync.enrollHocuspocusDraftRoom({
+            draftId: room.draftId,
+            document,
+          });
+        },
       });
     },
     async connected({ documentName, connection, context }) {
@@ -651,24 +749,31 @@ export function createHocuspocus(
           connection.close(close);
         },
       };
-      await withRemovalRefusal(services, room, context.userId, closing, async () => {
-        if (room.kind === "draft") {
-          // A close can commit between admission and registration; the ended draft
-          // must not take a late connection.
-          if (!(await services.documentSync.resolveDraftHocuspocusRoom(room.draftId)))
-            refuse(WS_CLOSE.DRAFT_CLOSED);
-          return;
-        }
-        try {
-          // The room can finish loading after restore's disconnection. Validate
-          // after connection creation too, so the late join is closed and retries.
-          await services.documentSync.validateHocuspocusDocument(
-            room.documentId,
-            connection.document,
-          );
-        } catch (cause) {
-          refuse({ code: 1013, reason: "retired-durable-authority-generation" }, cause);
-        }
+      await observeOpenStep({
+        services,
+        context,
+        room,
+        name: "connected",
+        run: () =>
+          withRemovalRefusal(services, room, context.userId, closing, async () => {
+            if (room.kind === "draft") {
+              // A close can commit between admission and registration; the ended draft
+              // must not take a late connection.
+              if (!(await services.documentSync.resolveDraftHocuspocusRoom(room.draftId)))
+                refuse(WS_CLOSE.DRAFT_CLOSED);
+              return;
+            }
+            try {
+              // The room can finish loading after restore's disconnection. Validate
+              // after connection creation too, so the late join is closed and retries.
+              await services.documentSync.validateHocuspocusDocument(
+                room.documentId,
+                connection.document,
+              );
+            } catch (cause) {
+              refuse({ code: 1013, reason: "retired-durable-authority-generation" }, cause);
+            }
+          }),
       });
     },
     async onStoreDocument({ documentName, document }) {
@@ -720,18 +825,52 @@ export function createYjsGateway(services: YjsGatewayServices) {
 
       const registration: YjsRoomRegistration = { revoke: () => undefined };
       const draftSyncState = new Map<string, DraftHandshakeState>();
+      const context: YjsConnectionContext = {
+        userId: peer.userId,
+        traceId: peer.traceId,
+        ...(peer.attemptId ? { attemptId: peer.attemptId } : {}),
+        clientSchemaVersion: clientSchemaVersionFromRequest(peer.request),
+        draftSyncState,
+        registration,
+        closeTransport: ({ code, reason }) => peer.close(code, reason),
+      };
+      const socket: WebSocketLike = {
+        close: (code, reason) => peer.socket.close(code, reason),
+        get readyState() {
+          return peer.socket.readyState;
+        },
+        send(data) {
+          let outcome = "sent";
+          try {
+            peer.socket.send(data);
+          } catch (cause) {
+            outcome = "failed";
+            throw cause;
+          } finally {
+            const sync = context.firstSync;
+            if (sync && !sync.ended && outgoingSyncType(data) === messageYjsSyncStep2) {
+              sync.ended = true;
+              emitEvent(services.eventSink, {
+                level: outcome === "sent" ? "info" : "warn",
+                source: "collab.open",
+                name: "first_sync.end",
+                correlation: openCorrelation(context, sync.room),
+                payload: {
+                  spanKind: "interval",
+                  roomKind: sync.room.kind,
+                  outcome,
+                  durationMs: performance.now() - sync.startedAt,
+                  bytes: data instanceof Uint8Array ? data.byteLength : undefined,
+                },
+              });
+            }
+          }
+        },
+      };
       const connection: YjsGatewayConnection = {
         draftSyncState,
         registration,
-        hocuspocus: hocuspocus.handleConnection(peer.socket, peer.request, {
-          userId: peer.userId,
-          traceId: peer.traceId,
-          clientSchemaVersion: clientSchemaVersionFromRequest(peer.request),
-          draftSyncState,
-          registration,
-          closeTransport: ({ code, reason }: { code: number; reason: string }) =>
-            peer.close(code, reason),
-        }),
+        hocuspocus: hocuspocus.handleConnection(socket, peer.request, context),
       };
       registration.revoke = () => {
         // Close the socket first, so Hocuspocus's own protocol CLOSE (which the

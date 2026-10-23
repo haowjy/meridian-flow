@@ -124,7 +124,11 @@ export class ProjectDocumentLiveOpener {
   constructor(
     private readonly dependencies: {
       availability: {
-        resolveForOpen(projectId: ProjectId, documentId: DocumentId): Promise<ExactOpenResolution>;
+        resolveForOpen(
+          projectId: ProjectId,
+          documentId: DocumentId,
+          attemptId?: string,
+        ): Promise<ExactOpenResolution>;
       };
       registry: Pick<
         LiveDocumentSessionRegistry,
@@ -141,9 +145,10 @@ export class ProjectDocumentLiveOpener {
   async resolveIdentity(
     projectId: ProjectId,
     documentId: DocumentId,
+    attemptId?: string,
   ): Promise<ExactOpenResolution> {
     try {
-      return await this.dependencies.availability.resolveForOpen(projectId, documentId);
+      return await this.dependencies.availability.resolveForOpen(projectId, documentId, attemptId);
     } catch {
       return { kind: "failed" };
     }
@@ -168,11 +173,11 @@ export class ProjectDocumentLiveOpener {
   private requestAttempt(
     projectId: ProjectId,
     documentId: DocumentId,
-    attemptId = crypto.randomUUID(),
+    attemptId: string = crypto.randomUUID(),
   ): Extract<OpenAttempt, { kind: "request" }> {
     markDocumentOpen("attempt-decided", { documentId, attemptId, kind: "request" });
     markDocumentOpen("request-start", { documentId, attemptId });
-    const resolution = this.resolveIdentity(projectId, documentId).finally(() =>
+    const resolution = this.resolveIdentity(projectId, documentId, attemptId).finally(() =>
       markDocumentOpen("request-end", { documentId, attemptId }),
     );
     return { kind: "request", attemptId, resolution };
@@ -242,11 +247,15 @@ export class ProjectDocumentLiveOpener {
   ): Promise<ProjectDocumentLiveOpenResult> {
     if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
       return { kind: "cancelled" };
-    const attempt = input.attempt ?? this.decide(input.projectId, input.documentId, false);
-    const resolution =
-      attempt.kind === "request"
-        ? await attempt.resolution
-        : await this.resolveIdentity(input.projectId, input.documentId);
+    const initialAttempt = input.attempt ?? this.decide(input.projectId, input.documentId, false);
+    // A local-expected attempt reaches this path only after the exact-local
+    // probe failed. Preserve its identity while making the fallback request
+    // visible in the same attempt trace.
+    const attempt =
+      initialAttempt.kind === "request"
+        ? initialAttempt
+        : this.requestAttempt(input.projectId, input.documentId, initialAttempt.attemptId);
+    const resolution = await attempt.resolution;
     if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
       return { kind: "cancelled" };
     if (resolution.kind !== "available") {
@@ -268,6 +277,7 @@ export class ProjectDocumentLiveOpener {
         input.projectId,
         input.documentId,
         resolution.generation,
+        { attemptId: attempt.attemptId },
       );
     } catch (error) {
       if (input.signal?.aborted || this.dependencies.epochSignal.aborted)

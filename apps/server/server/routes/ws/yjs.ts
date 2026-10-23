@@ -2,7 +2,7 @@
 import type { UserId } from "@meridian/contracts/runtime";
 import { selectCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import { defineWebSocketHandler } from "nitro";
-import { runWithEventCorrelation } from "../../domains/observability/index.js";
+import { emitEvent, runWithEventCorrelation } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
 import { getProcessEventSink } from "../../lib/observability.js";
 import {
@@ -16,6 +16,7 @@ import {
   type YjsGateway,
   type YjsGatewayConnection,
 } from "../../lib/yjs-ws-handler.js";
+import { parseRequestId } from "../../shared/uuid.js";
 
 type YjsRouteContext =
   | {
@@ -24,6 +25,7 @@ type YjsRouteContext =
       userId: UserId;
       gateway: YjsGateway;
       traceId: string;
+      attemptId?: string;
     }
   | { kind: "deferred-close"; close: WsDeferredClose };
 
@@ -45,9 +47,26 @@ export function getYjsGateway(app: AppServices): YjsGateway {
 
 export const yjsWebSocketHandler = defineWebSocketHandler({
   async upgrade(request) {
+    const startedAt = performance.now();
+    const traceId = crypto.randomUUID();
+    const attemptId =
+      parseRequestId(new URL(request.url).searchParams.get("attemptId") ?? "") ?? undefined;
+    const eventSink = getProcessEventSink();
     const auth = await resolveWsUpgradeAuth(request, {
       logPrefix: "ws-yjs-route",
-      eventSink: getProcessEventSink(),
+      eventSink,
+      traceId,
+    });
+    emitEvent(eventSink, {
+      level: "info",
+      source: "collab.open",
+      name: "upgrade_auth",
+      correlation: { traceId, ...(attemptId ? { attemptId } : {}) },
+      payload: {
+        spanKind: "exclusive",
+        durationMs: performance.now() - startedAt,
+        outcome: auth.kind,
+      },
     });
     const selectedSubprotocol = selectCollabSchemaSubprotocol(
       request.headers.get("sec-websocket-protocol"),
@@ -64,6 +83,7 @@ export const yjsWebSocketHandler = defineWebSocketHandler({
             userId: auth.userId,
             gateway: getYjsGateway(auth.app),
             traceId: auth.traceId,
+            ...(attemptId ? { attemptId } : {}),
           } satisfies YjsRouteContext),
           ...responseHeaders,
         };
@@ -81,6 +101,7 @@ export const yjsWebSocketHandler = defineWebSocketHandler({
             request: wsPeer.request,
             userId: wsPeer.context.userId,
             traceId: wsPeer.context.traceId,
+            attemptId: wsPeer.context.attemptId,
             close: (code, reason) => wsPeer.close(code, reason),
             socket: {
               send: (data) =>

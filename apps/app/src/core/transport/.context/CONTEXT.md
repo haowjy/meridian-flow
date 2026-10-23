@@ -25,6 +25,9 @@ socket. `CollabSchemaWebSocket` formats the current version through
 `@meridian/prosemirror-schema`; the Yjs URL carries no schema parameter. The
 subclass wraps `TappedWebSocket` in debug builds and the native `WebSocket` in
 production so observation does not create a second transport path.
+The open attempt that creates a cold live room is carried as the socket's
+`attemptId` query parameter. It is diagnostic correlation only; room identity,
+schema admission, and authorization never read it as authority.
 
 ## Outbox and acknowledgement edges
 

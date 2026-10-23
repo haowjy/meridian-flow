@@ -42,6 +42,8 @@ export type ProjectDocumentAvailabilityCommand =
 type Lookup = (
   projectId: string,
   documentIds: readonly string[],
+  signal?: AbortSignal,
+  attemptId?: string,
 ) => Promise<ProjectContextIdentityLookupResult>;
 
 export type AvailabilityWatchRecord = Readonly<{ documentId: string; sourceWorkId?: string }>;
@@ -262,11 +264,15 @@ export class ProjectContextAvailabilityCoordinator {
   }
 
   /** One exact-ID authority resolution with its own short-lived project lease. */
-  resolveForOpen(projectId: string, documentId: string): Promise<ProjectDocumentOpenResolution> {
+  resolveForOpen(
+    projectId: string,
+    documentId: string,
+    attemptId?: string,
+  ): Promise<ProjectDocumentOpenResolution> {
     const key = JSON.stringify([projectId, documentId]);
     const pending = this.pendingOpens.get(key);
     if (pending) return pending;
-    const opening = this.resolveOpen(projectId, documentId).finally(() =>
+    const opening = this.resolveOpen(projectId, documentId, attemptId).finally(() =>
       this.pendingOpens.delete(key),
     );
     this.pendingOpens.set(key, opening);
@@ -276,6 +282,7 @@ export class ProjectContextAvailabilityCoordinator {
   private async resolveOpen(
     projectId: string,
     documentId: string,
+    attemptId?: string,
   ): Promise<ProjectDocumentOpenResolution> {
     const lease = this.attachProject(projectId);
     // The departing view may release its watch while this explicit open is awaiting authority.
@@ -287,7 +294,7 @@ export class ProjectContextAvailabilityCoordinator {
       let response: ProjectContextIdentityLookupResult;
       try {
         response = await this.withLookupSlot(state, () =>
-          this.dependencies.lookup(projectId, [documentId]),
+          this.dependencies.lookup(projectId, [documentId], undefined, attemptId),
         );
       } catch {
         this.learnUnresolved(projectId, [documentId]);

@@ -207,6 +207,7 @@ export type DocumentSessionTransportFactory = (opts: {
   document: Y.Doc;
   awareness: Awareness;
   fragmentName: typeof PROSEMIRROR_FRAGMENT_NAME;
+  openAttemptId?: string;
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
@@ -216,6 +217,8 @@ export type DocumentSessionOptions = {
   persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };
   /** Plugs the server document-sync provider into the session-owned Y.Doc. */
   transportFactory?: DocumentSessionTransportFactory;
+  /** The user open that created this room, for joining HTTP and WebSocket traces. */
+  openAttemptId?: string;
   /** Registry-owned persistence hook for the first fence transition. */
   persistSchemaFence?: (fence: SchemaFence) => void;
   ownUserId?: string | null;
@@ -232,6 +235,7 @@ export class DocumentSession {
   readonly awareness: Awareness;
   readonly fragmentName = PROSEMIRROR_FRAGMENT_NAME;
   readonly markerStore: SessionMarkerStore;
+  private readonly openAttemptId: string | undefined;
 
   private persistence: IndexeddbPersistence | null;
   private localPeers: LocalDocumentPeers | null = null;
@@ -285,6 +289,7 @@ export class DocumentSession {
     roomKey,
     persistence,
     transportFactory,
+    openAttemptId,
     persistSchemaFence,
     ownUserId = null,
   }: DocumentSessionOptions) {
@@ -294,6 +299,7 @@ export class DocumentSession {
     this.room = room;
     this.documentId = room.kind === "live" ? room.documentId : room.draftId;
     this.document = createCollabYDoc();
+    this.openAttemptId = openAttemptId;
     this.persistSchemaFence = persistSchemaFence;
     this.markerStore = new SessionMarkerStore(ownUserId);
     this.awareness = new Awareness(this.document);
@@ -345,6 +351,7 @@ export class DocumentSession {
         document: this.document,
         awareness: this.awareness,
         fragmentName: this.fragmentName,
+        ...(this.openAttemptId ? { openAttemptId: this.openAttemptId } : {}),
       });
     } catch (error) {
       this.transportAttachmentPending = false;

@@ -86,12 +86,13 @@ export async function lookupProjectContextAvailability(
   projectId: string,
   documentIds: readonly string[],
   signal?: AbortSignal,
+  attemptId?: string,
 ): Promise<ProjectContextIdentityLookupResult> {
   const requested = [...new Set(documentIds)];
   return validateProjectContextAvailabilityResult(
     projectId,
     requested,
-    await getProjectContextAvailability(projectId, requested, signal),
+    await getProjectContextAvailability(projectId, requested, signal, undefined, attemptId),
   );
 }
 

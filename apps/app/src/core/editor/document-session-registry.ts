@@ -14,6 +14,12 @@ export type RetainedLiveDocumentReference = Readonly<{
 }>;
 
 export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthority {
+  admit(
+    projectId: ProjectId,
+    documentId: DocumentId,
+    generation: AvailabilityGeneration,
+    options?: { attemptId?: string },
+  ): Promise<LiveDocumentSessionLease>;
   get(lease: LiveDocumentSessionLease): DocumentSession;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
   /**

@@ -84,6 +84,10 @@ with the typed transport code. Schema admission closes the physical transport
 through `closeTransport` after emitting its correlated diagnostic; the hook
 throw only aborts processing and is not close delivery. Schema comparison and
 head semantics belong to [collab](../../domains/collab/.context/document-authority-and-schema.md).
+Cold-open diagnostics emit exclusive admission, load, post-load, and connected
+durations plus the first SyncStep1-to-SyncStep2 interval through the shared
+event sink. Their trace id comes from the upgrade, and a valid client
+`attemptId` query parameter joins them to the availability request and click.
 
 The client schema comes from `Sec-WebSocket-Protocol`: exactly one grammar
 match supplies the triple; absent, zero, or multiple matches use the `0.0.0`

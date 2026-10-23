@@ -284,6 +284,8 @@ export type HocuspocusDocumentTransportOptions = {
   connectivityHints?: ConnectivityHintsPort;
   /** Session creation starts the socket now and attaches the Yjs provider after local replay. */
   deferAttach?: boolean;
+  /** Joins this room's first socket to the click and availability request that created it. */
+  openAttemptId?: string;
 };
 
 export function createHocuspocusDocumentTransport({
@@ -292,6 +294,7 @@ export function createHocuspocusDocumentTransport({
   awareness,
   connectivityHints,
   deferAttach = false,
+  openAttemptId,
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
   const listeners = new Set<(state: DocumentSessionConnectionState) => void>();
   const accessListeners = new Set<(access: DocumentSessionAccess) => void>();
@@ -304,9 +307,11 @@ export function createHocuspocusDocumentTransport({
     }
     for (const listener of acknowledgementListeners) listener(acknowledged);
   });
+  const socketUrl = new URL(buildSameOriginWsUrl(yjsWsPath()));
+  if (openAttemptId) socketUrl.searchParams.set("attemptId", openAttemptId);
   const websocket = new RoomScopedHocuspocusWebsocket(
     {
-      url: buildSameOriginWsUrl(yjsWsPath()),
+      url: socketUrl.toString(),
       WebSocketPolyfill: CollabSchemaWebSocket,
       autoConnect: false,
     },

@@ -56,13 +56,14 @@ function createCore(
     undefined,
     undefined,
     accountId,
-    ({ roomKey, document, awareness }) =>
+    ({ roomKey, document, awareness, openAttemptId }) =>
       createHocuspocusDocumentTransport({
         roomName: roomKey,
         document,
         awareness,
         connectivityHints,
         deferAttach: true,
+        openAttemptId,
       }),
   );
   return Object.freeze({

@@ -80,6 +80,10 @@ export class DocumentSessionRegistry
     (snapshot: readonly RetainedLiveDocumentReference[]) => void
   >();
   private readonly admissionReservations = new Map<DocumentId, number>();
+  private readonly openAttempts = new Map<
+    DocumentId,
+    { generation: AvailabilityGeneration; attemptId: string }
+  >();
   /** The private local-transfer facet: the account runtime's reservation and adoption ports. */
   readonly localTransfers = new LocalDocumentSessionTransfers({
     requireOpen: () => this.requireAccountRuntimeOpen(),
@@ -118,12 +122,14 @@ export class DocumentSessionRegistry
       roomKey,
       document,
       awareness,
+      openAttemptId,
     }) =>
       createHocuspocusDocumentTransport({
         roomName: roomKey,
         document,
         awareness,
         deferAttach: true,
+        openAttemptId,
       }),
   ) {
     this.draftRooms = new DraftRoomPool({
@@ -148,6 +154,7 @@ export class DocumentSessionRegistry
     projectId: ProjectId,
     documentId: DocumentId,
     generation: AvailabilityGeneration,
+    options?: { attemptId?: string },
   ): Promise<LiveDocumentSessionLease> {
     this.requireAccountRuntimeOpen();
     compareAvailabilityGeneration(generation, generation);
@@ -161,12 +168,18 @@ export class DocumentSessionRegistry
       const admitted = await this.translateCoordination(() =>
         coordination.admit(projectId, documentId, generation, { originLineageHandle }),
       );
-      return {
+      const lease = {
         accountId: admitted.accountId,
         projectId: admitted.projectId,
         documentId: admitted.documentId,
         generation: admitted.generation,
       };
+      if (options?.attemptId)
+        this.openAttempts.set(documentId, {
+          generation: lease.generation,
+          attemptId: options.attemptId,
+        });
+      return lease;
     } finally {
       this.releaseAdmissionReservation(documentId);
     }
@@ -575,6 +588,8 @@ export class DocumentSessionRegistry
     this.cancelPendingTeardown(lease.documentId);
     this.teardownOwner.assertAvailable({ kind: "live", roomKey: lease.documentId });
     if (state.session) {
+      if (this.openAttempts.get(lease.documentId)?.generation === lease.generation)
+        this.openAttempts.delete(lease.documentId);
       if (attach && state.session.getSnapshot().status === "detached") {
         this.attachSessionTransport(state.session);
       }
@@ -586,10 +601,16 @@ export class DocumentSessionRegistry
       lease.documentId,
       state.persistenceGeneration,
     );
-    const session = this.createSession(lease.documentId, {
-      kind: "indexeddb",
-      key: state.exactDatabaseName,
-    });
+    const openAttempt = this.openAttempts.get(lease.documentId);
+    if (openAttempt?.generation === lease.generation) this.openAttempts.delete(lease.documentId);
+    const session = this.createSession(
+      lease.documentId,
+      {
+        kind: "indexeddb",
+        key: state.exactDatabaseName,
+      },
+      openAttempt?.generation === lease.generation ? openAttempt.attemptId : undefined,
+    );
     state.session = session;
     if (attach) this.attachSessionTransport(session);
     this.maybeWarnLiveDocCap();
@@ -599,8 +620,9 @@ export class DocumentSessionRegistry
   private createSession(
     roomKey: string,
     persistence: DocumentSessionOptions["persistence"],
+    openAttemptId?: string,
   ): DocumentSession {
-    const session = this.constructSession(roomKey, persistence);
+    const session = this.constructSession(roomKey, persistence, openAttemptId);
     this.publishSession(roomKey, session);
     return session;
   }
@@ -608,11 +630,13 @@ export class DocumentSessionRegistry
   private constructSession(
     roomKey: string,
     persistence: DocumentSessionOptions["persistence"],
+    openAttemptId?: string,
   ): DocumentSession {
     let session!: DocumentSession;
     session = new DocumentSession({
       roomKey,
       persistence,
+      ...(openAttemptId ? { openAttemptId } : {}),
       ownUserId: this.accountId,
       persistSchemaFence: (fence) => writeSchemaFenceQuarantine(session.documentId, fence),
     });

@@ -261,11 +261,15 @@ export async function getProjectContextAvailability(
   documentIds: readonly string[],
   signal?: AbortSignal,
   folderIds?: readonly string[],
+  attemptId?: string,
 ): Promise<ProjectContextIdentityLookupResult> {
   return postJson<ProjectContextIdentityLookupResult>(
     `/api/projects/${encodeURIComponent(projectId)}/context/availability`,
     { projectId, documentIds, ...(folderIds ? { folderIds } : {}) },
-    { signal },
+    {
+      signal,
+      ...(attemptId ? { headers: { "x-meridian-open-attempt-id": attemptId } } : {}),
+    },
   );
 }
 
