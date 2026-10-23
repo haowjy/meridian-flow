@@ -479,7 +479,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const commands = createDrizzleBranchCommands(deps.db);
-  const applyClick = createApplyClickService({
+  const applyCommands = createApplyClickService({
     identity,
     commands,
     evidence: createDrizzleDraftDispositionStore(deps.db),
@@ -514,6 +514,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       },
     }),
   });
+  const applyClick = applyCommands.apply;
   const branches = createWorkBranchReviewService({
     applyClick,
     branches: workBranches,

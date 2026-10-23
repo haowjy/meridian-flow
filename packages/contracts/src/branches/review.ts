@@ -80,6 +80,8 @@ export type ApplyClickResult =
        * this flag, per document.
        */
       restored?: true;
+      /** A frozen text cut committed, including a cut whose live update was already contained. */
+      textEffect?: true;
     }
   /** The branch's row is not the revision the click froze: nothing applied (design-v2 §4). */
   | { status: "changed"; commandId: BranchCommandId }
@@ -100,8 +102,26 @@ export type ApplyClickObservation =
   | ApplyClickAnswer
   | { status: "none"; commandId: BranchCommandId };
 
+/** Reverse the surviving text groups of one Apply. Tree effects are intentionally absent. */
+export type UnapplyClick = {
+  commandId: BranchCommandId;
+  applyCommandId: BranchCommandId;
+};
+export type UnapplyClickResult =
+  | {
+      status: "unapplied";
+      commandId: BranchCommandId;
+      applyCommandId: BranchCommandId;
+      reversedGroupIds: string[];
+      skippedGroupIds: string[];
+    }
+  | { status: "closed" | "refused"; commandId: BranchCommandId };
+export type UnapplyClickAnswer =
+  | UnapplyClickResult
+  | { status: "pending" | "conflict"; commandId: BranchCommandId };
+
 /** Stored writer-command outcomes. */
-export type StoredBranchCommandResult = BranchCommandResult | ApplyClickResult;
+export type StoredBranchCommandResult = BranchCommandResult | ApplyClickResult | UnapplyClickResult;
 
 /**
  * One review item of the Work's active branch: a created or edited document, text or binary.
@@ -184,6 +204,7 @@ export type DraftMetadataResponse =
 /** Which writer command a `commandId` was recorded for. */
 export const BRANCH_COMMAND_KINDS = [
   "apply_click",
+  "unapply_click",
   "apply_items",
   "apply_changes",
   "discard_items",
