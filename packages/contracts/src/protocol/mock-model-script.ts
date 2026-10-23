@@ -6,41 +6,113 @@ import { z } from "zod";
 
 export const API_DEBUG_MOCK_MODEL_SCRIPT_PATH = "/api/debug/mock-model/script";
 
-const toolCallSchema = z.object({
+const toolCallSchema = z.strictObject({
   name: z.string().min(1),
   args: z.record(z.string(), z.unknown()).default({}),
 });
 
+const responseFields = {
+  /** Choose one text source: literal text, an authored sample, or generated lorem. */
+  text: z.string().max(1_000_000).optional(),
+  sample: z.enum(["scene", "critique", "outline", "markdown"]).optional(),
+  lorem: z
+    .strictObject({
+      words: z.number().int().min(1).max(100_000),
+      wordsPerParagraph: z.number().int().min(1).max(1_000).optional(),
+    })
+    .optional(),
+  /** Thinking before text/tools; an empty string suppresses a sample's thinking. */
+  reasoning: z.string().max(1_000_000).optional(),
+  /** Repeat literal/sample text, separated by blank lines. Use lorem.words for lorem size. */
+  repeat: z.number().int().min(1).max(100).optional(),
+  /** Delay before headers and the first output. */
+  delayMs: z.number().int().min(0).max(120_000).optional(),
+  /** Unicode characters per text, reasoning, or tool-argument chunk (default 24). */
+  chunkSize: z.number().int().min(1).max(65_536).optional(),
+  /** Milliseconds between chunks; 0 streams as fast as the connection allows. */
+  chunkDelayMs: z.number().int().min(0).max(10_000).optional(),
+};
+
+function validTextSource(response: z.infer<typeof responseShape>): boolean {
+  return (
+    [response.text, response.sample, response.lorem].filter((value) => value !== undefined)
+      .length <= 1 &&
+    !(response.lorem && response.repeat !== undefined) &&
+    (response.text?.length ?? (response.sample ? 10_000 : 0)) * (response.repeat ?? 1) +
+      (response.reasoning?.length ?? 0) +
+      2 * ((response.repeat ?? 1) - 1) <=
+      2_000_000 &&
+    (response.repeat === undefined || response.text !== undefined || response.sample !== undefined)
+  );
+}
+
+const responseShape = z.strictObject(responseFields);
+const sourceMessage =
+  "choose at most one of text, sample, lorem; repeat needs text/sample; expanded text and reasoning must fit 2,000,000 characters";
+
+/** Repeated defaults cannot execute tools or consume queue-step budgets. */
+export const mockModelDefaultResponseSchema = responseShape
+  .refine(validTextSource, { message: sourceMessage })
+  .refine(
+    (response) =>
+      response.text !== undefined ||
+      response.sample ||
+      response.lorem ||
+      response.reasoning !== undefined,
+    { message: "a default response needs text, sample, lorem, or reasoning" },
+  );
+export type MockModelDefaultResponse = z.infer<typeof mockModelDefaultResponseSchema>;
+
 /**
- * One step answers `times` model calls (default 1). An `error` step without `times`
- * is sticky: it answers every matching call, so gateway retries and fallbacks all
- * fail and the run fails deterministically. Give it `times` to test recovery.
+ * One step answers `times` model calls (default 1). An error without `times`
+ * is sticky, so gateway retries and fallbacks fail deterministically.
  */
 export const mockModelStepSchema = z
-  .object({
-    /** Assistant prose streamed word by word. */
-    text: z.string().optional(),
-    /** Tool calls the model makes in this response (after any text). */
-    toolCalls: z.array(toolCallSchema).min(1).optional(),
-    /** Provider failure instead of a response. */
+  .strictObject({
+    ...responseFields,
+    /** Executed by the real runtime after reasoning/text. End a tool script with a text step. */
+    toolCalls: z.array(toolCallSchema).min(1).max(100).optional(),
+    /** Truncation/filtering instead of normal completion; partial tools must not execute. */
+    finishReason: z.enum(["length", "content_filter"]).optional(),
     error: z
-      .object({
+      .strictObject({
         status: z.number().int().min(400).max(599).default(500),
         message: z.string().default("mock provider error"),
       })
       .optional(),
-    /** Delay before the response starts. */
-    delayMs: z.number().int().min(0).max(120_000).optional(),
-    /** How many model calls this step answers before the next step. */
     times: z.number().int().min(1).max(1_000).optional(),
   })
-  .refine((step) => step.text !== undefined || step.toolCalls || step.error, {
-    message: "a step needs text, toolCalls, or error",
-  });
+  .refine(validTextSource, { message: sourceMessage })
+  .refine(
+    (step) =>
+      step.text !== undefined ||
+      step.sample ||
+      step.lorem ||
+      step.reasoning !== undefined ||
+      step.toolCalls ||
+      step.error,
+    { message: "a step needs text, sample, lorem, reasoning, toolCalls, or error" },
+  )
+  .refine(
+    (step) =>
+      !step.error ||
+      [
+        step.text,
+        step.sample,
+        step.lorem,
+        step.reasoning,
+        step.toolCalls,
+        step.finishReason,
+        step.repeat,
+        step.chunkSize,
+        step.chunkDelayMs,
+      ].every((value) => value === undefined),
+    { message: "error cannot be combined with response content or streaming controls" },
+  );
 
 export type MockModelStep = z.infer<typeof mockModelStepSchema>;
 
-export const mockModelScriptSchema = z.object({
+export const mockModelScriptSchema = z.strictObject({
   /**
    * Only model calls whose latest user message contains this text consume the
    * script, so concurrent threads do not steal each other's steps. Omitted: any call.

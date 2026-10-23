@@ -1,0 +1,51 @@
+{
+  "steps": [
+    {
+      "reasoning": "I need a scratch document so this workflow does not depend on an existing manuscript.",
+      "text": "I’ll draft a short scene in scratch, then check its contents.",
+      "toolCalls": [
+        {
+          "name": "write",
+          "args": {
+            "command": "create",
+            "path": "scratch://Mock scene",
+            "overwrite": true,
+            "content": "# The mountain gate\n\nMei broke the copper coin. The gate opened, but the mountain remembered her name.\n\n“别回头。” Jun waited on the other side. 🐉"
+          }
+        }
+      ],
+      "chunkSize": 16,
+      "chunkDelayMs": 10
+    },
+    {
+      "reasoning": "The draft is written. I will read it, inspect the scratch folder, and search for the copper coin.",
+      "toolCalls": [
+        {
+          "name": "read",
+          "args": {
+            "path": "scratch://Mock scene"
+          }
+        },
+        {
+          "name": "ls",
+          "args": {
+            "path": "scratch://"
+          }
+        },
+        {
+          "name": "search",
+          "args": {
+            "pattern": "copper coin",
+            "scope": "scratch://"
+          }
+        }
+      ],
+      "chunkSize": 8,
+      "chunkDelayMs": 15
+    },
+    {
+      "text": "## Scratch scene ready\n\nThe scene gives Mei a concrete sacrifice and leaves a consequence for the next chapter. You can open scratch://Mock scene to revise it.\n\n- **Choice:** Break the copper coin.\n- **Result:** The gate opens.\n- **Cost:** The mountain learns her name.",
+      "chunkDelayMs": 20
+    }
+  ]
+}

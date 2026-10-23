@@ -1,0 +1,30 @@
+{
+  "steps": [
+    {
+      "reasoning": "The next scene depends on whose perspective the writer wants.",
+      "toolCalls": [
+        {
+          "name": "ask_user",
+          "args": {
+            "kind": "choice",
+            "question": "Whose perspective should the next scene use?",
+            "options": [
+              {
+                "value": "mei",
+                "label": "Mei at the gate"
+              },
+              {
+                "value": "jun",
+                "label": "Jun inside the temple"
+              }
+            ],
+            "requires_human": true
+          }
+        }
+      ]
+    },
+    {
+      "text": "Your choice is recorded. This scripted reply ends the interrupt probe."
+    }
+  ]
+}
