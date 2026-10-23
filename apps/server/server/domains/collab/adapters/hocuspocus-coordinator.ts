@@ -6,6 +6,7 @@
 
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import {
+  type ConcurrentUpdate,
   type DocumentCoordinator,
   DocumentNotFoundError,
   type JournalSnapshot,
@@ -18,6 +19,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
+import { partitionConcurrentUpdates } from "../domain/concurrent-updates.js";
 import {
   bindDocumentAuthority,
   boundDocumentAuthority,
@@ -86,7 +88,7 @@ export function createHocuspocusCoordinator(deps: CoordinatorDeps): LiveDocument
  */
 export function createDeferredLiveProjectionCoordinator(deps: {
   hocuspocus: () => Hocuspocus;
-  journal: Pick<UpdateJournal, "read" | "appendBatch">;
+  journal: Pick<UpdateJournal, "read" | "readUpdates" | "appendBatch">;
   live: Pick<LiveDocumentCoordinator, "deliver">;
   transactions: {
     inTransaction(): boolean;
@@ -119,13 +121,35 @@ export function createDeferredLiveProjectionCoordinator(deps: {
           if (!deps.transactions.afterCommit(delivery)) void delivery();
         },
       ),
+    async concurrentUpdatesForReport({ docId, doc, baselineDoc, after, through }) {
+      const rows: ConcurrentUpdate[] = (await deps.journal.readUpdates(docId, after, through)).map(
+        (entry) => ({
+          update: entry.update,
+          origin: entry.meta.origin.startsWith("agent:")
+            ? {
+                type: "agent",
+                actorTurnId: entry.meta.actorTurnId ?? entry.meta.origin.slice("agent:".length),
+                ...(entry.meta.author ? { author: entry.meta.author } : {}),
+              }
+            : entry.meta.origin.startsWith("human:")
+              ? { type: "human", userId: entry.meta.origin.slice("human:".length) }
+              : { type: "system" },
+        }),
+      );
+      return partitionConcurrentUpdates(
+        baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null,
+        baselineDoc ? Y.snapshot(baselineDoc) : Y.emptySnapshot,
+        rows,
+        Y.encodeStateAsUpdate(doc),
+      );
+    },
   };
 }
 
 /** A document a save creates has no room yet: its rows append onto an empty one. */
-export function emptyWhenMissing(cause: unknown): { doc: Y.Doc; room: null } {
+export function emptyWhenMissing(cause: unknown): { doc: Y.Doc; room: null; position: number } {
   if (!(cause instanceof DocumentNotFoundError)) throw cause;
-  return { doc: new Y.Doc({ gc: false }), room: null };
+  return { doc: new Y.Doc({ gc: false }), room: null, position: 0 };
 }
 
 /**
@@ -158,12 +182,17 @@ export function liveSave(
       write: {
         kind: "write",
         async persist() {
-          const [first] = await journal.appendBatch(
+          const appended = await journal.appendBatch(
             input.entries.map((entry) => ({ ...entry, authority })),
             precondition && ((found) => precondition(cutBefore(found, prepared))),
           );
+          const first = appended[0];
           if (!first) throw new Error(`The journal returned no rows for ${input.docId}`);
-          return appendCut(input, cutBefore(first.beforeState, prepared));
+          return appendCut(
+            input,
+            cutBefore(first.beforeState, prepared),
+            Math.max(...appended.map((row) => row.seq)),
+          );
         },
         transfer: deliver,
         dispose() {},
@@ -192,12 +221,12 @@ function cutBefore(found: Uint8Array, prepared: Uint8Array): Uint8Array {
 }
 
 /** The cut of `input`'s rows appended after `beforeState`. */
-function appendCut(input: StagedRoomEntries, beforeState: Uint8Array): SaveCut {
+function appendCut(input: StagedRoomEntries, beforeState: Uint8Array, position: number): SaveCut {
   const doc = new Y.Doc({ gc: false });
   try {
     Y.applyUpdate(doc, beforeState);
     for (const entry of input.entries) Y.applyUpdate(doc, entry.update);
-    return { beforeState, afterState: Y.encodeStateAsUpdate(doc) };
+    return { beforeState, afterState: Y.encodeStateAsUpdate(doc), position };
   } finally {
     doc.destroy();
   }
@@ -211,7 +240,7 @@ function appendCut(input: StagedRoomEntries, beforeState: Uint8Array): SaveCut {
 async function liveRoomCopy(
   deps: { hocuspocus: () => Hocuspocus; journal: Pick<UpdateJournal, "read"> },
   docId: string,
-): Promise<{ doc: Y.Doc; room: string | null }> {
+): Promise<{ doc: Y.Doc; room: string | null; position: number }> {
   const snapshot = await deps.journal.read(docId);
   const authority = snapshot.authority as CheckpointAuthority | undefined;
   const loaded = deps.hocuspocus().documents.get(docId);
@@ -228,12 +257,19 @@ async function liveRoomCopy(
   if (!room && !snapshot.checkpoint && snapshot.updates.length === 0)
     throw new DocumentNotFoundError(docId);
   const copy = new Y.Doc({ gc: false });
-  if (room) Y.applyUpdate(copy, Y.encodeStateAsUpdate(room), RECOVERY_ORIGIN);
+  // The journal query supplies both bytes and cursor. Merging a warmer room here could put
+  // later bytes behind the older cursor and make their known author look unattributed.
+  if (!snapshot.checkpoint && snapshot.updates.length === 0 && room)
+    Y.applyUpdate(copy, Y.encodeStateAsUpdate(room), RECOVERY_ORIGIN);
   if (snapshot.checkpoint) Y.applyUpdate(copy, snapshot.checkpoint, RECOVERY_ORIGIN);
   for (const entry of [...snapshot.updates].sort((a, b) => a.seq - b.seq))
     Y.applyUpdate(copy, entry.update, RECOVERY_ORIGIN);
   if (authority) bindDocumentAuthority(copy, authority);
-  return { doc: copy, room: authority ? liveRoom(docId, authority.generation) : null };
+  return {
+    doc: copy,
+    room: authority ? liveRoom(docId, authority.generation) : null,
+    position: snapshot.persistenceWatermark ?? 0,
+  };
 }
 
 /** A live room has no retirement or inverse to reconcile against: every staged entry is kept. */

@@ -20,6 +20,8 @@ No consumer may maintain a second language list or branch on a language string.
   sanitization.
 - The render layer is keyed by provider so a language change cannot reuse old
   state. Source is visible only when the node view's selection requires it.
+- Transcript fences reuse this boundary. An open fence stays code; a closed
+  fence draws. The Editor owns source-edit actions; the transcript only shows it.
 - Nothing outside the catalog names a diagram language. A
   `language === "mermaid"` predicate elsewhere is the parallel hierarchy this
   module replaced; ask `diagramProviderFor(node)` or the object registration.

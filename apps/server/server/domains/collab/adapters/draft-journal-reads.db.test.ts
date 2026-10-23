@@ -22,6 +22,8 @@ describe("draft journal reads (Postgres)", () => {
         reads
           .listConcurrentJournalRows("00000000-0000-4000-8000-0000000008f1", {
             documentId: ALPHA_ID as DocumentId,
+            after: 0,
+            through: Number.MAX_SAFE_INTEGER,
           })
           .then(() => "served"),
         new Promise<string>((resolve) =>

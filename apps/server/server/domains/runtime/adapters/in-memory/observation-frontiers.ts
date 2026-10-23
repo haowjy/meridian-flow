@@ -26,7 +26,7 @@ export function createInMemoryObservationFrontiers(deps: {
       rows.set(sourceBlockId, {
         room: frontier.room,
         snapshot: frontier.snapshot.slice(),
-        unshown: [...frontier.unshown],
+        ...(frontier.position === undefined ? {} : { position: frontier.position }),
         recordedSeq: ++seq,
       });
     },
@@ -37,7 +37,11 @@ export function createInMemoryObservationFrontiers(deps: {
         if (row?.room === room && (!latest || row.recordedSeq > latest.recordedSeq)) latest = row;
       }
       return latest
-        ? { room, snapshot: latest.snapshot.slice(), unshown: [...latest.unshown] }
+        ? {
+            room,
+            snapshot: latest.snapshot.slice(),
+            ...(latest.position === undefined ? {} : { position: latest.position }),
+          }
         : null;
     },
   };

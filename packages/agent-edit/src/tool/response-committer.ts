@@ -16,7 +16,6 @@ import {
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
-import type { CommitDetection } from "./commit-detection.js";
 import type { CopySummary } from "./copy-receipt.js";
 import {
   accessFor,
@@ -163,6 +162,8 @@ export interface RoomCopy {
   doc: Y.Doc;
   /** The room the copy was read from; null records no frontier. */
   room: string | null;
+  /** Journal high-water mark for the committed part of this copy. */
+  position?: number;
   /** The edit scope's acceptance epoch the call was bound to before the read. */
   lifetime: DocumentLifetime | null;
   dispose(): void;
@@ -288,7 +289,6 @@ export function isResponseLifecycleError(error: unknown): error is ResponseLifec
 const ROOM_READ_ATTEMPTS = 4;
 
 export function createResponseCommitter(deps: {
-  detection: CommitDetection;
   coordinator: DocumentCoordinator;
   model: AgentEditModel;
   codec: AgentEditCodecFactory;
@@ -529,8 +529,14 @@ export function createResponseCommitter(deps: {
         docBuffer.rejectedUpdates = [...(docBuffer.rejectedUpdates ?? []), ...rejected];
         enqueueNotices(responseId, docId, rejected);
       }
-      const { doc, room } = read;
-      return { doc, room, lifetime: token, dispose: () => doc.destroy() };
+      const { doc, room, position } = read;
+      return {
+        doc,
+        room,
+        ...(position === undefined ? {} : { position }),
+        lifetime: token,
+        dispose: () => doc.destroy(),
+      };
     }
   }
 

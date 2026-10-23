@@ -1,5 +1,5 @@
 -- migration: no-transaction
--- migration: code 0094_normalize_hidden_names.ts sha256:a71386af825cd85fa2d71913aabe2832b2916408275a2507e4dc4e666cb035d1
+-- migration: code 0098_normalize_hidden_names.ts sha256:a71386af825cd85fa2d71913aabe2832b2916408275a2507e4dc4e666cb035d1
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "folders_context_parent_alias_active"
   ON "folders" USING btree ("context_source_id", "parent_id", "document_alias")
   WHERE "deleted_at" IS NULL;

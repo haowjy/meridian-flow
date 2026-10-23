@@ -5,8 +5,8 @@ writer WebSocket mutations. Any content apply after an `await` must recheck
 durable authority synchronously before applying or broadcasting.
 
 `withDocument()` serializes coordinator callers only. Writer admission is
-journal-first; optional sweep detection may degrade to no elevation but never
-supplies apply authority. Agent-edit's
+journal-first. Concurrent-change reporting may degrade without affecting apply
+authority. Agent-edit's
 `applyCommittedUpdateWithRecheck` and reversal execution all use
 this final recheck. Take sorted live-document locks before any transaction (the
 lock order in [CONTEXT.md](CONTEXT.md)), and do not treat the coordinator mutex

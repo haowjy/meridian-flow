@@ -35,10 +35,8 @@ holds them. Reporting is best-effort and never changes what the save keeps.
   reconstruction adapter; it does not own persistence, attribution, or undo.
 - Never bypass `ResponseCommitter` or infer durability from what reached a room.
   The host's commit decides; a live room hears of a save only after it.
-- Yjs merge is trusted. Destructive policy is report-only; it never blocks an
-  otherwise valid agent write. Echo reports best-effort direct-write
-  destructive evidence, and that evidence never feeds draft-settlement sweep
-  or apply authority.
+- Yjs merge is trusted. Concurrent attribution is report-only and never blocks an
+  otherwise valid agent write or supplies apply authority.
 - Attribution is host-provided per interaction and must not depend on
   session-lifetime snapshots.
 - Keep the kernel CRDT-neutral while treating v1 content as ProseMirror via

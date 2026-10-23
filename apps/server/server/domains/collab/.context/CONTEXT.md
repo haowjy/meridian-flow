@@ -189,10 +189,9 @@ refuses that document stale when the pin no longer holds (closed peer or
 closed draft, closed branch). Peers are created only by the identity ensure for a tool access, never by a save.
 
 Save confirms every grant used by the reply once, drops writes whose Work lost
-access, and marks the remaining writes for the journal's no-grant guard. A
-write into a room where the model has no frontier (its last read was another
-version) is refused once with the passage's current text (`region_changed`):
-the frontier's room key replaces the old last-read destination check. Model inverse commands use the current destination grant and
+access, and marks the remaining writes for the journal's no-grant guard. A write into a room where the model has no frontier plans on the current room.
+A write with a usable frontier plans on that offline view and merges onto the
+current room. Model inverse commands use the current destination grant and
 the immutable edit policy, not a legacy journal selection.
 
 Every model call reads its room fresh through agent-edit's `readRoom`. The
@@ -213,7 +212,8 @@ thread has a Work draft of the document, else live.
 
 A call whose caller passes `frontiers` (the read and write tools, and
 reference reads, which pass `recording` only) records an observation frontier
-in the room its result rendered from; a write plans on the `planning` lookup.
+in the room its result rendered from. A write plans on the `planning` lookup
+when usable, otherwise on the current room; neither path refuses concurrent text.
 An undo, redo or revert records in the room its inverse committed into
 (`DocumentEditResult.room`). A staged write records nothing. The reply's save,
 given `recordingFrontier`, records each saved document in the room the save
@@ -568,12 +568,12 @@ therefore write no document bytes. Link extraction and revision hashing use
 the same occurrence rules, and failed ahead-ref registration is repaired by
 the derivation sweep.
 
-A save's concurrent attribution reads the upstream cut its save read (the
-save's before state); there is no preflight or second recheck. Baseline containment compares struct clocks and the delete set: equal
-state vectors alone do not establish equality, so delete-only writer edits are
-still attributed. There is no journal floor: each check reads the Work draft
-rows and skips only those the view contains, so its cost grows with
-the draft's retained history (C11). Drafts have no generation or epoch reset.
+A result's concurrent attribution reads only the room journal interval after its
+stored observation position through the rendered cut. A read uses the resolved
+Work-draft identity directly, so a chat that has never written needs no thread peer.
+There is no preflight or second recheck. Baseline containment compares struct clocks
+and the delete set: equal state vectors alone do not establish equality, so delete-only
+writer edits are still attributed. Drafts have no generation or epoch reset.
 
 `document_links` is a hint from a certified cut, never link authority. Changing
 the extractor bumps its version, and no second post-write writer exists.

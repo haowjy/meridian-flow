@@ -13,8 +13,8 @@ Read the page that owns the seam you are changing:
   model, session-store, and core interfaces.
 - [Write architecture](write-architecture.md) — module boundaries, codec flow,
   semantic certification, edit application, and forward inverses.
-- [Write invariants](write-invariants.md) — block identity, destructive-edit
-  safety, synchronization, and resolver constraints.
+- [Write invariants](write-invariants.md) — block identity, synchronization,
+  and resolver constraints.
 - [Link identity](link-correspondence.md) — ref assignment at every write
   door, find-splice restoration, shown-link facts, and exact correspondence.
 - [Write tool surface](write-tool-surface.md) — lifecycle behavior, outcomes,

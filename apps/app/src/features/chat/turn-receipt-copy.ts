@@ -68,7 +68,6 @@ export function reversalRefusalCopy(refusal: ReversalRefusal, names?: OwnerNames
     case "superseded":
       return treeFaultCopy(refusal.status, refusal.direction, refusal.at ?? null, names);
     case "internal_error":
-    case "region_changed":
     case "request_failed":
       return reversalRetryCopy(refusal.direction);
     default: {

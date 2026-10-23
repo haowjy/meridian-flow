@@ -9,13 +9,14 @@ Never add server, route, auth, or Work concepts to these interfaces.
 ### `UpdateJournal` (`src/ports/update-journal.ts`)
 
 The journal appends, batches, reads, compacts, and reserves per-document/thread
-write ordinals. Agent-edit itself only reads it (`AgentEditJournal`: ordinals,
-`read`, attribution and destructive provenance); rows append through the host's
+write ordinals. Agent-edit itself uses it for ordinals and ordinary reads; rows append through the host's
 save (`StagedWriteCommit.persist`). One logical edit may expand to ordered rows. `read` returns a
 checkpoint and retained updates in order; `since` does not hide retained rows
 behind a newer checkpoint. A persistence watermark includes the checkpoint cut
 even when no rows remain above it. The host, not this package, mints captured
 checkpoint cuts. Compaction never expires immutable receipts or lineage.
+`readUpdates` is the separate origin-aware interval read used for reporting; it
+returns only rows in `(after, through]` and never transfers checkpoint state.
 
 Undo/redo state is not transport state. `DocumentEdits` reads immutable parts
 and delegates stack policy to the host's inverse policy, after the reply's
@@ -49,7 +50,7 @@ transaction commits, for every outcome (appended, contained, or nothing new):
 someone else's rows that landed after preparing are in its before state.
 Nothing fallible runs between the rows becoming durable and `persist`
 resolving, so a stored write is never reported as a failed one. Receipts,
-commit-time detection, revision and frontier read that cut, for both hosts; the
+revision and frontier reporting read that cut, for both hosts; the
 rows are Yjs updates and land the same either way, so a moved base refreshes
 the report rather than the write.
 
@@ -81,7 +82,10 @@ once, from `integration.ts`.
 
 The codec delegates parse/full serialize and block-body normalization to
 `@meridian/markup`, then adds hash-prefixed display forms. Hashes are rendered
-from the current sibling set and are not durable identity. A command receives
+from the current sibling set and are not durable identity. A seeded draft block's
+address identity is its live origin item; every other block uses its own item.
+The immutable origin map travels with every room copy, snapshot planning view and
+inverse cut, including deleted block listings. A command receives
 one scoped codec at entry and passes it to every serialization door; the package
 has no default Meridian schema.
 

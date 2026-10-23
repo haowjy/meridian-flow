@@ -24,7 +24,7 @@ export function createDrizzleObservationFrontiers(db: DrizzleDatabase): Observat
             sourceBlockId,
             roomKey: frontier.room,
             snapshot: Buffer.from(frontier.snapshot),
-            unshown: [...frontier.unshown],
+            journalPosition: frontier.position,
           }),
       );
     },
@@ -36,7 +36,7 @@ export function createDrizzleObservationFrontiers(db: DrizzleDatabase): Observat
       // walks the room newest first and stops at the first row among these blocks.
       const [row] = await runIsolatedFromAmbientTransaction(db, () =>
         db_()
-          .select({ snapshot: table.snapshot, unshown: table.unshown })
+          .select({ snapshot: table.snapshot, journalPosition: table.journalPosition })
           .from(table)
           .where(
             and(
@@ -47,7 +47,13 @@ export function createDrizzleObservationFrontiers(db: DrizzleDatabase): Observat
           .orderBy(sql`${table.recordedSeq} DESC NULLS LAST`)
           .limit(1),
       );
-      return row ? { room, snapshot: new Uint8Array(row.snapshot), unshown: row.unshown } : null;
+      return row
+        ? {
+            room,
+            snapshot: new Uint8Array(row.snapshot),
+            ...(row.journalPosition === null ? {} : { position: row.journalPosition }),
+          }
+        : null;
     },
   };
 }

@@ -523,6 +523,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
         }
         if (!finalized || !cut)
           throw new Error(`Draft ${snapshot.draftId} append was not finalized`);
+        cut.position = Math.max(finalized.checkpointSeq, ...outcome.rowIds);
         const { doc, prefixHeld, prefixRows, checkpointSeq } = finalized;
         const rows = [
           ...prefixRows.map((row) => row.update),

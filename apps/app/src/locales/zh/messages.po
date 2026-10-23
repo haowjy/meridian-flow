@@ -1434,6 +1434,7 @@ msgstr ""
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/command-descriptor.ts
 #: src/features/editor/SchemaNotices.tsx
+#: src/rich-content/DocumentCodeBlock.tsx
 msgid "Copied"
 msgstr ""
 
@@ -1463,6 +1464,7 @@ msgstr ""
 
 #: src/features/editor/surfaces/objects/CodeBlockChips.tsx
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
+#: src/rich-content/DocumentCodeBlock.tsx
 msgid "Copy code"
 msgstr ""
 
@@ -2421,8 +2423,8 @@ msgid "Goal: {0}. "
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Got the latest text of"
-msgstr ""
+#~ msgid "Got the latest text of"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "grid"
@@ -4050,6 +4052,10 @@ msgstr ""
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Show more"
+msgstr ""
+
+#: src/rich-content/DocumentCodeBlock.tsx
+msgid "Show source"
 msgstr ""
 
 #: src/features/draft-review/DocumentChanges.tsx
