@@ -5,8 +5,8 @@ report-only merge semantics and preflight boundaries while evaluating them.
 
 ## Model guidance for mangled merges
 
-The listing names each concurrent author but says nothing about how the merge
-turned out. Consider letting the model repair a visibly mangled merge only if real transcripts show
+The `concurrent edits by <author>:` listing names who changed the document
+but says nothing about how the merge turned out. Consider letting the model repair a visibly mangled merge only if real transcripts show
 that it needs guidance and prompt validation confirms the copy does not invite
 unwanted rewriting. The owner seam is echo/response formatting.
 
