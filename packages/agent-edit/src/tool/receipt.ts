@@ -6,7 +6,6 @@ import { renderedItems, shownEvidence } from "../links/shown.js";
 import type { BlockItemId } from "../model/block-hash.js";
 import type { StagedWriteRejectionReason } from "../ports/document-coordinator.js";
 import type { CommandLinks } from "./command-links.js";
-import type { DestructiveSweepReport } from "./commit-detection.js";
 import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { modelResult, type WriteRejection } from "./model-result.js";
@@ -29,7 +28,6 @@ interface ReceiptCut {
   before: readonly (readonly BlockSnapshot[])[];
   after: readonly BlockSnapshot[];
   links: CommandLinks;
-  lateSweep?: DestructiveSweepReport;
 }
 
 /** Also accepts future inverse outcomes without a lifecycle-specific rendering mode. */
@@ -103,7 +101,6 @@ export function renderSettledReceipts(
           const result = renderReceipt(edit, cut.before[index], cut.after, {
             phase: "committed",
             writeId: edit.writeId,
-            lateSweep: index === accepted.length - 1 ? cut.lateSweep : undefined,
           });
           return {
             ...settledReceipt(edit, revision, result),

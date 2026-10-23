@@ -53,12 +53,16 @@ export interface StagedReconcile {
 export interface RoomRead extends StagedReconcile {
   doc: Y.Doc;
   room: string | null;
+  /** Journal high-water mark for `doc`, in the room's host-owned sequence. */
+  position?: number;
 }
 
 /** A document's state before a save's kept rows, and with them. */
 export interface SaveCut {
   beforeState: Uint8Array;
   afterState: Uint8Array;
+  /** Journal high-water mark of `afterState`. */
+  position?: number;
 }
 
 /** A save of one scope's entries: the kept and refused ones, and where they went. */
@@ -153,7 +157,11 @@ export interface ConcurrentUpdatesInput {
   docId: string;
   doc: Y.Doc;
   baselineDoc?: Y.Doc;
-  sinceStateVector: Uint8Array;
+  /** Exclusive observed and inclusive rendered journal bounds. */
+  after: number;
+  through: number;
+  /** Optional live interval projected into a draft's revision-0 cut. */
+  attributionBridge?: import("../frontier.js").SeedAttributionBridge;
   access?: DocumentAccess;
 }
 
@@ -182,15 +190,7 @@ export interface DocumentCoordinator {
     },
   ): Promise<StagedWriteSaveResult>;
 
-  /**
-   * Optional origin-aware description of the updates present in `doc` (the save's before
-   * state, frozen: the host reports only what it contains) that `baselineDoc` (the view the
-   * writes planned on) doesn't contain: containment is the only skip. Hosts that omit it have
-   * the whole delta treated as the writer's.
-   */
-  concurrentUpdatesSince?(input: ConcurrentUpdatesInput): Promise<ConcurrentUpdate[]>;
-
-  /** Origin-aware rows for the model-facing concurrent-change account, when richer than detection. */
+  /** One bounded, origin-aware lookup for the model-facing concurrent-change account. */
   concurrentUpdatesForReport?(input: ConcurrentUpdatesInput): Promise<ConcurrentUpdate[]>;
 }
 

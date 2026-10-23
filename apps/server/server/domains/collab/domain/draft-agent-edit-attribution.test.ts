@@ -41,6 +41,9 @@ function fixture(existingUpstream?: Y.Doc) {
   const coordinator = createDraftAgentEditCoordinator({
     removals: { lookup: async () => new Map() },
     threadId,
+    liveJournal: {
+      readUpdates: async () => [],
+    },
     draftCoordinator: createDraftCoordinator({
       onAppendCommitted: () => {},
       store: new MemoryDraftStore(
@@ -83,11 +86,12 @@ function fixture(existingUpstream?: Y.Doc) {
     };
   }
   async function check() {
-    const changes = await coordinator.concurrentUpdatesSince?.({
+    const changes = await coordinator.concurrentUpdatesForReport?.({
       docId: documentId,
       doc: upstream,
       baselineDoc: baseline,
-      sinceStateVector: Y.encodeStateVector(baseline),
+      after: 0,
+      through: rows.length,
     });
     if (!changes) throw new Error("Missing draft attribution");
     return changes;
@@ -106,7 +110,7 @@ describe("draft concurrent attribution", () => {
     };
     const f = fixture(ctx.liveDoc("chapter.md"));
     f.rows.push(f.row(Y.encodeStateAsUpdate(f.baseline)));
-    ctx.coordinator.concurrentUpdatesSince = f.coordinator.concurrentUpdatesSince;
+    ctx.coordinator.concurrentUpdatesForReport = f.coordinator.concurrentUpdatesForReport;
     let frontier: ObservationFrontier | null = null;
     const context = {
       sessionId: "session",

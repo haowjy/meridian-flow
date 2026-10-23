@@ -26,6 +26,10 @@ export type DraftSeedRecord = {
   /** Draft canonical item id -> live canonical item id. */
   origins: Readonly<Record<string, string>>;
   liveRoom: string;
+  liveSnapshot: Uint8Array;
+  draftSnapshot: Uint8Array;
+  /** Full live seed cut used only to attribute a pre-seed observation gap. */
+  liveAttribution?: { state: Uint8Array; position: number };
 };
 
 /** Hydrate the block-address context carried by an addressable live-to-draft seed. */

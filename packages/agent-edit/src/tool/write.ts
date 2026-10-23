@@ -82,9 +82,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const journal = options.journal;
   const detection = createCommitDetection({
     links: options.links,
-    journal: options.journal,
-    coordinator: options.coordinator,
-    model: options.model,
   });
   const responseCommitter = createResponseCommitter({
     detection,

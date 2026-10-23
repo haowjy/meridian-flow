@@ -438,13 +438,28 @@ export function createWriteCommands(deps: {
               context,
             });
           }
-          const assigner = linkAssigner(
-            address.documentId,
-            links.scope,
-            shown,
-            context.uploadsChat,
-          );
-          const resolved = plan.ok ? plan.assign(assigner) : plan;
+          let assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
+          let resolved = plan.ok ? plan.assign(assigner) : plan;
+          let appliedPlanDoc = planDoc;
+          if (
+            resolved.ok &&
+            planDoc !== room.doc &&
+            hasMissingTarget(resolved.edits, room.doc) &&
+            "find" in command &&
+            command.in === undefined
+          ) {
+            const currentPlan = planWrite(
+              { doc: toDocHandle(room.doc), model: options.model, codec: links.codec },
+              {
+                ...selectors,
+                documentAddress: address,
+                ...(copiedNodes ? { blocks: copiedNodes } : {}),
+              },
+            );
+            assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
+            resolved = currentPlan.ok ? currentPlan.assign(assigner) : currentPlan;
+            appliedPlanDoc = room.doc;
+          }
           if (!resolved.ok) {
             return errorResponse(
               resolved.error.code,
@@ -453,14 +468,14 @@ export function createWriteCommands(deps: {
               documentBlocksDetail(resolved.error.details),
             );
           }
-          validateResolvedIr(resolved.ir, address.documentId, planDoc);
+          validateResolvedIr(resolved.ir, address.documentId, appliedPlanDoc);
           if (resolved.edits.length === 0) return formatUnchangedSuccess();
           return finishPreparedEdit({
             command,
             session,
             context,
             room,
-            planDoc,
+            planDoc: appliedPlanDoc,
             assigner,
             links,
             actor,
@@ -562,7 +577,6 @@ export function createWriteCommands(deps: {
     const turnId = actor.kind === "agent" ? actor.turnId : null;
     let phase: "staged" | "committed",
       revision: string | null = null;
-    let lateSweep: import("./commit-detection.js").DestructiveSweepReport | undefined;
     let awarenessDegraded = false;
     if (staged && editScopeId && actor.kind === "agent") {
       const rejected = responseCommitter.stageUpdate({
@@ -629,9 +643,9 @@ export function createWriteCommands(deps: {
       if (isInternalWriteResult(saved)) return saved;
       // The echo and frontier show the room as the save left it, as a reply's receipt does.
       Y.applyUpdate(room.doc, saved.afterState);
+      room.position = saved.position;
       context.frontiers?.reply?.append(docId, [update]);
       revision = saved.revision;
-      lateSweep = saved.lateSweep;
       awarenessDegraded = Boolean(saved.awarenessDegraded);
       phase = "committed";
     }
@@ -640,7 +654,6 @@ export function createWriteCommands(deps: {
       revision,
       writeId: identity.handle,
       ...(phase === "staged" ? { settlementId: identity.durableId } : {}),
-      lateSweep,
       awarenessDegraded,
     };
     // A staged echo records nothing: the reply's save replaces it before the model's next request.
@@ -692,14 +705,37 @@ export function createWriteCommands(deps: {
     result: InternalWriteResult,
     own?: Pick<ListingSource, "ownRemoved" | "written">,
   ): Promise<InternalWriteResult> {
+    const written = [
+      ...(context.frontiers?.reply?.updates(documentId) ?? []),
+      ...responseCommitter.stagedUpdates(context.responseIdentity?.editScopeId, documentId),
+      ...(own?.written ?? []),
+    ];
     return recordObservation(
       result,
       {
         doc: room.doc,
         model: options.model,
         links,
-        ...own,
+        ...(room.position === undefined ? {} : { position: room.position }),
+        ...(own?.ownRemoved ? { ownRemoved: own.ownRemoved } : {}),
+        ...(written.length ? { written } : {}),
         ...(context.turnId ? { ownActorTurnIds: new Set([context.turnId]) } : {}),
+        ...(options.coordinator.concurrentUpdatesForReport
+          ? {
+              loadConcurrent: ({ baseline, after, through, attributionBridge }) =>
+                options.coordinator.concurrentUpdatesForReport?.({
+                  docId: documentId,
+                  doc: room.doc,
+                  baselineDoc: baseline,
+                  after,
+                  through,
+                  ...(attributionBridge ? { attributionBridge } : {}),
+                  ...(context.interactionContext?.mode === "threadPeer"
+                    ? { access: { pinnedDraftId: context.interactionContext.peerDraftId } }
+                    : {}),
+                }) ?? Promise.resolve([]),
+            }
+          : {}),
       },
       room.room,
       context.frontiers?.recording,

@@ -55,7 +55,6 @@ const liveCoordinator = {
 };
 const pulls = createDraftPullService({
   outsideTransaction: runOutsideWrite,
-  liveCoordinator,
   draftCoordinator: coordinator,
   drafts: h.store,
   liveJournal: h.persistence.journal,

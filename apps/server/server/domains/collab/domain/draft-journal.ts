@@ -26,7 +26,7 @@ export type DraftJournalRow = {
 export type DraftReplayJournalReads = {
   listConcurrentJournalRows(
     draftId: string,
-    options: { documentId: DocumentId },
+    options: { documentId: DocumentId; after: number; through: number },
   ): Promise<DraftJournalRow[]>;
   listJournalRowsForDraft(input: {
     draftId: string;

@@ -166,10 +166,11 @@ export function createDrizzleDraftStore(
     branchId: BranchId;
     liveDoc: Y.Doc;
     liveRoom: string | null;
+    livePosition?: number;
   }): Promise<DraftSnapshot> {
     const current = await activeDocumentDraft(input.documentId, input.branchId);
     if (current) return current;
-    const seeded = seedDraftState(input.liveDoc, input.liveRoom);
+    const seeded = seedDraftState(input.liveDoc, input.liveRoom, input.livePosition ?? 0);
     const { seed, ...checkpoint } = seeded;
     // Creating a draft is a write the Work's lifecycle orders (decision D12): the branch's
     // Work is locked first, so an Archive either fences the new draft or committed before it.
@@ -203,6 +204,12 @@ export function createDrizzleDraftStore(
             ? {
                 seedOrigins: seed.origins,
                 seedLiveRoom: seed.liveRoom,
+                seedLiveSnapshot: Buffer.from(seed.liveSnapshot),
+                seedDraftSnapshot: Buffer.from(seed.draftSnapshot),
+                seedLiveState: seed.liveAttribution
+                  ? Buffer.from(seed.liveAttribution.state)
+                  : null,
+                seedLivePosition: seed.liveAttribution?.position,
               }
             : {}),
           hasEffect: false,
@@ -265,7 +272,12 @@ export function createDrizzleDraftStore(
     try {
       if (snapshot.checkpoint) Y.applyUpdate(liveDoc, snapshot.checkpoint);
       for (const update of snapshot.updates) Y.applyUpdate(liveDoc, update.update);
-      await ensureDocumentDraft({ ...input, liveDoc, liveRoom: null });
+      await ensureDocumentDraft({
+        ...input,
+        liveDoc,
+        liveRoom: null,
+        livePosition: snapshot.persistenceWatermark ?? 0,
+      });
     } finally {
       liveDoc.destroy();
     }
@@ -302,7 +314,7 @@ export function createDrizzleDraftStore(
     documentId: DocumentId;
     threadId: ThreadId;
     branchId: BranchId;
-    liveDoc: () => Promise<{ doc: Y.Doc; room: string | null }>;
+    liveDoc: () => Promise<{ doc: Y.Doc; room: string | null; position?: number }>;
   }): Promise<{ documentDraft: DraftSnapshot; workDraft: DraftSnapshot }> {
     type EnsuredPeer = { documentDraft: DraftSnapshot; workDraft: DraftSnapshot };
     const currentPeer = async (): Promise<EnsuredPeer | null> => {
@@ -401,6 +413,7 @@ export function createDrizzleDraftStore(
           branchId: input.branchId,
           liveDoc: live.doc,
           liveRoom: live.room,
+          livePosition: live.position ?? 0,
         }),
       );
     }

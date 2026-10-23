@@ -1,8 +1,6 @@
-import type { DocHandle } from "../handles.js";
-import type { LineageRange } from "../lineage/range-set.js";
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { SavePrecondition } from "./document-coordinator.js";
-import type { CompactionResult, JournalSnapshot, UpdateMeta } from "./types.js";
+import type { CompactionResult, JournalSnapshot, PersistedUpdate, UpdateMeta } from "./types.js";
 
 type JournalMutationBase = {
   /** Ordered parts of one atomic edit. Storage adapters choose their journal row expansion. */
@@ -84,36 +82,16 @@ export interface UpdateJournal {
     precondition?: SavePrecondition,
   ): Promise<JournalBatchAppendResult[]>;
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
-  /** Durable attributed base used when reporting destructive effects. */
-  readAttribution?(docId: string): Promise<JournalSnapshot>;
+  /** Origin-aware rows in the exclusive/inclusive interval, without reconstruction data. */
+  readUpdates(docId: string, after: number, through: number): Promise<PersistedUpdate[]>;
   compact(docId: string, before: Date): Promise<CompactionResult>;
-  /** Optional host authority for exact destructive-report provenance. */
-  materializeDestructiveProvenance?(input: {
-    docId: string;
-    before: DocHandle;
-    afterCandidate: DocHandle;
-    /** Draft adapters classify roots absent from the live document as agent-authored. */
-    fallbackProvenance?: "writer_protected" | "agent";
-  }): Promise<{
-    before: DestructiveProvenanceRun[];
-    afterCandidate: DestructiveProvenanceRun[];
-  }>;
 }
 
 /**
- * What agent-edit itself reads from a host's journal: write ordinals and the provenance a
- * destructive report reads. Appending belongs to the host's save (`StagedWriteCommit.persist`).
+ * What agent-edit itself reads from a host's journal. Appending belongs to the host's save
+ * (`StagedWriteCommit.persist`).
  */
-export type AgentEditJournal = Pick<
-  UpdateJournal,
-  "reserveWriteOrdinal" | "read" | "readAttribution" | "materializeDestructiveProvenance"
->;
-
-export interface DestructiveProvenanceRun {
-  target: LineageRange;
-  root: LineageRange;
-  provenance: "writer_protected" | "agent";
-}
+export type AgentEditJournal = Pick<UpdateJournal, "reserveWriteOrdinal">;
 
 /** The one place an edit handle is formatted: the model names an edit as `e<n>`. */
 export function editHandle(wId: number): string {

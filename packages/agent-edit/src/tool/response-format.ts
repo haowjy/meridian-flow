@@ -1,6 +1,5 @@
 // Formats document-write responses for the model tool surface.
 import type { ApplyEchoHunk } from "../apply/types.js";
-import type { DestructiveSweepReport } from "./commit-detection.js";
 import type { CopySummary } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import {
@@ -24,7 +23,6 @@ export interface ApplySuccessResponseInput {
   settlementId?: string;
   echo: ApplyEchoHunk[];
   deletedBlocks?: readonly string[];
-  lateSweep?: DestructiveSweepReport;
   awarenessDegraded?: boolean;
   /** The write left the document with no text, only the one blank block every document keeps. */
   documentEmpty?: boolean;

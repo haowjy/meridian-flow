@@ -218,7 +218,6 @@ describe("response staging", () => {
     const committed = await ctx.core.commitResponse("response-own-removal");
 
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Race", "Gamma AI edit."]);
-    expect(committed.documents[0]?.lateSweep).toBeUndefined();
     for (const receipt of committed.documents[0]?.receipts ?? []) {
       expect(renderAgentEditResult(receipt.result)).not.toContain("swept");
     }
