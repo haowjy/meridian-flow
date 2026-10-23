@@ -19,6 +19,7 @@ import type { ContextCatalogMutationPort } from "../../context/ports/context-cat
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
 import { writeBackBranchFacts } from "../../context/tree/branch-tree-changes.js";
+import { tombstoneUnused } from "../../context/tree/end-use.js";
 import { resolveAbsorbedFolders } from "../../context/tree/folder-normalization.js";
 import {
   moveToPlacement,
@@ -27,7 +28,10 @@ import {
 } from "../../context/tree/live-tree-state.js";
 import { restoreDocument } from "../../context/tree/removal.js";
 import { createTreeReader } from "../../context/tree/tree-view.js";
-import { loadFolderIdentityRows } from "../../context/tree/tree-view-sql.js";
+import {
+  loadDocumentIdentityRows,
+  loadFolderIdentityRows,
+} from "../../context/tree/tree-view-sql.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
 import {
   type PlannedTreeInverse,
@@ -54,8 +58,7 @@ export function createTurnInverseTreeOperations(input: {
   removal: DocumentRemoval;
   arrivals?: Pick<DocumentArrivals, "settle">;
   catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
-  drafts: Pick<ApplicationDraftStore, "ensureCreatedDocumentDraft">;
-  initializeEmptyDocument(documentId: DocumentId): Promise<void>;
+  drafts: Pick<ApplicationDraftStore, "restoreCreatedDocumentDraft" | "retireCreatedDocumentDraft">;
 }) {
   const db = () => currentDrizzleDb(input.db);
 
@@ -73,10 +76,7 @@ export function createTurnInverseTreeOperations(input: {
   }
 
   function requested(planned: PlannedTreeInverse): string | null {
-    if (planned.op === "delete") return null;
-    return planned.direction === "invert"
-      ? planned.entry.tree.shownAt
-      : (planned.entry.tree.landedAt ?? planned.entry.tree.shownAt);
+    return planned.requestedAt;
   }
 
   async function commit(
@@ -86,14 +86,15 @@ export function createTurnInverseTreeOperations(input: {
     query: TurnInverseQuery,
   ): Promise<TreeTransition> {
     return isLiveTransition(planned)
-      ? commitLive(entry, planned, userId)
-      : commitBranch(entry, planned, query);
+      ? commitLive(entry, planned, userId, query)
+      : commitBranch(entry, planned, query, userId);
   }
 
   async function commitLive(
     entry: TreeOperationEntry,
     planned: Extract<PlannedTreeInverse, { destination: { kind: "live" } }>,
     userId: UserId | undefined,
+    query: TurnInverseQuery,
   ): Promise<LiveTreeTransition> {
     const { documentId } = entry;
     const expected =
@@ -105,7 +106,7 @@ export function createTurnInverseTreeOperations(input: {
       planned.op,
       { before: expected, after: planned.after },
       userId,
-      planned.entry.tree.op === "create",
+      query,
     );
     if (fault) throw new TreeFault(fault);
     const [after] = (await readLiveTreeStates(db(), [documentId])).values();
@@ -119,6 +120,7 @@ export function createTurnInverseTreeOperations(input: {
     entry: TreeOperationEntry,
     planned: BranchTreeTransition & PlannedTreeInverse,
     query: TurnInverseQuery,
+    userId: UserId | undefined,
   ): Promise<BranchTreeTransition> {
     const { branchId } = planned.destination;
     const [branch] = await db()
@@ -128,12 +130,37 @@ export function createTurnInverseTreeOperations(input: {
     if (branch?.status !== "active") throw new TreeFault("refused");
     if (planned.entry.tree.op === "create") {
       if (planned.op === "delete") {
-        await input.removal.remove({
-          documentIds: [entry.documentId],
-          reason: "discarded",
-          ...(query.model ? { threadId: query.threadId } : {}),
+        await input.drafts.retireCreatedDocumentDraft({
+          documentId: entry.documentId,
+          branchId,
         });
-        return { destination: planned.destination, before: planned.before, after: planned.after };
+        const [identity] = await loadDocumentIdentityRows(db(), [entry.documentId]);
+        const committed = await writeBackBranchFacts(input.db, {
+          branchId,
+          documentId: entry.documentId,
+          expected: planned.before,
+          facts: planned.after,
+          changedBy: {
+            threadId: query.threadId,
+            ...(query.turnId ? { turnId: query.turnId } : {}),
+          },
+        });
+        if (!committed.ok) throw new TreeFault(committed.error);
+        const ended = await tombstoneUnused(input.db, [entry.documentId], {
+          actor: userId ? { userId } : { threadId: query.threadId },
+          removal: input.removal,
+          retainStorage: true,
+        });
+        if (identity && ended.tombstoned.length)
+          await input.catalog.refreshSources(
+            [identity.contextSourceId],
+            ended.tombstoned.map((node) => node.id),
+          );
+        return {
+          destination: planned.destination,
+          before: planned.before,
+          after: committed.value,
+        };
       }
       if (planned.op !== "create")
         throw new Error("A drafted create can only be removed or restored");
@@ -142,8 +169,8 @@ export function createTurnInverseTreeOperations(input: {
         { documentId: entry.documentId, created: true },
         { arrivals: input.arrivals, catalog: input.catalog },
       );
-      if (restored.kind !== "restored") throw new TreeFault("refused");
-      await input.initializeEmptyDocument(entry.documentId);
+      if (restored.kind !== "restored" && restored.kind !== "already_living")
+        throw new TreeFault("refused");
       const committed = await writeBackBranchFacts(input.db, {
         branchId,
         documentId: entry.documentId,
@@ -154,7 +181,7 @@ export function createTurnInverseTreeOperations(input: {
       if (!committed.ok) throw new TreeFault(committed.error);
       entry.reopened.set(
         branchId,
-        await input.drafts.ensureCreatedDocumentDraft({
+        await input.drafts.restoreCreatedDocumentDraft({
           documentId: entry.documentId,
           branchId,
         }),
@@ -177,7 +204,7 @@ export function createTurnInverseTreeOperations(input: {
     op: PlannedTreeInverse["op"],
     { before, after }: Pick<LiveTreeTransition, "before" | "after">,
     userId: UserId | undefined,
-    created: boolean,
+    query: TurnInverseQuery,
   ): Promise<TreeInverseFault | null> {
     const deps = { arrivals: input.arrivals, catalog: input.catalog };
     switch (op) {
@@ -201,7 +228,6 @@ export function createTurnInverseTreeOperations(input: {
         );
         if (restored.kind !== "restored")
           return restored.kind === "already_living" ? "superseded" : "refused";
-        await input.initializeEmptyDocument(documentId);
         return null;
       }
       case "move": {
@@ -246,8 +272,8 @@ export function createTurnInverseTreeOperations(input: {
         if (!before?.living) throw new Error("A delete inverse starts from a placement");
         await input.removal.remove({
           documentIds: [documentId],
-          reason: created ? "discarded" : "deleted",
-          userId,
+          reason: "deleted",
+          ...(userId ? { userId } : { threadId: query.threadId }),
         });
         const [source] = await placementSources(input.db, [before.at]);
         await input.catalog.refreshSources(source ? [source] : [], [documentId]);

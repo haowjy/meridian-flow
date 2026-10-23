@@ -405,7 +405,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     db: deps.db,
     journal: persistence.journal,
     drafts,
-    initializeEmptyDocument: runtime.markdownDocuments.initializeEmptyDocument,
     coordinator: liveCoordinator,
     draftCoordinator,
     resolveDocumentUri: documentUriResolver,

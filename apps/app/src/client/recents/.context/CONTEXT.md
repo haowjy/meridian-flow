@@ -17,6 +17,9 @@ item revision.
   `applyAvailability` remembers only ids dropped from this record in that call,
   including an unreadable address. Unrelated availability commands must not
   consume this record's removal capacity.
+- A reversible create Undo stores the removed recent with its tombstone. Redo
+  restores the row at its original `openedAt`, updating only the document's
+  current name and address, so reversal does not make an old document recent.
 - Availability admits deletion, access loss, and a later locator. An open tab
   does the same for a row still in the record, including a local draft's name.
 - A local handle is not watched. A document locator is. Never-admitted

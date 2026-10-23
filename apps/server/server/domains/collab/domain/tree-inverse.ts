@@ -36,6 +36,7 @@ export type StoredTreeEntry = {
   turnId: TurnId | null;
   responseId: string | null;
   editScopeId: string | null;
+  toolCallId: string | null;
   actor: "agent" | "human" | "system";
   wId: number | null;
   kind: "write" | "undo" | "redo" | "revert" | "rollback";
@@ -84,6 +85,8 @@ export type PlannedTreeInverse = (PlannedLiveTransition | BranchTreeTransition) 
   entry: TransitionEntry;
   direction: "invert" | "reapply";
   op: TreeChangeOp;
+  /** The placement requested by this application, before free-name allocation. */
+  requestedAt: string | null;
 };
 
 /**
@@ -316,9 +319,28 @@ export function planTreeInverse(
   states: TreeStates,
   step: number,
 ): PlannedTreeInverse | null {
-  if (!holdsAfter(states, latest.tree)) return null;
+  const createExists =
+    direction === "invert" &&
+    entry.tree.op === "create" &&
+    (isLiveTransition(entry.tree)
+      ? states.live?.living === true
+      : branchFacts(states, entry.tree.destination.branchId).created);
+  if (!createExists && !holdsAfter(states, latest.tree)) return null;
   const op = direction === "invert" ? INVERSE_OP[entry.tree.op] : entry.tree.op;
-  const common = { step, entry, direction, op };
+  const common = {
+    step,
+    entry,
+    direction,
+    op,
+    requestedAt:
+      op === "delete"
+        ? null
+        : direction === "reapply" && entry.tree.op === "create"
+          ? latest.tree.shownAt
+          : direction === "invert"
+            ? entry.tree.shownAt
+            : (entry.tree.landedAt ?? entry.tree.shownAt),
+  };
   const { tree } = entry;
   // The state the destination holds, which `holdsAfter` matched: a removal still to be made
   // keeps naming the step that makes it.
@@ -336,14 +358,21 @@ export function planTreeInverse(
                     removal: { time: new Date(0).toISOString(), locationVersion: "0" },
                   }
                 : (tree.before as LiveTreeState)
-              : tree.after,
+              : tree.op === "create" && isLiveTransition(latest.tree)
+                ? (latest.tree.before as LiveTreeState)
+                : tree.after,
         }
       : null;
   return {
     ...common,
     destination: tree.destination,
     before: branchFacts(states, tree.destination.branchId),
-    after: direction === "invert" ? tree.before : tree.after,
+    after:
+      direction === "invert"
+        ? tree.before
+        : tree.op === "create" && !isLiveTransition(latest.tree)
+          ? latest.tree.before
+          : tree.after,
   };
 }
 

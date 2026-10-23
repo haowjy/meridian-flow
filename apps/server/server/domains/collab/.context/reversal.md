@@ -22,9 +22,11 @@ still writes only in the chat's current version.
 
 Redo is preferred when the latest unconsumed Undo has a reapplicable part;
 otherwise an invertible active part offers Undo. Effective action state is
-indexed per immutable part. A partial writer Undo does not expose an older
-entry or mark the whole action undone. A rolled-back action has no stack
-impact, and repeated rollback does not append another inverse.
+indexed per immutable part. A model count consumes original actions: once a
+partial model Undo reverses any surviving part of an edit, the next count
+continues to the preceding edit; Redo retains the exact parts that were
+reversed. A rolled-back action has no stack impact, and repeated rollback does
+not append another inverse.
 
 The model owns one strict stack per thread/document. `write undo` and `write
 redo` accept a count; `write revert` creates a new edit at the current
@@ -134,13 +136,17 @@ whose content stays live, but Undo and Redo still write its branch facts. A docu
 authorized where its row is (file facts' branch-deleted fallback).
 
 A create transition precedes its initial text edit in the same per-document stream. Model Undo
-groups those adjacent entries as one edit: it removes the initial text, then the placement;
-Redo restores the placement, then the text. A live Undo removes the document with the ordinary
-removal record, and Redo restores its identity through `restoreDocument`, taking the next free
-name when necessary. A drafted Undo ends the created draft, removes the branch's `created` fact
-and tombstones the unused identity. Redo restores that identity and writes the original content
-into a fresh draft. Empty creates have only the tree entry and follow the same path. An undone
-draft create no longer contributes a pending review item.
+groups those adjacent entries only when both came from the same model tool call, in the same
+turn, response and edit scope: it removes the initial text, then the placement. A later write
+call in that response remains a separate edit. Redo restores the placement, then reapplies only
+the text parts Undo reversed. A live Undo uses an ordinary reversible removal, so the identity,
+Yjs history, later writer text and drafts remain available; Redo restores that retained state
+through `restoreDocument`, taking the next free name when necessary. A drafted Undo closes only
+the creating branch's draft and removes that branch's `created` fact. It tombstones the hidden
+identity only when no other branch still uses it, retaining the closed draft as the Redo source.
+Redo restores the identity or rejoins the still-living one, restores the branch facts and clones
+the retained content into a fresh active draft. Empty creates have only the tree entry and follow
+the same path. An undone draft create no longer contributes a pending review item.
 
 ## Effects and failures
 

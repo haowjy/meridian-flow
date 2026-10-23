@@ -97,9 +97,10 @@ async function filterAccessibleLiveLineageDocuments(
       // An undone draft create has no draft row left. Its immutable receipt still names the
       // identity, so authorize the row at the same restore seam Redo uses.
       if (isFileAccessDenied(grant) && document.tree?.op !== "delete")
-        grant = await deps.fileAccess.authorize(
+        grant = await deps.fileAccess.authorizeAt(
           principal,
           { kind: "restore", documentId: document.documentId },
+          turnEditDestination(document),
           "read",
         );
       return !isFileAccessDenied(grant);

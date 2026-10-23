@@ -308,6 +308,10 @@ export function useAccountId(): string {
   return accountId;
 }
 
+export function useOptionalAccountId(): string | null {
+  return useContext(AccountIdContext);
+}
+
 /**
  * Account epoch for command owners that also render outside the authenticated
  * shell (tests, SSR). `null` means there is no account lifetime to fence yet.

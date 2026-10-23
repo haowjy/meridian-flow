@@ -10,6 +10,7 @@ import type {
   DocumentId,
   FolderId,
   ProjectId,
+  ThreadId,
   UserId,
   WorkId,
 } from "@meridian/contracts/runtime";
@@ -33,6 +34,7 @@ import {
   identityDocuments,
   type TreeView,
 } from "../../context/tree/tree-view.js";
+import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { FileFacts, FileNode, FileOwnerRef, FileWorkFacts } from "../domain/types.js";
 import type { FileFactsPort, FileFactsRequest } from "../ports/file-facts.js";
@@ -71,7 +73,11 @@ export function createDrizzleFileFacts(
         ? await loadContainer(db, target.scheme, target.owner)
         : ((await loadDocument(db, target.documentId, view, {
             ownDelete: target.kind !== "restore",
-          })) ?? (await loadBranchDeleted(db, target.documentId, view)));
+          })) ??
+          (await loadBranchDeleted(db, target.documentId, view)) ??
+          (target.kind === "restore" && branchWorkId
+            ? await loadPhysicalDocument(db, target.documentId)
+            : null));
     if (!base) return null;
     const facts: FileFacts = { ...base, target };
     if (branchWorkId === undefined) return facts;
@@ -189,10 +195,21 @@ function documentRows(
     .innerJoin(projects, eq(projects.id, effectiveProjectId));
 }
 
-type DocumentRow = Awaited<ReturnType<ReturnType<typeof documentRows>["where"]>>[number];
+type DocumentBaseRow = {
+  documentDeletedAt: Date | null;
+  folderId: FolderId | null;
+  sourceId: ContextSourceId;
+  sourceDeletedAt: Date | null;
+  rootThreadId: ThreadId | null;
+  chatThreadId: ThreadId | null;
+  work: Pick<WorkRow, "id" | "handle" | "isNoWork" | "archivedAt" | "deletedAt"> | null;
+  projectId: ProjectId;
+  ownerAccountId: UserId;
+  projectDeletedAt: Date | null;
+};
 
 function documentBase(
-  row: DocumentRow,
+  row: DocumentBaseRow,
   documentId: DocumentId,
   folders: readonly FolderRow[],
   ownDelete = true,
@@ -203,7 +220,7 @@ function documentBase(
     projectDeleted: row.projectDeletedAt !== null,
     ownerRootThreadId: row.rootThreadId,
     ownerChatThreadId: row.chatThreadId,
-    ownerWork: row.work ? workFacts(row.work as WorkRow) : null,
+    ownerWork: row.work ? workFacts(row.work) : null,
     deleted:
       (ownDelete && row.documentDeletedAt !== null) ||
       row.sourceDeletedAt !== null ||
@@ -232,6 +249,58 @@ async function loadDocument(
   const folders = lineage.folders;
   return {
     ...documentBase(row, documentId, folders, options.ownDelete),
+    scheme: row.scheme,
+  };
+}
+
+/** A branch create Redo may restore a use while another branch keeps the hidden row alive. */
+async function loadPhysicalDocument(
+  db: Database,
+  documentId: DocumentId,
+): Promise<BaseFacts | null> {
+  if (!isUuid(documentId)) return null;
+  const [identity] = await loadDocumentIdentityRows(currentDrizzleDb(db), [documentId]);
+  if (!identity) return null;
+  const [row] = await currentDrizzleDb(db)
+    .select({
+      sourceId: contextSources.id,
+      sourceDeletedAt: contextSources.deletedAt,
+      rootThreadId: contextSources.rootThreadId,
+      chatThreadId: contextSources.chatThreadId,
+      scheme: contextSources.slug,
+      work: {
+        id: works.id,
+        projectId: works.projectId,
+        handle: works.handle,
+        isNoWork: works.isNoWork,
+        archivedAt: works.archivedAt,
+        deletedAt: works.deletedAt,
+      },
+      projectId: projects.id,
+      ownerAccountId: projects.userId,
+      projectDeletedAt: projects.deletedAt,
+    })
+    .from(contextSources)
+    .leftJoin(works, eq(works.id, contextSources.workId))
+    .innerJoin(projects, eq(projects.id, effectiveProjectId))
+    .where(eq(contextSources.id, identity.contextSourceId))
+    .limit(1);
+  if (!row || !isContextUriScheme(row.scheme)) return null;
+  const chain = identity.folderId
+    ? ((await loadFolderChains(currentDrizzleDb(db), [identity.folderId])).get(identity.folderId) ??
+      [])
+    : [];
+  return {
+    ...documentBase(
+      {
+        ...row,
+        folderId: identity.folderId,
+        documentDeletedAt: identity.deleted ? new Date(0) : null,
+      },
+      documentId,
+      chain.map((folder) => ({ id: folder.id, deleted: folder.deleted })),
+      false,
+    ),
     scheme: row.scheme,
   };
 }

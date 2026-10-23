@@ -48,6 +48,8 @@ export const documentEdits = pgTable(
       .references(() => turns.id, { onDelete: "set null" }),
     responseId: text("response_id"),
     editScopeId: text("edit_scope_id"),
+    /** The model tool call that made this edit; scoped by its response identity. */
+    toolCallId: text("tool_call_id"),
     actor: text("actor").$type<"agent" | "human" | "system">().notNull(),
     actorUserId: uuid("actor_user_id")
       .$type<UserId>()

@@ -50,6 +50,7 @@ export function createDrizzleTreeHistory(
         turnId: input.turnId ?? null,
         responseId: input.responseIdentity?.providerResponseId ?? null,
         editScopeId: input.responseIdentity?.editScopeId ?? null,
+        toolCallId: input.toolCallId ?? null,
         kind: "write",
         receipts: [],
         treeChange: {

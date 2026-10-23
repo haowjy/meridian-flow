@@ -53,9 +53,9 @@ export function planInverseDocument(
         revision: captured.documentDraft.revision,
         branchId: captured.documentDraft.branchId,
         active: captured.documentDraft.status === "active",
-        // A redone creation gets a fresh draft seeded from empty live. Its closed predecessor
-        // supplies history and provenance, never the Yjs store whose items Undo deleted.
-        view: captured.documentDraft.status === "active" ? captured.doc : document.live,
+        // A redone creation clones its closed predecessor, retaining the item identities that
+        // its text inverse targets while giving the active draft a fresh lifecycle identity.
+        view: captured.doc,
         edits: [],
         origins: new Map(),
       };

@@ -631,6 +631,13 @@
       "when": 1792705953612,
       "tag": "0095_create_tree_change",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1792713430293,
+      "tag": "0096_document_edit_tool_call",
+      "breakpoints": true
     }
   ]
 }

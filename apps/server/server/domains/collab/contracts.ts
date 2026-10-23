@@ -183,6 +183,7 @@ export type AgentTreeHistory = {
     threadId: ThreadId;
     turnId?: TurnId;
     responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+    toolCallId?: string;
     op: "create" | "move" | "delete";
     change: /** Live: the placement read before the mutation; the entry reads its `after` itself. */
       | {
