@@ -32,7 +32,9 @@ messages (without changing content or sequence) in a browser capture to check:
 - Blank lines inside an open fence do not settle code prematurely. Code text
   appears with every append; lowlight catches up within 50ms, never hiding words.
 - Completed paragraphs and code DOM survive tail appends and turn settlement.
-  A closed reply has the same spacing and markup before and after settlement.
+  Click a code block's copy action, wait for “Copied”, then settle the turn. The
+  same success state and DOM remain. A closed reply has the same spacing and
+  markup before and after settlement.
 - Repeat with loose/nested lists, longer tilde fences, reference definitions,
   source replacements, and leading blank lines. Each completed worker result must
   match one canonical whole-source parse of that text block.
@@ -42,10 +44,15 @@ messages (without changing content or sequence) in a browser capture to check:
 Static reference/skill occurrence turns use the same canonical codec and document
 renderer. Only exact authored link ranges may resolve to a document; adjacent
 same-destination links must not acquire combined identity. Skills stay outside
-code and rewritten/unmappable ranges remain ordinary Markdown.
+code and rewritten/unmappable ranges remain ordinary Markdown. Include a user
+message with an `@` document reference, an authorized `/skill`, and an escaped
+`\/` immediately before or near another skill. Only the authorized, unescaped
+range becomes a skill token.
 
-Closed diagram fences draw through the Editor's sanitized provider boundary;
-open fences stay source, including list/quote-contained fences. Verify that
+Closed diagram fences draw through the Editor's sanitized provider boundary.
+Stream an open Mermaid fence, then its close, and confirm the source becomes the
+diagram without a worker fallback error. Open fences stay source, including
+list/quote-contained fences. Verify quoted and list-contained fences, and that
 quoted or four-space-indented delimiters inside a top-level fence stay literal
 code. Checkboxes and ordinary bracketed text must not disable settled-block reuse.
 Reference definitions follow the canonical full parse, including first-definition
