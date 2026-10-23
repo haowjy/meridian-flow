@@ -228,6 +228,11 @@ export type DocumentSessionOptions = {
 type Listener = (snapshot: DocumentSessionSnapshot) => void;
 type DestroyStage = { settled: boolean; run: () => void | Promise<void> };
 
+function reportSessionError(error: unknown): void {
+  if (typeof globalThis.reportError === "function") globalThis.reportError(error);
+  else console.error(error);
+}
+
 export class DocumentSession {
   roomKey: string;
   room: YjsRoomName;
@@ -672,7 +677,7 @@ export class DocumentSession {
       if (this.initialization === attempt) this.initialization = null;
     });
     this.initialization = attempt;
-    void attempt.catch((error) => reportError(error));
+    void attempt.catch(reportSessionError);
   }
 
   /** Opaque identity observation for authority transfer; callers cannot mutate the provider. */
@@ -823,7 +828,7 @@ export class DocumentSession {
     const close = this.persistenceKey
       ? detachedPersistenceCloseOwner.retire(this.persistenceKey, () => persistence.destroy())
       : persistence.destroy();
-    void close.catch((error) => globalThis.reportError?.(error));
+    void close.catch(reportSessionError);
     this.settleLocalStorage("detached");
   }
 
@@ -851,7 +856,7 @@ export class DocumentSession {
         this.localPeers = new LocalDocumentPeers(this.document, this.persistence, this.awareness);
       } catch (error) {
         // A denied peer channel must not make successfully loaded writing unavailable.
-        reportError(error);
+        reportSessionError(error);
       }
   }
 
