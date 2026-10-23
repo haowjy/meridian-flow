@@ -73,7 +73,7 @@ export function createDeltaJournal(deps: DeltaJournalDeps) {
   let inFlightBytes = 0;
   let writing = false;
   let sealed = false;
-  let failure: unknown;
+  let failure: { cause: unknown } | undefined;
   let writes = 0;
   let rows = 0;
   let mergedDeltas = 0;
@@ -99,7 +99,7 @@ export function createDeltaJournal(deps: DeltaJournalDeps) {
   }
 
   function fail(error: unknown): void {
-    if (failure === undefined) failure = error;
+    failure ??= { cause: error };
     leaveFull();
     notify(capacityWaiters);
     notify(drainWaiters);
@@ -160,12 +160,12 @@ export function createDeltaJournal(deps: DeltaJournalDeps) {
 
   async function push(event: DeltaEvent): Promise<void> {
     while (!hasCapacity(event)) {
-      if (failure !== undefined) throw failure;
+      if (failure !== undefined) throw failure.cause;
       if (sealed) throw new Error("Delta journal is sealed");
       fullSince ??= performance.now();
       await waitFor(capacityWaiters);
     }
-    if (failure !== undefined) throw failure;
+    if (failure !== undefined) throw failure.cause;
     if (sealed) throw new Error("Delta journal is sealed");
     admit(event);
   }
@@ -212,13 +212,13 @@ export function createDeltaJournal(deps: DeltaJournalDeps) {
     while (writing || pending.length > 0) {
       if (failure !== undefined) {
         emitSummary(startedAt);
-        throw failure;
+        throw failure.cause;
       }
       await waitFor(drainWaiters);
     }
     emitSummary(startedAt);
     if (failure !== undefined) {
-      throw failure;
+      throw failure.cause;
     }
   }
 
@@ -227,6 +227,7 @@ export function createDeltaJournal(deps: DeltaJournalDeps) {
     tryPush,
     seal,
     flush,
-    failurePayload: () => (failure === undefined ? undefined : unknownToEventPayload(failure)),
+    failurePayload: () =>
+      failure === undefined ? undefined : unknownToEventPayload(failure.cause),
   };
 }

@@ -2345,7 +2345,7 @@ async function executeLoop({
           eventSink,
           scope: "model_request",
         });
-        let streamFailure: unknown;
+        let streamFailure: { cause: unknown } | undefined;
         try {
           for await (const event of gateway.stream(request)) {
             if (isCancelled()) {
@@ -2469,7 +2469,7 @@ async function executeLoop({
             }
           }
         } catch (cause) {
-          streamFailure = cause;
+          streamFailure = { cause };
           throw cause;
         } finally {
           deltaJournal.seal();
