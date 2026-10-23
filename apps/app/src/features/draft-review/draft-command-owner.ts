@@ -33,8 +33,13 @@ import {
   type DraftRoomRegistry,
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
-import type { EditorHistoryActionResult, EditorHistoryHandle } from "@/core/editor/editor-history";
-import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./apply-click-queue";
+import type { EditorHistoryHandle } from "@/core/editor/editor-history";
+import {
+  type ApplyClickOutcome,
+  ApplyClickQueue,
+  type FrozenApply,
+  type UnapplyClickOutcome,
+} from "./apply-click-queue";
 import { startDraftDiscardSession } from "./draft-discard-session";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
@@ -108,7 +113,6 @@ type Entry = {
   users: number;
   lease: DraftRoomRead | null;
   unwatchLease(): void;
-  unapplying: Map<string, { frozen: FrozenApply; groupIds: Set<string>; observed: boolean }>;
 };
 export type CapturedApply = {
   /** Releases the already-queued click to send. A preceding click may have settled its tree cut. */
@@ -164,7 +168,6 @@ export class DraftCommandOwner {
   private readonly closingWorks = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
   private readonly reconciling = new Map<string, Promise<boolean>>();
-  private readonly unapplyRetries = new Map<string, () => boolean>();
   /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
   private readonly restoredDocuments = new Set<string>();
   /** Final paths allocated by Apply, until dismissed or another document shows. */
@@ -245,7 +248,6 @@ export class DraftCommandOwner {
         users: 0,
         lease: null,
         unwatchLease: () => {},
-        unapplying: new Map(),
       };
       this.entries.set(address.draftId, entry);
       this.byItem.set(ref.itemKey, entry);
@@ -269,6 +271,7 @@ export class DraftCommandOwner {
       queue: new ApplyClickQueue({
         send: (body) => applyDraftClick(ref, body),
         lookup: (body) => observeDraftClick(ref, body),
+        unapply: (body) => unapplyDraftClick(ref, body),
         changed: () => {
           for (const entry of item.rooms) {
             entry.binding?.runtime.invalidateBase();
@@ -285,14 +288,16 @@ export class DraftCommandOwner {
 
   /** The item's schedule, on the generation its state follows: the one publication path. */
   private publishQueue({ ref, queue }: Item) {
-    const unapplying = [...(this.items.get(ref.itemKey)?.rooms ?? [])].some(
-      (entry) => entry.unapplying.size > 0,
-    );
+    const unapplying = queue.unapplies.length > 0;
+    const stalled = queue.stalled;
     this.setState(ref.itemKey, {
-      pending: queue.clicks.length > 0 || unapplying,
+      pending: queue.pending,
       applying: queue.applying,
       unapplying,
-      stalled: queue.clicks[0]?.stalled ?? false,
+      stalled,
+      ...(stalled && unapplying
+        ? { failure: { code: "unapply-refused" as const, serverCode: "unknown" } }
+        : {}),
     });
   }
 
@@ -303,7 +308,9 @@ export class DraftCommandOwner {
 
   /** A draft with clicks outstanding keeps its room read, surface or not, to observe their record. */
   private holdRoom(entry: Entry) {
-    const pending = this.textClicks(entry).length > 0;
+    const pending =
+      this.textClicks(entry).length > 0 ||
+      entry.item.queue.unapplies.some((command) => command.draftId === entry.draftId);
     if (pending && !entry.lease) {
       const lease = readDraftRoom(this.registry, entry.roomKey);
       entry.lease = lease;
@@ -343,10 +350,11 @@ export class DraftCommandOwner {
     binding.runtime.setBaseProvider((_room, schema) => {
       const recorded = new Set(readApplyRecord(session.document).map((row) => row.commandId));
       let base: readonly PMNode[] = readBase(session.document, schema);
-      for (const pending of [...entry.unapplying.values()].reverse())
-        base = applyBase(schema, base, pending.frozen.patched, pending.frozen.optimistic);
+      for (const pending of [...entry.item.queue.unapplies].reverse())
+        if (pending.draftId === entry.draftId)
+          base = applyBase(schema, base, pending.frozen.patched, pending.frozen.optimistic);
       for (const click of this.textClicks(entry))
-        if (!recorded.has(click.body.commandId) && !entry.unapplying.has(click.body.commandId))
+        if (!recorded.has(click.body.commandId))
           base = applyBase(schema, base, click.optimistic, click.patched);
       return base;
     });
@@ -354,19 +362,13 @@ export class DraftCommandOwner {
     const observe = () => {
       binding.runtime.invalidateBase();
       const rows = readApplyRecord(session.document);
-      const recorded = new Set(rows.flatMap((row) => (row.commandId ? [row.commandId] : [])));
-      for (const [commandId, pending] of entry.unapplying) {
-        const targetedRecord = rows.some(
-          (row) =>
-            row.commandId === commandId &&
-            row.groupId !== undefined &&
-            pending.groupIds.has(row.groupId),
-        );
-        if (targetedRecord) pending.observed = true;
-        else if (pending.observed) entry.unapplying.delete(commandId);
-      }
       this.publishQueue(entry.item);
-      entry.item.queue.observe(entry.draftId, recorded);
+      entry.item.queue.observe(
+        entry.draftId,
+        rows.flatMap((row) =>
+          row.commandId ? [{ commandId: row.commandId, groupId: row.groupId }] : [],
+        ),
+      );
     };
     record.observeDeep(observe);
     let stopSession = () => {};
@@ -539,7 +541,12 @@ export class DraftCommandOwner {
   }
 
   private releaseIdle(entry: Entry) {
-    if (entry.users || this.textClicks(entry).length || this.entries.get(entry.draftId) !== entry)
+    if (
+      entry.users ||
+      this.textClicks(entry).length ||
+      entry.item.queue.unapplies.some((command) => command.draftId === entry.draftId) ||
+      this.entries.get(entry.draftId) !== entry
+    )
       return;
     this.detach(entry);
     this.entries.delete(entry.draftId);
@@ -549,8 +556,7 @@ export class DraftCommandOwner {
   }
 
   private releaseItem(item: Item) {
-    if (item.rooms.size || item.queue.clicks.length || this.items.get(item.ref.itemKey) !== item)
-      return;
+    if (item.rooms.size || item.queue.pending || this.items.get(item.ref.itemKey) !== item) return;
     this.items.delete(item.ref.itemKey);
   }
 
@@ -775,104 +781,82 @@ export class DraftCommandOwner {
   ): void {
     let frozen = original;
     let outcome = initial;
-    let unapplyCommandId: string | undefined;
-    let retryHistory = () => false;
+    let inverseOutcome: Promise<UnapplyClickOutcome> = Promise.resolve({ status: "cancelled" });
+    let reversedGroups = [...original.body.groupIds];
+    let redoCommandId: string | undefined;
     const landedText = (answer: ApplyClickOutcome) =>
       answer.status === "landed" || (answer.status === "applied" && answer.textEffect === true);
-    const fail = (serverCode: string) => {
-      entry.unapplying.delete(frozen.body.commandId);
-      entry.binding?.runtime.invalidateBase();
-      this.publishQueue(entry.item);
-      this.setState(entry.ref.itemKey, {
-        failure: { code: "unapply-refused", serverCode },
-      });
-      this.unapplyRetries.set(entry.ref.itemKey, retryHistory);
-    };
-    const reverse = async (): Promise<EditorHistoryActionResult> => {
-      this.unapplyRetries.delete(entry.ref.itemKey);
-      this.setState(entry.ref.itemKey, { failure: null });
-      const releaseQueue = entry.item.queue.hold();
-      try {
-        if (entry.item.queue.cancel(frozen.body.commandId)) return "done";
-        const answer = await outcome;
-        if (!landedText(answer)) return "discard";
-        const records = new Set(
-          entry.binding
-            ? readApplyRecord(entry.binding.session.document).map((row) => row.commandId)
-            : [],
-        );
-        entry.unapplying.set(frozen.body.commandId, {
-          frozen,
-          groupIds: new Set(frozen.body.groupIds),
-          observed: records.has(frozen.body.commandId),
+
+    history.captureApply({
+      undo: () => {
+        this.setState(entry.ref.itemKey, { failure: null });
+        const target = frozen;
+        if (entry.item.queue.cancel(target.body.commandId)) {
+          inverseOutcome = Promise.resolve({ status: "cancelled" });
+          return;
+        }
+        const commandId = crypto.randomUUID();
+        redoCommandId = undefined;
+        reversedGroups = [...target.body.groupIds];
+        inverseOutcome = entry.item.queue.enqueueUnapply({
+          body: { commandId, applyCommandId: target.body.commandId },
+          draftId: entry.draftId,
+          frozen: target,
+          ready: outcome.then(landedText),
         });
         entry.binding?.runtime.invalidateBase();
+        this.holdRoom(entry);
         this.publishQueue(entry.item);
-        unapplyCommandId ??= crypto.randomUUID();
-        const commandId = unapplyCommandId;
-        for (const delay of [0, 250, 750, 1500]) {
-          if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-          try {
-            const result = await unapplyDraftClick(entry.ref, {
-              commandId,
-              applyCommandId: frozen.body.commandId,
-            });
-            if (result.status === "unapplied") {
-              const pending = entry.unapplying.get(frozen.body.commandId);
-              if (!result.reversedGroupIds.length) {
-                entry.unapplying.delete(frozen.body.commandId);
-                entry.binding?.runtime.invalidateBase();
-                this.publishQueue(entry.item);
-                return "discard";
-              }
-              frozen = {
+        void inverseOutcome.then((answer) => {
+          if (answer.status === "unapplied") {
+            reversedGroups = answer.reversedGroupIds;
+            if (redoCommandId) {
+              const revised = {
                 ...frozen,
-                body: { ...frozen.body, groupIds: result.reversedGroupIds },
-                patched: patchFor(result.reversedGroupIds),
+                body: { ...frozen.body, groupIds: reversedGroups },
+                patched: patchFor(reversedGroups),
               };
-              if (pending) {
-                pending.frozen = frozen;
-                pending.groupIds = new Set(result.reversedGroupIds);
-                entry.binding?.runtime.invalidateBase();
-              }
-              return "done";
+              frozen = revised;
+              entry.item.queue.reviseApply(redoCommandId, revised);
             }
-            if (result.status === "closed" || result.status === "refused") {
-              fail(result.status);
-              return "failed";
-            }
-          } catch {
-            // The immutable command id makes an unknown response safe to retry.
+          } else if (answer.status !== "cancelled") {
+            this.setState(entry.ref.itemKey, {
+              failure: { code: "unapply-refused", serverCode: answer.status },
+            });
           }
-        }
-        fail("unknown");
-        return "failed";
-      } finally {
-        releaseQueue();
-      }
-    };
-    const reapply = async (): Promise<EditorHistoryActionResult> => {
-      const commandId = crypto.randomUUID();
-      unapplyCommandId = undefined;
-      frozen = {
-        ...frozen,
-        body: { ...frozen.body, commandId, tree: undefined },
-        acknowledged: Promise.resolve(),
-      };
-      outcome = entry.item.queue.enqueue(frozen);
-      entry.binding?.runtime.invalidateBase();
-      const answer = await outcome;
-      if (landedText(answer)) return "done";
-      this.setState(entry.ref.itemKey, {
-        failure: {
-          code: "apply-refused",
-          serverCode: answer.status === "applied" ? "text_not_applied" : refusalCode(answer),
-        },
-      });
-      return "failed";
-    };
-    const captured = history.captureApply({ undo: reverse, redo: reapply });
-    retryHistory = captured.retry;
+          entry.binding?.runtime.invalidateBase();
+          this.publishQueue(entry.item);
+          this.releaseIdle(entry);
+        });
+      },
+      redo: () => {
+        const commandId = crypto.randomUUID();
+        redoCommandId = commandId;
+        const ready = inverseOutcome.then((answer) =>
+          answer.status === "cancelled" || answer.status === "unapplied"
+            ? undefined
+            : Promise.reject(new Error("Un-Apply did not land")),
+        );
+        frozen = {
+          ...frozen,
+          body: { ...frozen.body, commandId, groupIds: reversedGroups, tree: undefined },
+          patched: patchFor(reversedGroups),
+          acknowledged: ready,
+        };
+        outcome = entry.item.queue.enqueue(frozen);
+        entry.binding?.runtime.invalidateBase();
+        this.holdRoom(entry);
+        void outcome.then((answer) => {
+          if (!landedText(answer) && answer.status !== "cancelled")
+            this.setState(entry.ref.itemKey, {
+              failure: {
+                code: "apply-refused",
+                serverCode: answer.status === "applied" ? "text_not_applied" : refusalCode(answer),
+              },
+            });
+        });
+      },
+    });
   }
 
   /** Releases a captured batch in server order while every intent remains owner-held. */
@@ -919,7 +903,7 @@ export class DraftCommandOwner {
   }
 
   retry(itemKey: string) {
-    if (this.unapplyRetries.get(itemKey)?.()) return;
+    if (this.items.get(itemKey)?.queue.stalled) this.setState(itemKey, { failure: null });
     this.items.get(itemKey)?.queue.retry();
   }
   /** Server-only lifecycle commands share this account owner, never the Apply-all route. */
@@ -1018,7 +1002,6 @@ export class DraftCommandOwner {
   }
   close() {
     this.active = false;
-    this.unapplyRetries.clear();
     for (const item of this.items.values()) item.queue.close();
   }
 }

@@ -9,7 +9,9 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Button } from "@/components/ui/button";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { cn } from "@/lib/utils";
+import { useDraftCommandState } from "./draft-changes";
 import { ChangeAuthor, discardLabel } from "./ReviewChangeParts";
 import { ReviewMessageText } from "./ReviewMessageText";
 import type { BranchCommandFailure } from "./review-command-types";
@@ -17,6 +19,7 @@ import type { ReviewChange } from "./review-model";
 
 export type ReviewChangeBarProps = {
   change: ReviewChange;
+  itemKey: string;
   disabled: boolean;
 
   draftFailure?: BranchCommandFailure | null;
@@ -32,6 +35,7 @@ export type ReviewChangeBarProps = {
 
 export function ReviewChangeBar({
   change,
+  itemKey,
   disabled,
 
   draftFailure,
@@ -42,10 +46,22 @@ export function ReviewChangeBar({
   inFlow = false,
   className,
 }: ReviewChangeBarProps) {
+  const owner = useDraftCommandOwner();
+  const state = useDraftCommandState(itemKey);
   const label = discardLabel();
   const failure = draftFailure ? (
-    <p role="status" className="min-w-0 break-words pr-2 text-meta text-destructive">
-      <ReviewMessageText failure={draftFailure} />
+    <p
+      role="status"
+      className="flex min-w-0 items-center gap-2 break-words pr-2 text-meta text-destructive"
+    >
+      <span>
+        <ReviewMessageText failure={draftFailure} />
+      </span>
+      {draftFailure.code === "unapply-refused" && state.stalled ? (
+        <button type="button" className="shrink-0 text-button" onClick={() => owner.retry(itemKey)}>
+          <Trans>Retry</Trans>
+        </button>
+      ) : null}
     </p>
   ) : null;
   const failureInRow = inFlow && failure;

@@ -39,7 +39,7 @@ selection. See [Two readings, owner first](#two-readings-owner-first).
 | Owner `document`, the span refusing unevenly (the Ctrl+A case) | heading, code block, bullet list | `mixed-selection` |
 | Inline code covers the selection | bold, italic, link | `inline-code` |
 | No paragraph, heading, or table under the selection | alignment | `no-alignable-block` |
-| Yjs undo or redo stack empty | undo, redo | `empty-history` |
+| mounted editor history has no undo or redo entry | undo, redo | `empty-history` |
 | Code-schema file | upload figure | `code-document` |
 | Document opened without a project | upload figure | `no-project` |
 

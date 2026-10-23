@@ -21,7 +21,11 @@ export function DraftCommandStatus({
   const state = useDraftCommandState(itemKey);
   const content = state.stalled ? (
     <>
-      <Trans>Apply is waiting for confirmation.</Trans>
+      {state.unapplying ? (
+        <Trans>Undo is waiting for confirmation.</Trans>
+      ) : (
+        <Trans>Apply is waiting for confirmation.</Trans>
+      )}
       <button
         type="button"
         className="text-button [@media(pointer:coarse)]:min-h-11"
@@ -35,22 +39,9 @@ export function DraftCommandStatus({
   ) : state.applying ? (
     <Trans>Applying</Trans>
   ) : state.failure ? (
-    <>
-      <span
-        className={state.failure.serverCode === "needs_restore" ? undefined : "text-destructive"}
-      >
-        <ReviewMessageText failure={state.failure} />
-      </span>
-      {state.failure.code === "unapply-refused" ? (
-        <button
-          type="button"
-          className="text-button [@media(pointer:coarse)]:min-h-11"
-          onClick={() => owner.retry(itemKey)}
-        >
-          <Trans>Retry</Trans>
-        </button>
-      ) : null}
-    </>
+    <span className={state.failure.serverCode === "needs_restore" ? undefined : "text-destructive"}>
+      <ReviewMessageText failure={state.failure} />
+    </span>
   ) : isDeletedFromManuscript(item) ? (
     <Trans>Deleted from the manuscript</Trans>
   ) : null;

@@ -144,10 +144,15 @@ settled, but never recaptures later text or a later tree revision. The queue ret
 `readDraftRoom` lease independently of React until terminal.
 
 An editor text Apply also gives that mounted editor's history an action over the
-frozen cut. Undo cancels it by command id while unsent. After send, Undo holds the
-item FIFO through the durable Un-Apply; later clicks cannot pass it. Redo is a new
-Apply command for only the text groups the server actually reversed, never the
-original tree cut. Work and dock callers pass no editor history handle.
+frozen cut. Apply is a boundary between native Yjs segments. Undo moves the history
+cursor synchronously, cancels an unsent Apply, or immediately queues a projected
+Un-Apply intent in the item's command schedule. The schedule retries the targeted
+Apply before the inverse when its delivery is unknown and withholds later commands
+behind any stalled intent. Redo immediately queues a new Apply intent for only the
+text groups the server actually reversed, never the original tree cut. The account
+owner retains delivery, retry and the draft-room subscription after editor unmount;
+the mounted history only retains navigation. Work and dock callers pass no editor
+history handle.
 
 A deleted document (the list item's `deletedLive`, D79) is draft-only on every
 surface. Existence is its own fact, never read from a name conflict. If another document took
