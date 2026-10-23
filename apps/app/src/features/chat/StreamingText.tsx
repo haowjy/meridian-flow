@@ -10,6 +10,7 @@ import { Markdown } from "@/rich-content/Markdown";
 import { readDebugStreamPlaybackCps, useDebugStreamPlayback } from "./streaming-text-dev";
 
 export type StreamingTextProps = {
+  streamId: string;
   text: string;
   streaming?: boolean;
 };
@@ -21,16 +22,28 @@ export function StreamingText(props: StreamingTextProps) {
   return <StreamingTextView {...props} />;
 }
 
-function StreamingTextWithPlayback({ text, streaming = true }: StreamingTextProps) {
+function StreamingTextWithPlayback({ streamId, text, streaming = true }: StreamingTextProps) {
   const cps = readDebugStreamPlaybackCps();
   const displayed = useDebugStreamPlayback(text, cps);
-  return <StreamingTextView text={displayed} streaming={streaming || displayed !== text} />;
+  return (
+    <StreamingTextView
+      streamId={streamId}
+      text={displayed}
+      streaming={streaming || displayed !== text}
+    />
+  );
 }
 
-function StreamingTextView({ text, streaming = true }: StreamingTextProps) {
+function StreamingTextView({ streamId, text, streaming = true }: StreamingTextProps) {
   return (
     <div>
-      <Markdown mode={streaming ? "streaming" : "static"}>{text}</Markdown>
+      {streaming ? (
+        <Markdown mode="streaming" streamId={streamId}>
+          {text}
+        </Markdown>
+      ) : (
+        <Markdown streamId={streamId}>{text}</Markdown>
+      )}
       {streaming && (
         <span aria-hidden className="mt-[var(--chat-space-inline)] block">
           <StreamCaret />

@@ -1,17 +1,30 @@
 /** Static and streaming Markdown: the canonical codec's document nodes rendered without an editor. */
-import {
-  type MarkdownStreamSnapshot,
-  markdownCodec,
-  type PresentationSourceRun,
-} from "@meridian/markup";
+import { markdownCodec, type PresentationSourceRun } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Mark as PMMark, Node as PMNode } from "@tiptap/pm/model";
-import { createElement, Fragment, memo, type ReactNode, useMemo, useRef } from "react";
+import {
+  createElement,
+  Fragment,
+  memo,
+  type ReactNode,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import { browserPictureSource } from "@/core/editor/images";
 import { classifyLinkTarget } from "@/core/editor/links";
 import { DocumentCodeBlock } from "./DocumentCodeBlock";
 import { createDocumentCache } from "./document-cache";
+import {
+  configureMarkdownStreaming,
+  releaseStreamingMarkdown,
+  requestStreamingMarkdown,
+  type StreamingMarkdownSnapshot,
+  settledStreamingMarkdown,
+  streamingMarkdownSnapshot,
+  subscribeStreamingMarkdown,
+} from "./markdown-stream-service";
 import {
   boundedRanges,
   type MarkdownReferenceOccurrence,
@@ -22,8 +35,10 @@ import {
 import { SkillToken } from "./SkillToken";
 import { TranscriptReference } from "./TranscriptReference";
 
-const codec = markdownCodec({ schema: buildDocumentSchema() });
-const settledSnapshots = createDocumentCache<MarkdownStreamSnapshot>();
+const schema = buildDocumentSchema();
+const codec = markdownCodec({ schema });
+configureMarkdownStreaming(schema, (source) => codec.parseStreaming(source, { repair: true }));
+const settledSnapshots = createDocumentCache<StreamingMarkdownSnapshot>();
 
 type Presentation = {
   source: string;
@@ -280,17 +295,28 @@ function StaticTranscript({
   breaks,
   references,
   skills,
+  streamId,
 }: {
   source: string;
   breaks: boolean;
   references: readonly MarkdownReferenceOccurrence[];
   skills: readonly MarkdownSkillOccurrence[];
+  streamId?: string;
 }) {
-  const { sourceMap } = useMemo(() => codec.parseWithSourceMap(source), [source]);
-  const snapshot = useMemo(() => codec.stream(null, source), [source]);
+  const parsed = useMemo(() => codec.parseWithSourceMap(source), [source]);
+  const snapshot = streamId ? settledStreamingMarkdown(streamId, source) : null;
+  const settled = reuseEqualSnapshot(
+    {
+      source,
+      blocks: parsed.blocks,
+      openCode: parsed.openCode,
+      openCodeBlock: parsed.blocks.findIndex((block) => ownsNode(block, parsed.openCode)),
+    },
+    snapshot,
+  );
   const presentation = useMemo(() => {
     const runs = new Map<string, PresentationSourceRun[]>();
-    for (const run of sourceMap) {
+    for (const run of parsed.sourceMap) {
       const key = runKey(run.kind, [run.at.block, ...run.at.path]);
       runs.set(key, [...(runs.get(key) ?? []), run]);
     }
@@ -300,16 +326,15 @@ function StaticTranscript({
       references: boundedRanges(references, source.length),
       skills: boundedRanges(skills, source.length),
     };
-  }, [source, sourceMap, references, skills]);
-  const openBlock = snapshot.blocks.findIndex((block) => ownsNode(block, snapshot.openCode));
-  return snapshot.blocks.map((node, index) => (
+  }, [source, parsed.sourceMap, references, skills]);
+  return settled.blocks.map((node, index) => (
     <Fragment key={index}>
       {renderDocumentNode(
         node,
         breaks,
         presentation,
         [index],
-        index === openBlock ? snapshot.openCode : null,
+        index === settled.openCodeBlock ? settled.openCode : null,
       )}
     </Fragment>
   ));
@@ -319,6 +344,7 @@ export function DocumentMarkdown({
   source,
   breaks = false,
   streaming = false,
+  streamId,
   className,
   references = [],
   skills = [],
@@ -326,28 +352,40 @@ export function DocumentMarkdown({
   source: string;
   breaks?: boolean;
   streaming?: boolean;
+  streamId?: string;
   className?: string;
   references?: readonly MarkdownReferenceOccurrence[];
   skills?: readonly MarkdownSkillOccurrence[];
 }) {
-  const settled = useMemo(
-    () => (streaming ? null : settledSnapshots(source, () => codec.stream(null, source))),
-    [source, streaming],
-  );
-  const previous = useRef<MarkdownStreamSnapshot | null>(null);
-  const snapshot = useMemo(() => {
-    if (!streaming) return null;
-    const next = codec.stream(previous.current, source, { repair: true });
-    previous.current = next;
-    return next;
-  }, [source, streaming]);
+  const live = useStreamingMarkdown(streamId, source, streaming);
+  const settled = useMemo(() => {
+    if (streaming) return null;
+    const parsed = settledSnapshots(source, () => {
+      const result = codec.parseStreaming(source);
+      return {
+        source,
+        blocks: result.blocks,
+        openCode: result.openCode,
+        openCodeBlock: result.blocks.findIndex((block) => ownsNode(block, result.openCode)),
+      };
+    });
+    const previous = streamId ? settledStreamingMarkdown(streamId, source) : null;
+    return reuseEqualSnapshot(parsed, previous);
+  }, [source, streamId, streaming]);
+  const snapshot = streaming ? live : null;
   const blocks = snapshot?.blocks ?? settled?.blocks ?? [];
   const openCode = snapshot?.openCode ?? settled?.openCode ?? null;
-  const openBlock = blocks.findIndex((block) => ownsNode(block, openCode));
+  const openBlock = snapshot?.openCodeBlock ?? settled?.openCodeBlock ?? -1;
   return (
     <div className={className}>
       {!streaming && (references.length > 0 || skills.length > 0) ? (
-        <StaticTranscript source={source} breaks={breaks} references={references} skills={skills} />
+        <StaticTranscript
+          source={source}
+          breaks={breaks}
+          references={references}
+          skills={skills}
+          streamId={streamId}
+        />
       ) : (
         blocks.map((node, index) => (
           <MarkdownBlock
@@ -360,4 +398,68 @@ export function DocumentMarkdown({
       )}
     </div>
   );
+}
+
+function useStreamingMarkdown(
+  streamId: string | undefined,
+  source: string,
+  active: boolean,
+): StreamingMarkdownSnapshot | null {
+  const [snapshot, setSnapshot] = useState<StreamingMarkdownSnapshot | null>(() =>
+    streamId ? streamingMarkdownSnapshot(streamId) : null,
+  );
+  useLayoutEffect(() => {
+    if (!active || !streamId) return;
+    const update = () => setSnapshot(streamingMarkdownSnapshot(streamId));
+    const unsubscribe = subscribeStreamingMarkdown(streamId, update);
+    update();
+    return () => {
+      unsubscribe();
+      releaseStreamingMarkdown(streamId);
+    };
+  }, [active, streamId]);
+  useLayoutEffect(() => {
+    if (active && streamId) requestStreamingMarkdown(streamId, source);
+  }, [active, source, streamId]);
+  return snapshot;
+}
+
+function reuseEqualSnapshot(
+  next: StreamingMarkdownSnapshot,
+  previous: StreamingMarkdownSnapshot | null,
+): StreamingMarkdownSnapshot {
+  if (!previous) return next;
+  const blocks = next.blocks.map((node, index) => {
+    const old = previous.blocks[index];
+    return old?.eq(node) ? old : node;
+  });
+  const openCode =
+    next.openCode && next.openCodeBlock >= 0
+      ? nodeAtPath(
+          blocks[next.openCodeBlock],
+          nodePath(next.blocks[next.openCodeBlock], next.openCode),
+        )
+      : null;
+  return { ...next, blocks, openCode };
+}
+
+function nodePath(node: PMNode | undefined, target: PMNode): number[] | null {
+  if (!node) return null;
+  if (node === target) return [];
+  for (let index = 0; index < node.childCount; index++) {
+    const path = nodePath(node.child(index), target);
+    if (path) return [index, ...path];
+  }
+  return null;
+}
+
+function nodeAtPath(node: PMNode | undefined, path: readonly number[] | null): PMNode | null {
+  if (!node || !path) return null;
+  let current = node;
+  for (const index of path) {
+    const child = current.maybeChild(index);
+    if (!child) return null;
+    current = child;
+  }
+  return current;
 }

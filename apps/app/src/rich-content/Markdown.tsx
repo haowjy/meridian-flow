@@ -7,11 +7,10 @@ import {
   type TranscriptReferenceResolution,
 } from "./TranscriptReference";
 
-export type MarkdownProps = {
+type MarkdownBaseProps = {
   children: string;
   /** Dense meta voice for tool output and helper summaries. */
   variant?: "compact";
-  mode?: "streaming" | "static";
   className?: string;
   breaks?: boolean;
   references?: readonly MarkdownReferenceOccurrence[];
@@ -23,10 +22,14 @@ export type MarkdownProps = {
   uploadsChat?: string;
 };
 
+export type MarkdownProps = MarkdownBaseProps &
+  ({ mode: "streaming"; streamId: string } | { mode?: "static"; streamId?: string });
+
 export function Markdown({
   children,
   variant,
   mode = "static",
+  streamId,
   className,
   breaks = false,
   references,
@@ -49,6 +52,7 @@ export function Markdown({
         source={children}
         breaks={breaks}
         streaming={mode === "streaming"}
+        streamId={streamId}
         references={references}
         skills={skills}
         className={cn(
