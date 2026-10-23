@@ -129,6 +129,11 @@ logs.
   journal append in the same transaction, so `event_journal.turn_id` is valid.
   Journal `seq` is a delivery cursor, not transcript ordering; `turns.position`
   is the write-once transcript order.
+- A live model request or tool call batches its deltas behind the write already
+  in flight and merges adjacent deltas for the same block. Each batch reserves
+  one contiguous sequence range and sends one notification. The runtime owns
+  the per-scope byte bound and flushes before its durable events; the hub still
+  owns projection and fan-out.
 - `ThreadEventHub` is process-local pub/sub and hot cache over the durable
   journal. One ordered drain reads committed rows after its cursor. Catchup
   installs a guard listener, replays, then merges buffered live events without

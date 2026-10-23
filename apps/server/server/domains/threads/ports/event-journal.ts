@@ -11,11 +11,11 @@ import type { OrchestratorEvent } from "@meridian/contracts/threads";
 export type JournalEventEnvelope = OrchestratorEvent;
 
 /**
- * Journal-only transport facts: these are appended through the loop's
- * non-transactional `appendEvent` path, so the HTTP snapshot cannot have
- * reflected them in read-model rows yet. Output deltas are high-volume live
- * transport facts, but they are still journaled here so WS catch-up/replay uses
- * the same cursor model as every other live event. Other produced events are
+ * Journal-only transport facts bypass read-model projection, so the HTTP
+ * snapshot cannot have reflected them in read-model rows yet. Runtime delta
+ * scopes batch stream and output deltas; lower-volume lifecycle events append
+ * directly. All remain journaled so WS catch-up/replay uses the same cursor
+ * model as every other live event. Other produced events are
  * appended through `persistAndAppendEvents`; some are projector no-ops
  * (usage/tool result), but they are still sequenced with the durable projection
  * transaction.
@@ -27,6 +27,7 @@ export const JOURNAL_ONLY_EVENT_TYPES = [
 ] as const;
 
 export interface EventJournalWriter {
+  appendEvents(threadId: ThreadId, events: readonly JournalEventEnvelope[]): Promise<bigint>;
   appendEvent(threadId: ThreadId, event: JournalEventEnvelope): Promise<bigint>;
 }
 

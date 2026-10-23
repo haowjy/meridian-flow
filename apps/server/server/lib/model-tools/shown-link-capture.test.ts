@@ -674,6 +674,12 @@ const rows: Array<{
               async appendEvent(_threadId: string, event: { type: string }) {
                 if (event.type === "tool.result") throw new Error("journal append failed");
               },
+              async appendEvents(_threadId: string, events: { type: string }[]) {
+                if (events.some((event) => event.type === "tool.result")) {
+                  throw new Error("journal append failed");
+                }
+                return events.length;
+              },
             },
           },
         } as never,
