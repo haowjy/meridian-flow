@@ -300,9 +300,11 @@ Terminal record example (command-specific fields follow the reserved keys):
 
 ### Mock provider responses
 
-`MODEL_PROVIDER=mock` selects the in-process fake provider. It makes no paid
-model calls. `--mock @file.json` supplies that provider's responses for one
-send; it does not switch a real-provider server to mock.
+`MODEL_PROVIDER=mock` selects a local HTTP model server hosted inside the app
+server process. It makes no paid model calls. A **fixture** is a JSON script of
+model responses. `--mock @file.json` supplies one for a single send and requires
+the server to use the mock provider; on a real-provider server the CLI refuses
+before admitting the message. It does not switch providers.
 
 Without a script, the dev provider streams an authored fiction scene with
 thinking. Choose a different default with `MOCK_MODEL_RESPONSE`, a JSON
@@ -317,12 +319,16 @@ Changing startup environment requires restarting your stack. Defaults cannot
 contain tools, errors, finish reasons, or `times`: a repeated tool call would
 never reach a final answer. Use a multi-step script for those scenarios.
 Explicit scripts win over built-in trigger phrases, which win over the default.
-Existing triggers used by cancellation and write probes still work.
+For example, a matching script that says `{"text":"Hello"}` makes a message
+containing `Phase 7 final gate` return Hello instead of triggering a write.
+Existing fault triggers include `slow before output`, `slow after output`,
+`midstream disconnect`, `hang cancel drain`, and `cancel billing`.
 
 #### Script a response
 
-With the debug gate open (`pnpm dev` opens it), queue responses through
-`/api/debug/mock-model/script`. Each step answers one **model call**, not one
+Use `./mf mock script` to queue fixtures; it calls
+`/api/debug/mock-model/script`. The route needs the debug gate (`APP_DEBUG=1` in a
+non-production environment, set by `pnpm dev`). Each step answers one **model call**, not one
 user message. A tool step causes real tool execution, followed by another model
 call, so finish a tool workflow with a text step.
 
@@ -358,11 +364,11 @@ accompany any of them. Unknown fields and conflicting text sources are rejected.
 | `repeat` | Repeat literal or sample text 1–100 times, separated by blank lines; bounded to 2,000,000 characters with reasoning. For lorem, set `words` instead. |
 | `delayMs` | Wait 0–120,000 ms before starting the response, including errors. |
 | `chunkSize` | Unicode characters per text, thinking, or tool-argument chunk; 1–65,536, default 24. |
-| `chunkDelayMs` | Interval between chunks, 0–10,000 ms. Scripts default to 0; the unconfigured dev default uses 20 ms. Approximate character rate is `chunkSize * 1000 / chunkDelayMs`; network and application processing add overhead. |
+| `chunkDelayMs` | Interval between chunks, 0–10,000 ms. Scripts default to 0 (burst output); without `MOCK_MODEL_RESPONSE` or a matching script, the dev default uses 20 ms. Approximate character rate is `chunkSize * 1000 / chunkDelayMs`; network and application processing add overhead. |
 | `toolCalls` | `[{ "name": "read", "args": { "path": "scratch://Mock scene" } }]`. Up to 100 calls; names and arguments go to the real tool registry. |
-| `finishReason` | `length` for truncation or `content_filter` for a filtered response. Does not shorten text for you. Omit for normal completion or tool execution. |
+| `finishReason` | `length` for truncation or `content_filter` for a filtered response. Sends all supplied text, then marks the response failed; the partial text remains above a failed-response card. Does not shorten text for you. Omit for normal completion or tool execution. |
 | `error` | `{ "status": 503, "message": "Unavailable" }` instead of content. Cannot be combined with response content or streaming controls. |
-| `times` | Number of model calls consuming this step (1–1,000). An error without `times` is sticky, so retries cannot slip past it. |
+| `times` | Number of model calls consuming this step (1–1,000). An error without `times` keeps answering every matching call, including retries, until the script is cleared. |
 
 For example, this produces a long answer slowly without storing a large fixture:
 
@@ -380,7 +386,7 @@ For example, this produces a long answer slowly without storing a large fixture:
 ```
 
 Large, slow responses may exceed the CLI deadline or the gateway's model-call
-ceiling. Increase `--timeout` for the CLI and `MODEL_CALL_TIMEOUT_MS` for the
+ceiling (default 900,000 ms). The default inactivity limit is 60,000 ms. Increase `--timeout` for the CLI and `MODEL_CALL_TIMEOUT_MS` for the
 server when deliberately exercising long runs; a chunk interval above
 `MODEL_CALL_STALL_MS` deliberately exercises a stalled provider. `chunkDelayMs`
 has no effect on non-stream responses. Stop/disconnection releases pending mock
@@ -398,7 +404,7 @@ from the real runtime, not fabricated model output.
 - [Thinking and critique](../tools/mf/fixtures/mock-thinking.json): paced thinking followed by a formatted critique.
 - [Large output](../tools/mf/fixtures/mock-large.json): 10,000 lorem words with paragraph breaks.
 - [Sample rotation](../tools/mf/fixtures/mock-samples.json): scene, critique, outline and Markdown on four model calls. Queue with `mock script`; `send --mock` removes unconsumed steps when that send finishes.
-- [Document tools](../tools/mf/fixtures/mock-tools.json): create/overwrite `scratch://Mock scene`, then read, list and search it, followed by a final answer. Uses the current chat's Scratch, not manuscript files.
+- [Document tools](../tools/mf/fixtures/mock-tools.json): create/overwrite `scratch://Mock scene`, then read, list and search it, followed by a final answer. The fixture fixes this path in the current chat's Scratch, not manuscript files. Read it with `./mf doc read "scratch://@<chat-ref>/Mock scene"` (for example, chat ref `c7`).
 - [Retry recovery](../tools/mf/fixtures/mock-recovery.json): one 503, then a successful outline. The gateway is the only retry layer; provider SDK clients use `maxRetries: 0`.
 - [Truncated response](../tools/mf/fixtures/mock-truncated.json): a partial sentence with the provider's length finish reason.
 - [Provider failure](../tools/mf/fixtures/mock-provider-error.json): a sticky failure. Inspect the failed reply, not only the send exit code.
