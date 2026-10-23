@@ -70,7 +70,7 @@ export function computeEcho(input: EchoInput): ApplyEchoHunk[] {
 
 /**
  * The blocks around `targets`: each target index widened by one neighbour on each side, clamped
- * to the document, merged, in order. The echo's window, and the region a write is checked in.
+ * to the document, merged, in order. The echo's window.
  * A target of -1 (an insert at the start) widens to the first block.
  */
 export function windowOf(targets: Iterable<number>, blockCount: number): number[] {
