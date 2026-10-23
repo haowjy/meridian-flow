@@ -1,6 +1,5 @@
 /** Exact source authority for static user-turn references and skill presentation. */
-import type { PresentationSourceRun } from "@meridian/markup";
-import { decodeString } from "micromark-util-decode-string";
+import { type PresentationSourceRun, presentationTextRange } from "@meridian/markup";
 
 export type MarkdownReferenceOccurrence = {
   from: number;
@@ -46,18 +45,13 @@ export function referenceForRun(
     : undefined;
 }
 
-export function skillsForRun(
+function skillsForRun(
   run: PresentationSourceRun | undefined,
   source: string,
   skills: readonly MarkdownSkillOccurrence[],
 ): { from: number; to: number; skill: MarkdownSkillOccurrence }[] {
   if (run?.kind !== "text" || !run.source) return [];
   const range = run.source;
-  const length = decodeString(source.slice(range.from, range.to)).length;
-  // Decode from the end: a preceding backslash can escape the token's slash,
-  // so a prefix ending at that boundary is not independently decodable.
-  const offset = (at: number) =>
-    (run.at.offset ?? 0) + length - decodeString(source.slice(at, range.to)).length;
   return skills
     .filter(
       (item) =>
@@ -65,11 +59,10 @@ export function skillsForRun(
         item.to <= range.to &&
         source.slice(item.from, item.to) === `/${item.slug}`,
     )
-    .map((skill) => ({
-      from: offset(skill.from),
-      to: offset(skill.to),
-      skill,
-    }));
+    .flatMap((skill) => {
+      const resolved = presentationTextRange(run, source, skill);
+      return resolved ? [{ ...resolved, skill }] : [];
+    });
 }
 
 export function skillsForRuns(
