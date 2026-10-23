@@ -267,81 +267,6 @@ export function createDrizzleDraftStore(
     }
   }
 
-  async function retireCreatedDocumentDraft(input: {
-    documentId: DocumentId;
-    branchId: BranchId;
-  }): Promise<string | null> {
-    const [active] = await selectDraft(currentDrizzleDb(db))
-      .where(
-        and(
-          eq(documentDrafts.documentId, input.documentId),
-          eq(documentDrafts.branchId, input.branchId),
-          eq(documentDrafts.kind, "work_draft"),
-          eq(documentDrafts.status, "active"),
-        ),
-      )
-      .limit(1);
-    await deps.close.closeDrafts(
-      currentDrizzleDb(db),
-      { documentIds: [input.documentId], branchId: input.branchId },
-      "document_discarded",
-    );
-    return active?.draftId ?? null;
-  }
-
-  async function restoreCreatedDocumentDraft(input: {
-    documentId: DocumentId;
-    branchId: BranchId;
-    sourceDraftId: string;
-    sourceRevision: number;
-  }): Promise<DraftSnapshot | null> {
-    const retained = await readDraftAt(currentDrizzleDb(db), input.sourceDraftId);
-    if (
-      retained?.documentDraft.documentId !== input.documentId ||
-      retained.documentDraft.branchId !== input.branchId ||
-      retained.documentDraft.kind !== "work_draft" ||
-      retained.documentDraft.status !== "closed" ||
-      retained.documentDraft.revision !== input.sourceRevision ||
-      retained.documentDraft.successorDraftId
-    )
-      return null;
-    const [occupied] = await selectDraft(currentDrizzleDb(db))
-      .where(
-        and(
-          eq(documentDrafts.documentId, input.documentId),
-          eq(documentDrafts.branchId, input.branchId),
-          eq(documentDrafts.kind, "work_draft"),
-          eq(documentDrafts.status, "active"),
-        ),
-      )
-      .limit(1);
-    if (occupied) return null;
-    const doc = materializeDraftRead(retained, createCollabYDoc({ gc: false }));
-    try {
-      const successor = await ensureDocumentDraft({
-        ...input,
-        liveDoc: doc,
-        preserveIdentity: true,
-      });
-      const [linked] = await currentDrizzleDb(db)
-        .update(documentDrafts)
-        .set({ successorDraftId: successor.draftId })
-        .where(
-          and(
-            eq(documentDrafts.id, input.sourceDraftId),
-            isNull(documentDrafts.successorDraftId),
-            eq(documentDrafts.status, "closed"),
-            eq(documentDrafts.revision, input.sourceRevision),
-          ),
-        )
-        .returning({ id: documentDrafts.id });
-      if (!linked) return null;
-      return successor;
-    } finally {
-      doc.destroy();
-    }
-  }
-
   /**
    * Callers route scratch and uploads live (D9), and pick a branch that may hold the
    * document (`branchMayHold`); reaching here otherwise is a routing or authorization bug.
@@ -760,8 +685,6 @@ export function createDrizzleDraftStore(
     },
 
     ensureCreatedDocumentDraft,
-    retireCreatedDocumentDraft,
-    restoreCreatedDocumentDraft,
     retractCreatedDocumentDraft,
 
     ensureThreadPeerDraft(input) {

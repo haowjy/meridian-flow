@@ -9,7 +9,7 @@ import {
   draftWriteJournal,
   projects,
 } from "@meridian/database";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInRootDrizzleReadSnapshot,
@@ -35,22 +35,6 @@ export function createDrizzleDraftDispositionStore(db: Database): DraftDispositi
           .innerJoin(projects, eq(projects.id, branches.projectId))
           .where(eq(documentDrafts.id, draftId));
         if (!project) return null;
-        const ancestors = await tx.execute<{ id: string }>(sql`
-          WITH RECURSIVE lineage(id, path) AS (
-            SELECT ${draftId}::text, ARRAY[${draftId}::text]
-            UNION ALL
-            SELECT predecessor.id, lineage.path || predecessor.id
-            FROM document_drafts predecessor
-            JOIN lineage ON predecessor.successor_draft_id = lineage.id
-            WHERE predecessor.document_id = ${draft.documentDraft.documentId}
-              AND predecessor.branch_id = ${draft.documentDraft.branchId}
-              AND predecessor.kind = 'work_draft'
-              AND NOT predecessor.id = ANY(lineage.path)
-              AND cardinality(lineage.path) < 64
-          )
-          SELECT id FROM lineage
-        `);
-        const lineageIds = ancestors.map((row) => row.id);
         const rows = await tx
           .select({
             id: documentEditParts.id,
@@ -71,7 +55,7 @@ export function createDrizzleDraftDispositionStore(db: Database): DraftDispositi
           .where(
             and(
               sql`${documentEditParts.origin}->>'kind' = 'pending'`,
-              inArray(sql`${documentEditParts.origin}->>'draftId'`, lineageIds),
+              sql`${documentEditParts.origin}->>'draftId' = ${draftId}`,
               eq(documentEdits.actor, "agent"),
               eq(documentEdits.documentId, draft.documentDraft.documentId),
             ),

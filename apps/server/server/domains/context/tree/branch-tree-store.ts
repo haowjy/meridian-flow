@@ -87,6 +87,35 @@ export async function endCreatedFact(
     .where(key);
 }
 
+/**
+ * A different branch revealed a creation this branch had hidden again by undoing its create.
+ * The undo no longer means a delete of the now-live document; only an independent move remains.
+ */
+export async function settleUndoneCreatesAfterReveal(
+  db: Database,
+  documentId: DocumentId,
+): Promise<void> {
+  const tx = currentDrizzleDb(db);
+  const undone = and(
+    eq(branchTreeChanges.nodeKind, "document"),
+    eq(branchTreeChanges.nodeId, documentId),
+    eq(branchTreeChanges.created, true),
+    eq(branchTreeChanges.deleted, true),
+  );
+  await tx.delete(branchTreeChanges).where(and(undone, eq(branchTreeChanges.moved, false)));
+  await tx
+    .update(branchTreeChanges)
+    .set({
+      created: false,
+      createdThreadId: null,
+      createdTurnId: null,
+      deleted: false,
+      revision: sql`nextval('branch_tree_change_revision')`,
+      updatedAt: new Date(),
+    })
+    .where(undone);
+}
+
 /** Who ended a branch's drafted entries, and how: the writer's Apply or Discard, or a cleanup. */
 export type BranchSettlement = { as: "applied" | "discarded"; userId?: UserId | null };
 

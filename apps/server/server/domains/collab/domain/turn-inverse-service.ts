@@ -65,20 +65,12 @@ export type TurnInverseQuery = {
   toolCallId?: string;
   model?: boolean;
   draftId?: string | null;
-  /** The target branch even when this document has only a move or delete, with no text draft. */
-  branchId?: BranchId | null;
   documentIds?: DocumentId[];
   /** The path the model named, for a document no visible path holds (a deleted one). */
   path?: string;
   /** Caller identity for destination admission; the incoming content grant never routes it. */
   principal?: Principal;
-  /**
-   * The destinations the writer's card may reverse, each a document live (`branchId` null) or
-   * in a branch; an edit that landed anywhere else is left out. Absent: every destination.
-   */
-  destinations?: readonly RequestedInverseDestination[];
 };
-export type RequestedInverseDestination = { documentId: DocumentId; branchId: BranchId | null };
 export type InverseDocument = {
   documentId: DocumentId;
   uri: string;
@@ -98,10 +90,8 @@ export type InverseDocument = {
   >;
   /** The sole captured destination resolution used by planning and presentation. */
   destinationOf(origin: EditOrigin): InverseDestination;
-  /** The retained destination of a drafted create, including tree-only creates. */
-  destinationForCreate(create: TransitionEntry): InverseDestination;
-  /** The branch's independently active draft at capture, if any. */
-  occupancy(branchId: BranchId): string | null;
+  /** The active draft in a tree step's branch, or a gone destination. */
+  destinationForBranch(branchId: BranchId): InverseDestination;
 };
 export type PreparedDocumentInverse = {
   document: InverseDocument;
@@ -164,26 +154,6 @@ const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
   part.turnId === query.turnId &&
   (!query.responseIdentity || part.editScopeId === query.responseIdentity.editScopeId);
 
-/** Whether the query's destinations admit `row`, a text part or tree entry of `document`. */
-function admits(
-  query: TurnInverseQuery,
-  document: InverseDocument,
-  row: StoredInversePart | StoredTreeEntry,
-): boolean {
-  if (!query.destinations) return true;
-  let branchId: string | null;
-  if ("tree" in row)
-    branchId = row.tree.destination.kind === "draft" ? row.tree.destination.branchId : null;
-  else {
-    const destination = document.destinationOf(row.origin);
-    branchId = destination.kind === "draft" ? destination.branchId : null;
-  }
-  return query.destinations.some(
-    (destination) =>
-      destination.documentId === document.documentId && destination.branchId === branchId,
-  );
-}
-
 /**
  * Each document's ordered steps, for both command and dry run; each text step lands where its
  * original did, live or in its draft. Each of
@@ -199,8 +169,8 @@ function prepare(
   actionId: string,
 ): PreparedDocumentInverse[] {
   const direction = kind === "redo" ? "redo" : "undo";
-  const inTurn = (document: InverseDocument, row: StoredInversePart | StoredTreeEntry) =>
-    targetsTurn(row, query) && admits(query, document, row);
+  const inTurn = (_document: InverseDocument, row: StoredInversePart | StoredTreeEntry) =>
+    targetsTurn(row, query);
   const turnTree = (document: InverseDocument) =>
     document.tree.filter(
       (row): row is TransitionEntry =>
@@ -291,7 +261,6 @@ function prepare(
       | { kind: "text"; editId: string; destination: InverseDestination; at: number }
     )[] = [];
     const selection = new Map<InverseDestination, InverseSelection[]>();
-    const restoring = new Set<BranchId>();
     for (const { at, row, parts } of originals) {
       if (row) {
         if (simulation.rolledBack.has(treeKey(row.editId))) {
@@ -320,12 +289,6 @@ function prepare(
           continue;
         }
         simulation.recordTree(planned, { kind, actionId, consumes });
-        if (
-          direction === "redo" &&
-          planned.entry.tree.op === "create" &&
-          planned.destination.kind === "draft"
-        )
-          restoring.add(planned.destination.branchId);
         order.push({ kind: "tree", planned, at });
         continue;
       }
@@ -350,21 +313,12 @@ function prepare(
           skip(part, "applied");
           continue;
         }
-        if (
-          destination.kind === "draft" &&
-          (destination.state === "gone" ||
-            (destination.state === "restorable" &&
-              !(direction === "redo" && restoring.has(destination.branchId))))
-        ) {
+        if (destination.kind === "draft" && destination.state === "gone") {
           skip(part, "discarded");
           continue;
         }
         const capturedDraft =
-          destination.kind === "draft" && destination.state === "active"
-            ? document.drafts.get(destination.draftId)
-            : destination.kind === "draft" && destination.state === "restorable"
-              ? document.drafts.get(destination.source.draftId)
-              : undefined;
+          destination.kind === "draft" ? document.drafts.get(destination.draftId) : undefined;
         if (capturedDraft?.frozen) {
           skip(part, "draft_archived");
           continue;

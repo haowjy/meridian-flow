@@ -18,7 +18,6 @@ import type { ContextCatalogMutationPort } from "../../context/ports/context-cat
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
 import { writeBackBranchFacts } from "../../context/tree/branch-tree-changes.js";
-import { tombstoneUnused } from "../../context/tree/end-use.js";
 import { resolveAbsorbedFolders } from "../../context/tree/folder-normalization.js";
 import {
   moveToPlacement,
@@ -27,12 +26,7 @@ import {
 } from "../../context/tree/live-tree-state.js";
 import { restoreDocument } from "../../context/tree/removal.js";
 import { createTreeReader } from "../../context/tree/tree-view.js";
-import {
-  loadDocumentIdentityRows,
-  loadFolderIdentityRows,
-} from "../../context/tree/tree-view-sql.js";
-import type { RestorableInverseDestination } from "../domain/inverse-draft-destination.js";
-import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
+import { loadFolderIdentityRows } from "../../context/tree/tree-view-sql.js";
 import {
   type PlannedTreeInverse,
   sameLiveState,
@@ -47,11 +41,8 @@ export type TreeOperationEntry = {
 };
 
 export type CommittedTreeOperation = {
-  transition: TreeTransition & { retiredDraftId?: string };
-  restored?: import("../domain/draft-store.js").DraftSnapshot;
+  transition: TreeTransition;
 };
-
-export class DraftRestoreMiss extends Error {}
 
 export class TreeFault extends Error {
   constructor(readonly fault: TreeInverseFault) {
@@ -64,7 +55,6 @@ export function createTurnInverseTreeOperations(input: {
   removal: DocumentRemoval;
   arrivals?: Pick<DocumentArrivals, "settle">;
   catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
-  drafts: Pick<ApplicationDraftStore, "restoreCreatedDocumentDraft" | "retireCreatedDocumentDraft">;
 }) {
   const db = () => currentDrizzleDb(input.db);
 
@@ -86,11 +76,10 @@ export function createTurnInverseTreeOperations(input: {
     planned: PlannedTreeInverse,
     userId: UserId | undefined,
     query: TurnInverseQuery,
-    restoration?: RestorableInverseDestination,
   ): Promise<CommittedTreeOperation> {
     return isLiveTransition(planned)
       ? { transition: await commitLive(entry, planned, userId, query) }
-      : commitBranch(entry, planned, query, userId, restoration);
+      : commitBranch(entry, planned, query);
   }
 
   async function commitLive(
@@ -123,8 +112,6 @@ export function createTurnInverseTreeOperations(input: {
     entry: TreeOperationEntry,
     planned: BranchTreeTransition & PlannedTreeInverse,
     query: TurnInverseQuery,
-    userId: UserId | undefined,
-    restoration?: RestorableInverseDestination,
   ): Promise<CommittedTreeOperation> {
     const { branchId } = planned.destination;
     const [branch] = await db()
@@ -133,75 +120,8 @@ export function createTurnInverseTreeOperations(input: {
       .where(eq(branches.id, branchId));
     if (branch?.status !== "active") throw new TreeFault("refused");
     if (planned.entry.tree.op === "create") {
-      if (planned.op === "delete") {
-        const retiredDraftId = await input.drafts.retireCreatedDocumentDraft({
-          documentId: entry.documentId,
-          branchId,
-        });
-        const [identity] = await loadDocumentIdentityRows(db(), [entry.documentId]);
-        const committed = await writeBackBranchFacts(input.db, {
-          branchId,
-          documentId: entry.documentId,
-          expected: planned.before,
-          facts: planned.after,
-          changedBy: {
-            threadId: query.threadId,
-            ...(query.turnId ? { turnId: query.turnId } : {}),
-          },
-        });
-        if (!committed.ok) throw new TreeFault(committed.error);
-        const ended = await tombstoneUnused(input.db, [entry.documentId], {
-          actor: userId ? { userId } : { threadId: query.threadId },
-          removal: input.removal,
-          retainStorage: true,
-        });
-        if (identity && ended.tombstoned.length)
-          await input.catalog.refreshSources(
-            [identity.contextSourceId],
-            ended.tombstoned.map((node) => node.id),
-          );
-        return {
-          transition: {
-            destination: planned.destination,
-            before: planned.before,
-            after: committed.value,
-            ...(retiredDraftId ? { retiredDraftId } : {}),
-          },
-        };
-      }
-      if (planned.op !== "create")
+      if (planned.op !== "create" && planned.op !== "delete")
         throw new Error("A drafted create can only be removed or restored");
-      if (!restoration || restoration.branchId !== branchId) throw new TreeFault("refused");
-      const restored = await restoreDocument(
-        input.db,
-        { documentId: entry.documentId, created: true },
-        { arrivals: input.arrivals, catalog: input.catalog },
-      );
-      if (restored.kind !== "restored" && restored.kind !== "already_living")
-        throw new TreeFault("refused");
-      const committed = await writeBackBranchFacts(input.db, {
-        branchId,
-        documentId: entry.documentId,
-        expected: planned.before,
-        facts: planned.after,
-        changedBy: { threadId: query.threadId, ...(query.turnId ? { turnId: query.turnId } : {}) },
-      });
-      if (!committed.ok) throw new TreeFault(committed.error);
-      const restoredDraft = await input.drafts.restoreCreatedDocumentDraft({
-        documentId: entry.documentId,
-        branchId,
-        sourceDraftId: restoration.source.draftId,
-        sourceRevision: restoration.source.revision,
-      });
-      if (!restoredDraft) throw new DraftRestoreMiss();
-      return {
-        transition: {
-          destination: planned.destination,
-          before: planned.before,
-          after: committed.value,
-        },
-        restored: restoredDraft,
-      };
     }
     const committed = await writeBackBranchFacts(input.db, {
       branchId,

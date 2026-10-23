@@ -11,7 +11,6 @@ export function createModelDocumentEdits(input: { service(): TurnInverseService 
     return {
       model: true as const,
       draftId: null,
-      branchId: null,
       documentIds: [documentId],
       threadId: request.threadId as ThreadId,
       // A deleted document has no address of its own: results name it by the model's path.

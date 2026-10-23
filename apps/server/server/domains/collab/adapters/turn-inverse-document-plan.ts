@@ -22,14 +22,13 @@ export type PlannedInverse = {
   living: boolean;
   committed: ComputedInverseEdit[];
   stopped: boolean;
-  failedRestorations: Set<BranchId>;
   reversed: Map<BranchId | null, number>;
   outcomes: { documentId: string; branchId: BranchId | null; draftId: string | null }[];
 };
 
 export type PlannedDraft = {
   destination: Exclude<InverseDestination, { kind: "live" } | { state: "gone" }>;
-  draftId: string | null;
+  draftId: string;
   revision: number;
   branchId: BranchId;
   view: Y.Doc;
@@ -53,12 +52,9 @@ export function planInverseDocument(
       const destination = step.destination;
       const draft: PlannedDraft = drafts.get(destination) ?? {
         destination,
-        draftId: destination.state === "active" ? destination.draftId : null,
-        revision:
-          destination.state === "active" ? destination.revision : destination.source.revision,
+        draftId: destination.draftId,
+        revision: destination.revision,
         branchId: destination.branchId,
-        // A redone creation clones its closed predecessor, retaining the item identities that
-        // its text inverse targets while giving the active draft a fresh lifecycle identity.
         view: destination.view,
         edits: [],
         origins: new Map(),
@@ -107,7 +103,6 @@ export function planInverseDocument(
     living: document.treeStates.live?.living ?? document.removal === null,
     committed: [],
     stopped: false,
-    failedRestorations: new Set(),
     reversed: new Map(),
     outcomes: [],
   };

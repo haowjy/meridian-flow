@@ -12,9 +12,3 @@ export function runWithInversePrincipal<T>(principal: Principal, operation: () =
 export function currentInversePrincipal(): Principal | undefined {
   return storage.getStore();
 }
-
-export class InverseElsewhereError extends Error {
-  constructor(readonly direction: "undo" | "redo") {
-    super("The inverse belongs to another Work");
-  }
-}

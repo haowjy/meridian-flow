@@ -12,15 +12,9 @@ export function plannedStepDestination(
   step: InverseStep,
 ): InverseDestination {
   if (step.kind === "text") return step.destination;
-  if (step.planned.entry.tree.op === "create")
-    return document.destinationForCreate(step.planned.entry);
   if (step.planned.destination.kind === "live")
     return document.destinationOf({ kind: "live", seq: 0 });
-  const branchId = step.planned.destination.branchId;
-  const draftId = document.occupancy(branchId);
-  return draftId
-    ? document.destinationOf({ kind: "pending", draftId, rowId: 0 })
-    : { kind: "draft", branchId, state: "gone" };
+  return document.destinationForBranch(step.planned.destination.branchId);
 }
 
 /** A tree inverse the destination refused under the locks: nothing of the command ran. */

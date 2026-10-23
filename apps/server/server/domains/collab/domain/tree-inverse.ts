@@ -292,7 +292,8 @@ export function treeChangeFault(change: TreeChange): string | null {
   const { before, after } = change;
   const fits =
     change.op === "create"
-      ? !before.created && after.created
+      ? (!before.created && after.created) ||
+        (before.created && before.deleted && after.created && !after.deleted)
       : change.op === "move"
         ? !sameBranchFacts(before, after)
         : change.op === "delete"
@@ -368,10 +369,17 @@ export function planTreeInverse(
     destination: tree.destination,
     before: branchFacts(states, tree.destination.branchId),
     after:
-      direction === "invert"
-        ? tree.before
-        : tree.op === "create" && !isLiveTransition(latest.tree)
-          ? latest.tree.before
+      tree.op === "create"
+        ? direction === "invert"
+          ? {
+              ...branchFacts(states, tree.destination.branchId),
+              row: true,
+              created: true,
+              deleted: true,
+            }
+          : { ...tree.after, row: true, created: true, deleted: false }
+        : direction === "invert"
+          ? tree.before
           : tree.after,
   };
 }

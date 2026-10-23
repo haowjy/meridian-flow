@@ -110,7 +110,6 @@ try {
             turnId: work.turnId as never,
             documentIds: [documentId],
             draftId,
-            branchId: work.branchId as never,
             model: true,
           },
           command === "revert"

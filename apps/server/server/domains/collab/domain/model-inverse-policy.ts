@@ -14,7 +14,6 @@ import * as Y from "yjs";
 import { FileEditRefusedError } from "../../file-policy/index.js";
 import { partKey as key } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
-import { InverseElsewhereError } from "./inverse-principal.js";
 import { type InverseStep, simulateInverse } from "./inverse-stream.js";
 import { plannedStepDestination, treeRefusal } from "./model-inverse-presentation.js";
 import {
@@ -48,7 +47,7 @@ import type {
   TurnInverseStore,
 } from "./turn-inverse-service.js";
 
-type Query = TurnInverseQuery & { model: true; draftId: string | null; branchId: BranchId | null };
+type Query = TurnInverseQuery & { model: true; draftId: string | null };
 export function createModelInversePolicy(store: TurnInverseStore) {
   function planner(document: InverseDocument, query: Query) {
     const liveIndex = prepareEditRoots(document.live, document.history);
@@ -56,13 +55,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       ? document.destinationOf({ kind: "pending", draftId: query.draftId, rowId: 0 })
       : document.destinationOf({ kind: "live", seq: 0 });
     const draftIdOf = (destination: InverseDestination): string | null =>
-      destination.kind === "draft"
-        ? destination.state === "active"
-          ? destination.draftId
-          : destination.state === "restorable"
-            ? destination.source.draftId
-            : null
-        : null;
+      destination.kind === "draft" && destination.state === "active" ? destination.draftId : null;
     const capturedDraft = (destination: InverseDestination) => {
       const draftId = draftIdOf(destination);
       return draftId ? document.drafts.get(draftId) : undefined;
@@ -96,7 +89,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       handle: string,
       direction: "undo" | "redo",
       inspection: Inspection,
-      at = queryDestination,
+      _at = queryDestination,
     ): Exclude<DocumentEditResult, { status: "success" }> | null {
       const follow = `Use revert on ${document.uri}, or read it and make a new replace.`;
       const discarded = {
@@ -116,16 +109,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           message: `The user applied ${handle} to the manuscript. ${follow}`,
         };
       if (destination.kind === "draft" && destination.state === "gone") return discarded;
-      if (
-        destination.kind !== at.kind ||
-        (destination.kind === "draft" &&
-          at.kind === "draft" &&
-          destination.branchId !== at.branchId)
-      )
-        return {
-          status: `cant_${direction}_elsewhere`,
-          message: `${handle} is in another version (${version(destination)}). You can ${direction} only in the version you write to. ${follow}`,
-        };
       // Restoring the review base can hide an effective Undo from review membership.
       const state = inspection.states([part])[0];
       if (state.state !== (direction === "undo" ? "active" : "undone")) {
@@ -145,14 +128,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           ? "already removed"
           : "edited since";
     }
-    const reaches = (destination: InverseDestination) => {
-      if (destination.kind === "live") return true;
-      if (destination.state === "gone") return false;
-      const currentWorkId = query.principal?.agent?.branchWork?.id;
-      return Boolean(
-        currentWorkId && capturedDraft(destination)?.documentDraft.workId === currentWorkId,
-      );
-    };
     /** The branch a draft-mode write lands in, for comparing a drafted tree entry's. */
     /**
      * Whether `entry` can be reversed in `direction` from the states `states` hold, judged by
@@ -222,13 +197,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           (query.draftId && !draft) ||
           (originDestination.kind === "draft" && originDestination.state === "gone")
             ? "discarded"
-            : !reaches(originDestination)
-              ? "in another draft"
-              : inspection.rolledBack(part)
-                ? "rolled back"
-                : kernelReason && part.disposition === "discarded"
-                  ? "discarded"
-                  : kernelReason;
+            : inspection.rolledBack(part)
+              ? "rolled back"
+              : kernelReason && part.disposition === "discarded"
+                ? "discarded"
+                : kernelReason;
         if (reason) skipped.push(`part ${part.ordinal + 1}: ${reason}`);
         else selection.push({ part, direction: "invert" });
       }
@@ -241,7 +214,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       inspect,
       refusal,
       changedReason,
-      reaches,
       treePlan,
       revertSelection,
       version,
@@ -343,6 +315,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         destination = policy.queryDestination,
         groupedActionId?: string,
       ) => {
+        if (destination.kind === "draft" && destination.state === "gone")
+          throw new Error("Gone destination selected");
         const stepActionId = groupedActionId ?? stepAction(kind);
         const view = plannedView(destination);
         const result = currentInspection(destination).index.compute(selection, {
@@ -383,14 +357,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 destination.kind === "draft"
                   ? {
                       kind: "pending",
-                      draftId:
-                        destination.state === "active"
-                          ? destination.draftId
-                          : destination.state === "restorable"
-                            ? destination.source.draftId
-                            : (() => {
-                                throw new Error("Gone destination selected");
-                              })(),
+                      draftId: destination.draftId,
                       rowId: 0,
                     }
                   : { kind: "live", seq: 0 },
@@ -516,15 +483,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               continue;
             }
             const draftId = destinationOf(entry.parts);
-            if (!policy.reaches(draftId)) {
-              const refused = policy.refusal(
-                entry.parts[0],
-                entry.handle,
-                "undo",
-                currentInspection(policy.queryDestination),
-              );
-              if (refused) return refused;
-            }
             const removed = removedText(draftId);
             if (removed) return removed;
             const current = currentInspection(draftId);
@@ -608,15 +566,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                   ),
               );
               const draftId = destinationOf(inverseParts);
-              if (!policy.reaches(draftId)) {
-                const refused = policy.refusal(
-                  { ...entry.parts[0], origin: inverseParts[0].origin },
-                  entry.handle,
-                  "redo",
-                  currentInspection(policy.queryDestination),
-                );
-                if (refused) return refused;
-              }
               const removed = removedText(draftId);
               if (removed) return removed;
               const current = currentInspection(draftId);
@@ -793,11 +742,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         // Every attempt missed while the edit still applied: retryable, not a refusal.
         if (cause instanceof ReversalConflictError)
           return { status: "internal_error", message: cause.message };
-        if (cause instanceof InverseElsewhereError)
-          return {
-            status: `cant_${cause.direction}_elsewhere`,
-            message: `This change belongs to another Work. Use revert or make a new edit here.`,
-          };
         if (cause instanceof FileEditRefusedError)
           return {
             status: "permission_denied",
@@ -838,6 +782,15 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               policy,
             )
           : null;
+        const undo = topEntry
+          ? await plan(
+              document,
+              query,
+              { command: "undo", file: document.uri, documentId: document.documentId },
+              true,
+              policy,
+            )
+          : null;
         const displayInspection = (part: StoredInversePart) =>
           policy.inspect(
             (() => {
@@ -858,17 +811,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         for (const [context, parts] of displayParts) context.states(parts);
         // Revert stays current; Undo follows a reachable live/draft origin.
         inspection.states(page.flatMap((entry) => entry.parts));
-        const undoRefusal = (part: StoredInversePart, handle: string) => {
-          const destination = document.destinationOf(part.origin);
-          const reachable = policy.reaches(destination);
-          return policy.refusal(
-            part,
-            handle,
-            "undo",
-            reachable ? displayInspection(part) : inspection,
-            reachable ? destination : policy.queryDestination,
-          );
-        };
         const index = inspection.actions;
         const turn = (turnId: string | null) =>
           turnId === query.turnId ? "this turn" : "earlier turn";
@@ -899,11 +841,16 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             );
           let command = "status" in reversal("revert") ? "none" : "revert";
           if (entry.id === topEntry?.id) {
-            const undo = reversal("undo");
-            command =
-              "status" in undo
-                ? `undo: no (${undo.status.replace("cant_undo_", "")})${command === "revert" ? "; revert" : ""}`
-                : "undo";
+            const treeUndo = reversal("undo");
+            const refusal =
+              undo?.status !== "success"
+                ? undo?.status
+                : "status" in treeUndo
+                  ? treeUndo.status
+                  : null;
+            command = refusal
+              ? `undo: no (${refusal.replace("cant_undo_", "")})${command === "revert" ? "; revert" : ""}`
+              : "undo";
           } else if (
             action?.targets.has(k) &&
             action.parts.every(
@@ -957,12 +904,10 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 ? "revert"
                 : `revert ${revert} of ${entry.parts.length}`;
           if (entry.id === topEntry?.id) {
-            const blocked = entry.parts
-              .map((part) => undoRefusal(part, entry.handle))
-              .find(Boolean);
-            command = blocked
-              ? `undo: no (${blocked.status.replace("cant_undo_", "")})${revert ? `; ${command}` : ""}`
-              : "undo";
+            command =
+              undo?.status !== "success"
+                ? `undo: no (${undo?.status.replace("cant_undo_", "")})${revert ? `; ${command}` : ""}`
+                : "undo";
           } else if (
             action &&
             entry.parts.some((part) => action.targets.has(key(part))) &&
@@ -979,12 +924,17 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 : `− ${JSON.stringify(excerpt.before)}`;
           return `${entry.handle}  ${entry.parts[0].turnId === query.turnId ? "this turn" : "earlier turn"}  ${state}  ${summary}${entry.parts.length > 1 ? ` and ${entry.parts.length - 1} more` : ""}  ${command}`;
         });
+        const shownDestination = topEntry?.parts[0]
+          ? document.destinationOf(topEntry.parts[0].origin)
+          : topEntry?.tree?.tree.destination.kind === "draft"
+            ? document.destinationForBranch(topEntry.tree.tree.destination.branchId)
+            : policy.queryDestination;
         return {
           status: "success",
           actionId: randomUUID(),
           room: null,
           message: [
-            `your edits to ${document.uri}, newest first (version: ${policy.version(policy.queryDestination)})`,
+            `your edits to ${document.uri}, newest first (version: ${policy.version(shownDestination)})`,
             ...lines,
             ...(older.length > 20 ? [`more: before ${page.at(-1)?.handle}`] : []),
           ].join("\n"),

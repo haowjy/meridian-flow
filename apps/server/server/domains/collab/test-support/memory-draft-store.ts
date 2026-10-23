@@ -33,7 +33,6 @@ export function testDraftRow(
     hasEffect: false,
     schemaVersion: COLLAB_SCHEMA_VERSION,
     ...input,
-    successorDraftId: input.successorDraftId ?? null,
   };
 }
 
