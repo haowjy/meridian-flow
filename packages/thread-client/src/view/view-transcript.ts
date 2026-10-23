@@ -119,6 +119,74 @@ function responseOf(parts: readonly Turn[]): NonNullable<ViewRow["response"]> {
 const NO_DELIVERIES: readonly DeliveryGroup[] = [];
 const responseCache = new WeakMap<Turn, NonNullable<ViewRow["response"]>>();
 const rowCache = new WeakMap<Turn, Map<string, ViewRow>>();
+type RowComparison = "value" | "reference" | "json" | "references";
+type RowOf<K extends ViewRow["kind"]> = Extract<ViewRow, { kind: K }>;
+
+const commonRowFields = {
+  kind: "value",
+  turn: "reference",
+  inherited: "json",
+  identity: "json",
+  renderKey: "value",
+  deliveries: "references",
+  movedPast: "value",
+  continuing: "value",
+  response: "reference",
+  queued: "value",
+} as const;
+const turnRowFields = commonRowFields satisfies Record<keyof RowOf<"turn">, RowComparison>;
+const compactionRowFields = commonRowFields satisfies Record<
+  keyof RowOf<"compaction">,
+  RowComparison
+>;
+const writeModeRowFields = commonRowFields satisfies Record<
+  keyof RowOf<"write-mode">,
+  RowComparison
+>;
+const handoffRowFields = {
+  ...commonRowFields,
+  latest: "value",
+} satisfies Record<keyof RowOf<"handoff-seed">, RowComparison>;
+const referenceRowFields = {
+  ...commonRowFields,
+  references: "json",
+} satisfies Record<keyof RowOf<"thread-reference">, RowComparison>;
+
+function sameRowFields<T extends ViewRow>(
+  left: T,
+  right: T,
+  fields: Record<keyof T, RowComparison>,
+): boolean {
+  return (Object.keys(fields) as (keyof T)[]).every((field) => {
+    const comparison = fields[field];
+    if (comparison === "json") return sameJson(left[field], right[field]);
+    if (comparison === "references") {
+      const leftGroups = left[field] as readonly DeliveryGroup[];
+      const rightGroups = right[field] as readonly DeliveryGroup[];
+      return (
+        leftGroups.length === rightGroups.length &&
+        leftGroups.every((group, index) => group === rightGroups[index])
+      );
+    }
+    return left[field] === right[field];
+  });
+}
+
+function sameViewRow(left: ViewRow, right: ViewRow): boolean {
+  if (left.kind !== right.kind) return false;
+  switch (left.kind) {
+    case "turn":
+      return right.kind === "turn" && sameRowFields(left, right, turnRowFields);
+    case "compaction":
+      return right.kind === "compaction" && sameRowFields(left, right, compactionRowFields);
+    case "write-mode":
+      return right.kind === "write-mode" && sameRowFields(left, right, writeModeRowFields);
+    case "handoff-seed":
+      return right.kind === "handoff-seed" && sameRowFields(left, right, handoffRowFields);
+    case "thread-reference":
+      return right.kind === "thread-reference" && sameRowFields(left, right, referenceRowFields);
+  }
+}
 
 function internRow(row: ViewRow): ViewRow {
   let variants = rowCache.get(row.turn);
@@ -128,38 +196,7 @@ function internRow(row: ViewRow): ViewRow {
   }
   const key = `${row.kind}\0${row.identity.occurrence}`;
   const previous = variants.get(key);
-  const commonFields = {
-    kind: "value",
-    turn: "reference",
-    inherited: "json",
-    identity: "json",
-    renderKey: "value",
-    deliveries: "references",
-    movedPast: "value",
-    continuing: "value",
-    response: "reference",
-    queued: "value",
-  } satisfies Record<keyof ViewRow, "value" | "reference" | "json" | "references">;
-  const sameCommon =
-    previous &&
-    (Object.keys(commonFields) as (keyof ViewRow)[]).every((field) => {
-      const comparison = commonFields[field];
-      if (comparison === "json") return sameJson(previous[field], row[field]);
-      if (comparison === "references") {
-        const left = previous.deliveries;
-        const right = row.deliveries;
-        return left.length === right.length && left.every((group, index) => group === right[index]);
-      }
-      return previous[field] === row[field];
-    });
-  const sameVariant =
-    sameCommon &&
-    (row.kind === "thread-reference"
-      ? previous.kind === "thread-reference" && sameJson(previous.references, row.references)
-      : row.kind === "handoff-seed"
-        ? previous.kind === "handoff-seed" && previous.latest === row.latest
-        : true);
-  if (sameVariant) return previous;
+  if (previous && sameViewRow(previous, row)) return previous;
   variants.set(key, row);
   return row;
 }

@@ -138,34 +138,73 @@ function sameRun(left: ViewRun, right: ViewRun): boolean {
   return false;
 }
 
-function sameViewItem(left: ViewItem, right: ViewItem): boolean {
-  if (left.kind !== right.kind) return false;
-  switch (left.kind) {
-    case "process":
+type ViewItemComparison = "value" | "reference" | "json" | "runs";
+
+function sameItemFields<T extends ViewItem>(
+  left: T,
+  right: T,
+  fields: Record<keyof T, ViewItemComparison>,
+): boolean {
+  return (Object.keys(fields) as (keyof T)[]).every((field) => {
+    const comparison = fields[field];
+    if (comparison === "json") return sameJson(left[field], right[field]);
+    if (comparison === "runs") {
+      const leftRuns = left[field] as ViewRun[];
+      const rightRuns = right[field] as ViewRun[];
       return (
-        right.kind === "process" &&
-        left.visible === right.visible &&
-        sameJson(left.digest, right.digest) &&
-        left.runs.length === right.runs.length &&
-        left.runs.every((run, index) => {
-          const other = right.runs[index];
+        leftRuns.length === rightRuns.length &&
+        leftRuns.every((run, index) => {
+          const other = rightRuns[index];
           return other ? sameRun(run, other) : false;
         })
       );
-    case "text":
-      return right.kind === "text" && left.block === right.block && left.text === right.text;
-    case "report":
-      return (
-        right.kind === "report" && left.block === right.block && sameJson(left.report, right.report)
-      );
-    case "artifact":
-      return (
-        right.kind === "artifact" &&
-        left.block === right.block &&
-        left.cardKind === right.cardKind &&
-        left.text === right.text &&
-        sameJson(left.direct, right.direct)
-      );
+    }
+    return left[field] === right[field];
+  });
+}
+
+function sameViewItem(left: ViewItem, right: ViewItem): boolean {
+  if (left.kind !== right.kind) return false;
+  switch (left.kind) {
+    case "process": {
+      if (right.kind !== "process") return false;
+      const fields = {
+        kind: "value",
+        runs: "runs",
+        visible: "value",
+        digest: "json",
+      } satisfies Record<keyof typeof left, ViewItemComparison>;
+      return sameItemFields(left, right, fields);
+    }
+    case "text": {
+      if (right.kind !== "text") return false;
+      const fields = {
+        kind: "value",
+        block: "reference",
+        text: "value",
+      } satisfies Record<keyof typeof left, ViewItemComparison>;
+      return sameItemFields(left, right, fields);
+    }
+    case "report": {
+      if (right.kind !== "report") return false;
+      const fields = {
+        kind: "value",
+        block: "reference",
+        report: "json",
+      } satisfies Record<keyof typeof left, ViewItemComparison>;
+      return sameItemFields(left, right, fields);
+    }
+    case "artifact": {
+      if (right.kind !== "artifact") return false;
+      const fields = {
+        kind: "value",
+        block: "reference",
+        direct: "json",
+        cardKind: "value",
+        text: "value",
+      } satisfies Record<keyof typeof left, ViewItemComparison>;
+      return sameItemFields(left, right, fields);
+    }
   }
 }
 
