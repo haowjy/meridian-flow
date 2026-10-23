@@ -39,6 +39,7 @@ const schema = buildDocumentSchema();
 const codec = markdownCodec({ schema });
 configureMarkdownStreaming(schema, (source) => codec.parseStreaming(source, { repair: true }));
 const settledSnapshots = createDocumentCache<StreamingMarkdownSnapshot>();
+const sourceMappedDocuments = createDocumentCache<ReturnType<typeof codec.parseWithSourceMap>>();
 
 type Presentation = {
   source: string;
@@ -331,7 +332,7 @@ function StaticTranscript({
   skills: readonly MarkdownSkillOccurrence[];
   streamId?: string;
 }) {
-  const parsed = useMemo(() => codec.parseWithSourceMap(source), [source]);
+  const parsed = sourceMappedDocuments(source, () => codec.parseWithSourceMap(source));
   const snapshot = streamId ? settledStreamingMarkdown(streamId, source) : null;
   const settled = reuseEqualSnapshot(
     {
