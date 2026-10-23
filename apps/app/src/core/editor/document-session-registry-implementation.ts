@@ -80,10 +80,7 @@ export class DocumentSessionRegistry
     (snapshot: readonly RetainedLiveDocumentReference[]) => void
   >();
   private readonly admissionReservations = new Map<DocumentId, number>();
-  private readonly openAttempts = new Map<
-    DocumentId,
-    { generation: AvailabilityGeneration; attemptId: string }
-  >();
+  private readonly openAttempts = new WeakMap<LiveDocumentSessionLease, string>();
   /** The private local-transfer facet: the account runtime's reservation and adoption ports. */
   readonly localTransfers = new LocalDocumentSessionTransfers({
     requireOpen: () => this.requireAccountRuntimeOpen(),
@@ -174,11 +171,7 @@ export class DocumentSessionRegistry
         documentId: admitted.documentId,
         generation: admitted.generation,
       };
-      if (options?.attemptId)
-        this.openAttempts.set(documentId, {
-          generation: lease.generation,
-          attemptId: options.attemptId,
-        });
+      if (options?.attemptId) this.openAttempts.set(lease, options.attemptId);
       return lease;
     } finally {
       this.releaseAdmissionReservation(documentId);
@@ -587,9 +580,9 @@ export class DocumentSessionRegistry
   ): DocumentSession {
     this.cancelPendingTeardown(lease.documentId);
     this.teardownOwner.assertAvailable({ kind: "live", roomKey: lease.documentId });
+    const openAttemptId = this.openAttempts.get(lease);
+    this.openAttempts.delete(lease);
     if (state.session) {
-      if (this.openAttempts.get(lease.documentId)?.generation === lease.generation)
-        this.openAttempts.delete(lease.documentId);
       if (attach && state.session.getSnapshot().status === "detached") {
         this.attachSessionTransport(state.session);
       }
@@ -601,15 +594,13 @@ export class DocumentSessionRegistry
       lease.documentId,
       state.persistenceGeneration,
     );
-    const openAttempt = this.openAttempts.get(lease.documentId);
-    if (openAttempt?.generation === lease.generation) this.openAttempts.delete(lease.documentId);
     const session = this.createSession(
       lease.documentId,
       {
         kind: "indexeddb",
         key: state.exactDatabaseName,
       },
-      openAttempt?.generation === lease.generation ? openAttempt.attemptId : undefined,
+      openAttemptId,
     );
     state.session = session;
     if (attach) this.attachSessionTransport(session);
