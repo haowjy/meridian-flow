@@ -22,7 +22,11 @@ import type { InverseDocument } from "./turn-inverse-service.js";
  * text step lands at its capture-resolved destination. One document's
  * steps may land in both within one turn; they still run in this one order.
  */
-export type InverseStep = { actionId: string; at: number } & (
+export type InverseStep = {
+  actionId: string;
+  actionKind: "undo" | "redo" | "revert" | "rollback";
+  at: number;
+} & (
   | { kind: "text"; edit: ComputedInverseEdit; destination: InverseDestination }
   | { kind: "tree"; planned: PlannedTreeInverse }
 );
