@@ -290,6 +290,24 @@ const MarkdownBlock = memo(function MarkdownBlock({
   return renderDocumentNode(node, breaks, undefined, [], openCode);
 });
 
+const MarkdownBlocks = memo(function MarkdownBlocks({
+  snapshot,
+  breaks,
+}: {
+  snapshot: StreamingMarkdownSnapshot | null;
+  breaks: boolean;
+}) {
+  if (!snapshot) return null;
+  return snapshot.blocks.map((node, index) => (
+    <MarkdownBlock
+      key={index}
+      node={node}
+      breaks={breaks}
+      openCode={index === snapshot.openCodeBlock ? snapshot.openCode : null}
+    />
+  ));
+});
+
 function StaticTranscript({
   source,
   breaks,
@@ -372,12 +390,12 @@ export function DocumentMarkdown({
     const previous = streamId ? settledStreamingMarkdown(streamId, source) : null;
     return reuseEqualSnapshot(parsed, previous);
   }, [source, streamId, streaming]);
-  const snapshot = streaming ? live : null;
-  const blocks = snapshot?.blocks ?? settled?.blocks ?? [];
-  const openCode = snapshot?.openCode ?? settled?.openCode ?? null;
-  const openBlock = snapshot?.openCodeBlock ?? settled?.openCodeBlock ?? -1;
+  const snapshot = streaming ? live : settled;
   return (
-    <div className={className}>
+    <div
+      className={className}
+      data-markdown-source-length={snapshot?.source.length ?? source.length}
+    >
       {!streaming && (references.length > 0 || skills.length > 0) ? (
         <StaticTranscript
           source={source}
@@ -387,14 +405,7 @@ export function DocumentMarkdown({
           streamId={streamId}
         />
       ) : (
-        blocks.map((node, index) => (
-          <MarkdownBlock
-            key={index}
-            node={node}
-            breaks={breaks}
-            openCode={index === openBlock ? openCode : null}
-          />
-        ))
+        <MarkdownBlocks snapshot={snapshot} breaks={breaks} />
       )}
     </div>
   );

@@ -98,11 +98,19 @@ function codeNodes(blocks: readonly PMNode[]): PMNode[] {
 }
 
 export function markdownOpenCode(blocks: readonly PMNode[], source: string): PMNode | null {
-  if (!source.includes("```") && !source.includes("~~~")) return null;
+  const last = blocks.at(-1);
+  if (!last || !endsInCode(last) || (!source.includes("```") && !source.includes("~~~"))) {
+    return null;
+  }
   const openIndex = markdownSyntax(source).code.findIndex(
     (region) => region.fenced && !region.closed && region.to === source.length,
   );
   return openIndex === -1 ? null : (codeNodes(blocks)[openIndex] ?? null);
+}
+
+function endsInCode(node: PMNode): boolean {
+  if (node.type.name === "code_block") return true;
+  return node.lastChild ? endsInCode(node.lastChild) : false;
 }
 
 function repairIsSafe(canonical: readonly PMNode[], candidate: readonly PMNode[]): boolean {

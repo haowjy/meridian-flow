@@ -99,4 +99,8 @@ it("shows every code append immediately and preserves blocks when the turn settl
   expect(host.querySelector('button[aria-label="Copy code"]')).not.toBeNull();
   await render(<StreamingText streamId="test-stream" text={"```ts\nconst reset = 7;"} />);
   expect(host.querySelector("code")?.textContent).toBe("const reset = 7;");
+  await render(
+    <StreamingText streamId="test-stream" text={"```\nhello world\n```"} streaming={false} />,
+  );
+  expect(host.querySelector("code")?.textContent).toBe("hello world");
 });

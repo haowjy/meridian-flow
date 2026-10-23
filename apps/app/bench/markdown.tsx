@@ -1,8 +1,6 @@
 /** The real Markdown component under production React; timing includes layout. */
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
-import { type MarkdownStreamSnapshot, markdownCodec } from "@meridian/markup";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { Markdown } from "../src/rich-content/Markdown";
@@ -13,8 +11,8 @@ i18n.activate("en");
 const paragraph =
   "The cultivator crossed the silent courtyard and considered the price of power. ".repeat(8);
 const section = `## The gate\n\n${paragraph}\n\n- First step\n- Second step\n\n\`\`\`ts\nconst gate = { open: true };\nconsole.log(gate);\n\`\`\`\n\n| Rank | Cost |\n| --- | --- |\n| Jade | 42 |\n\n`;
-const tokens = (section.repeat(60).match(/\S+\s*/g) ?? []).slice(0, 4000);
 const long = section.repeat(Math.ceil(5000 / section.split(/\s+/).length));
+const tokens = long.match(/\S+\s*/g) ?? [];
 const transcript = Array.from(
   { length: 50 },
   (_, index) => `${index % 2 ? "Reply" : "Question"} ${index}\n\n${section}`,
@@ -26,20 +24,21 @@ const stats = (samples: number[]) => {
     p95: sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))],
   };
 };
-const diagnosticCodec = markdownCodec({ schema: buildDocumentSchema() });
-const fullParseFallbacks = (chunks: readonly string[], initial = "") => {
-  let source = initial;
-  let snapshot: MarkdownStreamSnapshot | null = null;
-  const reasons: Record<string, number> = {};
-  for (const chunk of chunks) {
-    source += chunk;
-    snapshot = diagnosticCodec.stream(snapshot, source);
-    if (snapshot.fullParseReason) {
-      reasons[snapshot.fullParseReason] = (reasons[snapshot.fullParseReason] ?? 0) + 1;
-    }
-  }
-  return reasons;
-};
+
+function waitForPaint(host: HTMLElement, sourceLength: number): Promise<void> {
+  return new Promise((resolve) => {
+    const inspect = () => {
+      const rendered = host.querySelector<HTMLElement>("[data-markdown-source-length]");
+      if (Number(rendered?.dataset.markdownSourceLength) === sourceLength) {
+        requestAnimationFrame(() => resolve());
+      } else {
+        requestAnimationFrame(inspect);
+      }
+    };
+    requestAnimationFrame(inspect);
+  });
+}
+
 export async function runMarkdownBench(interval: number) {
   const host = document.getElementById("root");
   if (!host) throw new Error("Missing bench root");
@@ -49,11 +48,15 @@ export async function runMarkdownBench(interval: number) {
     flushSync(() =>
       root.render(
         <I18nProvider i18n={i18n}>
-          {sources.map((source, index) => (
-            <Markdown key={index} mode={streaming ? "streaming" : "static"}>
-              {source}
-            </Markdown>
-          ))}
+          {sources.map((source, index) =>
+            streaming ? (
+              <Markdown key={index} mode="streaming" streamId={`bench:${index}`}>
+                {source}
+              </Markdown>
+            ) : (
+              <Markdown key={index}>{source}</Markdown>
+            ),
+          )}
         </I18nProvider>,
       ),
     );
@@ -63,13 +66,16 @@ export async function runMarkdownBench(interval: number) {
   commit([section]);
   flushSync(() => root.render(null));
   const updates: number[] = [];
+  const arrivalToPaint: number[] = [];
   let source = "";
   for (const token of tokens) {
-    const start = performance.now();
+    const arrived = performance.now();
     source += token;
     updates.push(commit([source], true));
+    await waitForPaint(host, source.length);
+    arrivalToPaint.push(performance.now() - arrived);
     await new Promise((resolve) =>
-      setTimeout(resolve, Math.max(0, interval - (performance.now() - start))),
+      setTimeout(resolve, Math.max(0, interval - (performance.now() - arrived))),
     );
   }
   const streamUpdates = async (chunks: readonly string[], initial = "") => {
@@ -106,16 +112,9 @@ export async function runMarkdownBench(interval: number) {
     tokens: tokens.length,
     words: long.split(/\s+/).length,
     tokenUpdateMs: stats(updates),
+    arrivalToPaintMs: stats(arrivalToPaint),
+    textBlockCharacters: long.length,
     worstCaseTokenUpdateMs,
-    fullParseFallbacks: {
-      ordinary: fullParseFallbacks(tokens),
-      paragraph: fullParseFallbacks(Array.from({ length: 300 }, (_, index) => `word${index} `)),
-      list: fullParseFallbacks(Array.from({ length: 300 }, (_, index) => `- item ${index}\n`)),
-      openCode: fullParseFallbacks(
-        Array.from({ length: 300 }, (_, index) => `value${index} `),
-        "```ts\n",
-      ),
-    },
     transcriptMountMs: mounts(transcript),
     longReplyMountMs: mounts([long]),
   };
