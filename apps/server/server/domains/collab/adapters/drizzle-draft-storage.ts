@@ -106,6 +106,8 @@ const draftColumns = {
   seedLiveRoom: documentDrafts.seedLiveRoom,
   seedLiveSnapshot: documentDrafts.seedLiveSnapshot,
   seedDraftSnapshot: documentDrafts.seedDraftSnapshot,
+  seedLiveState: documentDrafts.seedLiveState,
+  seedLivePosition: documentDrafts.seedLivePosition,
 };
 
 /**
@@ -151,8 +153,16 @@ export function mapDraft(row: DraftSelectRow): DraftSnapshot {
         ? {
             origins: row.seedOrigins,
             liveRoom: row.seedLiveRoom,
-            liveSnapshot: row.seedLiveSnapshot,
-            draftSnapshot: row.seedDraftSnapshot,
+            liveSnapshot: new Uint8Array(row.seedLiveSnapshot),
+            draftSnapshot: new Uint8Array(row.seedDraftSnapshot),
+            ...(row.seedLiveState && row.seedLivePosition !== null
+              ? {
+                  liveAttribution: {
+                    state: new Uint8Array(row.seedLiveState),
+                    position: row.seedLivePosition,
+                  },
+                }
+              : {}),
           }
         : null,
   };

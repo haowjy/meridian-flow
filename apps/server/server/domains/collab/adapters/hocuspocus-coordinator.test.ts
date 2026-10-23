@@ -67,6 +67,12 @@ class MemoryJournal implements UpdateJournal {
       : { checkpoint: null, updates: [] };
   }
 
+  async readUpdates(docId: string, after: number, through: number) {
+    return (this.entries.get(docId)?.updates ?? []).filter(
+      (update) => update.seq > after && update.seq <= through,
+    );
+  }
+
   async checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void> {
     const entry = this.entry(docId);
     entry.checkpoint = state;

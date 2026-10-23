@@ -2530,8 +2530,8 @@ msgid "Goal: {0}. "
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Got the latest text of"
-msgstr ""
+#~ msgid "Got the latest text of"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "grid"

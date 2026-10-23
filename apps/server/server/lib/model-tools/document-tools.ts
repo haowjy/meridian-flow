@@ -257,8 +257,8 @@ async function writeUnderGrant(
     );
   }
   // The echo, staged or immediate, and an undo or redo result were shown; so
-  // was a partial failure's echo and a region refusal's current text. Whatever
-  // frontier a result carries records, error or not.
+  // was a partial failure's echo. Whatever frontier a result carries records,
+  // error or not.
   const evidence = evidenceOf(address.documentId, written);
   if (written.isError) return { isError: true, output: written.result, evidence };
   // Showing and frontier are host-only: they leave here only as `evidence`.
