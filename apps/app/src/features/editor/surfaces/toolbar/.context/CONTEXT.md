@@ -3,6 +3,18 @@
 Reference depth for the document toolbar. Read [`AGENTS.md`](../AGENTS.md)
 first.
 
+## Current layout
+
+The row has ten controls, always, in one order. A control that cannot apply
+greys with its reason in the tooltip; it doesn't disappear or move as the caret
+travels. A pane too narrow for the row (the dock) scrolls it horizontally
+instead of dropping controls into a menu. Heading toggles between H1 and
+paragraph, bullet list un-lists, marks remove, and the Code button fences or
+un-fences a block (it makes a ``` block; it doesn't format text). Inline code
+and strikethrough aren't on this row: their surface is the formatting menu, and
+their commands live here so both share one fence. Block alignment resolves all
+alignable top-level blocks in the selection and applies one command.
+
 ## The enablement matrix
 
 `documentToolbarControls` maps editor state plus a few host facts (editable,
@@ -92,7 +104,7 @@ The two command families fence differently, and the difference is the design:
   object fence is not reversible at all (its reason is `embedded-block`),
   because un-fencing a diagram is the same loss as converting one to a heading.
 - **Marks** (bold, italic, code, link) land per node, so they refuse only when
-  NOTHING in the selection can take them. **A table cell is prose** (§5.4),
+  NOTHING in the selection can take them. **A table cell is prose**,
   which is the one place marks part ways with the block fence: a cell refuses to
   become a heading and takes bold in the same breath, and it matters most for a
   selected table, whose cells hold every word in it. Past that, availability
@@ -103,14 +115,14 @@ The two command families fence differently, and the difference is the design:
 
 `blockTypeStates` is that matrix for the eight types "Turn into" offers, and
 `turnIntoBlockType` is the command behind them: a true toggle, so choosing the
-checked type returns the block to a paragraph (law 6). `textMarkState` is the
+checked type returns the block to a paragraph. `textMarkState` is the
 same pair for one mark. Both exist because the formatting menu and the block
 menu carry these verbs and must refuse exactly what this fence refuses.
 
 Alignment has no fence: it writes to every alignable block the selection
 touches, so a select-all centers the chapter rather than greying. A caret in a
 table cell aligns the TABLE, because `alignableBlocksInSelection` stops its walk
-at the table (per-column alignment belongs to the table grips, §5.4).
+at the table (per-column alignment belongs to the table grips).
 
 `blockTypeRefusal` and `codeBlockRefusal` are exported, and
 `BlockTypeRefusalReason` names their answers. Every other surface that rewrites
@@ -152,6 +164,5 @@ same handler on every close path, selection and dismissal alike.
 ## Why greying, not disabling
 
 `disabled` removes the button from the hover and focus path, so its tooltip
-never opens and the writer never learns the reason — which is the dead control
-law 5 forbids. Blocked controls carry `aria-disabled`, keep pointer events,
+never opens and the writer never learns the reason: a dead control. Blocked controls carry `aria-disabled`, keep pointer events,
 drop their `onClick`, and dim to the same opacity the disabled style uses.

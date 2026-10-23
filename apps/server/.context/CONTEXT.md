@@ -25,10 +25,12 @@ composeAppServices(ports)
   registry/executor, late-bound turn runner, child-run coordination,
   orchestrator, and returned `AppServices` aggregate.
 
-`AppServices` carries both Meridian names and upstream-compatible aliases where
-copied route/lib code expects them: `threadRepos` and `threadEventHub` are the
-canonical names; `repos` and `hub` are aliases. Keep these aliases explicit
-instead of mechanically rewriting copied code one reference at a time.
+`AppServices` exposes thread repositories and the event hub under two names
+each: `threadRepos` and `threadEventHub`, and the aliases `repos` and `hub`
+that route and lib code copied from the upstream server still reads (about 60
+references, mostly in tests). The aliases are a compatibility seam the root
+rule against shims doesn't allow; collapsing them onto the canonical names is
+open work.
 
 `getApp()` caches the resulting `Promise<AppServices>` on a process-global symbol
 so hot reloads do not compose duplicate singletons.
@@ -74,13 +76,16 @@ The shipped route surface covers:
 - First-party package catalog, builtin agent catalog, readiness, and unknown
   route handling.
 
-Project-scoped handlers gate through `requireProjectOwner` from
-`server/domains/projects` before reading or mutating project-owned data, then
-ask the [file policy](../server/domains/file-policy/.context/CONTEXT.md) for
-each document they read or change.
+Project-scoped handlers gate through `requireProjectOwner`
+(`server/domains/projects/project-access.ts`) before reading or mutating
+project-owned data, then ask the
+[file policy](../server/domains/file-policy/.context/CONTEXT.md) for each
+document they read or change: `requireFileGrant` before the read, then
+`withEditGrants` around the write (both from `server/lib/file-access-http.ts`).
+List routes drop the rows `listAccess` leaves out.
 WorkOS AuthKit is the auth boundary; alternate auth adapter route code is not part of
-Meridian Flow. The removed external execution-provider route surface is also out
-of scope for Meridian; do not port it back while filling route parity gaps.
+Meridian Flow, and neither is an external package-execution provider: don't
+port either in while filling route parity gaps.
 
 ## WorkOS auth boundary
 
@@ -182,7 +187,7 @@ stall guard never kills a slow-but-streaming model.
 
 `server/lib/observability.ts` owns the process-scoped deferred sink used by startup, request observability, crash policy, and app composition. `server/lib/event-sink-factory.ts` keeps the upstream composition seam but only selects Meridian-local sinks: `EVENT_PROVIDER=local` writes structured JSON to stdout and mirrors to `LOG_DIR/YYYY-MM-DD.jsonl` when `LOG_DIR` is set, while `none`/`noop` returns the no-op sink. External provider policy is deliberately not wired into production composition yet; inject another `EventSink` later without changing route or domain code.
 
-In dev, the repository `logs/` tree is generated observability output, not source input. `nitro.config.ts` excludes it through Rolldown's active `watch.exclude` seam so JSONL mirror writes cannot rebuild Nitro and orphan in-flight work. Keep the exclusion rooted at the repository log directory; do not restore the inert legacy Nitro watcher option. The same `watch.exclude` also skips `**/node_modules/**`: a `pnpm install` in a sibling worktree hardlinks shared store files, and the resulting ctime change would otherwise rebuild Nitro (#817). The glob is computed here, independently of `tools/dev/lib/dev-env.ts`'s `resolveDevLogDir`: moving the dev log directory, or setting an absolute `LOG_DIR` under a watched tree, needs this exclusion to move in the same change.
+In dev, the repository `logs/` tree is generated observability output, not source input. `nitro.config.ts` excludes it through Rolldown's active `watch.exclude` seam so JSONL mirror writes cannot rebuild Nitro and orphan in-flight work. Keep the exclusion rooted at the repository log directory and on the Rolldown seam; Nitro's own watcher option is inert. The same `watch.exclude` also skips `**/node_modules/**`: a `pnpm install` in a sibling worktree hardlinks shared store files, and the resulting ctime change would otherwise rebuild Nitro mid-reply. The glob is computed here, independently of `tools/dev/lib/dev-env.ts`'s `resolveDevLogDir`: moving the dev log directory, or setting an absolute `LOG_DIR` under a watched tree, needs this exclusion to move in the same change.
 
 ## Route conventions
 

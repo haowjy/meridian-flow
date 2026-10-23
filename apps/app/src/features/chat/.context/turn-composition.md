@@ -25,13 +25,18 @@ placeholders are dropped. Text, image/file, or custom card flushes the process
 run and emits its own item. A later reasoning run therefore starts a new fold
 below prose or an artifact. There is no settlement-time regrouping.
 
-Render identity is positional: `blockRenderKey` uses turn and sequence, never
-`block.id`. Text and artifact identity must survive streaming; a process item
+Render identity is positional: `blockRenderKey` uses turn and sequence
+(`turnId::sequence`), never `block.id`. Text and artifact identity must survive streaming; a process item
 uses its first block. The digest names successful skills and reads, omits
 successful writes because receipts summarize them, and reports failures and
 other tools as steps. Its accessible name is the visible label.
 
 ## Durable cards and deliveries
+
+Subagent cards use normalized run identity and delivery mode, and every
+subagent surface builds on the normalized `SubagentRun` and the shared
+`SubagentRow` anatomy. Run liveness is never a turn block: a saved running card
+with no live lease is `unknown`, not running.
 
 Each admitted card-bearing invocation has one retained helper-result card. Its
 typed result and bound Agent definition are authoritative; the UI never parses
@@ -67,7 +72,21 @@ advertise `ask_user` until its rework
 ([#601](https://github.com/haowjy/meridian-flow/issues/601)); keep the interrupt
 card and its response path, they are not dead code.
 
+## Scrolling and run state
+
+`TurnList` is the only transcript scroller: TanStack Virtual owns geometry and
+`useChatFollowScroll` owns follow/free policy
+([scroll-follow decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/composer/chat-scroll-follow-state.md)).
+No child transcript surface adds a scroller.
+
+The server writes one versioned `RunState` per chat. The app and `./mf` read it
+only through the same `@meridian/thread-client` selectors (`isBusy`,
+`waitingWriterMessages`, `usageBlockedMessages`, `switchState`), never from
+execution identity, stream order or timers.
+
 ## Tool presentation
+
+Tool rows that call writes show edits in Draft and direct mode alike.
 
 `tool-renderers.tsx` keys must be real runtime tool names; a renamed tool
 silently falls through to the default, so check keys when either side changes.
@@ -97,5 +116,5 @@ flowchart TD
 ```
 
 Interrupt settlement and the runtime probe are tracked in
-[chat TODO](TODO.md). Activity, spacing, composer, fork, and tool surfaces have
-their own references in the parent [chat guide](../AGENTS.md).
+[chat TODO](TODO.md). Activity, spacing, composer, fork and tool surfaces have
+their own pages, listed in [CONTEXT.md](CONTEXT.md).

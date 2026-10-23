@@ -37,7 +37,7 @@ lets y-prosemirror updates decode on one side and fail on the other, so this
 package follows the editor's structural surface (figures, MDX blocks, images,
 scene breaks).
 
-## Surface rulings
+## Surface decisions
 
 - `align` is `null`, `"center"` or `"right"`. There is no `"left"`: unaligned is
   the default, and a second spelling would be a ghost state the markup codec
@@ -59,3 +59,11 @@ migration or reset decision.
 
 Keep provider behavior, figure upload policy, signed URLs, and editing UI in
 app or server domains.
+
+## Major versions
+
+`1.0.0` added a stored `ref` (`doc:` or `ahead:`) to the `link` mark, `image`
+and `figure` ([#729](https://github.com/haowjy/meridian-flow/issues/729),
+[#730](https://github.com/haowjy/meridian-flow/issues/730)). It was declared
+major because the attribute changes what stored content means. Heads written
+before it are unreadable, and collab state was reset rather than migrated.

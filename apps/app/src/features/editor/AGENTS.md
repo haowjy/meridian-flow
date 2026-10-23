@@ -6,9 +6,9 @@ and `chrome/` hosts writer-facing controls. Schemas, Yjs session machinery,
 and ProseMirror extensions belong to `core/editor`; pane and tab composition
 belongs to `features/project/context`.
 
-The contextual bubbles were deleted whole. Do not restore them or grow ad-hoc
-surfaces here: build from the `chrome/` primitives, with the persistent
-document toolbar owning the command layer the contextual surfaces share.
+Contextual surfaces are built from the `chrome/` primitives, with the
+persistent document toolbar owning the command layer they share. There are no
+selection bubbles and no ad-hoc surfaces.
 
 ## Rules
 
@@ -32,8 +32,8 @@ document toolbar owning the command layer the contextual surfaces share.
   supplies bylines. See [draft review](../draft-review/AGENTS.md).
 - `SessionEditor` owns device reading memory for live Editor and dock mounts
   (`core/editor/use-reading-position.ts`). Review and paint-held mounts stand
-  down, and explicit destinations win. Do not restore pixel scroll in a second
-  timer or warm-tab path.
+  down, and explicit destinations win. Reading position is restored in that one
+  place, never by a second timer or warm-tab path.
 - Chrome wrappers own focus return and Escape. A surface opened over prose
   must return focus through the wrapper and must not install a private handler.
 

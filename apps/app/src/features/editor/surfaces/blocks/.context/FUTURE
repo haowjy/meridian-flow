@@ -2,7 +2,7 @@
 
 - Nested reordering. The movable unit is a top-level block, so a writer cannot
   reorder one list item among its siblings from the handle. Rows and columns
-  belong to the table surface (§4, deepest owner) and already have Alt+Arrows
+  belong to the table surface (the deepest owner) and already have Alt+Arrows
   reserved for them; list items have no design yet. Whatever lands must keep
   the property that makes the current drop model safe: every seam resolves at a
   depth where the schema allows the moved node.

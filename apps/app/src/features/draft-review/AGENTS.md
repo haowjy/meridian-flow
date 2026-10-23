@@ -43,8 +43,8 @@ it never partitions the text.
   shows, else the identity row's notices (`useReviewFailures`); a file's status
   line (`DraftCommandStatus`) in Work Files and the dock, never its rows. The
   in-flow bar puts it in its own row. Archived-Work refusals hold no failure.
-  The displacement still left ([#992](https://github.com/haowjy/meridian-flow/issues/992))
-  waits for one feedback surface outside the manuscript; don't add per-width fixes.
+  Fix displacement with one feedback surface outside the manuscript, never
+  per-width fixes ([TODO](.context/TODO.md)).
 
 Read [the runtime reference](.context/draft-review.md) before changing ownership.
 Browser verification recipes live in [draft review QA](../../../../../docs/qa/draft-review.md).

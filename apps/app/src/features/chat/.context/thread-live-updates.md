@@ -116,3 +116,30 @@ composer, so the retry (same request id and body) stays reachable. A compaction
 divider's Stop is this one; only a handoff brief's own Stop (`useTurnStop`) uses
 the turn cancel route. While a hand-back is in flight `hiddenWriterTurns` keeps
 those rows out of the transcript.
+
+What the writer sees: Stop (the
+[composer's one button](../../../components/app/composer/AGENTS.md)) hands the
+waiting messages back as one editable message, in send order with blank lines
+between them, above typed text. A handed-back message never reaches the model, a
+conversation page, a fork, a summary or a snapshot. Retry replaces the failed
+reply in place. An idle queued switch reads "Switched to …"; "Switch to …
+queued" is only for a switch waiting behind a running reply.
+
+## The queue
+
+One queue per chat: a press in any tab takes any queued message into that tab's
+box, above typed text. A queued row is drawn from `ViewRow.queued` with
+`data-queued` on the article: a dotted `--color-muted-foreground` border, no
+fill and `--color-ink-muted` text (`globals.css`), never opacity. It has no
+status line; the dotted bubble is the mark, and the article's accessible name
+reads "Your message, queued". The x ("Move to the message box", 44px on coarse
+pointers) sits beside the bubble, centred on it. Under the last queued row,
+right-aligned, sit Cancel queue (two or more queued) and Send now (a reply
+runs). Send now stops the reply so the whole queue runs next, hands nothing
+back, and shows a spinner while pending or stopping. A lost race (the reply took
+the message first) shows nothing.
+
+`useHandBack` adapts the package's hand-back operation (draft store, run-state
+port, `fetch`); `useChatStop` and `useQueueControls` press it, and `useSendNow`
+posts `postSendNow`. None of them holds rules. The queue's failure cards are in
+[failure-cards.md](failure-cards.md).

@@ -10,15 +10,15 @@ drop line, and the menu are the surface's
 A drag is React's business right up until two things force it into the
 document:
 
-- **The manuscript has to show it.** A lifted block reads at half opacity
-  (§5.8), and a decoration is the only way to style a node ProseMirror renders.
-  Setting an attribute on the element by hand does not survive — the DOM
+- **The manuscript has to show it.** A lifted block reads at half opacity,
+  and a decoration is the only way to style a node ProseMirror renders.
+  Setting an attribute on the element by hand does not survive: the DOM
   observer treats an unexpected attribute change as corruption and re-renders
   the node without it.
 - **The position has to survive the drag.** A peer's edit or an AI write can
-  land while the pointer is down, because nothing gates a write (law 9). The
+  land while the pointer is down, because [nothing gates a write][trust]. The
   block the writer grabbed has to be the block that lands, so it is held here,
-  once, rather than in every consumer — as a `NodeHold`
+  once, rather than in every consumer, as a `NodeHold`
   (`core/editor/anchors.ts`), because a remote write replaces the whole
   document and a mapped number would report the grab deleted every time.
 
@@ -39,4 +39,5 @@ document:
 
 → [`../chrome/AGENTS.md`](../chrome/AGENTS.md) for the kernel that owns
   suppression and timing
-→ design of record: `editor-toolbar-split/interaction-model.md` §5.8
+
+[trust]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/trust-the-llm-mission.md

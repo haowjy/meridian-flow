@@ -14,7 +14,7 @@ Keep evidence in the active work directory, not in this repository. Record the
 commit, date, stack/provider, outcome, and evidence path after each run. A recipe
 is not a claim that it passed on the current commit.
 A gate's probe runs on its own fresh stack and database, from a detached
-checkout pinned to the commit under test. Never reuse another lane's stack or
+checkout pinned to the commit under test. Never reuse another session's stack or
 probe the integration worktree's: a checkout that moves under a watching dev
 server, or a reused database, produces regressions that vanish on a clean
 stack.
@@ -98,7 +98,8 @@ whatever `--session` says, including other teams' probes.
 
 ## Dev watcher: sibling installs
 
-Protects #817. With your stack running (`pnpm dev`), note the count of
+Checks that an install in a sibling worktree does not restart this worktree's
+server. With your stack running (`pnpm dev`), note the count of
 `startup.complete` lines in `logs/events/*.jsonl`. In a sibling worktree run
 `pnpm install`, or just hardlink one store file:
 `ln <store file under node_modules/.pnpm> ../probe-link` (the link must be on the
