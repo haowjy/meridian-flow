@@ -35,22 +35,17 @@ export type ModelInverseQuery = TurnInverseQuery & {
 };
 
 /** One immutable capture's reversal policy. A retry creates a new planner from a new capture. */
-export function createCapturedReversalPlanner(document: InverseDocument, query: ModelInverseQuery) {
+export function createCapturedReversalPlanner(document: InverseDocument, query: TurnInverseQuery) {
   const liveIndex = prepareEditRoots(document.live, document.history);
   const queryDestination = query.draftId
     ? document.destinationOf({ kind: "pending", draftId: query.draftId, rowId: 0 })
     : document.destinationOf({ kind: "live", seq: 0 });
   const draftIdOf = (destination: InverseDestination): string | null =>
     destination.kind === "draft" && destination.state === "active" ? destination.draftId : null;
-  const capturedDraft = (destination: InverseDestination) => {
-    const draftId = draftIdOf(destination);
-    return draftId ? document.drafts.get(draftId) : undefined;
-  };
   const view =
     queryDestination.kind === "draft" && queryDestination.state === "gone"
       ? document.live
       : queryDestination.view;
-  const draft = capturedDraft(queryDestination);
   const own = entries(document, query.threadId);
   const actions = inspectionActions(document.history, document.tree, own);
   const inspections = new Map<Y.Doc, Inspection>();
@@ -75,7 +70,6 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     handle: string,
     direction: "undo" | "redo",
     inspection: Inspection,
-    _at = queryDestination,
   ): Exclude<DocumentEditResult, { status: "success" }> | null {
     const follow = `Use revert on ${document.uri}, or read it and make a new replace.`;
     const discarded = {
@@ -83,16 +77,15 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       message: `The user discarded ${handle}; it is already gone. ${follow}`,
     };
     const destination = document.destinationOf(part.origin);
-    const destinationDraft = capturedDraft(destination);
-    if (destinationDraft?.frozen)
+    if (destination.frozen)
       return {
         status: "work_archived",
         message: `This draft is archived. Write to an active draft or live version of ${document.uri}.`,
       };
-    if (direction === "undo" && part.origin.kind === "pending" && part.disposition === "applied")
+    if (destination.kind === "live" && destination.removed)
       return {
-        status: `cant_${direction}_applied`,
-        message: `The user applied ${handle} to the manuscript. ${follow}`,
+        status: "document_not_found",
+        message: "File not found. Read the project to find the right path.",
       };
     if (destination.kind === "draft" && destination.state === "gone") return discarded;
     const state = inspection.states([part])[0];
@@ -149,6 +142,94 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     }
     return { selection, partial, refusal: null };
   }
+  function textPlan(
+    entry: Entry,
+    direction: "undo" | "redo" | "revert",
+    inspectAt: (destination: InverseDestination) => Inspection,
+    options: {
+      inverseParts?: readonly StoredInversePart[];
+      liveRemoved?: boolean;
+      actionKind?: "undo" | "redo" | "revert" | "rollback";
+      classify?: boolean;
+    } = {},
+  ) {
+    const destinationParts = direction === "redo" ? (options.inverseParts ?? []) : entry.parts;
+    const destinations = new Set(
+      destinationParts.map((part) => document.destinationOf(part.origin)),
+    );
+    if (destinations.size !== 1) throw new Error("One model edit spans multiple versions");
+    const [destination] = destinations;
+    if (!destination) throw new Error("One model edit has no destination");
+    if (options.classify === false && destination.kind === "draft" && destination.state === "gone")
+      return {
+        status: `cant_${direction === "redo" ? "redo" : "undo"}_discarded` as const,
+        message: `The user discarded ${entry.handle}; it is already gone.`,
+      };
+    if (destination.frozen)
+      return {
+        status: "work_archived" as const,
+        message: `This draft is archived. Write to an active draft or live version of ${document.uri}.`,
+      };
+    if (destination.kind === "live" && (options.liveRemoved ?? destination.removed))
+      return {
+        status: "document_not_found" as const,
+        message: "File not found. Read the project to find the right path.",
+      };
+    const actionKind =
+      options.actionKind ??
+      (direction === "undo" &&
+      entry.parts.some((part) => part.origin.kind === "pending" && part.disposition === "applied")
+        ? "revert"
+        : direction);
+    if (options.classify === false)
+      return {
+        destination,
+        actionKind,
+        selection: entry.parts.map(
+          (part): InverseSelection => ({
+            part,
+            direction: direction === "redo" ? ("reapply" as const) : ("invert" as const),
+          }),
+        ),
+        omissions: [],
+      };
+    const inspection = inspectAt(destination);
+    inspection.states(entry.parts);
+    const selected =
+      actionKind === "revert"
+        ? revertSelection(entry, inspection)
+        : textSelection(
+            entry,
+            direction === "revert" ? "undo" : direction,
+            inspection,
+            options.inverseParts,
+          );
+    if ("refusal" in selected && selected.refusal) return selected.refusal;
+    return {
+      destination,
+      actionKind,
+      selection: selected.selection,
+      omissions: "partial" in selected ? selected.partial : selected.skipped,
+    };
+  }
+  function poppableForTurn(turn: TurnInverseQuery, rollback: boolean) {
+    const poppable = new Set<string>();
+    if (rollback) return poppable;
+    for (const entry of actions.stack) {
+      const belongsToTurn =
+        entry.parts.some(
+          (part) => part.threadId === turn.threadId && part.turnId === turn.turnId,
+        ) ||
+        (entry.tree
+          ? entry.tree.threadId === turn.threadId && entry.tree.turnId === turn.turnId
+          : false);
+      const appliedText = entry.parts.some((part) => part.disposition === "applied");
+      const settledTree = entry.tree ? settlementOf(entry.tree, document.tree) : null;
+      if (!belongsToTurn || appliedText || settledTree) break;
+      poppable.add(entry.id);
+    }
+    return poppable;
+  }
   function treePlan(
     entry: Entry & { tree: TransitionEntry },
     direction: "undo" | "redo" | "revert",
@@ -164,8 +245,8 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     const resolvedDestination =
       destination.kind === "draft"
         ? document.destinationForBranch(destination.branchId)
-        : queryDestination;
-    if (resolvedDestination.kind === "draft" && resolvedDestination.frozen)
+        : document.destinationOf({ kind: "live", seq: 0 });
+    if (resolvedDestination.frozen)
       return {
         status: "work_archived",
         message: `This draft is archived. Write to an active draft or live version of ${document.uri}.`,
@@ -213,9 +294,10 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
             : state?.state !== "active"
               ? "edited since"
               : null;
-      const reason =
-        originDestination.kind === "draft" && originDestination.frozen
-          ? "draft archived"
+      const reason = originDestination.frozen
+        ? "draft archived"
+        : originDestination.kind === "live" && originDestination.removed
+          ? "document deleted"
           : originDestination.kind === "draft" && originDestination.state === "gone"
             ? "discarded"
             : inspection.rolledBack(part)
@@ -230,14 +312,11 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   }
   return {
     view,
-    draft,
     own,
     inspect,
-    refusal,
-    changedReason,
-    textSelection,
+    textPlan,
+    poppableForTurn,
     treePlan,
-    revertSelection,
     version,
     queryDestination,
     draftIdOf,

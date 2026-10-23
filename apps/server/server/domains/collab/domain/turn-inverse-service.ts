@@ -1,6 +1,7 @@
 /** Writer receipt and failed-response policies over immutable forward-inverse parts. */
 import { randomUUID } from "node:crypto";
 import {
+  editHandle,
   type InversePart,
   type InverseSelection,
   prepareEditRoots,
@@ -32,14 +33,12 @@ import { effectiveActionIndex, isRolledBack, partKey } from "./inverse-actions.j
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import { type InverseStep, simulateInverse } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
-import { entries, inspectionActions } from "./model-inverse-selection.js";
+import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 import {
   isTransitionEntry,
   latestTransition,
   type PlannedTreeInverse,
-  planTreeInverse,
   type StoredTreeEntry,
-  settlementOf,
   type TransitionEntry,
   type TreeStates,
   treeChangedCause,
@@ -89,6 +88,8 @@ export type InverseDocument = {
     string,
     { documentDraft: DraftSnapshot; doc: Y.Doc; name: string; frozen: boolean }
   >;
+  /** Per-source scratch views reused while this capture describes history and skip excerpts. */
+  excerptViews: Map<Y.Doc, Y.Doc>;
   /** The sole captured destination resolution used by planning and presentation. */
   destinationOf(origin: EditOrigin): InverseDestination;
   /** The active draft in a tree step's branch, or a gone destination. */
@@ -228,7 +229,6 @@ function prepare(
         : part
       )?.disposition ?? part.disposition;
     const liveIndex = prepareEditRoots(document.live, document.history);
-    const destinationOf = (part: StoredInversePart) => document.destinationOf(part.origin);
     const skips: TurnInverseSkip[] = [];
     const simulation = simulateInverse(document, {
       rolledBack: index.rolledBack,
@@ -241,19 +241,9 @@ function prepare(
         actor: kind === "rollback" ? "system" : "human",
       },
     });
-    const own = entries(document, query.threadId);
-    const stack = inspectionActions(document.history, document.tree, own).stack;
-    const poppableEditIds = new Set<string>();
-    if (direction === "undo" && kind !== "rollback")
-      for (const entry of stack) {
-        const belongsToTurn =
-          entry.parts.some((part) => targetsTurn(part, query)) ||
-          (entry.tree ? targetsTurn(entry.tree, query) : false);
-        const appliedText = entry.parts.some((part) => part.disposition === "applied");
-        const settledTree = entry.tree ? settlementOf(entry.tree, document.tree) : null;
-        if (!belongsToTurn || appliedText || settledTree) break;
-        poppableEditIds.add(entry.id);
-      }
+    const entryPlanner = createCapturedReversalPlanner(document, query);
+    const poppableEditIds =
+      direction === "undo" ? entryPlanner.poppableForTurn(query, kind === "rollback") : new Set();
     const skipTree = (row: StoredTreeEntry, cause: TurnInverseSkipCause) =>
       skips.push({
         kind: "tree",
@@ -298,25 +288,33 @@ function prepare(
           skipTree(row, "rolled_back");
           continue;
         }
-        const settled = settlementOf(row, document.tree);
-        if (settled) {
-          skipTree(row, settled === "applied" ? "applied" : "discarded");
-          continue;
-        }
-        const latest = latestTransition(row, simulation.tree, simulation.rolledBack);
-        if (latest.stands !== (direction === "undo")) {
-          skipTree(row, direction === "undo" ? "already_undone" : "already_redone");
-          continue;
-        }
-        const planned = planTreeInverse(
-          row,
-          direction === "undo" ? "invert" : "reapply",
-          latest.row,
+        const planned = entryPlanner.treePlan(
+          {
+            id: row.editId,
+            handle: row.wId === null ? "" : editHandle(row.wId),
+            parts: [],
+            tree: row,
+          },
+          direction,
+          simulation.tree,
           simulation.states,
-          simulation.nextStep(),
+          simulation.rolledBack,
+          simulation.nextStep,
         );
-        if (!planned) {
-          skipTree(row, treeChangedCause(simulation.states, row.tree.destination));
+        if ("status" in planned) {
+          const cause: TurnInverseSkipCause = planned.status.endsWith("_applied")
+            ? "applied"
+            : planned.status.endsWith("_discarded")
+              ? "discarded"
+              : planned.status === "work_archived"
+                ? "draft_archived"
+                : latestTransition(row, simulation.tree, simulation.rolledBack).stands !==
+                    (direction === "undo")
+                  ? direction === "undo"
+                    ? "already_undone"
+                    : "already_redone"
+                  : treeChangedCause(simulation.states, row.tree.destination);
+          skipTree(row, cause);
           continue;
         }
         simulation.recordTree(planned, { kind, actionId, consumes });
@@ -324,35 +322,61 @@ function prepare(
         continue;
       }
       let chosen = 0;
-      for (const part of parts) {
-        if (rolledBack(part)) {
-          skip(part, "rolled_back");
+      const inverseParts =
+        direction === "redo"
+          ? reversals.filter((inverse) =>
+              parts.some((part) =>
+                inverse.targets.some((target) => partKey(target) === partKey(part)),
+              ),
+            )
+          : undefined;
+      const entry = {
+        id: parts[0]?.editId ?? "",
+        handle: parts[0]?.wId === null ? "" : editHandle(parts[0]?.wId ?? 0),
+        parts,
+      };
+      const planned = entryPlanner.textPlan(
+        entry,
+        direction,
+        (destination) =>
+          destination.kind === "draft" && destination.state === "gone"
+            ? entryPlanner.inspect()
+            : entryPlanner.inspect(destination.view),
+        {
+          inverseParts,
+          liveRemoved: simulation.liveRemoved(),
+          actionKind:
+            kind === "rollback"
+              ? "rollback"
+              : direction === "redo"
+                ? "redo"
+                : poppableEditIds.has(entry.id)
+                  ? "undo"
+                  : "revert",
+          classify: false,
+        },
+      );
+      if ("status" in planned) {
+        const cause: TurnInverseSkipCause =
+          planned.status === "work_archived"
+            ? "draft_archived"
+            : planned.status.endsWith("_discarded")
+              ? "discarded"
+              : document.removal?.reason === "discarded"
+                ? "document_discarded"
+                : "document_deleted";
+        for (const part of parts) skip(part, cause);
+        continue;
+      }
+      for (const { part, direction: partDirection } of planned.selection) {
+        const selectedPart = part as StoredInversePart;
+        if (rolledBack(selectedPart)) {
+          skip(selectedPart, "rolled_back");
           continue;
         }
-        const destination = destinationOf(part);
-        // Parts in an active draft that outlived a live delete invert there (D79); parts that
-        // landed live meet the removal unless an earlier step restores the document, and a
-        // draft-text inverse never restores live.
-        if (destination.kind === "live" && simulation.liveRemoved()) {
-          skip(
-            part,
-            document.removal?.reason === "discarded" ? "document_discarded" : "document_deleted",
-          );
-          continue;
-        }
-        if (destination.kind === "draft" && destination.state === "gone") {
-          skip(part, "discarded");
-          continue;
-        }
-        const capturedDraft =
-          destination.kind === "draft" ? document.drafts.get(destination.draftId) : undefined;
-        if (capturedDraft?.frozen) {
-          skip(part, "draft_archived");
-          continue;
-        }
-        selection.set(destination, [
-          ...(selection.get(destination) ?? []),
-          { part, direction: direction === "undo" ? "invert" : "reapply" },
+        selection.set(planned.destination, [
+          ...(selection.get(planned.destination) ?? []),
+          { part: selectedPart, direction: partDirection },
         ]);
         chosen++;
       }
@@ -360,15 +384,8 @@ function prepare(
         order.push({
           kind: "text",
           editId: parts[0].editId,
-          destination: destinationOf(parts[0]),
-          actionKind:
-            kind === "rollback"
-              ? "rollback"
-              : direction === "redo"
-                ? "redo"
-                : poppableEditIds.has(parts[0].editId)
-                  ? "undo"
-                  : "revert",
+          destination: planned.destination,
+          actionKind: planned.actionKind,
           at,
         });
     }

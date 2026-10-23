@@ -335,7 +335,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await draftText(collab, KB_ID)).not.toContain("Agent lore.");
     });
 
-    it("refuses an undo of an archived Work's scratch under the journal's locks", async () => {
+    it("does not offer or run Undo for an archived Work's scratch", async () => {
       const collab = createTestCollab();
       await seed(collab);
       const agentEdit = collab.agentEdit();
@@ -355,12 +355,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       await archiveWork(WORK_ID);
 
+      expect(
+        await agentEdit.read(
+          { file: "notes.md", documentId: SCRATCH_ID, format: "edits" },
+          scratch,
+        ),
+      ).toMatchObject({
+        status: "success",
+        result: { message: expect.stringMatching(/e\d+.*none/) },
+      });
+
       const undo = agentEdit.write(
         { command: "undo", file: "notes.md", documentId: SCRATCH_ID },
         scratch,
       );
 
-      await expect(undo).resolves.toMatchObject({ status: "permission_denied" });
+      await expect(undo).resolves.toMatchObject({ status: "work_archived" });
       expect(await liveText(collab, SCRATCH_ID)).toContain("Agent notes.");
     });
 
