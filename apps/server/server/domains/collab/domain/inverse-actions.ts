@@ -30,7 +30,7 @@ export function effectiveActionIndex<Row extends HistoryRow>(
   const grouped = new Map<string, Row[]>();
   for (const part of effective) {
     if (
-      part.kind !== "undo" ||
+      (part.kind !== "undo" && !(part.kind === "revert" && part.actor === "human")) ||
       !part.actionId ||
       !part.targets.some((target) => keys.has(partKey(target)))
     )
