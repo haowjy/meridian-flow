@@ -72,24 +72,22 @@ export async function navigateToPassage(input: {
         ),
       ]);
     if (
-      cancelled() ||
-      target.signal.aborted ||
+      targetSignal.aborted ||
       (!target.localContentReady && session.getSnapshot().status !== "synced")
     )
       return { kind: "unavailable" };
 
     const show = input.showPassage ?? showPassageInTarget;
-    const deadline = Date.now() + timeoutMs;
     do {
-      if (cancelled() || target.signal.aborted) return { kind: "unavailable" };
+      if (targetSignal.aborted) return { kind: "unavailable" };
       // Re-derived every attempt, against the live document: the editor may
       // still be mounting, and the block may go while we wait for it.
       const block = blockRangeForHash(session.document, input.anchor.blockHash);
       const landing = show(target, { block, term: input.anchor.term });
-      if (target.signal.aborted) return { kind: "unavailable" };
+      if (targetSignal.aborted) return { kind: "unavailable" };
       if (landing) return { kind: landing.outcome };
       await waitForLiveRangeRetry(targetSignal);
-    } while (Date.now() < deadline);
+    } while (!targetSignal.aborted);
     return { kind: "unavailable" };
   } finally {
     releaseTarget();
