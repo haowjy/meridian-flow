@@ -72,7 +72,7 @@ class MountedEditorHistory implements EditorHistoryHandle {
 
   run(direction: "undo" | "redo"): boolean {
     const source = direction === "undo" ? this.undo : this.redo;
-    const entry = source.pop();
+    const entry = direction === "undo" ? source.pop() : source.shift();
     if (!entry) return false;
     const generation = this.redoGeneration;
     this.changed();
@@ -173,16 +173,31 @@ class MountedEditorHistory implements EditorHistoryHandle {
     redoStackCleared: boolean;
   }) => {
     if (this.suppressManagerEvents) return;
+    // Draft reconciliation clears Yjs' native stacks after Apply settles. The
+    // mounted adapter owns the history lifetime, so repopulate native stacks
+    // from its chronological entries until this editor is actually unmounted.
     if (undoStackCleared)
-      this.undo.splice(0, this.undo.length, ...this.undo.filter((entry) => entry.kind === "apply"));
+      this.manager.undoStack.push(
+        ...this.undo.flatMap((entry) => (entry.kind === "yjs" ? [entry.item] : [])),
+      );
     if (redoStackCleared)
-      this.redo.splice(0, this.redo.length, ...this.redo.filter((entry) => entry.kind === "apply"));
+      this.manager.redoStack.push(
+        ...this.redo.flatMap((entry) => (entry.kind === "yjs" ? [entry.item] : [])),
+      );
     queueMicrotask(() => this.changed());
   };
 
   private clearRedo(): void {
     this.redo.length = 0;
     this.redoGeneration++;
+    if (this.manager.redoStack.length > 0) {
+      this.suppressManagerEvents = true;
+      try {
+        this.manager.clear(false, true);
+      } finally {
+        this.suppressManagerEvents = false;
+      }
+    }
   }
 
   private changed(): void {
