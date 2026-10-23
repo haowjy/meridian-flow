@@ -6,6 +6,7 @@
 import { type Block, blockPlainText, type Turn } from "@meridian/contracts/protocol";
 import type { SavedReportContentValue } from "@meridian/contracts/spawn";
 import type { WorkReceipt } from "@meridian/contracts/works";
+import { sameJson } from "../turns/same-turn";
 import { isImageBlock } from "./block-kind";
 import { componentBlockContent } from "./component-block-content";
 import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
@@ -58,6 +59,7 @@ export type AssistantView = {
 };
 
 const cache = new WeakMap<readonly Block[], AssistantView>();
+const itemCache = new WeakMap<Block, ViewItem>();
 
 /** Memoized by the turn's `blocks` array: an unchanged turn keeps its view, so React rows stay still. */
 export function viewAssistantTurn(turn: Pick<Turn, "blocks">): AssistantView {
@@ -67,7 +69,7 @@ export function viewAssistantTurn(turn: Pick<Turn, "blocks">): AssistantView {
   const direct = directResultsForTurn(blocks);
   const segments = groupDeliverySegments(blocks);
   const hidden = hiddenToolCallIds(segments);
-  const items = partitionTurn(segments, hidden).map((item) => viewItem(item, direct));
+  const items = partitionTurn(segments, hidden).map((item) => internItem(viewItem(item, direct)));
   const tools = segments.flatMap((segment) =>
     segment.kind === "tool" ? [segment.tool] : segment.kind === "tool-run" ? segment.tools : [],
   );
@@ -83,6 +85,88 @@ export function viewAssistantTurn(turn: Pick<Turn, "blocks">): AssistantView {
   };
   cache.set(turn.blocks, view);
   return view;
+}
+
+function internItem(item: ViewItem): ViewItem {
+  const anchor = firstBlock(item);
+  if (!anchor) return item;
+  const previous = itemCache.get(anchor);
+  if (previous && sameViewItem(previous, item)) return previous;
+  itemCache.set(anchor, item);
+  return item;
+}
+
+function firstBlock(item: ViewItem): Block | undefined {
+  if (item.kind !== "process") return item.block;
+  return item.runs[0]?.blocks[0];
+}
+
+function sameBlocks(left: readonly Block[], right: readonly Block[]): boolean {
+  return left.length === right.length && left.every((block, index) => block === right[index]);
+}
+
+function sameTool(left: ToolView, right: ToolView): boolean {
+  const fields = {
+    toolCallId: "value",
+    toolName: "value",
+    input: "json",
+    result: "json",
+    status: "value",
+    isError: "value",
+    message: "value",
+    streamedOutput: "value",
+    metadata: "json",
+    keyBlock: "reference",
+  } satisfies Record<keyof ToolView, "value" | "json" | "reference">;
+  return (Object.keys(fields) as (keyof ToolView)[]).every((field) =>
+    fields[field] === "json" ? sameJson(left[field], right[field]) : left[field] === right[field],
+  );
+}
+
+function sameRun(left: ViewRun, right: ViewRun): boolean {
+  if (left.kind !== right.kind || !sameBlocks(left.blocks, right.blocks)) return false;
+  if (left.kind === "reasoning" && right.kind === "reasoning")
+    return sameJson(left.texts, right.texts);
+  if (left.kind === "activity" && right.kind === "activity")
+    return (
+      left.tools.length === right.tools.length &&
+      left.tools.every((tool, index) => {
+        const other = right.tools[index];
+        return other ? sameTool(tool, other) : false;
+      })
+    );
+  return false;
+}
+
+function sameViewItem(left: ViewItem, right: ViewItem): boolean {
+  if (left.kind !== right.kind) return false;
+  switch (left.kind) {
+    case "process":
+      return (
+        right.kind === "process" &&
+        left.visible === right.visible &&
+        sameJson(left.digest, right.digest) &&
+        left.runs.length === right.runs.length &&
+        left.runs.every((run, index) => {
+          const other = right.runs[index];
+          return other ? sameRun(run, other) : false;
+        })
+      );
+    case "text":
+      return right.kind === "text" && left.block === right.block && left.text === right.text;
+    case "report":
+      return (
+        right.kind === "report" && left.block === right.block && sameJson(left.report, right.report)
+      );
+    case "artifact":
+      return (
+        right.kind === "artifact" &&
+        left.block === right.block &&
+        left.cardKind === right.cardKind &&
+        left.text === right.text &&
+        sameJson(left.direct, right.direct)
+      );
+  }
 }
 
 function lastProcessIndex(items: readonly ViewItem[]): number {

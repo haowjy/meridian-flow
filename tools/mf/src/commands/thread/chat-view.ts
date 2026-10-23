@@ -121,7 +121,7 @@ export type ChatItem =
       direct?: unknown;
     }
   /** The reply's delivery groups, last as the app draws them. A group of several is one merged row. */
-  | { kind: "delivery"; groups: ChatDelivery[][] };
+  | { kind: "delivery"; groups: { id: string; events: ChatDelivery[] }[] };
 
 export type ChatRow = {
   identity: RowIdentity;
@@ -322,7 +322,13 @@ function chatRow(row: ViewRow, view: TranscriptView, limits: { full: boolean }):
   if (assistant) {
     out.items = assistant.items.map((item) => chatItem(item, limits));
     if (row.deliveries.length)
-      out.items.push({ kind: "delivery", groups: row.deliveries.map((g) => g.map(chatDelivery)) });
+      out.items.push({
+        kind: "delivery",
+        groups: row.deliveries.map((group) => ({
+          id: group.id,
+          events: group.events.map(chatDelivery),
+        })),
+      });
     out.finalFrom = assistant.finalFrom;
     if (limits.full) out.workReceipts = assistant.workReceipts;
     if (assistant.hiddenToolCallIds.length) out.hiddenToolCalls = assistant.hiddenToolCallIds;
@@ -545,7 +551,7 @@ function rowLines(row: ChatRow): string[] {
         for (const group of item.groups)
           lines.push(
             ...indent(
-              `delivery: ${group.map((event) => `${event.agentName ?? "message"}${event.outcome ? ` ${event.outcome}` : ""}${event.childThreadId ? ` [${event.childThreadId}]` : ""}${event.message && !event.outcome ? ` ${oneLine(event.message)}` : ""}`).join("; ")}`,
+              `delivery:${group.id} ${group.events.map((event) => `${event.agentName ?? "message"}${event.outcome ? ` ${event.outcome}` : ""}${event.childThreadId ? ` [${event.childThreadId}]` : ""}${event.message && !event.outcome ? ` ${oneLine(event.message)}` : ""}`).join("; ")}`,
             ),
           );
         break;

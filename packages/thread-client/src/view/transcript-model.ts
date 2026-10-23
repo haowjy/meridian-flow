@@ -1,7 +1,5 @@
 /** Transcript rows, response boundaries, delivery events and reveal targets: the indexed reading `viewTranscript` assembles. */
-import { parseInvocationCard } from "@meridian/contracts/components";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
-import { parseSubagentUpdateMetadata } from "@meridian/contracts/spawn";
 import {
   isHandoffSeed,
   isOverflowShell,
@@ -10,15 +8,15 @@ import {
   readWriteModeSwitch,
   type ThreadReference,
 } from "@meridian/contracts/threads";
+import { sameJson } from "../turns/same-turn";
 import { latestRow } from "./latest-row";
+import {
+  type CompletionFact,
+  type PersistedContractFailure,
+  turnSubagentFacts,
+} from "./subagent-facts";
 
-/** A persisted record that missed its contract. The caller decides where this is reported. */
-export type PersistedContractFailure = {
-  contract: "invocation_card" | "subagent_update";
-  threadId?: string;
-  turnId?: string;
-  blockId?: string;
-};
+export type { PersistedContractFailure } from "./subagent-facts";
 
 export type TurnClass = "bubble" | "delivery" | "context" | "write-mode" | "plumbing";
 const emptyEvents: DeliveryEvent[] = [];
@@ -29,8 +27,32 @@ export type DeliveryEvent = {
   childThreadId?: string;
   agentName?: string;
   title?: string;
-  subagentUpdate: ReturnType<typeof parseSubagentUpdateMetadata>;
+  subagentUpdate: CompletionFact["update"] | null;
 };
+
+const deliveryEventCache = new WeakMap<Turn, DeliveryEvent>();
+
+function internDeliveryEvent(event: DeliveryEvent): DeliveryEvent {
+  const previous = deliveryEventCache.get(event.turn);
+  const fields = {
+    turn: "reference",
+    message: "value",
+    childThreadId: "value",
+    agentName: "value",
+    title: "value",
+    subagentUpdate: "json",
+  } satisfies Record<keyof DeliveryEvent, "reference" | "value" | "json">;
+  const equal =
+    previous &&
+    (Object.keys(fields) as (keyof DeliveryEvent)[]).every((field) =>
+      fields[field] === "json"
+        ? sameJson(previous[field], event[field])
+        : previous[field] === event[field],
+    );
+  if (equal) return previous;
+  deliveryEventCache.set(event.turn, event);
+  return event;
+}
 
 /**
  * A fork's frozen prefix: the source's turns through the cutoff, read from the
@@ -186,47 +208,22 @@ export function buildTranscriptModel(
   markInheritedRuns(rows);
   // Index-aligned with `rows`: response grouping and reveal landing read turns.
   const visibleTurns = rows.map((row) => row.turn);
-  const subagentUpdateByTurnId = new Map<string, ReturnType<typeof parseSubagentUpdateMetadata>>();
+  const subagentUpdateByTurnId = new Map<string, CompletionFact["update"]>();
   const invocationByExecution = new Map<
     string,
     { threadId?: string; agentName: string; title?: string }
   >();
   for (const turn of turns) {
-    const metadata =
-      turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
-        ? (turn.metadata as Record<string, unknown>)
-        : null;
-    if (metadata?.kind === "subagent_update") {
-      const update = parseSubagentUpdateMetadata(metadata);
-      subagentUpdateByTurnId.set(turn.id, update);
-      if (!update) {
-        onContractFailure({
-          contract: "subagent_update",
-          turnId: turn.id,
-        });
-      }
-    }
-    for (const block of turn.blocks ?? []) {
-      const content =
-        block.content && typeof block.content === "object" && !Array.isArray(block.content)
-          ? (block.content as Record<string, unknown>)
-          : null;
-      if (content?.kind !== "helper-result") continue;
-      const card = parseInvocationCard(block.content);
-      if (!card) {
-        onContractFailure({
-          contract: "invocation_card",
-          turnId: turn.id,
-          blockId: block.id,
-        });
-      } else if (card.execution) {
+    const facts = turnSubagentFacts(turn);
+    if (facts.completion) subagentUpdateByTurnId.set(turn.id, facts.completion.update);
+    for (const failure of facts.failures) onContractFailure(failure);
+    for (const { card } of facts.invocations)
+      if (card.execution)
         invocationByExecution.set(card.execution, {
           ...(card.childThreadId ? { threadId: card.childThreadId } : {}),
           agentName: card.agentName,
           ...(card.title ? { title: card.title } : {}),
         });
-      }
-    }
   }
 
   const deliveryEventsByAssistantTurnId = new Map<string, DeliveryEvent[]>();
@@ -240,19 +237,21 @@ export function buildTranscriptModel(
         ? invocationByExecution.get(update.execution)
         : undefined;
       const childThreadId = update?.childThreadId ?? invocation?.threadId;
-      events.push({
-        turn: next,
-        message: next.blocks
-          .filter((block) => block.blockType === "text")
-          .map((block) => block.textContent ?? "")
-          .join(""),
-        subagentUpdate: update,
-        ...(childThreadId ? { childThreadId } : {}),
-        ...(update?.agentName || invocation?.agentName
-          ? { agentName: update?.agentName ?? invocation?.agentName }
-          : {}),
-        ...(invocation?.title ? { title: invocation.title } : {}),
-      });
+      events.push(
+        internDeliveryEvent({
+          turn: next,
+          message: next.blocks
+            .filter((block) => block.blockType === "text")
+            .map((block) => block.textContent ?? "")
+            .join(""),
+          subagentUpdate: update,
+          ...(childThreadId ? { childThreadId } : {}),
+          ...(update?.agentName || invocation?.agentName
+            ? { agentName: update?.agentName ?? invocation?.agentName }
+            : {}),
+          ...(invocation?.title ? { title: invocation.title } : {}),
+        }),
+      );
       if (childThreadId) latestRevealTurnByChildThreadId.set(childThreadId, turn.id);
     }
     if (events.length) deliveryEventsByAssistantTurnId.set(turn.id, events);
