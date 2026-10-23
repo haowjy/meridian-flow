@@ -15,7 +15,7 @@ import { attentionHandlers } from "./markdown/attention.js";
 import { originalOffset, originalSource, type PreparedSource } from "./prepared-source.js";
 import { blockSourceMap } from "./presentation-source-map.js";
 import { type CodecRuntime, MARKDOWN_STRINGIFY_OPTIONS, withRuntime } from "./runtime.js";
-import { createMarkdownStreamer, type SourceBlock } from "./streaming.js";
+import { markdownOpenCode, parseStreamingDocument, type SourceBlock } from "./streaming.js";
 import type {
   BuildOptions,
   CodecParseErrorLocation,
@@ -95,11 +95,10 @@ function buildMarkupCodec(
       if (typeof next === "string") {
         return next === current.value ? current : originalSource(next);
       }
+      if (!next.originalOffsets) return { value: next.value };
       return {
         value: next.value,
-        originalOffsets: next.originalOffsets.map(
-          (offset) => current.originalOffsets[offset] ?? current.originalOffsets.at(-1) ?? 0,
-        ),
+        originalOffsets: next.originalOffsets.map((offset) => originalOffset(current, offset)),
       };
     }, originalSource(content));
 
@@ -127,6 +126,7 @@ function buildMarkupCodec(
     baseCtx: ParseContext,
     withSpans: boolean,
     withSourceMap = false,
+    withRanges = false,
   ): {
     blocks: PMNode[];
     spans: OccurrenceSpan[];
@@ -153,12 +153,14 @@ function buildMarkupCodec(
           ...blockSourceMap(node, blocks.length, runtime.inlineOrigins ?? [], source === content),
         );
       blocks.push(node);
-      const position = astOffsets(child);
-      const from = originalOffset(prepared, position?.from ?? 0);
-      ranges.push({
-        from: physicalLineStart(content, from),
-        to: originalOffset(prepared, position?.to ?? content.length),
-      });
+      if (withRanges) {
+        const position = astOffsets(child);
+        const from = originalOffset(prepared, position?.from ?? 0);
+        ranges.push({
+          from: physicalLineStart(content, from),
+          to: originalOffset(prepared, position?.to ?? content.length),
+        });
+      }
       if (withSpans)
         spans.push(
           ...blockOccurrenceSpans(node, child, source === content ? source : null, content.length),
@@ -167,7 +169,12 @@ function buildMarkupCodec(
     return { blocks, spans, sourceMap, ranges, tree };
   };
 
-  const parseDocument = (content: string, withSpans: boolean, withSourceMap = false) => {
+  const parseDocument = (
+    content: string,
+    withSpans: boolean,
+    withSourceMap = false,
+    withRanges = false,
+  ) => {
     if (content.trim().length === 0)
       return {
         blocks: [schema.node("paragraph")],
@@ -176,7 +183,7 @@ function buildMarkupCodec(
         ranges: [{ from: 0, to: content.length }],
         tree: { type: "root", children: [] } as MdastRoot,
       };
-    const parsed = parseTopLevel(content, { schema }, withSpans, withSourceMap);
+    const parsed = parseTopLevel(content, { schema }, withSpans, withSourceMap, withRanges);
     return parsed.blocks.length > 0
       ? parsed
       : {
@@ -221,8 +228,6 @@ function buildMarkupCodec(
     return blockList.map((block) => serializeBody(block, ctx));
   };
 
-  const stream = createMarkdownStreamer((content) => parseDocument(content, false));
-
   return {
     serialize(blockList: PMNode[], links: DocumentLinkScope): string {
       const runtime = makeRuntime("");
@@ -243,7 +248,7 @@ function buildMarkupCodec(
 
     parseWithSourceMap(content: string) {
       const { blocks, sourceMap } = parseDocument(content, false, true);
-      return { blocks, sourceMap };
+      return { blocks, sourceMap, openCode: markdownOpenCode(blocks, content) };
     },
 
     serializeBlock(block: PMNode, links: DocumentLinkScope): string {
@@ -251,7 +256,11 @@ function buildMarkupCodec(
     },
 
     serializeBlocks,
-    stream,
+    parseStreaming(content, streamOptions = {}) {
+      return parseStreamingDocument(content, streamOptions, (source) =>
+        parseDocument(source, false, false, true),
+      );
+    },
   };
 }
 

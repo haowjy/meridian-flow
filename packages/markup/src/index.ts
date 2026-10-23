@@ -31,7 +31,7 @@ export type {
   MarkAttrs,
   MarkCodec,
   MarkdownStreamOptions,
-  MarkdownStreamSnapshot,
+  MarkdownStreamResult,
   MarkupCodec,
   OccurrenceSpan,
   ParseContext,
