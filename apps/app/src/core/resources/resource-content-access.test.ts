@@ -60,7 +60,7 @@ async function registrySession(record: ResourceRecord) {
     documentId: record.resource.identity.documentId,
     persistenceKey: exactDatabaseName(record),
   });
-  await session.whenLocalPersistenceSynced();
+  await session.whenLocalSettled();
   return session;
 }
 
@@ -165,7 +165,7 @@ async function initialize(record: ResourceRecord, words = "") {
     persistenceKey: record.resource.content.databaseName,
     fresh: true,
   });
-  await session.whenLocalPersistenceSynced();
+  await session.whenLocalSettled();
   expect(await session.hasInitializedLocalContent()).toBe(true);
   if (words) session.document.getText("probe").insert(0, words);
   await session.destroy();
@@ -207,7 +207,7 @@ it("permanently clears exact local content even while an editor lease is open", 
     persistenceKey:
       record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
   });
-  await recreated.whenLocalPersistenceSynced();
+  await recreated.whenLocalSettled();
   expect(await recreated.hasInitializedLocalContent()).toBe(false);
   expect(recreated.document.getText("probe").toString()).toBe("");
   await recreated.destroy();

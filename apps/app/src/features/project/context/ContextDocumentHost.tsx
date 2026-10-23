@@ -100,7 +100,6 @@ export function ContextDocumentHost({
   const renderEditor = (
     session: DocumentSession | null,
     failed = false,
-    localContentReady = false,
     retry?: () => void,
     failureReason: Extract<LiveDocumentBindingState, { kind: "failed" }>["reason"] | null = null,
   ): ReactNode => {
@@ -200,7 +199,6 @@ export function ContextDocumentHost({
                 editable={editable}
                 showToolbar={editable}
                 detached={tab.kind === "new"}
-                localContentReady={localContentReady}
                 schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
                 ariaLabel={presentation.ariaLabel?.()}
                 showCollaborationDecorations={presentation.collaborationDecorations}
@@ -318,7 +316,7 @@ function UntitledInputObserver({
     };
     fragment.observeDeep(observe);
     // IndexedDB may already contain words if React remounted this tab.
-    void session.whenLocalPersistenceSynced().then(observe);
+    void session.whenLocalSettled().then(observe);
     return () => {
       armed = false;
       if (retryTimer !== null) window.clearTimeout(retryTimer);

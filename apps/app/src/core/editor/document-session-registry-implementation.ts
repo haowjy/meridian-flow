@@ -118,7 +118,13 @@ export class DocumentSessionRegistry
       roomKey,
       document,
       awareness,
-    }) => createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
+    }) =>
+      createHocuspocusDocumentTransport({
+        roomName: roomKey,
+        document,
+        awareness,
+        deferAttach: true,
+      }),
   ) {
     this.draftRooms = new DraftRoomPool({
       openSession: (roomKey) => {

@@ -64,18 +64,13 @@ export async function navigateToPassage(input: {
     if (!target || cancelled()) return { kind: "unavailable" };
     const targetSignal = AbortSignal.any([waitSignal, target.signal]);
     const session = target.session;
-    if (!target.localContentReady)
-      await Promise.race([
-        session.waitForCurrentSync(timeoutMs),
-        new Promise<void>((resolve) =>
-          targetSignal.addEventListener("abort", () => resolve(), { once: true }),
-        ),
-      ]);
-    if (
-      targetSignal.aborted ||
-      (!target.localContentReady && session.getSnapshot().status !== "synced")
-    )
-      return { kind: "unavailable" };
+    await Promise.race([
+      session.whenContentConfirmed(),
+      new Promise<void>((resolve) =>
+        targetSignal.addEventListener("abort", () => resolve(), { once: true }),
+      ),
+    ]);
+    if (targetSignal.aborted) return { kind: "unavailable" };
 
     const show = input.showPassage ?? showPassageInTarget;
     do {

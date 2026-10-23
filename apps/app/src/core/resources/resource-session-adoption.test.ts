@@ -94,7 +94,7 @@ async function fixture() {
     roomKey: "document",
     persistence: { kind: "indexeddb", key: databaseName, fresh: true },
   });
-  await seed.whenLocalPersistenceSynced();
+  await seed.whenLocalSettled();
   expect(await seed.hasInitializedLocalContent()).toBe(true);
   seed.document.getText("probe").insert(0, "preserved");
   await seed.destroy();

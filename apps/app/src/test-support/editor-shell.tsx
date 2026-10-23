@@ -95,7 +95,6 @@ export function ReviewEditorHost({
       documentId={documentId}
       projectId={projectId}
       session={session}
-      localContentReady={!!session}
       draftOnly={draftOnly}
       reviewItemKey={review.controller.inlineReview?.itemKey}
     />

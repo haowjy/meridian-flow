@@ -87,10 +87,12 @@ function Harness({ initial }: { initial: SurfaceProps }) {
 }
 
 function ExactLiveEditor(props: SurfaceProps) {
+  const session = props.session ?? sessions.get(props.documentId);
+  session.confirmLocalContent();
   return (
     <QueryClientProvider client={queryClient}>
       <I18nProvider i18n={i18n}>
-        <EditorView {...props} session={props.session ?? sessions.get(props.documentId)} />
+        <EditorView {...props} session={session} />
       </I18nProvider>
     </QueryClientProvider>
   );
@@ -102,17 +104,19 @@ describe("editor lifetime", () => {
     let resolvePersistence!: () => void;
     let resolveServer!: () => void;
     const horizons = {
-      localPersistence: new Promise<void>((resolve) => {
-        resolvePersistence = resolve;
+      localPersistence: new Promise<"replayed">((resolve) => {
+        resolvePersistence = () => resolve("replayed");
       }),
       firstServerSync: new Promise<void>((resolve) => {
         resolveServer = resolve;
       }),
     };
-    vi.spyOn(sessions.get(documentId), "whenLocalPersistenceSynced").mockReturnValue(
+    vi.spyOn(sessions.get(documentId), "whenLocalSettled").mockReturnValue(
       horizons.localPersistence,
     );
-    vi.spyOn(sessions.get(documentId), "whenSynced").mockReturnValue(horizons.firstServerSync);
+    vi.spyOn(sessions.get(documentId), "whenContentConfirmed").mockReturnValue(
+      horizons.firstServerSync.then(() => "first-sync"),
+    );
 
     await withReactRoot(<ExactLiveEditor documentId={documentId} />, async () => {
       expect(document.querySelector(".ProseMirror")).toBeNull();
@@ -137,17 +141,16 @@ describe("editor lifetime", () => {
     const documentId = "local-horizon-controlled";
     let resolvePersistence!: () => void;
     const horizons = {
-      localPersistence: new Promise<void>((resolve) => {
-        resolvePersistence = resolve;
+      localPersistence: new Promise<"replayed">((resolve) => {
+        resolvePersistence = () => resolve("replayed");
       }),
-      firstServerSync: new Promise<void>(() => undefined),
     };
-    vi.spyOn(sessions.get(documentId), "whenLocalPersistenceSynced").mockReturnValue(
+    vi.spyOn(sessions.get(documentId), "whenLocalSettled").mockReturnValue(
       horizons.localPersistence,
     );
-    vi.spyOn(sessions.get(documentId), "whenSynced").mockReturnValue(horizons.firstServerSync);
+    sessions.get(documentId).confirmLocalContent();
 
-    await withReactRoot(<ExactLiveEditor documentId={documentId} localContentReady />, async () => {
+    await withReactRoot(<ExactLiveEditor documentId={documentId} />, async () => {
       expect(document.querySelector(".ProseMirror")).toBeNull();
       await act(async () => {
         resolvePersistence();
@@ -159,7 +162,7 @@ describe("editor lifetime", () => {
   });
 
   it("preserves content and undo through query churn and surface changes without leaking into a new room", async () => {
-    const initial = { documentId: "document-1", projectId: "project-1", localContentReady: true };
+    const initial = { documentId: "document-1", projectId: "project-1" };
     await withReactRoot(<Harness initial={initial} />, async () => {
       await act(async () => {
         mountedEditor().commands.insertContent("words the writer typed");

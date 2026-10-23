@@ -42,16 +42,13 @@ export async function navigateToTrailChange(input: {
     if (!target || cancelled()) return { kind: "could_not_open" };
     const targetSignal = AbortSignal.any([waitSignal, target.signal]);
     const session = target.session;
-    if (!target.localContentReady)
-      await Promise.race([
-        session.waitForCurrentSync(input.timeoutMs ?? 10_000),
-        new Promise<void>((resolve) =>
-          targetSignal.addEventListener("abort", () => resolve(), { once: true }),
-        ),
-      ]);
+    await Promise.race([
+      session.whenContentConfirmed(),
+      new Promise<void>((resolve) =>
+        targetSignal.addEventListener("abort", () => resolve(), { once: true }),
+      ),
+    ]);
     if (targetSignal.aborted) return { kind: "could_not_open" };
-    if (!target.localContentReady && session.getSnapshot().status !== "synced")
-      return { kind: "could_not_open" };
 
     const sessionMarker = session.markerStore
       ?.getSnapshot()

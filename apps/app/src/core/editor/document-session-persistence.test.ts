@@ -52,7 +52,7 @@ describe("DocumentSession persistence cleanup", () => {
       persistence: { kind: "indexeddb", key: "test:document-session" },
       transportFactory: () => ({ unacknowledgedUpdates: () => null, destroy: transportDestroy }),
     });
-    await session.whenLocalPersistenceSynced();
+    await session.whenLocalSettled();
     await Promise.resolve();
 
     await expect(session.destroy({ clearPersistence: true })).rejects.toThrow("clear failed");
@@ -88,14 +88,19 @@ describe("DocumentSession persistence cleanup", () => {
     expect(persistence.destroy).toHaveBeenCalledOnce();
   });
 
-  it("attaches transport after IndexedDB has replayed local updates", async () => {
+  it("attaches the transport provider after IndexedDB has replayed local updates", async () => {
     let resolveLocalSync!: () => void;
     persistence.createWhenSynced.mockReturnValue(
       new Promise((resolve) => {
         resolveLocalSync = resolve;
       }),
     );
-    const transportFactory = vi.fn(() => ({ unacknowledgedUpdates: () => null, destroy: vi.fn() }));
+    const attach = vi.fn();
+    const transportFactory = vi.fn(() => ({
+      attach,
+      unacknowledgedUpdates: () => null,
+      destroy: vi.fn(),
+    }));
 
     const session = new DocumentSession({
       roomKey: "doc-local-replay",
@@ -103,30 +108,37 @@ describe("DocumentSession persistence cleanup", () => {
       transportFactory,
     });
 
-    expect(transportFactory).not.toHaveBeenCalled();
+    expect(transportFactory).toHaveBeenCalledOnce();
+    expect(attach).not.toHaveBeenCalled();
     resolveLocalSync();
-    await session.whenLocalPersistenceSynced();
+    await session.whenLocalSettled();
     await Promise.resolve();
 
-    expect(transportFactory).toHaveBeenCalledOnce();
+    expect(attach).toHaveBeenCalledOnce();
     await session.destroy();
   });
 
-  it("attaches transport after one second when IndexedDB never becomes ready", async () => {
+  it("detaches blocked storage and attaches the provider after one second", async () => {
     vi.useFakeTimers();
     persistence.createWhenSynced.mockReturnValue(new Promise(() => {}));
-    const transportFactory = vi.fn(() => ({ unacknowledgedUpdates: () => null, destroy: vi.fn() }));
+    const attach = vi.fn();
+    const transportFactory = vi.fn(() => ({
+      attach,
+      unacknowledgedUpdates: () => null,
+      destroy: vi.fn(),
+    }));
     const session = new DocumentSession({
       roomKey: "doc-local-blocked",
       persistence: { kind: "indexeddb", key: "test:document-session" },
       transportFactory,
     });
 
-    expect(transportFactory).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(999);
-    expect(transportFactory).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
     expect(transportFactory).toHaveBeenCalledOnce();
+    expect(attach).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(attach).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attach).toHaveBeenCalledOnce();
 
     await session.destroy();
   });

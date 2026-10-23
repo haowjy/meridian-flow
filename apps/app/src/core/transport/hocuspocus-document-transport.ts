@@ -280,6 +280,8 @@ export type HocuspocusDocumentTransportOptions = {
   document: Y.Doc;
   awareness: Awareness;
   connectivityHints?: ConnectivityHintsPort;
+  /** Session creation starts the socket now and attaches the Yjs provider after local replay. */
+  deferAttach?: boolean;
 };
 
 export function createHocuspocusDocumentTransport({
@@ -287,6 +289,7 @@ export function createHocuspocusDocumentTransport({
   document,
   awareness,
   connectivityHints,
+  deferAttach = false,
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
   const listeners = new Set<(state: DocumentSessionConnectionState) => void>();
   const accessListeners = new Set<(access: DocumentSessionAccess) => void>();
@@ -336,6 +339,8 @@ export function createHocuspocusDocumentTransport({
     for (const listener of accessListeners) listener(access);
   }
 
+  let provider: HocuspocusProvider | null = null;
+
   function publishTerminal(state: DocumentSessionConnectionState): void {
     if (terminal) return;
     terminal = true;
@@ -343,7 +348,7 @@ export function createHocuspocusDocumentTransport({
     stopHints();
     acknowledgement.terminate();
     publish(state);
-    provider.destroy();
+    provider?.destroy();
     websocket.destroy();
   }
 
@@ -420,22 +425,6 @@ export function createHocuspocusDocumentTransport({
   // Store local bytes before the provider's listener sends and publishes its
   // acknowledgement edge. Session observers must see one complete pending edge.
   document.on("update", handleDocumentUpdate);
-  const provider = new HocuspocusProvider({
-    name: roomName,
-    document,
-    awareness,
-    websocketProvider: websocket,
-    onStatus: handleStatus,
-    onSynced: handleSynced,
-    onAuthenticated: handleAuthenticated,
-    onAuthenticationFailed: handleAuthenticationFailed,
-    onClose: handleClose,
-    onStateless: handleStateless,
-  });
-  if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1") {
-    notifyYjsRoomAttached(roomName, document.clientID);
-  }
-
   stopHints =
     connectivityHints?.subscribe(source, (hint) => {
       if (terminal || destroyed) return;
@@ -448,17 +437,39 @@ export function createHocuspocusDocumentTransport({
       }
     }) ?? (() => {});
 
-  // External websocketProvider: Hocuspocus v4.2.0 only auto-attaches when it owns the socket.
-  provider.attach();
+  // Native setup overlaps local replay. The protocol provider is attached by
+  // DocumentSession only after replay completed or storage detached.
   void websocket.connect();
 
-  if (provider.synced) resolveSynced();
+  const attach = () => {
+    if (destroyed || terminal || provider) return;
+    provider = new HocuspocusProvider({
+      name: roomName,
+      document,
+      awareness,
+      websocketProvider: websocket,
+      onStatus: handleStatus,
+      onSynced: handleSynced,
+      onAuthenticated: handleAuthenticated,
+      onAuthenticationFailed: handleAuthenticationFailed,
+      onClose: handleClose,
+      onStateless: handleStateless,
+    });
+    if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1") {
+      notifyYjsRoomAttached(roomName, document.clientID);
+    }
+    // External websocketProvider: Hocuspocus only auto-attaches when it owns the socket.
+    provider.attach();
+    if (provider.synced) resolveSynced();
+  };
+  if (!deferAttach) attach();
 
   return {
+    attach,
     unacknowledgedUpdates: () => outbox,
     whenCurrentChangesAcknowledged: () => acknowledgement.whenCurrentChangesAcknowledged(),
     get synced() {
-      return provider.synced;
+      return provider?.synced ?? false;
     },
     whenSynced,
     subscribeServerAcknowledgement(listener) {
@@ -492,7 +503,7 @@ export function createHocuspocusDocumentTransport({
       stopHints();
       document.off("update", handleDocumentUpdate);
       acknowledgement.terminate();
-      provider.destroy();
+      provider?.destroy();
       websocket.destroy();
       listeners.clear();
       accessListeners.clear();

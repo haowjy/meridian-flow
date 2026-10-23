@@ -113,7 +113,7 @@ describe("ContextTabSessionBoundary", () => {
             documentId="document-a"
             availabilityRevision={revision}
           >
-            {(value, failed, _localContentReady, retryBinding) => {
+            {(value, failed, retryBinding) => {
               retry = retryBinding;
               observed.push({ value, failed });
               return null;

@@ -17,6 +17,7 @@ export type ResourceContentUnavailableReason =
   | "missing"
   | "unacquired"
   | "uninitialized"
+  | "local-storage-detached"
   | "schema-mismatch"
   | "terminal"
   | "deleted"
@@ -541,7 +542,11 @@ export class ResourceContentAccess {
       fresh: content.initialization === "reserved",
     });
     try {
-      await session.whenLocalPersistenceSynced();
+      const storage = await session.whenLocalSettled();
+      if (storage !== "replayed") {
+        this.retire(id, session);
+        return { kind: "unavailable", reason: "local-storage-detached" };
+      }
       if (this.state !== "open" || this.epoch.aborted) {
         this.retire(id, session);
         return { kind: "cancelled" };
@@ -554,6 +559,7 @@ export class ResourceContentAccess {
         this.retire(id, session);
         return { kind: "unavailable", reason: "uninitialized" };
       }
+      session.confirmLocalContent();
       if (content.initialization === "reserved")
         await this.acknowledgeInitialization(key, content.databaseName);
       if (this.state !== "open" || this.epoch.aborted) {

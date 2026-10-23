@@ -9,7 +9,6 @@ export type LiveEditorContainer = "editor" | "dock";
 export type LiveEditorTarget = {
   editor: Editor;
   session: DocumentSession;
-  localContentReady: boolean;
   container: LiveEditorContainer;
   /** Registration lifetime. Retirement revokes every capability on this target. */
   signal: AbortSignal;

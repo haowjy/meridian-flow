@@ -78,7 +78,10 @@ export type { SchemaFence } from "./schema-fence";
 import { SessionMarkerStore } from "./session-marker-store";
 
 /** Give normal IndexedDB replay priority without letting blocked storage hold collaboration offline. */
-const LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS = 1_000;
+const LOCAL_PERSISTENCE_SETTLEMENT_DEADLINE_MS = 1_000;
+
+export type ContentSource = "verified-local" | "first-sync";
+export type LocalStorageOutcome = "replayed" | "detached" | "absent";
 
 export type DocumentSessionStatus =
   | "detached"
@@ -104,7 +107,7 @@ export type DocumentSessionSnapshot = {
    * (local-first).
    */
   access: DocumentSessionAccess | null;
-  localPersistenceSynced: boolean;
+  localStorageOutcome: LocalStorageOutcome | null;
   /** Derived: true only while `detached` after a reported adoption failure; edits stay local only. */
   adoptionStalled: boolean;
   schemaFence: SchemaFence | null;
@@ -166,6 +169,8 @@ export function updatesRefused(state: DocumentSessionConnectionState | null | un
  * value and `offline` could never fire.
  */
 export type DocumentSessionTransportProvider = {
+  /** Attach the Yjs protocol after local storage has settled; socket setup is already running. */
+  attach?: () => void;
   /** Local updates not acknowledged on this connection, merged; null when none. */
   unacknowledgedUpdates(): Uint8Array | null;
   whenCurrentChangesAcknowledged?: () => Promise<void>;
@@ -242,7 +247,7 @@ export class DocumentSession {
   private destroyed = false;
   private destroyPromise: Promise<void> | null = null;
   private destroyStages: DestroyStage[] | null = null;
-  private localPersistenceSynced = false;
+  private localStorageOutcome: LocalStorageOutcome | null = null;
   /** True after the transport's first `whenSynced` — blocks empty-local false `synced`. */
   private transportInitialSyncComplete = false;
   /** Raw transport signal; the snapshot exposes it only while `status` is `synced`. */
@@ -265,7 +270,11 @@ export class DocumentSession {
   private schemaRepairWitness: SchemaRepairWitness | null = null;
   private readonly persistSchemaFence: ((fence: SchemaFence) => void) | undefined;
   private readonly localPresence: LocalPresence;
-  private readonly localPersistenceSyncedPromise: Promise<void>;
+  private readonly localSettledPromise: Promise<LocalStorageOutcome>;
+  private resolveLocalSettled!: (outcome: LocalStorageOutcome) => void;
+  private contentSource: ContentSource | null = null;
+  private readonly contentConfirmedPromise: Promise<ContentSource>;
+  private resolveContentConfirmed!: (source: ContentSource) => void;
   private readonly transportAttachedPromise: Promise<void>;
   private resolveTransportAttached!: () => void;
   private readonly lifecycleCompletedPromise: Promise<void>;
@@ -299,7 +308,13 @@ export class DocumentSession {
     this.lifecycleCompletedPromise = new Promise((resolve) => {
       this.resolveLifecycleCompleted = resolve;
     });
-    this.localPersistenceSyncedPromise = this.watchLocalPersistence();
+    this.localSettledPromise = new Promise((resolve) => {
+      this.resolveLocalSettled = resolve;
+    });
+    this.contentConfirmedPromise = new Promise((resolve) => {
+      this.resolveContentConfirmed = resolve;
+    });
+    this.watchLocalPersistence();
     if (persistence.kind === "indexeddb" && persistence.fresh)
       this.establishContentInitialization();
     if (transportFactory) this.attachTransport(transportFactory);
@@ -317,12 +332,6 @@ export class DocumentSession {
     this.transportAttachmentPending = true;
     this.adoptionFailed = false;
     this.recomputeStatus();
-    if (this.persistence && !this.localPersistenceSynced) {
-      void this.waitForLocalPersistenceTransportGate().then(() => {
-        if (!this.destroyed) this.connectTransport(transportFactory);
-      });
-      return;
-    }
     this.connectTransport(transportFactory);
   }
 
@@ -373,6 +382,10 @@ export class DocumentSession {
         this.recomputeStatus();
       }) ?? null;
     void this.watchTransportSync(this.transportProvider);
+    const provider = this.transportProvider;
+    void this.localSettledPromise.then(() => {
+      if (!this.destroyed && provider === this.transportProvider) provider.attach?.();
+    });
     this.recomputeStatus();
     this.emit();
   }
@@ -452,20 +465,6 @@ export class DocumentSession {
     return this.unacknowledgedUpdates() !== null;
   }
 
-  private waitForLocalPersistenceTransportGate(): Promise<void> {
-    return new Promise((resolve) => {
-      let complete = false;
-      const finish = () => {
-        if (complete) return;
-        complete = true;
-        clearTimeout(timeout);
-        resolve();
-      };
-      const timeout = setTimeout(finish, LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS);
-      void this.localPersistenceSyncedPromise.then(finish, finish);
-    });
-  }
-
   getSnapshot(): DocumentSessionSnapshot {
     return {
       documentId: this.documentId,
@@ -475,7 +474,7 @@ export class DocumentSession {
       serverHasLocalChanges: this.serverHasLocalChanges,
       connectionState: this.transportState,
       access: this.access,
-      localPersistenceSynced: this.localPersistenceSynced,
+      localStorageOutcome: this.localStorageOutcome,
       adoptionStalled: this.adoptionFailed && this.status === "detached",
       schemaFence: this.schemaFence,
       schemaRepairs: this.schemaRepairs,
@@ -553,19 +552,29 @@ export class DocumentSession {
     };
   }
 
-  /** Resolve after first local + server sync, or when destruction ends that lifecycle. */
+  /** Resolve after first local settlement + server sync, or when destruction ends that lifecycle. */
   whenSynced(): Promise<void> {
     const syncSequence = async () => {
-      await this.localPersistenceSyncedPromise;
+      await this.localSettledPromise;
       await this.transportAttachedPromise;
       await this.transportProvider?.whenSynced;
     };
     return Promise.race([syncSequence(), this.lifecycleCompletedPromise]);
   }
 
-  /** Resolve once IndexedDB has replayed this room into the session-owned Y.Doc. */
-  whenLocalPersistenceSynced(): Promise<void> {
-    return Promise.race([this.localPersistenceSyncedPromise, this.lifecycleCompletedPromise]);
+  /** Resolve when local storage replayed, was absent, or was detached at its deadline. */
+  whenLocalSettled(): Promise<LocalStorageOutcome> {
+    return this.localSettledPromise;
+  }
+
+  /** Resolve only when this Y.Doc is known to hold this document's content. */
+  whenContentConfirmed(): Promise<ContentSource> {
+    return this.contentConfirmedPromise;
+  }
+
+  /** ResourceContentAccess alone may certify that an exact local copy was replayed. */
+  confirmLocalContent(): void {
+    this.confirmContent("verified-local");
   }
 
   waitForCurrentSync(timeoutMs: number): Promise<void> {
@@ -627,7 +636,8 @@ export class DocumentSession {
 
   /** Separate from replay readiness; absent evidence never authorizes empty initialization. */
   async hasInitializedLocalContent(): Promise<boolean> {
-    await Promise.race([this.localPersistenceSyncedPromise, this.lifecycleCompletedPromise]);
+    const outcome = await this.localSettledPromise;
+    if (outcome !== "replayed") return false;
     await this.initialization?.catch(() => undefined);
     if (this.destroyed || !this.persistence?.db) return false;
     return readContentInitialization(this.persistence.db);
@@ -636,7 +646,7 @@ export class DocumentSession {
   private establishContentInitialization(): void {
     if (!this.persistence || this.initialization) return;
     const attempt = (async () => {
-      await Promise.race([this.localPersistenceSyncedPromise, this.lifecycleCompletedPromise]);
+      if ((await this.localSettledPromise) !== "replayed") return;
       if (this.destroyed || this.schemaFence || !this.persistence?.db) return;
       const database = this.persistence.db;
       if (await readContentInitialization(database)) return;
@@ -692,6 +702,10 @@ export class DocumentSession {
       this.transportState?.kind === "reset" &&
       (this.transportState.disposition === "closed" ||
         this.transportState.disposition === "removed");
+    if (this.persistence && this.localStorageOutcome === null) {
+      if (options.clearPersistence || closed) this.settleLocalStorage("detached");
+      else this.detachLocalPersistence(this.persistence);
+    }
     if (!this.destroyStages) {
       this.destroyed = true;
       this.localPeers?.stop();
@@ -759,17 +773,51 @@ export class DocumentSession {
     return attempt;
   }
 
-  private async watchLocalPersistence(): Promise<void> {
-    await this.persistence?.whenSynced;
-    if (this.destroyed) return;
-    this.localPersistenceSynced = true;
-    this.startLocalPeers();
+  private watchLocalPersistence(): void {
+    const persistence = this.persistence;
+    if (!persistence) {
+      this.settleLocalStorage("absent");
+      return;
+    }
+    const deadline = setTimeout(
+      () => this.detachLocalPersistence(persistence),
+      LOCAL_PERSISTENCE_SETTLEMENT_DEADLINE_MS,
+    );
+    void persistence.whenSynced.then(
+      () => {
+        clearTimeout(deadline);
+        if (this.destroyed || persistence !== this.persistence) return;
+        this.settleLocalStorage("replayed");
+        this.startLocalPeers();
+      },
+      () => {
+        clearTimeout(deadline);
+        this.detachLocalPersistence(persistence);
+      },
+    );
+  }
+
+  private detachLocalPersistence(persistence: IndexeddbPersistence): void {
+    if (this.destroyed || persistence !== this.persistence || this.localStorageOutcome !== null)
+      return;
+    this.persistence = null;
+    // y-indexeddb fences replay synchronously in destroy(), but its returned
+    // promise can wait forever for a blocked open. The database owns that close;
+    // room teardown and a later room incarnation must not await it.
+    void persistence.destroy().catch((error) => reportError(error));
+    this.settleLocalStorage("detached");
+  }
+
+  private settleLocalStorage(outcome: LocalStorageOutcome): void {
+    if (this.localStorageOutcome !== null) return;
+    this.localStorageOutcome = outcome;
+    this.resolveLocalSettled(outcome);
     this.recomputeStatus();
   }
 
   private startLocalPeers(): void {
     if (
-      this.localPersistenceSynced &&
+      this.localStorageOutcome === "replayed" &&
       !this.destroyed &&
       !this.localPeers &&
       this.persistence &&
@@ -791,9 +839,17 @@ export class DocumentSession {
     await provider.whenSynced;
     if (this.destroyed || provider !== this.transportProvider) return;
     this.transportInitialSyncComplete = true;
+    this.confirmContent("first-sync");
     if (provider.whenSynced) this.establishContentInitialization();
     clearClientSchemaReloadGuard(this.roomKey);
     this.recomputeStatus();
+  }
+
+  private confirmContent(source: ContentSource): void {
+    if (this.contentSource !== null) return;
+    this.contentSource = source;
+    this.resolveContentConfirmed(source);
+    this.emit();
   }
 
   /**
@@ -829,7 +885,7 @@ export class DocumentSession {
 
   private deriveStatus(): DocumentSessionStatus {
     if (!this.transportProvider) return this.transportAttachmentPending ? "syncing" : "detached";
-    if (!this.localPersistenceSynced) return "syncing";
+    if (this.localStorageOutcome === null) return "syncing";
 
     const state = this.transportState;
 

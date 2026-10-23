@@ -76,6 +76,14 @@ barrier that drains that open.
   the exact cache when the review owner learns closure through authoritative
   metadata before the socket frame. The pool refuses to reopen that closed id.
 
+`DocumentSession` owns the two facts that permit an editor bind: content is
+confirmed by a verified exact local copy or the first server sync, and local
+storage has replayed, is absent, or has detached at its one-second deadline.
+No timeout substitutes for confirmed content. A detached IndexedDB provider is
+fenced synchronously; its physical close cannot block a new room incarnation.
+The room socket starts with the session, while its Yjs provider attaches only
+after local storage settles, so SyncStep2 includes every byte that can replay.
+
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
 orthogonal. `synced` means the transport handshake completed, not that all
@@ -85,10 +93,8 @@ and acknowledgement are edge observations, not per-keystroke snapshots; the
 transport stores bytes before sending them (see
 [`../../transport/.context/CONTEXT.md`](../../transport/.context/CONTEXT.md)).
 
-Before binding, `EditorView` waits for local persistence. Verified detached
-content may bind without first server sync; other sessions use the existing
-overall timeout, whose expiry permits degraded evidence but not upload
-authorization.
+Before binding, `EditorView` waits for both session facts. A storage detach
+degrades schema evidence but never certifies content.
 
 ## Schema repair and presence
 

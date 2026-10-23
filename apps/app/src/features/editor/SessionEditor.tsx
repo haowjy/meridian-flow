@@ -39,7 +39,6 @@ import { useRemovalRecord } from "@/features/project/context/use-removal-record"
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
-import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
 import { claimEditorFocus, focusIsFree } from "./focus-on-open";
@@ -59,7 +58,6 @@ export type EditorSurfaceOptions = {
   showToolbar?: boolean;
   active?: boolean;
   ariaLabel?: string;
-  localContentReady?: boolean;
   /** Warm live editors retain UndoManager but stand down their chrome and navigation. */
   held?: boolean;
 };
@@ -81,26 +79,20 @@ type SessionEditorProps = {
 
 export function SessionEditor(props: SessionEditorProps) {
   const [snapshot, setSnapshot] = useState(() => props.session.getSnapshot());
-  const [bindHorizon, setBindHorizon] = useState<EditorBindHorizonResult | null>(null);
-  const requiresFirstServerSync = !(
-    props.identity.surface === "live" &&
-    (props.identity.detached || props.surfaceOptions.localContentReady)
-  );
+  const [bindHorizon, setBindHorizon] = useState<{ evidenceDegraded: boolean } | null>(null);
 
   useEffect(() => props.session.subscribe(setSnapshot), [props.session]);
   useEffect(() => {
     let active = true;
-    const firstServerSync = requiresFirstServerSync ? props.session.whenSynced() : undefined;
-    void waitForEditorBindHorizon({
-      localPersistence: props.session.whenLocalPersistenceSynced(),
-      firstServerSync,
-    }).then((result) => {
-      if (active) setBindHorizon(result);
-    });
+    void Promise.all([props.session.whenLocalSettled(), props.session.whenContentConfirmed()]).then(
+      ([storage]) => {
+        if (active) setBindHorizon({ evidenceDegraded: storage === "detached" });
+      },
+    );
     return () => {
       active = false;
     };
-  }, [props.session, requiresFirstServerSync]);
+  }, [props.session]);
 
   if (
     snapshot.connectionState?.kind === "reset" &&
@@ -358,10 +350,9 @@ function ActiveSessionEditorView({
     return registerLiveRangeEditor(documentId, {
       editor,
       session,
-      localContentReady: surfaceOptions.localContentReady === true,
       container,
     });
-  }, [active, container, documentId, editor, inReview, session, surfaceOptions.localContentReady]);
+  }, [active, container, documentId, editor, inReview, session]);
 
   const constructionCallback = useRef(onConstructed);
   constructionCallback.current = onConstructed;

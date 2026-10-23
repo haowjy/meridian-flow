@@ -135,7 +135,7 @@ async function seam(
     roomKey: documentId,
     persistence: { kind: "indexeddb", key: pending.exactDatabaseName, fresh: true },
   });
-  await seedSession.whenLocalPersistenceSynced();
+  await seedSession.whenLocalSettled();
   expect(await seedSession.hasInitializedLocalContent()).toBe(true);
   seedSession.document.getText("probe").insert(0, "preserved");
   await seedSession.destroy();

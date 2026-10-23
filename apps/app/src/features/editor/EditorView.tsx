@@ -84,7 +84,6 @@ export function EditorView(props: EditorViewProps) {
     showToolbar: props.showToolbar,
     active: props.active,
     ariaLabel: props.ariaLabel,
-    localContentReady: props.localContentReady,
   };
   const liveSession = props.session ?? null;
   const [marksWaitOverFor, setMarksWaitOverFor] = useState<string | null>(null);

@@ -30,7 +30,6 @@ type ContextTabSessionProps = {
   children: (
     session: DocumentSession | null,
     failed: boolean,
-    localContentReady: boolean,
     retry: () => void,
     failureReason: Extract<LiveDocumentBindingState, { kind: "failed" }>["reason"] | null,
   ) => ReactNode;
@@ -244,7 +243,6 @@ function ContextTabSession({
   return children(
     session,
     state.kind === "failed" && state.documentId === documentId,
-    selectedSession !== null && selectedSession === localSession,
     // Remounting redoes the local probe as well as the live open.
     onReopen,
     state.kind === "failed" && state.documentId === documentId ? state.reason : null,
