@@ -373,6 +373,12 @@ export type DraftReviewApi = {
     request: import("@meridian/contracts/branches").ApplyClick;
     envelope: BranchCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
+  unapplyClick(input: {
+    workId: WorkId;
+    documentId: DocumentId;
+    request: import("@meridian/contracts/branches").UnapplyClick;
+    envelope: BranchCommandEnvelope;
+  }): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer>;
   list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ModelDraftRow[]>;
   /** The review list route's one read: the active branch's listed items with live text tokens. */
   listItems(input: { workId: WorkId }): Promise<{

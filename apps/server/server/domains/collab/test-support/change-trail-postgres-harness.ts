@@ -561,6 +561,9 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     applyClick: async () => {
       throw new Error("Apply click is not configured in the trail fixture");
     },
+    unapplyClick: async () => {
+      throw new Error("Un-Apply click is not configured in the trail fixture");
+    },
     branches: workBranches,
     reviewItems,
     pending: durableWorkBranchPendingStore,

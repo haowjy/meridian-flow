@@ -17,6 +17,7 @@ import type {
   ApplyClickAnswer,
   ApplyClickRefusalReason,
   ApplyClickResult,
+  UnapplyClickAnswer,
 } from "@meridian/contracts/branches";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
@@ -30,6 +31,19 @@ import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 import type { TrailOwner } from "./trail-read-kernel.js";
 
 export type ApplyClickCommand = Parameters<CollabBranches["draftReview"]["applyClick"]>[0];
+export type UnapplyClickCommand = Parameters<CollabBranches["draftReview"]["unapplyClick"]>[0];
+export type StoredApplyEffect = {
+  ordinal: number;
+  groupId: string;
+  liveUpdateSeq: number | null;
+  baseBefore: unknown[];
+  baseAfter: unknown[];
+};
+export type PreparedUnapply = {
+  base: DraftBase;
+  branchId: import("@meridian/contracts").BranchId;
+  effects: StoredApplyEffect[];
+};
 export type CompiledClick = {
   schema: import("prosemirror-model").Schema;
   optimistic: readonly PMNode[];
@@ -58,6 +72,8 @@ export interface ApplyCommandStore {
       | { kind: "text"; base: DraftBase; click: CompiledClick; tree?: TreeCut }
       | { kind: "tree"; branchId: import("@meridian/contracts").BranchId; tree: TreeCut },
   ): Promise<ApplyClickAnswer>;
+  loadUnapply(command: UnapplyClickCommand): Promise<PreparedUnapply | null>;
+  unapply(command: UnapplyClickCommand, prepared: PreparedUnapply): Promise<UnapplyClickAnswer>;
   measured?(input: { commandId: string; compileClickMs: number }): void;
 }
 /** The branch row revision a click froze. */
@@ -279,5 +295,30 @@ export function createApplyClickService(input: {
       throw cause;
     }
   };
-  return { apply };
+  const unapply = async (command: UnapplyClickCommand): Promise<UnapplyClickAnswer> => {
+    const commandId = command.envelope.commandId;
+    const lookup = async (): Promise<UnapplyClickAnswer | null> => {
+      const found = await input.commands.lookup(command.envelope);
+      if (found.kind === "none") return null;
+      if (found.kind === "done")
+        return found.commandKind === "unapply_click"
+          ? (found.result as import("@meridian/contracts/branches").UnapplyClickResult)
+          : { status: "conflict", commandId };
+      return { status: found.kind, commandId };
+    };
+    const first = await lookup();
+    if (first) return first;
+    try {
+      const prepared = await input.store.loadUnapply(command);
+      if (!prepared) return (await lookup()) ?? { status: "refused", commandId };
+      return await input.store.unapply(command, prepared);
+    } catch (cause) {
+      if (cause instanceof BranchCommandExistsError)
+        return (await lookup()) ?? { status: "pending", commandId };
+      if (cause instanceof ApplyClickRefused)
+        return (await lookup()) ?? { status: "refused", commandId };
+      throw cause;
+    }
+  };
+  return { apply, unapply };
 }
