@@ -81,5 +81,7 @@ items receive interned view-model values and are memoized. Context values for fa
 derivation actions, and subagent activity retain their reference until their own facts change; event
 callbacks and long-lived action adapters publish the latest committed render before paint. Render-time
 ref writes must not expose speculative scope or store actions to operations from the visible screen.
+Failure-card readers pass one anchor's cards through a memoized view, so a change at another anchor
+does not redraw the settled row.
 
 The invariants are in [`../AGENTS.md`](../AGENTS.md).
