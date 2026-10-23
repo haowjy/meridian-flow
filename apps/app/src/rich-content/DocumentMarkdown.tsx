@@ -376,8 +376,9 @@ export function DocumentMarkdown({
   skills?: readonly MarkdownSkillOccurrence[];
 }) {
   const live = useStreamingMarkdown(streamId, source, streaming);
+  const hasPresentation = !streaming && (references.length > 0 || skills.length > 0);
   const settled = useMemo(() => {
-    if (streaming) return null;
+    if (streaming || hasPresentation) return null;
     const parsed = settledSnapshots(source, () => {
       const result = codec.parseStreaming(source);
       return {
@@ -389,14 +390,14 @@ export function DocumentMarkdown({
     });
     const previous = streamId ? settledStreamingMarkdown(streamId, source) : null;
     return reuseEqualSnapshot(parsed, previous);
-  }, [source, streamId, streaming]);
+  }, [hasPresentation, source, streamId, streaming]);
   const snapshot = streaming ? live : settled;
   return (
     <div
       className={className}
       data-markdown-source-length={snapshot?.source.length ?? source.length}
     >
-      {!streaming && (references.length > 0 || skills.length > 0) ? (
+      {hasPresentation ? (
         <StaticTranscript
           source={source}
           breaks={breaks}
