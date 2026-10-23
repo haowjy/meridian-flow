@@ -612,7 +612,15 @@ export function ChatView({
       fork: forkTurn,
       handoff: handoffTurn,
     };
-  }, [activeThread, canDerive, forkTurn, handoffTurn, openThread, projectId]);
+  }, [
+    activeThread?.agentDefinitionRevisionId,
+    activeThread?.agentName,
+    canDerive,
+    forkTurn,
+    handoffTurn,
+    openThread,
+    projectId,
+  ]);
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
