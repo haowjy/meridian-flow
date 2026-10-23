@@ -110,6 +110,13 @@ bytes are not checkpoint authority. Materialize outside the persistence lock,
 then revalidate authority identity, generation, and retention under lock.
 Stale checkpoint requests return `stale_generation`.
 
+Every server authority doc and every materialization of one (draft and live
+docs, rooms in `yjs-ws-handler.ts`, clones, scratch docs) is `gc: false`, and a
+rewrite never encodes a gc-on doc. `createDocFromSnapshot` throws on a gc-on
+origin, and a store that has already garbage-collected restores the wrong text
+without an error. The frontier probe pins only the Yjs library behavior; it
+cannot catch a server fold that starts encoding a gc-on doc.
+
 Seed and compaction snapshots use the same mutation lock. A first seed is
 initialize-only, becomes the generation's base checkpoint, and reconciles an
 already open room before success. Writer admission rejects reserved client IDs

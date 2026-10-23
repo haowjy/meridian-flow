@@ -172,7 +172,10 @@ card's Undo. The caller holds the document's namespace, then its lock
 (`acquireTreeScope`). A reversing caller names the removal it reverses (its
 time and the `location_version` it wrote), so a later, different removal
 answers `superseded`; Apply names none, and calls it only for a click that
-carries the writer's `restore` (D79). A living document answers
+carries the writer's `restore` (D79); a click without it that meets a deleted
+document answers `needs_restore` and changes nothing. A draft that a removal
+closes stores `closed_cause` `document_removed` (a writer's Discard stores
+`discarded`). A living document answers
 `already_living`. Discards, Work cascades and deleted sources or projects
 answer `refused`: a Work's own Restore owns its cascade. It places the document
 through `placeLive` (placement's ancestry and one name-claim rule: a living
