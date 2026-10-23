@@ -6,10 +6,13 @@ import {
   type FrontierLookup,
   frontierBlockId,
   frontierDelta,
+  frontierEffectsForOwnership,
+  frontierEffectsForUpdate,
   type ObservationFrontier,
   planningSnapshot,
   type ResolvedObservationFrontier,
   recordedFrontier,
+  retainedUpdateOwnership,
   writtenOnlyBy,
 } from "../frontier.js";
 import { toDocHandle, toRef } from "../handles.js";
@@ -212,57 +215,56 @@ function changeAuthors(
   const ownRemoved = new Set(source.ownRemoved ?? []);
   const byAuthor = new Map<string, AuthorChanges>();
   const previousSnapshot = prev && planningSnapshot(source.doc, prev.room, prev);
-  const baseline = previousSnapshot ? YDocFromSnapshot(source.doc, previousSnapshot) : null;
-  if (baseline) {
-    try {
-      // Classify peers against the reply's offline branch, not its older observation. A host
-      // residual may combine both branches when attribution rows are missing; replaying the
-      // reply first makes its structs and tombstones no-ops without hiding a peer in the same block.
-      for (const update of source.ownUpdates ?? source.written ?? []) {
-        const effect = updateEffect(baseline, update, prev?.room ?? "");
+  if (previousSnapshot) {
+    const ownership = retainedUpdateOwnership(
+      source.doc,
+      source.ownUpdates ?? source.written ?? [],
+    );
+    const ownEffect = frontierEffectsForOwnership(source.doc, previousSnapshot, ownership);
+    ownEffect.changed.forEach((id) => {
+      ownChanged.add(id);
+    });
+    ownEffect.removed.map(frontierBlockId).forEach((id) => {
+      ownRemoved.add(id);
+    });
+    for (const item of source.concurrent ?? []) {
+      const own =
+        item.origin.type === "agent" &&
+        source.ownActorTurnIds?.has(item.origin.actorTurnId) === true;
+      const effect = item.effects
+        ? {
+            changed: [...item.effects.changed],
+            removed: item.effects.removed.map(parseFrontierBlockId),
+          }
+        : frontierEffectsForUpdate(
+            source.doc,
+            previousSnapshot,
+            item.update,
+            item.origin.type === "unattributed" ? ownership : undefined,
+          );
+      if (own) {
         effect.changed.forEach((id) => {
           ownChanged.add(id);
         });
         effect.removed.map(frontierBlockId).forEach((id) => {
           ownRemoved.add(id);
         });
+        continue;
       }
-      for (const item of source.concurrent ?? []) {
-        const own =
-          item.origin.type === "agent" &&
-          source.ownActorTurnIds?.has(item.origin.actorTurnId) === true;
-        const effect = item.effects
-          ? {
-              changed: [...item.effects.changed],
-              removed: item.effects.removed.map(parseFrontierBlockId),
-            }
-          : updateEffect(baseline, item.update, prev?.room ?? "");
-        if (own) {
-          effect.changed.forEach((id) => {
-            ownChanged.add(id);
-          });
-          effect.removed.map(frontierBlockId).forEach((id) => {
-            ownRemoved.add(id);
-          });
-          continue;
-        }
-        const author = authorLabel(item.origin);
-        const group = byAuthor.get(author) ?? { changed: new Set(), removed: new Set() };
-        effect.changed
-          .filter((id) => relevantChanged.has(id))
-          .forEach((id) => {
-            group.changed.add(id);
-          });
-        effect.removed
-          .map(frontierBlockId)
-          .filter((id) => relevantRemoved.has(id))
-          .forEach((id) => {
-            group.removed.add(id);
-          });
-        byAuthor.set(author, group);
-      }
-    } finally {
-      baseline.destroy();
+      const author = authorLabel(item.origin);
+      const group = byAuthor.get(author) ?? { changed: new Set(), removed: new Set() };
+      effect.changed
+        .filter((id) => relevantChanged.has(id))
+        .forEach((id) => {
+          group.changed.add(id);
+        });
+      effect.removed
+        .map(frontierBlockId)
+        .filter((id) => relevantRemoved.has(id))
+        .forEach((id) => {
+          group.removed.add(id);
+        });
+      byAuthor.set(author, group);
     }
   }
   const attributedChanged = new Set([...byAuthor.values()].flatMap((group) => [...group.changed]));
@@ -286,15 +288,6 @@ function authorLabel(origin: ConcurrentUpdate["origin"]): string {
   if (origin.type === "agent") return origin.author ?? "agent";
   if (origin.type === "human") return "the user";
   return "unattributed";
-}
-
-function updateEffect(baseline: Y.Doc, update: Uint8Array, room: string) {
-  const before: ObservationFrontier = {
-    room,
-    snapshot: Y.encodeSnapshotV2(Y.snapshot(baseline)),
-  };
-  Y.applyUpdate(baseline, update);
-  return frontierDelta(baseline, before);
 }
 
 function parseFrontierBlockId(id: string): { clientID: number; clock: number } {

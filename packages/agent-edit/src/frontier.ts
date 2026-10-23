@@ -207,6 +207,118 @@ export function decodeSnapshot(bytes: Uint8Array): Y.Snapshot | null {
 
 type Range = readonly [start: number, end: number];
 
+/** CRDT clock ranges contributed by updates and still present at the rendered cut. */
+export interface UpdateOwnership {
+  structs: ReadonlyMap<number, readonly Range[]>;
+  deletes: ReadonlyMap<number, readonly Range[]>;
+}
+
+/**
+ * The parts of `updates` that still belong to `doc`. A Discard can retire a saved
+ * deletion, so update bytes alone are not evidence that the rendered cut contains it.
+ */
+export function retainedUpdateOwnership(
+  doc: Y.Doc,
+  updates: readonly Uint8Array[],
+): UpdateOwnership {
+  const owned = updateOwnership(updates);
+  const current = Y.snapshot(doc);
+  return {
+    structs: intersectRangeMaps(
+      owned.structs,
+      new Map([...current.sv].map(([client, clock]) => [client, [[0, clock]]])),
+    ),
+    deletes: intersectRangeMaps(
+      owned.deletes,
+      new Map([...current.ds.clients].map(([client, ranges]) => [client, deleteRanges(ranges)])),
+    ),
+  };
+}
+
+/** The visible frontier effects contributed by `update`, excluding `without`. */
+export function frontierEffectsForUpdate(
+  doc: Y.Doc,
+  previous: Y.Snapshot,
+  update: Uint8Array,
+  without?: UpdateOwnership,
+): { changed: readonly string[]; removed: readonly BlockItemId[] } {
+  return frontierEffectsForOwnership(doc, previous, updateOwnership([update]), without);
+}
+
+/** The visible frontier effects contributed by clock-range ownership. */
+export function frontierEffectsForOwnership(
+  doc: Y.Doc,
+  previous: Y.Snapshot,
+  contribution: UpdateOwnership,
+  without?: UpdateOwnership,
+): { changed: readonly string[]; removed: readonly BlockItemId[] } {
+  const current = Y.snapshot(doc);
+  const inserted = new Map<number, Range[]>();
+  const deleted = new Map<number, Range[]>();
+  for (const [client, clock] of current.sv) {
+    const before = previous.sv.get(client) ?? 0;
+    const deletedNow = deleteRanges(current.ds.clients.get(client) ?? []);
+    const deletedBefore = deleteRanges(previous.ds.clients.get(client) ?? []);
+    const visibleInsertions = subtract([[before, clock]], deletedNow);
+    const visibleDeletions = below(subtract(deletedNow, deletedBefore), before);
+    const insertedByUpdate = intersect(visibleInsertions, contribution.structs.get(client) ?? []);
+    const deletedByUpdate = intersect(visibleDeletions, contribution.deletes.get(client) ?? []);
+    const peerInsertions = subtract(insertedByUpdate, without?.structs.get(client) ?? []);
+    const peerDeletions = subtract(deletedByUpdate, without?.deletes.get(client) ?? []);
+    if (peerInsertions.length) inserted.set(client, peerInsertions);
+    if (peerDeletions.length) deleted.set(client, peerDeletions);
+  }
+
+  const blocks = new Map<string, Y.Item>();
+  walkRanges(doc, inserted, (block) => {
+    blocks.set(frontierBlockId({ clientID: block.id.client, clock: block.id.clock }), block);
+  });
+  walkRanges(doc, deleted, (block) => {
+    blocks.set(frontierBlockId({ clientID: block.id.client, clock: block.id.clock }), block);
+  });
+  return {
+    changed: [...blocks].filter(([, block]) => !block.deleted).map(([id]) => id),
+    removed: [...blocks]
+      .filter(([, block]) => block.deleted)
+      .map(([, block]) => ({ clientID: block.id.client, clock: block.id.clock })),
+  };
+}
+
+function updateOwnership(updates: readonly Uint8Array[]): UpdateOwnership {
+  const structs = new Map<number, Range[]>();
+  const deletes = new Map<number, Range[]>();
+  for (const update of updates) {
+    const decoded = Y.decodeUpdate(update);
+    for (const struct of decoded.structs) {
+      if (!(struct instanceof Y.Item)) continue;
+      const ranges = structs.get(struct.id.client) ?? [];
+      ranges.push([struct.id.clock, struct.id.clock + struct.length]);
+      structs.set(struct.id.client, ranges);
+    }
+    for (const [client, ranges] of decoded.ds.clients) {
+      const own = deletes.get(client) ?? [];
+      own.push(...ranges.map(({ clock, len }): Range => [clock, clock + len]));
+      deletes.set(client, own);
+    }
+  }
+  return {
+    structs: new Map([...structs].map(([client, ranges]) => [client, mergeRanges(ranges)])),
+    deletes: new Map([...deletes].map(([client, ranges]) => [client, mergeRanges(ranges)])),
+  };
+}
+
+function intersectRangeMaps(
+  left: ReadonlyMap<number, readonly Range[]>,
+  right: ReadonlyMap<number, readonly Range[]>,
+): Map<number, Range[]> {
+  const result = new Map<number, Range[]>();
+  for (const [client, ranges] of left) {
+    const overlap = intersect(ranges, right.get(client) ?? []);
+    if (overlap.length) result.set(client, overlap);
+  }
+  return result;
+}
+
 /**
  * True when `current` holds every struct and every deletion `previous` names:
  * each state-vector clock is reached and each deleted range is deleted. A state
@@ -245,18 +357,30 @@ function walkChangedRanges(
   current: Y.Snapshot,
   visit: (block: Y.Item, item: Y.Item, start: number, end: number) => void,
 ): void {
-  const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+  const flipped = new Map<number, Range[]>();
   for (const [client, clock] of current.sv) {
     const before = previous.sv.get(client) ?? 0;
     const deletedNow = deleteRanges(current.ds.clients.get(client) ?? []);
     const deletedBefore = deleteRanges(previous.ds.clients.get(client) ?? []);
-    const flipped = [
+    const ranges = [
       ...below(subtract(deletedNow, deletedBefore), before),
       ...subtract([[before, clock]], deletedNow),
     ];
-    if (flipped.length === 0) continue;
+    if (ranges.length) flipped.set(client, ranges);
+  }
+  walkRanges(doc, flipped, visit);
+}
+
+/** Visit retained items in normalized client clock ranges. */
+function walkRanges(
+  doc: Y.Doc,
+  rangesByClient: ReadonlyMap<number, readonly Range[]>,
+  visit: (block: Y.Item, item: Y.Item, start: number, end: number) => void,
+): void {
+  const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+  for (const [client, ranges] of rangesByClient) {
     const structs = doc.store.clients.get(client) ?? [];
-    for (const [start, end] of flipped) {
+    for (const [start, end] of ranges) {
       for (let index = Y.findIndexSS(structs, start); index < structs.length; index += 1) {
         const struct = structs[index];
         if (struct.id.clock >= end) break;
@@ -333,9 +457,11 @@ function topLevelItem(item: Y.Item, fragment: Y.XmlFragment): Y.Item | null {
 }
 
 function deleteRanges(items: readonly { clock: number; len: number }[]): Range[] {
-  const sorted = items
-    .map((item): Range => [item.clock, item.clock + item.len])
-    .sort((a, b) => a[0] - b[0]);
+  return mergeRanges(items.map((item): Range => [item.clock, item.clock + item.len]));
+}
+
+function mergeRanges(ranges: readonly Range[]): Range[] {
+  const sorted = [...ranges].sort((a, b) => a[0] - b[0]);
   const merged: [number, number][] = [];
   for (const [start, end] of sorted) {
     const last = merged.at(-1);
@@ -343,6 +469,20 @@ function deleteRanges(items: readonly { clock: number; len: number }[]): Range[]
     else merged.push([start, end]);
   }
   return merged;
+}
+
+function intersect(left: readonly Range[], right: readonly Range[]): Range[] {
+  const result: Range[] = [];
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < left.length && rightIndex < right.length) {
+    const start = Math.max(left[leftIndex][0], right[rightIndex][0]);
+    const end = Math.min(left[leftIndex][1], right[rightIndex][1]);
+    if (start < end) result.push([start, end]);
+    if (left[leftIndex][1] < right[rightIndex][1]) leftIndex += 1;
+    else rightIndex += 1;
+  }
+  return result;
 }
 
 /** Every range of `inner` lies within `outer`; both sorted and merged. */
