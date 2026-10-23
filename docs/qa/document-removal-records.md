@@ -118,7 +118,7 @@ known-id denial can include its record without allowing content access.
    so it waits on the parent before any peer, without a deadlock.
 5. Move over a drafted victim, and move opposite-direction multi-document
    folders whose path order reverses their document-ID order. Victim drafts
-   stay active (the branch shows a `path_taken` clash); both moves finish. Also race folder
+   stay active (the branch keeps the review item without a name clash); both moves finish. Also race folder
    deletion with a save holding a living child's mutation lock: deletion must
    wait **before** `split.beforeRepoint`, because the split updates hidden
    boundary document rows too.
@@ -233,14 +233,9 @@ otherwise, A's tabs are live tabs.
   route the Work's `**/works/<W>/branches` list to its pre-delete body before
   the delete, then Apply all: the list asks again by name and the row says
   "This document was deleted from the manuscript. Apply again to bring it
-  back." Create a new document at the deleted one's path: the row says another
-  document now has this name, and neither Work Files' "Apply all changes" nor
-  the chat dock's group Apply is offered (desktop and phone; Discard stays, and
-  the other rows keep their own Apply). Opening that draft from the row still
-  opens it draft-only, and the identity row says "Deleted, name taken"; its
-  popover names both the delete and the taken name (the list item's
-  `deletedLive` is independent of `conflict`). The editor's change bar offers
-  only Discard there.
+  back." Create a new document at the deleted one's path: Apply remains offered
+  in Work Files, the chat dock and the editor. Apply restores the draft at the
+  next free name, and the surface says where it landed.
 - The draft editor's manuscript state never moves the page. With a draft tab
   open, `./mf doc rm` its document from another device: "Deleted from the
   manuscript" appears in the identity row's free end (desktop) or the review

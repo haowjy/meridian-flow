@@ -92,6 +92,7 @@ export function planResourceLocation(input: {
   eligibleAt: number;
   operationId?: string;
   destination: ResourceDestination;
+  typedName?: string;
 }): ResourceWrite | null {
   const { record } = input;
   if (record.resource.lifecycle.kind === "terminal") return null;
@@ -113,7 +114,7 @@ export function planResourceLocation(input: {
     !superseded.repaired &&
     latest?.desired.kind === "set-location" &&
     latest.state === "pending" &&
-    latest.desired.typedName === input.destination.name &&
+    latest.desired.typedName === (input.typedName ?? input.destination.name) &&
     JSON.stringify(latest.desired.destination) === JSON.stringify(destination)
   )
     return null;
@@ -125,7 +126,7 @@ export function planResourceLocation(input: {
     identityRevision: record.resource.identity.revision,
     desired: {
       kind: "set-location",
-      typedName: input.destination.name,
+      typedName: input.typedName ?? input.destination.name,
       destination,
     },
     ...(input.operationId ? { operationId: input.operationId } : {}),

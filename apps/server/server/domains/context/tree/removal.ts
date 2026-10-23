@@ -119,28 +119,78 @@ export function createDocumentRemoval(
 }
 
 /**
- * A Work Restore's documents: every one its deletion removed stands again, at the location
- * it held, and returns the Works whose branches use them, whose pending counts moved.
+ * A Work Restore's documents: every one its deletion removed stands again, at its prior or
+ * next free leaf name, and returns the Works whose branches use them, whose pending counts moved.
  */
-export async function restoreWorkDocuments(db: Database, workId: WorkId): Promise<WorkId[]> {
+export async function restoreWorkDocuments(
+  db: Database,
+  workId: WorkId,
+): Promise<{
+  workIds: WorkId[];
+}> {
   const tx = currentDrizzleDb(db);
-  const restored = await tx
-    .update(documents)
-    .set({
-      deletedAt: null,
-      deletionReason: null,
-      deletedByUserId: null,
-      deletionCause: null,
-      deletedByWorkId: null,
-      deletedByThreadId: null,
-      locationVersion: sql`${documents.locationVersion} + 1`,
+  const rows = await tx
+    .select({
+      id: documents.id,
+      sourceId: documents.contextSourceId,
+      folderId: documents.folderId,
+      name: documents.name,
+      extension: documents.extension,
+      hidden: documents.hidden,
     })
+    .from(documents)
     .where(eq(documents.deletedByWorkId, workId))
-    .returning({ id: documents.id });
-  return usingWorks(
-    tx,
-    restored.map(({ id }) => id as DocumentId),
-  );
+    .orderBy(documents.createdAt, documents.id);
+  const clear = {
+    deletedAt: null,
+    deletionReason: null,
+    deletedByUserId: null,
+    deletionCause: null,
+    deletedByWorkId: null,
+    deletedByThreadId: null,
+  } as const;
+  for (const row of rows) {
+    if (row.hidden) {
+      await tx
+        .update(documents)
+        .set({ ...clear, locationVersion: sql`${documents.locationVersion} + 1` })
+        .where(eq(documents.id, row.id));
+      continue;
+    }
+    const node: NodeRef = { kind: "document", id: row.id as DocumentId };
+    const placed = await placeLive(
+      db,
+      {
+        node,
+        at: {
+          contextSourceId: row.sourceId as ContextSourceId,
+          parentFolderId: row.folderId as FolderId | null,
+          name: row.name,
+          extension: row.extension,
+        },
+      },
+      async (parentId, at) => {
+        await tx
+          .update(documents)
+          .set({
+            ...clear,
+            contextSourceId: at.contextSourceId,
+            folderId: parentId,
+            name: at.name,
+            extension: at.extension ?? row.extension,
+          })
+          .where(eq(documents.id, row.id));
+        await bumpLocationVersions(db, { documentIds: [row.id as DocumentId] });
+      },
+    );
+    if (!placed.ok) throw new Error(`Work restore could not place ${row.id}: ${placed.error.code}`);
+  }
+  return {
+    workIds: await usingWorks(
+      tx,
+      rows.map(({ id }) => id as DocumentId),
+    ),
+  };
 }
 
 /**
@@ -150,24 +200,24 @@ export async function restoreWorkDocuments(db: Database, workId: WorkId): Promis
 export type RemovalIdentity = { time: Date; locationVersion: bigint };
 
 export type RestoreOutcome =
-  | { kind: "restored"; placed: readonly NodeRef[] }
+  | { kind: "restored"; placed: readonly NodeRef[]; at: PlaceTarget["at"] }
   | { kind: "already_living" }
   /** A different removal is current: an Undo of one delete never undoes a later one. */
   | { kind: "superseded" }
-  /** Another node holds the document's path, or a path on its folder chain. */
-  | { kind: "location_taken"; at: string; occupant: NodeRef }
+  /** A document holds a path on the folder chain. */
+  | { kind: "ancestor_taken"; at: string; occupant: NodeRef }
   /** Not a document's own delete: a discard, a Work cascade, or a deleted source or project. */
   | { kind: "refused" };
 
 /** A placement fault, carried out of the savepoint it rolls back. */
 class RestoreFault extends Error {
-  constructor(readonly outcome: Extract<RestoreOutcome, { kind: "location_taken" | "refused" }>) {
+  constructor(readonly outcome: Extract<RestoreOutcome, { kind: "ancestor_taken" | "refused" }>) {
     super(`Restore faulted: ${outcome.kind}`);
   }
 }
 
 /**
- * Brings one deleted document back at the location it held, or at `at` (Apply of a drafted
+ * Brings one deleted document back at the first free location based on where it held, or at `at` (Apply of a drafted
  * move restores where the branch put it, so an old-path clash never blocks it), with every
  * folder on that path
  * (a living folder there is reused, a deleted one restored), through placement's one
@@ -239,18 +289,14 @@ export async function restoreDocument(
             extension: row.extension,
           },
         },
-        async (parentId) => {
+        async (parentId, at) => {
           await currentDrizzleDb(db)
             .update(documents)
             .set({
               folderId: parentId,
-              ...(input.at
-                ? {
-                    contextSourceId: input.at.contextSourceId,
-                    name: input.at.name,
-                    extension: input.at.extension ?? row.extension,
-                  }
-                : {}),
+              contextSourceId: at.contextSourceId,
+              name: at.name,
+              extension: at.extension ?? row.extension,
               deletedAt: null,
               deletionReason: null,
               deletedByUserId: null,
@@ -263,20 +309,20 @@ export async function restoreDocument(
         },
       );
       if (!landed.ok) {
-        // A non-hidden document's chain holds no hidden folder, so only a taken path faults; a
+        // A non-hidden document's chain holds no hidden folder, so only a blocked ancestor faults; a
         // drafted move's folders are the branch's, which placement reveals.
-        if (landed.error.code !== "path_taken") {
+        if (landed.error.code !== "ancestor_taken") {
           // A drafted move's hidden folder can be gone since; the document's own chain can't.
           if (input.at) throw new RestoreFault({ kind: "refused" });
           throw new Error(`Restore of ${input.documentId} met a broken folder chain`);
         }
         throw new RestoreFault({
-          kind: "location_taken",
+          kind: "ancestor_taken",
           at: landed.error.at,
           occupant: landed.error.occupant,
         });
       }
-      return [...landed.value.ancestors, node];
+      return { placed: [...landed.value.ancestors, node], at: landed.value.at };
     });
     await deps.arrivals?.settle([input.documentId]);
     await deps.catalog.refreshSources(
@@ -286,9 +332,9 @@ export async function restoreDocument(
           ...(input.at ? [input.at.contextSourceId] : []),
         ]),
       ],
-      placed.map((ref) => ref.id),
+      placed.placed.map((ref) => ref.id),
     );
-    return { kind: "restored", placed };
+    return { kind: "restored", ...placed };
   } catch (cause) {
     if (cause instanceof RestoreFault) return cause.outcome;
     throw cause;

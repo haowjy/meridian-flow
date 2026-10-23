@@ -13,7 +13,7 @@ import type {
   ProjectId,
   WorkId,
 } from "@meridian/contracts";
-import { folderDocumentName } from "@meridian/contracts/protocol";
+import { namespaceName } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
@@ -105,21 +105,10 @@ export type VisibleFolder = {
 
 /**
  * A path asked as a claim of one kind also meets the shared document and folder namespace
- * (`namespaceName`). Creates, placements, moves, Apply's holds and `treeState`'s clash
- * diagnostics ask this way; browsing (ls, stat, read, a link's resolution) resolves
- * literally and never does.
+ * (`namespaceName`). Creates, placements and moves ask this way; browsing (ls, stat, read,
+ * a link's resolution) resolves literally and never does.
  */
 export type NameClaim = "document" | "folder";
-
-/**
- * The one shared-namespace rule: the document filename a node of this kind holds under its
- * parent. A document holds its own filename; a folder holds its document alias (folder
- * `Lore.md` holds document `Lore`). A document and a folder meet when these are equal; two
- * folders, or two documents, meet only literally (`Lore` and `Lore.md` may both be folders).
- */
-export function namespaceName(kind: NameClaim, filename: string): string {
-  return kind === "folder" ? folderDocumentName(filename) : filename;
-}
 
 /** A path to resolve; `as` makes it a claim of that kind. */
 export type PathQuery = { contextSourceId: ContextSourceId; path: string; as?: NameClaim };
@@ -210,18 +199,6 @@ export type TreeStateNode = {
   from: { path: string; uri: string | null } | null;
   /** The rendered location token's source. */
   locationVersion: bigint;
-  conflict:
-    | { kind: "none" }
-    /**
-     * 5a (F11): a different node visible in the branch holds the target path, or a
-     * document holds the path of a folder the target needs.
-     */
-    | { kind: "clash"; withNode: NodeRef; at: string; uri: string | null }
-    /**
-     * Created-and-revealed or edited, then deleted live while the branch kept pending changes
-     * (D79): the branch still lists it; Apply restores it, then merges.
-     */
-    | { kind: "deleted_live" };
 };
 
 export type DocumentLineage = {
@@ -513,7 +490,7 @@ export function createTreeReader(
     // The document at a claimed folder name's alias.
     const documentAsks = positions(
       asks.flatMap((ask, owner) => {
-        const alias = namespaceName("folder", ask.filename);
+        const alias = namespaceName({ kind: "folder", filename: ask.filename });
         return ask.as === "folder" && alias !== ask.filename
           ? ask.parents.map((parentId) => ({
               owner,
@@ -542,8 +519,8 @@ export function createTreeReader(
                   (folder) =>
                     parents.has(parentKey(folder.contextSourceId, folder.parentId)) &&
                     folder.name !== ask.filename &&
-                    namespaceName("folder", folder.name) ===
-                      namespaceName("document", ask.filename),
+                    namespaceName({ kind: "folder", filename: folder.name }) ===
+                      namespaceName({ kind: "document", filename: ask.filename }),
                 )
                 .map((folder) => folder.id)
             : [],
@@ -814,7 +791,6 @@ export function createTreeReader(
     edited: readonly DocumentId[] = [],
     only?: readonly DocumentId[],
   ): Promise<TreeStateNode[]> {
-    const view: TreeView = { kind: "branch", branchId };
     const rows = isUuid(branchId)
       ? await loadBranchTreeRows(tx(), branchId, only?.filter(isUuid))
       : [];
@@ -858,36 +834,6 @@ export function createTreeReader(
     const pathOf = (at: Item["at"]) =>
       folderPath(chainOf(at.folderId), renderFilename(at.name, at.extension));
 
-    // Every path a target needs, in the branch's view: its own, then each ancestor folder's,
-    // nearest first. Paths, not folder ids: a deleted folder's path may hold a new folder.
-    // Each is a claim of its kind, so the clash is the one Apply's live holds would see. A
-    // document the branch is deleting claims no path.
-    const needs = items.flatMap(({ at, state }, item) => {
-      if (state === "deleting") return [];
-      const segments = pathOf(at).split("/");
-      return segments.map((_, drop) => ({
-        item,
-        target: drop === 0,
-        contextSourceId: at.contextSourceId,
-        path: segments.slice(0, segments.length - drop).join("/"),
-        as: drop === 0 ? ("document" as const) : ("folder" as const),
-      }));
-    });
-    const occupied = await pathOccupants(view, needs);
-    const clashOf = (item: number): { withNode: NodeRef; at: string } | null => {
-      const nodeId = items[item]?.row.id;
-      for (const [index, need] of needs.entries()) {
-        if (need.item !== item) continue;
-        const occupancy = occupied[index];
-        const document = occupancy?.documents.find((other) => other !== nodeId);
-        if (document) return { withNode: { kind: "document", id: document }, at: need.path };
-        // A folder at an ancestor's path is the folder the target needs.
-        const folder = need.target ? occupancy?.folders[0] : undefined;
-        if (folder) return { withNode: { kind: "folder", id: folder }, at: need.path };
-      }
-      return null;
-    };
-
     // Spelled from the same read as the paths and the version token: each target, then each
     // moving document's row.
     const moving = items.flatMap((item, index) => (item.state === "moving" ? [index] : []));
@@ -911,7 +857,6 @@ export function createTreeReader(
 
     return items.map(({ row, branch, state, at }, item): TreeStateNode => {
       const chain = chainOf(at.folderId);
-      const clash = clashOf(item);
       const address = spelled[item]?.uri ?? null;
       const path = pathOf(at);
       return {
@@ -944,15 +889,6 @@ export function createTreeReader(
         },
         from: fromOf.get(item) ?? null,
         locationVersion: row.locationVersion,
-        conflict: clash
-          ? {
-              kind: "clash",
-              ...clash,
-              uri: sameSourceUri(address, path, clash.at),
-            }
-          : !row.hidden && row.deleted
-            ? { kind: "deleted_live" }
-            : { kind: "none" },
       };
     });
   }
@@ -1044,15 +980,6 @@ function positions(asks: readonly (Omit<PathSlot, "key"> & { owner: number })[])
       return [...new Set(hits.filter((hit) => asked.has(hit.key)).map((hit) => hit.id))];
     },
   };
-}
-
-/**
- * `path` in the source `uri` (at `uriPath`) is spelled in: an ancestor path of a target
- * shares its scheme and authority.
- */
-function sameSourceUri(uri: string | null, uriPath: string, path: string): string | null {
-  if (!uri?.endsWith(uriPath)) return null;
-  return uri.slice(0, uri.length - uriPath.length) + path;
 }
 
 /** A branch row's one logical state (delete dominant); null when it says nothing. */

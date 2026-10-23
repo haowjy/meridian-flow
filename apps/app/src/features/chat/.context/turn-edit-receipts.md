@@ -62,13 +62,12 @@ hide the semantic refusal after a successful HTTP response.
 
 Every refusal is visible, and the receipt's reason line is where it shows.
 Skipped parts and refusals are worded in `turn-receipt-copy.ts` from typed
-causes (`TurnInverseSkipCause`, the `location_taken` / `folder_missing` /
+causes (`TurnInverseSkipCause`, the `ancestor_taken` / `folder_missing` /
 `superseded` statuses); the card never prints server prose. A move or delete
-that can't come back names the cause, the whole place and the next step ("Can't
-undo: Manuscript/part2/ch2 is already taken. Move or rename what's there, then
-try again."), and the parts list doesn't repeat what that line already says. A
-place is "taken", never "another document": the refusal carries no occupant kind,
-and a folder can hold it.
+whose folder path a document blocks names the cause, the whole place and the next
+step, and the parts list doesn't repeat what that line already says. A taken leaf
+is not a refusal: the inverse lands at the next free name and the card says where,
+for example "Restored as ch2 (2)." from the committed transition.
 Copy covers the whole wire status union through an exhaustive switch that fails
 the build when a status is added, and a command that never reached a status at
 all — rejected fetch, HTTP error envelope — gets its own retry line naming the

@@ -7,7 +7,7 @@ for feature-level contracts first.
 
 Work Files, the context sidebar, and the phone browser render ordinary nested
 folders through `TreeChildren`. Search supplies visible ids
-with ancestor closure, not a filtered catalog: rename and move collision checks
+with ancestor closure, not a filtered catalog: rename and move free-name predictions
 always see all siblings. Search disclosure is temporary; it never overwrites
 the normal expansion state. A newly created Work note stays visible for naming
 even when its name does not match the search.
@@ -45,16 +45,15 @@ swallowing a same-tick `focus()`.
 |---|---|---|
 | initial | `""` | `entry.name` (or the failed repair name) |
 | unchanged | — | current name |
-| validate siblings | all sibling identities and kinds | siblings excluding current identity |
+| validate siblings | all sibling identities and kinds | syntax only; sibling claims choose the optimistic free name |
 | select | — | the part before a visible extension; all of a prose name |
 
 Names are compared and submitted as the contracts codec stores them
 (`storedFilename`, `entryNameKey` in `context-entry-name.ts`): a prose name
 has no extension, so `Chapter 13.md` typed on `Chapter 13` is no change and
-beside `Chapter 13` collides; a bare name keeps the renamed file's visible
+beside `Chapter 13` predicts `Chapter 13 (2)`; a bare name keeps the renamed file's visible
 extension (`settings` on `config.toml`). Folder-to-folder comparison is literal;
-the codec comparison applies when either entry is a document. Conflict copy names
-the occupant's kind, not the requested kind. The codec's `invalid_name` message
+the codec comparison applies when either entry is a document. Create conflict copy names the occupant's kind, not the requested kind. Rename and move never block on a sibling claim: the shared allocator predicts the landed name immediately, and the server receipt replaces it after settlement. The codec's `invalid_name` message
 shows on the field. Rename and identity commits transport the writer's typed name.
 `planResourceLocation` stores it as `typedName` beside the canonical optimistic
 destination; the request sends `typedName`, and the server mover computes the stored

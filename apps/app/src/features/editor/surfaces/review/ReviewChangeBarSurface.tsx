@@ -18,7 +18,6 @@ import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { BAR_SLOT_ATTR, getInlineReviewPluginState } from "@/core/editor/extensions/inline-review";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { isPathTaken } from "@/features/draft-review/deleted-drafts";
 import { ReviewChangeBar } from "@/features/draft-review/ReviewChangeBar";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
@@ -31,7 +30,7 @@ import { placeReviewBar } from "./place-review-bar";
 import { useManuscriptColumn } from "./useManuscriptColumn";
 
 export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
-  const { controller, files } = useDraftReview();
+  const { controller } = useDraftReview();
   const reviewing = !editor.isDestroyed && getInlineReviewPluginState(editor.state) !== null;
   const view = useReviewChanges(controller, { enabled: reviewing });
   const focusedItem = view.items.find((item) => item.change.id === view.focused?.id);
@@ -64,7 +63,7 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
       touch={touch}
       inFlow={placement.kind === "below"}
       draftFailure={focusedItem.draftFailure}
-      canApply={!isPathTaken(files.find((file) => file.draft.itemKey === view.itemKey)?.draft)}
+      canApply
       onApply={() => void view.apply(focusedItem.change)}
       onDiscard={() => void view.discard(focusedItem.change)}
     />

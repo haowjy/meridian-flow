@@ -2,6 +2,7 @@
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type {
+  TreeReversalLanding,
   Turn,
   TurnInverseSkip,
   TurnReceiptChip,
@@ -25,6 +26,7 @@ import {
   documentDisplayName,
   documentLocationName,
   moveDestinationName,
+  type OwnerNames,
 } from "./document-display-name";
 import { useOwnerNames } from "./owner-names";
 import {
@@ -102,12 +104,12 @@ export function TurnEditsReceipt({
     skips: TurnInverseSkip[];
   } | null>(null);
   const [commandRefusal, setCommandRefusal] = useState<ReversalRefusal | null>(null);
-  const [restoredNotices, setRestoredNotices] = useState<string[] | null>(null);
+  const [outcomeNotices, setOutcomeNotices] = useState<string[] | null>(null);
   const turnMutation = useReverseTurnMutation(threadId);
 
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
-  // A part the refusal line already names (a move or delete that met a taken location, a
-  // missing folder, or a document gone again) isn't listed a second time.
+  // A part the refusal line already names (a blocked or missing folder, or a document gone
+  // again) isn't listed a second time.
   const skips = (actionSkips?.skips ?? receipt?.skips ?? []).filter(
     (skip) => !(skip.kind === "tree" && commandRefusal?.status === skip.cause),
   );
@@ -203,8 +205,12 @@ export function TurnEditsReceipt({
           ? { direction, status: refusal, at: treeFaultLocation(refusal, outcome.skips) }
           : null,
       );
-      setRestoredNotices(restored.length > 0 ? [...new Set(restored.map(reversedWorkLine))] : null);
-      if (refusal || restored.length > 0 || outcome.skips?.length) setExpanded(true);
+      const notices = [
+        ...(outcome.landings ?? []).map((landing) => treeLandingLine(landing, names)),
+        ...restored.map(reversedWorkLine),
+      ];
+      setOutcomeNotices(notices.length ? [...new Set(notices)] : null);
+      if (refusal || notices.length > 0 || outcome.skips?.length) setExpanded(true);
     } catch {
       // A rejected request is a refusal the writer never asked for: the command
       // is the only thing that can report it, so it says so here rather than
@@ -322,11 +328,11 @@ export function TurnEditsReceipt({
               </ul>
             </div>
           ) : null}
-          {restoredNotices?.map((notice) => (
+          {outcomeNotices?.map((notice) => (
             <p
               key={notice}
               className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
-              data-work-restored
+              data-reversal-outcome
               role="status"
             >
               {notice}
@@ -607,7 +613,7 @@ function SkipSubject({ skip }: { skip: TurnInverseSkip }) {
     const at = skip.at ?? skip.uri;
     return (
       <>
-        {skip.cause === "location_taken" ||
+        {skip.cause === "ancestor_taken" ||
         skip.cause === "folder_missing" ||
         skip.cause === "superseded"
           ? documentLocationName(at, names)
@@ -637,4 +643,11 @@ function reversedWorkLine(work: { name: string; status: string }): string {
   return work.status === "redone"
     ? t`Redid change to Work ${work.name}.`
     : t`Undid change to Work ${work.name}.`;
+}
+
+/** Where a tree inverse actually committed when its recorded name was no longer free. */
+function treeLandingLine(landing: TreeReversalLanding, names: OwnerNames): string {
+  return landing.action === "restored"
+    ? t`Restored as ${documentDisplayName(landing.landedAt)}.`
+    : t`Moved to ${documentLocationName(landing.landedAt, names)}.`;
 }

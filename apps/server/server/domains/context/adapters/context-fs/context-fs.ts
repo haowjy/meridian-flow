@@ -11,6 +11,7 @@ import {
   type Filetype,
   filetypeForKnownPath,
   filetypeForPath,
+  type NamespaceNameClaim,
   type ParsedDocumentFilename,
   parseDocumentFilename,
   type RetractionCause,
@@ -298,7 +299,10 @@ export class ContextFS implements ContextSchemeAdapter {
           return moved.ok
             ? Ok({
                 moved: moved.value.moved,
-                path: [...dir, renderFilename(name, extension)].join("/"),
+                path: [
+                  ...dir,
+                  renderFilename(moved.value.name ?? name, moved.value.extension ?? extension),
+                ].join("/"),
               })
             : moved;
         },
@@ -496,6 +500,17 @@ export class ContextFS implements ContextSchemeAdapter {
       bound = binding.value;
     }
     return this.liveCreate.create(path, bound, options);
+  }
+
+  async createTrackedDocumentAtFreeName(
+    path: string,
+    markdown: string,
+    reserved: readonly NamespaceNameClaim[],
+    options?: ContextWriteOptions,
+  ): Promise<Result<{ documentId: string; path: string }, AdapterFault>> {
+    const refused = this.placement.refuse("create a file with text");
+    if (refused) return Err(refused);
+    return this.liveCreate.createAtFreeName(path, markdown, reserved, options);
   }
 
   async createBoundDocument(
@@ -862,7 +877,7 @@ export class ContextFS implements ContextSchemeAdapter {
       return Ok({
         movedNodeId: committed.value.movedNodeId,
         ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
-        path: prepared.destinationPath,
+        path: committed.value.destinationPath,
       });
     }
     const source = prepared.source;
@@ -881,7 +896,7 @@ export class ContextFS implements ContextSchemeAdapter {
     return Ok({
       movedNodeId: committed.value.movedNodeId,
       ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
-      path: prepared.destinationPath,
+      path: committed.value.destinationPath,
     });
   }
 

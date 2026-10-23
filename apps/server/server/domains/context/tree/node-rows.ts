@@ -4,7 +4,7 @@
  * nodes are tombstoned, never hard-deleted. Every function runs in its caller's transaction.
  */
 import type { ContextSourceId, DocumentId, FolderId, UserId } from "@meridian/contracts";
-import type { DocumentRemovalCause } from "@meridian/contracts/protocol";
+import { type DocumentRemovalCause, folderDocumentName } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import {
@@ -24,6 +24,7 @@ import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js"
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { renderFilename } from "../context/paths.js";
 import type { BinaryNode, TrackedNode } from "./hidden-node-types.js";
+import { normalizeNames } from "./name-normalization.js";
 import { bumpLocationVersions, claimDocumentLocation } from "./node-locations.js";
 import type { DocumentSlot } from "./tree-view-sql.js";
 
@@ -84,6 +85,7 @@ export async function insertDocumentRow(
       slot.folderId,
       renderFilename(slot.name, slot.extension),
     );
+    await normalizeNames(db, [{ kind: "document", id: row.id }]);
   }
   return row.id;
 }
@@ -99,6 +101,7 @@ export async function insertFolder(
       contextSourceId: at.contextSourceId,
       parentId: at.parentId,
       name: at.name,
+      documentAlias: folderDocumentName(at.name),
       hidden: options.hidden,
     })
     .returning({ id: folders.id });

@@ -1,9 +1,10 @@
 /**
  * The document an `undo`, `redo` or `revert` names by path (D76). A path no visible document
- * holds names the document this chat's latest move or delete took away from it; a deleted one
+ * holds names the document this chat's latest move or delete took away from it after the visible
+ * document has no matching stack entry; a deleted one
  * is authorized where its restore would bring it back (its own folder and source, which may
  * have moved since the path was shown), as the card's Undo is. A path a different document
- * now holds still names that one, and the result says so when it has nothing to reverse.
+ * now holds gets the first chance to reverse its own entry.
  */
 import type { DocumentId, ThreadId } from "@meridian/contracts";
 import { type FileGrant, isFileAccessDenied } from "../../domains/file-policy/index.js";
@@ -16,7 +17,6 @@ import {
   type ToolCall,
   type ToolWiringDeps,
   type WriteToolErrorOutput,
-  writeToolError,
 } from "./tool-context.js";
 
 type InverseCommand = "undo" | "redo" | "revert";
@@ -26,9 +26,6 @@ export type InverseTarget = {
   /** Edit where a deleted document returns to, instead of the document's own grant. */
   grant?: FileGrant<"edit">;
 };
-
-/** Another document this chat moved or deleted away from the path a visible one now holds. */
-type Displaced = { documentId: DocumentId; uri: string | null };
 
 export async function resolveInverseTarget(
   deps: ToolWiringDeps,
@@ -68,25 +65,25 @@ export async function currentUri(call: ToolCall, documentId: DocumentId): Promis
  * When the visible document at `path` had nothing to reverse: the document this chat moved or
  * deleted away from that path, as a refusal that says where it went, or null.
  */
-export async function displacedRefusal(
+export async function resolveDisplacedTarget(
   deps: ToolWiringDeps,
   call: ToolCall,
   command: InverseCommand,
   address: ResolvedDocumentAddress,
   threadId: string,
-): Promise<WriteToolErrorOutput | null> {
+): Promise<InverseTarget | WriteToolErrorOutput | null> {
   const path = address.uri;
   const away = await deps.documentSync
     .treeHistory()
     .movedAwayFrom(threadId as ThreadId, await canonicalPath(call, path));
   if (!away || away === address.documentId) return null;
-  const displaced: Displaced = { documentId: away, uri: await currentUri(call, away) };
-  return writeToolError(
-    command,
-    displaced.uri
-      ? `A different document is at ${path} now. The one you moved away is at ${displaced.uri}; ${command} it there.`
-      : `${path} is taken by a different document. Use \`ls\` to check what is there; move or rename it, then \`${command}\` again. If you should not move it, tell the user the location is blocked.`,
-    "invalid_write",
-    { path },
+  const uri = await currentUri(call, away);
+  if (uri) return { address: { documentId: away, uri, filePath: uri } };
+  const grant = await deps.fileAccess.authorize(
+    call.principal,
+    { kind: "restore", documentId: away },
+    "edit",
   );
+  if (isFileAccessDenied(grant)) return fileAccessDeniedError(command, grant, path);
+  return { address: { documentId: away, uri: path, filePath: path }, grant };
 }

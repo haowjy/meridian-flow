@@ -30,12 +30,14 @@ model.
    in Chapter cleanup deleted ch2.", the row reads "Deleted ch2" with no door, the card lists
    "Deleted ch2". The card's Undo brings ch2 back into the tree and offers Redo. The other
    Work's chat still docks "ch2 1 change Discard Apply".
-3. **Location taken.** Press Redo (ch2 deleted again), create a document at `manuscript://ch2`
-   (`./mf doc put`), then press Undo: the card reads "Can't undo: Manuscript/ch2 is already
-   taken. Move or rename what's there, then try again." once, with no "Undo left" list
-   repeating it. A refusal names the whole place (folder and area), and never says a document
-   is there: a folder can take a place too.
-4. **Stop mid-step.** Script step 1 `move` ch4 → ch4-old; step 2 `move` ch5 → ch5-final,
+3. **Name taken.** Press Redo (ch2 deleted again), create a document at `manuscript://ch2`
+   (`./mf doc put`), then press Undo: the original returns at `manuscript://ch2 (2)` and the
+   expanded card reads "Restored as ch2 (2)." The new ch2 stays where it was. Redo and Undo
+   again; the same document returns and the card names the committed path.
+4. **Absorbed folder.** In a draft-mode chat, move a document into a new `arc/` folder, then
+   move it out. Create a live `arc/` folder so it absorbs the hidden draft folder. Model Undo
+   of the second move returns the document inside the live `arc/`, not `folder_missing`.
+5. **Stop mid-step.** Script step 1 `move` ch4 → ch4-old; step 2 `move` ch5 → ch5-final,
    `delete` ch3, then thousands of `ls` calls to hold the step open. When ch5-final shows,
    `./mf thread stop` (the app's Stop operation; the browser struggles to render thousands of
    live rows, so reload it afterwards). ch3 and ch5 are back, ch4-old stays, and the card
@@ -44,7 +46,7 @@ model.
 
 `ask_user` doesn't hold a mock step open: the reply completes.
 
-### Draft mode (steps 5 to 8)
+### Draft mode (steps 6 to 9)
 
 Setup: chapters `manuscript://ch1` to `ch5`; a Work "Ascension" (`w1`); a chat in it
 (`./mf thread create --work w1`) switched to draft mode, from the composer's write-mode menu or
@@ -52,30 +54,32 @@ Setup: chapters `manuscript://ch1` to `ch5`; a Work "Ascension" (`w1`); a chat i
 A `replace` in the same reply as a `read` of live ch1 lands when the draft forks, using either
 the text it found or a block hash from that read.
 
-5. **Pending rows and the notice.** Script `move` ch1 → ch1-old, `delete` ch3, `move` ch5 →
+6. **Pending rows and the notice.** Script `move` ch1 → ch1-old, `delete` ch3, `move` ch5 →
    ch6, `move` ch4 → ch5, then (next reply) a `replace` in ch1-old. The live tree keeps ch1 to
    ch5. The dock and Work page Files list "ch1: renaming to ch1-old" with the text change
-   under it, "ch3: deleting", "ch4: renaming to ch5" with "ch5 still has that name. Apply its
-   change first.", and "ch5: renaming to ch6", each with Discard and Apply. Open live ch1: the
+   under it, "ch3: deleting", "ch4: renaming to ch5", and "ch5: renaming to ch6", each with
+   Discard and Apply. Open live ch1: the
    identity row reads "Ascension is renaming this to ch1-old." (at 390 px, "Pending rename",
    its popover the sentence); ch3 reads "Ascension is deleting this.". The prose doesn't move.
-6. **Apply, Discard, Apply all.** ch1's Draft view, Apply draft: the tab becomes ch1-old with
+7. **Apply, Discard, Apply all.** ch1's Draft view, Apply draft: the tab becomes ch1-old with
    the text change. Work page, Apply all changes: the footer asks "Applying deletes ch3."
    (Cancel). ch3's Discard: its row goes at once, ch3 stays live. Apply all changes: ch4 → ch5
-   and ch5 → ch6 both land (the held one is sent again after the other).
-7. **Mixed move.** Script `create` `scratch://@w1/sect-notes`, then `move` it to
+   and ch5 → ch6 both land in dependency order from either row. Repeat with a swap: both land
+   in one Apply transaction. Apply a drafted move after a new live document takes its target:
+   the move lands at the next free name and the footer says "Added as <name>."
+8. **Mixed move.** Script `create` `scratch://@w1/sect-notes`, then `move` it to
    `manuscript://sect-notes`: the row says "Couldn't move sect-notes" (the model reads D45's
    refusal). Then `copy` it there and `delete` the scratch one: the dock lists sect-notes. The
    other direction refuses alike: `move` `manuscript://ch2` to `scratch://@w1/ch2` reads the
    same refusal. After both, `./mf` shows sect-notes still in scratch and ch2 still live at its
    path, with no row in the dock for either move.
-8. **Undo after Apply.** Script `undo` of `manuscript://ch1-old`: "Couldn't undo ch1-old";
+9. **Undo after Apply.** Script `undo` of `manuscript://ch1-old`: "Couldn't undo ch1-old";
    the model reads `cant_undo_applied`.
 
 With more than one file, the dock's Apply asks the same question in its footer
 ("Applying deletes ch2.") before it sends.
 
-9. **One queue per item; one Discard per item.** Draft a move with a text change of ch1, ch2,
+10. **One queue per item; one Discard per item.** Draft a move with a text change of ch1, ch2,
    ch3 and ch6 (moves first, then a `read` and a `replace` of each new path in later steps), a
    move-only ch4 and a delete of ch5. In the browser, wrap `fetch` to delay an Apply POST with
    text groups by 3 s and log each send. The dock's ch4 line Apply moves it with no room.
@@ -88,7 +92,7 @@ With more than one file, the dock's Apply asks the same question in its footer
    In a Draft view of an item with a move and text, the change bar's Discard drops only the
    text: the band keeps Discard draft and Apply draft beside the Work notice, and its change
    list shows the move's line. Discard draft then drops the move.
-10. **A destination folder the writer makes, and a rename the Work ends.** Script `move` ch2 →
+11. **A destination folder the writer makes, and a rename the Work ends.** Script `move` ch2 →
    `arc2/ch2` (a folder only the Work sees). In the live tree, create a folder and rename it to
    `arc2`: the dock still reads "ch2: renaming to arc2/ch2". The card's Undo moves it back and
    the card expands with its draft outcome; Redo puts it in `arc2` again. Then script `move` ch4

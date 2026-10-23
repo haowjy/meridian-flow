@@ -32,10 +32,7 @@ import {
   CommandNotice,
   type CommandQuestion,
 } from "@/features/draft-review/CommandNotice";
-import {
-  isDeletedFromManuscript,
-  isGroupApplyWithdrawn,
-} from "@/features/draft-review/deleted-drafts";
+import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { hasTreeLine } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
@@ -190,8 +187,7 @@ export function WorkChanges({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              {!isGroupApplyWithdrawn(files.map((file) => file.draft)) &&
-              files.every(
+              {files.every(
                 (file) =>
                   (!file.draft.hasDraft && file.draft.isNew) ||
                   hasTreeLine(file.draft) ||

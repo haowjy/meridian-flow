@@ -15,7 +15,7 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { documentBasename } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { isDeletedFromManuscript } from "./deleted-drafts";
-import type { CommandOutcome, DiscardNotice } from "./draft-command-owner";
+import type { CapturedApply, CommandOutcome, DiscardNotice } from "./draft-command-owner";
 import type { DraftReviewSelection } from "./draft-review-session";
 import type { ChangeTarget } from "./review-model";
 
@@ -23,7 +23,15 @@ export type BranchCommandOutcome = CommandOutcome;
 /** A surface's latest command feedback: a Discard with its Undo, or documents an Apply brought back. */
 export type SurfaceNotice =
   | DiscardNotice
-  | { kind: "restored"; itemKey?: undefined; undo?: undefined; titles: string[]; end(): void };
+  | {
+      kind: "applied";
+      itemKey?: undefined;
+      undo?: undefined;
+      restored: string[];
+      renamed: string[];
+      end(): void;
+      alsoApplied: string[];
+    };
 export type CommandStart = { sent: boolean; outcome: Promise<CommandOutcome> };
 export type WorkBranchCommands = ReturnType<typeof useWorkBranchCommands>;
 
@@ -85,23 +93,100 @@ export function useWorkBranchCommands({
       heldNotice.current = value;
       setNotice(value);
     };
-    // Each document an Apply brought back joins the notice until the surface's next action.
-    const restored = (item: ThreadDraftListItem | undefined) => {
-      const title = item?.documentName ?? documentBasename(item?.contextLocation?.path) ?? null;
-      if (!title) return;
+    // Apply facts join the surface's notice until its next action.
+    const applied = (
+      item: ThreadDraftListItem | undefined,
+      outcome: Extract<CommandOutcome, { kind: "done" }>,
+    ) => {
       const held = heldNotice.current;
-      const titles = held?.kind === "restored" ? [...held.titles, title] : [title];
-      show({ kind: "restored", titles, end() {} });
+      const title = item?.documentName ?? documentBasename(item?.contextLocation?.path) ?? null;
+      const restored = [
+        ...(held?.kind === "applied" ? held.restored : []),
+        ...(outcome.restored && title ? [title] : []),
+      ];
+      const renamed = [
+        ...(held?.kind === "applied" ? held.renamed : []),
+        ...(outcome.applied ?? []).flatMap(({ renamed: path }) => {
+          if (!path) return [];
+          const name = documentBasename(path);
+          return name ? [name] : [];
+        }),
+      ];
+      const alsoApplied = [
+        ...(held?.kind === "applied" ? held.alsoApplied : []),
+        ...(outcome.applied ?? []).flatMap((appliedItem) => {
+          if (appliedItem.itemKey === item?.itemKey || !appliedItem.transition) return [];
+          const from = documentBasename(appliedItem.transition.from);
+          const to = documentBasename(appliedItem.transition.to);
+          return from && to ? [`${from} → ${to}`] : [];
+        }),
+      ];
+      if (restored.length || renamed.length || alsoApplied.length)
+        show({ kind: "applied", restored, renamed, alsoApplied, end() {} });
     };
     // An archived Work's refusal is silent (`shownRefusal`): its notice explains it once this tab
     // has read the archive, which another tab or device may have made.
+    type CapturedStart = {
+      release(treeAlreadyApplied?: boolean): CommandStart;
+      captured: CapturedApply;
+      present(outcome: CommandOutcome): void;
+    };
+    const captureApply = (
+      draft: DraftReviewSelection,
+      target: ChangeTarget,
+      restore?: boolean,
+      resetNotice = true,
+    ): CapturedStart | null => {
+      if (resetNotice) endNotice();
+      if (locked) return null;
+      const rows =
+        queryClient.getQueryData<ThreadDraftListItem[]>(
+          projectQueryKeys.workBranchDrafts(projectId, workId),
+        ) ?? [];
+      const item = rows.find((candidate) => candidate.itemKey === draft.itemKey);
+      const bringBack = restore ?? isDeletedFromManuscript(item);
+      const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
+      const captured: CapturedApply | null = owner.captureApply(
+        ref(draft),
+        target,
+        bringBack,
+        (tree && item?.tree) || undefined,
+      );
+      if (!captured) return null;
+      const present = (outcome: CommandOutcome) => {
+        if (outcome.kind === "done" && tree && item?.tree) dropTreeLine(item);
+        if (outcome.kind === "done") applied(item, outcome);
+        if (outcome.kind === "needs-restore" || !owner.state(draft.itemKey).pending) refresh();
+      };
+      return {
+        captured,
+        present,
+        release(treeAlreadyApplied = false) {
+          if (treeAlreadyApplied && target.kind === "tree") {
+            void captured.release({ cancel: true }).outcome;
+            if (item) dropTreeLine(item);
+            refresh();
+            return { sent: false, outcome: Promise.resolve({ kind: "done" }) };
+          }
+          const started = captured.release({ omitTree: treeAlreadyApplied });
+          void started.outcome.then(present);
+          return started;
+        },
+      };
+    };
     const start = (
       mode: "apply" | "discard",
       draft: DraftReviewSelection,
       target: ChangeTarget,
       restore?: boolean,
+      treeAlreadyApplied = false,
+      resetNotice = true,
     ): CommandStart => {
-      const started = dispatch(mode, draft, target, restore);
+      const started =
+        mode === "apply"
+          ? (captureApply(draft, target, restore, resetNotice)?.release(treeAlreadyApplied) ??
+            blocked())
+          : dispatchDiscard(draft, target, resetNotice);
       void started.outcome.then((outcome) => {
         if (outcome.kind === "change-refused" && outcome.code === "work_archived")
           void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
@@ -113,33 +198,14 @@ export function useWorkBranchCommands({
      * document's Apply means yes when its row showed it deleted; an Apply all passes what its
      * confirmation named.
      */
-    const dispatch = (
-      mode: "apply" | "discard",
+    const dispatchDiscard = (
       draft: DraftReviewSelection,
       target: ChangeTarget,
-      restore?: boolean,
+      resetNotice = true,
     ): CommandStart => {
-      endNotice();
+      if (resetNotice) endNotice();
       if (locked) return blocked();
       const item = row(draft);
-      if (mode === "apply") {
-        const bringBack = restore ?? isDeletedFromManuscript(item);
-        // The tree cut rides with the tree line, a whole-item click, or a selection that includes the line.
-        const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
-        const started = owner.apply(
-          ref(draft),
-          target,
-          bringBack,
-          (tree && item?.tree) || undefined,
-        );
-        void started.outcome.then((outcome) => {
-          if (outcome.kind === "done" && tree && item?.tree) dropTreeLine(item);
-          if (outcome.kind === "done" && outcome.restored) restored(item);
-          // A needs-restore answer means the row is behind: refresh so it shows the delete.
-          if (outcome.kind === "needs-restore" || !owner.state(draft.itemKey).pending) refresh();
-        });
-        return started;
-      }
       if (item?.isNew && target.kind === "draft") {
         const removed: DiscardNotice = { kind: "removed", end() {} };
         const outcome = owner.removeCreated(ref(draft), item).then((answer) => {
@@ -229,10 +295,26 @@ export function useWorkBranchCommands({
         restore: ReadonlySet<string> = new Set(),
       ) => {
         // Capture every item in the event turn, not in a promise continuation.
-        const send = ({ draft, target }: (typeof items)[number]) =>
-          start(mode, draft, target, restore.has(draft.documentId)).outcome;
-        const outcomes = Promise.all(items.map(send));
-        return mode === "apply" ? afterHolds(outcomes, items, send) : outcomes;
+        if (mode === "apply") {
+          endNotice();
+          const captured = items.map(({ draft, target }) => ({
+            draft,
+            command: captureApply(draft, target, restore.has(draft.documentId), false),
+          }));
+          const outcomes = owner.releaseBatch(
+            captured.map(({ draft, command }) => ({
+              itemKey: draft.itemKey,
+              command: command?.captured ?? null,
+            })),
+          );
+          void outcomes.then((settled) => {
+            settled.forEach((outcome, index) => {
+              captured[index]?.command?.present(outcome);
+            });
+          });
+          return outcomes;
+        }
+        return Promise.all(items.map(({ draft, target }) => start(mode, draft, target).outcome));
       },
       disposeDrafts: (
         mode: "apply" | "discard",
@@ -240,9 +322,28 @@ export function useWorkBranchCommands({
         restore: ReadonlySet<string> = new Set(),
       ) => {
         if (mode === "apply") {
-          const send = (draft: DraftReviewSelection) =>
-            start(mode, draft, { kind: "draft" }, restore.has(draft.documentId)).outcome;
-          return afterHolds(Promise.all(drafts.map(send)), drafts, send);
+          endNotice();
+          const captured = drafts.map((draft) => ({
+            draft,
+            command: captureApply(
+              draft,
+              { kind: "draft" as const },
+              restore.has(draft.documentId),
+              false,
+            ),
+          }));
+          const outcomes = owner.releaseBatch(
+            captured.map(({ draft, command }) => ({
+              itemKey: draft.itemKey,
+              command: command?.captured ?? null,
+            })),
+          );
+          void outcomes.then((settled) => {
+            settled.forEach((outcome, index) => {
+              captured[index]?.command?.present(outcome);
+            });
+          });
+          return outcomes;
         }
         endNotice();
         const branchId = drafts.map(row).find(Boolean)?.branchId;
@@ -255,32 +356,6 @@ export function useWorkBranchCommands({
       },
     };
   }, [owner, locked, projectId, workId, threadId, surface, queryClient, notice]);
-}
-
-/**
- * Apply all's order for drafted moves: a move whose destination another item still holds
- * answers `held`, so once the others ran it is sent again, until a pass frees none (a swap
- * stays held). Every other outcome is final.
- */
-async function afterHolds<T>(
-  first: Promise<CommandOutcome[]>,
-  items: readonly T[],
-  send: (item: T) => Promise<CommandOutcome>,
-): Promise<CommandOutcome[]> {
-  const outcomes = await first;
-  for (;;) {
-    const held = outcomes.flatMap((outcome, index) => (outcome.kind === "held" ? [index] : []));
-    if (!held.length) return outcomes;
-    let freed = false;
-    for (const index of held) {
-      const item = items[index];
-      if (item === undefined) continue;
-      const again = await send(item);
-      outcomes[index] = again;
-      freed ||= again.kind !== "held";
-    }
-    if (!freed) return outcomes;
-  }
 }
 
 const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);

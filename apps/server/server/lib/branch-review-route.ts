@@ -251,28 +251,39 @@ export async function handleBranchCommandObservation(
 // --- Grants ------------------------------------------------------------------------------------
 
 /**
- * The writer's grant on one draft (file-access §2, §4): preview reads it; Discard edits it;
- * Apply edits it and the live document, so an archived Work's frozen drafts can't be applied
- * (D30).
+ * A pending existing document is authorized by its stable live identity when its proposed
+ * branch placement cannot be resolved. Project and Work ownership are checked separately by
+ * every caller; this fallback never makes a hidden creation addressable outside its branch.
  */
-async function draftGrants<N extends FileNeed>(
+async function authorizeReviewItem<N extends FileNeed>(
   deps: BranchRouteServices,
-  input: { projectId: ProjectId; workId: WorkId; documentId: DocumentId; userId: UserId },
+  input: { workId: WorkId; documentId: DocumentId; userId: UserId },
+  item: Pick<DraftReviewItem, "isNew">,
   need: N,
-  options: { live?: boolean } = {},
-): Promise<FileGrant<N>[]> {
-  await requireBranchWorkAccess(deps, input);
-  const draft = await requireFileGrant(
-    deps.fileAccess,
-    input.userId,
+): Promise<FileGrant<N> | FileAccessDenied> {
+  const draft = await deps.fileAccess.authorize(
+    { accountId: input.userId },
     { kind: "draft", documentId: input.documentId, workId: input.workId },
     need,
   );
-  if (!options.live) return [draft];
-  return [
-    draft,
-    await requireFileGrant(deps.fileAccess, input.userId, documentTarget(input.documentId), need),
-  ];
+  if (!isFileAccessDenied(draft)) return draft;
+  if (item.isNew) return draft;
+  return deps.fileAccess.authorize(
+    { accountId: input.userId },
+    documentTarget(input.documentId),
+    need,
+  );
+}
+
+async function requireReviewItemGrant<N extends FileNeed>(
+  deps: BranchRouteServices,
+  input: { workId: WorkId; documentId: DocumentId; userId: UserId },
+  item: Pick<DraftReviewItem, "isNew">,
+  need: N,
+): Promise<FileGrant<N>> {
+  const grant = await authorizeReviewItem(deps, input, item, need);
+  if (isFileAccessDenied(grant)) throw createError({ statusCode: 404, message: "Draft not found" });
+  return grant;
 }
 
 /**
@@ -292,11 +303,19 @@ async function applyGrants(
       grants.push(await restoreGrant(deps, input, item));
       continue;
     }
+    await requireBranchWorkAccess(deps, input);
     grants.push(
-      ...(await draftGrants(deps, { ...input, documentId: item.documentId }, "edit", {
-        live: options.live && !item.isNew,
-      })),
+      await requireReviewItemGrant(deps, { ...input, documentId: item.documentId }, item, "edit"),
     );
+    if (options.live && !item.isNew)
+      grants.push(
+        await requireFileGrant(
+          deps.fileAccess,
+          input.userId,
+          documentTarget(item.documentId),
+          "edit",
+        ),
+      );
   }
   return grants;
 }
@@ -352,9 +371,18 @@ export async function handleWorkBranchListRequest(
         },
       )
     : new Map();
+  // A broken proposed placement must not erase a pending fact. Existing documents retain
+  // their stable live-source authority even when the branch view cannot resolve an ancestor.
+  const liveReadable = await deps.fileAccess.listAccess(
+    { accountId: input.userId },
+    listed.items.filter((item) => !item.isNew).map((item) => item.documentId),
+  );
   return {
     items: listed.items
-      .filter((item) => readable.has(item.documentId) || item.deletedLive)
+      .filter(
+        (item) =>
+          readable.has(item.documentId) || liveReadable.has(item.documentId) || item.deletedLive,
+      )
       .map((item) => toWireItem(item, listed.threadTitles)),
   };
 }
@@ -374,12 +402,7 @@ export async function handleDraftMetadataRequest(
     throw createError({ statusCode: 404, message: "Draft not found" });
   const resolved = await deps.documentSync.draftReview.resolveItem(input);
   if (!resolved?.draftId || resolved.documentId !== input.documentId) return { status: "gone" };
-  await requireFileGrant(
-    deps.fileAccess,
-    input.userId,
-    { kind: "draft", documentId: input.documentId, workId: input.workId },
-    "read",
-  );
+  await requireReviewItemGrant(deps, input, resolved.item, "read");
   return {
     status: "active",
     draftId: resolved.draftId,
@@ -588,15 +611,19 @@ export async function handleApplyClickRequest(
   // A drafted delete of a document live deleted too has no draft to read: the click only
   // settles the branch's row, authorized like a restore through the draft's destination.
   const settlesOnly = deletedLive && item?.item.tree?.deleted === true;
-  for (const target of [
-    ...(settlesOnly
-      ? []
-      : [{ kind: "draft" as const, documentId: input.documentId, workId: input.workId }]),
-    ...(item?.item.isNew || deletedLive ? [] : [documentTarget(input.documentId)]),
-  ]) {
-    const grant = await deps.fileAccess.authorize({ accountId: input.userId }, target, "edit");
+  if (!settlesOnly && item) {
+    const grant = await authorizeReviewItem(deps, input, item.item, "edit");
     if (isFileAccessDenied(grant)) return denied(grant);
     grants.push(grant);
+  }
+  if (item && !item.item.isNew && !deletedLive) {
+    const live = await deps.fileAccess.authorize(
+      { accountId: input.userId },
+      documentTarget(input.documentId),
+      "edit",
+    );
+    if (isFileAccessDenied(live)) return denied(live);
+    grants.push(live);
   }
   if (item && deletedLive) grants.push(await restoreGrant(deps, input, item.item));
   const result = await runWithEditGrants(deps.fileAccess, grants, () =>
@@ -715,7 +742,6 @@ export function toWireItem(
       : null,
     documentName: item.documentName,
     contextLocation: reviewContextLocation(item.path),
-    conflict: item.conflict,
     deletedLive: item.deletedLive,
     actorThreads: item.actorThreadIds.map((threadId) => ({
       threadId,

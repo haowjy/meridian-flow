@@ -20,6 +20,7 @@ import {
 import { and, asc, eq, isNull, ne, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
+import { normalizeNames } from "./name-normalization.js";
 import { insertFolder, tombstoneFolders } from "./node-rows.js";
 import type { NodeRef } from "./tree-view.js";
 import {
@@ -87,6 +88,10 @@ async function fold(db: Database, hidden: FolderId, into: FolderId): Promise<voi
         .where(eq(folders.id, child.id));
     }
   }
+  const documentChildren = await tx
+    .select({ id: documents.id })
+    .from(documents)
+    .where(and(eq(documents.folderId, hidden), isNull(documents.deletedAt)));
   // A hidden folder holds only hidden nodes (TM invariant 2). Their paths are unchanged in
   // every view, so no rendered token moves and no version is bumped.
   await tx
@@ -108,6 +113,10 @@ async function fold(db: Database, hidden: FolderId, into: FolderId): Promise<voi
   await tx.delete(branchTreeFolders).where(eq(branchTreeFolders.folderId, hidden));
   await tx.update(folders).set({ absorbedInto: into }).where(eq(folders.id, hidden));
   await tombstoneFolders(db, [hidden]);
+  await normalizeNames(db, [
+    ...children.map((child) => ({ kind: "folder" as const, id: child.id })),
+    ...documentChildren.map((child) => ({ kind: "document" as const, id: child.id })),
+  ]);
 }
 
 /**

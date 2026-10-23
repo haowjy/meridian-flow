@@ -57,7 +57,7 @@ import {
   keptDraftReader,
   removalBehind,
 } from "./file-access.js";
-import { currentUri, displacedRefusal, resolveInverseTarget } from "./inverse-address.js";
+import { currentUri, resolveDisplacedTarget, resolveInverseTarget } from "./inverse-address.js";
 import { runNamespaceCommand } from "./namespace-commands.js";
 import { readDocument } from "./read-document.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
@@ -419,7 +419,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       copied = read;
     }
 
-    const address = inverse
+    let address = inverse
       ? inverse.address
       : await inContainer(deps, principal, parsed.command, target, () =>
           resolveDocumentAddress(context, parsed.command, parsed.path, {
@@ -457,8 +457,27 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         outcome.isError ? outcome.output.status : outcome.result.status,
       )
     ) {
-      const displaced = await displacedRefusal(deps, call, parsed.command, address, ctx.threadId);
-      if (displaced) return displaced;
+      const displaced = await resolveDisplacedTarget(
+        deps,
+        call,
+        parsed.command,
+        address,
+        ctx.threadId,
+      );
+      if (isToolError(displaced)) return displaced;
+      if (displaced) {
+        address = displaced.address;
+        outcome = await writeUnderGrant(
+          deps,
+          principal,
+          parsed,
+          address,
+          copied,
+          ctx,
+          context.resolution.uploadsOwner?.chatRef,
+          displaced.grant,
+        );
+      }
     }
     // A reversed move left the document somewhere else: the result names where it is now.
     if (inverse && !outcome.isError && outcome.result.status === "success") {

@@ -51,6 +51,9 @@ function provenanceToWriteOrigin(provenance: WriteProvenance): DocumentWriteOrig
   if (provenance.type === "human") {
     return { type: "user", actorUserId: provenance.userId };
   }
+  if (provenance.type === "import") {
+    return { type: "user", actorUserId: provenance.userId };
+  }
   return null;
 }
 

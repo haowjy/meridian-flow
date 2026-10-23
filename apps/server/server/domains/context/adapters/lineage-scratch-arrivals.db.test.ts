@@ -1,5 +1,6 @@
 /** Restoring chat and Work visibility claims returning lineage addresses once. */
 
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
@@ -121,9 +122,13 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         deleted = crypto.randomUUID(),
         hidden = crypto.randomUUID(),
         folder = crypto.randomUUID();
-      await db
-        .insert(folders)
-        .values({ id: folder, contextSourceId: source, name: "hidden", deletedAt: new Date() });
+      await db.insert(folders).values({
+        id: folder,
+        contextSourceId: source,
+        name: "hidden",
+        documentAlias: folderDocumentName("hidden"),
+        deletedAt: new Date(),
+      });
       await db.insert(documents).values([
         { id: note, contextSourceId: source, name: "note", extension: "toml" },
         {

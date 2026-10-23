@@ -91,7 +91,7 @@ export interface BranchTreeCommands {
       /** The source the branch has it in now, whose namespace the command also takes. */
       fromSourceId: string;
     },
-  ): Promise<Result<{ moved: boolean }, AdapterFault>>;
+  ): Promise<Result<{ moved: boolean; name?: string; extension?: string }, AdapterFault>>;
   delete(command: BranchTreeCommand): Promise<Result<void, AdapterFault>>;
 }
 
@@ -241,7 +241,11 @@ function draftPlacement(
       move(target, command) {
         return executor.runInBranch(
           { ...work, mode: "ensure" },
-          async (active): Promise<Result<{ moved: boolean }, AdapterFault>> => {
+          async (
+            active,
+          ): Promise<
+            Result<{ moved: boolean; name?: string; extension?: string }, AdapterFault>
+          > => {
             const branch = { id: active.id, workId: placement.workId };
             const moved = await placement.tree.moveInBranch({
               branch,
@@ -254,7 +258,11 @@ function draftPlacement(
                 ? Ok({ moved: false })
                 : Err(branchTreeFault(moved.error));
             await command.record(recorded(branch, moved.value));
-            return Ok({ moved: true });
+            return Ok({
+              moved: true,
+              name: moved.value.after.moved?.name,
+              extension: moved.value.after.moved?.extension,
+            });
           },
           [command.fromSourceId],
         );

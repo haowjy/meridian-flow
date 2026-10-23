@@ -133,23 +133,27 @@ room reader for it (following replacement sessions even without a surface), and
 cancels it on close, so a newer draft under the same key never inherits an old click.
 A tree-only click has no room and its applied answer settles it. A refusal lands on
 the generation the click was made for. Retiring a session detaches that binding and
-refuses only its draft's unsent clicks. `apply(ref, target)` synchronously freezes the stable `draftId`, Yjs
+refuses only its draft's unsent clicks. `captureApply(ref, target)` synchronously freezes the stable `draftId`, Yjs
 snapshot, the reviewed base blocks (O), selected ids, the result of applying those
 groups (P) and one room-base-to-O delta. Its acknowledgement barrier waits for
-the server to acknowledge every local update in that captured cut before dispatch. The queue
-retains a `readDraftRoom` lease independently of React until terminal.
+the server to acknowledge every local update in that captured cut before sending. Capture
+immediately enters the immutable command in the item's account-owned FIFO. A single Apply
+releases it to send at once. Apply all captures and queues every item in the click's event turn,
+then the owner releases sends in server order; an earlier answer may omit a tree cut it already
+settled, but never recaptures later text or a later tree revision. The queue retains a
+`readDraftRoom` lease independently of React until terminal.
 
 A deleted document (the list item's `deletedLive`, D79) is draft-only on every
-surface. Existence is its own fact, never read from `conflict`: a deleted
-document's path may also be taken (`path_taken`, which only withdraws Apply); Apply restores it, then merges. `apply(ref, target, restore)` sends
+surface. Existence is its own fact, never read from a name conflict. If another document took
+its path, Apply restores it at the next free name, then merges. `apply(ref, target, restore)` sends
 `restore` only when the writer knew: a single document's Apply whose row showed
 the delete, or an Apply all for the documents its confirmation named. Without it
 the server answers `needs_restore` (nothing changed); the outcome is
 `needs-restore`, the list refreshes so the row shows the delete, and an Apply all
-asks again by name. An applied answer with `restored` makes the outcome
-`{ kind: "done", restored: true }` and marks the document (`wasRestored`) for the
-editor's "back in the manuscript" state; the surface that clicked says the same in
-its reserved notice slot (`CommandNotice`).
+asks again by name. An applied answer carries `restored` and every final `renamed`
+path. The account owner retains both facts for the document, so an editor Apply keeps
+its result in the identity row after navigation. Dock and Work surfaces show the same
+facts in `CommandNotice`, which renders only when there is a result or question.
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds,
 then an item Retry. A terminal acknowledgement failure refuses unsent cuts
@@ -173,7 +177,7 @@ between-paragraph bar; both are open in [#992](https://github.com/haowjy/meridia
 which needs one feedback surface outside the manuscript flow rather than another
 per-width fix. A terminal close cancels unsent clicks and observes a sent
 head's durable outcome; applied then needs no room record. Feedback starts at
-500 ms in reserved footer space. No queue or optimistic base persists. Queue changes invalidate its optimistic
+500 ms on the addressed item. No queue or optimistic base persists. Queue changes invalidate its optimistic
 contribution independently of account UI notifications; the account publishes only
 changed command state or a changed item-to-draft binding. Rendering leaves subscribe
 to those records; command callbacks and the project controller do not. The room
@@ -239,9 +243,9 @@ room is a lifecycle transition, not a room-opening error. The metadata GET retur
 Apply carries `tree.revision`, and with no text to send (no room, or no changes)
 it is the tree cut alone: empty `groupIds` and `baseViewDelta`, no `snapshot` or
 `draftId`, in the same item FIFO. A tree cut already queued is not sent again. A
-changed row answers `changed`; a move whose destination another of
-the branch's items still holds answers `held`, and Apply all re-sends those after
-the others. `discardItem` is the item's one Discard when it has a tree line: the
+changed row answers `changed`. The server applies a move's pending occupant chain under the
+branch lock, including a swap as one transaction, so single-row Apply and Apply all share the
+same ordering. `discardItem` is the item's one Discard when it has a tree line: the
 server drops the move or delete, and the chosen text is discarded here as always.
 Its text offers no Undo, because Undo would bring back the text without the move
 or delete the server already settled (#763): the owner ends the text notice at

@@ -62,8 +62,8 @@ identity appears once. Availability lookups in a branch view follow the same
 listing: a surviving document (and a deleted folder the view places it under)
 answers `available` at its deleted-at location, never `deleted`, so a review
 address opens its draft; live lookups still answer `deleted`. A new live node at a surviving document's path makes that
-path `ambiguous` in the branch, and `treeState` reports the clash. A path with two visible nodes answers `ambiguous`; normalization is a
-write operation, while `treeState` reports the clash.
+path `ambiguous` in the branch. A path with two visible nodes answers `ambiguous`;
+normalization is a write operation, while `treeState` reports each document's own state.
 
 `branch-ownership.ts` is the single rule for which branches may hold a document:
 the branch's project, or the account owner's personal `user://` source. End of
@@ -80,8 +80,8 @@ have diagnostic lineages, so known-id file access can deny access with their
 removal record; this never grants content access or makes them visible.
 
 Anything deciding whether a node may stand at a path asks as a kind (document
-or folder) through one rule, so a create, placement, move, Apply hold, and
-`treeState` clash diagnostic agree and review and Apply cannot disagree. A
+or folder) through one rule. Create refuses an occupied claim; moves, restores and Apply
+allocate a free leaf name but refuse a document blocking an ancestor. A
 folder holds its document alias (`Lore.md` holds `Lore`); folders never clash
 with folders through it. Browsing never asks as a kind, and a path two nodes
 share answers a clash, never a pick.
@@ -176,10 +176,15 @@ carries the writer's `restore` (D79). A living document answers
 `already_living`. Discards, Work cascades and deleted sources or projects
 answer `refused`: a Work's own Restore owns its cascade. It places the document
 through `placeLive` (placement's ancestry and one name-claim rule: a living
-folder at a path is reused, a deleted one restored), so a taken path answers
-`location_taken` and the savepoint rolls back every folder it restored. It
-settles arrivals and refreshes the catalog through ports its caller passes,
+folder at a path is reused, a deleted one restored). A taken leaf counts up to
+the free name; the inverse boundary reports a document blocking an ancestor as
+`ancestor_taken`.
+It settles arrivals and refreshes the catalog through ports its caller passes,
 and never touches a draft.
+
+Every arrival returns its actual free placement. Live moves, drafted moves and
+their inverses, restores, and Apply placements therefore count up rather than
+refusing a leaf-name collision. After a live write, `normalizeNames` looks up only hidden nodes whose indexed claim meets the installed claim and makes those nodes yield in the same transaction; visible wins, then a hidden folder, then the earlier `(created_at, id)`. Folders persist the contracts codec’s document alias so opposite-kind lookup stays indexed.
 
 ## Lock and identity contracts
 

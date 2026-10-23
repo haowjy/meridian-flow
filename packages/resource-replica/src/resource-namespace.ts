@@ -289,13 +289,9 @@ export function namespaceOutcomeMatches(
   if (attemptIs(attempt, "move") && namespaceReceiptIs(receipt, "move")) {
     const source = parseContextUri(receipt.command.sourceUri);
     const destination = parseContextUri(receipt.command.destinationUri);
-    const currentName = normalizedPath(attempt.request.body.path).split("/").at(-1) ?? "";
-    const destinationPath = [
-      normalizedPath(attempt.request.body.destinationFolderPath),
-      attempt.request.body.newName ?? currentName,
-    ]
-      .filter(Boolean)
-      .join("/");
+    const destinationParentPath = destination.ok
+      ? destination.value.path.split("/").slice(0, -1).join("/")
+      : "";
     return (
       source.ok &&
       destination.ok &&
@@ -312,9 +308,9 @@ export function namespaceOutcomeMatches(
         attempt.request.body.destinationParent,
       ) &&
       (attempt.request.body.destinationParent?.kind === "folder"
-        ? destination.value.path.split("/").at(-1) === (attempt.request.body.newName ?? currentName)
+        ? true
         : destination.value.scheme === attempt.request.body.destinationScheme &&
-          destination.value.path === destinationPath &&
+          destinationParentPath === normalizedPath(attempt.request.body.destinationFolderPath) &&
           authorityMatches(attempt.request.body.destinationScheme, destination.value.authority, {
             workId: attempt.request.body.destinationWorkId ?? null,
             workHandle: attempt.request.destinationWorkHandle,

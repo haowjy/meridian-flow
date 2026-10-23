@@ -64,7 +64,10 @@ collab's document-aware engine; they never seed a Y.Doc with an assumed
 Markdown schema. Binary documents are storage-backed and are read through
 storage, not the text engine. A whole-file `write` overwrites a living document and
 answers `not_found` at an empty path: it never creates (W52); creation is
-`createTrackedDocument`, `createBoundDocument` or `ensureTrackedDocument`.
+`createTrackedDocument`, `createTrackedDocumentAtFreeName`, `createBoundDocument`
+or `ensureTrackedDocument`. The free-name command owns allocation, identity and
+initial content together; callers supply only batch reservations and use its
+authoritative URI.
 
 ## Views, identity, and revisions
 
@@ -131,8 +134,9 @@ refused); a recursive delete, or a move to a source fewer branches may hold,
 first splits hidden contents into hidden twins at their old paths, so a
 writer's live folder operations never disturb a branch's hidden rows. Identity moves resolve a folder
 in the live view, then resolve it again under namespace locks; stale plans
-return `stale_target`, proven occupation returns a typed conflict, and absent,
-terminal, or denied identity destinations return `destination_missing`.
+return `stale_target`, while an occupied destination leaf sends the arrival to
+the next alias-aware free name and returns that actual path. An absent,
+terminal, or denied identity destination returns `destination_missing`.
 Location-only CAS tokens fence moves and deletes. A `createFolders` suffix is
 validated beneath the identity anchor in the same transaction; a missing
 anchor creates nothing. Folder deletes validate the supplied folder identity

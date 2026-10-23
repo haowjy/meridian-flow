@@ -1,6 +1,5 @@
 /**
- * A surface's command footer, reserved below its rows so nothing it says inserts a line
- * above surviving content. It shows the latest command feedback (a Discard offers Undo; an
+ * A surface's command footer below its rows. It shows the latest command feedback (a Discard offers Undo; an
  * Apply that brought deleted documents back names them), or, while one is open, the
  * question a command asks first (Discard all, an Apply all that deletes or brings back
  * documents).
@@ -38,6 +37,7 @@ export function CommandNotice({
   useEffect(() => {
     if (asking) footer.current?.scrollIntoView?.({ block: "nearest" });
   }, [asking]);
+  if (!question && !notice) return null;
   const button =
     "text-button shrink-0 disabled:opacity-50 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11";
   return (
@@ -68,8 +68,12 @@ export function CommandNotice({
       ) : (
         <>
           {notice?.itemKey ? <DraftCommandStatus itemKey={notice.itemKey} /> : null}
-          {notice?.kind === "restored" ? (
-            <RestoredSentence titles={notice.titles} />
+          {notice?.kind === "applied" ? (
+            <AppliedSentence
+              restored={notice.restored}
+              renamed={notice.renamed}
+              alsoApplied={notice.alsoApplied}
+            />
           ) : notice ? (
             <>
               <span>
@@ -131,12 +135,37 @@ export function restoredSentence(titles: readonly string[]): string {
     : t`${names} are back in the manuscript.`;
 }
 
-function RestoredSentence({ titles }: { titles: readonly string[] }) {
+function AppliedSentence({
+  restored,
+  renamed,
+  alsoApplied,
+}: {
+  restored: readonly string[];
+  renamed: readonly string[];
+  alsoApplied: readonly string[];
+}) {
   useLingui();
-  const sentence = restoredSentence(titles);
+  const sentence = appliedSentence(restored, renamed, alsoApplied);
   return (
     <span className="min-w-0 truncate" title={sentence}>
       {sentence}
     </span>
   );
+}
+
+export function appliedSentence(
+  restored: readonly string[],
+  renamed: readonly string[],
+  alsoApplied: readonly string[] = [],
+): string {
+  const others = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
+    alsoApplied,
+  );
+  return [
+    ...(renamed.length === 1
+      ? [t`Added as ${renamed[0]}.`]
+      : renamed.map((name) => t`Added as ${name}.`)),
+    ...(restored.length ? [restoredSentence(restored)] : []),
+    ...(alsoApplied.length ? [t`Also applied ${others}.`] : []),
+  ].join(" ");
 }

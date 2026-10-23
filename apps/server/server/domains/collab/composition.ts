@@ -484,6 +484,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     evidence: createDrizzleDraftDispositionStore(deps.db),
     store: createDrizzleApplyClick(deps.db, {
       workProjection: deps.workProjectionMutation,
+      branches: workBranches,
       coordinator: draftCoordinator,
       live: persistence.journal,
       liveCoordinator,
