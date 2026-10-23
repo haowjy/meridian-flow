@@ -4,6 +4,10 @@ import { I18nProvider } from "@lingui/react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { Markdown } from "../src/rich-content/Markdown";
+import {
+  streamingMarkdownSnapshot,
+  subscribeStreamingMarkdown,
+} from "../src/rich-content/markdown-stream-service";
 import "../src/styles/globals.css";
 
 i18n.load("en", {});
@@ -71,13 +75,16 @@ const stats = (samples: number[]) => {
   };
 };
 
-function waitForPaint(host: HTMLElement): Promise<void> {
+function waitForPaint(streamId: string, source: string): Promise<void> {
   return new Promise((resolve) => {
-    const observer = new MutationObserver(() => {
-      observer.disconnect();
+    let unsubscribe = () => {};
+    const inspect = () => {
+      if (streamingMarkdownSnapshot(streamId)?.source !== source) return;
+      unsubscribe();
       requestAnimationFrame(() => resolve());
-    });
-    observer.observe(host, { childList: true, characterData: true, subtree: true });
+    };
+    unsubscribe = subscribeStreamingMarkdown(streamId, inspect);
+    inspect();
   });
 }
 
@@ -114,7 +121,7 @@ export async function runMarkdownBench(interval: number, mountsOnly = false) {
     const arrived = performance.now();
     source += token;
     updates.push(commit([source], true));
-    await waitForPaint(host);
+    await waitForPaint("bench:0", source);
     arrivalToPaint.push(performance.now() - arrived);
     await new Promise((resolve) =>
       setTimeout(resolve, Math.max(0, interval - (performance.now() - arrived))),
