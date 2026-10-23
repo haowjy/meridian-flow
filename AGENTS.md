@@ -38,7 +38,7 @@ action is still pending.
 
 **Navigate first.** Every destination change goes to the new screen
 immediately. Create, persist, and connect in the background. This is the
-default for the whole app, not a chat special case. If the background work
+default for every screen, not only chat. If the background work
 fails, the error is on that destination. Never return to the previous screen
 because the new one has not finished materializing.
 
@@ -135,7 +135,7 @@ Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 ([docs/debugging.md](docs/debugging.md#set-up-and-debug-with-the-cli),
 [`./mf` drives shared client cores][mf-shared-cores]). Verification is a prober's
 browser run, with `agent-browser`, of what the writer sees. Every PR that changes
-anything on a writer's path ends with one, screenshots in the PR, server-only
+anything a writer sees or relies on ends with one, screenshots in the PR, server-only
 changes included. `./mf` output never stands in for that run.
 
 ## Build and test
