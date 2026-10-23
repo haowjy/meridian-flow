@@ -10,7 +10,8 @@ reversal, committed trail, and WebSocket details; this page keeps their shared r
 `@meridian/agent-edit`. Model reads and writes enter through the thread-peer
 pool and carry an explicit destination. A `live` destination uses the live
 core and creates no Work draft or thread peer; a `draft` destination uses the
-thread-peer core and names its Work. Scratch and uploads are always live.
+thread-peer core and names its Work. Scratch and upload content is always live;
+their placement can still be a Work branch fact.
 
 A reply may hold a live core and a thread core at once. Staged writes overlay
 only reads of the destination to which they were pinned. A live read never
