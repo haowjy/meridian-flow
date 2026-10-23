@@ -32,8 +32,11 @@ export function createModelDocumentEdits(input: {
     let draftId: string | null = null;
     let blockOrigins: BlockOriginMap | undefined;
     if (version === "draft") {
-      if (view?.kind !== "branch") return null;
-      if (ensure) {
+      if (view?.kind !== "branch") {
+        // History follows immutable edit origins even when the chat's current branch has not
+        // materialized this document. A write still needs a concrete branch destination.
+        if (ensure) return null;
+      } else if (ensure) {
         const documentDraft = await input.coordinator.withDocument(documentId, (liveDoc) => {
           const authority = boundDocumentAuthority(liveDoc);
           if (!authority) throw new Error(`Live document ${documentId} has no authority binding`);
@@ -54,8 +57,7 @@ export function createModelDocumentEdits(input: {
           );
           draftId = documentDraft.draftId;
         } catch (cause) {
-          if (cause instanceof DraftNotFoundError) return null;
-          throw cause;
+          if (!(cause instanceof DraftNotFoundError)) throw cause;
         }
       }
     }
