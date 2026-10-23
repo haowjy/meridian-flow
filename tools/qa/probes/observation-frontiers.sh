@@ -41,7 +41,7 @@ SELECT
   of.recorded_seq,
   of.source_block_id,
   of.room_key,
-  of.unshown,
+  of.journal_position,
   length(of.snapshot) AS snap_bytes,
   tb.turn_id,
   t.thread_id,

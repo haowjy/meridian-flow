@@ -113,6 +113,7 @@ export function createDraftThreadPeerAgentEditCore(input: {
           draftCoordinator: input.draftCoordinator,
           drafts: input.drafts,
           journalRows: input.draftJournal,
+          liveJournal: input.journal,
           flushLivePull: (documentId) => input.draftPulls.flushLivePull(documentId),
           branches: input.branches,
         }),

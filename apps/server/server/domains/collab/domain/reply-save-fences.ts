@@ -11,9 +11,16 @@ import type { RefusedResponseDocument } from "./agent-edit-cores.js";
 import type { Branches } from "./branches.js";
 import { type ClosedPin, closedPinReason } from "./closed-pin-reason.js";
 import type { DraftAgentEditDiagnostics } from "./draft-agent-edit.js";
+import type { DraftSeedRecord } from "./draft-store.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 
-export type ReplyPin = { branchId: BranchId; peerDraftId: string; upstreamDraftId: string };
+export type ReplyPin = {
+  branchId: BranchId;
+  peerDraftId: string;
+  upstreamDraftId: string;
+  /** Immutable provenance loaded with the ensured Work draft. */
+  seed: DraftSeedRecord | null;
+};
 export type ReplyDocument = {
   core: AgentEditCore;
   grant: FileGrant<"edit">;
@@ -30,7 +37,11 @@ export type ReplyRecord = {
 };
 
 /** A drafted write's ensured peer becomes its reply document's pin, before its room read. */
-export function pinStaged(entry: ReplyDocument | undefined, staged: WriteContext): void {
+export function pinStaged(
+  entry: ReplyDocument | undefined,
+  staged: WriteContext,
+  seed: DraftSeedRecord | null,
+): void {
   const peer = staged.interactionContext;
   if (!entry || peer?.mode !== "threadPeer" || entry.linkView.kind !== "branch") return;
   if (!peer.peerDraftId || !peer.upstreamDraftId)
@@ -39,6 +50,7 @@ export function pinStaged(entry: ReplyDocument | undefined, staged: WriteContext
     branchId: entry.linkView.branchId,
     peerDraftId: peer.peerDraftId,
     upstreamDraftId: peer.upstreamDraftId,
+    seed,
   };
 }
 export type ReplySaveFences = {

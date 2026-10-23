@@ -57,6 +57,7 @@ async function twoProcesses(
     documentId,
     branchId,
     liveDoc: live,
+    liveRoom: null,
   });
   const other = await openHarness(harness.url);
   const a = openProcess(harness, "A", wrap(storeA ?? harness.store));

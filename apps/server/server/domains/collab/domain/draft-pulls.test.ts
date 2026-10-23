@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import type { DraftCoordinator } from "./draft-coordinator.js";
 import { createDraftPullService } from "./draft-pulls.js";
-import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000701" as DocumentId;
 
@@ -26,7 +25,6 @@ describe("DraftPullService", () => {
       let fail = true;
       const service = createDraftPullService({
         outsideTransaction: (operation) => operation(),
-        liveCoordinator: coordinatorFor(live),
         liveJournal: journalFor(live),
         draftCoordinator: mockCoordinator(async ({ upstream }: { upstream: Y.Doc }) => {
           if (fail) {
@@ -40,6 +38,7 @@ describe("DraftPullService", () => {
           listActiveWorkDraftIds: async () => ["work"],
           ensureThreadPeerDraft: async () => ({
             documentDraft: { draftId: "peer", upstreamDraftId: "work" },
+            workDraft: { draftId: "work", seed: null },
           }),
         },
         debounceMs: 10,
@@ -79,7 +78,6 @@ describe("DraftPullService", () => {
       let pulls = 0;
       const service = createDraftPullService({
         outsideTransaction: (operation) => operation(),
-        liveCoordinator: coordinatorFor(live),
         liveJournal: journalFor(live),
         draftCoordinator: mockCoordinator(async ({ upstream }: { upstream: Y.Doc }) => {
           if (++pulls === 2) throw new Error("queued pull failed");
@@ -95,6 +93,7 @@ describe("DraftPullService", () => {
           listActiveWorkDraftIds: async () => ["work"],
           ensureThreadPeerDraft: async () => ({
             documentDraft: { draftId: "peer", upstreamDraftId: "work" },
+            workDraft: { draftId: "work", seed: null },
           }),
         },
         diagnostics: { backgroundFailed: () => {} },
@@ -155,7 +154,6 @@ describe("DraftPullService", () => {
       let failures = 2;
       const service = createDraftPullService({
         outsideTransaction: (operation) => operation(),
-        liveCoordinator: coordinatorFor(docWithText("writer edit")),
         liveJournal: journalFor(docWithText("writer edit")),
         draftCoordinator: mockCoordinator(async () => {
           if (failures-- > 0) throw new Error("timer pull failed");
@@ -165,6 +163,7 @@ describe("DraftPullService", () => {
           listActiveWorkDraftIds: async () => ["work"],
           ensureThreadPeerDraft: async () => ({
             documentDraft: { draftId: "peer", upstreamDraftId: "work" },
+            workDraft: { draftId: "work", seed: null },
           }),
         },
         diagnostics: { backgroundFailed: failed },
@@ -183,12 +182,6 @@ describe("DraftPullService", () => {
     }
   });
 });
-function coordinatorFor(doc: Y.Doc): Pick<LiveDocumentCoordinator, "withDocument"> {
-  return {
-    withDocument: async (_documentId, fn) => fn(doc),
-  };
-}
-
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => {

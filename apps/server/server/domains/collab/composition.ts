@@ -221,7 +221,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const draftPulls = createDraftPullService({
     // A pull isn't the write that scheduled it: it leaves that write's grants too.
     outsideTransaction: runOutsideWrite,
-    liveCoordinator,
     liveJournal: persistence.journal,
     draftCoordinator,
     drafts,
@@ -291,6 +290,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const modelDocumentEdits = createModelDocumentEdits({
     service: () => turnInverse,
+    drafts,
+    coordinator: liveCoordinator,
   });
   const responseTransactionDiagnostics = createResponseTransactionDiagnostics(deps.eventSink);
   const runtime = createAgentEditRuntime({

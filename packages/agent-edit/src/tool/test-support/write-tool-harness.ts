@@ -124,7 +124,7 @@ export function harness(
 
 export class MemoryCoordinator implements DocumentCoordinator {
   readonly docs = new Map<string, Y.Doc>();
-  concurrentUpdatesSince?: DocumentCoordinator["concurrentUpdatesSince"];
+  concurrentUpdatesForReport?: DocumentCoordinator["concurrentUpdatesForReport"];
   private journal?: UpdateJournal;
   private failure: unknown;
   private nextFailure: unknown;
@@ -227,9 +227,13 @@ export class MemoryCoordinator implements DocumentCoordinator {
             const beforeState = Y.encodeStateAsUpdate(cut);
             if (input.precondition && !input.precondition(beforeState))
               throw new SavePreconditionRefused(input.docId);
-            await this.journal?.appendBatch(input.entries);
+            const appended = await this.journal?.appendBatch(input.entries);
             for (const entry of input.entries) Y.applyUpdate(cut, entry.update);
-            return { beforeState, afterState: Y.encodeStateAsUpdate(cut) };
+            return {
+              beforeState,
+              afterState: Y.encodeStateAsUpdate(cut),
+              position: appended?.at(-1)?.seq ?? 0,
+            };
           } finally {
             cut.destroy();
           }
@@ -260,6 +264,7 @@ export class MemoryCoordinator implements DocumentCoordinator {
     return {
       doc,
       room: `memory:${docId}`,
+      position: committed?.persistenceWatermark ?? committed?.updates.at(-1)?.seq ?? 0,
       kept: (staged?.entries ?? []).flatMap((entry) =>
         entry.mutation?.writeId ? [entry.mutation.writeId] : [],
       ),

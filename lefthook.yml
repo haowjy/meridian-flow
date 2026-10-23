@@ -8,7 +8,7 @@ pre-commit:
       glob: "packages/database/src/migrations/*.sql"
       run: pnpm exec tsx tools/dev/migration-lint.ts --staged
     typecheck:
-      run: pnpm typecheck
+      run: pnpm typecheck:staged
 
 pre-push:
   commands:

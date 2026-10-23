@@ -13,7 +13,6 @@ import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock, parseImageBlockContent } from "@/rich-content/ImageBlock";
-import { Markdown } from "@/rich-content/Markdown";
 import { AssistantTurnActions } from "./AssistantTurnActions";
 import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
 import { blockRenderKey } from "./block-render-key";
@@ -238,11 +237,11 @@ const TurnItemView = memo(function TurnItemView({
     // only ever rendered here, outside the Thinking fold.
     return (
       <div className="space-y-[var(--chat-space-row)]" data-turn-item-kind="text">
-        {item.block.status === "partial" ? (
-          <StreamingText text={item.text} />
-        ) : (
-          <Markdown>{item.text}</Markdown>
-        )}
+        <StreamingText
+          streamId={blockRenderKey(item.block)}
+          text={item.text}
+          streaming={item.block.status === "partial"}
+        />
       </div>
     );
   }

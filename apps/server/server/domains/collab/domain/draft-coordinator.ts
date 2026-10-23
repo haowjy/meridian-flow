@@ -25,7 +25,7 @@ export type DraftCoordinator = Pick<DraftRuntime, "loadBase" | "prepareAppend"> 
     fn: (doc: Y.Doc, snapshot: DraftSnapshot) => Promise<T>,
   ): Promise<T>;
   /** A private copy of the committed draft, the caller's to change and destroy. */
-  copyDraft(draftId: string): Promise<{ doc: Y.Doc; snapshot: DraftSnapshot }>;
+  copyDraft(draftId: string): Promise<{ doc: Y.Doc; snapshot: DraftSnapshot; position: number }>;
   /**
    * Replays a response's rows on a candidate of the committed draft. With `commit`, the rows
    * come back as a prepared write (null when there are none) for the caller's commit scope.
@@ -83,9 +83,11 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
   }
 
   /** A private copy: whatever its owner changes stays with it (decision F6). */
-  async function copyDraft(draftId: string): Promise<{ doc: Y.Doc; snapshot: DraftSnapshot }> {
+  async function copyDraft(
+    draftId: string,
+  ): Promise<{ doc: Y.Doc; snapshot: DraftSnapshot; position: number }> {
     const base = await loadBase(draftId);
-    return { doc: cloneReplica(base.replica), snapshot: base.snapshot };
+    return { doc: cloneReplica(base.replica), snapshot: base.snapshot, position: base.replica.seq };
   }
 
   /**

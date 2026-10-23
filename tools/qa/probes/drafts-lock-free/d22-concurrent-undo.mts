@@ -33,6 +33,7 @@ async function seedModelDraftWrite(harness: Harness, label: string) {
     documentId,
     branchId: work.branchId,
     liveDoc: live,
+    liveRoom: null,
   });
   const read = await harness.store.readDraftAt(documentDraft.draftId);
   if (!read) throw new Error("The document draft was not created");

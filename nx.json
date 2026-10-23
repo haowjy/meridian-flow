@@ -1,7 +1,14 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "namedInputs": {
-    "default": ["{projectRoot}/**/*"],
+    "default": ["{projectRoot}/**/*", "sharedConfiguration"],
+    "sharedConfiguration": [
+      "{workspaceRoot}/*.{json,yaml,yml,js,cjs,mjs,ts,cts,mts}",
+      "{workspaceRoot}/.npmrc",
+      "{workspaceRoot}/packages/tsconfig*.json",
+      "{workspaceRoot}/patches/**/*",
+      "{workspaceRoot}/tools/ci/run-nx-target.mjs"
+    ],
     "production": ["default", "!{projectRoot}/**/*.test.ts", "!{projectRoot}/**/*.spec.ts"]
   },
   "targetDefaults": {

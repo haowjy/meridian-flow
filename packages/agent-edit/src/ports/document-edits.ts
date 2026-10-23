@@ -1,4 +1,6 @@
 // Host-owned immutable edit history and forward inverses; no reconstruction journal.
+
+import type { BlockOriginMap } from "../model/block-hash.js";
 import type { ReadCommand, WriteCommand, WriteContext, WriteStatus } from "../tool/types.js";
 
 export type ModelInverseCommand = Extract<WriteCommand, { command: "undo" | "redo" | "revert" }>;
@@ -25,6 +27,8 @@ export type DocumentEditResult =
       destination?: "live" | "draft";
       /** The Work handle for a draft destination, or `/` for No Work. */
       draftWork?: string;
+      /** The immutable address context for draft cuts returned as bytes. */
+      blockOrigins?: BlockOriginMap;
     };
 export interface DocumentEdits {
   execute(

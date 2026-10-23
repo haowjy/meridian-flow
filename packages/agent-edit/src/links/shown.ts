@@ -151,6 +151,6 @@ export function renderedItems(payload: AgentEditModelPayload | undefined): Agent
   if (!payload) return [];
   return [
     ...(payload.blocks ?? []).flatMap((group) => group.items),
-    ...(payload.concurrent?.blocks ?? []),
+    ...(payload.concurrent?.groups.flatMap((group) => group.blocks) ?? []),
   ];
 }

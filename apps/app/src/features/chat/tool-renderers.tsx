@@ -243,22 +243,9 @@ function documentFailureDocumentName(tool: ToolView): string | null {
   return documentDisplayName(path);
 }
 
-/**
- * A write held back because the passage changed since the AI last saw it. It
- * moved nothing, and the refusal handed the AI the current text, so the writer
- * sees a routine step rather than a failure.
- */
-function isCatchUpPause(tool: ToolView): boolean {
-  return (
-    documentToolFailed(tool) &&
-    tool.toolName === "write" &&
-    documentFailureStatus(tool) === "region_changed"
-  );
-}
-
 /** Whether the row reports a failure to the writer. */
 export function toolRowFailed(tool: ToolView): boolean {
-  return documentToolFailed(tool) && !isCatchUpPause(tool);
+  return documentToolFailed(tool);
 }
 
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
@@ -462,11 +449,6 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
   const descriptor = descriptorFor(tool);
   const command = toolCommand(tool);
 
-  if (isCatchUpPause(tool)) {
-    // True whether the passage changed or the AI hadn't seen all of it: it got the text either way.
-    const verb = t`Got the latest text of`;
-    return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
-  }
   if (documentToolFailed(tool)) {
     const verb = descriptor.failureVerb();
     // A move that didn't run left its document where it was.
@@ -504,8 +486,6 @@ const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | nu
 };
 
 function documentExpand(tool: ToolView): ToolExpand | null {
-  // The next row (the retried write, or a read when the passage was too long) says what happened.
-  if (isCatchUpPause(tool)) return null;
   if (documentToolFailed(tool)) {
     return () => <DocumentFailureText tool={tool} />;
   }

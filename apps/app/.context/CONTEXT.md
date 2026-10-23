@@ -94,10 +94,11 @@ not a link role or tab stop. Occurrence offsets refer to the original serialized
 message, not decoded mdast; code/raw HTML remain inert. Keep authorized content
 in one source block and map entity/backslash-decoded text with CommonMark's own
 decoder; a regex scanner or second wikilink tokenizer will drift from the wire
-grammar. Streamdown caches processors by plugin identity, so keep the occurrence
-plugin a stable named option-taking plugin, key the renderer by occurrence
-metadata, and pass live resolution through React context; dropping any one reuses
-stale authority or resolution.
+grammar. Static writer turns parse once with the canonical codec's presentation source
+map. Exact source ranges grant chip and skill identity; live resolution and the
+host's openability policy travel through React context. Streaming turns never
+receive presentation metadata, and unchanged prose never infers identity from a
+label.
 
 Removing a composer reference changes the draft, not Uploads. Upload deletion
 is explicit; duplicate references and Undo/Redo must not revive a deleted file.

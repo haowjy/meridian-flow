@@ -4,7 +4,11 @@
  * materialization of one read. The coordinator and the storage adapters both build on this.
  */
 
-import type { CapturedPart, SemanticEditIRV1 } from "@meridian/agent-edit/integration";
+import type {
+  BlockOriginMap,
+  CapturedPart,
+  SemanticEditIRV1,
+} from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
@@ -17,6 +21,29 @@ import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.
 
 export type DraftKind = "work_draft" | "thread_peer";
 export type DraftStatus = "active" | "closed";
+
+export type DraftSeedRecord = {
+  /** Draft canonical item id -> live canonical item id. */
+  origins: Readonly<Record<string, string>>;
+  liveRoom: string;
+  liveSnapshot: Uint8Array;
+  draftSnapshot: Uint8Array;
+  /** Full live seed cut used only to attribute a pre-seed observation gap. */
+  liveAttribution?: { state: Uint8Array; position: number };
+};
+
+/** Hydrate the block-address context carried by an addressable live-to-draft seed. */
+export function blockOriginsFromDraftSeed(seed: DraftSeedRecord | null): BlockOriginMap | null {
+  if (!seed) return null;
+  return new Map(
+    Object.entries(seed.origins).map(([target, origin]) => {
+      const [clientID, clock, extra] = origin.split(":").map(Number);
+      if (!Number.isSafeInteger(clientID) || !Number.isSafeInteger(clock) || extra !== undefined)
+        throw new Error(`Invalid block item id ${origin}`);
+      return [target, { clientID, clock }];
+    }),
+  );
+}
 
 /** The branch's origin Work as the row was read: archived, deleted or missing freeze it. */
 export type DraftWorkLifecycle = "active" | "archived" | "deleted" | "missing";
@@ -45,6 +72,8 @@ export type DraftSnapshot = {
   lifecycle: DraftWorkLifecycle;
   hasEffect: boolean;
   schemaVersion: CollabSchemaVersion;
+  /** Present only on a Work draft copied from an addressable live room. */
+  seed: DraftSeedRecord | null;
 };
 
 /** A journal row past the checkpoint, applied on read. */
