@@ -2,12 +2,11 @@
  * stream-delta-coalescer — folds a burst of append-only text/reasoning deltas
  * into one store event per animation frame.
  *
- * The server emits one `TEXT_MESSAGE_CONTENT` / `REASONING_MESSAGE_CONTENT` per
- * streaming chunk. Applying each one directly means one Zustand update, one
- * React render of the whole chat surface, and one markdown reparse per chunk.
- * Merging runs that share the same message id cuts that to at most one update
- * per frame, without changing event order: any non-delta event (or a delta for
- * a different message) flushes the pending run first.
+ * Server-side delta batches reduce frames during bursts, but paced streams and
+ * replay can still deliver faster than the screen paints. Merging runs that
+ * share the same message id caps store updates at one per frame without
+ * changing event order: any non-delta event (or a delta for a different
+ * message) flushes the pending run first.
  *
  * Only append-only deltas are merged. Everything else passes through untouched,
  * so lifecycle/ordering semantics are unchanged.
