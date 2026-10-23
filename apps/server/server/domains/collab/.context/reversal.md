@@ -142,7 +142,8 @@ Yjs history, later writer text and drafts remain available; Redo restores that r
 through `restoreDocument`, taking the next free name when necessary. A drafted Undo writes the
 branch's existing delete fact: `{ created: true, deleted: true }`. The document and its text are
 hidden in that branch, but its draft remains active and its identity is not tombstoned. Redo
-clears `deleted` on the same row and keeps writing the same draft. Neither direction rewrites
+clears `deleted` on the row's current facts, so a rename or move made while the create was
+undone survives, and keeps writing the same draft. Neither Undo nor Redo rewrites
 the draft text. If another Work Applies the
 shared creation first, that reveal settles this branch's undone creation so it cannot become a
 pending delete of the now-live document, then the ordinary live pull rebases the now-visible
@@ -175,8 +176,7 @@ the card and `internal_error` ("the document changed while reversing; try again"
 for model Undo, Redo and Revert, never an invented refusal. Delivery runs
 after the commit, outside the scope.
 
-A card outcome reports committed destination per document. Draft Undo says that
-Apply is needed to change the manuscript. The reverse endpoint may return
+A card outcome reports committed destination per document. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`, `nothing_to_redo`,
 `cant_undo_dependent`, `expired`, or `partial` with HTTP 200; callers retain
 those outcomes and refresh the turn query. A reversal that reversed nothing because a document
