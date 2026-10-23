@@ -4,7 +4,7 @@ import type { Node as PMNode } from "prosemirror-model";
 import { expect, it } from "vitest";
 
 import { schema } from "./codec-test-support.js";
-import { type MarkdownStreamSnapshot, markdownCodec } from "./index.js";
+import { markdownCodec } from "./index.js";
 
 const blocks = [
   "para",
@@ -53,59 +53,58 @@ const fixtures = [
 
 const codec = markdownCodec({ schema });
 
-it("keeps every streamed prefix equivalent to the canonical parse", () => {
-  for (const source of fixtures) {
-    let snapshot: MarkdownStreamSnapshot | null = null;
+it("keeps every streaming parse confined to the canonical last block", () => {
+  const corpus = [
+    ...fixtures,
+    "[x]: /\ncode\n=\n*h",
+    "\te\n1.\n\n--",
+    "[**x**][q]\n\np\n\n> [q]:\n> /url",
+    "| a | b |\n| - | - |\n| c\\\n d | e |\n\n[q]: /url\n\np\n\nlast\n\n[**x**][q]",
+    "[x](a_*foo",
+  ];
+  for (const source of corpus) {
     for (let end = 0; end <= source.length; end++) {
-      const prefix = source.slice(0, end);
-      snapshot = codec.stream(snapshot, prefix);
-      expect(nodesEqual(snapshot.blocks, codec.parse(prefix).blocks), prefix).toBe(true);
-      if (end > 0 && source.includes("]:") && !prefix.includes("<")) {
-        expect(snapshot.fullParseReason, prefix).not.toBe("non-append");
-        expect(snapshot.fullParseReason, prefix).not.toBe("html");
-      }
+      assertStreamingParse(source.slice(0, end));
     }
   }
 
   for (const source of fixtures.slice(-12)) {
     for (const size of [2, 7, 23]) {
-      let snapshot: MarkdownStreamSnapshot | null = null;
-      for (let end = 0; end < source.length; end += size) {
-        const prefix = source.slice(0, Math.min(end + size, source.length));
-        snapshot = codec.stream(snapshot, prefix);
-        expect(nodesEqual(snapshot.blocks, codec.parse(prefix).blocks), prefix).toBe(true);
+      for (let end = size; end < source.length; end += size) {
+        assertStreamingParse(source.slice(0, Math.min(end, source.length)));
       }
     }
   }
-
-  for (const source of [
-    "hello *unfinished",
-    "~~~\n*literal\n~~~\noutside",
-    "> ~~~\n> *literal\noutside",
-    "`inline` *unfinished",
-    "```\n*literal",
-    "<div>\n*literal",
-  ]) {
-    const snapshot = codec.stream(null, source, { repair: true });
-    expect(codeJson(snapshot.blocks), source).toEqual(codeJson(codec.parse(source).blocks));
-    expect(snapshot.displaySource.startsWith(source), source).toBe(true);
-    expect(
-      codec.stream(snapshot, source).blocks.map((node) => node.toJSON()),
-      source,
-    ).toEqual(codec.parse(source).blocks.map((node) => node.toJSON()));
-  }
 }, 30_000);
+
+function assertStreamingParse(source: string): void {
+  const canonical = codec.parse(source).blocks;
+  const unrepaired = codec.parseStreaming(source);
+  expect(nodesEqual(unrepaired.blocks, canonical), source).toBe(true);
+
+  const repaired = codec.parseStreaming(source, { repair: true });
+  expect(repaired.blocks.length, source).toBe(canonical.length);
+  expect(nodesEqual(repaired.blocks.slice(0, -1), canonical.slice(0, -1)), source).toBe(true);
+  expect(codeJson(repaired.blocks), source).toEqual(codeJson(canonical));
+  if (repaired.openCode) {
+    expect(codeNodes(repaired.blocks), source).toContainEqual(repaired.openCode);
+  }
+}
 
 function nodesEqual(left: readonly PMNode[], right: readonly PMNode[]): boolean {
   return left.length === right.length && left.every((node, index) => right[index]?.eq(node));
 }
 
 function codeJson(blocks: readonly PMNode[]): unknown[] {
-  const code: unknown[] = [];
+  return codeNodes(blocks).map((node) => node.toJSON());
+}
+
+function codeNodes(blocks: readonly PMNode[]): PMNode[] {
+  const code: PMNode[] = [];
   for (const block of blocks) {
-    if (block.type.name === "code_block") code.push(block.toJSON());
+    if (block.type.name === "code_block") code.push(block);
     block.descendants((node) => {
-      if (node.type.name === "code_block") code.push(node.toJSON());
+      if (node.type.name === "code_block") code.push(node);
       return node.type.name !== "code_block";
     });
   }
