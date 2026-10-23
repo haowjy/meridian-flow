@@ -121,7 +121,7 @@ export function createDeferredLiveProjectionCoordinator(deps: {
           if (!deps.transactions.afterCommit(delivery)) void delivery();
         },
       ),
-    async concurrentUpdatesSince({ docId, doc, baselineDoc }) {
+    async concurrentUpdatesForReport({ docId, doc, baselineDoc }) {
       // Attribution lives on journal rows, not checkpoints. Start before every retained row;
       // the partitioner discards the ones already present in the model's baseline.
       const snapshot = await deps.journal.read(docId, { since: 0 });
