@@ -8,7 +8,9 @@ currency is typed content, not Markdown strings or raw Yjs diffs.
 
 `@meridian/markup` parses source into block/mark nodes and serializes nodes back
 to source. `AgentEditCodec` adds display hash prefixes at render time; a hash is
-a sibling-unique targeting token, never durable identity.
+a sibling-unique targeting token, never durable identity. `block-hash.ts` owns
+the one address space: a seeded block hashes its live origin item and a later
+block hashes its own item. Rendering and lookup use the same identities.
 
 Parse is pure syntax: links, images, and figures start with `ref: null`. The
 command opens a host link scope, plans the write, prepares planned nodes, and
@@ -138,9 +140,11 @@ the same recording as a read, so the next attempt proceeds unless the passage
 changes again. Past
 `REFUSAL_REGION_MAX_BYTES` (16 KB) it names the first and last block, asks for
 a read of that range, and records nothing. With no frontier and a target the
-room can't place (`not_found`, `ambiguous_match`, such as a live hash in a new
-draft) it says to read the document. The host records whatever frontier a
-result carries, error or not.
+room can't place (`not_found`, `ambiguous_match`) it says to read the document.
+A Work draft seed keeps the live cut, seed cut and block origins durably; when
+the request's live frontier is exactly that cut, the host projects it into the
+new draft for planning and recording. A native draft frontier wins. The host
+records whatever frontier a result carries, error or not.
 
 The host names rooms; agent-edit carries the label. `readRoom` returns the
 room it read (`draft:<workDraftId>`, `live:<documentId>:<generation>`; `null`

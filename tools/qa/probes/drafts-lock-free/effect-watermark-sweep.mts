@@ -135,6 +135,7 @@ export const effectWatermarkSweep: Probe = {
             documentId,
             branchId: work.branchId,
             liveDoc: live,
+            liveRoom: null,
           });
           draftIds.push(documentDraft.draftId);
         }

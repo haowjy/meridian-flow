@@ -53,7 +53,12 @@ export const d12CreateDuringArchive: Probe = {
       const archivedBefore = await harness.workArchived(workId);
       const ensuring = settled(
         independently(() =>
-          harness.store.ensureDocumentDraft({ documentId, branchId, liveDoc: live }),
+          harness.store.ensureDocumentDraft({
+            documentId,
+            branchId,
+            liveDoc: live,
+            liveRoom: null,
+          }),
         ),
       );
       const waiting = await harness.waitForLockWaiter(/works/);

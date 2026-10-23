@@ -107,7 +107,12 @@ describeBranchTreeDb("Drafted user:// (postgres)", (start, db) => {
       branches: stranger.branches,
     });
     await expect(
-      drafts.ensureDocumentDraft({ documentId: kael, branchId: branch.id, liveDoc: new Y.Doc() }),
+      drafts.ensureDocumentDraft({
+        documentId: kael,
+        branchId: branch.id,
+        liveDoc: new Y.Doc(),
+        liveRoom: null,
+      }),
       "a stranger's branch",
     ).rejects.toThrow();
     expect

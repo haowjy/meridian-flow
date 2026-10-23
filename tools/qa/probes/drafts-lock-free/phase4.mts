@@ -244,6 +244,7 @@ export async function seedDraft(harness: Harness, label: string, text = "Base") 
     documentId,
     branchId: work.branchId,
     liveDoc: live,
+    liveRoom: null,
   });
   return { ...work, documentId, live, draftId: documentDraft.draftId };
 }

@@ -65,7 +65,8 @@ append, the live advisory lock, the projection job's effect write, edit
 receipts). An append takes only its draft row. These draft writes stand outside the doors,
 by name: creation and its seeds insert the row (`ensureDocumentDraft`,
 `ensureThreadPeerDraft`); retraction and tree deletion delete it.
-Thread-peer and Work-draft resolution return metadata only (id, status, lifecycle); content is read through the coordinator.
+Thread-peer and Work-draft resolution return metadata only (id, status, lifecycle and immutable
+seed provenance); content is read through the coordinator.
 
 Writes go through two doors. `appendRows` adds rows past the checkpoint,
 sequenced by the draft row's lock rather than fenced by a revision: it bumps
@@ -80,7 +81,9 @@ No rewrite resets generations, accumulates discarded clocks or marks journal
 rows discarded through reset. Compaction folds the tail with unchanged content
 and leaves `updated_at`; the runtime schedules it after every committed append at 512 rows or
 2 MiB, only after its root commit. Work drafts seed two fresh client-1 fragments,
-`prosemirror` and `review_base`, with no `live_cut`. The effect job compares their
+`prosemirror` and `review_base`. In the same insert they retain the live room and
+snapshot, revision-zero draft snapshot and live-origin map for copied top-level blocks.
+The map never changes and a race loser reads the winner's record. The effect job compares their
 blocks; a live commit rebases content through the same append finalizer.
 
 A draft's `lifecycle` (`active`, `archived`, `deleted`, `missing`) is read from

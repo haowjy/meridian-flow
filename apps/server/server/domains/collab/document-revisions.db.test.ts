@@ -378,6 +378,7 @@ describe("document revisions (postgres and collab)", () => {
         documentId: ALPHA_ID,
         branchId: branch.id,
         liveDoc,
+        liveRoom: null,
       });
     });
     const before = await f.current();
