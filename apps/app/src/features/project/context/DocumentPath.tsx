@@ -15,7 +15,7 @@ import { type ReactNode, useCallback, useMemo } from "react";
 import { useLineageTitle } from "@/client/query/useLineageTitle";
 import { useProject } from "@/client/query/useProjectList";
 import { useWorks } from "@/client/query/useWorks";
-import { type ContextTab, tabContextOwner } from "@/client/stores";
+import { type ContextTab, isDraftOnly, tabContextOwner } from "@/client/stores";
 import { DrillInMenuBody, DrillInMenuRoot, type DrillNode } from "@/components/app/DrillInMenu";
 import { DropdownMenuContent } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -120,7 +120,9 @@ function Crumb({
   children: ReactNode;
 }) {
   const classes = cn("flex items-center gap-1 rounded-sm px-0.5", className);
-  if (browse.tab.kind === "new") return <span className={classes}>{children}</span>;
+  // Neither local-new nor draft-only documents belong to a browsable catalog yet.
+  if (browse.tab.kind === "new" || isDraftOnly(browse.tab))
+    return <span className={classes}>{children}</span>;
   const button = (
     <button
       type="button"

@@ -25,8 +25,9 @@ the filename opens its folder. An area not offered by the root list opens inside
 highlights everything on the document's path and the folder a back row just
 climbed out of. A pick opens through `useOpenDocumentInDock`, the way the
 screen opens documents: the dock on Chat and Work, an Editor tab on the Editor.
-Crumb menus carry no actions. Their Radix roots and triggers stay mounted at
-rest; only the open browsing body acquires catalogs, and its initial trail
+Crumb menus carry no actions. A local-new or draft-only document is not in a
+catalog yet, so its path is passive until it joins one. Browsable paths keep
+their Radix roots and triggers mounted at rest; only the open browsing body acquires catalogs, and its initial trail
 is set once that source resolves. The identity row is wrapping-first, one rule for Editor and dock: the review
 controls move to a second line before anything shortens, and only a line too
 narrow for them alone collapses labels to icons, hides the stepper count, then
