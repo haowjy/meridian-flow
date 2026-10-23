@@ -4,7 +4,8 @@
  * routing so module workers run, and opens it in headless Chrome. One 5,071-word
  * text block streams at 30 tokens/s; mounts use ten cold roots.
  * Save stdout to compare checkouts. BENCH_INTERVAL_MS=0 is a quick diagnostic,
- * not comparable to the default streaming run. Build artifacts are temporary.
+ * not comparable to the default streaming run. BENCH_MOUNTS_ONLY=1 skips token
+ * streaming for alternating mount comparisons. Build artifacts are temporary.
  */
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -74,8 +75,11 @@ try {
   });
   await page.goto("https://markdown.bench/index.html");
   const result = await page.evaluate(
-    (interval) => window.runMarkdownBench(interval),
-    Number(process.env.BENCH_INTERVAL_MS ?? 1000 / 30),
+    ([interval, mountsOnly]) => window.runMarkdownBench(interval, mountsOnly),
+    [
+      Number(process.env.BENCH_INTERVAL_MS ?? 1000 / 30),
+      process.env.BENCH_MOUNTS_ONLY === "1",
+    ] as const,
   );
   if (errors.length) throw new AggregateError(errors, "Markdown bench browser errors");
   process.stdout.write(

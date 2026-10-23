@@ -16,7 +16,6 @@ import { browserPictureSource } from "@/core/editor/images";
 import { classifyLinkTarget } from "@/core/editor/links";
 import { DocumentCodeBlock } from "./DocumentCodeBlock";
 import { createDocumentCache } from "./document-cache";
-import { splitMarkdownBlocks } from "./markdown-blocks";
 import {
   configureMarkdownStreaming,
   releaseStreamingMarkdown,
@@ -40,7 +39,6 @@ const schema = buildDocumentSchema();
 const codec = markdownCodec({ schema });
 configureMarkdownStreaming(schema, (source) => codec.parseStreaming(source, { repair: true }));
 const settledSnapshots = createDocumentCache<StreamingMarkdownSnapshot>();
-const settledBlocks = createDocumentCache<PMNode[]>();
 
 type Presentation = {
   source: string;
@@ -61,24 +59,8 @@ function ownsNode(block: PMNode, target: PMNode | null): boolean {
   return found;
 }
 
-function lastCodeBlock(blocks: readonly PMNode[]): PMNode | null {
-  let last: PMNode | null = null;
-  for (const block of blocks) {
-    if (block.type.name === "code_block") last = block;
-    block.descendants((node) => {
-      if (node.type.name === "code_block") last = node;
-      return node.type.name !== "code_block";
-    });
-  }
-  return last;
-}
-
 function parseSettled(source: string): StreamingMarkdownSnapshot {
-  const split = splitMarkdownBlocks(source);
-  const blocks = split.blocks.flatMap((block) =>
-    settledBlocks(block, () => codec.parse(block).blocks),
-  );
-  const openCode = split.openFence ? lastCodeBlock(blocks) : null;
+  const { blocks, openCode } = codec.parseStreaming(source, { repair: false });
   return {
     source,
     blocks,
