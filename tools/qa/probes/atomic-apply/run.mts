@@ -385,68 +385,6 @@ try {
     );
     f.close();
   });
-  await row("Un-Apply reverses intact groups and replays its durable result", async () => {
-    const f = await fixture(["The cat sat."], ["The big cat sat."]);
-    const click = f.click();
-    await applied(f, click);
-    const commandId = randomUUID();
-    const answer = await f.unapply(click, commandId);
-    assert.equal(answer.status, "unapplied", JSON.stringify(answer));
-    if (answer.status === "unapplied") {
-      assert.deepEqual(answer.reversedGroupIds, click.request.groupIds);
-      assert.deepEqual(answer.skippedGroupIds, []);
-    }
-    assert.deepEqual(await f.liveText(), ["The cat sat."]);
-    const durable = await f.durable();
-    assert.deepEqual(readApplyRecord(durable), []);
-    durable.destroy();
-    assert.deepEqual(await f.unapply(click, commandId), answer);
-    f.close();
-  });
-  await row("Un-Apply skips an edited group and reverses an intact peer", async () => {
-    const f = await fixture(
-      ["The cat sat.", "The dog slept."],
-      ["The big cat sat.", "The small dog slept."],
-    );
-    const click = f.click();
-    assert.equal(click.request.groupIds.length, 2);
-    await applied(f, click);
-    await f.liveWrite(["The very big cat sat.", "The small dog slept."]);
-    const answer = await f.unapply(click);
-    assert.equal(answer.status, "unapplied", JSON.stringify(answer));
-    if (answer.status === "unapplied") {
-      assert.equal(answer.reversedGroupIds.length, 1);
-      assert.equal(answer.skippedGroupIds.length, 1);
-    }
-    assert.deepEqual(await f.liveText(), ["The very big cat sat.", "The dog slept."]);
-    const durable = await f.durable();
-    assert.equal(readApplyRecord(durable).length, 1);
-    durable.destroy();
-    f.close();
-  });
-  await row("Un-Apply removes a null-live receipt without reopening a diff", async () => {
-    const f = await fixture(["The cat sat."], ["The big cat sat."]);
-    const click = f.click();
-    await f.liveWrite(["The big cat sat."]);
-    await applied(f, click);
-    const answer = await f.unapply(click);
-    assert.equal(answer.status, "unapplied", JSON.stringify(answer));
-    assert.deepEqual(await f.liveText(), ["The big cat sat."]);
-    const durable = await f.durable();
-    assert.deepEqual(readApplyRecord(durable), []);
-    assert.deepEqual(
-      readBlocks(durable.getXmlFragment(REVIEW_BASE_FRAGMENT), schema).map(
-        (block) => block.textContent,
-      ),
-      ["The big cat sat."],
-    );
-    assert.deepEqual(
-      readBlocks(durable.getXmlFragment("prosemirror"), schema).map((block) => block.textContent),
-      ["The big cat sat."],
-    );
-    durable.destroy();
-    f.close();
-  });
   await row(
     "unknown group and overlapping delta refuse without claim; landed digest conflict",
     async () => {
@@ -1171,6 +1109,68 @@ try {
     },
   );
 
+  await row("Un-Apply reverses intact groups and replays its durable result", async () => {
+    const f = await fixture(["The cat sat."], ["The big cat sat."]);
+    const click = f.click();
+    await applied(f, click);
+    const commandId = randomUUID();
+    const answer = await f.unapply(click, commandId);
+    assert.equal(answer.status, "unapplied", JSON.stringify(answer));
+    if (answer.status === "unapplied") {
+      assert.deepEqual(answer.reversedGroupIds, click.request.groupIds);
+      assert.deepEqual(answer.skippedGroupIds, []);
+    }
+    assert.deepEqual(await f.liveText(), ["The cat sat."]);
+    const durable = await f.durable();
+    assert.deepEqual(readApplyRecord(durable), []);
+    durable.destroy();
+    assert.deepEqual(await f.unapply(click, commandId), answer);
+    f.close();
+  });
+  await row("Un-Apply skips an edited group and reverses an intact peer", async () => {
+    const f = await fixture(
+      ["The cat sat.", "The dog slept."],
+      ["The big cat sat.", "The small dog slept."],
+    );
+    const click = f.click();
+    assert.equal(click.request.groupIds.length, 2);
+    await applied(f, click);
+    await f.liveWrite(["The very big cat sat.", "The small dog slept."]);
+    const answer = await f.unapply(click);
+    assert.equal(answer.status, "unapplied", JSON.stringify(answer));
+    if (answer.status === "unapplied") {
+      assert.equal(answer.reversedGroupIds.length, 1);
+      assert.equal(answer.skippedGroupIds.length, 1);
+    }
+    assert.deepEqual(await f.liveText(), ["The very big cat sat.", "The dog slept."]);
+    const durable = await f.durable();
+    assert.equal(readApplyRecord(durable).length, 1);
+    durable.destroy();
+    f.close();
+  });
+  await row("Un-Apply removes a null-live receipt without reopening a diff", async () => {
+    const f = await fixture(["The cat sat."], ["The big cat sat."]);
+    const click = f.click();
+    await f.liveWrite(["The big cat sat."]);
+    await applied(f, click);
+    const answer = await f.unapply(click);
+    assert.equal(answer.status, "unapplied", JSON.stringify(answer));
+    assert.deepEqual(await f.liveText(), ["The big cat sat."]);
+    const durable = await f.durable();
+    assert.deepEqual(readApplyRecord(durable), []);
+    assert.deepEqual(
+      readBlocks(durable.getXmlFragment(REVIEW_BASE_FRAGMENT), schema).map(
+        (block) => block.textContent,
+      ),
+      ["The big cat sat."],
+    );
+    assert.deepEqual(
+      readBlocks(durable.getXmlFragment("prosemirror"), schema).map((block) => block.textContent),
+      ["The big cat sat."],
+    );
+    durable.destroy();
+    f.close();
+  });
   await row("ordinary text Apply does not take the tree namespace", async () => {
     const f = await fixture(["Base."], ["Changed."]);
     const entered = gate(),
