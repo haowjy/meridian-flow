@@ -163,11 +163,15 @@ export function createProjectNavigation(
       work: current.work.kind === "absent" ? shown.work : current.work,
     };
     const href = projectAddressHref(frozen);
+    // Route reporting can lag the commit by a layout effect. Keep the door's
+    // identity claim until the displayed selection has a newer one.
     port.replaceEntry(
       href,
       projectAddressState(frozen, {
         ...entry.state,
-        meridianProjectSelection: shown.local ? { version: 3, ...shown.local } : undefined,
+        meridianProjectSelection: shown.local
+          ? { version: 3, ...shown.local }
+          : entry.state.meridianProjectSelection,
       }),
     );
   }
