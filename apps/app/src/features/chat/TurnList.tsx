@@ -319,7 +319,10 @@ export function TurnList({
           onRespondToInterrupt={assistant && local ? onRespondToInterrupt : undefined}
           changeTrail={assistant && local ? byTurnId.get(row.turn.id) : undefined}
           navigateToChange={assistant ? navigateToChange : undefined}
-          threadUsage={assistant && local ? threadUsage : null}
+          // Thread cache stats belong to the latest settled action row. Passing
+          // the aggregate snapshot to every historical reply makes each one
+          // observe live-tail usage updates and defeats the row memo boundary.
+          threadUsage={assistant && local && rowIndex === lastAssistantIdx ? threadUsage : null}
         />
       );
     },
