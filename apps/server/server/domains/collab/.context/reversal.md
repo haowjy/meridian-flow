@@ -7,18 +7,22 @@ immutable journal edit; it never rewrites a target row or marks it reversed.
 ## Commands and policy
 
 `reverseThreadContext` is the whole-turn card command. Its authenticated POST
-accepts only `{ scope: "turn", target: turnId, direction }`; authorization
-precedes inverse planning. One action may cover several documents, but each
-inverse edit transitions one target edit and carries restoration aliases.
-Each text step lands where its original did, live or its draft: one turn may
-reverse a document's live and draft text together, each on its own view, inside
-the one ordered stream. A model Undo or Redo follows its text edit between live
-and the chat's draft instead of using the chat's current write mode; the result
-names the version it followed. It does not cross from one Work's draft into
-another. The card admits only the (document, branch)
-destinations the writer's grants cover (`InverseDestination`); a refused draft
-beside an allowed live edit is left out, not the whole document. Model Revert
-still writes only in the chat's current version.
+accepts only `{ scope: "turn", target: turnId, direction }`. Capture resolves each
+immutable origin once: live, the active terminal of its draft successor chain, a
+retained terminal this attempt can restore, or gone. One turn may reverse a
+document's live and draft text together, each on that destination's captured
+view, inside one ordered stream. Planning, history and result presentation use
+that same resolved object; commit validates it or restores its exact source
+before writing the planned view.
+
+After selection, one admission call authorizes every content destination, tree
+branch and restore target. A restore grant also covers content that the same
+operation writes into the restored destination; an ordinary document grant
+cannot exist before restoration. Commit runs under those exact grants and
+confirms them after locking their combined Work set. The incoming content grant
+carries the caller identity only; it never chooses the inverse branch. A model
+inverse does not cross into another Work. A user card uses the same admission
+boundary.
 
 Redo is preferred when the latest unconsumed Undo has a reapplicable part;
 otherwise an invertible active part offers Undo. Effective action state is
@@ -60,18 +64,19 @@ immutable parts, never equal text. Save and rollback take a
 helper scope: `response_id` keeps provider authorship and `edit_scope_id`
 selects the rotated scope.
 
-Part disposition comes from `createDraftDispositionReader`: Apply-record evidence
-wins; otherwise classification membership in an active draft is pending and the
-rest discarded. Inverse capture reads each origin draft once, including closed
-drafts, and matches receipts by edit id and ordinal. Active draft write admission
-is separate; a revision mismatch between the evidence and planning captures
-retries the bounded attempt. For a removed document, an active draft of it is planned on like any draft; the removal record decides only when no active draft exists.
+Part disposition is computed once for each resolved destination.
+`createDraftDispositionReader` reads receipts from the destination draft and its
+validated predecessors; Apply evidence in any generation wins. Otherwise an
+active or restorable lineage is pending and a gone lineage is discarded. A
+revision mismatch between evidence and planning recaptures the bounded attempt.
+Closed origins never stand in for a destination. A retained terminal is planned
+only with the create Redo that restores it; every other closed terminal is gone.
 
 Model Undo/Redo keep `cant_*_applied`. Review disposition is not inverse
 eligibility: an effective Undo that restores the review base has no shown change
 and can read discarded. In an active draft the kernel decides Undo/Redo, Revert
 and failed-scope rollback eligibility; discarded disposition chooses the copy
-only when the kernel skips a part. Closed origin drafts refuse without planning.
+only when the kernel skips a part.
 Effective action consumption follows immutable receipts, regardless of whether
 those receipts currently contribute to review. Applied draft parts revert only
 in their active origin draft, leaving live untouched and making a pending change against base.
@@ -145,11 +150,12 @@ through `restoreDocument`, taking the next free name when necessary. A drafted U
 the creating branch's draft and removes that branch's `created` fact. It tombstones the hidden
 identity only when no other branch still uses it, retaining the closed draft as the Redo source.
 Redo restores the identity or rejoins the still-living one, restores the branch facts and clones
-the retained content into a fresh active draft. The closed draft records that fresh draft as its
-successor. Card and model inverse planning follow the branch-scoped successor chain to the active
-continuation while immutable receipt origins continue to name where the historical write landed;
-closed transport identities never reopen. Empty creates have only the tree entry and follow
-the same path. An undone draft create no longer contributes a pending review item.
+the exact retained draft named by the Undo row's `retiredDraftId` into a fresh active draft. The
+source revision, missing successor and empty branch occupancy are validated under the document
+lock. The source records the fresh draft as its successor. Immutable receipt origins keep naming
+the historical write while destination resolution follows the successor chain. Empty creates
+carry the same provenance in their tree row. A legacy row whose migration could not derive
+`retiredDraftId` resolves as gone rather than cloning a guessed draft.
 
 ## Effects and failures
 

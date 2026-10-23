@@ -64,7 +64,7 @@ change-trail persistence, and Hocuspocus admission. It composes
   go through `domain/markdown-document.ts` and the single scoped link codec.
   A new door that hands Markdown to a reader joins that scope and prepares it;
   spelling outside a prepared scope throws under test.
-- Scratch and uploads are never drafted. Destination selection is explicit;
+- Scratch and upload content is never drafted; its placement can belong to a Work branch. Destination selection is explicit;
   collab must not infer live versus draft from a thread mode.
 
 Deep contracts and verification guidance live in [`.context/CONTEXT.md`](.context/CONTEXT.md).
