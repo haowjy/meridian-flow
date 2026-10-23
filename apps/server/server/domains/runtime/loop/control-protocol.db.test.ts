@@ -58,17 +58,24 @@ else
       return rig;
     }
 
-    /** Every journal append with its journal seq, and the socket frames each one projects to. */
+    /** Every appended journal row with its journal seq and projected socket frames. */
     async function appendedFrames(appended: {
       mock: { calls: unknown[][]; results: { value: unknown }[] };
     }) {
       const projector = createOrchestratorEventProjector();
-      return Promise.all(
-        appended.mock.calls.map(async ([, event], index) => ({
-          journalSeq: (await appended.mock.results[index]?.value) as bigint,
-          frames: projector.project(event as never) as { name?: string }[],
-        })),
-      );
+      const rows: { journalSeq: bigint; frames: { name?: string }[] }[] = [];
+      for (const [callIndex, [, events]] of appended.mock.calls.entries()) {
+        const batch = events as unknown[];
+        const lastSeq = (await appended.mock.results[callIndex]?.value) as bigint;
+        const firstSeq = lastSeq - BigInt(batch.length) + 1n;
+        for (const [index, event] of batch.entries()) {
+          rows.push({
+            journalSeq: firstSeq + BigInt(index),
+            frames: projector.project(event as never) as { name?: string }[],
+          });
+        }
+      }
+      return rows;
     }
 
     async function compactControl(
@@ -1023,7 +1030,7 @@ else
       const rig = await manualFixture();
       const withdrawn = await compactControl(rig);
       await rig.send(rig.threadId, "B behind withdrawn compact");
-      const appended = vi.spyOn(rig.eventWriter, "appendEvent");
+      const appended = vi.spyOn(rig.eventWriter, "appendEvents");
       const answer = await rig.delivery.withdrawControl(rig.threadId, withdrawn.id);
       expect(answer).toMatchObject({
         outcome: "withdrawn",
@@ -1417,7 +1424,7 @@ else
         expect(await switchTurns(rig)).toEqual([]);
         expect(await threadMode(rig)).toBe("direct");
 
-        const appended = vi.spyOn(rig.eventWriter, "appendEvent");
+        const appended = vi.spyOn(rig.eventWriter, "appendEvents");
         // Writer admission persists the message first; the switch applies behind it, before the reply.
         const admitted = await rig.send(rig.threadId, "Write it.");
         await drainControls(rig);
@@ -1895,10 +1902,14 @@ else
         const newer = crypto.randomUUID();
         // The journal is what other tabs and replays see: a settled request
         // publishes only the final queue, never a state with both switches.
-        const appended = vi.spyOn(rig.eventWriter, "appendEvent");
+        const appended = vi.spyOn(rig.eventWriter, "appendEvents");
         const publishedQueues = () =>
-          appended.mock.calls.flatMap(([, event]) =>
-            event.type === "run_state.changed" ? [event.runState.items.map((item) => item.id)] : [],
+          appended.mock.calls.flatMap(([, events]) =>
+            events.flatMap((event) =>
+              event.type === "run_state.changed"
+                ? [event.runState.items.map((item) => item.id)]
+                : [],
+            ),
           );
         expect((await switchMode(rig, "draft", first)).response).toMatchObject({
           runState: { items: [expect.objectContaining({ id: first })] },

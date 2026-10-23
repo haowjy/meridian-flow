@@ -37,10 +37,11 @@ import type {
   ToolExecutor,
 } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
+import { createDeltaJournal } from "./delta-journal.js";
 import { type CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
-import { appendEvent, type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
+import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 import { toJsonValue } from "./streaming.js";
 
 export interface ToolDispatchDeps {
@@ -91,11 +92,13 @@ export async function dispatchToolCall(
   call: ToolCallInput,
   ctx: ToolDispatchContext,
 ): Promise<ToolDispatchResult> {
-  await appendEvent(deps.persistenceDeps.eventWriter, ctx.state.threadId, {
-    type: "tool.executing",
-    toolCallId: call.id,
-    name: call.name,
-  });
+  await deps.persistenceDeps.eventWriter.appendEvents(ctx.state.threadId, [
+    {
+      type: "tool.executing",
+      toolCallId: call.id,
+      name: call.name,
+    },
+  ]);
   if (ctx.state.signal?.aborted) {
     return { cancelled: true };
   }
@@ -125,8 +128,43 @@ export async function dispatchToolCall(
     });
   }
 
-  let outputDeltaAppendChain: Promise<void> = Promise.resolve();
-  let outputDeltaAppendFailed = false;
+  const outputJournal = createDeltaJournal({
+    threadId: ctx.state.threadId,
+    appendEvents: (threadId, events) =>
+      deps.persistenceDeps.eventWriter.appendEvents(threadId, events),
+    eventSink: deps.eventSink,
+    scope: "tool_call",
+  });
+  let outputDropped = false;
+  const dropOutput = (reason: "budget_full" | "write_failed", failure?: { cause: unknown }) => {
+    if (outputDropped) return;
+    outputDropped = true;
+    outputJournal.seal();
+    emitEvent(deps.eventSink, {
+      level: "warn",
+      source: "runtime.orchestrator",
+      name: "tool_output_delta.dropped",
+      correlation: {
+        threadId: ctx.state.threadId,
+        turnId: ctx.state.currentTurn.id,
+        runId: ctx.state.currentTurn.id,
+        toolName: call.name,
+      },
+      payload: {
+        threadId: ctx.state.threadId,
+        turnId: ctx.state.currentTurn.id,
+        reason,
+        ...(failure ? unknownToEventPayload(failure.cause) : {}),
+      },
+    });
+  };
+  const drainOutput = async () => {
+    try {
+      await outputJournal.flush();
+    } catch (cause) {
+      dropOutput("write_failed", { cause });
+    }
+  };
   const emitOutputDelta = (
     toolCallId: string,
     chunk: { stream: "stdout" | "stderr"; text: string },
@@ -137,31 +175,12 @@ export async function dispatchToolCall(
       stream: chunk.stream,
       text: chunk.text,
     };
-    // Serialize live output appends while the tool runs so catch-up preserves chunk order.
-    outputDeltaAppendChain = outputDeltaAppendChain
-      .then(async () => {
-        if (outputDeltaAppendFailed) return;
-        await appendEvent(deps.persistenceDeps.eventWriter, ctx.state.threadId, event);
-      })
-      .catch((error: unknown) => {
-        outputDeltaAppendFailed = true;
-        emitEvent(deps.eventSink, {
-          level: "warn",
-          source: "runtime.orchestrator",
-          name: "tool_output_delta.append_failed",
-          correlation: {
-            threadId: ctx.state.threadId,
-            turnId: ctx.state.currentTurn.id,
-            runId: ctx.state.currentTurn.id,
-            toolName: call.name,
-          },
-          payload: {
-            threadId: ctx.state.threadId,
-            turnId: ctx.state.currentTurn.id,
-            ...unknownToEventPayload(error),
-          },
-        });
-      });
+    const admission = outputJournal.tryPush(event);
+    if (admission.status === "full") {
+      dropOutput("budget_full");
+    } else if (admission.status === "failed") {
+      dropOutput("write_failed", admission);
+    }
   };
 
   const transcript: SpawnTranscript = {
@@ -175,6 +194,7 @@ export async function dispatchToolCall(
   const spawn =
     call.name === "spawn"
       ? async (spawnInput: SpawnToolArgs) => {
+          await drainOutput();
           const request: ChildRunRequest = {
             kind: "spawn",
             parentThread: ctx.thread,
@@ -208,6 +228,7 @@ export async function dispatchToolCall(
   const threadMessage =
     call.name === "thread_message"
       ? async (messageInput: ThreadMessageArgs) => {
+          if (messageInput.mode === "foreground") await drainOutput();
           const request: ChildRunRequest = {
             kind: "message",
             parentThread: ctx.thread,
@@ -280,8 +301,14 @@ export async function dispatchToolCall(
       signal: ctx.state.signal,
       interruptTimeoutMs: ctx.interruptAutoResume.timeoutMs,
       emitOutputDelta,
-      interrupt: ctx.interruptSession.interrupt,
-      updateComponentBlock: ctx.interruptSession.updateComponentBlock,
+      interrupt: async (...args) => {
+        await drainOutput();
+        return ctx.interruptSession.interrupt(...args);
+      },
+      updateComponentBlock: async (...args) => {
+        await drainOutput();
+        return ctx.interruptSession.updateComponentBlock(...args);
+      },
       spawn,
       threadMessage,
       threadReport,
@@ -293,7 +320,8 @@ export async function dispatchToolCall(
       },
     },
   );
-  await outputDeltaAppendChain;
+  outputJournal.seal();
+  await drainOutput();
   if (ctx.state.signal?.aborted) {
     return { cancelled: true };
   }

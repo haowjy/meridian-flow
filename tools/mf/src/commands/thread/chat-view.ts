@@ -1,7 +1,8 @@
 /**
  * `thread view`: the chat transcript as the app's view model decides it. Hydrate the snapshot,
  * run `chatCards` and `viewTranscript` over its facts, and print rows and cards structurally
- * (text) or as the versioned `chatView: 2` envelope (its `cards` field is additive) (JSON). Nothing here decides a row or a card;
+ * (text) or as the versioned `chatView: 3` envelope (its delivery groups carry their stable id)
+ * (JSON). Nothing here decides a row or a card;
  * it only prints what the shared projections returned, and states `inputs`: what they were
  * computed from. `./mf` holds no local command state, so a card from one (a lost Retry, a failed
  * Stop, an unsent message) cannot appear here: only the cards durable facts give.
@@ -41,7 +42,7 @@ import { oneLine, truncate } from "../../core/output";
 import { viewOfLive } from "./run-state";
 import { asRecord, liveStatusLabel } from "./transcript";
 
-export const CHAT_VIEW_VERSION = 2;
+export const CHAT_VIEW_VERSION = 3;
 
 const TEXT_LIMIT = 1_500;
 
@@ -121,7 +122,7 @@ export type ChatItem =
       direct?: unknown;
     }
   /** The reply's delivery groups, last as the app draws them. A group of several is one merged row. */
-  | { kind: "delivery"; groups: ChatDelivery[][] };
+  | { kind: "delivery"; groups: { id: string; events: ChatDelivery[] }[] };
 
 export type ChatRow = {
   identity: RowIdentity;
@@ -322,7 +323,13 @@ function chatRow(row: ViewRow, view: TranscriptView, limits: { full: boolean }):
   if (assistant) {
     out.items = assistant.items.map((item) => chatItem(item, limits));
     if (row.deliveries.length)
-      out.items.push({ kind: "delivery", groups: row.deliveries.map((g) => g.map(chatDelivery)) });
+      out.items.push({
+        kind: "delivery",
+        groups: row.deliveries.map((group) => ({
+          id: group.id,
+          events: group.events.map(chatDelivery),
+        })),
+      });
     out.finalFrom = assistant.finalFrom;
     if (limits.full) out.workReceipts = assistant.workReceipts;
     if (assistant.hiddenToolCallIds.length) out.hiddenToolCalls = assistant.hiddenToolCallIds;
@@ -545,7 +552,7 @@ function rowLines(row: ChatRow): string[] {
         for (const group of item.groups)
           lines.push(
             ...indent(
-              `delivery: ${group.map((event) => `${event.agentName ?? "message"}${event.outcome ? ` ${event.outcome}` : ""}${event.childThreadId ? ` [${event.childThreadId}]` : ""}${event.message && !event.outcome ? ` ${oneLine(event.message)}` : ""}`).join("; ")}`,
+              `delivery:${group.id} ${group.events.map((event) => `${event.agentName ?? "message"}${event.outcome ? ` ${event.outcome}` : ""}${event.childThreadId ? ` [${event.childThreadId}]` : ""}${event.message && !event.outcome ? ` ${oneLine(event.message)}` : ""}`).join("; ")}`,
             ),
           );
         break;
