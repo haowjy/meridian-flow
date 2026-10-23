@@ -2,10 +2,16 @@
 
 import { t } from "@lingui/core/macro";
 import { isTerminalTurnStatus } from "@meridian/contracts/protocol";
-import type { InheritedMark, TranscriptView, ViewRow } from "@meridian/thread-client";
+import type {
+  AssistantView,
+  InheritedMark,
+  TranscriptView,
+  ViewRow,
+  WriterText,
+} from "@meridian/thread-client";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -251,100 +257,6 @@ export function TurnList({
     enterFollow();
   }, [tailFollowRevision, enterFollow]);
 
-  const renderTranscriptRow = useCallback(
-    (row: ViewRow, idx: number) => {
-      const turn = row.turn;
-      // Inherited rows are the source's history: read-only, and owned by the source.
-      const local = !row.inherited;
-      if (row.kind === "compaction") {
-        return (
-          <CompactionDivider
-            turn={turn}
-            stopping={local && (chatStop?.status === "pending" || chatStop?.status === "stopping")}
-            onStop={local ? chatStop?.stop : undefined}
-          />
-        );
-      }
-      if (row.kind === "write-mode") return <AppliedWriteModeNotice turn={turn} />;
-      if (row.kind === "thread-reference") {
-        return (
-          <div data-thread-references className="flex flex-wrap gap-[var(--chat-space-inline)]">
-            {row.references.map((reference) => (
-              <ThreadReferenceChip key={reference.threadId} reference={reference} />
-            ))}
-          </div>
-        );
-      }
-      if (row.kind === "handoff-seed") {
-        const actions = local ? brief : null;
-        return (
-          <HandoffBriefCard
-            turn={turn}
-            latest={row.latest}
-            stopping={actions?.stopping.has(turn.id) ?? false}
-            destinationBusy={busy}
-            onStop={actions?.canStop(turn) ? actions.stop : undefined}
-            onRetry={actions?.retry}
-          />
-        );
-      }
-      const writer = view.writer.get(turn.id);
-      if (writer) {
-        return (
-          <UserTurn
-            turn={turn}
-            writer={writer}
-            uploadsChat={local ? uploadsChat : undefined}
-            submissionRecovery={local ? submissionRecoveryByTurnId?.get(turn.id) : undefined}
-            queued={row.queued}
-            queueControls={row.queued && local ? queue : null}
-            lastQueued={row.queued && turn.id === lastQueuedTurnId}
-            queuedCount={queuedCount}
-          />
-        );
-      }
-      const items = view.items.get(turn.id);
-      if (!items || !row.response) return null;
-      const standIn = local && (isStandIn?.(turn.id) ?? false);
-      return (
-        <AssistantTurn
-          threadId={row.inherited?.ownerThreadId ?? threadId}
-          turn={turn}
-          view={items}
-          response={row.response}
-          threadUsage={local ? threadUsage : null}
-          deliveries={row.deliveries}
-          isLatestAssistant={idx === lastAssistantIdx}
-          movedPast={row.movedPast}
-          continuesResponse={row.continuing}
-          standIn={standIn}
-          onRespondToInterrupt={local ? onRespondToInterrupt : undefined}
-          changeTrail={local ? byTurnId.get(turn.id) : undefined}
-          navigateToChange={navigateToChange}
-        />
-      );
-    },
-    [
-      brief,
-      busy,
-      byTurnId,
-      isStandIn,
-      controls,
-      chatStop,
-      queue,
-      lastQueuedTurnId,
-      queuedCount,
-      lastAssistantIdx,
-      navigateToChange,
-      onRespondToInterrupt,
-      submissionRecoveryByTurnId,
-      threadId,
-      threadUsage,
-      view,
-      visibleTurns.length,
-    ],
-  );
-
   const renderRow = useCallback(
     (row: ListRow, idx: number) => {
       if (row.kind === "inherited-failed") {
@@ -376,16 +288,56 @@ export function TurnList({
           />
         );
       }
-      const content = renderTranscriptRow(row, rowIndexOf(idx));
-      return row.inherited ? (
-        <InheritedRow mark={row.inherited} owners={inherited?.owners ?? null}>
-          {content}
-        </InheritedRow>
-      ) : (
-        content
+      const rowIndex = rowIndexOf(idx);
+      const local = !row.inherited;
+      return (
+        <TranscriptRow
+          row={row}
+          items={view.items.get(row.turn.id)}
+          writer={view.writer.get(row.turn.id)}
+          threadId={threadId}
+          uploadsChat={local ? uploadsChat : undefined}
+          submissionRecovery={local ? submissionRecoveryByTurnId?.get(row.turn.id) : undefined}
+          queue={row.queued && local ? queue : null}
+          lastQueued={row.queued && row.turn.id === lastQueuedTurnId}
+          queuedCount={queuedCount}
+          isLatestAssistant={rowIndex === lastAssistantIdx}
+          standIn={local && (isStandIn?.(row.turn.id) ?? false)}
+          stopping={local && (chatStop?.status === "pending" || chatStop?.status === "stopping")}
+          onStop={local ? chatStop?.stop : undefined}
+          brief={row.kind === "handoff-seed" && local ? brief : null}
+          destinationBusy={busy}
+          owners={row.inherited ? (inherited?.owners ?? null) : null}
+          onRespondToInterrupt={local ? onRespondToInterrupt : undefined}
+          changeTrail={local ? byTurnId.get(row.turn.id) : undefined}
+          navigateToChange={navigateToChange}
+          threadUsage={local ? threadUsage : null}
+        />
       );
     },
-    [busy, controls, inherited?.owners, onRetryInherited, renderTranscriptRow, rowIndexOf],
+    [
+      brief,
+      busy,
+      byTurnId,
+      chatStop,
+      controls,
+      inherited?.owners,
+      isStandIn,
+      lastAssistantIdx,
+      lastQueuedTurnId,
+      navigateToChange,
+      onRespondToInterrupt,
+      onRetryInherited,
+      queue,
+      queuedCount,
+      rowIndexOf,
+      submissionRecoveryByTurnId,
+      threadId,
+      threadUsage,
+      uploadsChat,
+      view.items,
+      view.writer,
+    ],
   );
 
   return (
@@ -489,6 +441,118 @@ function JumpToLatestButton({
     </div>
   );
 }
+
+const TranscriptRow = memo(function TranscriptRow({
+  row,
+  items,
+  writer,
+  threadId,
+  uploadsChat,
+  submissionRecovery,
+  queue,
+  lastQueued,
+  queuedCount,
+  isLatestAssistant,
+  standIn,
+  stopping,
+  onStop,
+  brief,
+  destinationBusy,
+  owners,
+  onRespondToInterrupt,
+  changeTrail,
+  navigateToChange,
+  threadUsage,
+}: {
+  row: ViewRow;
+  items?: AssistantView;
+  writer?: WriterText;
+  threadId: string;
+  uploadsChat?: string;
+  submissionRecovery?: UserTurnRecovery;
+  queue?: TurnQueueControls | null;
+  lastQueued: boolean;
+  queuedCount: number;
+  isLatestAssistant: boolean;
+  standIn: boolean;
+  stopping: boolean;
+  onStop?: () => void;
+  brief?: HandoffBrief | null;
+  destinationBusy: boolean;
+  owners: InheritedView["owners"] | null;
+  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
+  changeTrail?: ChangeTrailShell;
+  navigateToChange: ReturnType<typeof useChangeTrailNavigation>;
+  threadUsage: TurnListProps["threadUsage"];
+}) {
+  const { turn } = row;
+  let content: ReactNode;
+  if (row.kind === "compaction") {
+    content = <CompactionDivider turn={turn} stopping={stopping} onStop={onStop} />;
+  } else if (row.kind === "write-mode") {
+    content = <AppliedWriteModeNotice turn={turn} />;
+  } else if (row.kind === "thread-reference") {
+    content = (
+      <div data-thread-references className="flex flex-wrap gap-[var(--chat-space-inline)]">
+        {row.references.map((reference) => (
+          <ThreadReferenceChip key={reference.threadId} reference={reference} />
+        ))}
+      </div>
+    );
+  } else if (row.kind === "handoff-seed") {
+    content = (
+      <HandoffBriefCard
+        turn={turn}
+        latest={row.latest}
+        stopping={brief?.stopping.has(turn.id) ?? false}
+        destinationBusy={destinationBusy}
+        onStop={brief?.canStop(turn) ? brief.stop : undefined}
+        onRetry={brief?.retry}
+      />
+    );
+  } else if (writer) {
+    content = (
+      <UserTurn
+        turn={turn}
+        writer={writer}
+        uploadsChat={uploadsChat}
+        submissionRecovery={submissionRecovery}
+        queued={row.queued}
+        queueControls={queue}
+        lastQueued={lastQueued}
+        queuedCount={queuedCount}
+      />
+    );
+  } else if (items && row.response) {
+    content = (
+      <AssistantTurn
+        threadId={row.inherited?.ownerThreadId ?? threadId}
+        turn={turn}
+        view={items}
+        response={row.response}
+        threadUsage={threadUsage}
+        deliveries={row.deliveries}
+        isLatestAssistant={isLatestAssistant}
+        movedPast={row.movedPast}
+        continuesResponse={row.continuing}
+        standIn={standIn}
+        onRespondToInterrupt={onRespondToInterrupt}
+        changeTrail={changeTrail}
+        navigateToChange={navigateToChange}
+      />
+    );
+  } else {
+    content = null;
+  }
+
+  return row.inherited ? (
+    <InheritedRow mark={row.inherited} owners={owners}>
+      {content}
+    </InheritedRow>
+  ) : (
+    content
+  );
+});
 
 /** One inherited row: its source's header when a run starts, the fork point when it ends. */
 function InheritedRow({
