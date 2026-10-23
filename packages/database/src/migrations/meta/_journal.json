@@ -624,6 +624,13 @@
       "when": 1792696265613,
       "tag": "0094_draft_seed_addresses_online",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1792722627611,
+      "tag": "0095_drop_draft_seed_snapshots",
+      "breakpoints": true
     }
   ]
 }

@@ -39,14 +39,6 @@ export function formatUnchangedSuccess(): InternalWriteResult {
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
   const blocks = input.copied ? copiedGroups(input.copied.edges) : echoGroups(input.echo);
-  const swept = input.lateSweep?.capturedDeletedBodies ?? [];
-  if (swept.length > 0) {
-    blocks.push({
-      extent: "full",
-      relation: "swept",
-      items: swept.map(({ hash, body }) => ({ hash, body })),
-    });
-  }
   const deletedHashes = input.deletedBlocks ?? [];
 
   return {
@@ -65,7 +57,7 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
       ...(input.copied
         ? { copied: { from: input.copied.summary.from, blocks: input.copied.summary.blocks } }
         : {}),
-      ...(blocks.length > 0 || input.lateSweep ? { blocks } : {}),
+      ...(blocks.length > 0 ? { blocks } : {}),
       ...(input.awarenessDegraded ? { awarenessDegraded: true } : {}),
       ...(input.documentEmpty ? { documentEmpty: true } : {}),
     },
@@ -156,7 +148,6 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
     status === "cant_redo_users_undo" ||
     status === "nothing_to_revert" ||
     status === "work_archived" ||
-    status === "region_changed" ||
     status === "binary_file" ||
     status === "permission_denied" ||
     status === "internal_error"

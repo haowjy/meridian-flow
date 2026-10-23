@@ -6,6 +6,7 @@
 
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import {
+  type ConcurrentUpdate,
   type DocumentCoordinator,
   DocumentNotFoundError,
   type JournalSnapshot,
@@ -18,6 +19,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
+import { partitionConcurrentUpdates } from "../domain/concurrent-updates.js";
 import {
   bindDocumentAuthority,
   boundDocumentAuthority,
@@ -119,6 +121,29 @@ export function createDeferredLiveProjectionCoordinator(deps: {
           if (!deps.transactions.afterCommit(delivery)) void delivery();
         },
       ),
+    async concurrentUpdatesSince({ docId, doc, baselineDoc }) {
+      // Attribution lives on journal rows, not checkpoints. Start before every retained row;
+      // the partitioner discards the ones already present in the model's baseline.
+      const snapshot = await deps.journal.read(docId, { since: 0 });
+      const rows: ConcurrentUpdate[] = snapshot.updates.map((entry) => ({
+        update: entry.update,
+        origin: entry.meta.origin.startsWith("agent:")
+          ? {
+              type: "agent",
+              actorTurnId: entry.meta.actorTurnId ?? entry.meta.origin.slice("agent:".length),
+              ...(entry.meta.author ? { author: entry.meta.author } : {}),
+            }
+          : entry.meta.origin.startsWith("human:")
+            ? { type: "human", userId: entry.meta.origin.slice("human:".length) }
+            : { type: "system" },
+      }));
+      return partitionConcurrentUpdates(
+        baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null,
+        baselineDoc ? Y.snapshot(baselineDoc) : Y.emptySnapshot,
+        rows,
+        Y.encodeStateAsUpdate(doc),
+      );
+    },
   };
 }
 

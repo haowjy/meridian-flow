@@ -65,7 +65,6 @@ describe("immediate destructive reporting", () => {
 
   it("reports delete after a human edits its parent and keeps the merge", async () => {
     const ctx = harness({ [DOC_ID]: "Alpha.\n\nBeta.\n\nGamma." });
-    const deletedHash = hashAt(ctx.liveDoc(DOC_ID), 0);
     const session: ActorSession = {
       id: "session-report",
       threadId: "thread-a",
@@ -78,7 +77,7 @@ describe("immediate destructive reporting", () => {
     );
 
     expectOutcome(outcome, "success");
-    expect(outcomeText(outcome)).toContain(`swept: ${deletedHash}|Writer: Alpha.`);
+    expect(outcomeText(outcome)).not.toContain("re-read required");
     expect(ctx.journal.recordedBatches()).toHaveLength(1);
     expect(blockTexts(ctx.liveDoc(DOC_ID))).toEqual(["Gamma."]);
   });

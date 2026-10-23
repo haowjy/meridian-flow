@@ -150,10 +150,8 @@ export function createCommitDetection(deps: {
   }
 
   /**
-   * Visible lineage the own writes were made against, and what each one hid. A writer edit
-   * that reached a write's view after the actor's last read is in that view without the actor
-   * having seen it (the region check lets an unchanged region through), so it is not counted
-   * as seen.
+   * Visible lineage the own writes were made against, and what each one hid. A writer edit that reached a write's view after the actor's last read is in that
+   * view without the actor having seen it, so it is not counted as seen.
    */
   function ownWriteLineage(
     steps: readonly OwnWriteStep[],

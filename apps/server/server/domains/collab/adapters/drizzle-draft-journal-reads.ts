@@ -4,6 +4,7 @@ import {
   documentEditParts,
   documentEdits,
   draftWriteJournal,
+  threads,
 } from "@meridian/database/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -35,8 +36,10 @@ export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJ
         .select({
           row: journalColumns,
           editKind: documentEdits.kind,
+          threadHandle: threads.ref,
         })
         .from(draftWriteJournal)
+        .leftJoin(threads, eq(threads.id, draftWriteJournal.threadId))
         .leftJoin(
           documentEditParts,
           sql`
@@ -50,10 +53,13 @@ export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJ
         .orderBy(draftWriteJournal.id);
       // A row can carry several parts of one edit: one entry per row, in journal order.
       const byRow = new Map<number, ReturnType<typeof mapJournalRow>>();
-      for (const { row, editKind } of rows) {
+      for (const { row, editKind, threadHandle } of rows) {
         const seen = byRow.get(row.id);
         if (!seen || (!seen.editKind && editKind)) {
-          byRow.set(row.id, { ...mapJournalRow(row), ...(editKind ? { editKind } : {}) });
+          byRow.set(row.id, {
+            ...mapJournalRow(row, threadHandle),
+            ...(editKind ? { editKind } : {}),
+          });
         }
       }
       return [...byRow.values()];
@@ -63,8 +69,9 @@ export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJ
       // A save's attribution reads inside its own transaction: the root pool handle would
       // wait on another connection and miss that transaction's uncommitted rows.
       const rows = await currentDrizzleDb(db)
-        .select({ row: journalColumns })
+        .select({ row: journalColumns, threadHandle: threads.ref })
         .from(draftWriteJournal)
+        .leftJoin(threads, eq(threads.id, draftWriteJournal.threadId))
         .innerJoin(documentDrafts, eq(draftWriteJournal.draftId, documentDrafts.id))
         .where(
           and(
@@ -74,12 +81,12 @@ export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJ
           ),
         )
         .orderBy(draftWriteJournal.id);
-      return rows.map(({ row }) => mapJournalRow(row));
+      return rows.map(({ row, threadHandle }) => mapJournalRow(row, threadHandle));
     },
   };
 }
 
-function mapJournalRow(row: JournalRecord): DraftJournalRow {
+function mapJournalRow(row: JournalRecord, threadHandle: string | null): DraftJournalRow {
   return {
     id: row.id,
     draftId: row.draftId,
@@ -87,6 +94,7 @@ function mapJournalRow(row: JournalRecord): DraftJournalRow {
     toolCallId: row.toolCallId,
     source: row.source,
     threadId: row.threadId,
+    threadHandle,
     turnId: row.turnId,
     actorUserId: row.actorUserId,
     updateData: row.updateData,

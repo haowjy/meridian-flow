@@ -51,8 +51,6 @@ export function seedDraftState(
           ? {
               origins,
               liveRoom: sourceRoom,
-              liveSnapshot: Buffer.from(Y.encodeSnapshotV2(Y.snapshot(live))),
-              draftSnapshot: Buffer.from(Y.encodeSnapshotV2(Y.snapshot(draft))),
             }
           : null,
     };

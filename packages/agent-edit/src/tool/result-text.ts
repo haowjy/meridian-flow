@@ -20,9 +20,9 @@ export function readCall(path: string, version?: "draft" | "live"): string {
 }
 
 /**
- * Renders one status line, any notes (concurrent edits, sweeps, the message),
- * then the blocks as `hash|text` lines. An outline says once how to read a
- * section, and each heading carries its `#slug`.
+ * Renders one status line, any notes and the message, then the blocks as
+ * `hash|text` lines and the concurrent-edit account. An outline says once how
+ * to read a section, and each heading carries its `#slug`.
  */
 export function renderAgentEditResult(result: AgentEditResultV1): string {
   const groups = result.blocks ?? [];
@@ -31,7 +31,7 @@ export function renderAgentEditResult(result: AgentEditResultV1): string {
       ...(result.notice ? [result.notice] : []),
       ...pendingLine(result),
       statusLine(result),
-      ...notes(result, groups),
+      ...notes(result),
     ].join("\n"),
   ];
   if (result.message) sections.push(result.message);
@@ -41,6 +41,7 @@ export function renderAgentEditResult(result: AgentEditResultV1): string {
   }
   const body = bodyLines(groups, outline);
   if (body.length > 0) sections.push(body.join("\n"));
+  if (result.concurrent) sections.push(concurrentLines(result.concurrent).join("\n"));
   return sections.join("\n\n");
 }
 
@@ -137,7 +138,7 @@ function writeVersion(result: Pick<AgentEditResultV1, "destination" | "draftWork
 
 const UNCHANGED_NOTE = "unchanged: the document already matches this content; nothing was written.";
 
-function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]): string[] {
+function notes(result: AgentEditResultV1): string[] {
   const lines: string[] = [];
   const removed = result.write?.deletedHashes ?? [];
   if (removed.length > 0) lines.push(`removed: ${removed.join(", ")}`);
@@ -151,14 +152,6 @@ function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]
       `${listed(surviving)} still ${surviving.length === 1 ? "has" : "have"} changes to it; applying them brings it back.`,
     );
   if (result.unchanged) lines.push(UNCHANGED_NOTE);
-  if (result.concurrent) lines.push(...concurrentLines(result.concurrent));
-  const swept = groups.filter((group) => group.relation === "swept");
-  if (swept.length > 0) {
-    lines.push("concurrent user content swept during commit; re-read required");
-    for (const item of swept.flatMap((group) => group.items)) {
-      lines.push(`swept: ${blockLine(item)}`);
-    }
-  }
   if (result.awarenessDegraded) {
     lines.push("destructive awareness degraded after durable recovery; re-read required");
   }
@@ -171,18 +164,22 @@ function listed(items: readonly string[]): string {
     : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-/** The blocks changed since the model last saw them, unlabelled (labels arrive with M3). */
+/** Concurrent changes grouped by the peer that made them. */
 function concurrentLines(listing: AgentEditConcurrentListing): string[] {
-  const lines = listing.blocks.map((item) => `  ${blockLine(item)}`);
-  if (listing.removed?.length)
-    lines.push(`  removed since you last saw it: ${listing.removed.join(" ")}`);
-  if (listing.more)
-    lines.push(
-      listing.more === 1
-        ? "  1 more block changed since you last saw it"
-        : `  ${listing.more} more blocks changed since you last saw them`,
-    );
-  return lines.length > 0 ? ["concurrent edits:", ...lines] : [];
+  return listing.groups.flatMap((group) => {
+    const details = [
+      ...(group.shown?.length ? [`  also shown above: ${group.shown.join(" ")}`] : []),
+      ...group.blocks.map((item) => `  ${blockLine(item)}`),
+      ...(group.removed?.length ? [`  removed: ${group.removed.join(" ")}`] : []),
+      ...(group.more
+        ? [group.more === 1 ? "  1 more change" : `  ${group.more} more changes`]
+        : []),
+    ];
+    if (details.length === 1 && group.shown?.length) {
+      return [`concurrent edits by ${group.author}: ${group.shown.join(" ")}`];
+    }
+    return [`concurrent edits by ${group.author}:`, ...details];
+  });
 }
 
 /** The file an outline's sections are read from; undefined when the result isn't an outline. */
@@ -192,9 +189,7 @@ function outlineFile(result: AgentEditResultV1): string | undefined {
 }
 
 function bodyLines(groups: readonly AgentEditBlockGroup[], outline: string | undefined): string[] {
-  const items = groups
-    .filter((group) => group.relation !== "swept")
-    .flatMap((group) => group.items);
+  const items = groups.flatMap((group) => group.items);
   if (!outline) return items.map(blockLine);
   // A heading whose slug looks like a hash is read by its hash.
   return items.map((item) => `${blockLine(item)}  #${item.section ?? item.hash}`);

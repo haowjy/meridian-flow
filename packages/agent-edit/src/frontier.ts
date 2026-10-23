@@ -22,35 +22,6 @@ export interface ObservationFrontier {
   unshown: readonly string[];
 }
 
-interface SeedFrontierProjection {
-  sourceRoom: string;
-  sourceSnapshot: Uint8Array;
-  targetRoom: string;
-  targetSnapshot: Uint8Array;
-  /** Target canonical item id -> source canonical item id. */
-  origins: ReadonlyMap<string, string>;
-}
-
-/** Project an observation only across the exact live cut that produced a Work draft seed. */
-export function projectSeedFrontier(
-  frontier: ObservationFrontier | null,
-  seed: SeedFrontierProjection,
-): ObservationFrontier | null {
-  if (!frontier || frontier.room !== seed.sourceRoom) return null;
-  const observed = decodeSnapshot(frontier.snapshot);
-  const source = decodeSnapshot(seed.sourceSnapshot);
-  if (!observed || !source || !Y.equalSnapshots(observed, source)) return null;
-  const targetBySource = new Map([...seed.origins].map(([target, origin]) => [origin, target]));
-  return {
-    room: seed.targetRoom,
-    snapshot: seed.targetSnapshot,
-    unshown: frontier.unshown.flatMap((origin) => {
-      const target = targetBySource.get(origin);
-      return target ? [target] : [];
-    }),
-  };
-}
-
 /**
  * A host's lookup of the model's latest frontier for a room. Never throws: an
  * unavailable frontier is `null`, the empty one.
@@ -203,26 +174,7 @@ function changedBlocks(doc: Y.Doc, previous: Y.Snapshot, current: Y.Snapshot): M
   return changed;
 }
 
-/** Words whose visibility flipped, clipped to the changed part of each retained item. */
-export function changedWords(
-  doc: Y.Doc,
-  previous: Y.Snapshot,
-  current: Y.Snapshot,
-  region: ReadonlySet<string>,
-): number {
-  let words = 0;
-  walkChangedRanges(doc, previous, current, (block, item, start, end) => {
-    if (!region.has(frontierBlockId({ clientID: block.id.client, clock: block.id.clock }))) return;
-    // Formats and container items have no prose; inline atoms still count as a fragment.
-    if (item.content instanceof Y.ContentString) {
-      const text = item.content.str.slice(start - item.id.clock, end - item.id.clock);
-      if (text.length) words += Math.max(1, text.trim().split(/\s+/u).filter(Boolean).length);
-    } else if (item.content instanceof Y.ContentEmbed) words += 1;
-  });
-  return words;
-}
-
-/** One flipped-range walk serves both credit and the region check. */
+/** Walk the Yjs ranges whose visibility differs between two contained cuts. */
 function walkChangedRanges(
   doc: Y.Doc,
   previous: Y.Snapshot,

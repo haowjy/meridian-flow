@@ -21,6 +21,8 @@ import {
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsUpdates,
+  threads,
+  turns,
 } from "@meridian/database";
 import {
   COLLAB_SCHEMA_VERSION,
@@ -187,7 +189,11 @@ type JournalTransportRow = Pick<
   keyof typeof journalTransportColumns
 >;
 
-function metaFromUpdateRow(row: JournalTransportRow, mode: UpdateMetaMode): UpdateMeta {
+function metaFromUpdateRow(
+  row: JournalTransportRow,
+  mode: UpdateMetaMode,
+  author?: string | null,
+): UpdateMeta {
   if (row.originType === "reconcile") {
     return {
       origin: "system:reconcile",
@@ -200,6 +206,7 @@ function metaFromUpdateRow(row: JournalTransportRow, mode: UpdateMetaMode): Upda
       return {
         origin: `agent:${originActor}`,
         ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
+        ...(author ? { author: `agent (${author})` } : {}),
         ...(row.authoringResponseId ? { authoringResponseId: row.authoringResponseId } : {}),
         seq: row.id,
       };
@@ -223,11 +230,15 @@ function metaFromUpdateRow(row: JournalTransportRow, mode: UpdateMetaMode): Upda
   };
 }
 
-function mapUpdate(row: JournalTransportRow, mode: UpdateMetaMode = "journal"): PersistedUpdate {
+function mapUpdate(
+  row: JournalTransportRow,
+  mode: UpdateMetaMode = "journal",
+  author?: string | null,
+): PersistedUpdate {
   return {
     seq: row.id,
     update: toBytes(row.updateData),
-    meta: metaFromUpdateRow(row, mode),
+    meta: metaFromUpdateRow(row, mode, author),
   };
 }
 
@@ -794,6 +805,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
             upToSeq: checkpoint.upToSeq,
           },
           update: journalTransportColumns,
+          authorHandle: threads.ref,
         })
         .from(documentYjsHeads)
         .leftJoinLateral(checkpoint, sql`true`)
@@ -808,12 +820,16 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
             opts.until === undefined ? undefined : lte(documentYjsUpdates.id, opts.until),
           ),
         )
+        .leftJoin(turns, eq(turns.id, documentYjsUpdates.actorTurnId))
+        .leftJoin(threads, eq(threads.id, turns.threadId))
         .where(eq(documentYjsHeads.documentId, asDocumentId(docId)))
         .orderBy(asc(documentYjsUpdates.id));
       const head = rows[0];
       if (!head) return { checkpoint: null, updates: [] };
       assertHeadSchemaCurrent(docId, unpackCollabSchemaVersion(head.schemaVersion));
-      const updates = rows.flatMap((row) => (row.update ? [mapUpdate(row.update)] : []));
+      const updates = rows.flatMap((row) =>
+        row.update ? [mapUpdate(row.update, "journal", row.authorHandle)] : [],
+      );
       return {
         authority: { authorityId: head.authorityId, generation: head.generation },
         checkpoint: head.checkpoint?.state ? toBytes(head.checkpoint.state) : null,
