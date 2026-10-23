@@ -1,8 +1,8 @@
 # Failed-reply Retry
 
 A failed reply consumes the messages it answered, and nothing retries it in
-the background (boundary-work Amendment A5). So the writer retries it from the
-reply itself.
+the background, so the writer retries it from the reply itself. Card rules
+shared by every chat failure are in [failure-cards.md](failure-cards.md).
 
 ## What the writer sees
 

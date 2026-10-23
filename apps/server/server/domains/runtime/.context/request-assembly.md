@@ -4,8 +4,8 @@ This context covers the Agent, system prompt, history, and cache hints sent to a
 model. A thread's cached prefix (system prompt, advertised tools, and history)
 changes only at named prompt epochs, image-removal breaks, and the one `skill`
 tool join after a user's first `/skill`.
-Rationale: the [frozen-prefix][kb-frozen-prefix] and
-[prefix-cache][kb-cache-state] decisions.
+Rationale: the [frozen-prefix decision][kb-frozen-prefix], which also covers
+cache warmth.
 
 ## Bound Agent and prompt
 
@@ -57,7 +57,12 @@ Prefix warmth is predicted from durable facts: the resolved registry model,
 previous successful assistant response, prompt-epoch bake, complete compaction
 boundaries, image decisions, and cutoff lineage. Summary rows and handoff seeds
 never supply warmth or a token baseline. Cache age uses the previous response's
-request-start time; missing time is cold/unknown.
+request-start time; missing time is cold/unknown. A thread's first request
+predicts cold even when the provider serves shared leading bytes from cache, and
+the first request after a compaction is cold because only an assistant turn's
+response counts as a reusable prefix. A fork routes its cache key to the thread
+that owns its cutoff turn. Prediction columns are non-null so the audited
+summarizer decision always stores one.
 
 `ContentPart.cacheBreakpoint` is provider-neutral intent. The loop marks only
 models with explicit cache descriptors, while adapter TTLs and wire shape live
@@ -69,4 +74,3 @@ Work's. A writer rebind writes a Work-switch notice and never moves notes or
 rebakes the prompt.
 
 [kb-frozen-prefix]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/frozen-request-prefix.md
-[kb-cache-state]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/prefix-cache-state.md

@@ -1,6 +1,6 @@
 # Collab — committed change trail
 
-The staged Apply/settlement pipeline is deleted. There is no pending settlement
+There is no staged Apply or settlement pipeline: no pending settlement
 store, contribution replacement/refinement, seed parser, owner reopening,
 worker recovery call, ingress barrier or offline-reconciliation service.
 Atomic Apply records its committed live effect without replaying draft journal

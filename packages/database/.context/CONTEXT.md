@@ -35,16 +35,16 @@ only after every statement succeeds. It validates journal identity and applied
 hashes before work. Regeneration after a base merge discards hand edits, so
 reapply online-safety changes and review the resulting SQL.
 
-When two lanes add a migration at the same ordinal, regenerate the unmerged
-lane's generated migration from the merged schema (`src/schema/` holding both
-sides); never renumber, rename, or hand-edit its identity. Two lanes that each
+When two branches add a migration at the same ordinal, regenerate the unmerged
+branch's generated migration from the merged schema (`src/schema/` holding both
+sides); never renumber, rename, or hand-edit its identity. Two branches that each
 recreate the same CHECK list only their own value, so a hand renumber silently
-drops the other lane's value, breaks the snapshot `prevId` chain, and can make
+drops the other branch's value, breaks the snapshot `prevId` chain, and can make
 an incremental database skip an entry a fresh one applies. A second
 `db:generate` must report no changes. A handwritten `--custom` migration cannot
 be regenerated: recreate it at the new ordinal and copy the body. Read the
-target's highest ordinal from its journal. A lane database that applied the
-replaced identity needs an owner-authorized reset of that checkout only.
+target's highest ordinal from its journal. A worktree database that applied the
+replaced identity needs a reset of that checkout's database only.
 
 Schema workflow is `db:generate`, review SQL/journal/snapshots, `drizzle-kit
 check`, migration lint, then `db:migrate`. The frozen journal's idx values and

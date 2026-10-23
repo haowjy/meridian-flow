@@ -1,6 +1,6 @@
 # FUTURE — nice-to-have follow-ups (project shell)
 
-- Dark mode activation (whole-app slice, new behavior → design-lead/tech-lead):
+- Dark mode activation (whole-app change, new behavior):
   the 墨 night-study ladder is designed and recorded in
   packages/design-tokens/src/ink-jade.css (header comment) — page stays lit,
   walls double their whisper, actives lighten, inks flip. Needs a theme toggle
@@ -11,13 +11,13 @@
   `h-9` against the h-10 band because PaneHeader centers its title slot;
   ContextTabBar seats chips via items-stretch instead. The stronger move is
   one adaptive band-chip geometry (PaneHeader items-stretch + grammar-owned
-  fit) so no consumer knows the band height. Reviewer-endorsed, low urgency
-  while both values are stable.
-- Chats as a working-set tab strip (user floated 2026-07-15): multiple chat
-  tabs + "+" in the centered chat band, like document tabs. Needs an
-  "open chats" model (close ≠ delete, overflow, ordering) and resolves how
-  chat navigation relates to the sidebar → design-lead/tech-lead. The
-  single-title tab chip shipped in slice 7 is the compatible first step.
+  fit) so no consumer knows the band height. Low urgency while both values
+  are stable.
+- Chats as a working-set tab strip (an idea the owner raised): multiple chat
+  tabs and a "+" in the centered chat band, like document tabs. Needs an
+  "open chats" model (close ≠ delete, overflow, ordering) and a decision on how
+  chat navigation relates to the sidebar. The current single-title tab chip is
+  compatible with it.
 - Clay secondary (palette proposal, not adopted): a cinnabar-family secondary
   surface (~oklch(0.92 0.012 29)) if secondary chips ever need to leave the
   page-neutral ladder.
@@ -36,8 +36,7 @@
   (ContextEditorMountHost MAX_MOUNTED_EDITORS=6, LRU); sessions are not.
   The move: lazy-connect background tabs' sessions on first view (same
   LRU shape as the view warm set), keeping only active/recent tabs live.
-  Prior art: Yjs FAQ warns against hydrating many Y.Docs; research brief
-  work/writer-ux/research/wss-localfirst-research-brief.md §4 (docs repo).
+  Prior art: the Yjs FAQ warns against hydrating many Y.Docs.
 - Multi-pane Editor layout: the current workspace deliberately owns one selected
   document view per browser tab. A split-view design must first define focus,
   history, tab membership, and session-retention semantics; do not stretch the

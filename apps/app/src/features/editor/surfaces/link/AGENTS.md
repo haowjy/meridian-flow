@@ -1,6 +1,6 @@
 # Link surfaces
 
-This lane is the app-facing link UI: completion, approach hint, form, and
+This surface is the app-facing link UI: completion, approach hint, form, and
 follow/create outcomes. The headless classifier and link runtime live beside
 the editor; project resource navigation remains in `features/links`.
 
@@ -21,12 +21,13 @@ the editor; project resource navigation remains in `features/links`.
   menu open until the write settles.
 - Unresolved is a sentence, never a warning: the hint says "Doesn't exist yet"
   (linking ahead of writing is the job), and its look is the shared link chip,
-  never a rule in this lane's stylesheet.
+  never a rule in this surface's stylesheet.
 - Follow delegates to `features/links` with the current editor scope. The
   surface reports pending, unresolved, failed, or created outcomes but does
   not own resolver generations or navigation policy.
 - All three doors use shared clipboard/chip rules and chrome focus/Escape
-  wrappers. Do not restore the deleted link bubble or add a second link form.
+  wrappers. These three doors are the only link UI: no selection bubble, no
+  second link form.
 
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) for catalog, follow, and
 store synchronization contracts.

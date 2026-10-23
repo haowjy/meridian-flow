@@ -20,9 +20,9 @@ listeners and the coalesced DOM write.
   rects, to read scale or intrinsic dimensions.
 - State is disposable: destroy restores every borrowed style, releases pointer
   capture, clears panning, and makes later calls inert. No view state persists.
-- Own it, do not buy it: `svg-pan-zoom` was spiked (2026-07-29) and rejected
-  because pinch is broken (it predates Pointer Events) and it strips `viewBox`.
-  Do not add `beforePan`/`beforeZoom` veto hooks; `minScale`/`maxScale` cover the
+- Own it, don't buy it: no pan-zoom library (why `svg-pan-zoom` was rejected
+  is in [`.context/CONTEXT.md`](.context/CONTEXT.md)). Add no
+  `beforePan`/`beforeZoom` veto hooks; `minScale`/`maxScale` cover the
   only real use. Zoom is one absolute number, and wheel steps are exponential so
   n notches out and back is exact.
 - Drag intentionally prevents selection. A caller needing selectable content

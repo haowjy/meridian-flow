@@ -36,6 +36,8 @@ Catalog visibility and finalized intake state commit in the ambient ContextFS
 transaction. `consume()` is the singular admission seam for defeating
 delete-after-send races. Intake never writes `thread_documents`, and explicit
 delete is identity-bound so it cannot target a replacement at the same path.
+When admission and delete race, the loser gets a factual refusal:
+`already_used` (a sent message consumed it) or `already_deleted`.
 
 Trashing the owner chat hides its uploads, and restoring it brings them back;
 purging the chat removes its upload objects idempotently. A fork reading a

@@ -150,8 +150,8 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   - These checks do not certify browser rendering, tools, reasoning, interrupts, optimistic UI,
     row placement, queued rows or dividers. Verify the screen with [the browser recipes](qa/chat-session.md).
   - Neither `matches` nor `differs` changes the proven outcome or exit code. A disagreement is
-    a debugging lead, not an automatic exit 6. The current conservative guarantee and possible
-    per-block provenance refinement are recorded in the [L1 design][l1-design].
+    a debugging lead, not an automatic exit 6. The guarantee and its limits are in
+    [`./mf` claims are proofs][mf-claims].
   - Retryable replay errors and replay deadlines recover through the shared transport until
     the command deadline. A refused replay ends the command; terminal/auth socket closes remain
     exit 4. The CLI owns no replay retry loop.
@@ -419,8 +419,8 @@ instead of `console.log`.
   code, confirm the running Nitro process belongs to this checkout and config,
   then capture the triggering path with a recursive `inotifywait` over the
   checkout (excluding `.git` only). Keep `node_modules`: a sibling worktree's
-  `pnpm install` hardlinks shared store files and fires `IN_ATTRIB` there, which
-  hid #817 when it was excluded.
+  `pnpm install` hardlinks shared store files and fires `IN_ATTRIB` there, so
+  excluding `node_modules` hides that trigger.
 - Each event is at most 8 KiB. The local output sink holds at most 5,000 pending
   events or 16 MiB. Output backpressure drops oldest first; the next successful
   write reports lost record and byte counts. The recent ring uses the same dual
@@ -630,5 +630,3 @@ pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr>
 ```
 
 [mf-claims]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md
-
-[l1-design]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/mf-client-unification/design-l1-session.md#5-liveview-becomes-an-end-of-turn-check

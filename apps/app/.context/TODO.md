@@ -11,8 +11,8 @@ The `optimistic-updates` work item owns the profiles and verification specificat
 - **Block-level `+` gutter handle.**
   ([#210](https://github.com/haowjy/meridian-flow/issues/210))
   "Turn into" / "Insert" menu on the current paragraph. Additive to the docked
-  formatting toolbar, never a replacement; a real build parked for its own
-  slice. `features/editor/`.
+  formatting toolbar, never a replacement; a separate build.
+  `features/editor/`.
 
 - **Fade-on-scroll for the docked toolbar.**
   ([#211](https://github.com/haowjy/meridian-flow/issues/211))
@@ -27,7 +27,7 @@ The `optimistic-updates` work item owns the profiles and verification specificat
   presentation, and the registration's `surfaceFields` is what differs.
   Still open, and schema-shaped: whether `figure` should exist at all, or a
   caption and label should be attributes of `image` in a block context. Also
-  open, from §5.6: `figure`'s `src` is a passthrough that does not run the asset
+  open: `figure`'s `src` is a passthrough that does not run the asset
   resolver, so it neither resolves `asset:` refs nor enforces the signed-URL
   exclusion the inline image does. `core/editor/FigureNodeView.tsx`,
   `packages/prosemirror-schema`.

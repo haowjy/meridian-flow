@@ -38,6 +38,7 @@ allow the target, and the action policy must allow the operation.
   its own scratch where the file-policy contract allows it.
 - `actionPolicy` gates non-file actions. Work changes are denied to read chains;
   list/show run; model `work switch` resolves and asks but never rebinds.
+  An action-policy refusal is `permission_denied` with reason `action_denied`.
 
 Advertisement and the per-turn gate use this policy. Dispatch and direct
 executor calls do not silently reapply it; callers must choose the policy seam.
@@ -69,6 +70,27 @@ placement like any pending change (`collab/.context/apply.md`). A path no
 visible document holds names, for undo/redo/revert only, the document this
 chat's latest move or delete took away from it (`inverse-address.ts`). Skills retain Mars
 filenames while `skills://` exposes the document codec's names.
+
+Command details the model sees:
+
+- Block `replace` with empty content refuses and points to `remove`, because
+  the codec parses `""`, `"\n"` and `" "` alike into one empty paragraph;
+  `replace(find, content="")` still deletes text.
+- Block copy (`from` on `insert` or `replace`) copies ProseMirror nodes and
+  positions with `after`/`before` or `in`/`#fragment`, never `find`; copies are
+  AI-marked and leave comments, authorship and hashes behind. Document copy
+  keeps the source's type; a binary copy duplicates its storage object live,
+  with no write handle, and refuses an existing destination.
+- `move` refuses only a destination that cannot exist. The model sees
+  `location_taken` (a document sits where the path needs a folder) and
+  `destination_missing` (a missing folder); Apply and the reversal paths call
+  the same cases `ancestor_taken` and `folder_missing`. A folder source refuses
+  as `source_is_folder`. Neither `move` nor `delete` runs the shown-view check.
+- When a deleted document and a moved one both left a path, `undo` on that path
+  picks the deleted one, so moving a blocker aside never makes `undo` pick the
+  blocker.
+- A server-side read of a writer's @-mention calls the same read and renderer
+  as the `read` handler instead of building tool arguments.
 
 Tool policy does not gate model-call cost. `turn-accounting.ts` uses
 `CreditLedger` and `TreeBudget`; `costing/` resolves token rates and applies the

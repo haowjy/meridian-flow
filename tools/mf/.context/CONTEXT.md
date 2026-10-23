@@ -106,9 +106,16 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   then command fields), built only by `terminalResult`, which maps outcome to exit:
   proven outcomes carry a null reason, unproven (exit 6) and timeout (124)
   require one. Reasons: `owed`, `running`, `lease_awake`, `admission_unknown`,
-  `replay_truncated`, `unconfirmed`, `deliverer_unknown`. Outcomes: `accepted`,
+  `replay_truncated`, `unconfirmed`, `deliverer_unknown`; a `failed` outcome may carry
+  `credits_exhausted`, `not_a_message` or `forgotten`. Outcomes: `accepted`,
   `complete`, `failed`, `cancelled`, `handed_back` (exit 5, shared with cancelled),
   `interrupt`, `timeout`, `unproven`.
+  Exit codes (`EXIT` in `src/core/cli-error.ts`): 0 proven; 1 the app failed or the
+  server refused; 2 usage; 3 not found; 4 unavailable (the stack, login, a closed socket,
+  or a Stop, hand-back or Send now answer that could not be read); 5 cancelled or handed
+  back; 6 unproven; 8 waiting on an interrupt; 124 `./mf`'s own deadline.
+  A message the chat forgot (`forgottenBy`, after the chat moved past its failed reply)
+  makes `send` exit 1 with `failed`/`forgotten` before any reply is attributed to it.
   `accepted` (exit 0) is admission only, returned just by `send --no-wait`. Run
   failures are results; `--fields` always keeps `type`, `command`, `outcome` and
   `reason`. Set `process.exitCode`; never call `process.exit()`.

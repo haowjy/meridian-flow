@@ -276,6 +276,20 @@ rendered system update. Running Work changes close A and start B under one
 lease. In-run Work tools do not append history. Hidden or archived targets park
 notices until restore; hard deletion cascades.
 
+Which mutations enqueue a Work refresh: every change to a chat's Work facts
+(model and Work-screen edits, receipt reversal, thread restore, the explicit
+rebind) enqueues one marker per affected thread, hidden and unfrozen threads
+included. The model's own `work` update, archive or unarchive skips the calling
+thread, whose tool result already carries the new value (a notice there split
+the reply into two assistant turns); `switch` still notifies its own thread.
+Creating or deleting a Work targets nothing; restore refreshes. Only a real
+deleted-to-visible restore enqueues, and an inherited fork or handoff enqueues
+one so its first request carries current Work. A writer Work switch also
+records a one-shot switched notice. An idle thread materializes the update
+without a model call, a writer send first materializes older pending notices
+so turns follow inbox order, and the recovery lane materializes the rest. A
+committed mutation stays successful while its update is pending.
+
 ## References, images, and synchronization
 
 Current-turn text references load outside admission transactions and persist
@@ -284,7 +298,10 @@ read once per turn; replay reuses frozen results. Image inclusion decisions are
 append-only by deciding turn, resolved late, and projected chronologically;
 definite loss or budget eviction creates a named break, while first-sight loss
 does not rewrite an already-sent prefix. Blocks retain identity, never bytes or
-inclusion state.
+inclusion state. Decision rows are never upserted: an overwrite would lose the
+decision as of an earlier turn and drop an image from a later fork with no
+notice. The removal notice turn owns the decisions it reports, so a decision
+and its explanation fall on the same side of any fork cutoff.
 
 Delivery takes the per-thread advisory/row lock and orders Work rows before
 thread mutation. No provider call runs under those locks. The process-local

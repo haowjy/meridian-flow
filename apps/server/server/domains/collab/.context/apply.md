@@ -83,7 +83,7 @@ It uses a scratch database and the real route core, file policy, command store,
 append door and trail writer. It does not stand in for integrated browser FIFO
 and optimistic-review verification.
 
-## The tree cut (design-v2 §4)
+## The tree cut
 
 A click may carry `tree: { revision }`, the revision of the branch's
 `branch_tree_changes` row the writer saw (`ThreadDraftListItem.tree`). A click

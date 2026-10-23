@@ -43,15 +43,14 @@ fixed pre-upgrade Yjs inputs (`scratch-archive-fixture.ts`). It applies the
 committed migration chain through the real runner, then exercises typed server
 consumers. Do not regenerate historical fixture bytes with current writers.
 
-Branch-tree suites build one world per case: `branch-tree-seeds.ts` writes rows the
-way the product leaves them (no runtime); `branch-tree-commands.ts` drives the
-composed runtime (model replies, the writer's route cores, readers' ports,
-review commands: `review` calls the list route core; the old settlement Apply verbs are deleted; lane A restores atomic Apply coverage.
-`discard` calls the per-document Discard or Discard
-all, `purge` deletes the Work, ages it past the cutoff and runs the purge sweep;
-readers such as `view(...).text`, `liveMeaning` );
-`branch-tree-scenario.ts` joins the two, and `branch-tree-suite.ts` is the committing
-describe block those suites share.
-Assert through these verbs (what the writer or a reader sees), not raw tables. Seed only states the
-product can't reach yet. Lock races go through `lock-interleave.ts`: `race`
+Branch-tree suites build one world per case. `branch-tree-seeds.ts` writes rows
+the way the product leaves them, without a runtime. `branch-tree-commands.ts`
+drives the composed runtime: model replies, the writer's route cores, readers'
+ports (`view(...).text`, `liveMeaning`) and review commands (`review` calls the
+list route core, `discard` the per-document Discard or Discard all, `purge`
+deletes the Work, ages it past the cutoff and runs the purge sweep). It has no
+Apply verb. `branch-tree-scenario.ts` joins the two, and `branch-tree-suite.ts`
+is the committing describe block those suites share. Assert through these verbs
+(what the writer or a reader sees), not raw tables. Seed only states the product
+can't reach yet. Lock races go through `lock-interleave.ts`: `race`
 names each run, so an order table reads the same outcome whichever ran first.

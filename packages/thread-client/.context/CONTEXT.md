@@ -25,7 +25,7 @@ remain late-bound globals, preserving existing reconnect timing.
 decides which rows a chat shows and what each reply's items are. The app builds
 the input from its store and hooks; `./mf thread view` builds it from a snapshot
 and says what it left out. The decision and its rejected alternatives are in the
-[transcript view model ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/client/transcript-view-model.md).
+[transcript view model decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/client/transcript-view-model.md).
 
 - **The transcript is not a log.** A failed reply a Retry names
   (`metadata.retryOf` on a stand-in or stored turn, or the `retried` input) is
@@ -35,6 +35,9 @@ and says what it left out. The decision and its rejected alternatives are in the
   the latest row (a write-mode line after it does not close it), with no items
   and no deliveries, has no row. The caller passes `anchoredTurnIds` from `chatCards` to keep that row for
   a card anchored on it (a refused Retry's, say); `./mf` passes the same projection's set.
+  A local turn stamped forgotten is hidden the same way unless a card is anchored on it.
+  Inherited rows are never filtered by stamp: the server already applied the stamps inside the
+  fork's span.
 - **Stand-ins and the opening seed** are placed after their `prevTurnId`; the
   opening seed goes first, which equals placing stand-ins first because no
   producer anchors a stand-in to it. A row's `identity` is the server turn id,
@@ -52,6 +55,26 @@ and says what it left out. The decision and its rejected alternatives are in the
 - `hidden` (from `hiddenWriterTurns`) keeps rows out while a hand-back is in
   flight; `onContractFailure` lets the caller report a persisted record that
   misses a contract.
+
+`viewTranscript` is memoized by input identity (`WeakMap`), so unchanged turns
+keep their items. `groupDeliverySegments` normalizes tool identities once across
+the turn; `partitionTurn` (`view/partition-turn.ts`) reads those ordered
+segments. A call whose card is in the turn shows as that card alone
+(`hiddenToolCallIds`). The server imports `replyDrawsNothing` from the
+`@meridian/thread-client/view` subpath, so its forgetting and the client's
+hiding share one rule.
+
+### Failure cards (`src/cards/`)
+
+`chatCards` is a pure projection over facts: the normalized turns
+(`normalizeTurns`) and the latest row (`latestRow`), the `RunStateView`, the
+hand-back operation's `unresolved()`, failed Send nows, Retry outcomes (refused
+or lost), unadmitted sends, queued commands and the brief's failed Stop. A
+card's `key` is its occurrence id (`${requestId}:${attempt}`, the turn id for a
+reply, `usage:${threadId}:${seq}`); its copy is a closed key set the app words.
+`./mf thread view` prints the same cards for what a snapshot holds. A host's
+local command state (a lost Retry, a failed Stop, an unadmitted send) isn't in a
+snapshot, so `thread view` passes none and never prints those cards.
 
 Turn-metadata readers (compaction, handoff seed, thread references) live in
 `@meridian/contracts/threads` because they mirror the server's metadata codecs.
@@ -257,6 +280,29 @@ One framework-free operation runs Stop, the queue's x and Cancel queue for the a
 - **L1 seams.** The builders (`stopRequest`, `waitingWriterMessages`, `sendNowRequest`) read only a
   `RunStateView`; a shared session would implement `RunStatePort` so command records pass its one
   version check.
+
+## Command occurrences (`src/commands.ts`)
+
+A command failure's occurrence is one attempt, `{ requestId, attempt }` (key
+`${requestId}:${attempt}`). The command's owner allocates it with
+`nextOccurrence(previousAttempt, freshRequestId)` before the attempt's first save or post; a projection
+or render never allocates one. Every owner uses the same allocator: the app's chat sends
+(`chat-submissions/`), queued `/compact` and write-mode switches (`run-state-slice.ts`), and the
+hand-back operation.
+
+- **Try again** keeps the command's wire identity (the idempotency key the server dedupes on: a
+  journaled command's `submissionId`, a hand-back's own `requestId`) and starts a new occurrence with
+  a fresh `requestId`. A counter alone would repeat after a refused save and a reload; the pair stays
+  unique.
+- **A saved command saves its occurrence with it**, so a reload and another tab see the same attempt.
+  An attempt whose occurrence can't be saved is never posted; the press still fails visibly under the
+  new occurrence, and a command already in the store keeps its status.
+- **Reload differs by owner.** A hand-back's resume continues its last saved occurrence; a send's
+  journal re-drives as a new attempt. An attempt still in flight never replaces a failure already
+  shown; only its own durable refusal does. Another tab's occurrence change only redraws cards.
+
+The rule this serves is the KB's
+[one failure model](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/one-failure-model.md).
 
 ## Thread wire protocol and recovery
 

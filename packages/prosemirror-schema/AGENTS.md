@@ -1,9 +1,10 @@
 # @meridian/prosemirror-schema
 
-Shared ProseMirror structural contract used by the TipTap/Yjs editor and server
-collab code. It owns node and mark specs, schema versioning, the Yjs fragment
-name, client-ID policy and the Y.Doc factory; DOM and
-editor runtime behavior stay outside this package.
+The shared ProseMirror structural contract for the TipTap/Yjs editor and
+server collab code: node and mark specs, schema versioning, the Yjs fragment
+name, client-ID policy and the Y.Doc factory. DOM and editor runtime behavior
+live outside it, and it depends on no React, TipTap runtime objects, database
+adapters or server domains.
 
 ## Rules
 
@@ -16,29 +17,25 @@ editor runtime behavior stay outside this package.
 - Random authoring docs use `createCollabYDoc()` so they avoid the reserved
   server-authored client-ID band. Review restoration belongs to the diff kernel,
   not this schema package.
-- A schema version change follows the append-only history and compatibility
-  rules in [`.context/CONTEXT.md`](.context/CONTEXT.md).
-
-Keep this package independent from React, TipTap runtime objects, database
-adapters, and server domains.
+- Compatibility seams between the schema, the editor and Yjs:
+  [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
 ## Schema version bump policy
 
 `src/schema-shape.history.json` is the append-only record of collab schema
-versions and surfaces protected by `src/schema-shape.test.ts` (which points
-here). Never modify or remove an existing entry; append the new version and
-surface so the test can classify the transition from its predecessor.
+versions and surfaces; `src/schema-shape.test.ts` checks each transition
+against this table. Never modify or remove an entry: append the new version and
+its surface.
 
 | Change | Version class |
 |---|---|
 | Surface identical | No bump required; patch allowed |
-| New node/mark, or new attribute with a default | Minor `x.(y+1).0` |
-| Content expression or attribute default changed | Next minor or next major; review must confirm the minor path only loosens the schema |
-| Node/mark/attribute removed or renamed, fragment renamed, or Yjs encoding changed | Major `(x+1).0.0`, human ruling, and migration plan |
-| Any change a human ruling declares major (an added attr that changes what stored content means) | Major; the entry's `compatibilityNote` cites the ruling and the reset or migration |
+| New node or mark, or new attribute with a default | Minor `x.(y+1).0` |
+| Content expression or attribute default changed | Next minor or next major; review confirms the minor path only loosens the schema |
+| Node, mark or attribute removed or renamed, fragment renamed, or Yjs encoding changed | Major `(x+1).0.0` |
+| A change that alters what stored content means (such as an added attribute) | Major |
 
-Minor is additive even in `0.x`, and a patch must keep the surface identical.
-A major is expected never: do not append an entry around a removal or encoding
-change without the ruling and migration plan. `1.0.0` added `ref` to `link`,
-`image` and `figure` by ruling (#729/#730): old heads are unreadable and collab
-state is reset, not migrated.
+Minor is additive even in `0.x`, and a patch keeps the surface identical. A
+major needs a human call and a migration or reset plan, recorded in the entry's
+`compatibilityNote`. Past majors are listed in
+[`.context/CONTEXT.md`](.context/CONTEXT.md).

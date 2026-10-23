@@ -75,3 +75,8 @@ unregistered stored model fails route resolution before provider dispatch; no
 local-data remapping or compatibility alias is allowed. Tool schema projection
 for providers that reject root unions belongs to the adapter, while execution
 validates the unchanged canonical schema.
+Direct Anthropic rejects a root `oneOf` or `anyOf`, so its adapter advertises
+one object envelope carrying each command's purpose, required and allowed
+fields, and command-tagged descriptions generated from the Zod branches.
+DeepSeek receives the canonical unions unchanged, and a root `allOf` is refused
+at tool registration.

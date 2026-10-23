@@ -40,8 +40,14 @@ pane clips them; there are no viewport fit tests or clamping rules. The expanded
 `tableHoverZone` owns the gaps needed to reach a grip. The block handle occupies
 the outer margin band; row grips occupy the inner band.
 
+Chrome never overlaps prose. The add-row tab sits 6px inside the frame's
+bottom edge because the gap between blocks (about 14px) is smaller than the
+tab; check any change to either number against `.ProseMirror > * + *`. A grip
+appears at the hovered row at once, with no transition on its position and no
+scroll-driven re-measurement: it labels the row rather than travelling to it.
+
 The kernel owns one hover/probe answer and re-hit-tests after layout changes.
-This lane answers only which table cell is under its probe and whether the
+This surface answers only which table cell is under its probe and whether the
 pointer is in its expanded zone. It adds no pointer listener on the portal.
 `NodeHold` plus `useAnchorRect` follows cell identity and geometry separately.
 The selected table menu reads kernel context rather than a per-keystroke local

@@ -245,7 +245,7 @@ parses as anything else. Positive `colspan` and `rowspan` round-trip. Unknown
 table structure is inert raw text, while invalid PM span/alignment attrs and
 malformed `Layout` column widths still throw rather than serialize lossily.
 
-`widths` counts GRID columns, and so does `colwidth` (ruling, 2026-07-29). A
+`widths` counts GRID columns, and so does `colwidth`. A
 cell's index among its row's children stops being its column the moment
 anything spans, so both sides walk the grid: `colwidth` holds one entry per
 column the cell covers, and **zero means that column has no width**. That is
