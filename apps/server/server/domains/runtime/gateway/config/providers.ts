@@ -11,6 +11,8 @@ import { buildFromRegistry, MODEL_REGISTRY } from "./registry.js";
 export interface GatewayEnvInput {
   /** Only "mock" has behavior; all other values are ignored so the registry decides. */
   MODEL_PROVIDER?: string;
+  /** JSON default response for the local mock (same content/pacing fields as script steps). */
+  MOCK_MODEL_RESPONSE?: string;
   /** Absolute per-attempt ceiling in ms; env strings and numbers both accepted. 0 disables. */
   MODEL_CALL_TIMEOUT_MS?: string | number;
   /** Inactivity stall window in ms; env strings and numbers both accepted. 0 disables. */

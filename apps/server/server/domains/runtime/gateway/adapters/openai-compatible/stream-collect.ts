@@ -46,6 +46,7 @@ interface StreamAccumulator {
   // for separate text blocks, so text is flushed as one canonical TextPart.
   contentParts: ContentPart[];
   textBuffer: string;
+  reasoningBuffer: string;
   // Chat Completions streams tool calls as an array of deltas keyed by
   // `tool_calls[].index` — a required field on Delta.ToolCall (SDK-confirmed).
   // The same index receives the id/name and successive argument JSON fragments,
@@ -65,6 +66,7 @@ export function createStreamAccumulator(model: string, provider: string): Stream
   return {
     contentParts: [],
     textBuffer: "",
+    reasoningBuffer: "",
     toolCalls: new Map(),
     usage: emptyUsage(),
     finishReason: "end_turn",
@@ -88,6 +90,7 @@ export function accumulatorHasPartialResult(acc: StreamAccumulator): boolean {
     acc.usage.inputTokens > 0 ||
     acc.usage.outputTokens > 0 ||
     acc.textBuffer.length > 0 ||
+    acc.reasoningBuffer.length > 0 ||
     acc.contentParts.length > 0 ||
     acc.toolCalls.size > 0
   );
@@ -96,6 +99,10 @@ export function accumulatorHasPartialResult(acc: StreamAccumulator): boolean {
 export function buildGenerateResult(acc: StreamAccumulator): GenerateResult {
   // Chat Completions has no final response object with reconstructed content, so
   // the GenerateResult is built entirely from accumulated deltas.
+  if (acc.reasoningBuffer) {
+    acc.contentParts.push({ type: "reasoning", text: acc.reasoningBuffer });
+    acc.reasoningBuffer = "";
+  }
   flushTextBuffer(acc);
 
   const toolCalls: ToolCall[] = [];
@@ -203,14 +210,11 @@ export function* eventsFromOpenAIChunk(
   const choice = chunk.choices?.[0];
   if (!choice) return;
 
-  // DeepSeek thinking models send reasoning via `reasoning_content` — not
-  // part of the OpenAI SDK types (ChatCompletionChunk.Choice.Delta has no
-  // `reasoning_content` field), so access via untyped cast. Chat Completions
-  // does not provide a standard reasoning channel or final reasoning block
-  // shape, so this is surfaced as streaming reasoning.delta only. There is no
-  // accumulated canonical ReasoningPart for this path.
+  // Compatible providers carry visible thinking in this extension. Preserve it
+  // for the transcript, without inventing a provider signature or replay payload.
   const reasoningContent = (choice.delta as Record<string, unknown> | undefined)?.reasoning_content;
   if (typeof reasoningContent === "string" && reasoningContent) {
+    acc.reasoningBuffer += reasoningContent;
     yield { type: "reasoning.delta", text: reasoningContent };
   }
 
