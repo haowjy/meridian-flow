@@ -1836,6 +1836,10 @@ msgstr ""
 msgid "Couldn't undo"
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "Couldn't undo this Apply. Try again."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't update that Work"
 msgstr ""
@@ -5124,6 +5128,10 @@ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Undo is no longer available."
+msgstr ""
+
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "Undoing Apply"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
