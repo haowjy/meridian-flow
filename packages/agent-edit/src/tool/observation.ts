@@ -151,8 +151,15 @@ export function observeRendered(
       const item = itemById.get(id);
       if (!item) {
         if (shown.has(id)) {
+          const hash = hashForId(doc, blocks, id);
+          const bytes = byteLength(hash) + 1;
+          if (bytes > remaining) {
+            group.more = (group.more ?? 0) + 1;
+            continue;
+          }
+          remaining -= bytes;
           group.shown ??= [];
-          group.shown.push(hashForId(doc, blocks, id));
+          group.shown.push(hash);
         }
         continue;
       }
