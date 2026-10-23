@@ -91,16 +91,18 @@ export function inspectionActions(
       action.parts.every((part) => part.actor === "agent") ? [...action.targets] : [],
     ),
   );
+  const stack = own.filter((entry) => {
+    const keys = entryKeys(entry);
+    return (
+      !keys.some((key) => modelConsumed.has(key)) &&
+      !keys.every((key) => actions.byPart.has(key) || actions.rolledBack.has(key))
+    );
+  });
   return {
     actions,
     rolledBack,
-    top: own.find((entry) => {
-      const keys = entryKeys(entry);
-      return (
-        !keys.some((key) => modelConsumed.has(key)) &&
-        !keys.every((key) => actions.byPart.has(key) || actions.rolledBack.has(key))
-      );
-    }),
+    stack,
+    top: stack[0],
     candidate: actions.actions.find(
       (action) =>
         !own.some((entry) =>

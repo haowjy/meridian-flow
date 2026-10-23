@@ -1,6 +1,5 @@
 // Composition adapter binds model history commands to the caller's current destination.
 
-import { randomUUID } from "node:crypto";
 import type {
   BlockOriginMap,
   DocumentEditRequest,
@@ -31,8 +30,7 @@ export function createModelDocumentEdits(input: {
     if (!version) throw new Error("Model edit history requires an explicitly routed version");
     let draftId: string | null = null;
     let blockOrigins: BlockOriginMap | undefined;
-    if (version === "draft") {
-      if (view?.kind !== "branch") return null;
+    if (version === "draft" && view?.kind === "branch") {
       if (ensure) {
         const documentDraft = await input.coordinator.withDocument(documentId, (liveDoc) => {
           const authority = boundDocumentAuthority(liveDoc);
@@ -54,8 +52,7 @@ export function createModelDocumentEdits(input: {
           );
           draftId = documentDraft.draftId;
         } catch (cause) {
-          if (cause instanceof DraftNotFoundError) return null;
-          throw cause;
+          if (!(cause instanceof DraftNotFoundError)) throw cause;
         }
       }
     }
@@ -78,7 +75,6 @@ export function createModelDocumentEdits(input: {
   return {
     async execute(request) {
       const resolved = await query(request, true);
-      if (!resolved) return absentDraftInverse(request.command);
       const result = await input.service().modelInverse(resolved.query, request.command);
       return result.status === "success" && resolved.blockOrigins
         ? { ...result, blockOrigins: resolved.blockOrigins }
@@ -86,34 +82,7 @@ export function createModelDocumentEdits(input: {
     },
     async read(request) {
       const resolved = await query(request, false);
-      return resolved
-        ? input.service().modelEdits(resolved.query, request.command.before)
-        : {
-            status: "success",
-            message: `This chat has no edits in a draft of ${request.command.file}.`,
-            actionId: randomUUID(),
-            room: null,
-          };
+      return input.service().modelEdits(resolved.query, request.command.before);
     },
   };
-}
-
-function absentDraftInverse(command: { command: "undo" | "redo" | "revert"; file: string }) {
-  switch (command.command) {
-    case "undo":
-      return {
-        status: "nothing_to_undo" as const,
-        message: `You have no edits to undo in ${command.file}. Read it and make a new replace if needed.`,
-      };
-    case "redo":
-      return {
-        status: "nothing_to_redo" as const,
-        message: `Nothing of yours to redo in ${command.file}. A new edit clears redo here. Read it and make a new replace if needed.`,
-      };
-    case "revert":
-      return {
-        status: "nothing_to_revert" as const,
-        message: `Nothing is left to reverse in ${command.file}. Read it and make a new replace.`,
-      };
-  }
 }
