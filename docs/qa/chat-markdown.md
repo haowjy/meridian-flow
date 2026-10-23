@@ -34,7 +34,10 @@ messages (without changing content or sequence) in a browser capture to check:
 - Completed paragraphs and code DOM survive tail appends and turn settlement.
   A closed reply has the same spacing and markup before and after settlement.
 - Repeat with loose/nested lists, longer tilde fences, reference definitions,
-  source replacements, and leading blank lines. They retain canonical parsing.
+  source replacements, and leading blank lines. Each completed worker result must
+  match one canonical whole-source parse of that text block.
+- Put tool, report, and artifact items between text blocks. Each text block keeps
+  its own worker stream, and a settled block is never submitted again.
 
 Static reference/skill occurrence turns use the same canonical codec and document
 renderer. Only exact authored link ranges may resolve to a document; adjacent
@@ -44,15 +47,17 @@ code and rewritten/unmappable ranges remain ordinary Markdown.
 Closed diagram fences draw through the Editor's sanitized provider boundary;
 open fences stay source, including list/quote-contained fences. Verify that
 quoted or four-space-indented delimiters inside a top-level fence stay literal
-code. Checkboxes and ordinary bracketed text must not disable settled-block reuse;
-link reference definitions patch only earlier links whose normalized labels they
-resolve, while duplicate definitions keep the first definition authoritative. Chat
+code. Checkboxes and ordinary bracketed text must not disable settled-block reuse.
+Reference definitions follow the canonical full parse, including first-definition
+precedence. Chat
 images use the Editor's positive browser-source allowlist; unavailable sources
 show their alt text without fetching an app-origin or disallowed URL.
 
-Performance: `pnpm --filter @meridian/app bench:markdown` runs 4,000 whitespace
-chunks at 30/s and measures synchronous React commits with forced layout. Keep
-this fixture/cadence unchanged for comparisons; do not run checks concurrently.
+Performance: `pnpm --filter @meridian/app bench:markdown` streams one 30,381-character,
+5,071-word text block at 30 tokens/s. It reports synchronous main-thread React
+commits, forced layout, and arrival-to-next-paint delay after the matching worker
+result. It also measures 50-message and long-reply cold and cached mounts. Keep the
+fixture and cadence unchanged for comparisons; do not run checks concurrently.
 
 Focused contract checks:
 `pnpm --filter @meridian/app exec vitest run src/rich-content/document-markdown.test.tsx src/rich-content/code-block.test.tsx`.

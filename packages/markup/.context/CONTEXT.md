@@ -45,26 +45,22 @@ Preset-internal codec lists (`markdownBlockCodecs`, `markdownMarkCodecs`,
 package root. Tests or preset internals that need them import from sibling
 `markdown/index.js` / `mdx/index.js` modules instead.
 
-`MarkupCodec` exposes `parse`, `parseWithSpans`, `parseWithSourceMap`, `stream`,
+`MarkupCodec` exposes `parse`, `parseWithSpans`, `parseWithSourceMap`, `parseStreaming`,
 `serialize`, `serializeBlock`, and `serializeBlocks`. Every serialize call takes the
 `DocumentLinkScope` explicitly; nothing is captured at construction.
 `serializeBlock`/`serializeBlocks` return normalized block bodies without hash
 prefixes. Agent-edit owns any hash-prefixed adapter layer.
 
-`stream(previous, source, { repair })` is the Markdown presentation path for
-append-only replies. The immutable snapshot returns canonical PM blocks, retains
-the identity of unchanged completed nodes, and names the exact open fenced-code
-node from micromark events. Non-append edits reset it. The active suffix keeps one
-or two top-level nodes as parse context, depending on whether a blank-line boundary
-has made the preceding block independent. Reference definitions are carried separately:
-when their first-wins normalized map changes, only retained blocks whose parsed
-links change receive replacement nodes. Raw HTML falls back to a whole-source
-parse because its block boundary can remain open across blank lines.
+`parseStreaming(source, { repair })` performs one canonical whole-source parse and
+reports its blocks plus the exact open fenced-code node from micromark events. It
+retains no prior source, parser checkpoint, definition state, or node identity;
+the presentation host owns transport and identity reuse.
 
-Optional repair starts from the unrepaired canonical parse and considers only the
-last parser-positioned text region of a top-level paragraph or heading. It accepts
-an append-only completion only when preceding blocks and every code node remain
-unchanged. Inline code, links, HTML and container tails are not repair candidates.
+Optional repair runs `remend` from the parser-positioned start of the last prose
+block. The codec reparses the complete candidate and accepts it only when every
+earlier block and every code node is unchanged and the last rendered block
+changes. Inline code, links and HTML are not repair candidates. A repair that only
+adds visible delimiter text is rejected.
 
 ## Presentation source map
 
@@ -79,7 +75,8 @@ source had intervening delimiters. Those runs retain separate source authority.
 No schema attrs, document mutations or extra parser are involved. Normal parsing
 does not collect provenance. Consumers must decline null or mismatched ranges,
 not infer identity from labels. This map is for static presentation, not writes
-or streaming. Existing enclosing `parseWithSpans` semantics remain separate.
+or worker streaming. The result also identifies an open fenced-code node from
+that same parse. Existing enclosing `parseWithSpans` semantics remain separate.
 
 ## Round-trip guarantees
 
