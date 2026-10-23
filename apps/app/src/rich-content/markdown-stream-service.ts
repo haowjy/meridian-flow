@@ -41,6 +41,11 @@ export function configureMarkdownStreaming(
   parseStreaming = parse;
 }
 
+/** Start the module worker while the chat shell is mounting, before its first reply. */
+export function prewarmMarkdownStreaming(): void {
+  if (!synchronous) workerForBrowser();
+}
+
 export function subscribeStreamingMarkdown(streamId: string, listener: () => void): () => void {
   const state = stateFor(streamId);
   state.listeners.add(listener);
@@ -149,7 +154,9 @@ function receive(message: MarkdownWorkerResponse): void {
   for (const [key, json] of Object.entries(message.nodes)) {
     if (!schema) throw new Error("Markdown streaming is not configured");
     state.nodes.set(key, PMNode.fromJSON(schema, json));
-    state.json.set(key, JSON.stringify(json));
+    // Worker responses already carry content keys. Keep JSON only for the
+    // synchronous fallback, whose cacheNode path compares serialized nodes.
+    if (synchronous) state.json.set(key, JSON.stringify(json));
   }
   if (message.seq < state.appliedSeq) return;
   const blocks = message.keys.map((key) => state.nodes.get(key));

@@ -23,11 +23,14 @@ blocks remain distinct.
 
 The main thread ignores stale sequence and generation results, keeps the last
 completed render while a newer parse runs, and releases worker state when the text
-block settles or unmounts. Settlement parses canonical source once and reuses
-equal worker nodes by position, preserving mounted code and diagram components.
-Open-fence highlights are throttled at 50ms. Bounded source caches retain settled
-PM trees and code colors across virtual-row remounts (256 entries and 250,000 key
-characters each).
+block settles or unmounts. Streaming settlement parses canonical source once and
+reuses equal worker nodes by position, preserving mounted code and diagram
+components. Non-presentational settled transcripts use conservative blank-line
+render units and a shared per-unit cache so repeated history does not reparse
+whole replies; whole-document constructs stay one unit. Open-fence highlights
+are throttled at 50ms. Bounded source caches retain settled PM trees and code
+colors across virtual-row remounts (256 entries and 250,000 key characters each).
+Chat mounts prewarm the module worker before a reply starts.
 
 Static user turns with occurrences parse once with the canonical codec's opt-in
 presentation source map. Exact complete link ranges grant reference identity;
