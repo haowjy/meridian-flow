@@ -56,10 +56,12 @@ and says what it left out. The decision and its rejected alternatives are in the
   flight; `onContractFailure` lets the caller report a persisted record that
   misses a contract.
 
-`viewTranscript` is memoized by input identity (`WeakMap`), so unchanged turns
-keep their items. `groupDeliverySegments` normalizes tool identities once across
-the turn; `partitionTurn` (`view/partition-turn.ts`) reads those ordered
-segments. A call whose card is in the turn shows as that card alone
+Transcript projections preserve identity at the output they own. Equal store turns and blocks keep
+their references after snapshot reconciliation; assistant items, response summaries, delivery events
+and groups, rows, and per-turn subagent facts are interned by their source object and full projected
+value. The outer row and item arrays remain per-call values. `groupDeliverySegments` normalizes tool
+identities once across the turn; `partitionTurn` (`view/partition-turn.ts`) reads those ordered segments.
+A call whose card is in the turn shows as that card alone
 (`hiddenToolCallIds`). The server imports `replyDrawsNothing` from the
 `@meridian/thread-client/view` subpath, so its forgetting and the client's
 hiding share one rule.

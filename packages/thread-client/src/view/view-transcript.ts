@@ -6,8 +6,9 @@
  */
 import type { Turn } from "@meridian/contracts/protocol";
 import { retryTargetOf } from "@meridian/contracts/threads";
+import { sameJson } from "../turns/same-turn";
 import { type AssistantView, viewAssistantTurn } from "./assistant-view";
-import { groupDeliveryEvents } from "./delivery-groups";
+import { type DeliveryGroup, groupDeliveryEvents } from "./delivery-groups";
 import { type NormalizedTurns, normalizeTurns, type TurnFacts } from "./normalize-turns";
 import { isOptimisticTurnId } from "./optimistic-turn-id";
 import { replyDrawsNothing } from "./reply-draws-nothing";
@@ -63,7 +64,7 @@ export type ViewRow = TranscriptRow & {
    * Subagent notifications and other deliveries that belong to this reply, in order, grouped as
    * drawn: contiguous completions are one group (one merged row), anything else stands alone.
    */
-  deliveries: readonly (readonly DeliveryEvent[])[];
+  deliveries: readonly DeliveryGroup[];
   /** A closing turn follows this one (drawn or not): the chat moved on, so a failure here has ended and has no Retry. */
   movedPast: boolean;
   /** The reply continues in a later row, so this one has no settled action row. */
@@ -101,10 +102,67 @@ function groupsOf(events: readonly DeliveryEvent[] | undefined) {
 }
 
 function responseOf(parts: readonly Turn[]): NonNullable<ViewRow["response"]> {
-  return { parts, stats: turnStats(parts) };
+  const anchor = parts.at(-1);
+  if (!anchor) return { parts, stats: turnStats(parts) };
+  const previous = responseCache.get(anchor);
+  if (
+    previous &&
+    previous.parts.length === parts.length &&
+    previous.parts.every((turn, index) => turn === parts[index])
+  )
+    return previous;
+  const response = { parts, stats: turnStats(parts) };
+  responseCache.set(anchor, response);
+  return response;
 }
 
-const NO_DELIVERIES: readonly (readonly DeliveryEvent[])[] = [];
+const NO_DELIVERIES: readonly DeliveryGroup[] = [];
+const responseCache = new WeakMap<Turn, NonNullable<ViewRow["response"]>>();
+const rowCache = new WeakMap<Turn, Map<string, ViewRow>>();
+
+function internRow(row: ViewRow): ViewRow {
+  let variants = rowCache.get(row.turn);
+  if (!variants) {
+    variants = new Map();
+    rowCache.set(row.turn, variants);
+  }
+  const key = `${row.kind}\0${row.identity.occurrence}`;
+  const previous = variants.get(key);
+  const commonFields = {
+    kind: "value",
+    turn: "reference",
+    inherited: "json",
+    identity: "json",
+    renderKey: "value",
+    deliveries: "references",
+    movedPast: "value",
+    continuing: "value",
+    response: "reference",
+    queued: "value",
+  } satisfies Record<keyof ViewRow, "value" | "reference" | "json" | "references">;
+  const sameCommon =
+    previous &&
+    (Object.keys(commonFields) as (keyof ViewRow)[]).every((field) => {
+      const comparison = commonFields[field];
+      if (comparison === "json") return sameJson(previous[field], row[field]);
+      if (comparison === "references") {
+        const left = previous.deliveries;
+        const right = row.deliveries;
+        return left.length === right.length && left.every((group, index) => group === right[index]);
+      }
+      return previous[field] === row[field];
+    });
+  const sameVariant =
+    sameCommon &&
+    (row.kind === "thread-reference"
+      ? previous.kind === "thread-reference" && sameJson(previous.references, row.references)
+      : row.kind === "handoff-seed"
+        ? previous.kind === "handoff-seed" && previous.latest === row.latest
+        : true);
+  if (sameVariant) return previous;
+  variants.set(key, row);
+  return row;
+}
 
 export function viewTranscript(input: TranscriptViewInput): TranscriptView {
   const normalized = input.normalized ?? normalizeTurns(input);
@@ -158,7 +216,7 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
       else items.set(turn.id, viewAssistantTurn(turn));
     }
     return [
-      {
+      internRow({
         ...row,
         identity: {
           turnId: isOptimisticTurnId(turn.id) || unconfirmed.has(turn.id) ? null : turn.id,
@@ -171,7 +229,7 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
         movedPast: model.movedPast(turn),
         response: row.kind === "turn" && turn.role !== "user" ? responseOf(parts ?? [turn]) : null,
         queued: row.kind === "turn" && !row.inherited && (input.queued?.has(turn.id) ?? false),
-      },
+      }),
     ];
   });
   // The chat's next run is the Retry whose failed reply is still the last reply: a stand-in
