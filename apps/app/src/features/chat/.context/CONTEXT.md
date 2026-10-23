@@ -79,6 +79,7 @@ transcript does not add a conversation-wide aggregate record.
 surfaces still. `ChatComposer` owns the chat draft and dock lifecycle. Transcript rows and assistant
 items receive interned view-model values and are memoized. Context values for failure cards,
 derivation actions, and subagent activity retain their reference until their own facts change; event
-callbacks publish the latest committed render before paint.
+callbacks and long-lived action adapters publish the latest committed render before paint. Render-time
+ref writes must not expose speculative scope or store actions to operations from the visible screen.
 
 The invariants are in [`../AGENTS.md`](../AGENTS.md).
