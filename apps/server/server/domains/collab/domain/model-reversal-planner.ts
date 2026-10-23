@@ -193,7 +193,10 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
         ),
         omissions: [],
       };
-    const inspection = inspectAt(destination);
+    const inspection =
+      destination.kind === "draft" && destination.state === "gone"
+        ? inspect()
+        : inspectAt(destination);
     inspection.states(entry.parts);
     const selected =
       actionKind === "revert"
