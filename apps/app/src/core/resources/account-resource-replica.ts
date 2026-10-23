@@ -139,6 +139,7 @@ export class AccountResourceReplica {
       listeners: Map<(snapshot: ResourceProjectionSnapshot) => void, (error: unknown) => void>;
       stop: () => void;
       snapshot: ResourceProjectionSnapshot | null;
+      error: unknown | null;
     }
   >();
   private readonly serverSessionCaptures = new Map<string, Promise<void>>();
@@ -520,6 +521,46 @@ export class AccountResourceReplica {
     return this.metadata.readProjection(projectId);
   }
 
+  readProjectionState(
+    projectId: string,
+  ):
+    | { kind: "pending" }
+    | { kind: "ready"; snapshot: ResourceProjectionSnapshot }
+    | { kind: "failed"; error: unknown } {
+    const stream = this.projectionStreams.get(projectId);
+    if (stream?.error !== null && stream?.error !== undefined)
+      return { kind: "failed", error: stream.error };
+    if (stream?.snapshot) return { kind: "ready", snapshot: stream.snapshot };
+    return { kind: "pending" };
+  }
+
+  whenProjectionReady(
+    projectId: string,
+    signal?: AbortSignal,
+  ): Promise<ResourceProjectionSnapshot> {
+    const state = this.readProjectionState(projectId);
+    if (state.kind === "ready") return Promise.resolve(state.snapshot);
+    if (state.kind === "failed") return Promise.reject(state.error);
+    if (signal?.aborted) return Promise.reject(signal.reason);
+    return new Promise((resolve, reject) => {
+      const stop = this.observeProjection(projectId, settle, fail);
+      const abort = () => fail(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+      function cleanup() {
+        signal?.removeEventListener("abort", abort);
+        stop();
+      }
+      function settle(snapshot: ResourceProjectionSnapshot) {
+        cleanup();
+        resolve(snapshot);
+      }
+      function fail(error: unknown) {
+        cleanup();
+        reject(error);
+      }
+      signal?.addEventListener("abort", abort, { once: true });
+    });
+  }
+
   observeProjection(
     projectId: string,
     listener: (snapshot: ResourceProjectionSnapshot) => void,
@@ -535,15 +576,18 @@ export class AccountResourceReplica {
       const created = {
         listeners,
         snapshot: null as ResourceProjectionSnapshot | null,
+        error: null as unknown | null,
         stop: (() => undefined) as () => void,
       };
       created.stop = this.metadata.observeProjection(
         projectId,
         (snapshot) => {
           created.snapshot = snapshot;
+          created.error = null;
           for (const subscriber of created.listeners.keys()) subscriber(snapshot);
         },
         (error) => {
+          created.error = error;
           for (const report of created.listeners.values()) report(error);
         },
       );

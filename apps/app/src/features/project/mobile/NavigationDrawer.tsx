@@ -60,10 +60,11 @@ export function NavigationDrawer({
     }
     void openDocument({
       documentId: file.documentId,
+      known: { scheme, file, workId: editorWorkId },
       workId: editorWorkId ?? undefined,
       ...options,
     }).then((result) => {
-      if (result.kind === "opened") onOpenChange(false);
+      if (result.kind === "committed") onOpenChange(false);
     });
   };
   // The drawer owns its own inline-create state: the desktop shell's shared

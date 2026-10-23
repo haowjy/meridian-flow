@@ -160,6 +160,7 @@ function MobileFolderTree({
               if (file.editable)
                 void openDocument({
                   documentId: file.documentId,
+                  known: { scheme, file, workId: editorWorkId },
                   workId: editorWorkId ?? undefined,
                 });
               else onSelectContextPath(file.path, scheme);
