@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "lorem": {
+        "words": 10000,
+        "wordsPerParagraph": 100
+      },
+      "reasoning": "I will produce a long placeholder response for scrolling and transcript checks.",
+      "chunkSize": 512,
+      "chunkDelayMs": 10
+    }
+  ]
+}

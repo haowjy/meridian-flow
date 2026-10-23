@@ -7,6 +7,7 @@
  * composition root may bypass this and call createGateway() directly with
  * secrets from a secret store.
  */
+import { mockModelDefaultResponseSchema } from "@meridian/contracts/protocol";
 import { createMockScriptQueue, type MockScriptQueue } from "../adapters/mock/script-queue.js";
 import { createMockOpenAICompatibleServer } from "../adapters/mock/server.js";
 import { createGateway } from "../create-gateway.js";
@@ -67,8 +68,8 @@ function formatGatewayStartupInfo(
  * Build a gateway from environment inputs.
  *
  * When no real provider keys are configured (or MODEL_PROVIDER is "mock"),
- * starts an in-process OpenAI-compatible mock server that echoes deterministic
- * responses. Returns a cleanup function so the caller can shut down the mock
+ * starts an in-process OpenAI-compatible mock server with deterministic
+ * sample responses. Returns a cleanup function so the caller can shut down the mock
  * server when the gateway is no longer needed.
  *
  * The `mockBaseUrl` option lets tests provide a pre-existing mock server URL
@@ -90,7 +91,12 @@ export async function createGatewayFromEnv(
     let baseUrl = options?.mockBaseUrl;
     if (!baseUrl) {
       mockScript = createMockScriptQueue();
-      const mock = await createMockOpenAICompatibleServer({ script: mockScript });
+      const defaultResponse = mockModelDefaultResponseSchema.parse(
+        env.MOCK_MODEL_RESPONSE
+          ? JSON.parse(env.MOCK_MODEL_RESPONSE)
+          : { sample: "scene", chunkDelayMs: 20 },
+      );
+      const mock = await createMockOpenAICompatibleServer({ script: mockScript, defaultResponse });
       baseUrl = mock.baseUrl;
       cleanup = mock.close;
     }

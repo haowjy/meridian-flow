@@ -298,19 +298,116 @@ Terminal record example (command-specific fields follow the reserved keys):
 ```
 
 
-Scripting the model: with `MODEL_PROVIDER=mock` (or no provider keys) and the
-debug gate open, the in-process mock model accepts queued replies through the
-`/api/debug/mock-model/script` route. A step replies with `text`, `toolCalls`
-(`[{name, args}]`), or an `error` (`{status, message}`), plus optional
-`delayMs` and `times` (how many model calls it answers, default 1). An `error`
-step without `times` is sticky: it answers every matching call, so gateway
-retries cannot slip past it and the matching run fails (verify with
-`./mf thread view`, not just a `send` exit code). Use
-`"times": 1` to test the gateway recovering on retry. `send --mock` scopes the
-script to that message, so concurrent threads cannot consume it, and removes
-it once the run settles; `./mf mock script|list|clear [--id]` manage the queue
-directly. Unscripted calls keep the mock's canned behavior. The gateway is the
-only retry layer: provider SDK clients run with `maxRetries: 0`.
+### Mock provider responses
+
+`MODEL_PROVIDER=mock` selects the in-process fake provider. It makes no paid
+model calls. `--mock @file.json` supplies that provider's responses for one
+send; it does not switch a real-provider server to mock.
+
+Without a script, the dev provider streams an authored fiction scene with
+thinking. Choose a different default with `MOCK_MODEL_RESPONSE`, a JSON
+object using the same content and pacing fields as a script step:
+
+```bash
+MODEL_PROVIDER=mock MOCK_MODEL_RESPONSE='{"sample":"critique","chunkDelayMs":30}' pnpm dev
+MODEL_PROVIDER=mock MOCK_MODEL_RESPONSE='{"lorem":{"words":10000},"chunkSize":256,"chunkDelayMs":10}' pnpm dev
+```
+
+Changing startup environment requires restarting your stack. Defaults cannot
+contain tools, errors, finish reasons, or `times`: a repeated tool call would
+never reach a final answer. Use a multi-step script for those scenarios.
+Explicit scripts win over built-in trigger phrases, which win over the default.
+Existing triggers used by cancellation and write probes still work.
+
+#### Script a response
+
+With the debug gate open (`pnpm dev` opens it), queue responses through
+`/api/debug/mock-model/script`. Each step answers one **model call**, not one
+user message. A tool step causes real tool execution, followed by another model
+call, so finish a tool workflow with a text step.
+
+```bash
+# One CLI send, scoped to its user message and cleaned up when the command finishes.
+./mf thread send <id> "Critique the opening" --mock @tools/mf/fixtures/mock-thinking.json
+./mf thread send <id> "Long response probe" --mock @tools/mf/fixtures/mock-large.json --timeout 120s
+./mf thread send <id> "Scratch workflow probe" --mock @tools/mf/fixtures/mock-tools.json
+
+# Queue for messages you type in the browser. Four samples, one per model call.
+./mf mock script @tools/mf/fixtures/mock-samples.json --match "sample probe"
+./mf mock list
+./mf mock clear --id <scriptId>
+```
+
+A script is `{ "match": "optional message substring", "steps": [...] }`;
+a bare step array is also accepted. `match` compares the latest user message
+on each model call. Give concurrent probes distinct message text: identical
+messages in different chats can consume the same script. Unmatched calls use
+the provider default. `mock clear` without `--id` removes all queued scripts.
+
+#### Response controls
+
+Choose at most one of `text`, `sample`, and `lorem`. Thinking and tools can
+accompany any of them. Unknown fields and conflicting text sources are rejected.
+
+| Field | Effect |
+|---|---|
+| `text` | Exact assistant Markdown, up to 1,000,000 characters. Supports headings, lists, quotes, code fences, links, and Unicode. |
+| `sample` | `scene`, `critique`, `outline`, or `markdown`. Authored samples with thinking, not recordings and not answers tailored to the prompt. |
+| `lorem` | `{ "words": 10000, "wordsPerParagraph": 100 }`. Exact whitespace-separated word count, up to 100,000; default paragraph size 80. |
+| `reasoning` | Thinking text before the answer and tools. Overrides sample thinking; `""` disables it. Thinking alone is also accepted. |
+| `repeat` | Repeat literal or sample text 1–100 times, separated by blank lines; bounded to 2,000,000 characters with reasoning. For lorem, set `words` instead. |
+| `delayMs` | Wait 0–120,000 ms before starting the response, including errors. |
+| `chunkSize` | Unicode characters per text, thinking, or tool-argument chunk; 1–65,536, default 24. |
+| `chunkDelayMs` | Interval between chunks, 0–10,000 ms. Scripts default to 0; the unconfigured dev default uses 20 ms. Approximate character rate is `chunkSize * 1000 / chunkDelayMs`; network and application processing add overhead. |
+| `toolCalls` | `[{ "name": "read", "args": { "path": "scratch://Mock scene" } }]`. Up to 100 calls; names and arguments go to the real tool registry. |
+| `finishReason` | `length` for truncation or `content_filter` for a filtered response. Does not shorten text for you. Omit for normal completion or tool execution. |
+| `error` | `{ "status": 503, "message": "Unavailable" }` instead of content. Cannot be combined with response content or streaming controls. |
+| `times` | Number of model calls consuming this step (1–1,000). An error without `times` is sticky, so retries cannot slip past it. |
+
+For example, this produces a long answer slowly without storing a large fixture:
+
+```json
+{
+  "steps": [{
+    "sample": "scene",
+    "repeat": 20,
+    "reasoning": "I will build the chapter around the cost of Mei's choice.",
+    "delayMs": 500,
+    "chunkSize": 64,
+    "chunkDelayMs": 25
+  }]
+}
+```
+
+Large, slow responses may exceed the CLI deadline or the gateway's model-call
+ceiling. Increase `--timeout` for the CLI and `MODEL_CALL_TIMEOUT_MS` for the
+server when deliberately exercising long runs; a chunk interval above
+`MODEL_CALL_STALL_MS` deliberately exercises a stalled provider. `chunkDelayMs`
+has no effect on non-stream responses. Stop/disconnection releases pending mock
+output and timers. Synthetic token usage is based on request/output bytes, not
+real tokenization or provider pricing.
+
+The mock uses the Chat Completions wire format: thinking, one text channel,
+then tool calls. Markdown formats are text, not separate provider blocks.
+It does not simulate arbitrary interleaved Anthropic/Responses blocks or
+assistant image/audio/file output. Tool results and document receipts come
+from the real runtime, not fabricated model output.
+
+#### Ready-made scenarios
+
+- [Thinking and critique](../tools/mf/fixtures/mock-thinking.json): paced thinking followed by a formatted critique.
+- [Large output](../tools/mf/fixtures/mock-large.json): 10,000 lorem words with paragraph breaks.
+- [Sample rotation](../tools/mf/fixtures/mock-samples.json): scene, critique, outline and Markdown on four model calls. Queue with `mock script`; `send --mock` removes unconsumed steps when that send finishes.
+- [Document tools](../tools/mf/fixtures/mock-tools.json): create/overwrite `scratch://Mock scene`, then read, list and search it, followed by a final answer. Uses the current chat's Scratch, not manuscript files.
+- [Human question](../tools/mf/fixtures/mock-interrupt.json): `ask_user` plus a final reply. Queue with `mock script --match` and answer in the browser. `send --mock` cleans up at an interrupt, so it would discard the follow-up step.
+- [Retry recovery](../tools/mf/fixtures/mock-recovery.json): one 503, then a successful outline. The gateway is the only retry layer; provider SDK clients use `maxRetries: 0`.
+- [Truncated response](../tools/mf/fixtures/mock-truncated.json): a partial sentence with the provider's length finish reason.
+- [Provider failure](../tools/mf/fixtures/mock-provider-error.json): a sticky failure. Inspect the failed reply, not only the send exit code.
+
+To exercise another tool, replace `toolCalls` with its current name and
+arguments; invalid arguments exercise the real refusal path. Scripts do not
+interpret tool results or choose subsequent steps conditionally. For dynamic
+handles or IDs, inspect the result and queue the next step explicitly.
 
 Capture a run for later inspection. `--json` output is never truncated (only
 text mode shortens tool payloads), so redirect it and query with `jq`:

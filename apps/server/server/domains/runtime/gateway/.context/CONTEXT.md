@@ -48,8 +48,23 @@ Provider terminal failure/truncation takes precedence over accumulated tool call
 OpenAI incomplete/failed responses and compatible length/content-filter finishes
 never become successful tool-use just because a call was streamed earlier.
 
-The dev mock reports request-derived synthetic input usage, so long histories
-reach real compaction boundaries. These counters test control flow, not provider
+The dev mock selects a queued step, a built-in trigger, or its configured default,
+then sends every normal response through `adapters/mock/response.ts`. Samples,
+lorem, literal content and tool calls share JSON/SSE serialization, synthetic
+byte-derived usage and cancellation-aware pacing. `MOCK_MODEL_RESPONSE` configures
+tool-free defaults; `times` belongs only to the script queue. Deliberately malformed
+or hanging transport probes stay separate. Controls and fixtures:
+[debugging guide](../../../../../../../docs/debugging.md).
+
+The compatible accumulator persists visible `reasoning_content` as a canonical
+reasoning part before text and tools. This carries no provider signature or
+replay metadata. Like text, it is included in the adapter's partial result on cancellation;
+the runtime still discards the in-flight response on Stop. This does not change
+the gateway's reasoning-only retry rule. The Chat Completions protocol does not
+supply arbitrary block positions.
+
+The mock reports request-derived synthetic input usage so long histories reach
+real compaction boundaries. These counters test control flow, not provider
 pricing or cache performance.
 
 Malformed tool-argument JSON is repaired at the gateway helper or surfaced as a
