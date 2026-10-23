@@ -7,7 +7,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ChatCard, ChatCardAnchor } from "@meridian/thread-client";
-import { createContext, type ReactNode, useContext, useMemo } from "react";
+import { createContext, memo, type ReactNode, useContext } from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { FailureCard } from "@/components/app/FailureCard";
 import { Button } from "@/components/ui/button";
@@ -31,20 +31,32 @@ export type ChatCardHandlers = {
   addUsage: () => void;
 };
 
-type ChatCardsContextValue = { cards: readonly ChatCard[]; handlers: ChatCardHandlers };
-
-const ChatCardsContext = createContext<ChatCardsContextValue | null>(null);
+const ChatCardsContext = createContext<readonly ChatCard[]>([]);
+const ChatCardHandlersContext = createContext<ChatCardHandlers | null>(null);
 
 export function ChatCardsProvider({
   cards,
   handlers,
   children,
-}: ChatCardsContextValue & { children: ReactNode }) {
-  const value = useMemo(() => ({ cards, handlers }), [cards, handlers]);
-  return <ChatCardsContext.Provider value={value}>{children}</ChatCardsContext.Provider>;
+}: {
+  cards: readonly ChatCard[];
+  handlers: ChatCardHandlers;
+  children: ReactNode;
+}) {
+  return (
+    <ChatCardsContext.Provider value={cards}>
+      <ChatCardHandlersContext.Provider value={handlers}>
+        {children}
+      </ChatCardHandlersContext.Provider>
+    </ChatCardsContext.Provider>
+  );
 }
 
-const NONE: readonly ChatCard[] = [];
+type AnchoredCardViewProps = {
+  cards: readonly ChatCard[];
+  recovery: UserTurnRecovery | null;
+  wrapClassName?: string;
+};
 
 export function sameChatCardAnchor(a: ChatCardAnchor, b: ChatCardAnchor): boolean {
   if (typeof a === "string" || typeof b === "string") return a === b;
@@ -100,12 +112,11 @@ function sameFailure(left: ChatCard["failure"], right: ChatCard["failure"]): boo
 
 /** The cards anchored at one place, in `chatCards` order. */
 export function useCardsAt(anchor: ChatCardAnchor): readonly ChatCard[] {
-  const context = useContext(ChatCardsContext);
-  return context?.cards.filter((card) => sameChatCardAnchor(card.anchor, anchor)) ?? NONE;
+  return useContext(ChatCardsContext).filter((card) => sameChatCardAnchor(card.anchor, anchor));
 }
 
 /** Every card at an anchor. A message card's Retry and Edit are the writer row's own recovery. */
-export function AnchoredCards({
+function AnchoredCardsReader({
   anchor,
   recovery,
   wrapClassName,
@@ -115,14 +126,51 @@ export function AnchoredCards({
   /** Wraps the cards in one box, drawn only when there are any. */
   wrapClassName?: string;
 }) {
-  const cards = useCardsAt(anchor);
-  const handlers = useContext(ChatCardsContext)?.handlers;
-  if (!handlers || cards.length === 0) return null;
+  const cards = useContext(ChatCardsContext).filter((card) =>
+    sameChatCardAnchor(card.anchor, anchor),
+  );
+  return (
+    <AnchoredCardViews cards={cards} recovery={recovery ?? null} wrapClassName={wrapClassName} />
+  );
+}
+
+const AnchoredCardViews = memo(function AnchoredCardViews({
+  cards,
+  recovery,
+  wrapClassName,
+}: AnchoredCardViewProps) {
+  if (cards.length === 0) return null;
+  return <CardViewsWithHandlers cards={cards} recovery={recovery} wrapClassName={wrapClassName} />;
+}, sameAnchoredCardViews);
+
+function CardViewsWithHandlers({ cards, recovery, wrapClassName }: AnchoredCardViewProps) {
+  const handlers = useContext(ChatCardHandlersContext);
+  if (!handlers) return null;
   const views = cards.map((card) => (
-    <CardView key={card.key} card={card} handlers={handlers} recovery={recovery ?? null} />
+    <CardView key={card.key} card={card} handlers={handlers} recovery={recovery} />
   ));
   return wrapClassName ? <div className={wrapClassName}>{views}</div> : views;
 }
+
+function sameAnchoredCardViews(
+  previous: AnchoredCardViewProps,
+  next: AnchoredCardViewProps,
+): boolean {
+  return (
+    previous.recovery === next.recovery &&
+    previous.wrapClassName === next.wrapClassName &&
+    sameChatCards(previous.cards, next.cards)
+  );
+}
+
+export const AnchoredCards = memo(AnchoredCardsReader, (previous, next) => {
+  return (
+    sameChatCardAnchor(previous.anchor, next.anchor) &&
+    previous.recovery === next.recovery &&
+    previous.wrapClassName === next.wrapClassName
+  );
+});
+AnchoredCards.displayName = "AnchoredCards";
 
 function CardView({
   card,
