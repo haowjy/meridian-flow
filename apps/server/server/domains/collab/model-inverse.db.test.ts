@@ -12,6 +12,7 @@ import { allocateDocumentClient, buildDocumentSchema } from "@meridian/prosemirr
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { setTestHook } from "../../shared/test-hooks.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
@@ -282,7 +283,41 @@ describe("model document stack", () => {
         });
       };
 
-      await applyDraft("Alpha Gamma.");
+      // Apply lands after the chip was offered and after the click's first capture. The retry
+      // must reclassify the pending pop as a forward revert instead of refusing the click.
+      expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
+        control: "undo",
+      });
+      let removeApplyHook = () => {};
+      removeApplyHook = setTestHook("inverse.beforeCommitScope", async () => {
+        removeApplyHook();
+        await applyDraft("Alpha Gamma.");
+      });
+      try {
+        expect(
+          await view.collab.reverseTurn({
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            direction: "undo",
+            actor: { type: "user", userId: USER_ID },
+          }),
+        ).toMatchObject({ status: "reversed" });
+      } finally {
+        removeApplyHook();
+      }
+      expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
+      expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
+        control: "redo",
+      });
+      expect(
+        await view.collab.reverseTurn({
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          direction: "redo",
+          actor: { type: "user", userId: USER_ID },
+        }),
+      ).toMatchObject({ status: "reversed" });
+      expect(await view.draftMarkdown(draftId)).toBe("Alpha Gamma.\n\nBlue.\n");
       expect(
         (
           await createDraftDispositionReader(createDrizzleDraftDispositionStore(db))(draftId)

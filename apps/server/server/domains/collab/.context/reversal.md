@@ -38,10 +38,11 @@ edit remains to reverse. The model uses ordinary `read` for the passage;
 cannot use a reconstruction endpoint, reversal table, or reserved client. A
 multi-edit Undo is all-or-nothing on stack availability, and Redo restores the
 last undone edit first; a count beyond what is available refuses with the
-available count and changes nothing. User-actuated entries refuse model stack
-commands. A card Undo names and skips a part whose draft
-was discarded (`expired`) or that a later writer edit depends on
-(`cant_undo_dependent`), and inverts the rest.
+available count and changes nothing. User-actuated entries refuse model stack commands. A card Undo pops the turn's
+poppable stack prefix and writes forward reverts for its other text parts, including applied
+parts. Both kinds share one action identity, so the card's Redo reverses exactly the parts its
+Undo accepted. The card names and skips a part whose draft was discarded (`expired`) or that a
+later writer edit depends on (`cant_undo_dependent`), and inverts the rest.
 A turn's edit targets include its create transition even when the document is empty. A create
 that Undo removed stays addressable through that immutable target, so Redo can restore it. A draft-scoped
 edit of a document deleted live stays one (D79): each draft-scoped target names
@@ -65,15 +66,20 @@ wins; otherwise an active draft is pending and a gone draft is discarded. A
 revision mismatch between evidence and planning recaptures the bounded attempt.
 Closed origins are gone and never stand in for a destination.
 
-Model Undo/Redo keep `cant_*_applied`. Review disposition is not inverse
-eligibility: an effective Undo that restores the review base has no shown change
-and can read discarded. In an active draft the kernel decides Undo/Redo, Revert
-and failed-scope rollback eligibility; discarded disposition chooses the copy
-only when the kernel skips a part.
-Effective action consumption follows immutable receipts, regardless of whether
-those receipts currently contribute to review. Applied draft parts revert only
-in their active origin draft, leaving live untouched and making a pending change against base.
-Closed drafts are never writable. Runtime context reports a card action by turn
+Applied text is not a refusal. Model Undo and the card write its inverse as a forward
+`revert` in the active origin draft, leaving live untouched and making a pending change against
+the review base. Redo of an Undo whose inverse was applied reapplies the original parts through
+that same captured origin. Applied tree entries still keep their existing refusal or skip until
+tree reverts are implemented.
+
+Review disposition is not otherwise inverse eligibility: an effective Undo that restores the
+review base has no shown change and can read discarded. In an active draft the kernel decides
+Undo/Redo, Revert and failed-scope rollback eligibility; discarded disposition chooses the copy
+only when the kernel skips a part. Effective action consumption follows immutable receipts,
+regardless of whether those receipts currently contribute to review. Closed drafts are never
+writable. History derives its offered command from the same captured origin-resolved plan as the
+write command; an archived origin shows no action even when the chat's current destination is
+writable. Runtime context reports a card action by turn
 and document, not model handle. There are no inverse holds or blocking flags.
 
 ## Tree entries (creates, moves and deletes)

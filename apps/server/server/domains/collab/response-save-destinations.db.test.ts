@@ -867,6 +867,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       // The older top is drafted; this thread now writes live.
       await archiveWork(WORK_ID);
+      const archivedHistory = await agentEdit.read(
+        { file: "lore.md", documentId: KB_ID, format: "edits" },
+        await context(direct(), KB_ID),
+      );
+      expect(archivedHistory).toMatchObject({
+        status: "success",
+        result: { message: expect.stringMatching(/e2.*none/) },
+      });
       await expect(undoLast(direct())).resolves.toMatchObject({ status: "work_archived" });
       expect(await keptDraftText()).toContain("Pending lore.");
     });

@@ -32,6 +32,7 @@ import { effectiveActionIndex, isRolledBack, partKey } from "./inverse-actions.j
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import { type InverseStep, simulateInverse } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
+import { entries, inspectionActions } from "./model-inverse-selection.js";
 import {
   isTransitionEntry,
   latestTransition,
@@ -240,6 +241,19 @@ function prepare(
         actor: kind === "rollback" ? "system" : "human",
       },
     });
+    const own = entries(document, query.threadId);
+    const stack = inspectionActions(document.history, document.tree, own).stack;
+    const poppableEditIds = new Set<string>();
+    if (direction === "undo" && kind !== "rollback")
+      for (const entry of stack) {
+        const belongsToTurn =
+          entry.parts.some((part) => targetsTurn(part, query)) ||
+          (entry.tree ? targetsTurn(entry.tree, query) : false);
+        const appliedText = entry.parts.some((part) => part.disposition === "applied");
+        const settledTree = entry.tree ? settlementOf(entry.tree, document.tree) : null;
+        if (!belongsToTurn || appliedText || settledTree) break;
+        poppableEditIds.add(entry.id);
+      }
     const skipTree = (row: StoredTreeEntry, cause: TurnInverseSkipCause) =>
       skips.push({
         kind: "tree",
@@ -269,7 +283,13 @@ function prepare(
     ].sort((a, b) => (direction === "undo" ? b.at - a.at : a.at - b.at));
     const order: (
       | { kind: "tree"; planned: PlannedTreeInverse; at: number }
-      | { kind: "text"; editId: string; destination: InverseDestination; at: number }
+      | {
+          kind: "text";
+          editId: string;
+          destination: InverseDestination;
+          actionKind: "undo" | "redo" | "revert" | "rollback";
+          at: number;
+        }
     )[] = [];
     const selection = new Map<InverseDestination, InverseSelection[]>();
     for (const { at, row, parts } of originals) {
@@ -320,10 +340,6 @@ function prepare(
           );
           continue;
         }
-        if (disposition(part) === "applied") {
-          skip(part, "applied");
-          continue;
-        }
         if (destination.kind === "draft" && destination.state === "gone") {
           skip(part, "discarded");
           continue;
@@ -345,6 +361,14 @@ function prepare(
           kind: "text",
           editId: parts[0].editId,
           destination: destinationOf(parts[0]),
+          actionKind:
+            kind === "rollback"
+              ? "rollback"
+              : direction === "redo"
+                ? "redo"
+                : poppableEditIds.has(parts[0].editId)
+                  ? "undo"
+                  : "revert",
           at,
         });
     }
@@ -405,7 +429,7 @@ function prepare(
               edit,
               destination: step.destination,
               actionId,
-              actionKind: kind,
+              actionKind: step.actionKind,
               at: step.at,
             },
           ]
