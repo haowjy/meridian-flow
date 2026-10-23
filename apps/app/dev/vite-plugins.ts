@@ -4,7 +4,7 @@ import path from "node:path";
 import * as babel from "@babel/core";
 import type { Plugin } from "vite";
 
-/** Resolve the parser's worker-safe entity decoder in Markdown worker bundles. */
+/** Keep the parser's entity decoder worker-safe in development and worker builds. */
 export function markdownWorkerCharacterReferencePlugin(repoRoot: string): Plugin {
   const markupRequire = createRequire(
     realpathSync(
@@ -15,6 +15,14 @@ export function markdownWorkerCharacterReferencePlugin(repoRoot: string): Plugin
   return {
     name: "markdown-worker-character-reference-decoder",
     enforce: "pre",
+    // Dev prebundles parse-entities before resolveId; worker builds call resolveId directly.
+    config() {
+      return {
+        resolve: {
+          alias: { "decode-named-character-reference": workerDecoder },
+        },
+      };
+    },
     resolveId(source: string) {
       return source === "decode-named-character-reference" ? workerDecoder : undefined;
     },
