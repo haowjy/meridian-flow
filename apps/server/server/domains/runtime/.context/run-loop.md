@@ -30,6 +30,15 @@ foreign key, and both occur in one transaction. Tool dispatch persists typed
 `tool_result` values and delegates policy to the per-turn gate. return-result
 settlement remains spawn-owned.
 
+Live deltas use one `DeltaJournal` per model request or tool call. The first
+delta starts a write immediately; deltas arriving behind that write merge by
+live block and commit in batches of at most 256 rows. At 256 KiB of admitted,
+unjournaled data the model loop stops pulling until a commit frees capacity,
+handing pressure back to the gateway's bounded buffer. Model scopes flush
+before terminal handling and on every exit. Tool output is best effort: tool
+settlement seals its scope, durable handler callbacks drain it first, and an
+output-write failure never changes the tool or suppresses the callback.
+
 **Failure records.** `projectAndAppendEvents` (`loop/persistence.ts`) is the one seam
 every live durable event passes through inside its transaction, so it is also
 where a failure is detected (`loop/failure-detection.ts`). A `turn.error`
