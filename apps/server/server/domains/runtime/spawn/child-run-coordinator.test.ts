@@ -224,6 +224,11 @@ async function fixture(
   const runClaim = createInMemoryRunClaim();
   const eventWriter: LiveEventWriter = options.eventWriter ?? {
     ...noFailureRecorder,
+    async appendEvents(threadId, events) {
+      let seq = 0n;
+      for (const event of events) seq = await this.appendEvent(threadId, event);
+      return seq;
+    },
     async appendEvent(threadId, event) {
       journal.push({
         threadId,
@@ -368,6 +373,11 @@ function transcriptFor(
       repos: deps.repos,
       eventWriter: {
         ...noFailureRecorder,
+        async appendEvents(threadId, events) {
+          let seq = 0n;
+          for (const event of events) seq = await this.appendEvent(threadId, event);
+          return seq;
+        },
         async appendEvent(id, event) {
           const seq = await deps.eventWriter.appendEvent(id, event);
           journal.push(event);
@@ -816,6 +826,11 @@ describe("ChildRunCoordinator direct-parent activity journal", () => {
     let activityAppends = 0;
     const eventWriter: LiveEventWriter = {
       ...noFailureRecorder,
+      async appendEvents(threadId, events) {
+        let seq = 0n;
+        for (const event of events) seq = await this.appendEvent(threadId, event);
+        return seq;
+      },
       async appendEvent(_threadId, event) {
         const typed = event as unknown as { type: string; outcome?: string };
         if (typed.type === "subagent.activity") {
@@ -859,6 +874,11 @@ describe("ChildRunCoordinator direct-parent activity journal", () => {
     let activityAppends = 0;
     const eventWriter: LiveEventWriter = {
       ...noFailureRecorder,
+      async appendEvents(threadId, events) {
+        let seq = 0n;
+        for (const event of events) seq = await this.appendEvent(threadId, event);
+        return seq;
+      },
       async appendEvent(_threadId, event) {
         const typed = event as unknown as { type: string; outcome?: string };
         if (typed.type === "subagent.activity") {

@@ -90,6 +90,11 @@ describe("persistReturnResult", () => {
     const { repos, child, turn, transcript } = await setup();
     transcript.persistence.eventWriter = {
       ...noFailureRecorder,
+      async appendEvents(threadId, events) {
+        let seq = 0n;
+        for (const event of events) seq = await this.appendEvent(threadId, event);
+        return seq;
+      },
       async appendEvent() {
         throw new Error("journal failed");
       },

@@ -283,12 +283,18 @@ export function createThreadEventHub(
         deps.inMemoryTransactionOwner,
       );
     },
-    async appendEvent(threadId: ThreadId, orchestratorEvent: OrchestratorEvent): Promise<bigint> {
-      const journalSeq = await deps.journalWriter.appendEvent(threadId, orchestratorEvent);
+    async appendEvents(
+      threadId: ThreadId,
+      orchestratorEvents: readonly OrchestratorEvent[],
+    ): Promise<bigint> {
+      const journalSeq = await deps.journalWriter.appendEvents(threadId, orchestratorEvents);
       const invalidate = () => invalidateCommittedJournal(threadId);
       if (deps.scheduleAfterCommit) deps.scheduleAfterCommit(invalidate);
       else await drainCommittedJournal(threadId);
       return journalSeq;
+    },
+    async appendEvent(threadId: ThreadId, orchestratorEvent: OrchestratorEvent): Promise<bigint> {
+      return this.appendEvents(threadId, [orchestratorEvent]);
     },
 
     async catchup(threadId: ThreadId, afterSeq: bigint = 0n): Promise<SequencedEventInternal[]> {

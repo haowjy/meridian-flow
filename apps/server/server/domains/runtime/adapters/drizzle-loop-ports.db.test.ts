@@ -257,6 +257,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         runClaim: authority,
         eventWriter: {
           ...noFailureRecorder,
+          async appendEvents(threadId, events) {
+            let seq = 0n;
+            for (const event of events) seq = await this.appendEvent(threadId, event);
+            return seq;
+          },
           async appendEvent(threadId, event) {
             if (event.type === "run_state.changed") throw new Error("projection unavailable");
             return eventWriter.appendEvent(threadId, event);
@@ -361,6 +366,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         publishStatus,
         eventWriter: {
           ...noFailureRecorder,
+          async appendEvents(threadId, events) {
+            let seq = 0n;
+            for (const event of events) seq = await this.appendEvent(threadId, event);
+            return seq;
+          },
           async appendEvent() {
             throw new Error("projection unavailable");
           },
@@ -512,6 +522,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     describe("RuntimeDelivery atomic transitions", () => {
       const failure = {
         ...noFailureRecorder,
+        async appendEvents() {
+          throw new Error("projection unavailable");
+        },
         async appendEvent() {
           throw new Error("projection unavailable");
         },
@@ -826,6 +839,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             ...noFailureRecorder,
             ...noFailureRecorder,
             ...noFailureRecorder,
+            async appendEvents(threadId, events) {
+              let seq = 0n;
+              for (const event of events) seq = await this.appendEvent(threadId, event);
+              return seq;
+            },
             async appendEvent(threadId, event) {
               if (event.type === "run_state.changed") {
                 entered();

@@ -66,20 +66,27 @@ export function createInMemoryEventJournalWriter(
       );
     },
     getFailureRecords: () => failures,
-    async appendEvent(threadId, event) {
+    async appendEvents(threadId, appended) {
+      if (appended.length === 0) throw new Error("Cannot append an empty journal batch");
       const key = threadId as string;
       const prev = seqByThread.get(key) ?? 0n;
-      const seq = prev + 1n;
-      seqByThread.set(key, seq);
-      events.push({
-        id: crypto.randomUUID(),
-        threadId,
-        turnId: deriveJournalTurnId(event),
-        seq,
-        event,
-        createdAt: toIsoString(new Date()),
-      });
-      return seq;
+      const createdAt = toIsoString(new Date());
+      for (const [index, event] of appended.entries()) {
+        events.push({
+          id: crypto.randomUUID(),
+          threadId,
+          turnId: deriveJournalTurnId(event),
+          seq: prev + BigInt(index) + 1n,
+          event,
+          createdAt,
+        });
+      }
+      const lastSeq = prev + BigInt(appended.length);
+      seqByThread.set(key, lastSeq);
+      return lastSeq;
+    },
+    async appendEvent(threadId, event) {
+      return this.appendEvents(threadId, [event]);
     },
     async readAfter(threadId, afterSeq, limit = Number.POSITIVE_INFINITY): Promise<JournalEntry[]> {
       return events
