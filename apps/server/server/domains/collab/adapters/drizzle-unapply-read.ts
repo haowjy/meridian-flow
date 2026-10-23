@@ -11,7 +11,7 @@ import {
   documentEdits,
 } from "@meridian/database/schema";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { and, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { CollabBranches } from "../contracts.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
@@ -84,6 +84,7 @@ export async function loadPreparedUnapply(
       liveUpdateSeq: applyCommandEffects.liveUpdateSeq,
       baseStart: applyCommandEffects.baseStart,
       baseDelta: applyCommandEffects.baseDelta,
+      unappliedBy: applyCommandEffects.unappliedBy,
     })
     .from(applyCommandEffects)
     .innerJoin(branchCommands, eq(branchCommands.id, applyCommandEffects.commandId))
@@ -91,7 +92,6 @@ export async function loadPreparedUnapply(
       and(
         eq(applyCommandEffects.commandId, command.request.applyCommandId),
         eq(applyCommandEffects.documentId, command.documentId),
-        isNull(applyCommandEffects.unappliedBy),
         eq(branchCommands.workId, command.workId),
         eq(branchCommands.accountId, command.envelope.accountId),
         eq(branchCommands.kind, "apply_click"),
@@ -127,13 +127,14 @@ export async function loadPreparedUnapply(
         })),
         "base",
       );
-      effects.push({
-        ordinal: row.ordinal,
-        groupId: row.groupId,
-        liveUpdateSeq: row.liveUpdateSeq,
-        baseBefore: preceding.map((node) => node.toJSON()),
-        baseAfter: following.map((node) => node.toJSON()),
-      });
+      if (row.unappliedBy === null)
+        effects.push({
+          ordinal: row.ordinal,
+          groupId: row.groupId,
+          liveUpdateSeq: row.liveUpdateSeq,
+          baseBefore: preceding.map((node) => node.toJSON()),
+          baseAfter: following.map((node) => node.toJSON()),
+        });
       preceding = following;
     }
     return { base, branchId: first.branchId, effects };

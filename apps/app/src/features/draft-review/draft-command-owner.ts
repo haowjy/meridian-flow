@@ -18,7 +18,6 @@ import type {
   ThreadDraftListItem,
 } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
-import type { Node as PMNode } from "@tiptap/pm/model";
 import * as Y from "yjs";
 import {
   applyDraftClick,
@@ -34,12 +33,7 @@ import {
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
 import type { EditorHistoryHandle } from "@/core/editor/editor-history";
-import {
-  type ApplyClickOutcome,
-  ApplyClickQueue,
-  type FrozenApply,
-  type UnapplyClickOutcome,
-} from "./apply-click-queue";
+import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./apply-click-queue";
 import { startDraftDiscardSession } from "./draft-discard-session";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
@@ -348,15 +342,11 @@ export class DraftCommandOwner {
     };
     entry.binding = binding;
     binding.runtime.setBaseProvider((_room, schema) => {
-      const recorded = new Set(readApplyRecord(session.document).map((row) => row.commandId));
-      let base: readonly PMNode[] = readBase(session.document, schema);
-      for (const pending of [...entry.item.queue.unapplies].reverse())
-        if (pending.draftId === entry.draftId)
-          base = applyBase(schema, base, pending.frozen.patched, pending.frozen.optimistic);
-      for (const click of this.textClicks(entry))
-        if (!recorded.has(click.body.commandId))
-          base = applyBase(schema, base, click.optimistic, click.patched);
-      return base;
+      return entry.item.queue.project(
+        entry.draftId,
+        readBase(session.document, schema),
+        (base, before, after) => applyBase(schema, base, before, after),
+      );
     });
     const record = session.document.getArray(APPLY_RECORD_ROOT);
     const observe = () => {
@@ -753,13 +743,29 @@ export class DraftCommandOwner {
     const barrier = sendBarrier();
     this.setState(ref.itemKey, { failure: null });
     const frozen = { body, optimistic, patched, acknowledged } satisfies FrozenApply;
-    const result = entry.item.queue.enqueue(frozen, barrier.promise);
-    if (history)
-      this.captureApplyHistory(entry, frozen, result, history, (groupIds) =>
-        applySpanPatches(optimistic, composeGroups(schema, frame, groupIds, "apply"), "base"),
-      );
+    const scheduled = history
+      ? entry.item.queue.enqueueHistory({
+          frozen,
+          release: barrier.promise,
+          patchFor: (groupIds) =>
+            applySpanPatches(optimistic, composeGroups(schema, frame, groupIds, "apply"), "base"),
+          intent: () => this.setState(entry.ref.itemKey, { failure: null }),
+          applyRefused: (answer) =>
+            this.setState(entry.ref.itemKey, {
+              failure: {
+                code: "apply-refused",
+                serverCode: answer.status === "applied" ? "text_not_applied" : refusalCode(answer),
+              },
+            }),
+          unapplyRefused: (answer) =>
+            this.setState(entry.ref.itemKey, {
+              failure: { code: "unapply-refused", serverCode: answer.status },
+            }),
+        })
+      : { outcome: entry.item.queue.enqueue(frozen, barrier.promise), handle: null };
+    if (scheduled.handle) history?.captureApply(scheduled.handle);
     binding.runtime.projectNow();
-    const outcome = result.then((answer) => this.settled(ref, entry.draftId, answer));
+    const outcome = scheduled.outcome.then((answer) => this.settled(ref, entry.draftId, answer));
     let released = false;
     return {
       release: ({ omitTree = false, cancel = false } = {}) => {
@@ -770,93 +776,6 @@ export class DraftCommandOwner {
         return { sent: !cancel, outcome: cancel ? Promise.resolve({ kind: "done" }) : outcome };
       },
     };
-  }
-
-  private captureApplyHistory(
-    entry: Entry,
-    original: FrozenApply,
-    initial: Promise<ApplyClickOutcome>,
-    history: EditorHistoryHandle,
-    patchFor: (groupIds: readonly string[]) => readonly PMNode[],
-  ): void {
-    let frozen = original;
-    let outcome = initial;
-    let inverseOutcome: Promise<UnapplyClickOutcome> = Promise.resolve({ status: "cancelled" });
-    let reversedGroups = [...original.body.groupIds];
-    let redoCommandId: string | undefined;
-    const landedText = (answer: ApplyClickOutcome) =>
-      answer.status === "landed" || (answer.status === "applied" && answer.textEffect === true);
-
-    history.captureApply({
-      undo: () => {
-        this.setState(entry.ref.itemKey, { failure: null });
-        const target = frozen;
-        if (entry.item.queue.cancel(target.body.commandId)) {
-          inverseOutcome = Promise.resolve({ status: "cancelled" });
-          return;
-        }
-        const commandId = crypto.randomUUID();
-        redoCommandId = undefined;
-        reversedGroups = [...target.body.groupIds];
-        inverseOutcome = entry.item.queue.enqueueUnapply({
-          body: { commandId, applyCommandId: target.body.commandId },
-          draftId: entry.draftId,
-          frozen: target,
-          ready: outcome.then(landedText),
-        });
-        entry.binding?.runtime.invalidateBase();
-        this.holdRoom(entry);
-        this.publishQueue(entry.item);
-        void inverseOutcome.then((answer) => {
-          if (answer.status === "unapplied") {
-            reversedGroups = answer.reversedGroupIds;
-            if (redoCommandId) {
-              const revised = {
-                ...frozen,
-                body: { ...frozen.body, groupIds: reversedGroups },
-                patched: patchFor(reversedGroups),
-              };
-              frozen = revised;
-              entry.item.queue.reviseApply(redoCommandId, revised);
-            }
-          } else if (answer.status !== "cancelled") {
-            this.setState(entry.ref.itemKey, {
-              failure: { code: "unapply-refused", serverCode: answer.status },
-            });
-          }
-          entry.binding?.runtime.invalidateBase();
-          this.publishQueue(entry.item);
-          this.releaseIdle(entry);
-        });
-      },
-      redo: () => {
-        const commandId = crypto.randomUUID();
-        redoCommandId = commandId;
-        const ready = inverseOutcome.then((answer) =>
-          answer.status === "cancelled" || answer.status === "unapplied"
-            ? undefined
-            : Promise.reject(new Error("Un-Apply did not land")),
-        );
-        frozen = {
-          ...frozen,
-          body: { ...frozen.body, commandId, groupIds: reversedGroups, tree: undefined },
-          patched: patchFor(reversedGroups),
-          acknowledged: ready,
-        };
-        outcome = entry.item.queue.enqueue(frozen);
-        entry.binding?.runtime.invalidateBase();
-        this.holdRoom(entry);
-        void outcome.then((answer) => {
-          if (!landedText(answer) && answer.status !== "cancelled")
-            this.setState(entry.ref.itemKey, {
-              failure: {
-                code: "apply-refused",
-                serverCode: answer.status === "applied" ? "text_not_applied" : refusalCode(answer),
-              },
-            });
-        });
-      },
-    });
   }
 
   /** Releases a captured batch in server order while every intent remains owner-held. */
