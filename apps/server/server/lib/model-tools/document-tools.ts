@@ -87,6 +87,9 @@ export async function resolveDocumentAddress(
     sourceExtension?: string;
     metadata?: DocumentCreationMetadata;
     origin?: import("../../domains/context/index.js").WriteProvenance;
+    recordCreate?: NonNullable<
+      import("../../domains/context/ports/context-adapter.js").ContextEnsureTrackedOptions["recordCreate"]
+    >;
   } = {},
 ): Promise<ResolvedDocumentAddress | WriteToolErrorOutput> {
   const port = context.port;
@@ -100,6 +103,7 @@ export async function resolveDocumentAddress(
         : {}),
       ...(options.origin ? { origin: options.origin } : {}),
       ...(options.metadata ? { metadata: options.metadata } : {}),
+      ...(options.recordCreate ? { recordCreate: options.recordCreate } : {}),
     };
     const ensured = await port.ensureTrackedDocument(
       basePath,
@@ -191,8 +195,15 @@ function buildAgentWriteCommand(
 }
 
 /** Writes report where they landed; a drafted write names its Work. */
-function withDestination(outcome: WriteOutcome, destination: FileDestination): WriteOutcome {
+function withDestination(
+  outcome: WriteOutcome,
+  destination: FileDestination,
+  command: EngineWriteInput["command"],
+): WriteOutcome {
   if (outcome.isError) return outcome;
+  // Inverses can follow an edit away from the chat's current destination. Their owner reports
+  // the version actually changed, or deliberately leaves it unnamed when one command spans views.
+  if (command === "undo" || command === "redo" || command === "revert") return outcome;
   return {
     ...outcome,
     result: {
@@ -263,7 +274,10 @@ async function writeUnderGrant(
   if (written.isError) return { isError: true, output: written.result, evidence };
   // Showing and frontier are host-only: they leave here only as `evidence`.
   const { showing: _showing, frontier: _frontier, ...outcome } = written;
-  return { ...withDestination(outcome, grant.destination), evidence } as WriteOutcome & {
+  return {
+    ...withDestination(outcome, grant.destination, parsed.command),
+    evidence,
+  } as WriteOutcome & {
     isError: false;
     evidence: ResultEvidence;
   };
@@ -435,6 +449,24 @@ export function createWriteHandler(deps: ToolWiringDeps) {
                   sourceExtension: sourceExtension(copied.copiedFrom.uri),
                 }
               : {}),
+            ...(creates
+              ? {
+                  recordCreate: async ({ documentId, change }) => {
+                    await deps.documentSync.treeHistory().recordAgentTreeChange({
+                      documentId,
+                      threadId: ctx.threadId as import("@meridian/contracts").ThreadId,
+                      ...(ctx.turnId
+                        ? { turnId: ctx.turnId as import("@meridian/contracts").TurnId }
+                        : {}),
+                      ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+                      ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
+                      op: "create",
+                      change,
+                      shownAt: parsed.path,
+                    });
+                  },
+                }
+              : {}),
           }),
         );
     if (isToolError(address)) return address;
@@ -479,11 +511,15 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         );
       }
     }
-    // A reversed move left the document somewhere else: the result names where it is now.
+    // A reversed move left the document somewhere else: the result names where it is now. A
+    // reversed creation removed the document, so its text half must not claim an empty document
+    // survived the tree half of the same inverse.
     if (inverse && !outcome.isError && outcome.result.status === "success") {
       const now = await currentUri(call, address.documentId);
       if (now && now !== outcome.result.path)
         outcome = { ...outcome, result: { ...outcome.result, path: now } };
+      else if (!now && outcome.result.documentEmpty)
+        outcome = { ...outcome, result: { ...outcome.result, documentEmpty: false } };
     }
     const stagedCreate =
       creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;

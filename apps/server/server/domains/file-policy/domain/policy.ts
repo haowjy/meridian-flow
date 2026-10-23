@@ -74,7 +74,7 @@ function destinationFor(principal: Principal, facts: FileFacts): FileDestination
   }
   // A deleted document comes back live, where it was.
   if (target.kind === "restore") return { kind: "live" };
-  return sourceDestination(facts.scheme, principal.agent?.branchWork ?? null);
+  return sourceDestination(facts.contentScheme, principal.agent?.branchWork ?? null);
 }
 
 /** The whole decision: the destination, then the level there. */
@@ -159,10 +159,12 @@ function workTerms(work: FileWorkFacts): Term[] {
  * of its thread's current Work, No Work's included (D55). The minimum wins.
  */
 function agentTerms(chain: AgentChain, facts: FileFacts): Term[] {
-  const terms: Term[] = [{ cap: SOURCE_AGENT_CAPS[facts.scheme], limit: "uploads_read_only" }];
+  const terms: Term[] = [
+    { cap: SOURCE_AGENT_CAPS[facts.contentScheme], limit: "uploads_read_only" },
+  ];
   for (const link of chain) {
     const ownScratch =
-      facts.scheme === "scratch" &&
+      facts.contentScheme === "scratch" &&
       (link.scratchOwner.scope === "lineage"
         ? facts.ownerRootThreadId === link.scratchOwner.rootThreadId
         : facts.ownerWork?.id === link.scratchOwner.workId);

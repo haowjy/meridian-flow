@@ -48,6 +48,8 @@ export const documentEdits = pgTable(
       .references(() => turns.id, { onDelete: "set null" }),
     responseId: text("response_id"),
     editScopeId: text("edit_scope_id"),
+    /** The model tool call that made this edit; scoped by its response identity. */
+    toolCallId: text("tool_call_id"),
     actor: text("actor").$type<"agent" | "human" | "system">().notNull(),
     actorUserId: uuid("actor_user_id")
       .$type<UserId>()
@@ -56,7 +58,7 @@ export const documentEdits = pgTable(
     kind: text("kind").$type<"write" | "undo" | "redo" | "revert" | "rollback">().notNull(),
     actionId: uuid("action_id"),
     consumes: jsonb("consumes").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
-    /** A move, delete, restore or settlement: a tree entry, which has no parts. */
+    /** A create, move, delete, restore or settlement: a tree entry, which has no parts. */
     treeChange: jsonb("tree_change").$type<TreeChange>(),
     createdAt: createdAt(),
   },
@@ -72,7 +74,7 @@ export const documentEdits = pgTable(
     check(
       "document_edits_tree_change_valid",
       sql`${t.treeChange} IS NULL OR (
-        ${t.treeChange}->>'op' IN ('move','delete','restore','settle')
+        ${t.treeChange}->>'op' IN ('create','move','delete','restore','settle')
         AND ${t.treeChange}->'destination'->>'kind' IN ('live','draft')
         AND jsonb_typeof(${t.treeChange}->'seq') = 'number'
         AND jsonb_typeof(${t.treeChange}->'targets') = 'array'

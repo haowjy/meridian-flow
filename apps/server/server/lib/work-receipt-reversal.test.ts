@@ -80,7 +80,10 @@ describe("Work receipt reversal", () => {
     ).toBe("reversed");
     expect(
       combineWorkReversalOutcome(
-        { status: "reconciled", documents: [{ uri: "manuscript://a", status: "reconciled" }] },
+        {
+          status: "reconciled",
+          documents: [{ documentId: "document-a", uri: "manuscript://a", status: "reconciled" }],
+        },
         [
           {
             command: "restore",

@@ -40,6 +40,10 @@ export type TreeOperationEntry = {
   living: boolean;
 };
 
+export type CommittedTreeOperation = {
+  transition: TreeTransition;
+};
+
 export class TreeFault extends Error {
   constructor(readonly fault: TreeInverseFault) {
     super(`Tree inverse refused: ${fault}`);
@@ -67,21 +71,14 @@ export function createTurnInverseTreeOperations(input: {
     return status?.kind === "visible" ? status.address.uri : null;
   }
 
-  function requested(planned: PlannedTreeInverse): string | null {
-    if (planned.op === "delete") return null;
-    return planned.direction === "invert"
-      ? planned.entry.tree.shownAt
-      : (planned.entry.tree.landedAt ?? planned.entry.tree.shownAt);
-  }
-
   async function commit(
     entry: TreeOperationEntry,
     planned: PlannedTreeInverse,
     userId: UserId | undefined,
     query: TurnInverseQuery,
-  ): Promise<TreeTransition> {
+  ): Promise<CommittedTreeOperation> {
     return isLiveTransition(planned)
-      ? commitLive(entry, planned, userId)
+      ? { transition: await commitLive(entry, planned, userId, query) }
       : commitBranch(entry, planned, query);
   }
 
@@ -89,6 +86,7 @@ export function createTurnInverseTreeOperations(input: {
     entry: TreeOperationEntry,
     planned: Extract<PlannedTreeInverse, { destination: { kind: "live" } }>,
     userId: UserId | undefined,
+    query: TurnInverseQuery,
   ): Promise<LiveTreeTransition> {
     const { documentId } = entry;
     const expected =
@@ -100,6 +98,7 @@ export function createTurnInverseTreeOperations(input: {
       planned.op,
       { before: expected, after: planned.after },
       userId,
+      query,
     );
     if (fault) throw new TreeFault(fault);
     const [after] = (await readLiveTreeStates(db(), [documentId])).values();
@@ -113,13 +112,17 @@ export function createTurnInverseTreeOperations(input: {
     entry: TreeOperationEntry,
     planned: BranchTreeTransition & PlannedTreeInverse,
     query: TurnInverseQuery,
-  ): Promise<BranchTreeTransition> {
+  ): Promise<CommittedTreeOperation> {
     const { branchId } = planned.destination;
     const [branch] = await db()
       .select({ status: branches.status })
       .from(branches)
       .where(eq(branches.id, branchId));
     if (branch?.status !== "active") throw new TreeFault("refused");
+    if (planned.entry.tree.op === "create") {
+      if (planned.op !== "create" && planned.op !== "delete")
+        throw new Error("A drafted create can only be removed or restored");
+    }
     const committed = await writeBackBranchFacts(input.db, {
       branchId,
       documentId: entry.documentId,
@@ -128,7 +131,13 @@ export function createTurnInverseTreeOperations(input: {
       changedBy: { threadId: query.threadId, ...(query.turnId ? { turnId: query.turnId } : {}) },
     });
     if (!committed.ok) throw new TreeFault(committed.error);
-    return { destination: planned.destination, before: planned.before, after: committed.value };
+    return {
+      transition: {
+        destination: planned.destination,
+        before: planned.before,
+        after: committed.value,
+      },
+    };
   }
 
   async function applyLive(
@@ -136,11 +145,35 @@ export function createTurnInverseTreeOperations(input: {
     op: PlannedTreeInverse["op"],
     { before, after }: Pick<LiveTreeTransition, "before" | "after">,
     userId: UserId | undefined,
+    query: TurnInverseQuery,
   ): Promise<TreeInverseFault | null> {
     const deps = { arrivals: input.arrivals, catalog: input.catalog };
     switch (op) {
+      case "create": {
+        if (!before || before.living) throw new Error("A create inverse starts from a removal");
+        if (!after.living) throw new Error("A create inverse ends at a placement");
+        const at = await restoreTarget(after.at);
+        if (!at) return "folder_missing";
+        const restored = await restoreDocument(
+          input.db,
+          {
+            documentId,
+            removal: {
+              time: new Date(before.removal.time),
+              locationVersion: BigInt(before.removal.locationVersion),
+            },
+            at,
+            created: true,
+          },
+          deps,
+        );
+        if (restored.kind !== "restored")
+          return restored.kind === "already_living" ? "superseded" : "refused";
+        return null;
+      }
       case "move": {
-        if (!before.living || !after.living) throw new Error("A move inverse joins two placements");
+        if (!before?.living || !after.living)
+          throw new Error("A move inverse joins two placements");
         const moved = await moveToPlacement(
           input.db,
           { documentId, from: before.at, to: after.at },
@@ -153,7 +186,7 @@ export function createTurnInverseTreeOperations(input: {
             : moved.kind;
       }
       case "restore": {
-        if (before.living) throw new Error("A restore inverse starts from a removal");
+        if (!before || before.living) throw new Error("A restore inverse starts from a removal");
         if (!after.living) throw new Error("A restore inverse ends at a placement");
         const at = await restoreTarget(after.at);
         if (!at) return "folder_missing";
@@ -177,8 +210,12 @@ export function createTurnInverseTreeOperations(input: {
             : restored.kind;
       }
       case "delete": {
-        if (!before.living) throw new Error("A delete inverse starts from a placement");
-        await input.removal.remove({ documentIds: [documentId], reason: "deleted", userId });
+        if (!before?.living) throw new Error("A delete inverse starts from a placement");
+        await input.removal.remove({
+          documentIds: [documentId],
+          reason: "deleted",
+          ...(userId ? { userId } : { threadId: query.threadId }),
+        });
         const [source] = await placementSources(input.db, [before.at]);
         await input.catalog.refreshSources(source ? [source] : [], [documentId]);
         return null;
@@ -210,5 +247,5 @@ export function createTurnInverseTreeOperations(input: {
       : null;
   }
 
-  return { address, requested, commit };
+  return { address, commit };
 }

@@ -33,6 +33,7 @@ import {
   type ThreadPeerAgentEditCore,
 } from "./agent-edit-cores.js";
 import { runBoundedAttempts } from "./draft-attempts.js";
+import { runWithInversePrincipal } from "./inverse-principal.js";
 import type {
   ResponseCommitParticipant,
   ResponseTransactionSettlement,
@@ -357,10 +358,15 @@ export function createThreadPeerCorePool(input: {
       ...(workDraftId ? { workDraftId } : {}),
     };
     // An edits read shows history, not the document: it records no frontier.
-    const outcome = await core.read(
-      command,
-      command.format === "edits" ? { ...routedContext, frontiers: undefined } : routedContext,
-    );
+    const readCore = () =>
+      core.read(
+        command,
+        command.format === "edits" ? { ...routedContext, frontiers: undefined } : routedContext,
+      );
+    const outcome =
+      command.format === "edits"
+        ? await runWithInversePrincipal(grant.principal, readCore)
+        : await readCore();
     if (outcome.isError) return outcome;
     const read = outcome.result.read;
     // Results name the version actually read, which a reply's pin can choose.
@@ -456,7 +462,11 @@ export function createThreadPeerCorePool(input: {
       }
     };
     const outcome =
-      record && !immediateInverse ? await staged() : await commitNow(pinned?.grant ?? grant, call);
+      record && !immediateInverse
+        ? await staged()
+        : immediateInverse
+          ? await runWithInversePrincipal(grant.principal, call)
+          : await commitNow(pinned?.grant ?? grant, call);
     const settled = oneEntry
       ? await settleOneEntry(command, documentId, outcome, oneEntry.editScopeId, given.frontiers)
       : outcome;

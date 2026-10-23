@@ -39,7 +39,8 @@ export type TreeChangeTarget = { editId: string; direction: "invert" | "reapply"
 /** A live transition joins two live states; a branch one, two sets of the branch's facts. */
 export type LiveTreeTransition = {
   destination: { kind: "live" };
-  before: LiveTreeState;
+  /** A create starts with no live state; every later transition starts from one. */
+  before: LiveTreeState | null;
   after: LiveTreeState;
 };
 export type BranchTreeTransition = {
@@ -49,8 +50,8 @@ export type BranchTreeTransition = {
 };
 export type TreeTransition = LiveTreeTransition | BranchTreeTransition;
 
-/** `restore` reverses a delete. */
-export type TreeChangeOp = "move" | "delete" | "restore";
+/** `restore` reverses a delete; `create` makes a document identity visible in its destination. */
+export type TreeChangeOp = "create" | "move" | "delete" | "restore";
 
 type TreeEntryFields = {
   /** The path the model or writer saw it at, for messages. */

@@ -6,7 +6,6 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
-import { createAllowAllFileAccess } from "../file-policy/index.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createTurnReversalService } from "./domain/turn-reversal-service.js";
 import {
@@ -37,7 +36,6 @@ describe("model document stack", () => {
         turnInverse: { reverseTurn: view.collab.reverseTurn },
         resolveDocumentUri,
         listTurnTargets: createDrizzleTurnLiveLineageStore(db).listEditedDocumentIdsForTurn,
-        fileAccess: createAllowAllFileAccess(),
         threadContext: { requireThreadOwner: async () => ({ projectId: PROJECT_ID }) },
       });
       const liveContext = { ...context, grant: testFileGrant({ kind: "live" }, ALPHA_ID) };
@@ -300,7 +298,7 @@ describe("model document stack", () => {
 it.each([
   "undo",
   "redo",
-] as const)("model %s refuses changed and elsewhere without touching content", async (direction) => {
+] as const)("model %s follows its edit to the draft and refuses only after none remains", async (direction) => {
   const { harness, view, context, responseId } = await fixture();
   try {
     const core = view.collab.agentEdit();
@@ -315,12 +313,25 @@ it.each([
     const liveContext = {
       ...context,
       responseIdentity: undefined,
-      grant: testFileGrant({ kind: "live" }, ALPHA_ID),
+      grant: {
+        ...testFileGrant({ kind: "live" }, ALPHA_ID),
+        principal: context.grant.principal,
+      },
     };
     await core.read({ ...command, format: "edits" }, liveContext);
     expect(await core.write({ ...command, command: direction }, liveContext)).toMatchObject({
-      status: `cant_${direction}_elsewhere`,
+      status: "success",
+      result: { destination: "draft", draftWork: "w1" },
     });
+    expect(await view.draftMarkdown(draftId)).toBe(
+      direction === "undo" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Gamma.\n\nBlue.\n",
+    );
+    expect(
+      await core.write(
+        { ...command, command: direction === "undo" ? "redo" : "undo" },
+        liveContext,
+      ),
+    ).toMatchObject({ status: "success" });
     await core.read({ ...command, format: "edits" }, context);
     const [documentDraft] = await db
       .select()

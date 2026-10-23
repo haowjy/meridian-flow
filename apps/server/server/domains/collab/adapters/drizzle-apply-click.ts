@@ -48,7 +48,11 @@ import { testHook } from "../../../shared/test-hooks.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
-import { dropDocumentRows, endCreatedFact } from "../../context/tree/branch-tree-store.js";
+import {
+  dropDocumentRows,
+  endCreatedFact,
+  settleUndoneCreatesAfterReveal,
+} from "../../context/tree/branch-tree-store.js";
 import { tombstoneUnused } from "../../context/tree/end-use.js";
 import { movePlacementCycle, moveToPlacement } from "../../context/tree/live-tree-state.js";
 import { acquireTreeScope, TreeScopeChangedError } from "../../context/tree/mutation-scope.js";
@@ -147,6 +151,7 @@ export function createDrizzleApplyClick(
         placed.error.code === "ancestor_taken" ? "ancestor_taken" : "not_found",
       );
     }
+    await settleUndoneCreatesAfterReveal(db, node.nodeId);
     await deps.arrivals?.settle([node.nodeId]);
     await deps.catalog.refreshSources(
       placed.value.sourceIds,

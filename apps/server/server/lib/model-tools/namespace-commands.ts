@@ -2,8 +2,8 @@
  * `write`'s `move` and `delete` (D25, D38): host commands that change where a whole document
  * lives, not what it says. Each runs when called (D66). Live, through the thread's live port,
  * links follow a move (#694) and a delete keeps every Work's drafts (D79). In a draft-mode
- * chat on drafted sources they are facts in the Work's branch and live is untouched until the
- * writer applies them (D26). Either way the tree entry commits in the mutation's own
+ * chat, any move touching a drafted source is a fact in the Work's branch and live is untouched
+ * until the writer applies it (D26, D45). Either way the tree entry commits in the mutation's own
  * transaction with a handle on the document's counter for this chat, so `undo`, `redo` and
  * `revert` walk it with the text edits (D76), and a reply's rollback reverses it.
  */
@@ -139,6 +139,7 @@ async function commitLive(
         threadId: ctx.threadId as ThreadId,
         ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
         ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+        ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
         op: input.command,
         change: { destination: "live", before },
         shownAt: source.uri,
@@ -234,6 +235,7 @@ async function commitDrafted(
         threadId,
         ...(turnId ? { turnId } : {}),
         ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+        ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
         op: input.command,
         change: { destination: "draft", ...change },
         shownAt: source.uri,
@@ -267,8 +269,8 @@ async function commitDrafted(
 
 /**
  * `move` needs edit on the document and on the folder it lands in; `delete`, edit on the
- * document. Agents only read uploads (D11, D15). A move between a drafted document and a live
- * one would land half in each, so it refuses (D45). No frontier check (D78).
+ * document. Agents only read uploads (D11, D15). A move touching a drafted namespace lands as
+ * one drafted move, including moves to or from live Scratch (D45). No frontier check (D78).
  */
 export async function runNamespaceCommand(
   deps: ToolWiringDeps,
@@ -288,16 +290,13 @@ export async function runNamespaceCommand(
   if (isToolError(grant)) return grant;
   const grants: FileGrant<"edit">[] = [grant];
   let drafted = grant.destination.kind === "draft";
+  let draftDestination = grant.destination.kind === "draft" ? grant.destination : null;
   if (input.command === "move") {
     const container = await containerGrant(deps, call, input.path);
     if (isToolError(container)) return container;
     if (container) {
       grants.push(container);
-      if ((container.destination.kind === "draft") !== drafted)
-        return namespaceRefusal(input.command, "mixed_modes", {
-          path: source.uri,
-          destination: input.path,
-        });
+      if (container.destination.kind === "draft") draftDestination = container.destination;
       drafted ||= container.destination.kind === "draft";
     }
   }
@@ -316,7 +315,8 @@ export async function runNamespaceCommand(
     input.command === "delete" && !drafted
       ? await deps.documentSync.treeHistory().survivingDraftWorks(source.documentId)
       : [];
-  const destination = grant.destination;
+  const destination = drafted ? draftDestination : grant.destination;
+  if (!destination) throw new Error("A drafted namespace command has no Work destination");
   return {
     output: modelResult({
       command: input.command,

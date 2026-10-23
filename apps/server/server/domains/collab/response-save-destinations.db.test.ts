@@ -20,7 +20,6 @@ import {
   createDrizzleFileFacts,
   createFileAccess,
   createOwnerFileGrants,
-  FileEditRefusedError,
   type FileGrant,
   isFileAccessDenied,
   type Principal,
@@ -361,8 +360,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scratch,
       );
 
-      await expect(undo).rejects.toBeInstanceOf(FileEditRefusedError);
-      await expect(undo).rejects.toMatchObject({ refused: [{ reason: "work_archived" }] });
+      await expect(undo).resolves.toMatchObject({ status: "permission_denied" });
       expect(await liveText(collab, SCRATCH_ID)).toContain("Agent notes.");
     });
 
@@ -849,24 +847,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(drafted).toContain("Pending lore.");
     });
 
-    it("undoes the live top and refuses an older edit in another destination", async () => {
+    it("undoes the live top from draft mode and refuses an archived older draft edit", async () => {
       const collab = createTestCollab();
       const keptDraftText = await saveLiveWriteOverKeptDraft(collab);
       const agentEdit = collab.agentEdit();
-      const undoLast = async () =>
+      const undoLast = async (principal = drafting()) =>
         agentEdit.write(
           { command: "undo", file: "lore.md", documentId: KB_ID, count: 1 },
-          await context(direct(), KB_ID),
+          await context(principal, KB_ID),
         );
 
-      // The live write came after the keep switch; the latest write is undone live.
-      await expect(undoLast()).resolves.toMatchObject({ status: "success" });
+      // The live write came after the keep switch; a draft-mode chat follows it to live.
+      await expect(undoLast()).resolves.toMatchObject({
+        status: "success",
+        result: { destination: "live" },
+      });
       expect(await liveText(collab, KB_ID)).not.toContain("Live lore.");
       expect(await keptDraftText()).toContain("Pending lore.");
 
       // The older top is drafted; this thread now writes live.
       await archiveWork(WORK_ID);
-      await expect(undoLast()).resolves.toMatchObject({ status: "cant_undo_elsewhere" });
+      await expect(undoLast(direct())).resolves.toMatchObject({ status: "work_archived" });
       expect(await keptDraftText()).toContain("Pending lore.");
     });
   });

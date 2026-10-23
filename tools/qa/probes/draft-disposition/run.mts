@@ -1,4 +1,5 @@
 /** G1: exercise text-derived inverse policy and whole-Work close against real PostgreSQL adapters. */
+
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -11,6 +12,7 @@ import { createDraftClose } from "../../../../apps/server/server/domains/collab/
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
 import { createDrizzleTurnInverseService } from "../../../../apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts";
 import { createDraftDispositionReader } from "../../../../apps/server/server/domains/collab/domain/draft-disposition.ts";
+import { createAllowAllFileAccess } from "../../../../apps/server/server/domains/file-policy/index.ts";
 import { runWithEditConfirmation } from "../../../../apps/server/server/shared/edit-confirmation.ts";
 import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.ts";
 import {
@@ -31,6 +33,7 @@ const docs: Y.Doc[] = [];
 try {
   const work = await h.seedWork("g1-disposition");
   const inverse = createDrizzleTurnInverseService({
+    fileAccess: createAllowAllFileAccess(),
     db: h.db,
     journal: h.persistence.journal,
     drafts: h.store,

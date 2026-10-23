@@ -23,6 +23,10 @@ export type DocumentEditResult =
       after?: Uint8Array;
       /** An inverse's committed bytes, exactly as journaled, in order: the reply replays them. */
       updates?: readonly Uint8Array[];
+      /** The version that held the reversed edit; absent when one command reached several versions. */
+      destination?: "live" | "draft";
+      /** The Work handle for a draft destination, or `/` for No Work. */
+      draftWork?: string;
       /** The immutable address context for draft cuts returned as bytes. */
       blockOrigins?: BlockOriginMap;
     };

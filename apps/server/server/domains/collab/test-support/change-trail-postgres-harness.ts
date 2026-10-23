@@ -509,6 +509,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     removal: documentRemoval,
     ...(options.arrivals ? { arrivals: options.arrivals } : {}),
     catalog: { refreshSources: async () => "" },
+    fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
   });
   const responseFinalizer = createResponseWriteFinalizer({
     agentEdit,
@@ -522,7 +523,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   });
   const turnReversal = createTurnReversalService({
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
-    fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
     turnInverse,
     resolveDocumentUri,
   });

@@ -8,6 +8,7 @@ import { createDraftCoordinator } from "../../../../apps/server/server/domains/c
 import { createDraftProjection } from "../../../../apps/server/server/domains/collab/domain/draft-projection.ts";
 import { createDraftPullService } from "../../../../apps/server/server/domains/collab/domain/draft-pulls.ts";
 import { commitDraftRows } from "../../../../apps/server/server/domains/collab/test-support/draft-update-writes.ts";
+import { createAllowAllFileAccess } from "../../../../apps/server/server/domains/file-policy/index.ts";
 import {
   runInRootDrizzleTransaction,
   runOutsideWrite,
@@ -391,6 +392,7 @@ try {
       peer,
     );
     const inverse = createDrizzleTurnInverseService({
+      fileAccess: createAllowAllFileAccess(),
       db: h.db,
       journal: h.persistence.journal,
       drafts: h.store,

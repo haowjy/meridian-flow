@@ -50,7 +50,8 @@ change-trail persistence, and Hocuspocus admission. It composes
 - Derive read models from a journal-locked durable cut, never a warm room paired
   with a database watermark. Schema-aware reads, seeds and writes go through
   `domain/markdown-document.ts` and the scoped link codec.
-- Scratch and uploads are never drafted. Destination selection is explicit;
+- Scratch and upload content is never drafted, but its placement can belong to
+  a Work branch. Destination selection is explicit;
   never infer live versus draft from a thread mode.
 
 ## Depth

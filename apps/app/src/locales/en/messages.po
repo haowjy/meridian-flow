@@ -1012,10 +1012,6 @@ msgstr "Can't move {source}: that location is already taken."
 msgid "Can't move {source}: the folder for {place} doesn't exist."
 msgstr "Can't move {source}: the folder for {place} doesn't exist."
 
-#: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: this chat is in draft mode, so the move would be half drafted and half live."
-msgstr "Can't move {source}: this chat is in draft mode, so the move would be half drafted and half live."
-
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: {place} was moved or deleted after you undid this change."
 msgstr "Can't redo: {place} was moved or deleted after you undid this change."
@@ -4375,8 +4371,8 @@ msgid "That change can't be redone here because it was already applied to your m
 msgstr "That change can't be redone here because it was already applied to your manuscript."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone here because the chat now writes somewhere else."
-msgstr "That change can't be redone here because the chat now writes somewhere else."
+#~ msgid "That change can't be redone here because the chat now writes somewhere else."
+#~ msgstr "That change can't be redone here because the chat now writes somewhere else."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone because it was discarded."
@@ -4395,8 +4391,8 @@ msgid "That change can't be undone here because it was already applied to your m
 msgstr "That change can't be undone here because it was already applied to your manuscript."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be undone here because the chat now writes somewhere else."
-msgstr "That change can't be undone here because the chat now writes somewhere else."
+#~ msgid "That change can't be undone here because the chat now writes somewhere else."
+#~ msgstr "That change can't be undone here because the chat now writes somewhere else."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change couldn't be made in {name}."
@@ -5136,8 +5132,8 @@ msgid "Undoing…"
 msgstr "Undoing…"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Undone in your drafts. Apply them to change your manuscript."
-msgstr "Undone in your drafts. Apply them to change your manuscript."
+#~ msgid "Undone in your drafts. Apply them to change your manuscript."
+#~ msgstr "Undone in your drafts. Apply them to change your manuscript."
 
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"

@@ -14,6 +14,7 @@ function openFacts(request: FileFactsRequest): FileFacts {
   const { target } = request;
   const branchWorkId: WorkId | undefined =
     target.kind === "draft" ? target.workId : request.branchWorkId;
+  const scheme = target.kind === "container" ? target.scheme : "manuscript";
   return {
     target,
     projectId: OPEN_PROJECT,
@@ -21,7 +22,8 @@ function openFacts(request: FileFactsRequest): FileFacts {
     projectDeleted: false,
     ownerWork: null,
     deleted: false,
-    scheme: target.kind === "container" ? target.scheme : "manuscript",
+    scheme,
+    contentScheme: scheme,
     self: target.kind === "container" ? null : { kind: "document", id: target.documentId },
     ancestors: [{ kind: "project", id: OPEN_PROJECT }],
     ...(branchWorkId

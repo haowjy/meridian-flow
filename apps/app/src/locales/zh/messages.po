@@ -1012,10 +1012,6 @@ msgstr ""
 msgid "Can't move {source}: the folder for {place} doesn't exist."
 msgstr ""
 
-#: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: this chat is in draft mode, so the move would be half drafted and half live."
-msgstr ""
-
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: {place} was moved or deleted after you undid this change."
 msgstr ""
@@ -4375,8 +4371,8 @@ msgid "That change can't be redone here because it was already applied to your m
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone here because the chat now writes somewhere else."
-msgstr ""
+#~ msgid "That change can't be redone here because the chat now writes somewhere else."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone because it was discarded."
@@ -4395,8 +4391,8 @@ msgid "That change can't be undone here because it was already applied to your m
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be undone here because the chat now writes somewhere else."
-msgstr ""
+#~ msgid "That change can't be undone here because the chat now writes somewhere else."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change couldn't be made in {name}."
@@ -5136,8 +5132,8 @@ msgid "Undoing…"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Undone in your drafts. Apply them to change your manuscript."
-msgstr "已在你的草稿中撤销。应用后才会更改你的正文。"
+#~ msgid "Undone in your drafts. Apply them to change your manuscript."
+#~ msgstr "已在你的草稿中撤销。应用后才会更改你的正文。"
 
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"
