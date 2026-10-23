@@ -7,6 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
+import type { LiveEditorContainer } from "@/core/editor/live-range-navigation-runtime";
 import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-editor";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { InlineDraftReview } from "@/features/draft-review/draft-review-session";
@@ -32,6 +33,7 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   focusKey?: string;
   /** Which host mounts this editor; the dock's is "dock". */
   reviewSurface?: ReviewSurface;
+  container?: LiveEditorContainer;
 };
 
 const REVIEW_MARKS_WAIT_MS = 1500;
@@ -179,6 +181,7 @@ export function EditorView(props: EditorViewProps) {
               }}
               session={liveSession}
               focusKey={props.focusKey}
+              container={props.container ?? "editor"}
             />
           </div>
         </PaintScope>
@@ -193,6 +196,7 @@ export function EditorView(props: EditorViewProps) {
             <SessionEditor
               identity={identity}
               session={reviewSession}
+              container={props.container ?? "editor"}
               holderUri={reviewHolderUri}
               surfaceOptions={{
                 ...surfaceOptions,

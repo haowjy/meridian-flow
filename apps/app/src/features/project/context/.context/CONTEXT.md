@@ -10,15 +10,22 @@ Chat Work. Unresolved Editor Work cannot bootstrap Context or register a
 removal host. The selected-tab map is keyed by Work row id; project-scoped
 files retain the Editor's Work context.
 
-`ProjectDocumentNavigationAdapter` opens both tracked editors and existing
-read-only Context viewers through the one stable-ID opener. Its lower-level
-`not-editable` result means no live Yjs admission, not a failed navigation:
-Editor-eligible project binary/custom metadata still opens a viewer tab and route.
+`ProjectDocumentNavigationAdapter` turns a known file identity into an Editor,
+dock, or background destination before content opens. An ID absent from the
+in-memory resource projection waits for one availability lookup; its available
+answer is consumed once by the installed tab instance. The destination alone
+opens local content, admits the live room, and presents Retry. Read-only Context
+files still open viewer tabs without live Yjs admission.
 Scratch documents open Editor tabs owned by their resolved Work, or by their lineage
 (`rootThreadId` and the handle its URI spells) when they are a No Work chat's notes.
 Uploads route to the deferred-viewing notice without opening a tab. The resolved file's
 Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
+
+The resource projection has explicit pending, ready, and failed states. A host
+without a resource handle waits for the first ready snapshot; pending is never
+treated as missing local content. A failed projection falls back to the
+transactional identity lookup.
 
 Availability command admission rejects while removal is suspended or disposed;
 an empty successful receipt would let the availability owner falsely acknowledge

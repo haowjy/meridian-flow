@@ -48,6 +48,7 @@ stack.
 - [Editor schema notices](editor-notices.md): one-line repair and fence bars, the Details popover, copy refusals and Dismiss focus.
 - [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
 - [Document adoption across a reload](document-adoption-reload.md): New file reloaded inside the adoption commit window, desktop and the phone's three document branches.
+- [Document open: commit first](document-open.md): immediate Editor, dock, and phone placement; one content open; transfer ownership; failures, removal, fencing, passages, projection readiness, streaming, and keystrokes.
 - [Draft review](draft-review.md): visual editor and review workflows.
 - [Text-derived draft disposition](draft-disposition.md): inverse policy, historical Apply evidence and whole-Work close, with an isolated PostgreSQL runner.
 - [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.

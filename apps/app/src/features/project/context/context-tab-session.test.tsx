@@ -12,6 +12,8 @@ const reportError = vi.fn();
 
 const resourceReplica = vi.hoisted(() => ({
   keyForDocument: vi.fn(),
+  readProjectionState: vi.fn(() => ({ kind: "failed", error: new Error("projection failed") })),
+  whenProjectionReady: vi.fn(),
   openDocument: vi.fn(),
   captureServerSession: vi.fn(async () => undefined),
 }));

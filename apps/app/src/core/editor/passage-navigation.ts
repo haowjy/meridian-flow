@@ -21,8 +21,8 @@
 
 import { lookupBlockHash } from "@meridian/agent-edit";
 import * as Y from "yjs";
-import type { ProjectDocumentLiveOpenResult } from "@/features/project/context/open-project-document";
-import { showPassageInEditor } from "./live-range-navigation-runtime";
+import type { OpenDocumentOutcome } from "@/features/project/context/open-project-document";
+import { showPassageInTarget, whenLiveEditor } from "./live-range-navigation-runtime";
 import { claimDocumentTarget } from "./reading-position-navigation";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
@@ -37,14 +37,12 @@ export type PassageNavigationResult =
   /** Nothing could be decided: the document never synced or never mounted. */
   | { kind: "unavailable" };
 
-let navigationSequence = 0;
-
 export async function navigateToPassage(input: {
   documentId: string;
   anchor: PassageAnchor;
   timeoutMs?: number;
-  openDocument: (documentId: string) => Promise<ProjectDocumentLiveOpenResult>;
-  showPassage?: typeof showPassageInEditor;
+  openDocument: (documentId: string) => Promise<OpenDocumentOutcome>;
+  showPassage?: typeof showPassageInTarget;
   signal?: AbortSignal;
 }): Promise<PassageNavigationResult> {
   const cancelled = () => input.signal?.aborted === true;
@@ -53,50 +51,46 @@ export async function navigateToPassage(input: {
   const releaseTarget = claimDocumentTarget(input.documentId);
   try {
     const opened = await input.openDocument(input.documentId).catch(() => null);
-    if (cancelled() || !opened || opened.kind !== "opened") return { kind: "unavailable" };
-    const owner = `passage-navigation:${++navigationSequence}`;
-    let binding: Awaited<ReturnType<typeof opened.admission.bind>> | null = null;
-    try {
-      binding = await opened.admission.bind(owner);
-      if (cancelled()) return { kind: "unavailable" };
-      const timeoutMs = input.timeoutMs ?? 10_000;
-      const session = binding.session;
-      if (!binding.local)
-        await Promise.race([
-          session.waitForCurrentSync(timeoutMs),
-          new Promise<void>((resolve) =>
-            input.signal?.addEventListener("abort", () => resolve(), { once: true }),
-          ),
-        ]);
-      if (cancelled()) return { kind: "unavailable" };
-      if (!binding.local && session.getSnapshot().status !== "synced")
-        return { kind: "unavailable" };
-
-      const show = input.showPassage ?? showPassageInEditor;
-      const deadline = Date.now() + timeoutMs;
-      do {
-        if (cancelled()) return { kind: "unavailable" };
-        // Re-derived every attempt, against the live document: the editor may
-        // still be mounting, and the block may go while we wait for it.
-        const block = blockRangeForHash(session.document, input.anchor.blockHash);
-        const landing = show(input.documentId, { block, term: input.anchor.term });
-        if (landing) return { kind: landing.outcome };
-        await new Promise((resolve) => {
-          const timer = setTimeout(resolve, 25);
-          input.signal?.addEventListener(
-            "abort",
-            () => {
-              clearTimeout(timer);
-              resolve(undefined);
-            },
-            { once: true },
-          );
-        });
-      } while (Date.now() < deadline);
+    if (cancelled() || !opened || opened.kind !== "committed") return { kind: "unavailable" };
+    if (opened.placement === "background") return { kind: "unavailable" };
+    const timeoutMs = input.timeoutMs ?? 10_000;
+    const timeout = AbortSignal.timeout(timeoutMs);
+    const waitSignal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
+    const target = await whenLiveEditor(input.documentId, opened.placement, waitSignal);
+    if (!target || cancelled()) return { kind: "unavailable" };
+    const session = target.session;
+    if (!target.localContentReady)
+      await Promise.race([
+        session.waitForCurrentSync(timeoutMs),
+        new Promise<void>((resolve) =>
+          waitSignal.addEventListener("abort", () => resolve(), { once: true }),
+        ),
+      ]);
+    if (cancelled() || (!target.localContentReady && session.getSnapshot().status !== "synced"))
       return { kind: "unavailable" };
-    } finally {
-      binding?.release();
-    }
+
+    const show = input.showPassage ?? showPassageInTarget;
+    const deadline = Date.now() + timeoutMs;
+    do {
+      if (cancelled()) return { kind: "unavailable" };
+      // Re-derived every attempt, against the live document: the editor may
+      // still be mounting, and the block may go while we wait for it.
+      const block = blockRangeForHash(session.document, input.anchor.blockHash);
+      const landing = show(target, { block, term: input.anchor.term });
+      if (landing) return { kind: landing.outcome };
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, 25);
+        input.signal?.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            resolve(undefined);
+          },
+          { once: true },
+        );
+      });
+    } while (Date.now() < deadline);
+    return { kind: "unavailable" };
   } finally {
     releaseTarget();
   }
