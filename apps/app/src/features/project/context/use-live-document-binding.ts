@@ -39,7 +39,10 @@ export function useLiveDocumentBinding({
   const opener = useProjectDocumentLiveOpener();
   const hostId = useRef(`${owner}:${++hostSequence}`);
   const attemptRef = useRef(0);
-  const firstResolution = useRef<AvailableOpenResolution | null | undefined>(undefined);
+  const firstResolution = useRef<{
+    key: string;
+    value: AvailableOpenResolution | null;
+  } | null>(null);
   const [retryGeneration, setRetryGeneration] = useState(0);
   const [state, setState] = useState<LiveDocumentBindingState>(
     documentId ? { kind: "opening", documentId } : { kind: "absent" },
@@ -54,10 +57,13 @@ export function useLiveDocumentBinding({
     const abort = new AbortController();
     let binding: LiveDocumentBinding | null = null;
     const bindingOwner = `${hostId.current}:attempt:${++attemptRef.current}`;
-    if (firstResolution.current === undefined)
-      firstResolution.current = tabInstanceId
-        ? opener.takeTransfer(tabInstanceId, documentId)
-        : null;
+    const transferKey = `${tabInstanceId ?? "none"}:${documentId}`;
+    if (firstResolution.current?.key !== transferKey)
+      firstResolution.current = {
+        key: transferKey,
+        value: tabInstanceId ? opener.takeTransfer(tabInstanceId, documentId) : null,
+      };
+    const initialResolution = firstResolution.current.value;
     setState({ kind: "opening", documentId });
     void (async () => {
       try {
@@ -67,7 +73,7 @@ export function useLiveDocumentBinding({
           documentId,
           signal: abort.signal,
           attempt: retryGeneration === 0 ? "first" : "retry",
-          resolution: retryGeneration === 0 ? (firstResolution.current ?? undefined) : undefined,
+          resolution: retryGeneration === 0 ? (initialResolution ?? undefined) : undefined,
         });
         // Account shutdown cancels the open without aborting this effect; that is teardown, not a failure.
         if (opened.kind === "cancelled") return;

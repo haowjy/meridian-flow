@@ -15,7 +15,9 @@ dock, or background destination before content opens. An ID absent from the
 in-memory resource projection waits for one availability lookup; its available
 answer is consumed once by the installed tab instance. The destination alone
 opens local content, admits the live room, and presents Retry. Read-only Context
-files still open viewer tabs without live Yjs admission.
+files still open viewer tabs without live Yjs admission. Background tabs do not
+carry lookup answers because they acquire content only when shown. Closing or
+replacing a destination discards its unconsumed answer.
 Scratch documents open Editor tabs owned by their resolved Work, or by their lineage
 (`rootThreadId` and the handle its URI spells) when they are a No Work chat's notes.
 Uploads route to the deferred-viewing notice without opening a tab. The resolved file's

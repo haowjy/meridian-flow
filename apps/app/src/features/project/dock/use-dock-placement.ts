@@ -36,7 +36,7 @@ export function dockHoldsDocument(screen: ScreenKey, phone: boolean): boolean {
   return (screen === "chat" || screen === "work") && !phone;
 }
 
-export type DockCommit = "opened" | "cancelled";
+export type DockCommit = { kind: "opened"; tab: ContextTab } | { kind: "cancelled" };
 
 export function useDockPlacement() {
   const screen = useProjectScreen();
@@ -46,7 +46,7 @@ export function useDockPlacement() {
   /** Show `tab` in the dock under `claim` (a fresh one when the caller has none). */
   const commit = useCallback(
     (tab: ContextTab, claim?: number, focus?: true, review?: ReviewAddress): DockCommit => {
-      if (!projectId || (screen !== "chat" && screen !== "work")) return "cancelled";
+      if (!projectId || (screen !== "chat" && screen !== "work")) return { kind: "cancelled" };
       return commitDockDocument(projectId, screen, tab, revealDock, claim, review ?? null, focus);
     },
     [projectId, revealDock, screen],
@@ -74,8 +74,9 @@ export function commitDockDocument(
   const attempt = claim ?? store.claim();
   // Each dock open is its own tab instance, so its focus intent cannot reach a later reopen.
   const opened = { ...tab, tabInstanceId: tab.tabInstanceId ?? crypto.randomUUID() } as ContextTab;
-  if (!store.commit(attempt, dockDocument(projectId, screen, opened, review))) return "cancelled";
+  if (!store.commit(attempt, dockDocument(projectId, screen, opened, review)))
+    return { kind: "cancelled" };
   if (focus) armEditorFocus(opened.tabInstanceId as string);
   revealDock("document");
-  return "opened";
+  return { kind: "opened", tab: opened };
 }

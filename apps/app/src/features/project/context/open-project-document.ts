@@ -50,7 +50,14 @@ import {
   projectCatalogFile,
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
-import { isEditorScheme, type ServerContextTab, useContextTabsActions } from "@/client/stores";
+import {
+  type ContextTab,
+  isEditorScheme,
+  type ServerContextTab,
+  useContextTabsActions,
+  useContextTabsStore,
+} from "@/client/stores";
+import { useDockDocumentStore } from "../dock/dock-document-store";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
 import { contextTabFromFile, serverTabFromFile } from "./context-tab-from-file";
@@ -98,7 +105,7 @@ export type ProjectDocumentLiveOpenRequest = {
 type ExactOpenResolution = ProjectContextIdentityResolution | { kind: "failed" | "malformed" };
 export type AvailableOpenResolution = Extract<ExactOpenResolution, { kind: "available" }>;
 export type TransferToken = { readonly id: string; readonly tabInstanceId: string };
-type TransferPlacement = "editor" | "dock" | "background";
+type TransferPlacement = "editor" | "dock";
 
 /** Exact-resolution application operation, independent from navigation effects. */
 export class ProjectDocumentLiveOpener {
@@ -135,18 +142,24 @@ export class ProjectDocumentLiveOpener {
     }
   }
 
-  armTransfer(
+  replaceTransfer(
     tabInstanceId: string,
-    resolution: AvailableOpenResolution,
+    resolution: AvailableOpenResolution | undefined,
     placement?: TransferPlacement,
-  ): TransferToken {
-    // The dock has one occupant. A second commit can replace the first before
-    // React mounts it, so the superseded tab never gets a chance to consume.
+  ): TransferToken | null {
     if (placement === "dock" && this.dockTransfer) this.disposeTransfer(this.dockTransfer);
+    const prior = this.transfers.get(tabInstanceId);
+    if (prior) this.disposeTransfer(prior.token);
+    if (!resolution) return null;
     const token = Object.freeze({ id: crypto.randomUUID(), tabInstanceId });
     this.transfers.set(tabInstanceId, { token, resolution });
     if (placement === "dock") this.dockTransfer = token;
     return token;
+  }
+
+  transferToken(tabInstanceId: string, documentId: string): TransferToken | null {
+    const transfer = this.transfers.get(tabInstanceId);
+    return transfer?.resolution.documentId === documentId ? transfer.token : null;
   }
 
   takeTransfer(tabInstanceId: string, documentId: string): AvailableOpenResolution | null {
@@ -161,6 +174,13 @@ export class ProjectDocumentLiveOpener {
     if (this.transfers.get(token.tabInstanceId)?.token === token)
       this.transfers.delete(token.tabInstanceId);
     if (this.dockTransfer === token) this.dockTransfer = null;
+  }
+
+  pruneTransfers(activeTabInstanceIds: ReadonlySet<string>): void {
+    for (const transfer of this.transfers.values()) {
+      if (!activeTabInstanceIds.has(transfer.token.tabInstanceId))
+        this.disposeTransfer(transfer.token);
+    }
   }
 
   async open(
@@ -269,7 +289,10 @@ export type OpenProjectDocumentRequest = {
   /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
   workId?: string;
   disposition?: "current" | "background";
-  beside?: (tab: ServerContextTab, focus?: true) => "opened" | "cancelled";
+  beside?: (
+    tab: ServerContextTab,
+    focus?: true,
+  ) => { kind: "opened"; tab: ContextTab } | { kind: "cancelled" };
   focus?: true;
   signal?: AbortSignal;
 };
@@ -284,7 +307,7 @@ export type OpenProjectDocument = (
 ) => Promise<OpenDocumentOutcome>;
 
 type NavigationAdapterDependencies = {
-  opener: Pick<ProjectDocumentLiveOpener, "resolveIdentity" | "armTransfer" | "disposeTransfer">;
+  opener: Pick<ProjectDocumentLiveOpener, "resolveIdentity" | "replaceTransfer">;
   openTab(
     projectId: string,
     tab: ReturnType<typeof contextTabFromFile>,
@@ -461,7 +484,7 @@ export class ProjectDocumentNavigationAdapter {
     rootThreadId?: string;
     chatId?: string;
     disposition: "current" | "background";
-    beside?: (tab: ServerContextTab, focus?: true) => "opened" | "cancelled";
+    beside?: OpenProjectDocumentRequest["beside"];
     focus?: true;
     isCurrent: () => boolean;
     canCommit: () => boolean;
@@ -478,15 +501,6 @@ export class ProjectDocumentNavigationAdapter {
           tabInstanceId: crypto.randomUUID(),
         }
       : undefined;
-    let transferToken: TransferToken | null = null;
-    const armTransfer = (placement?: TransferPlacement) => {
-      if (input.transfer && tab?.tabInstanceId)
-        transferToken = this.dependencies.opener.armTransfer(
-          tab.tabInstanceId,
-          input.transfer,
-          placement,
-        );
-    };
     if (!input.isCurrent()) return { kind: "cancelled" };
 
     if (input.disposition === "current" && input.beside) {
@@ -500,8 +514,15 @@ export class ProjectDocumentNavigationAdapter {
       if (besideTab) {
         const placed = input.beside(besideTab, input.focus);
         this.current = null;
-        if (placed === "opened") armTransfer("dock");
-        return placed === "opened" ? { kind: "applied", placement: "dock" } : { kind: "cancelled" };
+        if (placed.kind === "opened" && placed.tab.tabInstanceId)
+          this.dependencies.opener.replaceTransfer(
+            placed.tab.tabInstanceId,
+            input.transfer,
+            "dock",
+          );
+        return placed.kind === "opened"
+          ? { kind: "applied", placement: "dock" }
+          : { kind: "cancelled" };
       }
     }
 
@@ -526,11 +547,16 @@ export class ProjectDocumentNavigationAdapter {
           ...(input.focus ? { focus: true as const } : {}),
           isCurrent: input.isCurrent,
           canCommit: input.canCommit,
-          afterCommit: () => armTransfer("editor"),
+          afterCommit: (installed) => {
+            if (installed?.tabInstanceId)
+              this.dependencies.opener.replaceTransfer(
+                installed.tabInstanceId,
+                input.transfer,
+                "editor",
+              );
+          },
         },
       );
-      if (settlement.kind !== "applied" && transferToken)
-        this.dependencies.opener.disposeTransfer(transferToken);
       return settlement.kind === "failed"
         ? { kind: "failed" }
         : settlement.kind === "applied"
@@ -542,7 +568,6 @@ export class ProjectDocumentNavigationAdapter {
       const installed = this.dependencies.openTab(input.projectId, tab, input.isCurrent);
       if (installed.kind !== "opened")
         return installed.kind === "superseded" ? { kind: "cancelled" } : { kind: "failed" };
-      armTransfer("background");
     }
     return input.canCommit() ? { kind: "applied", placement: "background" } : { kind: "cancelled" };
   }
@@ -583,6 +608,26 @@ export function ProjectDocumentNavigationProvider({
       () => undefined,
     );
   }, [projectId, resources]);
+  useEffect(() => {
+    const prune = () => {
+      const active = new Set<string>();
+      for (const project of Object.values(useContextTabsStore.getState().byProject)) {
+        for (const tab of project.tabs) if (tab.tabInstanceId) active.add(tab.tabInstanceId);
+      }
+      const dock = useDockDocumentStore.getState();
+      for (const document of [dock.occupant, dock.restoring]) {
+        if (document?.tab.tabInstanceId) active.add(document.tab.tabInstanceId);
+      }
+      opener.pruneTransfers(active);
+    };
+    const stopTabs = useContextTabsStore.subscribe(prune);
+    const stopDock = useDockDocumentStore.subscribe(prune);
+    prune();
+    return () => {
+      stopTabs();
+      stopDock();
+    };
+  }, [opener]);
   const owner = useMemo<ProjectDocumentNavigationOwner>(
     () => ({
       projectId,
