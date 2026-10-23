@@ -50,7 +50,7 @@ transaction commits, for every outcome (appended, contained, or nothing new):
 someone else's rows that landed after preparing are in its before state.
 Nothing fallible runs between the rows becoming durable and `persist`
 resolving, so a stored write is never reported as a failed one. Receipts,
-commit-time detection, revision and frontier read that cut, for both hosts; the
+revision and frontier reporting read that cut, for both hosts; the
 rows are Yjs updates and land the same either way, so a moved base refreshes
 the report rather than the write.
 

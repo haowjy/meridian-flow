@@ -1,5 +1,5 @@
 // One document's save through its host: prepare, persist (the durable append and its cut), then
-// the accepted save's report (detection, receipts, frontier), which never fails the save.
+// the accepted save's report (revision, receipts, frontier), which never fails the save.
 import * as Y from "yjs";
 import { snapshotBlocks } from "../apply/echo.js";
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
@@ -21,11 +21,6 @@ import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
-import type {
-  AcceptedMutationReport,
-  CommitDetection,
-  CommitDetectionInput,
-} from "./commit-detection.js";
 import type { CopySummary } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { type ListingSource, loadConcurrent, observeRendered } from "./observation.js";
@@ -117,8 +112,8 @@ export interface DocumentSave {
   persist(save: SaveOutcome): Promise<SaveCut | null>;
   /**
    * The saved document's receipts, after its save handed its write to the host: the save's
-   * verdict on `doc` (the commit's snapshot), then detection on `cut` (what `persist`
-   * resolved), then the frontier it records. Never throws: past persistence any failure
+   * verdict on `doc` (the commit's snapshot), then revision reporting on `cut` (what
+   * `persist` resolved), then the frontier it records. Never throws: past persistence any failure
    * degrades the receipts, never the save.
    */
   report(
@@ -139,13 +134,12 @@ export interface DocumentSave {
 
 export function createDocumentSave(deps: {
   coordinator: DocumentCoordinator;
-  detection: CommitDetection;
   model: AgentEditModel;
   codec: AgentEditCodecFactory;
   links: DocumentLinksPort;
   onObservationFailed?: (event: ObservationFailedDetail) => void;
 }): DocumentSave {
-  const { coordinator, detection } = deps;
+  const { coordinator } = deps;
 
   return {
     async prepare(doc) {
@@ -187,23 +181,14 @@ export function createDocumentSave(deps: {
       doc.rejectedUpdates = [...(doc.rejectedUpdates ?? []), ...save.rejected];
       if (!doc.updates.length) return degradedReceipts(doc, null, 0);
       if (!cut) return degradedReceipts(doc, null);
-      return reportAccepted(
-        cut,
-        degradedReceipts(doc, null),
-        save.blockOrigins,
-        async (before, after) => {
-          const links = await saveLinks(editScopeId, doc, after, save.blockOrigins);
-          const applied = await detection.reportAcceptedMutation(
-            before,
-            after,
-            detectionInput(doc, links),
-          );
-          const document = renderedReceipts(doc, links, applied, after, save.blockOrigins);
-          return save.room && recordingFrontier
-            ? await observeSave(doc, links, document, after, cut, save.room, recordingFrontier)
-            : document;
-        },
-      );
+      return reportAccepted(cut, degradedReceipts(doc, null), save.blockOrigins, async (after) => {
+        const links = await saveLinks(editScopeId, doc, after, save.blockOrigins);
+        const applied = reportRevision(after, links, deps.links);
+        const document = renderedReceipts(doc, links, applied, after, save.blockOrigins);
+        return save.room && recordingFrontier
+          ? await observeSave(doc, links, document, after, cut, save.room, recordingFrontier)
+          : document;
+      });
     },
 
     async saveNow(input) {
@@ -237,8 +222,8 @@ export function createDocumentSave(deps: {
           cut,
           { revision: null, awarenessDegraded: true, afterState: cut.afterState },
           saved.blockOrigins,
-          async (before, after) => ({
-            ...(await detection.reportAcceptedMutation(before, after, { links: input.links })),
+          async (after) => ({
+            ...reportRevision(after, input.links, deps.links),
             afterState: cut.afterState,
             ...(cut.position === undefined ? {} : { position: cut.position }),
           }),
@@ -281,13 +266,6 @@ export function createDocumentSave(deps: {
     } finally {
       for (const view of before) view.destroy();
     }
-  }
-
-  /** What accepted-save revision reporting reads. */
-  function detectionInput(doc: SavedDocument, links: CommandLinks): CommitDetectionInput {
-    if (!doc.updates.length)
-      throw new Error(`Response document ${doc.docId} has no staged updates.`);
-    return { links };
   }
 
   /** Each accepted write's receipt with its echo against the view it planned on. */
@@ -404,19 +382,34 @@ async function reportAccepted<T>(
   cut: SaveCut,
   degraded: T,
   blockOrigins: BlockOriginMap | undefined,
-  run: (before: Y.Doc, after: Y.Doc) => Promise<T>,
+  run: (after: Y.Doc) => Promise<T>,
 ): Promise<T> {
-  const docs: Y.Doc[] = [];
+  let after: Y.Doc | undefined;
   try {
-    const before = docFromState(cut.beforeState, blockOrigins);
-    docs.push(before);
-    const after = docFromState(cut.afterState, blockOrigins);
-    docs.push(after);
-    return await run(before, after);
+    after = docFromState(cut.afterState, blockOrigins);
+    return await run(after);
   } catch {
     return degraded;
   } finally {
-    for (const doc of docs) doc.destroy();
+    after?.destroy();
+  }
+}
+
+interface AcceptedMutationReport {
+  revision: string | null;
+  /** Revision reporting failed after persistence; the save itself still landed. */
+  awarenessDegraded?: true;
+}
+
+function reportRevision(
+  after: Y.Doc,
+  links: CommandLinks,
+  port: DocumentLinksPort,
+): AcceptedMutationReport {
+  try {
+    return { revision: port.revision(after, links.scope) };
+  } catch {
+    return { revision: null, awarenessDegraded: true };
   }
 }
 

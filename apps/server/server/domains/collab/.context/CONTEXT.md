@@ -568,12 +568,12 @@ therefore write no document bytes. Link extraction and revision hashing use
 the same occurrence rules, and failed ahead-ref registration is repaired by
 the derivation sweep.
 
-A save's concurrent attribution reads the upstream cut its save read (the
-save's before state); there is no preflight or second recheck. Baseline containment compares struct clocks and the delete set: equal
-state vectors alone do not establish equality, so delete-only writer edits are
-still attributed. There is no journal floor: each check reads the Work draft
-rows and skips only those the view contains, so its cost grows with
-the draft's retained history (C11). Drafts have no generation or epoch reset.
+A result's concurrent attribution reads only the room journal interval after its
+stored observation position through the rendered cut. A read uses the resolved
+Work-draft identity directly, so a chat that has never written needs no thread peer.
+There is no preflight or second recheck. Baseline containment compares struct clocks
+and the delete set: equal state vectors alone do not establish equality, so delete-only
+writer edits are still attributed. Drafts have no generation or epoch reset.
 
 `document_links` is a hint from a certified cut, never link authority. Changing
 the extractor bumps its version, and no second post-write writer exists.

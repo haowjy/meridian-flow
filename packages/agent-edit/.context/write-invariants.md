@@ -54,7 +54,9 @@ and the room copy, so parallel calls and write/undo/write in one reply never
 reuse a client. A write with no valid frontier plans on the current room.
 
 Concurrent attribution reads the host journal only between the stored observation
-position and the rendered cut. It is report-only and never supplies apply authority.
+position and the rendered cut. A draft read carries its resolved Work-draft identity
+into that lookup; attribution never requires or provisions a thread peer. It is
+report-only and never supplies apply authority.
 
 Yjs convergence is not intent preservation. Concurrent character edits may
 produce mangled prose. Echoes inform the model, but the kernel never gates a
