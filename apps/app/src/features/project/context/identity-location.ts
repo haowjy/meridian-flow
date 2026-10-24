@@ -80,7 +80,8 @@ export function destinationOwner(
       rootThreadId: destination.rootThreadId,
       rootThreadRef: destination.rootThreadRef,
     };
-  if (destination.scheme !== "scratch" && !destination.workId) return { workId: null };
+  // Project areas belong to no Work: the Editor's Work never owns their roots.
+  if (!isWorkScopedScheme(destination.scheme)) return { workId: null };
   const workId = destination.workId;
   if (!workId || !noWork) return null;
   try {
