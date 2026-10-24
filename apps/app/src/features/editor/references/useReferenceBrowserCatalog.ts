@@ -6,7 +6,7 @@ import {
   sameCatalogProjectionScope,
 } from "@meridian/resource-replica";
 import { QueryClientContext } from "@tanstack/react-query";
-import { useContext, useEffect, useMemo } from "react";
+import { useContext, useMemo } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   catalogScopeReady,
@@ -51,11 +51,6 @@ export function useReferenceBrowserCatalog(
         : [],
     [projectId, workId, rootThreadId, chatId, lineagePending, chatPending],
   );
-  useEffect(() => {
-    if (!queryClient || !projectId || !resources || projectPending) return;
-    for (const scope of scopes)
-      void queryClient.prefetchQuery(contextCatalogQueryOptions(resources, projectId, scope));
-  }, [projectId, projectPending, queryClient, resources, scopes]);
   return useMemo(
     () =>
       projectId && queryClient && resources && !projectPending
@@ -87,7 +82,13 @@ export function useReferenceBrowserCatalog(
             };
             return {
               label,
-              openContext: () => ({ warmScopes: scopes }),
+              openContext: () => {
+                for (const scope of scopes)
+                  void queryClient.prefetchQuery(
+                    contextCatalogQueryOptions(resources, projectId, scope),
+                  );
+                return { warmScopes: scopes };
+              },
               port: {
                 subscribe: (listener) => {
                   const stopQuery = queryClient.getQueryCache().subscribe((event) => {

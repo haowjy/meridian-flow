@@ -16,14 +16,16 @@ life faster, with AI that understands narrative craft.
 progression-fantasy web serials at 5,000–10,000+ words/day who need
 Scrivener-scale power without its complexity.
 
-**Trust the LLM, and make changes easy to review.** The user and the model both
-change documents, often at the same time, and changing a document should be
-smooth for both. Their writes land: never put approval gates, refusals, or
-"safety" friction in front of them. The user is protected by seeing what
-changed and being able to take it back. AI writes merge like any Yjs peer's,
+**Trust the user and the LLM, and make changes easy to review.** The user and
+the model both change documents, often at the same time, and changing a
+document should be smooth for both. Their writes land: never put approval
+gates, refusals, or "safety" friction in front of them. The user is protected
+by seeing what changed and being able to take it back. AI writes merge like any Yjs peer's,
 marks and receipts say who did what, and review makes conflicting changes easy
-to resolve. See the
-[trust ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/trust-the-llm-mission.md).
+to resolve. In the app, teach each concept that needs words in one place, then
+trust the user to know it: screens show state, not standing explanations. See the
+[trust ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/trust-the-llm-mission.md)
+and [trust the user](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/trust-the-user.md).
 
 ## Engineering principles
 
@@ -40,7 +42,8 @@ action is still pending.
 immediately. Create, persist, and connect in the background. This is the
 default for every screen, not only chat. If the background work
 fails, the error is on that destination. Never return to the previous screen
-because the new one has not finished materializing.
+because the new one has not finished materializing. Where only the server can
+assign the address, [apps/app](apps/app/AGENTS.md) says how to wait.
 
 **Writer primitives:** a **Project** is a serial, book, or body of work. A
 **Work** is a task-scoped editing context within a project: it groups chats,
@@ -72,25 +75,8 @@ hidden constraints, surprising invariants, and workarounds.
 **Writing.** Load and apply `/llm-writing` before writing or revising user-facing
 text or documentation: UI copy, guides, README files, AGENTS.md, .context/, KB
 pages, work artifacts, PR descriptions, and release notes. Apply
-`/information-hierarchy` to multi-section documents and UI surfaces with
-supporting detail: lead with what the reader needs, then disclose depth.
-
-**Writer-facing copy.** Separate facts with layout, typography, sentences, or
-parentheses, never `·`, `•`, `—`, or `|`. See the
-[copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/writer-copy-separation.md).
-
-**Offer only what applies.** Show a control only while its action can succeed.
-Feedback never displaces content already on screen: it uses blank space, or the
-end of a surface that grows downward, like a chat's latest turn. See the
-[offer-only-what-applies decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/offer-only-what-applies.md).
-
-**Trust the user, and save vertical space.** Teach how the product works once,
-in a tutorial, and then trust the user to know it. The UI shows state, never
-standing explanations of rules the user already learned or will learn by trying
-("ch5 still has that name. Apply its change first."). A refusal is said on the
-thing the user did, after they try it. Never reserve empty lines for messages
-that might come: a list row is one line until it has something to say. See the
-[trust-the-user decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/trust-the-user.md).
+`/information-hierarchy` to multi-section documents: lead with what the reader
+needs, then disclose depth.
 
 **Debugging.** Follow [docs/debugging.md](docs/debugging.md).
 
@@ -140,7 +126,11 @@ changes included. `./mf` output never stands in for that run.
 
 ## Build and test
 
-`pnpm check` is the full gate. `pnpm test:db` forces the DB suite.
+`pnpm check` is the full local gate. Its final DB step uses Vitest's module
+graph to run the DB test files related to changes since `origin/main`, including
+uncommitted and untracked files. DB test infrastructure, dependency resolution
+and migrations force the full DB suite; `DB_GATE_FULL=1 pnpm check:db` does the
+same. `pnpm test:db` and CI's `db-tests` job always run the full DB suite.
 `pnpm test:all` runs unit and managed DB tests together.
 
 The test case count per file may not grow against

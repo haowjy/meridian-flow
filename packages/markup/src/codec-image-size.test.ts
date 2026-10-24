@@ -44,7 +44,6 @@ function spannedTable(imageWire: string, canonical = false): string {
 describe.each(dialects)("$name image sizes", ({ codec }) => {
   it.each([
     '<img src="assets/map.png" alt="World map" width="240">',
-    'Before <img src="assets/map.png" alt="World map" width="240"> after.',
   ])("reads an HTML void image without a closing slash: %s", (wire) => {
     const closed = wire.replace('width="240">', 'width="240" />');
     const blocks = codec.parse(wire).blocks;

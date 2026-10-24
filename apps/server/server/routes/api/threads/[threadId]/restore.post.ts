@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   const threadId = getRouterParam(event, "threadId") ?? "";
   const thread = await restoreOwnedThreadFromTrash(
     {
-      repos: app.repos,
+      repos: app.threadRepos,
       projects: app.projectRepo,
       workContextNotices: app.workContextNotices,
       workAuthorityResolver: app.workAuthorityResolver,

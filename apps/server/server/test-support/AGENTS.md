@@ -38,10 +38,19 @@ pattern). Keep a real clock only when the claim is PostgreSQL's own timing,
 such as lock contention. Never poll for work a seed suppressed; await the
 notification that proves it ran.
 
-The Scratch archival upgrade contract owns an isolated historical schema and
-fixed pre-upgrade Yjs inputs (`scratch-archive-fixture.ts`). It applies the
-committed migration chain through the real runner, then exercises typed server
-consumers. Do not regenerate historical fixture bytes with current writers.
+A populated-upgrade proof (seed the old schema, run the new migration, check the
+data) runs once, before the migration merges into `main` or `staging`, as a
+recipe in `docs/qa/` such as `document-removal-records.md`. After that merge,
+`pnpm db:migration-history` refuses any edit to the migration, so no committed
+test replays it over populated data;
+`packages/database/src/fresh-migrations.db.test.ts` checks the database the
+runner migrates from empty. The SQL is frozen, but the TypeScript that reads its
+rows is not. When a migration leaves old rows in a state new rows never reach,
+keep a current-schema DB case that seeds such a row and asserts what the reader
+returns. Migration 0046 could not recover which turn delivered an old message, so
+it left `delivered_by_turn_id` null; `listMessageDeliveries` must still report
+that message as delivered, and
+`../domains/threads/adapters/drizzle/turn-position.db.test.ts` asserts it.
 
 Branch-tree suites build one world per case. `branch-tree-seeds.ts` writes rows
 the way the product leaves them, without a runtime. `branch-tree-commands.ts`

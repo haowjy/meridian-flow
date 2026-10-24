@@ -202,6 +202,11 @@ in deterministic order, and delete child-first in one transaction. History
 sequence assertions and membership assertions have different ordering
 semantics; raw SELECT order is never a lifecycle contract.
 
+DB tests seed `public.users` only through the shared fixture helper
+(`src/__test-support__/db-fixtures.ts`), which gives each suite its own
+`fixture+<suite>@test.invalid` email. A test that seeded the dev-login email
+would overwrite the real WorkOS user and break dev login.
+
 Prompt bakes are insert-only and their pointers are write-once; a rebake inserts
 a new row (only the runtime's `beginPromptEpoch` does, for compaction), and a
 thread is never repointed to change what its requests send. Pending

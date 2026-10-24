@@ -281,8 +281,6 @@ export type AppServices = {
   threadRepos: ThreadRepositories;
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
-  repos: ThreadRepositories;
-  hub: ThreadEventHub;
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
@@ -1135,11 +1133,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   return {
     gateway: ports.gateway,
     threadRepos: ports.threadRepos,
-    repos: ports.threadRepos,
     journalReader: ports.journalReader,
     journalWriter: ports.journalWriter,
     threadEventHub,
-    hub: threadEventHub,
     threadRuntime: createThreadRuntimeService({
       db: ports.db,
       statusReader: ports.statusReader,
@@ -1405,7 +1401,6 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     threadRepos,
-    repos: threadRepos,
     journalReader: {
       async lastSeqBefore() {
         return 0n;
@@ -1443,7 +1438,6 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     threadEventHub: inMemoryThreadEventHub,
-    hub: inMemoryThreadEventHub,
     threadRuntime: {
       async requireOwnedThread() {
         throw new Error("in-memory thread runtime is not implemented");
