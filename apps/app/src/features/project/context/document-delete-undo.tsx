@@ -16,10 +16,7 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  getDeleteRestoreOperationReceipt,
-  restoreContextDocuments,
-} from "@/client/api/projects-api";
+import { getContextOperationReceipt, restoreContextDocuments } from "@/client/api/projects-api";
 import { announce, announceError, getContextTabs } from "@/client/stores";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
@@ -186,11 +183,9 @@ export function DocumentDeleteUndoProvider({
       )
         continue;
       emptyFolderChecks.current.add(operationId);
-      void getDeleteRestoreOperationReceipt(projectId, operationId, {
-        signal: lifetime.current.signal,
-      })
-        .then((receipt) => {
-          if (receipt?.result.ok && receipt.result.value.removed.length === 0) dismiss(operationId);
+      void readDeleteRemovals(projectId, operationId, lifetime.current.signal)
+        .then((removed) => {
+          if (removed?.length === 0) dismiss(operationId);
         })
         .catch(() => {
           emptyFolderRetryTimers.current.set(
@@ -292,11 +287,12 @@ export function DocumentDeleteUndoProvider({
             dismiss(operationId);
             return;
           }
-          const receipt = await getDeleteRestoreOperationReceipt(projectId, operationId, {
-            signal: lifetime.current.signal,
-          });
-          if (!receipt?.result.ok) throw new Error("Delete receipt is unavailable");
-          const documents = receipt.result.value.removed;
+          const documents = await readDeleteRemovals(
+            projectId,
+            operationId,
+            lifetime.current.signal,
+          );
+          if (!documents) throw new Error("Delete receipt is unavailable");
           if (documents.length === 0) {
             dismiss(operationId);
             return;
@@ -443,4 +439,12 @@ function DocumentDeleteUndoRow({
       </IconButton>
     </div>
   );
+}
+
+/** The removals a landed delete recorded in its receipt; null while no successful delete receipt exists. */
+async function readDeleteRemovals(projectId: string, operationId: string, signal: AbortSignal) {
+  const receipt = await getContextOperationReceipt(projectId, operationId, { signal });
+  if (!receipt?.result.ok) return null;
+  const value = receipt.result.value;
+  return "removed" in value ? value.removed : null;
 }
