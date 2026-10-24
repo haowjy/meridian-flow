@@ -24,13 +24,14 @@ export function useOpenReviewChanges(
         itemKey: inline.itemKey,
       }
     : null;
-  const read = useRoomReview(draft);
   const command = useDraftCommandState(draft?.itemKey ?? "");
   const listed = useQuery({
     ...workBranchDraftsQueryOptions(controller.projectId, controller.workId),
     enabled: Boolean(draft),
   });
   const item = draft ? listed.data?.find((row) => row.itemKey === draft.itemKey) : undefined;
+  const withoutText = item?.hasDraft === false || item?.tree?.deleted === true;
+  const read = useRoomReview(draft);
   const line = item && !item.isNew ? treeLineOf(item) : null;
   const changes = line?.kind === "delete" ? [] : read.changes;
   const { items } = useChangeItems(
@@ -44,7 +45,7 @@ export function useOpenReviewChanges(
     changes,
     retry: read.retry,
     items,
-    status: read.status as DraftChangesData["status"],
+    status: withoutText ? "ready" : (read.status as DraftChangesData["status"]),
 
     completing: command.discarding
       ? ("discard" as const)

@@ -193,6 +193,7 @@ export interface ThreadDraftListResponse {
 /** SQL-only addressed lookup; no text room is loaded or created. */
 export type DraftMetadataResponse =
   | { status: "active"; draftId: string; reviewRoomName: string; item: ThreadDraftListItem }
+  | { status: "tree-only"; item: ThreadDraftListItem }
   | { status: "gone" };
 
 // --- Commands and outcomes (contract §4.5, §4.6) ---------------------------------------------

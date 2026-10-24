@@ -406,8 +406,9 @@ export async function handleDraftMetadataRequest(
   if (parseDraftItemKey(input.itemKey)?.documentId !== input.documentId)
     throw createError({ statusCode: 404, message: "Draft not found" });
   const resolved = await deps.documentSync.draftReview.resolveItem(input);
-  if (!resolved?.draftId || resolved.documentId !== input.documentId) return { status: "gone" };
+  if (!resolved || resolved.documentId !== input.documentId) return { status: "gone" };
   await requireReviewItemGrant(deps, input, resolved.item, "read");
+  if (!resolved.draftId) return { status: "tree-only", item: toWireItem(resolved.item, new Map()) };
   return {
     status: "active",
     draftId: resolved.draftId,
