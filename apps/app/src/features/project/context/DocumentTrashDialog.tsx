@@ -13,7 +13,7 @@ import { announce } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { RuledList } from "../RuledList";
-import { documentLocation } from "./context-schemes";
+import { documentLocation, schemeLabel } from "./context-schemes";
 
 type RowState = { kind: "restoring" } | { kind: "failed"; message: string };
 
@@ -161,7 +161,7 @@ function TrashRow({
 }) {
   const { i18n } = useLingui();
   const folder = entry.formerPath.split("/").slice(0, -1).join("/");
-  const location = documentLocation(entry.scheme, folder);
+  const location = documentLocation(entry.scheme, folder) || schemeLabel(entry.scheme);
   const actor = removalActor(entry);
   const deleted = new Intl.DateTimeFormat(i18n.locale, { dateStyle: "medium" }).format(
     new Date(entry.deletedAt),
@@ -173,9 +173,7 @@ function TrashRow({
       <div className="flex min-w-0 items-center gap-4">
         <div className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium text-foreground">{entry.name}</span>
-          {location ? (
-            <span className="block truncate text-xs text-ink-subtle">{location}</span>
-          ) : null}
+          <span className="block truncate text-xs text-ink-subtle">{location}</span>
           <span className="block text-xs text-muted-foreground">
             <Trans>
               Deleted by {actor} on {deleted}
