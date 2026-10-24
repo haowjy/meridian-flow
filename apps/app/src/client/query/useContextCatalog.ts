@@ -1,11 +1,5 @@
 /** React Query acquisition and flat selectors over one normalized ID cache. */
 import {
-  isOwnedContextScheme,
-  isWorkScopedScheme,
-  parseContextUri,
-} from "@meridian/contracts/context-uri";
-import {
-  type CatalogFileEntry,
   type CatalogScope,
   type CatalogWakeHint,
   catalogScopeKey,
@@ -21,11 +15,8 @@ import {
   indexCatalogView,
   projectFolderNeedsRepair,
   projectResourceNeedsRepair,
-  type ResourceLocation,
   type ResourcePlacement,
   type ResourceRecord,
-  resourceContextAuthority,
-  resourceContextUri,
   sameCatalogProjectionScope,
 } from "@meridian/resource-replica";
 import {
@@ -143,132 +134,15 @@ const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   uploads: "Uploads",
 };
 
-function locationBelongsToScope(location: ResourceLocation, scope: CatalogScope): boolean {
-  if (scope.kind === "project")
-    return !isOwnedContextScheme(location.scheme) && location.scheme !== "user";
-  if (scope.kind === "user") return location.scheme === "user";
-  if (scope.kind === "lineage")
-    return location.scheme === "scratch" && location.rootThreadId === scope.rootThreadId;
-  if (scope.kind === "chat")
-    return location.scheme === "uploads" && location.chatId === scope.chatId;
-  return (
-    scope.kind === "work" && isWorkScopedScheme(location.scheme) && location.workId === scope.workId
-  );
-}
-
-function catalogUri(location: ResourceLocation, path: string): string {
-  const uri = resourceContextUri(
-    location.scheme,
-    path,
-    resourceContextAuthority(location.scheme, location),
-  );
-  const parsed = uri ? parseContextUri(uri) : null;
-  if (!parsed?.ok) throw new Error("Invalid local catalog URI");
-  return parsed.value.normalized;
-}
-
-/** One normalized catalog read model: durable local intentions overlay the server checkpoint. */
-function overlayResourceCatalogView(
-  projectId: string,
-  scope: CatalogScope,
-  view: CatalogCacheView,
-  records: readonly ResourceRecord[],
-  isKnownVisible: (record: ResourceRecord) => boolean,
-  placement: ResourcePlacement,
-): CatalogCacheView {
-  const entries = new Map(view.entries);
-  for (const record of records) {
-    const documentId = record.resource.identity.documentId;
-    const location = placement.resourceLocation(record);
-    const visible =
-      isKnownVisible(record) ||
-      record.intents.some(
-        (intent) => intent.projectId === projectId && intent.state !== "cancelled",
-      ) ||
-      location?.scheme === "user" ||
-      entries.has(documentId);
-    if (!visible) continue;
-    const installed = entries.get(documentId);
-    const installedMatches =
-      installed?.kind === "file" &&
-      installed.uri.startsWith(`${location?.scheme}://`) &&
-      `/${installed.path.join("/")}` === location?.path &&
-      installed.provisionalName === location?.provisional;
-    if (installed && !installedMatches) entries.delete(documentId);
-    if (!location || !locationBelongsToScope(location, scope) || installedMatches) continue;
-
-    const sourceId =
-      [...entries.values()].find(
-        (entry) => entry.kind === "source" && entry.scheme === location.scheme,
-      )?.entryId ?? `local-source:${location.scheme}:${JSON.stringify(scope)}`;
-    if (!entries.has(sourceId)) {
-      entries.set(sourceId, {
-        kind: "source",
-        entryId: sourceId,
-        scope,
-        scheme: location.scheme,
-        name: ROOT_NAMES[location.scheme],
-        uri: catalogUri(location, ""),
-      });
-    }
-    const path = location.path.split("/").filter(Boolean);
-    let parentId = sourceId;
-    for (let depth = 1; depth < path.length; depth += 1) {
-      const folderPath = path.slice(0, depth);
-      const existing = [...entries.values()].find(
-        (entry) =>
-          entry.kind === "folder" &&
-          entry.sourceId === sourceId &&
-          entry.path.join("/") === folderPath.join("/"),
-      );
-      if (existing?.kind === "folder") {
-        parentId = existing.entryId;
-        continue;
-      }
-      const folderId = `local-folder:${sourceId}:${folderPath.join("/")}`;
-      entries.set(folderId, {
-        kind: "folder",
-        observationVersion: "0",
-        entryId: folderId,
-        scope,
-        sourceId,
-        parentId,
-        name: folderPath.at(-1) ?? "",
-        path: folderPath,
-        uri: catalogUri(location, folderPath.join("/")),
-        hasChildren: true,
-        navigationOnly: true,
-      });
-      parentId = folderId;
-    }
-    const uri = catalogUri(location, path.join("/"));
-    entries.set(documentId, {
-      kind: "file",
-      observationVersion: record.resource.observationVersion ?? "0",
-      entryId: documentId,
-      scope,
-      sourceId,
-      parentId,
-      aliases: [],
-      name: location.name,
-      path,
-      uri,
-      provisionalName: location.provisional,
-      ...record.resource.classification,
-    } satisfies CatalogFileEntry);
-  }
-  return indexCatalogView({ ...view, entries });
-}
-
-/** Overlay recoverable resource state without treating unrelated account records as project files. */
+/** Project recoverable resource state without treating unrelated account records as project files. */
 export function projectResourceCatalogView(
-  projectId: string,
+  _projectId: string,
   scope: CatalogScope,
   view: CatalogCacheView,
   records: readonly ResourceRecord[],
   placement: ResourcePlacement,
 ): CatalogCacheView {
-  const placed = indexCatalogView({
+  return indexCatalogView({
     ...view,
     entries: new Map(
       placement
@@ -277,25 +151,25 @@ export function projectResourceCatalogView(
         .map((entry) => [entry.entryId, entry]),
     ),
   });
-  // Insert local-only rows against final folder identities, never stale paths.
-  return overlayResourceCatalogView(projectId, scope, placed, records, () => false, placement);
 }
 
 /** Project one record whose replica lookup already proved this project's access. */
 export function accessibleResourceCatalogView(
-  projectId: string,
+  _projectId: string,
   scope: CatalogScope,
   record: ResourceRecord,
   placement: ResourcePlacement,
 ): CatalogCacheView {
-  return overlayResourceCatalogView(
-    projectId,
-    scope,
-    emptyCatalogView(scope),
-    [record],
-    () => true,
-    placement,
-  );
+  const view = emptyCatalogView(scope);
+  return indexCatalogView({
+    ...view,
+    entries: new Map(
+      placement
+        .accessibleResourceCatalog(record)
+        .filter((entry) => sameCatalogProjectionScope(entry.scope, scope))
+        .map((entry) => [entry.entryId, entry]),
+    ),
+  });
 }
 
 export function projectCatalogFile(
