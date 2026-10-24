@@ -20,6 +20,7 @@ import { isFileAccessDenied, targetDocumentId } from "../../file-policy/index.js
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
+import { branchMayHold } from "../tree/branch-ownership.js";
 import { TreeScopeChangedError } from "../tree/mutation-scope.js";
 import { restoreDocument } from "../tree/removal.js";
 import { loadDocumentAddresses } from "../tree/tree-addresses.js";
@@ -68,7 +69,17 @@ async function restoreAttempt(
       { kind: "live" },
       "edit",
     );
-    if (isFileAccessDenied(grant) || grant.facts.projectId !== input.projectId) {
+    if (
+      isFileAccessDenied(grant) ||
+      !branchMayHold(
+        { projectId: input.projectId, accountId: input.userId },
+        {
+          projectId: grant.facts.projectId,
+          accountId: grant.facts.ownerAccountId,
+          scheme: grant.facts.scheme,
+        },
+      )
+    ) {
       refused.add(documentId);
       continue;
     }
