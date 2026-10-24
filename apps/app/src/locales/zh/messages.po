@@ -3843,8 +3843,8 @@ msgid "Restored as {0}."
 msgstr ""
 
 #. placeholder {0}: alternateLocations.join(", ")
+#. placeholder {0}: documentLocationName(result.landedAt)
 #. placeholder {0}: notice.location
-#. placeholder {0}: result.landedAt
 #: src/features/project/context/document-delete-undo.tsx
 #: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/context/restore-trashed-document.ts
