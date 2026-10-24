@@ -11,7 +11,7 @@ import {
   projects,
   works,
 } from "@meridian/database/schema";
-import { and, asc, desc, eq, gt, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
@@ -208,6 +208,28 @@ export function createDrizzleDocumentTrash(deps: {
   }
 
   return {
+    async retained(projectId, documentIds): Promise<ReadonlySet<DocumentId>> {
+      if (documentIds.length === 0) return new Set();
+      const rows = await currentDrizzleDb(deps.db)
+        .select({ id: documents.id })
+        .from(documents)
+        .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+        .leftJoin(works, eq(works.id, contextSources.workId))
+        .innerJoin(
+          sourceProjects,
+          eq(sourceProjects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
+        )
+        .innerJoin(requestProjects, eq(requestProjects.id, projectId))
+        .where(
+          and(
+            inArray(documents.id, documentIds),
+            projectTrashMember(),
+            isNull(requestProjects.deletedAt),
+            trashEligible(),
+          ),
+        );
+      return new Set(rows.map(({ id }) => id as DocumentId));
+    },
     async list(projectId): Promise<readonly DocumentTrashEntry[]> {
       return entries(await rows(projectId));
     },

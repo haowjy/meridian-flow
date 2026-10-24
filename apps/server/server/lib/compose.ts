@@ -1480,6 +1480,9 @@ export function createInMemoryAppServices(): AppServices {
       throw new Error("Document restore is unavailable in memory");
     },
     documentTrash: {
+      async retained() {
+        return new Set();
+      },
       async list() {
         return [];
       },
