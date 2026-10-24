@@ -109,9 +109,11 @@ review?" confirmation; each chat owns its write mode.
     Chat screen before the request settles. Refuse the request. The destination
     stays open and offers Retry. Retry uses the same project identity and title.
 33. Edit a Work goal, then try to leave before saving. Choose to keep editing;
-    the goal remains. Try again and discard it; navigation continues. Archive a
-    Work with an unsaved goal, refuse its save, and confirm the draft remains
-    without exposing the raw server error.
+    the goal remains. Try again and discard it; navigation continues. In one
+    client, edit the goal and hold its Save request. Archive the Work from a
+    second client, then deliver the Save refusal before the first client receives
+    the archive update, while it still shows the Work as active. The draft
+    remains without exposing the raw server error.
 34. Hold the account-settings request open. Settings that require the account
     record, including Sync, remain disabled until the request settles.
 

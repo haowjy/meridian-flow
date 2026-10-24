@@ -75,4 +75,6 @@ editor.
 
 ## Download naming
 
-Download a prose document whose stored name has no extension, one whose name contains a dot, and a non-prose document. The prose downloads end in `.md` without losing an existing dotted name; the non-prose download keeps its stored name.
+Download prose documents named `Ending`, `part.one`, and `龙脉终章`, plus a non-prose
+document. The prose downloads are `Ending.md`, `part.one.md`, and `龙脉终章.md`;
+the non-prose download keeps its stored name.
