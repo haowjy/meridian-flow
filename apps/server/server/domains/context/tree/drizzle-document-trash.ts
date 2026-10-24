@@ -8,8 +8,8 @@ import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizz
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import { createObjectRelease, type ObjectStorePort } from "../../storage/index.js";
 import type { DocumentPurgeDraftDisposal, DocumentTrash } from "../ports/document-trash.js";
-import { releaseDocumentStorage } from "../tree/node-rows.js";
-import { pendingDocuments } from "../tree/tree-view-sql.js";
+import { releaseDocumentStorage } from "./node-rows.js";
+import { pendingDocuments } from "./tree-view-sql.js";
 
 const DOCUMENT_PURGE_BATCH_LIMIT = 100;
 

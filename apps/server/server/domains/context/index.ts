@@ -9,7 +9,6 @@ export { createDrizzleDocumentAddressStore } from "./adapters/document-address.j
 export { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
 export { createDrizzleDocumentLinkScopes } from "./adapters/document-link-scope.js";
-export { createDrizzleDocumentTrash } from "./adapters/drizzle-document-trash.js";
 export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export {
@@ -151,6 +150,7 @@ export {
   type ScratchOwner,
   scratchOwnerFor,
 } from "./scratch-owner.js";
+export { createDrizzleDocumentTrash } from "./tree/drizzle-document-trash.js";
 export { createHiddenNodeRepair, type HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 export {
   createDocumentRemoval,
