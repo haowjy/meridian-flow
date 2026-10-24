@@ -48,6 +48,12 @@ export function removedFile(removal: DocumentRemovalRecord | null | undefined): 
   status: "document_not_found";
   message: string;
 } {
+  if (removal?.reason === "deleted") {
+    return {
+      status: "document_not_found",
+      message: `This file is in the trash. It was ${removalPhrase(removal)}.`,
+    };
+  }
   return {
     status: "document_not_found",
     message: `File not found. This file was ${removalPhrase(removal)}.`,

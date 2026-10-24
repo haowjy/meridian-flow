@@ -33,8 +33,9 @@ import type {
   TurnUsage,
 } from "../threads/index.js";
 import { threadSchema } from "../threads/thread.js";
-import { removalIdentitySchema } from "../tree-change.js";
+import { type RemovalIdentity, removalIdentitySchema } from "../tree-change.js";
 import type { AiWriteMode, Work, WorkHandle, WorksSnapshot } from "../works/index.js";
+import type { DocumentRemovalRecord } from "./document-removal.js";
 import { type Filetype, filetypeSchema, type YjsTrackedSchemaType } from "./filetype.js";
 import { admissionReceiptShape, type SubmittedReference } from "./user-turn-admission.js";
 import { runStateSchema } from "./ws-protocol.js";
@@ -222,6 +223,28 @@ export type RestoreContextDocumentResult =
 
 export type RestoreContextDocumentsResponse = {
   documents: RestoreContextDocumentResult[];
+};
+
+/** One restorable document in a project's trash. */
+export type DocumentTrashEntry = {
+  documentId: string;
+  name: string;
+  scheme: ProjectContextTreeScheme;
+  /** Source-relative path, including the filename, without a leading slash. */
+  formerPath: string;
+  removal: RemovalIdentity;
+  actor: DocumentRemovalRecord["actor"];
+  deletedAt: string;
+  purgeAt: string;
+};
+
+export type ListDocumentTrashResponse = {
+  documents: DocumentTrashEntry[];
+};
+
+/** One trashed document with its last settled Markdown projection. */
+export type GetDocumentTrashResponse = DocumentTrashEntry & {
+  markdown: string;
 };
 
 /** Stable writer-selected parent. URI callers may continue to omit this. */

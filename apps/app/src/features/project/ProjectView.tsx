@@ -77,6 +77,7 @@ import {
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
+import { DocumentTrashDialog } from "./context/DocumentTrashDialog";
 import { DocumentDeleteUndoProvider } from "./context/document-delete-undo";
 import { resolveEditorFrame } from "./context/editor-presentation";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
@@ -384,6 +385,7 @@ export function ProjectView(props: ProjectViewProps) {
   return (
     <DocumentDeleteUndoProvider key={props.projectId} projectId={props.projectId}>
       <div className="flex h-full min-h-0 w-full bg-background text-foreground">
+        <DocumentTrashDialog projectId={props.projectId} />
         {hydrated ? (
           <>
             {resolvedProps.contextLive && editorScope.status === "ready" ? (

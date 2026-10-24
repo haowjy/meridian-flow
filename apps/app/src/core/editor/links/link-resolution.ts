@@ -47,7 +47,12 @@
  * publishes.
  */
 
-import { classifyWrittenSource, storedHref, storedLinkRef } from "@meridian/contracts";
+import {
+  classifyWrittenSource,
+  parseLinkRef,
+  storedHref,
+  storedLinkRef,
+} from "@meridian/contracts";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
 import type { LinkAssignmentIndex, LinkAssignmentScope } from "./link-assignment";
@@ -107,6 +112,16 @@ export type LinkResolutionEntry =
 
 /** A settled answer: every entry but pending. */
 export type LinkAnswer = Exclude<LinkResolutionEntry, { state: "pending" }>;
+
+/** The stable document named by a followable gone link, if its ref names one directly. */
+export function goneLinkDocumentId(
+  entry: LinkResolutionEntry | null,
+  link: Pick<LinkKey, "ref">,
+): string | null {
+  if (entry?.state !== "gone") return null;
+  const ref = parseLinkRef(link.ref);
+  return ref?.kind === "doc" ? ref.documentId : null;
+}
 
 /** One question for the port: the link's ref and its classified internal target. */
 export type LinkQuestion = { ref: string | null; target: LinkTarget };

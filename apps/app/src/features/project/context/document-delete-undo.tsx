@@ -3,6 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { NamespaceIntent, ResourceProjectionSnapshot } from "@meridian/resource-replica";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -14,6 +15,7 @@ import {
   useState,
 } from "react";
 import { getContextOperationReceipt, restoreContextDocuments } from "@/client/api/projects-api";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { announce, announceError, getContextTabs } from "@/client/stores";
 import { documentLocationName } from "../../chat/document-display-name";
 import { useDockDocumentStore } from "../dock/dock-document-store";
@@ -116,6 +118,7 @@ export function DocumentDeleteUndoProvider({
   children: ReactNode;
 }) {
   const resources = useAccountResourceReplica();
+  const queryClient = useQueryClient();
   const notices = useOptionalRemovedNotices();
   const { snapshot } = useAccountResourceProjection(projectId);
   const deleteIntents = useMemo(() => deleteOperationIndex(snapshot), [snapshot]);
@@ -363,6 +366,9 @@ export function DocumentDeleteUndoProvider({
           );
           if (alternateLocations.length > 0)
             announce(t`Restored at ${alternateLocations.join(", ")}.`);
+          void queryClient.invalidateQueries({
+            queryKey: projectQueryKeys.documentTrash(projectId),
+          });
           dismiss(operationId);
         } catch {
           if (!mounted.current) return;
@@ -376,7 +382,15 @@ export function DocumentDeleteUndoProvider({
         }
       })();
     },
-    [deleteIntents, dismiss, noticesBySurface, projectId, updateFeedback, waitForSettlement],
+    [
+      deleteIntents,
+      dismiss,
+      noticesBySurface,
+      projectId,
+      queryClient,
+      updateFeedback,
+      waitForSettlement,
+    ],
   );
 
   const value = useMemo<DeleteUndoContextValue>(
