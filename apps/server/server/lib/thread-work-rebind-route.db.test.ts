@@ -5,7 +5,6 @@
  * - writer enqueue/rebind lock ordering, busy-thread refusal, and commit-time lifecycle recheck
  */
 
-import { setTimeout as delay } from "node:timers/promises";
 import { createApp, toWebHandler } from "nitro/h3";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -18,6 +17,7 @@ import {
 } from "../domains/threads/test-support/thread-work-postgres-harness.js";
 import { createTestDocumentRemoval } from "../test-support/document-removal.js";
 import { createQuietDrizzleJournalWriter } from "../test-support/journal-writer.js";
+import { waitForPostgresLock } from "../test-support/lock-interleave.js";
 import { createTestWorkProjectionMutation } from "../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -105,15 +105,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         `);
       await control`SELECT pg_advisory_lock(${key})`;
       async function waitForLock(wait: string) {
-        for (let attempt = 0; attempt < 200; attempt++) {
+        await waitForPostgresLock(`PostgreSQL ${wait} lock`, async () => {
           const rows = await control`
               SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
               AND wait_event = ${wait} AND pid <> pg_backend_pid()
             `;
-          if (rows.length) return;
-          await delay(10);
-        }
-        throw new Error(`Timed out waiting for ${wait}`);
+          return rows.length ? true : undefined;
+        });
       }
       const turnId = crypto.randomUUID();
       const writer = () =>

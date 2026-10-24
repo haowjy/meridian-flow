@@ -5,10 +5,10 @@
  * - email-key advisory serialization for account provisioning
  */
 
-import { setTimeout as delay } from "node:timers/promises";
 import type { UserId } from "@meridian/contracts/runtime";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { waitForPostgresLock } from "../../test-support/lock-interleave.js";
 import type { ProjectBootstrapRepository } from "./index.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -68,8 +68,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
       }
 
-      for (let attempt = 0; attempt < 200; attempt += 1) {
-        const waiters = await observer<{ pid: number }[]>`
+      return waitForPostgresLock(
+        `${expectedWaiters} waiter(s) on the exact email admission lock`,
+        async () => {
+          const waiters = await observer<{ pid: number }[]>`
           SELECT locks.pid
           FROM pg_locks AS locks
           WHERE locks.locktype = 'advisory'
@@ -85,15 +87,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             )::oid
             AND locks.objsubid = 1
         `;
-        if (waiters.length >= expectedWaiters) return waiters.map(({ pid }) => pid);
-        if (settled.some(Boolean)) {
-          throw new Error(
-            "Provisioning completed before requesting the exact email admission lock",
-          );
-        }
-        await delay(10);
-      }
-      throw new Error(`Timed out waiting for ${expectedWaiters} exact email admission waiter(s)`);
+          if (waiters.length >= expectedWaiters) return waiters.map(({ pid }) => pid);
+          if (settled.some(Boolean)) {
+            throw new Error(
+              "Provisioning completed before requesting the exact email admission lock",
+            );
+          }
+          return undefined;
+        },
+      );
     }
 
     it("admits same-principal provisioning through the exact email advisory key", async () => {
