@@ -138,8 +138,8 @@ msgstr "{0} additional balance"
 
 #. placeholder {0}: relativeTime(entry.removal.time, now)
 #: src/features/project/context/DocumentTrashSection.tsx
-msgid "{0} ago"
-msgstr "{0} ago"
+#~ msgid "{0} ago"
+#~ msgstr "{0} ago"
 
 #. placeholder {0}: dock.files.length
 #: src/features/chat/DraftDock.tsx
@@ -212,6 +212,10 @@ msgstr "{0} subagents finished ({1} stopped)"
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} tok/s"
 msgstr "{0} tok/s"
+
+#: src/features/project/context/DocumentTrashSection.tsx
+msgid "{age} ago"
+msgstr "{age} ago"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -3340,6 +3344,7 @@ msgid "Nothing to undo yet."
 msgstr "Nothing to undo yet."
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
+#: src/features/project/context/DocumentTrashSection.tsx
 #: src/lib/date-groups.ts
 msgid "now"
 msgstr "now"
