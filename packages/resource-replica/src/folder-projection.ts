@@ -1,6 +1,6 @@
 /** Shared identity placement over all installed catalogs and namespace journals. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import type { CatalogEntry } from "@meridian/contracts/protocol";
+import type { CatalogEntry, CatalogFileEntry, CatalogScope } from "@meridian/contracts/protocol";
 import { catalogEntryParent } from "./catalog-installation";
 import { projectFolderNeedsRepair } from "./folder-namespace";
 import { folderPlacementGraph } from "./folder-placement";
@@ -77,15 +77,28 @@ export function createResourcePlacement(
         parent: folder.canonicalParent,
         ancestryOnly: folder.intents.length === 0,
       });
-  const sourceFor = (location: ResourceLocation) =>
-    entries.find(
-      (candidate) =>
+  const sourceFor = (candidates: Iterable<CatalogEntry>, location: ResourceLocation) => {
+    for (const candidate of candidates)
+      if (
         candidate.kind === "source" &&
         candidate.scheme === location.scheme &&
-        ownerListedInScope(location, location.scheme, candidate.scope, projectId),
-    );
+        ownerListedInScope(location, location.scheme, candidate.scope, projectId)
+      )
+        return candidate;
+    return undefined;
+  };
+  const scopeFor = (location: ResourceLocation): CatalogScope =>
+    location.scheme === "user"
+      ? { kind: "user", userId: "self" }
+      : location.chatId !== undefined
+        ? { kind: "chat", projectId, chatId: location.chatId }
+        : location.rootThreadId !== undefined
+          ? { kind: "lineage", projectId, rootThreadId: location.rootThreadId }
+          : location.workId !== null
+            ? { kind: "work", projectId, workId: location.workId }
+            : { kind: "project", projectId };
   const graph = folderPlacementGraph(projectId, nodes, folders, (location) =>
-    Boolean(sourceFor(location)),
+    Boolean(sourceFor(entries, location)),
   );
   const resourceLocations = new WeakMap<
     ResourceRecord,
@@ -124,16 +137,15 @@ export function createResourcePlacement(
         return { kind: "folder", folderId };
     return null;
   }
-  function projectCatalog(
-    input: readonly CatalogEntry[],
-    records: readonly ResourceRecord[] = [],
+  function projectRows(
+    rows: readonly CatalogEntry[],
+    records: readonly ResourceRecord[],
+    repairFolders: readonly FolderNamespaceRecord[],
+    knownVisible: ReadonlySet<string>,
   ): readonly CatalogEntry[] {
     const byDocument = new Map(
       records.map((record) => [record.resource.identity.documentId, record]),
     );
-    const rows = [
-      ...new Map([...entries, ...input].map((entry) => [entry.entryId, entry])).values(),
-    ];
     let projected = rows.map((entry): CatalogEntry => {
       if (entry.kind !== "file" && entry.kind !== "folder") return entry;
       const location = locations.get(entry.entryId);
@@ -163,7 +175,7 @@ export function createResourcePlacement(
     });
     // Recovery belongs to the journal identity, not to current catalog membership.
     // Retain a row (and a reachable ancestor chain) until the writer repairs it.
-    for (const folder of [...folders].sort((a, b) => a.folderId.localeCompare(b.folderId))) {
+    for (const folder of [...repairFolders].sort((a, b) => a.folderId.localeCompare(b.folderId))) {
       if (
         (folder.projectId !== null && folder.projectId !== projectId) ||
         !projectFolderNeedsRepair(folder) ||
@@ -171,23 +183,9 @@ export function createResourcePlacement(
       )
         continue;
       const location = graph.locations.get(folder.folderId)!;
-      let source = projected.find(
-        (candidate) =>
-          candidate.kind === "source" &&
-          candidate.scheme === location.scheme &&
-          ownerListedInScope(location, location.scheme, candidate.scope, projectId),
-      );
-      if (!source || source.kind !== "source") {
-        const scope =
-          location.scheme === "user"
-            ? { kind: "user" as const, userId: "self" }
-            : location.chatId !== undefined
-              ? { kind: "chat" as const, projectId, chatId: location.chatId }
-              : location.rootThreadId !== undefined
-                ? { kind: "lineage" as const, projectId, rootThreadId: location.rootThreadId }
-                : location.workId
-                  ? { kind: "work" as const, projectId, workId: location.workId }
-                  : { kind: "project" as const, projectId };
+      let source = sourceFor(projected, location);
+      if (source?.kind !== "source") {
+        const scope = scopeFor(location);
         source = {
           kind: "source",
           entryId: `repair-source:${location.scheme}:${JSON.stringify(scope)}`,
@@ -222,6 +220,59 @@ export function createResourcePlacement(
         ? Boolean(resourceLocation(record))
         : !location || !graph.place(location, undefined, parents.get(entry.entryId)).hidden;
     });
+    const listedDocumentIds = new Set(
+      rows.flatMap((entry) => (entry.kind === "file" ? [entry.entryId] : [])),
+    );
+    const projectedById = new Map(projected.map((entry) => [entry.entryId, entry]));
+    for (const record of records) {
+      const documentId = record.resource.identity.documentId;
+      const location = resourceLocation(record);
+      const visible =
+        knownVisible.has(documentId) ||
+        record.intents.some(
+          (intent) => intent.projectId === projectId && intent.state !== "cancelled",
+        ) ||
+        location?.scheme === "user" ||
+        listedDocumentIds.has(documentId);
+      const installed = projectedById.get(documentId);
+      const installedMatches =
+        installed?.kind === "file" &&
+        installed.uri.startsWith(`${location?.scheme}://`) &&
+        `/${installed.path.join("/")}` === location?.path &&
+        installed.provisionalName === location?.provisional;
+      if (installed && !installedMatches) projectedById.delete(documentId);
+      if (!visible || !location || installedMatches) continue;
+
+      let source = sourceFor(projectedById.values(), location);
+      if (source?.kind !== "source") {
+        const scope = scopeFor(location);
+        source = {
+          kind: "source",
+          entryId: `local-source:${location.scheme}:${JSON.stringify(scope)}`,
+          scope,
+          scheme: location.scheme,
+          name: location.scheme,
+          uri: requiredNamespaceUri({ ...location, path: "", name: "" }),
+        };
+        projectedById.set(source.entryId, source);
+      }
+      const path = location.path.split("/").filter(Boolean);
+      projectedById.set(documentId, {
+        kind: "file",
+        observationVersion: record.resource.observationVersion ?? "0",
+        entryId: documentId,
+        scope: source.scope,
+        sourceId: source.entryId,
+        parentId: source.entryId,
+        aliases: [],
+        name: location.name,
+        path,
+        uri: requiredNamespaceUri(location),
+        provisionalName: location.provisional,
+        ...record.resource.classification,
+      } satisfies CatalogFileEntry);
+    }
+    projected = [...projectedById.values()];
     // One qualified-home index installs real rows before navigation-only gaps.
     const homeKey = (sourceId: string, path: string) => JSON.stringify([sourceId, path]);
     const homes = new Map(
@@ -268,7 +319,7 @@ export function createResourcePlacement(
       }
     }
     const projectedIds = new Set(projected.map((entry) => entry.entryId));
-    const foldersById = new Map(folders.map((folder) => [folder.folderId, folder]));
+    const foldersById = new Map(repairFolders.map((folder) => [folder.folderId, folder]));
     return projected.map((entry): CatalogEntry => {
       if (entry.kind !== "file" && entry.kind !== "folder") return entry;
       const record = byDocument.get(entry.entryId);
@@ -301,33 +352,56 @@ export function createResourcePlacement(
     });
   }
 
-  const placedRows = new WeakMap<readonly ResourceRecord[], Map<string, CatalogEntry[]>>();
-  /** The files and folders a parent holds as placed (the catalogs with every pending move), by parent ID. */
+  function projectCatalog(
+    input: readonly CatalogEntry[],
+    records: readonly ResourceRecord[] = [],
+  ): readonly CatalogEntry[] {
+    const rows = [
+      ...new Map([...entries, ...input].map((entry) => [entry.entryId, entry])).values(),
+    ];
+    return projectRows(rows, records, folders, new Set());
+  }
+
+  /** Project one record whose caller already proved project access. */
+  function accessibleResourceCatalog(record: ResourceRecord): readonly CatalogEntry[] {
+    return projectRows([], [record], [], new Set([record.resource.identity.documentId]));
+  }
+
+  const placedRows = new WeakMap<
+    readonly ResourceRecord[],
+    {
+      byParent: Map<string, CatalogEntry[]>;
+      sources: Extract<CatalogEntry, { kind: "source" }>[];
+    }
+  >();
+  /** The files and folders a parent holds as placed, including pending moves and creates. */
   function childrenAt(
     parent: ParentRef,
     records: readonly ResourceRecord[],
   ): readonly CatalogEntry[] {
-    let byParent = placedRows.get(records);
-    if (!byParent) {
-      byParent = new Map();
+    let index = placedRows.get(records);
+    if (!index) {
+      const byParent = new Map<string, CatalogEntry[]>();
+      const sources: Extract<CatalogEntry, { kind: "source" }>[] = [];
       for (const row of projectCatalog(entries, records)) {
+        if (row.kind === "source") sources.push(row);
         if (row.kind !== "file" && row.kind !== "folder") continue;
         const siblings = byParent.get(row.parentId);
         if (siblings) siblings.push(row);
         else byParent.set(row.parentId, [row]);
       }
-      placedRows.set(records, byParent);
+      index = { byParent, sources };
+      placedRows.set(records, index);
     }
     const parentId =
       parent.kind === "folder"
         ? parent.folderId
-        : entries.find(
+        : index.sources.find(
             (candidate) =>
-              candidate.kind === "source" &&
               candidate.scheme === parent.scheme &&
               ownerListedInScope(parent.owner, parent.scheme, candidate.scope, projectId),
           )?.entryId;
-    return (parentId && byParent.get(parentId)) || [];
+    return (parentId && index.byParent.get(parentId)) || [];
   }
 
   return {
@@ -369,6 +443,7 @@ export function createResourcePlacement(
       return shown ? parentAtLocation(shown) : null;
     },
     projectCatalog,
+    accessibleResourceCatalog,
   };
 }
 
@@ -392,6 +467,12 @@ function namespaceUri(location: ResourceLocation): string | null {
   const parsed = uri ? parseContextUri(uri) : null;
   if (!parsed?.ok) return null;
   return parsed.value.normalized;
+}
+
+function requiredNamespaceUri(location: ResourceLocation): string {
+  const uri = namespaceUri(location);
+  if (!uri) throw new Error("Invalid local catalog URI");
+  return uri;
 }
 
 const snapshotPlacements = new WeakMap<
