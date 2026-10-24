@@ -30,6 +30,10 @@ export async function restoreTrashedDocument(
             }
           : current,
     );
+    queryClient.removeQueries({
+      queryKey: projectQueryKeys.trashedDocument(projectId, entry.documentId),
+      exact: true,
+    });
     if (result.outcome === "restored" && result.landedAt)
       announce(t`Restored at ${result.landedAt}.`);
     return "living";

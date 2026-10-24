@@ -241,9 +241,24 @@ function TrashedDocumentView({
     setState({ kind: "restoring" });
     void restoreTrashedDocument(queryClient, projectId, document)
       .then(async (outcome) => {
-        if (outcome === "living" || outcome === "superseded") {
-          await openDocument({ documentId, disposition: "current" });
-          onClose();
+        if (outcome === "living") {
+          const opened = await openDocument({
+            documentId,
+            disposition: "current",
+            refreshIdentity: true,
+          });
+          if (opened.kind === "committed") {
+            onClose();
+            return;
+          }
+          setState({
+            kind: "failed",
+            message: t`Restored ${document.name}, but couldn't open it. Try again from the file list.`,
+          });
+          return;
+        }
+        if (outcome === "superseded") {
+          setState(undefined);
           return;
         }
         setState({

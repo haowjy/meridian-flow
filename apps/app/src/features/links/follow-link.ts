@@ -130,7 +130,9 @@ export async function followProjectLink({
     settle();
     reporter.clear();
     const documentId = directDocumentId(ref);
-    if (documentId) await open({ documentId, trashed: true }, gesture);
+    // Trash is one routed auxiliary surface, not an Editor tab. A modified
+    // follow therefore opens that surface instead of inventing a background tab.
+    if (documentId) await open({ documentId, trashed: true }, "current");
     return;
   }
   if (known?.state === "document") {
@@ -147,7 +149,7 @@ export async function followProjectLink({
   if (entry?.state === "gone") {
     reporter.clear();
     const documentId = directDocumentId(ref);
-    if (documentId) await open({ documentId, trashed: true }, gesture);
+    if (documentId) await open({ documentId, trashed: true }, "current");
     return;
   }
   if (entry?.state === "document") {
