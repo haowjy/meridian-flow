@@ -57,7 +57,12 @@ import {
   keptDraftReader,
   removalBehind,
 } from "./file-access.js";
-import { currentUri, resolveDisplacedTarget, resolveInverseTarget } from "./inverse-address.js";
+import {
+  currentUri,
+  removedPathError,
+  resolveDisplacedTarget,
+  resolveInverseTarget,
+} from "./inverse-address.js";
 import { runNamespaceCommand } from "./namespace-commands.js";
 import { readDocument } from "./read-document.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
@@ -300,7 +305,13 @@ export async function readTrackedDocument(
   const call = await resolveToolCall(deps, ctx, version);
   if (isToolError(call)) return { ...writeToolError("read", call.output.message), revision: null };
   const address = await resolveDocumentAddress(call.context, "read", path);
-  if (isToolError(address)) return { ...address, revision: null };
+  if (isToolError(address)) {
+    const removed =
+      address.output.status === "document_not_found"
+        ? await removedPathError(deps, call, "read", path, ctx.threadId)
+        : null;
+    return { ...(removed ?? address), revision: null };
+  }
   if (options.expectedDocumentId !== undefined && address.documentId !== options.expectedDocumentId)
     return {
       ...writeToolError(
@@ -469,7 +480,13 @@ export function createWriteHandler(deps: ToolWiringDeps) {
               : {}),
           }),
         );
-    if (isToolError(address)) return address;
+    if (isToolError(address)) {
+      const removed =
+        !creates && address.output.status === "document_not_found"
+          ? await removedPathError(deps, call, parsed.command, parsed.path, ctx.threadId)
+          : null;
+      return removed ?? address;
+    }
 
     let outcome = await writeUnderGrant(
       deps,
