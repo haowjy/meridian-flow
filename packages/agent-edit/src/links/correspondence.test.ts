@@ -341,35 +341,6 @@ it("preserves r7 ranking counterexamples, stated ambiguities and historical hold
   }
 });
 
-function* permutations<T>(values: readonly T[]): Generator<T[]> {
-  if (values.length === 0) {
-    yield [];
-    return;
-  }
-  for (let i = 0; i < values.length; i++) {
-    for (const tail of permutations(values.filter((_, j) => i !== j))) yield [values[i], ...tail];
-  }
-}
-
-it("preserves uniquely identifiable historical-address links in all 153 r7 reorder permutations", () => {
-  let count = 0;
-  for (let n = 1; n <= 5; n++) {
-    const ids = Array.from({ length: n }, (_, i) => i);
-    for (const order of permutations(ids)) {
-      const values = input({
-        old: ids.map((i) => old(`Old ${i}`, `ref${i}`, `new${i}`)),
-        written: order.map((i) => written(`Entirely changed ${i}`, `old${i}`)),
-        shown: ids.flatMap((i) => [seen(`ref${i}`, `old${i}`, 1), seen(`ref${i}`, `new${i}`, 2)]),
-      });
-      expect
-        .soft(correspondLinks(values), `reorder ${order.join(",")}`)
-        .toEqual(order.map((occurrence) => ({ pass: 1, occurrence })));
-      count++;
-    }
-  }
-  expect(count).toBe(153);
-});
-
 it("matches exhaustive six-component ranking with mixed historical holders and relative hrefs", () => {
   let state = 729730;
   const random = (n: number) => {

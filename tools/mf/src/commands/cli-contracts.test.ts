@@ -1,8 +1,8 @@
 /** CLI document inputs use the shared codec and report the server's stored URI. */
 import { describe, expect, it } from "vitest";
-import { CliError } from "../../core/cli-error";
-import type { Session } from "../../core/session";
-import { putDocument } from "./put";
+import { CliError } from "../core/cli-error";
+import type { Session } from "../core/session";
+import { putDocument } from "./doc/put";
 
 const session: Session = {
   serverUrl: "https://unused.test",
