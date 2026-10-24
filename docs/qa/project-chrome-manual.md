@@ -147,3 +147,7 @@ which are still present.
 
 If a check here turns out to be impractical to drive by hand, say so and it should
 become a probe recipe instead of quietly staying unrun.
+
+## Account preferences
+
+32. Change language and theme separately, reload, and confirm each choice persists without changing the other. Disable automatic reply resume, reload, and confirm it remains off. Try an unsupported value through the request boundary and confirm the saved preferences remain unchanged.
