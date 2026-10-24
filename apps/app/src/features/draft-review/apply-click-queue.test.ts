@@ -126,6 +126,7 @@ it("a terminal close cancels unsent clicks and settles a sent head from its answ
     expect(await first).toEqual(
       status === "applied" ? { status, commandId: "first", applied: [] } : { status: "cancelled" },
     );
+    expect(queue.pending).toBe(false);
     queue.destroy();
   }
   const answer = deferred<ApplyClickAnswer>();
