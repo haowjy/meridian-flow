@@ -13,7 +13,7 @@
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,8 @@ export type WorkspaceNavBodyProps = {
   presentation: WorkspaceNavPresentation;
   /** Persistent navigation content between the controls and account row. */
   children?: ReactNode;
+  /** The pane holding `children`, for a section below that resizes against it. */
+  childrenRef?: Ref<HTMLDivElement>;
   /** The chat's Scratch section, pinned above the account row. */
   scratch?: ReactNode;
   /** A move's notice: it takes height from the body above, so nothing shifts or is covered. */
@@ -39,6 +41,7 @@ export function WorkspaceNavBody({
   onSelectScreen,
   presentation,
   children,
+  childrenRef,
   scratch,
   notice,
 }: WorkspaceNavBodyProps) {
@@ -71,8 +74,7 @@ export function WorkspaceNavBody({
         ))}
       </div>
 
-      {/* Scratch's resize handle measures this pane by its marker; a notice may sit between them. */}
-      <div data-rail-tree className={cn("min-h-0 flex-1", !phone && "min-h-[120px]")}>
+      <div ref={childrenRef} className={cn("min-h-0 flex-1", !phone && "min-h-[120px]")}>
         {children}
       </div>
       {notice}

@@ -18,7 +18,7 @@ import { t } from "@lingui/core/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { Folder } from "lucide-react";
-import { type CSSProperties, useMemo, useRef } from "react";
+import { type CSSProperties, type RefObject, useMemo, useRef } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabs } from "@/client/stores";
@@ -65,7 +65,7 @@ export function RailScratchSection({
   threadId,
   editorWorkId,
   onPicked,
-  resizable = false,
+  resizeAgainst,
 }: {
   projectId: string;
   /** The chat on screen: the centre chat on the Chat screen, the dock's chat elsewhere. */
@@ -73,8 +73,11 @@ export function RailScratchSection({
   editorWorkId: string | null;
   /** Called after a note is picked (the phone drawer closes over the document). */
   onPicked?: () => void;
-  /** Desktop only: a handle on the divider above the expanded section resizes it. */
-  resizable?: boolean;
+  /**
+   * Desktop only: the pane above, which a handle on the divider trades height
+   * with when the section is expanded.
+   */
+  resizeAgainst?: RefObject<HTMLElement | null>;
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
   const expanded = useProjectSurfacePrefsStore((state) => state.railPrefs.scratchExpanded);
@@ -130,7 +133,7 @@ export function RailScratchSection({
           : undefined
       }
     >
-      {resizable && expanded ? (
+      {resizeAgainst && expanded ? (
         <ResizeHandle
           gridRef={sectionRef}
           cssVariableName={HEIGHT_VAR}
@@ -141,10 +144,8 @@ export function RailScratchSection({
           dragDirection={-1}
           ariaLabel={t`Resize Scratch`}
           measure={() => {
-            const section = sectionRef.current;
-            const tree = section?.parentElement?.querySelector(":scope > [data-rail-tree]");
-            const own = section?.getBoundingClientRect().height ?? MIN_PANE_PX;
-            const above = tree?.getBoundingClientRect().height ?? 0;
+            const own = sectionRef.current?.getBoundingClientRect().height ?? MIN_PANE_PX;
+            const above = resizeAgainst.current?.getBoundingClientRect().height ?? 0;
             return { value: own, min: MIN_PANE_PX, max: own + above - MIN_PANE_PX };
           }}
           onCommit={(next) => {

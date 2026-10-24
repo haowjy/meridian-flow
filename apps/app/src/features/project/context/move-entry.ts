@@ -1,8 +1,8 @@
 /**
  * The one way a row changes folders: Move…, dragging and a drag's Undo resolve
- * a destination here, refuse for the same reasons, and place through the
- * replica by folder ID. A taken name never refuses: the row arrives at the next
- * free name, predicted here and decided by the server.
+ * a destination here and place through the replica by folder ID. A taken name
+ * never refuses: the row arrives at the next free name, predicted here and
+ * decided by the server. Refusals are judged by identity in `entry-drag/move-plan.ts`.
  */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -12,22 +12,6 @@ import type { TabOwner } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { allocateContextEntryArrivalName, type ContextEntrySibling } from "./context-entry-name";
 import { destinationOwner } from "./identity-location";
-import { isFolderWithin } from "./menu-tree";
-
-export type MoveSubject = {
-  kind: "file" | "folder";
-  /** The document ID for a file, the folder's entry ID for a folder. */
-  id: string;
-  name: string;
-  path: string;
-  /**
-   * The root ID of the catalog it lives in. Catalog objects are snapshots that
-   * each surface projects separately, so identity is the root, never the object.
-   */
-  catalogRootId: string | null;
-  /** The folder it sits in now (the catalog root at an area's top level). */
-  parentId: string | null;
-};
 
 /** An area's top level (its catalog root) or a folder in it. */
 export type MoveDestination = {
@@ -39,21 +23,8 @@ export type MoveDestination = {
   path: string;
 };
 
-type MoveRefusal = { kind: "inside-itself" } | { kind: "already-there" };
-
 type WorkDirectory = Parameters<typeof destinationOwner>[1];
 type NoWork = Parameters<typeof destinationOwner>[2];
-
-export function moveRefusal(
-  subject: MoveSubject,
-  destination: MoveDestination,
-): MoveRefusal | null {
-  const sameCatalog = subject.catalogRootId === destination.catalog.root.entryId;
-  if (subject.kind === "folder" && sameCatalog && isFolderWithin(destination.path, subject.path))
-    return { kind: "inside-itself" };
-  if (sameCatalog && subject.parentId === destination.entryId) return { kind: "already-there" };
-  return null;
-}
 
 /** The replica's parent for a destination: a folder by ID, or an area's root with its owning authority. */
 export function destinationParent(
@@ -80,7 +51,7 @@ export function destinationParent(
 export async function placeEntry(
   resources: AccountResourceReplica,
   projectId: string,
-  subject: Pick<MoveSubject, "kind" | "id" | "name">,
+  subject: { kind: "file" | "folder"; id: string; name: string },
   parent: ParentRef,
   siblings: readonly ContextEntrySibling[],
   typed: string = subject.name,

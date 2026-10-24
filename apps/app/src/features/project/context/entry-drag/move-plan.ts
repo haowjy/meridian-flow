@@ -110,6 +110,11 @@ function within(view: PlacementView, start: ParentRef | null, folderId: string):
   return false;
 }
 
+/** The parent `ref` sits in now, or null when it is gone or not placed yet. */
+export function parentOf(view: PlacementView, ref: EntryRef): ParentRef | null {
+  return placeEntryRef(view, ref)?.parent ?? null;
+}
+
 /** Drops each item whose parent sits inside another carried folder. */
 function dropNested<T extends { ref: EntryRef }>(
   view: PlacementView,
@@ -125,11 +130,28 @@ function dropNested<T extends { ref: EntryRef }>(
 
 /** A folder carries its contents, so a row inside a carried folder is dropped from the carry. */
 export function withoutNested<T extends { ref: EntryRef }>(view: PlacementView, items: T[]): T[] {
-  return dropNested(view, items, (item) => placeEntryRef(view, item.ref)?.parent ?? null);
+  return dropNested(view, items, (item) => parentOf(view, item.ref));
 }
 
 type OwnerLike = { workId?: string | null; rootThreadId?: string | null };
 type Parent = ParentRef | { kind: "root"; scheme: ProjectContextTreeScheme; owner: OwnerLike };
+
+type Refusal = "inside-itself" | "already-there";
+
+function refusalFor(view: PlacementView, source: PlacedEntry, into: Parent): Refusal | null {
+  if (source.ref.kind === "folder" && into.kind === "folder" && within(view, into, source.ref.id))
+    return "inside-itself";
+  return sameParent(source.parent, into) ? "already-there" : null;
+}
+
+/**
+ * Why `ref` can't move into `into`, judged by identity from the placement graph
+ * (the same rule a drop uses); null when it can or when `ref` isn't placed yet.
+ */
+export function moveRefusal(view: PlacementView, ref: EntryRef, into: Parent): Refusal | null {
+  const placed = placeEntryRef(view, ref);
+  return placed ? refusalFor(view, placed, into) : null;
+}
 
 /** The same folder, or the same area top level (project areas ignore the owner). */
 export function sameParent(a: Parent, b: Parent): boolean {
@@ -179,15 +201,10 @@ export function planMove(
   const into: Parent = target.folder
     ? { kind: "folder", folderId: target.folder.entryId }
     : { kind: "root", scheme: area.scheme, owner: area.owner };
-  if (
-    sources.some(
-      (source) =>
-        source.ref.kind === "folder" && into.kind === "folder" && within(view, into, source.ref.id),
-    )
-  )
-    return { kind: "inside-itself" };
+  const refusals = sources.map((source) => refusalFor(view, source, into));
+  if (refusals.includes("inside-itself")) return { kind: "inside-itself" };
   // Rows already there stay put; a taken name never refuses (the row arrives at the next free name).
-  const moves = sources.filter((source) => !sameParent(source.parent, into));
+  const moves = sources.filter((_, index) => refusals[index] === null);
   return moves.length === 0 ? NONE : { kind: "ready", destination, destinationName, moves };
 }
 

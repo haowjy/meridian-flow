@@ -39,6 +39,8 @@ export type EntrySelection = {
   /** Selects exactly these keys (after a move), even one; none returns to the open row. */
   replace(keys: readonly string[]): void;
   clear(): void;
+  /** Focuses the list's first selected row, or its first row. */
+  focus(): void;
   /** Rows announce themselves while mounted; the open row says so. */
   register(entry: DragEntry, active: boolean): () => void;
   root: RefObject<HTMLDivElement | null>;
@@ -122,6 +124,14 @@ export function useEntrySelection(
       },
       clear() {
         setExplicit(null);
+      },
+      focus() {
+        const list = root.current;
+        const rows = list?.querySelectorAll<HTMLElement>(`[${KEY_ATTRIBUTE}]`) ?? [];
+        const first = Array.from(rows).find((row) =>
+          current().has(row.getAttribute(KEY_ATTRIBUTE) ?? ""),
+        );
+        (first ?? rows[0])?.focus();
       },
       register(entry, active) {
         const key = entryKey(entry.ref);

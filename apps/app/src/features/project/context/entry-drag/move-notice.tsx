@@ -34,9 +34,11 @@ type Notice = {
   message: string;
   /** Absent when nothing moved. */
   undo: UndoMove | null;
+  /** Puts focus back in the list the move came from, when the notice leaves under it. */
+  refocus: () => void;
 };
 
-type Publish = (message: string, undo: UndoMove | null) => void;
+type Publish = (notice: Notice) => void;
 
 const HostContext = createContext<{
   notice: Notice | null;
@@ -61,10 +63,10 @@ export function MoveNoticeHost({ children }: { children: ReactNode }) {
     };
   }, []);
   // A drop can finish after its surface has gone; there is nowhere to say so.
-  const publish = useCallback<Publish>((message, undo) => {
+  const publish = useCallback<Publish>((next) => {
     if (!mounted.current) return;
-    setNotice({ message, undo });
-    announce(message);
+    setNotice(next);
+    announce(next.message);
   }, []);
   const settle = useCallback((from: Notice, to: Notice | null) => {
     if (mounted.current) setNotice((now) => (now === from ? to : now));
@@ -81,30 +83,26 @@ export function MoveNotice({ className }: { className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   if (!current) return null;
 
-  // The notice leaves under the focused button; focus goes to the rows it was about.
-  const close = (next: Notice | null) => {
-    const scope = ref.current?.parentElement;
-    const refocus = !next && ref.current?.contains(document.activeElement);
+  // Asked before anything awaits: Undo's button disables while it runs and drops focus.
+  const holdsFocus = () => ref.current?.contains(document.activeElement) ?? false;
+  const close = (next: Notice | null, focused: boolean) => {
     settle(current, next);
-    if (!refocus || !scope) return;
-    const row =
-      scope.querySelector<HTMLElement>('[data-entry-key][aria-pressed="true"]') ??
-      scope.querySelector<HTMLElement>("[data-entry-key]");
-    row?.focus();
+    if (!next && focused) current.refocus();
   };
 
   const undo = async (put: UndoMove) => {
+    const focused = holdsFocus();
     setUndoing(true);
     let next: Notice | null = null;
     try {
       const failure = await put();
-      if (failure) next = { message: failure, undo: null };
+      if (failure) next = { ...current, message: failure, undo: null };
     } catch {
-      next = { message: t`Couldn't move it back.`, undo: null };
+      next = { ...current, message: t`Couldn't move it back.`, undo: null };
     } finally {
       setUndoing(false);
     }
-    close(next);
+    close(next, focused);
     if (next) announce(next.message);
   };
 
@@ -131,7 +129,7 @@ export function MoveNotice({ className }: { className?: string }) {
       <IconButton
         className="shrink-0 [@media(pointer:coarse)]:size-11"
         aria-label={t`Dismiss`}
-        onClick={() => close(null)}
+        onClick={() => close(null, holdsFocus())}
       >
         <X aria-hidden className="size-3.5" />
       </IconButton>
