@@ -1,3 +1,10 @@
+/**
+ * Tests worktree cleanup readiness behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Automatic cleanup liveness and path-attribution policy
+ */
+
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";

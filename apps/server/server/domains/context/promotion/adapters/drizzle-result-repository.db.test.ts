@@ -1,11 +1,11 @@
 /** Durable reconciliation contract for caller-owned promotion result identity. */
 
-import { setTimeout as delay } from "node:timers/promises";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { projectResults, projects, threads, turns, users } from "@meridian/database/schema";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { deleteDrizzleRows } from "../../../../test-support/drizzle-reset.js";
+import { waitForPostgresLock } from "../../../../test-support/lock-interleave.js";
 import type { CreateProjectResultInput } from "../ports/result-repository.js";
 import { createDrizzleResultRepository } from "./drizzle-result-repository.js";
 
@@ -77,17 +77,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     async function waitForTransactionLock(): Promise<void> {
-      for (let attempt = 0; attempt < 200; attempt += 1) {
+      await waitForPostgresLock("result reconciliation transaction lock", async () => {
         const [row] = await observer<{ count: string }[]>`
           SELECT count(*)::text AS count
           FROM pg_stat_activity
           WHERE datname = current_database()
             AND wait_event = 'transactionid'
         `;
-        if (Number(row?.count ?? 0) >= 1) return;
-        await delay(10);
-      }
-      throw new Error("Timed out waiting for result reconciliation transaction lock");
+        return Number(row?.count ?? 0) >= 1 ? true : undefined;
+      });
     }
 
     it("serializes concurrent unresolved callers on the same result identity", async () => {

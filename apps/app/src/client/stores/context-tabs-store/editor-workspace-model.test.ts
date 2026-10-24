@@ -1,4 +1,8 @@
-/** Editor admission distinguishes authorable Scratch documents from Upload resources. */
+/** Editor admission distinguishes authorable Scratch documents from Upload resources.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Editor Scratch admission and workspace schema (kb/decisions/work/model/lineage-scratch.md)
+ */
 import { expect, it } from "vitest";
 import { type ContextTab, isEditorContextTab, isEditorTab } from "./editor-workspace-model";
 import { parseEditorWorkspace } from "./editor-workspace-state";

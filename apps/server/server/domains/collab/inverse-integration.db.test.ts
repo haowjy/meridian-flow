@@ -1,6 +1,8 @@
 /**
- * Contract §2.6 cases 18 and 22 and §6.5: a failed reply's rollback order, an inverse landing
- * on a draft while another reply is staged, and what a Work or discard change does to undo.
+ * Contract §2.6 cases 18 and 22 and §6.5: a failed reply's rollback order, an inverse landing on a draft while another reply is staged, and what a Work or discard change does to undo.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - rollback ordering, durable inverse ownership, and created-draft retraction (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import type * as Y from "yjs";

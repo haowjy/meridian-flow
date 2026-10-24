@@ -1,4 +1,8 @@
-/** Regression risks: detached checkouts aliasing main, and foreign routes passing readiness. */
+/** Regression risks: detached checkouts aliasing main, and foreign routes passing readiness.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - App-specific Portless readiness marker
+ */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

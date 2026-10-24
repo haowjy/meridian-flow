@@ -1,4 +1,8 @@
-/** Attribution must skip covered history without caching away a later concurrency recheck. */
+/** Attribution must skip covered history without caching away a later concurrency recheck.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Covered journal history is skipped
+ */
 import { renderAgentEditResult } from "@meridian/agent-edit";
 import {
   cloneYDoc,

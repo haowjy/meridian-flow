@@ -1,4 +1,8 @@
-/** Review admission and draft-only tabs retain the document's scheme. */
+/** Review admission and draft-only tabs retain the document's scheme.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - warm Editor review-item request policy
+ */
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import { expect, it } from "vitest";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";

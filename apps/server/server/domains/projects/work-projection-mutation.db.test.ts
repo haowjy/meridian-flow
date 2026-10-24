@@ -1,4 +1,9 @@
-/** PostgreSQL barriers for the production Works-changed notice owner. */
+/**
+ * PostgreSQL barriers for the production Works-changed notice owner.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - transactional Work revision aggregation and one project wake per commit (kb/decisions/work/management/work-archive-and-delete.md)
+ */
 
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";

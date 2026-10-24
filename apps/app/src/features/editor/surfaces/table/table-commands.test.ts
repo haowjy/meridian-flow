@@ -4,6 +4,9 @@
  * reason, and no verb advertises what dispatch would refuse. These cases walk
  * the table states a writer actually reaches — header on and off, a merged
  * cell, the edges — and assert the reason, not just the refusal.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - table row and column movement semantics
  */
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { Editor, type JSONContent } from "@tiptap/core";

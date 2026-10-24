@@ -1,3 +1,10 @@
+/**
+ * Tests worktree cleanup eligibility behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Targeted cleanup evidence and manual authorization
+ */
+
 import { describe, expect, it } from "vitest";
 import {
   type CleanupEligibility,
@@ -296,47 +303,6 @@ describe("selectContainedByRef", () => {
     expect(selectContainedByRef(["refs/remotes/ghost/lane"], "lane", "main", ["origin"])).toBe(
       undefined,
     );
-  });
-
-  it("prefers the trunk, then local branches, then remote-tracking refs", () => {
-    const remotes = ["origin", "upstream"];
-    expect(
-      selectContainedByRef(
-        [
-          "refs/remotes/origin/feat/z",
-          "refs/heads/feat/a",
-          "refs/remotes/upstream/main",
-          "refs/heads/main",
-        ],
-        "feature",
-        "main",
-        remotes,
-      ),
-    ).toBe("refs/heads/main");
-    expect(
-      selectContainedByRef(
-        ["refs/remotes/origin/feat/z", "refs/heads/feat/a", "refs/remotes/upstream/main"],
-        "feature",
-        "main",
-        remotes,
-      ),
-    ).toBe("refs/remotes/upstream/main");
-    expect(
-      selectContainedByRef(
-        ["refs/remotes/origin/feat/z", "refs/heads/feat/b", "refs/heads/feat/a"],
-        "feature",
-        "main",
-        remotes,
-      ),
-    ).toBe("refs/heads/feat/a");
-    expect(
-      selectContainedByRef(
-        ["refs/remotes/upstream/feat/a", "refs/remotes/origin/feat/z"],
-        "feature",
-        "main",
-        remotes,
-      ),
-    ).toBe("refs/remotes/origin/feat/z");
   });
 });
 

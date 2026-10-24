@@ -1,4 +1,8 @@
-/** Exact local content access proves cache provenance before exposing an editable Y.Doc. */
+/** Exact local content access proves cache provenance before exposing an editable Y.Doc.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - resource handoff and local initialization policy
+ */
 import "fake-indexeddb/auto";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import type { ResourceKey, ResourceRecord } from "@meridian/resource-replica";

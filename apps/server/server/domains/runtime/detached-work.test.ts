@@ -1,3 +1,9 @@
+/**
+ * Tests detached work behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Promise-tracking shutdown quiescence
+ */
 import { describe, expect, it } from "vitest";
 import { createDetachedWorkTracker } from "./detached-work.js";
 

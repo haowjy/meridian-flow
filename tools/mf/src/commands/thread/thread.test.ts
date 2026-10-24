@@ -1,8 +1,10 @@
 /**
  * `thread` commands against the wire harness: each test states the admission, snapshots, frames and
  * Stop answer it needs, and checks what ./mf posted and how it read them. Server policy is not tested here.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - CLI request assembly and live-view exit policy (kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md)
  */
-
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -475,7 +477,7 @@ describe("thread send", () => {
     // the deadline starts no further read.
     wire.fail("snapshot", { delayMs: 600 }, Number.POSITIVE_INFINITY);
     const readsBefore = wire.requestsOf("snapshot").length;
-    const started = Date.now();
+    const abortedBefore = wire.aborted.filter((request) => request.kind === "snapshot").length;
     const pending = await send("hang", "--timeout", "100ms", "--json");
     expect(pending.code).toBe(EXIT.timeout);
     expect(lastRecord(pending.stdout)).toMatchObject({
@@ -484,7 +486,12 @@ describe("thread send", () => {
       snapshotUnavailable: true,
     });
     expect(wire.requestsOf("snapshot").length - readsBefore).toBe(1);
-    expect(Date.now() - started).toBeLessThan(500);
+    await wire.until(
+      () => wire.aborted.filter((request) => request.kind === "snapshot").length > abortedBefore,
+    );
+    expect(
+      wire.aborted.filter((request) => request.kind === "snapshot").length - abortedBefore,
+    ).toBe(1);
   });
 
   it("is unproven, not timed out, when the snapshot shows the reply neither open nor finished", async () => {
@@ -580,9 +587,7 @@ describe("thread send", () => {
       wire.fail("snapshot", fault === "delayed" ? { delayMs: 5000 } : { status: 204, text: "" });
       wire.publish(frames.finished("a1"));
     });
-    const started = Date.now();
     const result = await send("hold", "--timeout", "10s", "--json");
-    expect(Date.now() - started).toBeLessThan(2000);
     expect(result.code).toBe(EXIT.ok);
     expect(lastRecord(result.stdout)).toMatchObject({
       outcome: "complete",

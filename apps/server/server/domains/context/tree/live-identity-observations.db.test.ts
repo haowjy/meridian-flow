@@ -1,11 +1,10 @@
 /**
- * Where #754's identity moves and namespace observation versions meet hidden nodes: a
- * writer's `{ parent, name }` move never lands in a folder only a branch holds, anchored
- * folder creation is a live create (it reveals the branch's hidden folder of that name),
- * and only live changes publish observations. A branch's creates, tree changes and Discard
- * allocate no namespace version and restamp no live entry; Apply's reveal publishes a newer
- * version.
+ * Where #754's identity moves and namespace observation versions meet hidden nodes: a writer's `{ parent, name }` move never lands in a folder only a branch holds, anchored folder creation is a live create (it reveals the branch's hidden folder of that name), and only live changes publish observations.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - live-only namespace observations and hidden-folder reveal on anchored creation (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
+
 import type { DocumentId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import { contextAvailabilityHeads, contextCatalogCommits, users } from "@meridian/database/schema";

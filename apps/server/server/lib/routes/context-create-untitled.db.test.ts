@@ -1,4 +1,9 @@
-/** Postgres-backed coverage for work-scoped untitled creation, rollback and identity recovery. */
+/**
+ * Postgres-backed coverage for work-scoped untitled creation, rollback and identity recovery.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - cross-scheme identity recovery without provisioning scanned sources
+ */
 
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";

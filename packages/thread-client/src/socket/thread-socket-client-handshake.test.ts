@@ -1,4 +1,8 @@
-/** Thread socket deadlines preserve delivered cursors through restart recovery. */
+/** Thread socket deadlines preserve delivered cursors through restart recovery.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Socket readiness, replay, and retry ownership (kb/decisions/platform/client/chat-sync-boundaries.md)
+ */
 import { EventType, type SequencedEvent, type WsServerMessage } from "@meridian/contracts/protocol";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FakeThreadSocket } from "../test-support/fake-thread-socket";

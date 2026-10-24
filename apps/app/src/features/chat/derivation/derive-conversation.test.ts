@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** Navigate-first fork and handoff: open now, create in the background, fail on the destination. */
+/** Navigate-first fork and handoff: open now, create in the background, fail on the destination.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - journaled create-or-get replay protocol
+ */
 import type { Thread } from "@meridian/contracts/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

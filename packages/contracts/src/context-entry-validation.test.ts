@@ -1,3 +1,10 @@
+/**
+ * Tests context entry validation behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Context entry name and path grammar
+ */
+
 import { describe, expect, it } from "vitest";
 import { validateContextEntryName, validateContextEntryPath } from "./context-entry-validation.js";
 

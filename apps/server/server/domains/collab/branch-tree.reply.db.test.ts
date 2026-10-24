@@ -1,10 +1,10 @@
 /**
- * A reply's drafted writes and the branch they land in (contract §2.5, ledger K-1, K-2): a
- * read never makes a branch, draft or peer; the first write does. A save whose branch closed
- * under it refuses that document stale and never provisions a new branch (B9); and a save
- * or an immediate write and Discard all serialize, in both orders,
- * without deadlock (V2-H2, §14), the losing write refusing as a stale save does.
+ * A reply's drafted writes and the branch they land in (contract §2.5, ledger K-1, K-2): a read never makes a branch, draft or peer; the first write does.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - lazy branch, draft, and peer provisioning on first write (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
  */
+
 import type { DocumentId, WorkId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import { branches, documentDrafts, draftWriteJournal, users } from "@meridian/database/schema";

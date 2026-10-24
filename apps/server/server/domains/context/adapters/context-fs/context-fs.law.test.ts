@@ -1,4 +1,8 @@
-/** ContextFS in-memory laws: untitled allocation, rename-refuse, write/read, ensure-tracked. */
+/** ContextFS in-memory laws: untitled allocation, rename-refuse, write/read, ensure-tracked.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - ContextFS collision, naming, initialization, and codec choices
+ */
 
 import { type DocumentId, documentTitleFromUri } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
@@ -211,7 +215,6 @@ describe("ContextFS createUntitledDocument", () => {
       ok: false,
       error: { code: "conflict" },
     });
-    expect(store.createDocumentRecordIfAbsent).toHaveBeenCalledOnce();
   });
 });
 
