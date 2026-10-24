@@ -140,11 +140,11 @@ function validateBump(
   const nextMajor =
     current.major === previous.major + 1 && current.minor === 0 && current.patch === 0;
   if (bump === "addition") {
-    // A defaulted attr is additive to the surface, but a ruling may still make
+    // A defaulted attr is additive to the surface, but a human decision may still make
     // it a major when it changes what stored content means.
     if (!nextMinor && !nextMajor) {
       throw new Error(
-        "Additive schema surface changes require an x.(y+1).0 or ruled (x+1).0.0 version bump.",
+        "Additive schema surface changes require an x.(y+1).0 or a human-decided (x+1).0.0 version bump.",
       );
     }
     return;
@@ -157,7 +157,7 @@ function validateBump(
   }
   if (!nextMajor) {
     throw new Error(
-      `Removing or renaming schema surface, changing the fragment name, or changing Yjs encoding requires a major bump, human ruling, and migration plan. See ${POLICY}.`,
+      `Removing or renaming schema surface, changing the fragment name, or changing Yjs encoding requires a major bump, a human decision, and a migration plan. See ${POLICY}.`,
     );
   }
 }
@@ -250,7 +250,7 @@ describe("collaboration schema shape", () => {
       if (current.version.major !== previous.version.major) {
         expect(
           current.compatibilityNote,
-          "A major bump records its human ruling and migration plan in the compatibility note.",
+          "A major bump records its human decision and migration plan in the compatibility note.",
         ).toBeTruthy();
       }
       if (isMinorMutation) {

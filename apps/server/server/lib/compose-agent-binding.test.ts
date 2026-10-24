@@ -15,11 +15,11 @@ describe("in-memory app Agent binding transaction", () => {
     });
     let deferred: Promise<unknown> = Promise.resolve();
     let id = "";
-    await app.repos.transaction(async () => {
+    await app.threadRepos.transaction(async () => {
       deferred = (async () => {
         await gate;
-        return app.repos.transaction(async () => {
-          const thread = await app.repos.threads.create({
+        return app.threadRepos.transaction(async () => {
+          const thread = await app.threadRepos.threads.create({
             aiWriteMode: "direct",
             projectId: "project",
             userId: "owner",
@@ -37,7 +37,7 @@ describe("in-memory app Agent binding transaction", () => {
     });
     release();
     expect(await deferred).toBe("late rollback");
-    expect(await app.repos.threads.findById(id)).toBeNull();
+    expect(await app.threadRepos.threads.findById(id)).toBeNull();
     expect(await app.agentRevisions.readThreadBinding(id)).toBeUndefined();
   });
 
@@ -52,10 +52,10 @@ describe("in-memory app Agent binding transaction", () => {
       arrived = resolve;
     });
     let pendingId = "";
-    const pending = app.repos
+    const pending = app.threadRepos
       .transaction(async () => {
         pendingId = (
-          await app.repos.threads.create({
+          await app.threadRepos.threads.create({
             aiWriteMode: "direct",
             projectId: "project",
             userId: "owner",
@@ -67,8 +67,8 @@ describe("in-memory app Agent binding transaction", () => {
       })
       .catch((error) => error.message);
     await ready;
-    const hidden = await app.repos.threads.findById(pendingId);
-    const ordinary = await app.repos.threads.create({
+    const hidden = await app.threadRepos.threads.findById(pendingId);
+    const ordinary = await app.threadRepos.threads.create({
       aiWriteMode: "direct",
       projectId: "project",
       userId: "owner",
@@ -76,7 +76,7 @@ describe("in-memory app Agent binding transaction", () => {
     release();
     expect(await pending).toBe("rollback");
     expect(hidden).toBeNull();
-    expect(await app.repos.threads.findById(ordinary.id)).not.toBeNull();
+    expect(await app.threadRepos.threads.findById(ordinary.id)).not.toBeNull();
   });
 });
 

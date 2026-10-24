@@ -6,12 +6,12 @@ import { requireRequestId } from "../../../../../../lib/request-id.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const { repos, runner } = app;
+  const { threadRepos, runner } = app;
   const { userId } = user;
   const threadId = getRouterParam(event, "threadId") ?? "";
   const turnId = requireRequestId(getRouterParam(event, "turnId"), "turnId");
 
-  const thread = await requireThreadOwner({ threads: repos.threads }, threadId, userId);
+  const thread = await requireThreadOwner({ threads: threadRepos.threads }, threadId, userId);
   const status = await runner.cancel(thread.id, turnId);
 
   return { threadId: thread.id, turnId, status };
