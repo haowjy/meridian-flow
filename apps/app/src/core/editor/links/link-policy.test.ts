@@ -1,12 +1,44 @@
-/**
- * The resolution cache: answers belong to a link's whole identity and to the
- * generation that asked.
- */
-
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createLinkAnswerCache, type LinkAnswer, type LinkQuestion } from "./link-resolution";
+
+import { classifyLinkTarget, linkTargetLabel, normalizeLinkHref } from "./link-target";
+
+describe("normalizeLinkHref", () => {
+  it.each(["Chapter 13"])("keeps the extensionless document name %s internal", (written) => {
+    expect(normalizeLinkHref(written)).toBe(written);
+    expect(classifyLinkTarget(normalizeLinkHref(written) ?? "")?.kind).toBe("relative");
+  });
+
+  it.each(["Vol. 2"])("keeps the dotted document name %s internal", (written) => {
+    expect(normalizeLinkHref(written)).toBe(written);
+  });
+
+  it.each(["chapter-213.md"])("keeps an explicit relative file name %s internal", (written) => {
+    expect(normalizeLinkHref(written)).toBe(written);
+  });
+
+  it("keeps a Context URI and a scheme URL as written", () => {
+    expect(normalizeLinkHref("manuscript://The Second Gate")).toBe("manuscript://The Second Gate");
+    expect(normalizeLinkHref("https://example.com")).toBe("https://example.com");
+  });
+});
+
+it("keeps bare hosts external without requiring extensions on internal names", () => {
+  expect(normalizeLinkHref("example.com/data.json")).toBe("https://example.com/data.json");
+  expect(normalizeLinkHref("example.com/data.png")).toBe("https://example.com/data.png");
+  expect(normalizeLinkHref("example.json")).toBe("https://example.json");
+  expect(normalizeLinkHref("Chapter 13")).toBe("Chapter 13");
+  expect(normalizeLinkHref("The Second Gate")).toBe("The Second Gate");
+});
+
+it("labels an escaped literal # before interpreting an href section", () => {
+  expect(linkTargetLabel({ kind: "relative", path: "Chapter%2313.md" })).toBe("Chapter#13");
+  expect(linkTargetLabel({ kind: "relative", path: "Chapter%2313.md#opening" })).toBe(
+    "Chapter#13#opening",
+  );
+});
 
 const KAEL_ID = "00000000-0000-4000-8000-00000000000a";
 const OLD_KAEL_ID = "00000000-0000-4000-8000-0000000000aa";
