@@ -1,4 +1,8 @@
-/** The advertised journal head never replaces the client's delivered cursor. */
+/** The advertised journal head never replaces the client's delivered cursor.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - WebSocket request echo, concurrent subscribe, and lease cancellation
+ */
 
 import {
   EventType,
