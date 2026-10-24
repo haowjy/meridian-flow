@@ -82,7 +82,6 @@ the route, and no separate active-document pointer is stored.
 ContextTreePanel (desktop)          MobileContextBrowser (mobile)
        │                                     │
        ├─ useContextCatalogViews (batched projection) ┤
-       ├─ useDocumentTrash (server snapshot) ┤
        ├─ useCreateEntryForm ────────────────┤
        ├─ useEntryInteraction ───────────────┤
        │     └─ rename forms + move picker   │
@@ -114,7 +113,8 @@ ContextPaneController
 ```
 
 Document trash is a server snapshot separate from the live catalog projection.
-The tree reads only whether that snapshot is empty; the routed
+The tree doesn't read it: the Trash row is a fixed navigation row below Scratch
+(`WorkspaceNavBody`), always shown. The routed
 `DocumentTrashDialog` lists its records and opens a selected record by Document
 ID. The detail route reads the server's last Markdown projection and composes
 `ReadOnlyViewerFrame` with `TextViewer`; it never uses the live path-based read.

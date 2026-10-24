@@ -5109,8 +5109,8 @@ msgstr "Tokens before"
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr "Top up any time. Extra usage carries over month to month."
 
-#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "Trash"
 msgstr "Trash"
 

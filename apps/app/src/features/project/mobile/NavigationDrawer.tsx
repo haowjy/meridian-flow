@@ -144,6 +144,10 @@ export function NavigationDrawer({
               }}
               presentation="phone"
               notice={<DocumentDeleteUndoNotice surface="sidebar" className="mx-3 mb-1" />}
+              onOpenTrash={() => {
+                void navigateTrash(true);
+                onOpenChange(false);
+              }}
               scratch={
                 <RailScratchSection
                   projectId={projectId}
@@ -160,10 +164,6 @@ export function NavigationDrawer({
                   activeScheme={activeContextScheme}
                   activePath={activeContextPath}
                   onSelectFile={handleSelectFile}
-                  onOpenTrash={() => {
-                    void navigateTrash(true);
-                    onOpenChange(false);
-                  }}
                   creating={creating}
                   onRequestCreate={setCreating}
                   onCreateDone={() => setCreating(null)}

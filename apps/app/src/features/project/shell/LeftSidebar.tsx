@@ -123,6 +123,7 @@ export function LeftSidebar({
         onSelectScreen={onSelectScreen}
         presentation="desktop"
         notice={<DocumentDeleteUndoNotice surface="sidebar" className="mx-2 mb-1" />}
+        onOpenTrash={() => void navigateTrash(true)}
         scratch={
           <RailScratchSection
             projectId={projectId}
@@ -141,7 +142,6 @@ export function LeftSidebar({
             }
             activePath={docked ? (docked.kind === "new" ? null : docked.path) : activeContextPath}
             onSelectFile={handleSelectFile}
-            onOpenTrash={() => void navigateTrash(true)}
           />
         ) : null}
       </WorkspaceNavBody>

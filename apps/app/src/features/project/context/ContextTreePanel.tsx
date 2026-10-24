@@ -4,11 +4,10 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { FilePlus, FolderPlus, Trash2 } from "lucide-react";
+import { FilePlus, FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
-import { useDocumentTrash } from "@/client/query/useDocumentTrash";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { TreeChildren, type TreeEnv, TreeEnvProvider, TreeGroup } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -43,7 +42,6 @@ export type ContextTreePanelProps = {
     file: ContextFile,
     options?: { focus?: true },
   ) => void;
-  onOpenTrash: () => void;
   creating?: TreeCreationRequest | null;
   onRequestCreate?: (request: TreeCreationRequest) => void;
   onCreateDone?: () => void;
@@ -64,7 +62,6 @@ export function ContextTreePanel({
   activeScheme,
   activePath,
   onSelectFile,
-  onOpenTrash,
   creating: controlledCreating,
   onRequestCreate: controlledRequestCreate,
   onCreateDone: controlledCreateDone,
@@ -78,7 +75,6 @@ export function ContextTreePanel({
   }
   const schemes = EDITOR_CONTEXT_SCHEMES;
   const catalogs = useContextCatalogViews(projectId, schemes, { workId: editorWorkId });
-  const trash = useDocumentTrash(projectId);
   const renderScheme = (scheme: (typeof EDITOR_CONTEXT_SCHEMES)[number]) => (
     <SchemeSection
       key={`${projectId}:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`}
@@ -106,16 +102,6 @@ export function ContextTreePanel({
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
         {schemes.map(renderScheme)}
       </div>
-      {trash.data?.documents.length ? (
-        <button
-          type="button"
-          onClick={onOpenTrash}
-          className="focus-ring mx-2 mb-2 flex min-h-9 shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
-        >
-          <Trash2 className="size-4 shrink-0" aria-hidden />
-          <Trans>Trash</Trans>
-        </button>
-      ) : null}
     </div>
   );
 }
