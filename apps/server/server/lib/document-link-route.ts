@@ -20,7 +20,6 @@ import {
   type ResolveDocumentLinksResponse,
   resolveDocumentHref,
 } from "@meridian/contracts";
-import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type { Branches, DocumentLinkScopes } from "../domains/collab/index.js";
@@ -41,7 +40,7 @@ export interface DocumentLinkRouteDeps {
   /** The selected Work's view: its active branch, or live when it has none (F7). */
   branches: Pick<Branches, "viewForWork">;
   /** Project-authorized retained identities for gone links; purged rows are absent. */
-  documentTrash?: Pick<DocumentTrash, "list">;
+  documentTrash: Pick<DocumentTrash, "retained">;
 }
 
 type DocumentAnswer = Extract<DocumentLinkAnswer, { state: "document" }>["document"];
@@ -70,12 +69,11 @@ export async function handleDocumentLinkResolveRequest(
     : { kind: "live" };
   const answers: DocumentLinkAnswer[] = new Array(request.links.length);
   let holderUri: string | undefined;
-  let trash: readonly DocumentTrashEntry[] | null = null;
-  const retainedTrash = async () => {
-    if (!deps.documentTrash) return [];
-    if (trash === null) trash = await deps.documentTrash.list(projectId as ProjectId);
-    return trash;
-  };
+  const refResolutions: Array<{
+    index: number;
+    resolution: LinkResolution;
+    candidateId?: DocumentId;
+  }> = [];
   // Relative hrefs resolve against the holder where it is now.
   let baseUri = request.baseUri;
 
@@ -126,13 +124,24 @@ export async function handleDocumentLinkResolveRequest(
           resolution.kind === "gone"
             ? (resolution.documentId ?? (parsed?.kind === "doc" ? parsed.documentId : undefined))
             : undefined;
-        const retained = candidateId
-          ? (await retainedTrash()).find((entry) => entry.documentId === candidateId)
-          : undefined;
-        answers[index] = answerOf(resolution, retained?.documentId);
+        refResolutions.push({
+          index,
+          resolution,
+          ...(candidateId ? { candidateId: candidateId as DocumentId } : {}),
+        });
       }
     },
   );
+  const retainedIds = await deps.documentTrash.retained(
+    projectId as ProjectId,
+    refResolutions.flatMap(({ candidateId }) => (candidateId ? [candidateId] : [])),
+  );
+  for (const { index, resolution, candidateId } of refResolutions) {
+    answers[index] = answerOf(
+      resolution,
+      candidateId && retainedIds.has(candidateId) ? candidateId : undefined,
+    );
+  }
 
   const found: Array<{ index: number; document: DocumentAnswer }> = [];
   // Address-only links the live tree left unanswered: a Work's branch may have created them.
@@ -161,17 +170,6 @@ export async function handleDocumentLinkResolveRequest(
     }
     const resolved = await resolving;
     if (!resolved) {
-      const parsed = parseContextUri(target.uri);
-      const retained = parsed.ok
-        ? (await retainedTrash()).find(
-            (entry) =>
-              entry.scheme === parsed.value.scheme && entry.formerPath === parsed.value.path,
-          )
-        : undefined;
-      if (retained) {
-        answers[index] = { state: "gone", trashedDocumentId: retained.documentId };
-        continue;
-      }
       unanswered.push({ index, uri: target.uri });
     }
     if (resolved) {

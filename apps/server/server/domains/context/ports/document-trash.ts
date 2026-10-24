@@ -14,6 +14,11 @@ export type DocumentPurgeDraftDisposal = {
 };
 
 export type DocumentTrash = {
+  /** Which requested document identities are still retained in this project's Trash. */
+  retained(
+    projectId: ProjectId,
+    documentIds: readonly DocumentId[],
+  ): Promise<ReadonlySet<DocumentId>>;
   /** Lists current restorable removals, newest first. */
   list(projectId: ProjectId): Promise<readonly DocumentTrashEntry[]>;
   /** Reads one restorable removal and its last settled text. */

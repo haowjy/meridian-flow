@@ -221,6 +221,7 @@ export function branchTreeCommands(
         workAuthorityResolver: app.workAuthorityResolver,
         fileAccess: app.fileAccess,
         branches: app.documentSync.branches,
+        documentTrash: app.documentTrash,
       },
       {
         projectId,
