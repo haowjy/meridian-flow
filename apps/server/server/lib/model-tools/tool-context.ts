@@ -81,8 +81,8 @@ export interface ToolWiringDeps {
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit" | "listAccess" | "historyAccess">;
   /** The removal record behind a missing file the model already addresses by id. */
   documentRemovals: DocumentRemovals;
-  /** Retained project Trash, used to explain a missing path deleted outside this thread. */
-  documentTrash: Pick<DocumentTrash, "list">;
+  /** Retained project Trash, used to confirm a history-resolved missing document still exists. */
+  documentTrash: Pick<DocumentTrash, "retained">;
   /** The calling thread's bound skills, read as files under `skills://` (D52). */
   agentRevisions: SkillFilesDeps["agentRevisions"];
   /** The calling thread's delegation chain, read fresh per call (file-access §8). */
