@@ -9,6 +9,7 @@ import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
+import { useDocumentTrashNavigation } from "../context/DocumentTrashDialog";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
 import { InlineProjectTitle, type ProjectTitleEdit } from "../shell/InlineProjectTitle";
@@ -48,6 +49,7 @@ export function NavigationDrawer({
   chatThreadId,
 }: NavigationDrawerProps) {
   const openDocument = useOpenProjectDocument(projectId);
+  const setTrashOpen = useDocumentTrashNavigation();
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
     file: ContextFile,
@@ -156,6 +158,10 @@ export function NavigationDrawer({
                   activeScheme={activeContextScheme}
                   activePath={activeContextPath}
                   onSelectFile={handleSelectFile}
+                  onOpenTrash={() => {
+                    setTrashOpen(true);
+                    onOpenChange(false);
+                  }}
                   creating={creating}
                   onRequestCreate={setCreating}
                   onCreateDone={() => setCreating(null)}
