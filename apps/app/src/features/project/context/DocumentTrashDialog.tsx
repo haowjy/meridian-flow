@@ -11,6 +11,7 @@ import { useDocumentTrash, useTrashedDocument } from "@/client/query/useDocument
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { documentLocationName } from "../../chat/document-display-name";
 import { daysUntilPurge } from "../deletion-retention";
 import { RuledList } from "../RuledList";
 import {
@@ -64,7 +65,8 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
                 return next;
               });
             }
-            if (outcome.landedAt) setRestored({ id: Date.now(), location: outcome.landedAt });
+            if (outcome.landedAt)
+              setRestored({ id: Date.now(), location: documentLocationName(outcome.landedAt) });
             return;
           }
           if (outcome.kind === "superseded") {
