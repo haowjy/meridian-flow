@@ -20,9 +20,10 @@ import {
   getDeleteRestoreOperationReceipt,
   restoreContextDocuments,
 } from "@/client/api/projects-api";
-import { announce, getContextTabs } from "@/client/stores";
+import { announce, announceError, getContextTabs } from "@/client/stores";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
+import { documentLocationName } from "../../chat/document-display-name";
 import { useDockDocumentStore } from "../dock/dock-document-store";
 import {
   useAccountResourceProjection,
@@ -36,7 +37,9 @@ type DeleteScope = {
   owner: { workId?: string; rootThreadId?: string };
 };
 
-type RestoreFeedback = { kind: "restoring" } | { kind: "failed"; message: string };
+type RestoreFeedback =
+  | { kind: "restoring" }
+  | { kind: "failed"; message: string; retryable: boolean };
 
 type DeleteWindow = {
   label: string;
@@ -132,11 +135,6 @@ function ownDeletedDocumentIds(projectId: string, target: DeleteTarget): string[
   );
 }
 
-function restoredName(landedAt: string): string {
-  const tail = landedAt.split("/").filter(Boolean).at(-1);
-  return tail ? decodeURIComponent(tail) : landedAt;
-}
-
 export function DocumentDeleteUndoProvider({
   projectId,
   children,
@@ -151,10 +149,16 @@ export function DocumentDeleteUndoProvider({
     () => new Map(),
   );
   const emptyFolderChecks = useRef(new Set<string>());
+  const emptyFolderRetryTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const [emptyFolderCheckRevision, retryEmptyFolderChecks] = useState(0);
   const restores = useRef(new Set<string>());
   const lifetime = useRef(new AbortController());
 
   const dismiss = useCallback((operationId: string) => {
+    emptyFolderChecks.current.delete(operationId);
+    const timer = emptyFolderRetryTimers.current.get(operationId);
+    if (timer) clearTimeout(timer);
+    emptyFolderRetryTimers.current.delete(operationId);
     setWindowsById((current) => {
       if (!current.has(operationId)) return current;
       const next = new Map(current);
@@ -166,6 +170,7 @@ export function DocumentDeleteUndoProvider({
   useEffect(
     () => () => {
       lifetime.current.abort();
+      for (const timer of emptyFolderRetryTimers.current.values()) clearTimeout(timer);
     },
     [],
   );
@@ -188,10 +193,17 @@ export function DocumentDeleteUndoProvider({
           if (receipt?.result.ok && receipt.result.value.removed.length === 0) dismiss(operationId);
         })
         .catch(() => {
-          emptyFolderChecks.current.delete(operationId);
+          emptyFolderRetryTimers.current.set(
+            operationId,
+            setTimeout(() => {
+              emptyFolderChecks.current.delete(operationId);
+              emptyFolderRetryTimers.current.delete(operationId);
+              retryEmptyFolderChecks((revision) => revision + 1);
+            }, 1_000),
+          );
         });
     }
-  }, [dismiss, projectId, snapshot, windowsById]);
+  }, [dismiss, emptyFolderCheckRevision, projectId, snapshot, windowsById]);
 
   const requestDelete = useCallback(
     (target: DeleteTarget) => {
@@ -219,6 +231,7 @@ export function DocumentDeleteUndoProvider({
           setWindowsById((current) => new Map(current).set(operationId, window));
         } catch {
           settleMark("kept");
+          announceError(t`Couldn't delete ${target.name}. Try again.`);
         }
       })();
     },
@@ -235,7 +248,7 @@ export function DocumentDeleteUndoProvider({
 
   const waitForSettlement = useCallback(
     (operationId: string) =>
-      new Promise<DeleteOperationState>((resolve) => {
+      new Promise<DeleteOperationState>((resolve, reject) => {
         let stop: (() => void) | null = null;
         let done = false;
         function finish(state: DeleteOperationState) {
@@ -254,7 +267,7 @@ export function DocumentDeleteUndoProvider({
             const state = deleteOperationState(current, operationId);
             if (state !== "pending") finish(state);
           },
-          () => finish("refused"),
+          reject,
         );
         if (done) {
           stop();
@@ -301,6 +314,7 @@ export function DocumentDeleteUndoProvider({
           if (fault) {
             updateFeedback(operationId, {
               kind: "failed",
+              retryable: fault.outcome === "ancestor_taken",
               message:
                 fault.outcome === "ancestor_taken"
                   ? t`Couldn't restore ${window.label}. A file is in the way.`
@@ -308,15 +322,19 @@ export function DocumentDeleteUndoProvider({
             });
             return;
           }
-          const renamed = response.documents.find(
-            (result) => result.outcome === "restored" && result.landedAt,
+          const alternateLocations = response.documents.flatMap((result) =>
+            result.outcome === "restored" && result.landedAt
+              ? [documentLocationName(result.landedAt)]
+              : [],
           );
-          if (renamed?.landedAt) announce(t`Restored as ${restoredName(renamed.landedAt)}.`);
+          if (alternateLocations.length > 0)
+            announce(t`Restored at ${alternateLocations.join(", ")}.`);
           dismiss(operationId);
         } catch {
           if (lifetime.current.signal.aborted) return;
           updateFeedback(operationId, {
             kind: "failed",
+            retryable: true,
             message: t`Couldn't restore ${window.label}. Try again.`,
           });
         } finally {
@@ -410,7 +428,7 @@ function DocumentDeleteUndoRow({
           <Trans>Deleted {window.label}</Trans>
         )}
       </span>
-      {!restoring ? (
+      {!restoring && (window.feedback?.kind !== "failed" || window.feedback.retryable) ? (
         <button type="button" className="text-button shrink-0 text-sm" onClick={onUndo}>
           <Trans>Undo</Trans>
         </button>
