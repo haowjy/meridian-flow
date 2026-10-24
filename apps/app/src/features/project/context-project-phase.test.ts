@@ -1,3 +1,9 @@
+/**
+ * Context project phase behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - context-project bootstrap attempt tokens
+ */
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { describe, expect, it } from "vitest";
 import {

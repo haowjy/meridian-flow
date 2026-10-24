@@ -1,4 +1,8 @@
-/** Dock reload contracts: durable layout, hydrated identity, scope, and newer intent. */
+/** Dock reload contracts: durable layout, hydrated identity, scope, and newer intent.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - dock session persistence envelope
+ */
 
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import {

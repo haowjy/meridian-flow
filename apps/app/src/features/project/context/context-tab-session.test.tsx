@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** Resource-session fallback and recovery behavior at the desktop editor host. */
+/** Resource-session fallback and recovery behavior at the desktop editor host.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - context session opener fallback policy
+ */
 
 import { act, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";

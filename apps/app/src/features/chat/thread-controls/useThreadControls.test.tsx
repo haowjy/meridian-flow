@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** `/compact` dispatch: optimistic at once, retried with the same id, withdrawn at once on both sides. */
+/** `/compact` dispatch: optimistic at once, retried with the same id, withdrawn at once on both sides.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - control enqueue and withdrawal reconciliation
+ */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/core/macro", () => ({

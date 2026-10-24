@@ -1,4 +1,8 @@
-/** Production-owner composition proofs for durable-local availability publication. */
+/** Production-owner composition proofs for durable-local availability publication.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - context availability settlement ordering
+ */
 import { describe, expect, it, vi } from "vitest";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";

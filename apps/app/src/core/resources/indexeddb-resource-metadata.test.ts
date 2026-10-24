@@ -1,4 +1,8 @@
-/** Storage conformance: atomic visibility, durable attempts, isolated accounts and shutdown. */
+/** Storage conformance: atomic visibility, durable attempts, isolated accounts and shutdown.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - IndexedDB metadata compaction policy
+ */
 import "fake-indexeddb/auto";
 import {
   type NamespaceOutcome,

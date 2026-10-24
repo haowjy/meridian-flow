@@ -1,3 +1,9 @@
+/**
+ * Thread store behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - list reads own existing thread write mode
+ */
 import { expect, it } from "vitest";
 import { createThreadStore } from "./thread-store";
 

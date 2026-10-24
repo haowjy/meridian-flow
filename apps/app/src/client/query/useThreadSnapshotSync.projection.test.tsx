@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** The mounted snapshot owner is the chat's one subscriber: durable blocks, the stream and run-state records. */
+/** The mounted snapshot owner is the chat's one subscriber: durable blocks, the stream and run-state records.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - React snapshot callback lifetime fence
+ */
 import {
   type AGUIEvent,
   EventType,
