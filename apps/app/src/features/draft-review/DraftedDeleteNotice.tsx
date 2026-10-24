@@ -8,7 +8,7 @@ import { useReviewChanges } from "./useReviewChanges";
 export function DraftedDeleteNotice({ documentId }: { documentId: string }) {
   const { controller } = useDraftReview();
   const review = controller.inlineReview;
-  const itemKey = review?.documentId === documentId && review.shown ? review.itemKey : "";
+  const itemKey = review?.documentId === documentId ? review.itemKey : "";
   const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
   const deletion = view.items.find(({ change }) => change.tree?.kind === "delete")?.change;
   if (!deletion) return null;
