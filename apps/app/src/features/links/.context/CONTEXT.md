@@ -123,7 +123,8 @@ is one request of up to 200 links, four batches at most in flight.
 |---|---|
 | resolved, already cached | the document opens, no surface at all |
 | resolved after a wait | the same, and the checking dialog closes if it appeared |
-| a ref whose document is gone | nothing: no dialog, no open; the chip already says "No longer available" |
+| a document retained in Trash | the Trash view opens; the chip still says "No longer available" |
+| a purged or never-existing document | nothing: no dialog, no open |
 | nothing at the address, creatable | "“{name}” doesn't exist yet", with `Create “{name}”` |
 | nothing at the address, not creatable (Scratch in any Work, Uploads, Unfiled, a non-document extension) | "“{name}” can't be found", no Create |
 | the request failed | "That link could not be checked", with Try again |

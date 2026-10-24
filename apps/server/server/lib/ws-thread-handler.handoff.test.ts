@@ -1,4 +1,8 @@
-/** Ordered and cancellable socket handoff over the real journal hub. */
+/** Ordered and cancellable socket handoff over the real journal hub.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - One replaceable lease per subscribed thread (kb/decisions/concurrent-safety/journal/committed-thread-journal-delivery.md)
+ */
 
 import type { WsServerMessage } from "@meridian/contracts/protocol";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
@@ -90,7 +94,6 @@ async function harness(
   const app = {
     eventSink: sink,
     threadEventHub,
-    hub,
     threadRuntime: {
       requireOwnedThread: options.authorize ?? (async () => {}),
       liveState: options.liveState ?? (async () => LIVE_STATE),

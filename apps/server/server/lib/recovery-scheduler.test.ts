@@ -1,4 +1,8 @@
-/** Fake-clock coverage of lane independence, completion-relative scheduling, and shutdown. */
+/** Fake-clock coverage of lane independence, completion-relative scheduling, and shutdown.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Independent completion-relative recovery lanes
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
 import { startRecoveryScheduler } from "./recovery-scheduler.js";

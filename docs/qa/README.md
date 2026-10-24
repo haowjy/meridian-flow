@@ -22,7 +22,7 @@ stack.
 - [Rich mock provider](mock-provider.md): samples, large output, thinking, pacing, cancellation, tool scripts and startup defaults.
 - [The model's move and delete](model-move-delete.md): tool rows, the turn card's lines and Undo at a free name, absorbed-folder Undo, and a stopped reply's rollback, in the browser on the mock model.
 - [Atomic frozen Apply](atomic-apply.md): production API-core command, merge, rollback, lifecycle and trail probes over a scratch database.
-- [Document removal records](document-removal-records.md): populated upgrade, actor readback, closure/admission races, storage release and after-commit room retirement.
+- [Document removal records](document-removal-records.md): populated upgrade, actor readback, Trash list/read/restore, pending-Work retention, permanent purge, closure/admission races, storage release and after-commit room retirement.
 - [Document existence admission](document-existence-admission.md): live frames, saves and Apply against a removal, head creation only by create or repair, with the pause controller.
 - [Runtime protocols](runtime-probes.md): RP-1 through RP-20, server protocol checks driven with `./mf`; RP-17 runs `./mf` beside the browser. They don't verify the app.
 - [Project chrome and shell](project-chrome-manual.md): the browser checks that replaced nine slow DOM tests in `apps/app`. Their durable halves are RP-13 and RP-14.
@@ -39,7 +39,6 @@ stack.
 - [Draft content rebase](draft-review-rebase.md): fresh client-1 seeds, the server append rebase, late typing recovery, badge convergence and inverse cutover through PostgreSQL.
 - [Stable draft identity and terminal closes](draft-generations.md): draft rooms through Discard all, a fresh server instance and live restore; `4205`, `4207` and removal `4208`.
 - [Lock-free drafts seam probes](drafts-lock-free-probes.md): the PostgreSQL interleavings behind lock-free drafts (Work-first order, attempt ownership, archived drafts, sampled Discard, Undo ordering, room delivery, sequenced appends, the effect projection and its sweep, the reconnect order), run with one command against a scratch database.
-- [Document removal records](document-removal-records.md): populated upgrade, actor readback, closure/admission races, storage release and after-commit room retirement.
 - [Document existence admission](document-existence-admission.md): live frames, saves and Apply against a removal, head creation only by create or repair, with the pause controller.
 - [#871 cells](871-cells.md): the writer types into a passage while the AI rewrites it, four cells in auto-apply and draft mode, in the browser; what is kept, what is lost to ancestor delete, and how the result names the user.
 - [Model text reversal](model-revert.md): model Undo, Redo and Revert by Yjs identity, including partial changes, destination routing, repeated text and a revert of a revert, in auto-apply and draft mode.

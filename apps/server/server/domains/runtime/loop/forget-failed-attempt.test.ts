@@ -3,6 +3,9 @@
  * failed reply or the chat moves past it. Each case names the wrong outcome it prevents. `decideForgetting`
  * is pure, so the cases build the facts by hand; the walk over non-closing turns uses the real loader over
  * a fake graph.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Failed-attempt projection and view-row traversal
  */
 import type { Block, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";

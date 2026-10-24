@@ -27,9 +27,7 @@ const expectedSuites = [
   "apps/server/server/domains/preferences/adapters/drizzle/account-settings-repository.db.test.ts",
   "apps/server/server/domains/packages/__tests__/account-skill-install-store.db.test.ts",
   "apps/server/server/domains/packages/__tests__/agent-revision-store.db.test.ts",
-  "apps/server/server/domains/threads/adapters/drizzle/chat-feed-activity.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/chat-feed.adapter-contract.db.test.ts",
-  "apps/server/server/domains/threads/adapters/drizzle/failed-reply-projection.db.test.ts",
   "apps/server/server/domains/billing/adapters/__conformance__/drizzle-credit-ledger.db.test.ts",
   "apps/server/server/domains/collab/adapters/__conformance__/drizzle-drafts.adapter-contract.db.test.ts",
   "apps/server/server/domains/collab/adapters/drizzle-change-trail-aggregate.db.test.ts",
@@ -60,7 +58,6 @@ const expectedSuites = [
   "apps/server/server/domains/collab/branch-tree.user-source.db.test.ts",
   "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/context-fs.create-untitled.db.test.ts",
-  "apps/server/server/domains/context/adapters/context-fs/document-names-migration.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/drizzle-store.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/drizzle-tree-mutation-store.db.test.ts",
   "apps/server/server/domains/context/adapters/drizzle-link-ahead-registry.db.test.ts",
@@ -110,6 +107,7 @@ const expectedSuites = [
   "apps/server/server/domains/threads/adapters/drizzle/model-response-cache-prediction.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/turn-position.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/transcript-reader.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/transcript-reader-transaction.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/thread-ls-requester-plan.db.test.ts",
   "apps/server/server/domains/threads/domain/rebind-thread-work.db.test.ts",
   "apps/server/server/domains/threads/domain/transcript-page.db.test.ts",
@@ -130,11 +128,6 @@ const expectedSuites = [
   "apps/server/server/test-support/drizzle-reset.db.test.ts",
   "packages/database/src/consume-credit-lots-fifo.db.test.ts",
   "packages/database/src/fresh-migrations.db.test.ts",
-  "packages/database/src/owner-handles-migration.db.test.ts",
-  "packages/database/src/saved-subagent-contracts-migration.db.test.ts",
-  "apps/server/server/test-support/scratch-archive-migration.db.test.ts",
-  "apps/server/server/test-support/work-branch-foundation-migration.db.test.ts",
-  "apps/server/server/test-support/chat-write-mode-migration.db.test.ts",
   "tools/dev/lib/migration-runner.db.test.ts",
 ] as const;
 const discoveredSuites = globSync("{apps/server,packages/database,tools/dev}/**/*.db.test.ts", {
@@ -180,7 +173,10 @@ export default defineProject({
     isolate: false,
     include: ["**/*.db.test.ts"],
     exclude: ["**/node_modules/**", "**/.{git,nx}/**"],
-    setupFiles: [fileURLToPath(new URL("../../tools/ci/db-test-worker-setup.ts", import.meta.url))],
+    setupFiles: [
+      fileURLToPath(new URL("../../tools/ci/db-test-worker-setup.ts", import.meta.url)),
+      fileURLToPath(new URL("server/test-support/db-test-file-setup.ts", import.meta.url)),
+    ],
     fileParallelism: workerDatabaseUrls.length > 0,
     maxWorkers: workerDatabaseUrls.length || 1,
     // Vitest's 5s default is too tight for the heavier real-Postgres suites, and a
@@ -190,6 +186,9 @@ export default defineProject({
     // Postgres load a hook can still outlast this; the harness fix is #616.
     testTimeout: 30_000,
     hookTimeout: 30_000,
+    // Reverse teardown order lets file-local afterEach hooks finish before the
+    // shared drain, which then settles before nested pool-closing afterAll hooks.
+    sequence: { shuffle: true, hooks: "stack" },
     reporters: [
       "default",
       fileURLToPath(new URL("../../tools/ci/test-budget-reporter.ts", import.meta.url)),

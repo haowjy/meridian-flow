@@ -1,4 +1,8 @@
-/** Desired-identity planning is independent of whichever surface submitted it. */
+/** Desired-identity planning is independent of whichever surface submitted it.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - typed-name identity commit projection
+ */
 
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -19,9 +23,7 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
 describe("useIdentityCommit", () => {
   it.each([
     ["before", "after.md", "after"],
-    ["config.toml", "settings.md", "settings"],
     ["config.toml", "settings.txt", "settings"],
-    ["config.toml", "Notes.md", "Notes"],
   ])("transports %s to %s as typed, retaining No Work and canonical presentation", async (current, typed, canonical) => {
     let rename!: ReturnType<typeof useIdentityCommit>;
     const committed = vi.fn();

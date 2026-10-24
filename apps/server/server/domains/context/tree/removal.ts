@@ -3,7 +3,13 @@
  * the last use of a hidden creation), the two restores that clear it (a Work Restore's
  * cascade, and one deleted document's `restoreDocument`), and its reader.
  */
-import type { ContextSourceId, DocumentId, FolderId, WorkId } from "@meridian/contracts";
+import {
+  type ContextSourceId,
+  type DocumentId,
+  type FolderId,
+  serializeRemovalIdentity,
+  type WorkId,
+} from "@meridian/contracts";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
@@ -15,7 +21,7 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   type DrizzleDb,
@@ -114,7 +120,25 @@ export function createDocumentRemoval(
       await testHook("removal.afterRecord");
       deps.workProjection.recountAfterCommit([...affected, ...drafted]);
       if (input.reason === "discarded") await releaseDocumentStorage(db, removed);
-      return removed;
+      const identities = await tx
+        .select({
+          documentId: documents.id,
+          time: documents.deletedAt,
+          locationVersion: documents.locationVersion,
+        })
+        .from(documents)
+        .where(inArray(documents.id, removed));
+      const byId = new Map(identities.map((identity) => [identity.documentId, identity]));
+      return removed.map((documentId) => {
+        const identity = byId.get(documentId);
+        if (!identity) throw new Error(`Removal of ${documentId} wrote no identity`);
+        const { time, locationVersion } = identity;
+        if (!time) throw new Error(`Removal of ${documentId} wrote no identity`);
+        return {
+          documentId,
+          removal: serializeRemovalIdentity({ time, locationVersion }),
+        };
+      });
     },
   };
 }
@@ -252,6 +276,7 @@ export async function restoreDocument(
       extension: documents.extension,
       hidden: documents.hidden,
       deletedAt: documents.deletedAt,
+      contentPurgedAt: documents.contentPurgedAt,
       reason: documents.deletionReason,
       byWork: documents.deletedByWorkId,
       locationVersion: documents.locationVersion,
@@ -278,6 +303,7 @@ export async function restoreDocument(
     (row.reason !== "deleted" && !(input.created && row.reason === "discarded")) ||
     (!input.created && row.hidden) ||
     row.byWork !== null ||
+    row.contentPurgedAt !== null ||
     row.sourceDeleted ||
     row.projectDeleted
   )
@@ -376,7 +402,10 @@ export async function restoreDocument(
 
 /** The `DocumentRemovals` port: `readRemovalRecords` in the caller's transaction, if any. */
 export function createRemovalRecords(db: DrizzleDb): DocumentRemovals {
-  return { lookup: (documentIds) => readRemovalRecords(currentDrizzleDb(db), documentIds) };
+  return {
+    lookup: (documentIds) =>
+      readRemovalRecords(currentDrizzleDb(db), documentIds, { retainedOnly: true }),
+  };
 }
 
 /**
@@ -387,6 +416,7 @@ export function createRemovalRecords(db: DrizzleDb): DocumentRemovals {
 export async function readRemovalRecords(
   db: Pick<DrizzleDb, "select">,
   documentIds: readonly DocumentId[],
+  options: { retainedOnly?: boolean } = {},
 ): Promise<ReadonlyMap<DocumentId, DocumentRemovalRecord>> {
   const records = new Map<DocumentId, DocumentRemovalRecord>();
   if (!documentIds.length) return records;
@@ -406,7 +436,13 @@ export async function readRemovalRecords(
     .leftJoin(users, eq(users.id, documents.deletedByUserId))
     .leftJoin(works, eq(works.id, documents.deletedByWorkId))
     .leftJoin(threads, eq(threads.id, documents.deletedByThreadId))
-    .where(and(inArray(documents.id, [...documentIds]), isNotNull(documents.deletedAt)));
+    .where(
+      and(
+        inArray(documents.id, [...documentIds]),
+        isNotNull(documents.deletedAt),
+        options.retainedOnly ? isNull(documents.contentPurgedAt) : undefined,
+      ),
+    );
   for (const row of rows) {
     records.set(row.id as DocumentId, {
       reason: row.reason as DocumentRemovalRecord["reason"],

@@ -2,6 +2,9 @@
  * A confirmed deletion is owned by the server version that confirmed it. A strictly newer
  * server observation of the same identity as present (Apply's restore, F9) supersedes it;
  * stale pages and receipts never resurrect it.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Canonical refresh retires older deletion evidence
  */
 import type {
   CatalogEntry,
@@ -37,7 +40,7 @@ const at = (version: string, rows: readonly CatalogEntry[] = entries): CatalogSn
 function deleted(
   request: Extract<NamespaceRequest, { kind: "delete" }>,
   observationVersion: string,
-  deletedDocumentIds: string[],
+  removedDocumentIds: string[],
 ): ContextOperationReceipt {
   return {
     observationVersion,
@@ -49,7 +52,14 @@ function deleted(
     },
     result: {
       ok: true,
-      value: { status: "deleted", deletedDocumentIds, availabilityGeneration: "9" },
+      value: {
+        status: "deleted",
+        removed: removedDocumentIds.map((documentId) => ({
+          documentId,
+          removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+        })),
+        availabilityGeneration: "9",
+      },
     },
   };
 }

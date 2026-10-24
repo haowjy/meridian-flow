@@ -1,4 +1,9 @@
-/** Real-Postgres crash-window proofs for durable change-trail event delivery. */
+/**
+ * Real-Postgres crash-window proofs for durable change-trail event delivery.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - bounded resumable outbox drains and predecessor exclusion between dispatchers
+ */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";

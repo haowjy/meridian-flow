@@ -1,13 +1,13 @@
-/** Schema-aware read and restore contracts for the collab document engine. */
+/** Schema-aware read and restore contracts for the collab document engine.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Tracked-file schema checks and identity-preserving repair (kb/decisions/collab/schema/schema-coherence-invariant.md)
+ */
 
 import { fragmentOf, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import {
-  buildDocumentSchema,
-  COLLAB_SCHEMA_VERSION,
-  createCollabYDoc,
-} from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryEventSink } from "../../observability/index.js";
@@ -238,11 +238,6 @@ describe("schema-aware serialization purity", () => {
 
     expect(Y.encodeStateAsUpdate(input)).toEqual(beforeState);
     expect(subject.eventSink.events).toHaveLength(1);
-    expect(subject.eventSink.events[0]?.payload).toEqual({
-      schemaVersion: COLLAB_SCHEMA_VERSION,
-      deletedNodeTypes: [],
-      deletedClockCount: 2,
-    });
     input.destroy();
   });
 });

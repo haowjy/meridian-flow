@@ -1,7 +1,13 @@
-/** Conformance tests for the UploadIntake aggregate independent of adapters. */
+/** Conformance tests for the UploadIntake aggregate independent of adapters.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Server-side upload content taxonomy
+ */
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { createNoopEventSink } from "../../observability/index.js";
+import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
+import { createContextUploadContentPort } from "./context-upload-content.js";
 import type { UploadIntakeRepository, UploadReservation } from "./upload-intake.js";
 import { classifyUpload, createUploadIntake } from "./upload-intake.js";
 
@@ -179,4 +185,41 @@ describe("UploadIntake", () => {
       }),
     ).toBe("binary");
   });
+});
+
+it("rejects a committed address different from the reservation", async () => {
+  const reservation: UploadReservation = {
+    owner: { kind: "chat", chatId: "chat", chatRef: null },
+    projectId: "project",
+    intakeId: "pending",
+    fingerprint: "fingerprint",
+    filename: "upload.md",
+    objectKey: "object",
+    locationRevision: "revision",
+    state: "reserved",
+    storageUrl: null,
+    consumed: false,
+    canonicalUri: "uploads://upload.md",
+    finalPath: "upload.md",
+    documentId: "document",
+    fileType: "markdown",
+  };
+  const content = createContextUploadContentPort({
+    forProject: () => ({
+      createBoundDocument: async () => ({
+        ok: true,
+        value: { documentId: "document", uri: "uploads://upload" },
+      }),
+    }),
+  } as unknown as UnifiedContextPortFactory);
+  expect(
+    await content.persist({
+      reservation,
+      bound: null,
+      actorUserId: "user",
+      bytes: new Uint8Array(),
+      mimeType: "text/plain",
+      storageUrl: null,
+    }),
+  ).toEqual({ ok: false, definite: true });
 });

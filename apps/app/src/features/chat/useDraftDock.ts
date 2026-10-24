@@ -69,7 +69,7 @@ export function useDraftDock({
   const targets = useMemo(
     () =>
       candidates
-        .filter((row) => row.draft.hasDraft)
+        .filter((row) => row.draft.hasDraft && row.draft.tree?.deleted !== true)
         .map((row) => ({
           projectId,
           workId,
@@ -84,7 +84,7 @@ export function useDraftDock({
   const files = candidates
     .map((row) => {
       const read = reads[targets.findIndex((target) => target.itemKey === row.draft.itemKey)];
-      const withoutText = row.draft.hasDraft === false;
+      const withoutText = row.draft.hasDraft === false || row.draft.tree?.deleted === true;
       const file = dockFile(
         row,
         reviewFileTargetName(row, untitled),
@@ -116,7 +116,7 @@ export function useDraftDock({
     (file: DockFile, change?: ReviewChange) => {
       controller.dismissNotice();
       // A draft-only picture has no review room: it opens as a preview.
-      if (!file.row.draft.hasDraft) {
+      if (!file.row.draft.hasDraft && file.row.draft.tree?.deleted !== true) {
         if (isDraftImagePath(file.row.contextLocation?.path))
           setImagePreview({ projectId, workId, documentId: file.row.documentId, name: file.name });
         return;

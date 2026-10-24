@@ -8,9 +8,9 @@ import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
-import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import { serverTabFromFile } from "../context/context-tab-from-file";
+import { DocumentDeleteUndoNotice, useDeleteContextEntry } from "../context/document-delete-undo";
 import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { DropRegion } from "../context/tree-drop/DropRegion";
@@ -86,7 +86,7 @@ export function WorkFilesView(props: WorkFilesViewProps) {
 
 function WorkFilesList({ projectId, work, search, files }: WorkFilesViewProps) {
   const { scratch, intake } = files;
-  const scratchDelete = useDeleteConfirmation({ projectId });
+  const scratchDelete = useDeleteContextEntry("work-files");
   const catalog = scratch.catalog;
   const openFile = useOpenDocumentInDock();
   const docked = useDockDocument(useProjectScreen(), projectId)?.tab.documentId;
@@ -209,14 +209,7 @@ function WorkFilesList({ projectId, work, search, files }: WorkFilesViewProps) {
         </ScratchDropGroup>
       </EntryList>
       <MoveNotice className="mt-2" />
-      <DeleteConfirmationDialog
-        projectId={projectId}
-        target={scratchDelete.target}
-        isPending={scratchDelete.isPending}
-        error={scratchDelete.error}
-        onCancel={scratchDelete.cancel}
-        onConfirm={() => void scratchDelete.confirm()}
-      />
+      <DocumentDeleteUndoNotice surface="work-files" className="sticky bottom-2 mt-2 px-2" />
     </div>
   );
 }

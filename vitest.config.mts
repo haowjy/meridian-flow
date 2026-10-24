@@ -33,6 +33,7 @@ export default defineConfig({
         ? Math.min(8, availableParallelism())
         : localWorkers,
     pool: "threads",
+    sequence: { shuffle: true },
     reporters: [
       "default",
       "./tools/ci/test-budget-reporter.ts",

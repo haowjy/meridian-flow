@@ -1,4 +1,9 @@
-/** A pool no larger than the concurrent peer ensures must still drain: one connection each. */
+/**
+ * A pool no larger than the concurrent peer ensures must still drain: one connection each.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - one transaction connection per concurrent peer ensure (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ */
 import { randomUUID } from "node:crypto";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";

@@ -15,11 +15,13 @@ import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel, UserRailSection } from "../context/ContextTreePanel";
 import { serverTabFromFile } from "../context/context-tab-from-file";
+import { DocumentDeleteUndoNotice } from "../context/document-delete-undo";
 import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
 import { useDockPlacement } from "../dock/use-dock-placement";
+import { useProjectTrashNavigation } from "../routing/ProjectNavigationContext";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleButton } from "./PanelToggleButton";
 import type { ScreenKey } from "./screens";
@@ -74,6 +76,7 @@ function LeftSidebarRail({
   onSelectContextPath,
   onCollapse,
 }: LeftSidebarProps) {
+  const trashNavigation = useProjectTrashNavigation();
   // A tree click is a known file, so it enters at the dock's commit boundary: beside the
   // chat on the Chat screen (the dock hosts images, PDFs and binaries in its viewer too),
   // and the Editor path everywhere else (see `use-dock-placement`).
@@ -138,7 +141,13 @@ function LeftSidebarRail({
         onSelectScreen={onSelectScreen}
         presentation="desktop"
         childrenRef={treePane}
-        notice={<MoveNotice className="mx-2 my-1.5 shrink-0" />}
+        notice={
+          <>
+            <DocumentDeleteUndoNotice surface="sidebar" className="mx-2 mb-1" />
+            <MoveNotice className="mx-2 my-1.5 shrink-0" />
+          </>
+        }
+        onOpenTrash={() => void trashNavigation.navigate(true)}
         user={
           contextLive ? (
             <UserRailSection

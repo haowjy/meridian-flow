@@ -1,4 +1,9 @@
-// Response committer lifecycle invariants: observer failures must not alter outcomes.
+/**
+ * Response committer lifecycle invariants: observer failures must not alter outcomes.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Response snapshot ownership and host-finalized lifecycle
+ */
 
 import { describe, expect, it, vi } from "vitest";
 import type * as Y from "yjs";
@@ -429,11 +434,10 @@ describe("reasoned refusal of staged writes", () => {
       { command: "insert", file: "chapter.md", content: "One." },
       peerContext(responseId, "peer-1", "turn-1"),
     );
-    const prepareSave = vi.spyOn(ctx.coordinator, "prepareSave");
-
     await ctx.core.rollbackResponse(responseId);
 
-    expect(prepareSave).not.toHaveBeenCalled();
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
     expect(ctx.core.hasResponseDocument(responseId, "chapter.md")).toBe(false);
   });
 

@@ -1,4 +1,9 @@
-/** Route seam coverage for create-with-content followed by the public read projection. */
+/**
+ * Route seam coverage for create-with-content followed by the public read projection.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - upload-only binary creation, archived Scratch refusal, and lazy source provisioning
+ */
 
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -343,7 +348,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: true,
         value: {
           status: "deleted",
-          deletedDocumentIds: [userDocumentId],
+          removed: [
+            {
+              documentId: userDocumentId,
+              removal: {
+                time: expect.any(String),
+                locationVersion: expect.stringMatching(/^[1-9]\d*$/),
+              },
+            },
+          ],
           availabilityGeneration: expect.not.stringMatching(/^0$/),
         },
       });

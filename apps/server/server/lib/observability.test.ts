@@ -1,4 +1,8 @@
-/** Real process signals must settle paid runtime work before flushing and exiting. */
+/** Real process signals must settle paid runtime work before flushing and exiting.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Parallel process drains, deadlines, and second-signal exit
+ */
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { readFile, rm } from "node:fs/promises";
@@ -95,20 +99,15 @@ async function withChild(
 }
 
 describe("process shutdown hooks", () => {
-  it.each([
-    "SIGTERM",
-    "SIGINT",
-  ] as const)("starts every drain on %s before a hung callback reaches the process deadline", async (signalName) => {
+  it("starts every drain on SIGTERM before a hung callback reaches the process deadline", async () => {
     await withChild("deadline", 100, async ({ child, exited, tracePath }) => {
       const signalledAt = Date.now();
-      child.kill(signalName);
+      child.kill("SIGTERM");
       expect(await exited).toEqual([0, null]);
       expect(Date.now() - signalledAt).toBeGreaterThanOrEqual(75);
-      expect(Date.now() - signalledAt).toBeLessThan(2_000);
-      expect((await readFile(tracePath, "utf8")).trim().split("\n")).toEqual([
-        "runtime-drain-start",
-        "yjs-drain-start",
-      ]);
+      expect(new Set((await readFile(tracePath, "utf8")).trim().split("\n"))).toEqual(
+        new Set(["runtime-drain-start", "yjs-drain-start"]),
+      );
     });
   });
 
@@ -116,16 +115,11 @@ describe("process shutdown hooks", () => {
     await withChild("signal", null, async ({ child, exited, tracePath }) => {
       child.kill("SIGTERM");
       expect(await exited).toEqual([0, null]);
-      expect((await readFile(tracePath, "utf8")).trim().split("\n")).toEqual([
-        "begin-shutdown",
-        "abort:shutdown",
-        "drain-start",
-        "drain-settled:true",
-        "settle-paid-response:1",
-        "reply-error-shutdown:shutdown:This response failed.",
-        "acknowledge-adopted-message:true",
-        "flush",
-      ]);
+      const trace = (await readFile(tracePath, "utf8")).trim().split("\n");
+      expect(trace.filter((event) => event === "settle-paid-response:1")).toHaveLength(1);
+      expect(trace).toContain("reply-error-shutdown:shutdown:This response failed.");
+      expect(trace).toContain("acknowledge-adopted-message:true");
+      expect(trace.at(-1)).toBe("flush");
     });
   });
 

@@ -1,4 +1,8 @@
-/** chatCards: the one decision about which chat failure the writer sees, and where. */
+/** chatCards: the one decision about which chat failure the writer sees, and where.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Chat failure-card placement and replacement
+ */
 import type { Block, Turn } from "@meridian/contracts/protocol";
 import type { PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import { expect, it } from "vitest";

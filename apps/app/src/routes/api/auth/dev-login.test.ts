@@ -1,3 +1,9 @@
+/**
+ * Dev login behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - development login adapter redirect and cookie forwarding
+ */
 import { getAuthkit } from "@workos/authkit-tanstack-react-start";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

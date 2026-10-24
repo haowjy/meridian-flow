@@ -4,7 +4,7 @@
  * its record (`removal`); every model path words it from that record. Callers of `remove` hold
  * Work/namespace and sorted document mutation locks before entering it.
  */
-import type { DocumentId, ThreadId, UserId, WorkId } from "@meridian/contracts";
+import type { DocumentId, RemovalIdentity, ThreadId, UserId, WorkId } from "@meridian/contracts";
 import type { DocumentRemovalCause, DocumentRemovalRecord } from "@meridian/contracts/protocol";
 
 type RemoveDocumentsInput = {
@@ -20,8 +20,10 @@ type RemoveDocumentsInput = {
 };
 
 export interface DocumentRemoval {
-  /** Tombstones the living ones among `documentIds` and returns exactly those. */
-  remove(input: RemoveDocumentsInput): Promise<readonly DocumentId[]>;
+  /** Tombstones the living ones among `documentIds` and returns exactly those removals. */
+  remove(
+    input: RemoveDocumentsInput,
+  ): Promise<readonly { documentId: DocumentId; removal: RemovalIdentity }[]>;
 }
 
 /**

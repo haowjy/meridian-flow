@@ -299,6 +299,10 @@ export function ContextViewerSurfaceController({
       );
       if (projection.kind === "none") continue;
       if (projection.kind === "terminal") {
+        // A terminal resource has already disappeared from the live catalog. Close its
+        // represented tab through the same removal path as an optimistic disappearance;
+        // closeVanished keeps live drafts open while ordinary tabs leave silently.
+        settleWriterClose(contextRemoval.closeVanished(projectId, tab));
         void availability
           .acceptCommittedDelete({
             projectId,

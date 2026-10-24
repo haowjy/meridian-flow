@@ -33,7 +33,9 @@ import type {
   TurnUsage,
 } from "../threads/index.js";
 import { threadSchema } from "../threads/thread.js";
+import { type RemovalIdentity, removalIdentitySchema } from "../tree-change.js";
 import type { AiWriteMode, Work, WorkHandle, WorksSnapshot } from "../works/index.js";
+import type { DocumentRemovalRecord } from "./document-removal.js";
 import { type Filetype, filetypeSchema, type YjsTrackedSchemaType } from "./filetype.js";
 import { admissionReceiptShape, type SubmittedReference } from "./user-turn-admission.js";
 import { runStateSchema } from "./ws-protocol.js";
@@ -184,7 +186,7 @@ export type CreateUntitledContextDocumentAnswer =
 /** Exact identities committed by one successful context-tree deletion. */
 export const deleteContextEntryResultSchema = z.object({
   status: z.literal("deleted"),
-  deletedDocumentIds: z.array(z.string().min(1)),
+  removed: z.array(z.object({ documentId: z.string().min(1), removal: removalIdentitySchema })),
   availabilityGeneration: z.string().regex(/^(0|[1-9]\d*)$/),
 });
 export type DeleteContextEntryResult = z.infer<typeof deleteContextEntryResultSchema>;
@@ -193,6 +195,57 @@ export type DeleteContextEntryRequest = {
   operationId: string;
   path: string;
   expected: { kind: "file"; documentId: string } | { kind: "folder"; nodeId: string };
+};
+
+export const restoreContextDocumentsRequestSchema = z.object({
+  documents: z
+    .array(
+      z.object({
+        documentId: z.string().uuid(),
+        removal: removalIdentitySchema,
+      }),
+    )
+    .min(1)
+    .refine(
+      (documents) =>
+        new Set(documents.map(({ documentId }) => documentId)).size === documents.length,
+      "Each document may be restored once per request",
+    ),
+});
+export type RestoreContextDocumentsRequest = z.infer<typeof restoreContextDocumentsRequestSchema>;
+
+export type RestoreContextDocumentResult =
+  | { documentId: string; outcome: "restored"; landedAt?: string }
+  | {
+      documentId: string;
+      outcome: "superseded" | "already_living" | "ancestor_taken" | "refused";
+    };
+
+export type RestoreContextDocumentsResponse = {
+  documents: RestoreContextDocumentResult[];
+};
+
+/** One restorable document in a project's trash. */
+export type DocumentTrashEntry = {
+  documentId: string;
+  name: string;
+  scheme: ProjectContextTreeScheme;
+  /** Source-relative path, including the filename, without a leading slash. */
+  formerPath: string;
+  removal: RemovalIdentity;
+  actor: DocumentRemovalRecord["actor"];
+  retention:
+    | { kind: "scheduled"; purgeAt: string }
+    | { kind: "held"; works: Array<{ id: string; name: string }> };
+};
+
+export type ListDocumentTrashResponse = {
+  documents: DocumentTrashEntry[];
+};
+
+/** One trashed document with its last settled Markdown projection. */
+export type GetDocumentTrashResponse = DocumentTrashEntry & {
+  markdown: string;
 };
 
 /** Stable writer-selected parent. URI callers may continue to omit this. */

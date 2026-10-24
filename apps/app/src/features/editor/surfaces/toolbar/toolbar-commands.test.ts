@@ -1,4 +1,10 @@
 // @vitest-environment jsdom
+/**
+ * Toolbar commands behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - block conversion toggle and selection semantics
+ */
 import { Editor, type JSONContent } from "@tiptap/core";
 import { CellSelection } from "@tiptap/pm/tables";
 import { afterEach, describe, expect, it } from "vitest";

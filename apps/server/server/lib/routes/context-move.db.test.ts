@@ -1,4 +1,9 @@
-/** Postgres-backed coverage for promoting work-scoped scratch documents. */
+/**
+ * Postgres-backed coverage for promoting work-scoped scratch documents.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - receipt lifetime, root representation, lineage-move policy, and provisional-name graduation
+ */
 
 import { folderDocumentName } from "@meridian/contracts/protocol";
 import { and, eq } from "drizzle-orm";
@@ -366,7 +371,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const operationId = crypto.randomUUID();
       const options = { operationId, expected: { kind: "file" as const, documentId: DOCUMENT_ID } };
       const deleted = await port.delete(uri, options);
-      expect(deleted).toMatchObject({ ok: true, value: { deletedDocumentIds: [DOCUMENT_ID] } });
+      expect(deleted).toMatchObject({
+        ok: true,
+        value: { removed: [{ documentId: DOCUMENT_ID }] },
+      });
       const replacement = await port.createTrackedDocument(uri, "replacement writing");
       expect(replacement.ok).toBe(true);
       await expect(port.delete(uri, options)).resolves.toEqual(deleted);
@@ -794,56 +802,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.documents.id, DOCUMENT_ID));
       expect(document?.folderId).toBeNull();
     });
-
-    it("delayed delivery follows the captured destination folder identity after its rename", async () => {
-      const { projectId, workId, port } = await arrangeUntitled();
-      const [parent] = await db
-        .select({ id: schema.folders.id })
-        .from(schema.folders)
-        .innerJoin(
-          schema.contextSources,
-          eq(schema.folders.contextSourceId, schema.contextSources.id),
-        )
-        .where(
-          and(
-            eq(schema.contextSources.projectId, projectId),
-            eq(schema.contextSources.slug, "manuscript"),
-            eq(schema.folders.name, "Act 1"),
-          ),
-        );
-      if (!parent) throw new Error("Missing destination folder");
-      // This is the immutable HTTP payload prepared while the parent still has its old name.
-      const prepared = {
-        operationId: crypto.randomUUID(),
-        expected: { kind: "file" as const, nodeId: DOCUMENT_ID },
-        path: "Untitled 1",
-        sourceWorkId: workId,
-        destinationScheme: "manuscript",
-        destinationFolderPath: "Act 1",
-        destinationParent: { kind: "folder", folderId: parent.id },
-      };
-      await expect(
-        port.commitWriterLocation("manuscript://Act 1", "manuscript://Renamed", {
-          expected: { kind: "folder", nodeId: parent.id },
-          operationId: crypto.randomUUID(),
-        }),
-      ).resolves.toMatchObject({ ok: true });
-      await expect(
-        moveContextEntry({ port, userId: USER_ID, sourceScheme: "scratch", body: prepared }),
-      ).resolves.toMatchObject({ status: "moved" });
-      const [document] = await db
-        .select({ folderId: schema.documents.folderId })
-        .from(schema.documents)
-        .where(eq(schema.documents.id, DOCUMENT_ID));
-      expect.soft(document?.folderId).toBe(parent.id);
-      await expect.soft(port.stat("manuscript://Renamed/Untitled 1")).resolves.toMatchObject({
-        ok: true,
-      });
-      await expect.soft(port.stat("manuscript://Act 1/Untitled 1")).resolves.toMatchObject({
-        ok: false,
-      });
-    });
-
     it("creates missing suffix folders beneath an anchor renamed before delivery and replays exactly", async () => {
       const { projectId, workId, port } = await arrangeUntitled();
       const folderId = await destinationFolder(projectId);

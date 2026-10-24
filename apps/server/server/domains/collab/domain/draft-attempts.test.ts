@@ -3,6 +3,9 @@
  * attempt captures anything (a retry never computes under the failed attempt's locks), and
  * every candidate a failed attempt owned is disposed, one whose own write succeeded inside
  * the rolled-back scope included. A second owner cannot start inside a commit scope (D16a).
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Draft attempt unwind and ownership transfer
  */
 import { describe, expect, it } from "vitest";
 import { type AttemptScope, NestedAttemptError, runBoundedAttempts } from "./draft-attempts.js";

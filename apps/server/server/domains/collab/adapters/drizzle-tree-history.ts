@@ -16,6 +16,22 @@ import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
 import type { AgentTreeHistory } from "../contracts.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 
+type DirectTreeChange = Extract<
+  Parameters<AgentTreeHistory["recordAgentTreeChange"]>[0],
+  { threadId: unknown }
+>;
+
+function directProvenance(input: DirectTreeChange) {
+  return {
+    threadId: input.threadId,
+    turnId: input.turnId ?? null,
+    responseId: input.responseIdentity?.providerResponseId ?? null,
+    editScopeId: input.responseIdentity?.editScopeId ?? null,
+    toolCallId: input.toolCallId ?? null,
+    shownAt: input.shownAt,
+  };
+}
+
 export function createDrizzleTreeHistory(
   db: Database,
   journal: Pick<UpdateJournal, "reserveWriteOrdinal">,
@@ -32,7 +48,47 @@ export function createDrizzleTreeHistory(
     },
 
     async recordAgentTreeChange(input) {
+      if (input.op === "move" && !input.landedAt)
+        throw new Error("A recorded move requires its committed destination");
       const { change } = input;
+      const materialized = input.materializes
+        ? await tx()
+            .select({
+              documentId: documentEdits.documentId,
+              actor: documentEdits.actor,
+              threadId: documentEdits.threadId,
+              turnId: documentEdits.turnId,
+              responseId: documentEdits.responseId,
+              editScopeId: documentEdits.editScopeId,
+              toolCallId: documentEdits.toolCallId,
+              tree: documentEdits.treeChange,
+            })
+            .from(documentEdits)
+            .where(eq(documentEdits.id, input.materializes))
+            .limit(1)
+        : [];
+      const source = materialized[0];
+      if (
+        input.materializes &&
+        (!source ||
+          source.documentId !== input.documentId ||
+          source.actor !== "agent" ||
+          !source.threadId ||
+          !source.tree ||
+          source.tree.op !== "delete" ||
+          source.tree.destination.kind !== "draft")
+      )
+        throw new Error("Applied delete must materialize its exact drafted agent entry");
+      const provenance = source
+        ? {
+            threadId: source.threadId as import("@meridian/contracts").ThreadId,
+            turnId: source.turnId,
+            responseId: source.responseId,
+            editScopeId: source.editScopeId,
+            toolCallId: source.toolCallId,
+            shownAt: source.tree?.shownAt ?? null,
+          }
+        : directProvenance(input as DirectTreeChange);
       const transition: TreeTransition =
         change.destination === "draft"
           ? {
@@ -41,23 +97,24 @@ export function createDrizzleTreeHistory(
               after: change.after,
             }
           : { destination: { kind: "live" }, before: change.before, after: await liveAfter(input) };
-      const wId = await journal.reserveWriteOrdinal(input.documentId, input.threadId);
+      const wId = await journal.reserveWriteOrdinal(input.documentId, provenance.threadId);
       await recordDocumentEdit(tx(), {
         documentId: input.documentId,
         actor: "agent",
         wId,
-        threadId: input.threadId,
-        turnId: input.turnId ?? null,
-        responseId: input.responseIdentity?.providerResponseId ?? null,
-        editScopeId: input.responseIdentity?.editScopeId ?? null,
-        toolCallId: input.toolCallId ?? null,
+        threadId: provenance.threadId,
+        turnId: provenance.turnId,
+        responseId: provenance.responseId,
+        editScopeId: provenance.editScopeId,
+        toolCallId: provenance.toolCallId,
         kind: "write",
         receipts: [],
         treeChange: {
           op: input.op,
           ...transition,
-          shownAt: input.shownAt,
+          shownAt: provenance.shownAt,
           ...(input.landedAt ? { landedAt: input.landedAt } : {}),
+          ...(input.materializes ? { materializes: input.materializes } : {}),
           seq: await nextEditSeq(tx()),
           targets: [],
         },

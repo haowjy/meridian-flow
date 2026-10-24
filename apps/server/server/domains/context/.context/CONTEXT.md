@@ -93,6 +93,18 @@ member or Work is restored. Document tombstones and lineage-hidden sources
 retain distinct status. Stable IDs never become capabilities without a policy
 check.
 
+`DocumentTrash` owns the deleted-document lifecycle outside live `ContextPort`
+path resolution. List and identity reads admit only a currently restorable
+delete: visible rather than hidden, not removed by a Work cascade, unpurged,
+and still under a live source and project. The list returns removal metadata;
+the identity read adds the retained Markdown projection. Both authorize
+through the project before exposing the tombstone or its text. The hourly
+purge releases content after the shared 30-day retention period while keeping
+the tombstone and incoming identity links. It takes the Work, branch,
+namespace, document, and draft locks before rechecking eligibility. Pending
+branch text or tree changes defer purge; otherwise collab closes active drafts
+before the storage-release kernel erases the content.
+
 ## Creation and hidden-node lifecycle
 
 Content placement and branch tree visibility are separate. Scratch content writes stay live in
@@ -232,8 +244,9 @@ relative spelling uses only a holder the reader may name and read.
 
 Browser addresses normally resolve in the live tree. A review address may
 supply `reviewWorkId` and an item key `${branchId}:${documentId}`; the server
-checks that item against active review items, then reads the branch tree. The
-item's own draft admits its document the way it admits writes
+checks that item against active review items, then reads the branch tree, except
+for a drafted delete whose identity is intentionally absent there, which reads
+the live tree by the validated document identity. The item's own draft admits its document the way it admits writes
 (`survivingDraftDocuments`, availability's `admitDrafts`): a no-effect draft of a
 document deleted live is not listed, so its path finds it gone, but its review
 address still opens the open tab's draft (D79). Stale,

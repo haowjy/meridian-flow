@@ -11,12 +11,12 @@ export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const result = await handleRebindThreadWorkRequest(
     {
-      threads: app.repos.threads,
-      threadWorks: app.repos.threadWorks,
+      threads: app.threadRepos.threads,
+      threadWorks: app.threadRepos.threadWorks,
       works: app.workRepo,
       workContextNotices: app.workContextNotices,
       notices: app.notices,
-      transaction: app.repos.transaction,
+      transaction: app.threadRepos.transaction,
       runClaim: app.runClaim,
     },
     {

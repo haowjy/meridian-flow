@@ -1,4 +1,8 @@
-/** Exact root binding, ownership create-or-get, and atomic failure in the app transaction. */
+/** Exact root binding, ownership create-or-get, and atomic failure in the app transaction.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Work-default write mode and reserved Agent revision recovery (kb/decisions/work/write-mode/chat-write-mode.md)
+ */
 import { describe, expect, it } from "vitest";
 import { createBoundAgentCatalog, seedGeneralAgent } from "../domains/packages/index.js";
 import {
@@ -31,9 +35,9 @@ async function fixture() {
   const deps = {
     projects,
     workRepo,
-    threads: app.repos.threads,
-    threadWorks: app.repos.threadWorks,
-    transaction: app.repos.transaction,
+    threads: app.threadRepos.threads,
+    threadWorks: app.threadRepos.threadWorks,
+    transaction: app.threadRepos.transaction,
     agentRevisions: app.agentRevisions,
     agentCatalog,
     eventSink: app.eventSink,
@@ -92,7 +96,7 @@ describe("exact thread creation", () => {
     expect(created.agentDefinitionRevisionId).toBe(args.agentSelection.definitionRevisionId);
     expect(created.agentName).toBe("General");
     expect(created.ref).toBe("c1");
-    expect((await app.repos.threads.findById(created.id))?.agentDefinitionRevisionId).toBe(
+    expect((await app.threadRepos.threads.findById(created.id))?.agentDefinitionRevisionId).toBe(
       args.agentSelection.definitionRevisionId,
     );
     await seedGeneralAgent(app.agentRevisions, "new-model");
@@ -155,7 +159,7 @@ describe("exact thread creation", () => {
       createThreadForProject(deps, args),
     ]);
     expect(second).toEqual(first);
-    expect((await app.repos.threads.listByProject(args.projectId)).length).toBe(1);
+    expect((await app.threadRepos.threads.listByProject(args.projectId)).length).toBe(1);
     expect((await app.agentRevisions.readThreadBinding(args.id))?.revision?.id).toBe(
       args.agentSelection.definitionRevisionId,
     );
@@ -178,7 +182,7 @@ describe("exact thread creation", () => {
         { ...args, workId: work.id },
       ),
     ).rejects.toBeInstanceOf(InvalidWorkAttachmentError);
-    expect(await app.repos.threads.findById(args.id)).toBeNull();
+    expect(await app.threadRepos.threads.findById(args.id)).toBeNull();
     expect(await app.agentRevisions.readThreadBinding(args.id)).toBeUndefined();
   });
 
@@ -199,7 +203,7 @@ describe("exact thread creation", () => {
         args,
       ),
     ).rejects.toThrow("after binding");
-    expect(await app.repos.threads.findById(args.id)).toBeNull();
+    expect(await app.threadRepos.threads.findById(args.id)).toBeNull();
     expect(await app.agentRevisions.readThreadBinding(args.id)).toBeUndefined();
   });
 
@@ -220,6 +224,6 @@ describe("exact thread creation", () => {
     await expect(createThreadForProject(deps, { ...args, workId: "missing-work" })).rejects.toThrow(
       "Work is not available",
     );
-    expect(await app.repos.threads.findById(args.id)).toBeNull();
+    expect(await app.threadRepos.threads.findById(args.id)).toBeNull();
   });
 });

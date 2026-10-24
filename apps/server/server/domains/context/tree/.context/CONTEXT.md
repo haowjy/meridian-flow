@@ -173,9 +173,11 @@ included, before the split updates any document row. Rollback delivers nothing.
 ## Restoring one document
 
 `restoreDocument` is the one restore of a deleted document: Apply of a draft
-that outlived the delete (D79), and from PR 3 a reply's rollback and the turn
-card's Undo. The caller holds the document's namespace, then its lock
-(`acquireTreeScope`). A reversing caller names the removal it reverses (its
+that outlived the delete (D79), a reply's rollback, the turn card's Undo, and
+writer Undo or Trash Restore through the project restore endpoint. Interactive restores share
+`context/tree-edit-admission.ts`: bound grants enter the Work projection seam
+before `acquireTreeScope`; each caller owns the transaction retry. A reversing
+caller names the removal it reverses (its
 time and the `location_version` it wrote), so a later, different removal
 answers `superseded`; Apply names none, and calls it only for a click that
 carries the writer's `restore` (D79); a click without it that meets a deleted

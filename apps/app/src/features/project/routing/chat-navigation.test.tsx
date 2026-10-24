@@ -3,6 +3,9 @@
  * Chat commands keep the writer's screen: on the Chat screen they navigate;
  * elsewhere they point the dock at the chat and reveal it. The current chat is
  * this tab's own, and a chat the server no longer has is let go.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - tab-local remembered chat navigation
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";

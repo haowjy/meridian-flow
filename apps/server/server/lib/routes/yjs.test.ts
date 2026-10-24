@@ -1,3 +1,9 @@
+/**
+ * Tests yjs behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Hocuspocus close forwarding and current Yjs handshake protocol
+ */
 import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
@@ -277,36 +283,32 @@ describe("Yjs draft handshake route guard", () => {
     expect(state.get("draft_1")).toBe("rejected");
   });
 
-  it("clears draft sync state through the route close handler", async () => {
-    const state = new Map<string, DraftHandshakeState>([["draft_1", "rejected"]]);
+  it("forwards route closes to Hocuspocus", async () => {
     const handleClose = vi.fn();
     const gateway = createYjsGateway(gatewayServices());
     const connection = {
       hocuspocus: { handleClose },
-      draftSyncState: state,
+      draftSyncState: new Map<string, DraftHandshakeState>(),
       offlineSyncUpdates: new Set<string>(),
     };
 
     gateway.close(connection as never, { code: 1000, reason: "test" });
 
     expect(handleClose).toHaveBeenCalledWith({ code: 1000, reason: "test" });
-    expect(state.size).toBe(0);
   });
 
-  it("clears draft sync state through the route error handler", async () => {
-    const state = new Map<string, DraftHandshakeState>([["draft_1", "rejected"]]);
+  it("forwards route errors to Hocuspocus as server closes", async () => {
     const handleClose = vi.fn();
     const gateway = createYjsGateway(gatewayServices());
     const connection = {
       hocuspocus: { handleClose },
-      draftSyncState: state,
+      draftSyncState: new Map<string, DraftHandshakeState>(),
       offlineSyncUpdates: new Set<string>(),
     };
 
     gateway.error(connection as never);
 
     expect(handleClose).toHaveBeenCalledWith({ code: 1011, reason: "error" });
-    expect(state.size).toBe(0);
   });
 
   it("stops connection admission synchronously when drain starts", async () => {

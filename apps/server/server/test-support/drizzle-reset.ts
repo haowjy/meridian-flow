@@ -123,11 +123,17 @@ async function assertThrowawayDatabase(db: Database): Promise<void> {
 }
 
 /** A rollback must also wait while its transaction-backed adapters are still usable. */
-async function drainDetachedWork(): Promise<void> {
+export async function drainDetachedWork(context = "reset fixtures"): Promise<void> {
   if (!(await processDetachedWork.drain(25_000)))
     throw new Error(
-      `Cannot reset fixtures before detached runtime work settles: ${processDetachedWork.pendingTasks.join(", ")}`,
+      `Cannot ${context} before detached runtime work settles: ${processDetachedWork.pendingTasks.join(", ")}`,
     );
+}
+
+/** Drain runtime work before giving Postgres a bounded window to close its pool. */
+export async function closeTestDatabase(db: Database): Promise<void> {
+  await drainDetachedWork("close the test database");
+  await db.$client.end({ timeout: 1 });
 }
 
 /**
@@ -290,7 +296,7 @@ export function useRollbackTestDatabase(
   });
 
   afterAll(async () => {
-    await root.close();
+    await closeTestDatabase(root);
   });
 
   return {

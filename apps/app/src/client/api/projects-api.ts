@@ -9,7 +9,14 @@
  */
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
-import type { ContextOperationReceipt, ProjectChatFeedPage } from "@meridian/contracts/protocol";
+import type {
+  ContextOperationReceipt,
+  GetDocumentTrashResponse,
+  ListDocumentTrashResponse,
+  ProjectChatFeedPage,
+  RestoreContextDocumentsRequest,
+  RestoreContextDocumentsResponse,
+} from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
   apiProjectChatFeedPath,
@@ -372,6 +379,42 @@ export async function getContextOperationReceipt(
     { headers: init?.headers, signal: init?.signal },
   );
   return result.receipt;
+}
+
+export function restoreContextDocuments(
+  projectId: string,
+  body: RestoreContextDocumentsRequest,
+  init?: RequestInitOptions,
+): Promise<RestoreContextDocumentsResponse> {
+  return postJson(
+    urlFor(`/api/projects/${encodeURIComponent(projectId)}/context/restore`, init),
+    body,
+    { headers: init?.headers, signal: init?.signal },
+  );
+}
+
+export function getDocumentTrash(
+  projectId: string,
+  init?: RequestInitOptions,
+): Promise<ListDocumentTrashResponse> {
+  return getJson(urlFor(`/api/projects/${encodeURIComponent(projectId)}/context/trash`, init), {
+    headers: init?.headers,
+    signal: init?.signal,
+  });
+}
+
+export function getTrashedDocument(
+  projectId: string,
+  documentId: string,
+  init?: RequestInitOptions,
+): Promise<GetDocumentTrashResponse> {
+  return getJson(
+    urlFor(
+      `/api/projects/${encodeURIComponent(projectId)}/context/trash/${encodeURIComponent(documentId)}`,
+      init,
+    ),
+    { headers: init?.headers, signal: init?.signal },
+  );
 }
 
 export async function deleteContextEntry(

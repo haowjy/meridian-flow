@@ -8,6 +8,7 @@ import type {
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import {
   type ResourcePlacement,
+  type ResourceProjectionSnapshot,
   type ResourceRecord,
   resourcePlacementForSnapshot,
 } from "@meridian/resource-replica";
@@ -58,7 +59,11 @@ import {
   useContextTabsStore,
 } from "@/client/stores";
 import { useDockDocumentStore } from "../dock/dock-document-store";
-import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
+import {
+  type OpenContextRoute,
+  useOpenContextRoute,
+  useProjectTrashNavigation,
+} from "../routing/ProjectNavigationContext";
 import {
   useOptionalAccountResourceReplica,
   useOptionalContextRemovalCoordinator,
@@ -288,6 +293,10 @@ export type KnownDocumentIdentity = {
 
 export type OpenProjectDocumentRequest = {
   documentId: string;
+  /** The caller has already resolved this identity as deleted. */
+  trashed?: true;
+  /** Ignore a local identity projection known to predate a completed mutation. */
+  refreshIdentity?: true;
   known?: KnownDocumentIdentity;
   /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
   workId?: string;
@@ -303,6 +312,7 @@ export type OpenProjectDocumentRequest = {
 export type OpenDocumentPlacement = "editor" | "dock" | "background";
 export type OpenDocumentOutcome =
   | { kind: "committed"; documentId: string; placement: OpenDocumentPlacement }
+  | { kind: "trashed"; documentId: string }
   | { kind: "cancelled" }
   | { kind: "refused"; reason: "gone" | "no-viewer" | "lookup-failed" };
 export type OpenProjectDocument = (
@@ -318,9 +328,10 @@ type NavigationAdapterDependencies = {
   ): import("@/client/stores").OpenEditorTabResult;
   openRoute: OpenContextRoute | null;
   captureNavigation?: () => () => boolean;
+  openTrash(documentId: string): Promise<unknown>;
   resources?: Pick<
     import("@/core/resources/account-resource-replica").AccountResourceReplica,
-    "accountId" | "readProjectionState"
+    "accountId" | "observeProjection" | "readProjectionState"
   > | null;
   reconcileInstalledTab?: (projectId: string, tab: ContextTab) => void;
 };
@@ -378,6 +389,8 @@ export class ProjectDocumentNavigationAdapter {
     projectId: string,
     {
       documentId,
+      trashed,
+      refreshIdentity,
       known,
       workId,
       disposition = "current",
@@ -403,6 +416,19 @@ export class ProjectDocumentNavigationAdapter {
     const isCurrent = () => canCommit() && navigationIsCurrent?.() !== false;
 
     try {
+      if (trashed) {
+        const resolution = await this.dependencies.opener.resolveIdentity(projectId, documentId);
+        if (!isCurrent()) return { kind: "cancelled" };
+        if (resolution.kind === "deleted")
+          return this.openTrash(documentId, controller.signal, isCurrent);
+        return {
+          kind: "refused",
+          reason:
+            resolution.kind === "failed" || resolution.kind === "malformed"
+              ? "lookup-failed"
+              : "gone",
+        };
+      }
       const projection = this.dependencies.resources?.readProjectionState(projectId);
       const record =
         projection?.kind === "ready"
@@ -410,11 +436,11 @@ export class ProjectDocumentNavigationAdapter {
               (candidate) => candidate.resource.identity.documentId === documentId,
             )
           : undefined;
-      if (record?.resource.lifecycle.kind === "terminal")
-        return { kind: "refused", reason: "gone" };
+      if (!refreshIdentity && record?.resource.lifecycle.kind === "terminal")
+        return this.openTrash(documentId, controller.signal, isCurrent);
 
-      let identity = known;
-      if (!identity && projection?.kind === "ready" && record) {
+      let identity = refreshIdentity ? undefined : known;
+      if (!refreshIdentity && !identity && projection?.kind === "ready" && record) {
         identity =
           identityForRecord(
             projectId,
@@ -427,13 +453,12 @@ export class ProjectDocumentNavigationAdapter {
       if (!identity) {
         const resolution = await this.dependencies.opener.resolveIdentity(projectId, documentId);
         if (!isCurrent()) return { kind: "cancelled" };
+        if (resolution.kind === "deleted")
+          return this.openTrash(documentId, controller.signal, isCurrent);
         if (resolution.kind !== "available") {
           return {
             kind: "refused",
-            reason:
-              resolution.kind === "deleted" || resolution.kind === "not-visible"
-                ? "gone"
-                : "lookup-failed",
+            reason: resolution.kind === "not-visible" ? "gone" : "lookup-failed",
           };
         }
         transfer = resolution;
@@ -450,6 +475,25 @@ export class ProjectDocumentNavigationAdapter {
           chatId:
             resolution.entry.scope.kind === "chat" ? resolution.entry.scope.chatId : undefined,
         };
+      }
+
+      if (refreshIdentity && this.dependencies.resources) {
+        // Restoring a deleted ancestor republishes the document through the catalog. Do not
+        // install its tab while the replica still holds the prior terminal record: that record
+        // would immediately close the tab and clear the destination.
+        try {
+          await waitForLivingProjection(
+            this.dependencies.resources,
+            projectId,
+            documentId,
+            controller.signal,
+          );
+        } catch {
+          return controller.signal.aborted
+            ? { kind: "cancelled" }
+            : { kind: "refused", reason: "lookup-failed" };
+        }
+        if (!isCurrent()) return { kind: "cancelled" };
       }
 
       if (disposition === "current" && !this.dependencies.openRoute)
@@ -478,6 +522,17 @@ export class ProjectDocumentNavigationAdapter {
       this.pending.delete(controller);
       if (this.current === controller) this.current = null;
     }
+  }
+
+  private async openTrash(
+    documentId: string,
+    signal: AbortSignal,
+    isCurrent: () => boolean,
+  ): Promise<OpenDocumentOutcome> {
+    if (signal.aborted) return { kind: "cancelled" };
+    if (!isCurrent()) return { kind: "cancelled" };
+    await this.dependencies.openTrash(documentId);
+    return { kind: "trashed", documentId };
   }
 
   private async commitFile(input: {
@@ -579,6 +634,42 @@ export class ProjectDocumentNavigationAdapter {
   }
 }
 
+function waitForLivingProjection(
+  resources: NonNullable<NavigationAdapterDependencies["resources"]>,
+  projectId: string,
+  documentId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const living = (snapshot: ResourceProjectionSnapshot) =>
+    snapshot.records.some(
+      (record) =>
+        record.resource.identity.documentId === documentId &&
+        record.resource.lifecycle.kind !== "terminal",
+    );
+  const state = resources.readProjectionState(projectId);
+  if (state.kind === "ready" && living(state.snapshot)) return Promise.resolve();
+  if (state.kind === "failed") return Promise.reject(state.error);
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    let stop: () => void = () => undefined;
+    const finish = (settle: () => void) => {
+      signal.removeEventListener("abort", abort);
+      stop();
+      settle();
+    };
+    const abort = () => finish(() => reject(signal.reason));
+    stop = resources.observeProjection(
+      projectId,
+      (snapshot) => {
+        if (living(snapshot)) finish(resolve);
+      },
+      (error) => finish(() => reject(error)),
+    );
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+  });
+}
+
 function schemeForEntry(entry: CatalogFileEntry): ProjectContextTreeScheme | null {
   const separator = entry.uri.indexOf(":");
   const scheme = separator < 0 ? "" : entry.uri.slice(0, separator);
@@ -602,6 +693,7 @@ export function ProjectDocumentNavigationProvider({
   children: ReactNode;
   captureNavigation?: () => () => boolean;
 }) {
+  const { navigate: openTrash } = useProjectTrashNavigation();
   const opener = useProjectDocumentLiveOpener();
   const resources = useOptionalAccountResourceReplica();
   const removal = useOptionalContextRemovalCoordinator();
@@ -643,12 +735,22 @@ export function ProjectDocumentNavigationProvider({
         openTab,
         openRoute: openContextRoute,
         captureNavigation,
+        openTrash,
         resources,
         reconcileInstalledTab: (installedProjectId, tab) =>
           removal?.reconcileInstalledTab(installedProjectId, tab),
       }),
     }),
-    [openContextRoute, openTab, opener, projectId, captureNavigation, removal, resources],
+    [
+      openContextRoute,
+      openTab,
+      openTrash,
+      opener,
+      projectId,
+      captureNavigation,
+      removal,
+      resources,
+    ],
   );
   useEffect(() => () => owner.adapter.dispose(), [owner]);
 

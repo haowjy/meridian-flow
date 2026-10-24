@@ -1,5 +1,10 @@
 // @vitest-environment jsdom
-/** Attested deletion disposition, distinct from the never-created destination lifecycle. */
+/** Attested deletion disposition, distinct from the never-created destination lifecycle.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - deleted-chat bind sweep protocol
+ * - accepted two-tab deletion transfer limit
+ */
 import { expect, it, vi } from "vitest";
 import { MeridianApiError } from "@/client/api/meridian-error";
 import { ComposerSessionDraft } from "@/client/composer-drafts";

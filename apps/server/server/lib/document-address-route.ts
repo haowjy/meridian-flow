@@ -43,7 +43,12 @@ export async function handleDocumentAddressRequest(
     });
     if (!resolved) return { kind: "unavailable" };
     reviewDocumentId = resolved.documentId;
-    view = { kind: "branch", branchId: resolved.branchId };
+    // A drafted delete is intentionally absent from its branch tree. The validated review
+    // identity still opens the live document at the item's path; ordinary path resolution
+    // remains unavailable in that branch.
+    view = resolved.item.tree?.deleted
+      ? { kind: "live" }
+      : { kind: "branch", branchId: resolved.branchId };
     destination = {
       kind: "draft",
       workId: work.id,

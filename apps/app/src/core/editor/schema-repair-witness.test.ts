@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** Contract coverage for bind-time schema repair observation and evidence. */
+/** Contract coverage for bind-time schema repair observation and evidence.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - schema-repair witness batching (kb/decisions/collab/schema/repair-first-never-disable.md)
+ */
 
 import { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";

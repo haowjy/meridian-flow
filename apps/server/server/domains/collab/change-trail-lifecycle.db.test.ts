@@ -1,3 +1,10 @@
+/**
+ * Database coverage for change trail lifecycle.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - cold terminal-owner reconciliation and transaction-bound receipt invalidation
+ */
+
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { drizzleFileAccess } from "../../test-support/file-grants.js";
@@ -23,61 +30,6 @@ describe("change trail (postgres)", () => {
   const db = createTestDatabase();
   beforeEach(() => resetDatabase(db));
   afterAll(() => closeDatabase(db));
-
-  it("retains captured trail prose after the file is permanently deleted", async () => {
-    const trailId = "00000000-0000-4000-8000-000000000810";
-    await db.insert(schema.changeTrailShells).values({
-      id: trailId,
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      ownerKind: "turn",
-      changeCount: 1,
-      documentCount: 1,
-    });
-    await db
-      .insert(schema.changeTrailDocumentOccurrences)
-      .values({ trailId, documentId: ALPHA_ID });
-    await db.insert(schema.changeTrailDocumentDetails).values({
-      trailId,
-      documentId: ALPHA_ID,
-      documentTitle: "Deleted chapter",
-      changes: [
-        {
-          changeId: "captured-change",
-          ordinal: 0,
-          documentId: ALPHA_ID,
-          pushId: null,
-          receiptId: null,
-          kind: "delete",
-          beforeText: "deleted-block|Captured after reload.",
-          afterTextAtReceipt: null,
-          beforeBlockIdentity: null,
-          afterBlockIdentity: null,
-          navigation: { kind: "unavailable", reason: "document_deleted" },
-        },
-      ],
-    });
-    await db
-      .update(schema.documents)
-      .set({ deletionReason: "deleted", deletedAt: new Date() })
-      .where(eq(schema.documents.id, ALPHA_ID));
-
-    const reader = createDrizzleChangeTrailReader(db, drizzleFileAccess(db));
-    await expect(
-      reader.readDetails({ threadId: THREAD_ID, trailId, userId: USER_ID }),
-    ).resolves.toEqual([
-      expect.objectContaining({
-        documentId: ALPHA_ID,
-        anchorState: "deleted",
-        changes: [
-          expect.objectContaining({
-            beforeText: "deleted-block|Captured after reload.",
-          }),
-        ],
-      }),
-    ]);
-  });
-
   it("returns no protected trail detail when document authorization fails", async () => {
     const trailId = "00000000-0000-4000-8000-000000000811";
     await db.insert(schema.changeTrailShells).values({

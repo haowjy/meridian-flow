@@ -70,7 +70,7 @@ export type LinkResolution =
    */
   | { kind: "document"; document: CatalogDocument; inBranch: boolean; settled?: true }
   /** Rule 2 (and 3, `settled`, when the settled document is gone). */
-  | { kind: "gone"; settled?: true }
+  | { kind: "gone"; settled?: true; documentId?: string }
   /** Rule 4: an unsettled ahead ref with nothing at its address. */
   | { kind: "ahead"; uri: string; suffix: string }
   /** Rule 5: no ref; the host applies today's address rules. */
@@ -121,7 +121,10 @@ function resolveDocument(
   document: CatalogDocument | null | undefined,
 ): Extract<LinkResolution, { kind: "document" | "gone" | "unknown" }> {
   if (document === undefined) return { kind: "unknown" };
-  return document && nameableLive(document) ? documentResolution(document) : { kind: "gone" };
+  if (document && nameableLive(document)) return documentResolution(document);
+  return document?.presence === "deleted"
+    ? { kind: "gone", documentId: document.documentId }
+    : { kind: "gone" };
 }
 
 function nameableLive(document: CatalogDocument): boolean {

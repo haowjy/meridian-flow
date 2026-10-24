@@ -48,6 +48,7 @@ import {
   createDrizzleDocumentArrivals,
   createDrizzleDocumentLinkHistory,
   createDrizzleDocumentLinkScopes,
+  createDrizzleDocumentTrash,
   createDrizzleFigureDocumentRepository,
   createDrizzleLineageScratchLifecycle,
   createDrizzleLinkAheadRegistry,
@@ -63,16 +64,19 @@ import {
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createRemovalRecords,
+  createRestoreRemovedDocuments,
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentLinkResolver,
   type DocumentRemovals,
+  type DocumentTrash,
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
   type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
   type PromotionService,
+  type RestoreRemovedDocuments,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
   type UploadIntake,
@@ -277,13 +281,13 @@ export type AppServices = {
   threadRepos: ThreadRepositories;
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
-  repos: ThreadRepositories;
-  hub: ThreadEventHub;
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
+  restoreRemovedDocuments: RestoreRemovedDocuments;
+  documentTrash: DocumentTrash;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -326,6 +330,7 @@ export type AppServices = {
     repairOrphans(): Promise<number>;
     publishReports(): Promise<number>;
     purgeWorks(): Promise<number>;
+    purgeDocuments(): Promise<number>;
   };
   userTurnAdmission: UserTurnAdmission;
   runClaim: Pick<RunClaim, "withExclusiveThread">;
@@ -373,6 +378,8 @@ export type ProductionAppPorts = {
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog & ContextCatalogMutationPort & ProjectCatalogLifecyclePort;
+  restoreRemovedDocuments: RestoreRemovedDocuments;
+  documentTrash: DocumentTrash;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -689,6 +696,19 @@ export async function createProductionAppPorts(input: {
     linkAheadRegistry,
     contextPorts,
     contextCatalog,
+    restoreRemovedDocuments: createRestoreRemovedDocuments({
+      db,
+      fileAccess,
+      workProjection: workProjectionMutation,
+      arrivals,
+      catalog: contextCatalog,
+    }),
+    documentTrash: createDrizzleDocumentTrash({
+      db,
+      objectStore,
+      eventSink,
+      drafts: documentSync.documentPurgeDraftDisposal,
+    }),
     projectContextAvailability,
     documentAddresses: createDocumentAddressResolver({
       locations: createDrizzleDocumentAddressStore(db),
@@ -845,6 +865,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     readChainPermission: ports.readChainPermission,
     shownLinks: ports.shownLinks,
     documentRemovals: ports.documentRemovals,
+    documentTrash: ports.documentTrash,
   };
   for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
@@ -934,6 +955,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repairOrphans: () => orphanRepair.sweep(WAKE_SWEEP_LIMIT),
     publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
     purgeWorks: () => workPurger.sweep(),
+    purgeDocuments: () => ports.documentTrash.purge(),
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
@@ -1111,11 +1133,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   return {
     gateway: ports.gateway,
     threadRepos: ports.threadRepos,
-    repos: ports.threadRepos,
     journalReader: ports.journalReader,
     journalWriter: ports.journalWriter,
     threadEventHub,
-    hub: threadEventHub,
     threadRuntime: createThreadRuntimeService({
       db: ports.db,
       statusReader: ports.statusReader,
@@ -1128,6 +1148,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
     contextCatalog: ports.contextCatalog,
+    restoreRemovedDocuments: ports.restoreRemovedDocuments,
+    documentTrash: ports.documentTrash,
     projectContextAvailability: ports.projectContextAvailability,
     documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
@@ -1289,6 +1311,9 @@ export function createInMemoryAppServices(): AppServices {
     async purgeWorks() {
       return 0;
     },
+    async purgeDocuments() {
+      return 0;
+    },
   };
 
   const documentSync: CollabDomain = createInMemoryCollabDomain();
@@ -1376,7 +1401,6 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     threadRepos,
-    repos: threadRepos,
     journalReader: {
       async lastSeqBefore() {
         return 0n;
@@ -1414,7 +1438,6 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     threadEventHub: inMemoryThreadEventHub,
-    hub: inMemoryThreadEventHub,
     threadRuntime: {
       async requireOwnedThread() {
         throw new Error("in-memory thread runtime is not implemented");
@@ -1447,6 +1470,26 @@ export function createInMemoryAppServices(): AppServices {
     linkAheadRegistry,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
+    async restoreRemovedDocuments() {
+      throw new Error("Document restore is unavailable in memory");
+    },
+    documentTrash: {
+      async retained() {
+        return new Set();
+      },
+      async list() {
+        return [];
+      },
+      async read() {
+        return null;
+      },
+      async wasPurged() {
+        return false;
+      },
+      async purge() {
+        return 0;
+      },
+    },
     documentAddresses: {
       async resolveById() {
         return { kind: "unavailable" };

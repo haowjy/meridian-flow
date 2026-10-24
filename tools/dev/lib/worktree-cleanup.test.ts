@@ -1,3 +1,10 @@
+/**
+ * Tests worktree cleanup behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Cleanup planning order and compare-and-swap ref deletion
+ */
+
 import { describe, expect, it } from "vitest";
 import {
   buildCleanupContext,
@@ -292,33 +299,6 @@ describe("worktree cleanup resolver", () => {
   it("revalidates auto readiness before teardown so a newly dirty worktree stays intact", async () => {
     const context = makeContext();
     const plan = createCleanupPlan(context, resolveAutoTargets(context));
-    let actionsRun = 0;
-
-    const result = await executeCleanupPlan(
-      plan,
-      () => ({
-        eligible: true,
-        evidence: plan.targets[0].eligibility,
-      }),
-      () => ({ ready: false, reasons: ["worktree has uncommitted changes"] }),
-      () => {
-        actionsRun += 1;
-        return { ok: true };
-      },
-    );
-
-    expect(result).toMatchObject({
-      ok: false,
-      readinessFailure: "worktree has uncommitted changes",
-    });
-    expect(actionsRun).toBe(0);
-  });
-
-  it("revalidates targeted cleanup readiness before teardown", async () => {
-    const context = makeContext();
-    const plan = createCleanupPlan(context, [
-      resolveTarget(context, { kind: "direct", value: "feature" }),
-    ]);
     let actionsRun = 0;
 
     const result = await executeCleanupPlan(

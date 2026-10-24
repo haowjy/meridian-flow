@@ -1,3 +1,9 @@
+/**
+ * Menu tree behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - project menu drill-in algorithm
+ */
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import {

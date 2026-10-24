@@ -5,6 +5,9 @@
  * event. The scenarios are the reviewers' own scripts from five rounds of #760 review (R1, R4,
  * F1 to F4, B1 from rp1, rp3 and rp4, N2). Versions read `J * 1000 + index` like the stream's; an
  * answer's version is the journal head `J * 1000 + 999`.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Run-state intent folding and switch-row projection
  */
 import type { RunState } from "@meridian/contracts/threads";
 import { expect, it } from "vitest";

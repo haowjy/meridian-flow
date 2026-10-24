@@ -1,7 +1,13 @@
-/** Production-adapter contract coverage for document transport status subscription. */
+/** Production-adapter contract coverage for document transport status subscription.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - transport status and update batching policy
+ */
 
 import { MessageType } from "@hocuspocus/provider";
 import { WS_CLOSE } from "@meridian/contracts/protocol";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import type { ConnectionState } from "@meridian/thread-client";
 import * as encoding from "lib0/encoding";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
@@ -250,5 +256,58 @@ describe("Hocuspocus document transport adapter", () => {
       awareness.destroy();
       document.destroy();
     }
+  });
+});
+
+describe("Hocuspocus document transport isolation", () => {
+  it("does not fan out or reconnect after one room's terminal schema refusal", async () => {
+    const firstDocument = createCollabYDoc();
+    const secondDocument = createCollabYDoc();
+    const first = createHocuspocusDocumentTransport({
+      roomName: "document-1",
+      document: firstDocument,
+      awareness: new Awareness(firstDocument),
+    });
+    const second = createHocuspocusDocumentTransport({
+      roomName: "document-2",
+      document: secondDocument,
+      awareness: new Awareness(secondDocument),
+    });
+    const firstStates: ConnectionState[] = [];
+    const secondStates: ConnectionState[] = [];
+    first.subscribeStatus?.((state) => firstStates.push(state));
+    second.subscribeStatus?.((state) => secondStates.push(state));
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(DocumentSocketHarness.instances).toHaveLength(2);
+    const [firstSocket, secondSocket] = DocumentSocketHarness.instances;
+    if (!firstSocket || !secondSocket) throw new Error("missing room sockets");
+    firstSocket.open();
+    secondSocket.open();
+    firstSocket.syncStep1("document-1", firstDocument);
+    secondSocket.syncStep1("document-2", secondDocument);
+    await vi.advanceTimersByTimeAsync(0);
+    firstSocket.deliverClose(4406, "client-schema-superseded");
+
+    expect(firstStates.at(-1)).toEqual({
+      kind: "reset",
+      reason: "client-schema-superseded",
+      disposition: "schema",
+      code: 4406,
+    });
+    expect(secondStates.at(-1)).toEqual({ kind: "connected" });
+    expect(firstSocket.closeCalls).toBeGreaterThan(0);
+    expect(secondSocket.closeCalls).toBe(0);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(DocumentSocketHarness.instances).toEqual([firstSocket, secondSocket]);
+    expect(firstStates.at(-1)?.kind).toBe("reset");
+    expect(secondStates.at(-1)).toEqual({ kind: "connected" });
+    secondDocument.getText("body").insert(0, "healthy room still writes");
+    expect(sentSyncKinds(secondSocket)).toEqual(["step2", "update"]);
+
+    first.destroy();
+    second.destroy();
+    firstDocument.destroy();
+    secondDocument.destroy();
   });
 });

@@ -1,9 +1,14 @@
-/** A shared Vitest module graph must not load vi.mock. One missed file can call a real provider. */
-
+/** A shared Vitest module graph must not load vi.mock. One missed file can call a real provider.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Mock-bearing tests use isolated Vitest module graphs
+ */
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
+import sharedServerConfig from "../../apps/server/vitest.config";
+import isolatedServerConfig from "../../apps/server/vitest.isolated.config";
 import { asVitestGlob, mockedServerTests } from "../../apps/server/vitest.mocked-files";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -43,15 +48,15 @@ it("rejects module mocks in isolate: false projects", () => {
 });
 
 it("keeps mocked server tests in exactly the isolated project", () => {
-  const shared = readFileSync(join(repoRoot, "apps/server/vitest.config.ts"), "utf8");
-  const isolated = readFileSync(join(repoRoot, "apps/server/vitest.isolated.config.ts"), "utf8");
-  expect(shared).toContain('from "./vitest.mocked-files"');
-  expect(isolated).toContain('from "./vitest.mocked-files"');
-  expect(shared).toContain("isolate: false");
-  expect(isolated).toContain("isolate: true");
-  expect(shared).toContain("mockedServerTests.map(asVitestGlob)");
-  expect(isolated).toContain("mockedServerTests.map(asVitestGlob)");
+  if (typeof sharedServerConfig === "function" || typeof isolatedServerConfig === "function") {
+    throw new Error("server Vitest configs must remain static objects");
+  }
+  expect(sharedServerConfig.test?.isolate).toBe(false);
+  expect(isolatedServerConfig.test?.isolate).toBe(true);
   for (const file of mockedServerTests) {
+    const glob = asVitestGlob(file);
+    expect(sharedServerConfig.test?.exclude).toContain(glob);
+    expect(isolatedServerConfig.test?.include).toContain(glob);
     expect(moduleMock.test(readFileSync(join(repoRoot, "apps/server", file), "utf8"))).toBe(true);
   }
   expect(asVitestGlob("server/routes/api/threads/[threadId]/messages.post.test.ts")).toBe(

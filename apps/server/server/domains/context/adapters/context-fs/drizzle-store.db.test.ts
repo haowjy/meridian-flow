@@ -1,4 +1,9 @@
-/** ContextFS Drizzle persistence and atomic writer mutation coverage. */
+/**
+ * ContextFS Drizzle persistence and atomic writer mutation coverage.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - rename-as-name-change rejection and alias-only rename no-ops (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,

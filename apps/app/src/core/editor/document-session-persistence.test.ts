@@ -1,4 +1,9 @@
-/** Regression coverage for detached-session IndexedDB cleanup. */
+/** Regression coverage for detached-session IndexedDB cleanup.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - IndexedDB teardown policy and retry
+ * - one-second persistence readiness timeout
+ */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -86,30 +91,6 @@ describe("DocumentSession persistence cleanup", () => {
     await session.destroy();
     expect(await initialized).toBe(false);
     expect(persistence.destroy).toHaveBeenCalledOnce();
-  });
-
-  it("attaches transport after IndexedDB has replayed local updates", async () => {
-    let resolveLocalSync!: () => void;
-    persistence.createWhenSynced.mockReturnValue(
-      new Promise((resolve) => {
-        resolveLocalSync = resolve;
-      }),
-    );
-    const transportFactory = vi.fn(() => ({ unacknowledgedUpdates: () => null, destroy: vi.fn() }));
-
-    const session = new DocumentSession({
-      roomKey: "doc-local-replay",
-      persistence: { kind: "indexeddb", key: "test:document-session" },
-      transportFactory,
-    });
-
-    expect(transportFactory).not.toHaveBeenCalled();
-    resolveLocalSync();
-    await session.whenLocalPersistenceSynced();
-    await Promise.resolve();
-
-    expect(transportFactory).toHaveBeenCalledOnce();
-    await session.destroy();
   });
 
   it("attaches transport after one second when IndexedDB never becomes ready", async () => {

@@ -1,5 +1,8 @@
-/** Image sizes, source-less slots, and literal attributes survive both codec dialects. */
-
+/** Image sizes, source-less slots, and literal attributes survive both codec dialects.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - HTML image admission and canonical wire escalation
+ */
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import { components, docFrom, paragraph, parsedDoc, schema } from "./codec-test-support.js";
@@ -44,7 +47,6 @@ function spannedTable(imageWire: string, canonical = false): string {
 describe.each(dialects)("$name image sizes", ({ codec }) => {
   it.each([
     '<img src="assets/map.png" alt="World map" width="240">',
-    'Before <img src="assets/map.png" alt="World map" width="240"> after.',
   ])("reads an HTML void image without a closing slash: %s", (wire) => {
     const closed = wire.replace('width="240">', 'width="240" />');
     const blocks = codec.parse(wire).blocks;

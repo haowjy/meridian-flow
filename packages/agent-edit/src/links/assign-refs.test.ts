@@ -1,4 +1,9 @@
-// Ref assignment on the real write path: reviewer cases are assigned as the model means them, and no door loses or churns refs.
+/**
+ * Ref assignment on the real write path: reviewer cases are assigned as the model means them, and no door loses or churns refs.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Ranked three-pass link correspondence (kb/decisions/documents/identity/link-identity.md)
+ */
 import { documentRef, storedHref } from "@meridian/contracts";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import { extractStoredLinks } from "@meridian/markup/stored-links";

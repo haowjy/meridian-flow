@@ -162,6 +162,43 @@ documents or drafts.
 Sign in, create/open a document, delete it using its Files menu, and confirm
 the tab/tree update without an error. Capture a screenshot outside this repo.
 
+## Document trash
+
+1. Create one document at a scheme root and one inside a folder. In a third
+   document, use the Editor's link picker to link to the first one; choosing
+   the result stores the target document's stable ID. Delete the linked
+   document, then delete the folder. The Trash row remains below Scratch in
+   the sidebar whether or not anything is deleted.
+2. Open Trash from the sidebar. One popup shows the newest-first list on the
+   left and the newest document's read-only view on the right. Each row shows
+   its full former location, relative deletion time, and a row menu with
+   Restore. Select the other row and confirm the right pane changes without
+   adding another browser-history step.
+3. Confirm the selected document shows its last settled text and the banner
+   "In the trash. Deleted by <name> on <date>. Gone for good in <n> days."
+   Close the popup and follow the stable link to the deleted document. The
+   same popup opens with that document selected; the link chip may still say
+   "No longer available".
+4. Restore the linked document from its banner. Restore remains disabled with
+   "Restoring" until the response. The popup closes into the live document,
+   and the catalog stream returns it to the context tree.
+5. Restore one document from its row menu. Its row says Restoring until the
+   response, then leaves the list. The popup stays open and selects the next
+   entry.
+6. Create a document at another deleted document's former path, then restore
+   the deleted document from its row menu. Confirm the row leaves, the popup
+   stays open, and the success message names the alternate location where it
+   landed.
+7. Restore every remaining row. The popup says "Nothing in the trash." Close
+   it and confirm the sidebar row remains.
+8. Repeat with a 390 by 844 coarse-pointer viewport. The row opens a full-screen
+   list. Selecting a row shows the read-only document, and Back returns to the
+   list.
+
+An already-open live tab still follows terminal resource cleanup when another
+actor deletes its document: the tab closes and the removal notice appears. The
+read-only Trash view is an auxiliary route, not a retained Editor tab.
+
 ## Removal notices in the browser
 
 Two tabs of one signed-in browser (A and B), plus `./mf doc rm` as another
@@ -220,11 +257,12 @@ otherwise, A's tabs are live tabs.
   deleted after that confirmation answers `needs_restore` the same way.
 - The app's surfaces for a Work with pending changes to a deleted document
   (seed with `./mf`: a draft-mode chat's reply edits the document, then delete
-  it from the tree). The delete dialog says "<title> will be deleted." and
-  names the Work: "The Work <name> has changes to it. Applying them brings it
-  back." (never a handle like `w3`). After the delete the chat dock row and the
-  Work page's Changes to review row keep the file with "Deleted from the
-  manuscript" on its status line; an open draft tab stays open. A dock with
+  it from the tree). There is no confirmation dialog. The live row leaves at
+  once, and its Files surface ends with `Deleted <title>` and Undo; no Work
+  explanation appears there. The chat dock row and the Work page's Changes to
+  review row keep the file with "Deleted from the manuscript" on its status
+  line; an open draft tab stays open. Choose Undo and confirm the exact document
+  returns, then delete it again for the Apply checks below. A dock with
   several files, or Work Files' "Apply all changes", asks first: "Applying
   brings back <title>, which was deleted from the manuscript." with Cancel and
   Apply, in the footer below the rows (as Discard all's question does): no row

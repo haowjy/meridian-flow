@@ -72,3 +72,9 @@ node and both documents after every key. No character may reach the document
 being left. The held pane deliberately blocks input, so keys during its hold do
 not land in either document; a cancelled guard keeps typing in the current
 editor.
+
+## Download naming
+
+Download prose documents named `Ending`, `part.one`, and `龙脉终章`, plus a non-prose
+document. The prose downloads are `Ending.md`, `part.one.md`, and `龙脉终章.md`;
+the non-prose download keeps its stored name.
