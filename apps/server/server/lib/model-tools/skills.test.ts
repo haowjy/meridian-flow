@@ -3,6 +3,9 @@
  * the built-in launch agents: Critic is offered `story-review` and
  * `writing-principles`, so it loads and reads those folders under `skills://`
  * and nothing else.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Extensionless, read-only skill addresses (kb/decisions/agents/tools/skills-as-files.md)
  */
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";

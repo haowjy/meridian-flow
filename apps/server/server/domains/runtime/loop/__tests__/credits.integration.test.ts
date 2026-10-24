@@ -1,4 +1,8 @@
-/** Runtime credit-gate integration test for ledger exhaustion. */
+/** Runtime credit-gate integration test for ledger exhaustion.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Pending usage projection and debt gate
+ */
 
 import { describe, expect, it } from "vitest";
 import type { Gateway, GenerateResult, StreamEvent } from "../../gateway/index.js";

@@ -1,4 +1,8 @@
-/** Consolidated test contracts; each block retains its original fixture scope. */
+/** Consolidated test contracts; each block retains its original fixture scope.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Stripe grant-event and monthly entitlement mapping
+ */
 
 import { describe as __mergedSuite, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../adapters/in-memory/credit-ledger.js";

@@ -40,6 +40,14 @@ once in one worktree. `pnpm test:all` runs unit and DB projects together; its DB
 reporter rejects a run with no passed or failed DB test, so a unit-only result
 is not combined-run evidence.
 
+Unit and DB suites shuffle files and cases by default. A failure prints its
+seed; replay it with `pnpm test --sequence.seed=<n>` or
+`pnpm test:db --sequence.seed=<n>`. Server DB workers share their module
+cache, so the server setup drains the runtime's detached-work tracker after
+each case, after file-local teardown and before suite pool closers, with a
+file-level drain as the next-file backstop. The shared `closeTestDatabase`
+closer drains again before applying a bounded PostgreSQL pool timeout.
+
 The DB Vitest config refuses to run unless `RUN_DB_TESTS=1` and a throwaway
 `DATABASE_URL` are set. A managed run migrates a template database from empty
 and clones one database per worker from it. Managed names carry the owner's PID

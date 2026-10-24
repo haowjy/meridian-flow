@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** Account reconciliation continues without a mounted project/catalog consumer. */
+/** Account reconciliation continues without a mounted project/catalog consumer.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - background resource reconciliation and location queue
+ */
 import "fake-indexeddb/auto";
 import type { ResourceRecord, ResourceWrite } from "@meridian/resource-replica";
 import {

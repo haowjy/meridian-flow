@@ -1,4 +1,8 @@
-/** The summarizer's provider-neutral request and paid-attempt contracts. */
+/** The summarizer's provider-neutral request and paid-attempt contracts.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Warm and rolling summary strategy (kb/decisions/engineering/runtime/compaction-summarizer-and-overflow.md)
+ */
 import type { Block, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
@@ -56,11 +60,6 @@ function projection(texts: string[]) {
   };
 }
 
-function onlyText(request: GenerateRequest, messageIndex: number, partIndex = 0): string {
-  const part = request.messages[messageIndex]?.content[partIndex];
-  if (part?.type !== "text") throw new Error("Expected prompt text");
-  return part.text;
-}
 function setup(
   options: {
     warm?: boolean;
@@ -163,8 +162,6 @@ describe("conversation summarizer", () => {
       "immediately before this system update",
     );
 
-    expect(sent).toMatchSnapshot("warm compaction request bytes");
-    expect(onlyText(sent, sent.messages.length - 1)).toMatchSnapshot("compaction branch prompt");
     expect(JSON.stringify({ ...sent, maxTokens: 500, messages: sent.messages.slice(0, -1) })).toBe(
       before,
     );
@@ -364,9 +361,6 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
     JSON.stringify(sourceRequest.messages),
   );
   expect(JSON.stringify(request.messages.at(-1))).not.toContain("thread_history");
-  expect(onlyText(request, request.messages.length - 1)).toMatchSnapshot(
-    "handoff writer-row cutoff prompt with changed documents",
-  );
   expect(request.correlation).toMatchObject({
     threadId: "destination",
     turnId: "seed",

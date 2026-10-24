@@ -1,4 +1,8 @@
-/** Operation-specific contract tests for document mutation admission policy. */
+/** Operation-specific contract tests for document mutation admission policy.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Checkpoints carry attribution manifests
+ */
 
 import type { DocumentRevision } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";

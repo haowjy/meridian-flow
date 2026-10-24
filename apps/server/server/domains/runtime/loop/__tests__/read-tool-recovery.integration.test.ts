@@ -1,4 +1,8 @@
-/** The retired write(command="read") gets repair guidance, then `read` dispatches in the same turn. */
+/** The retired write(command="read") gets repair guidance, then `read` dispatches in the same turn.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Recoverable read and write command separation
+ */
 import { modelResult } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
 import type { GenerateResult } from "../../gateway/index.js";

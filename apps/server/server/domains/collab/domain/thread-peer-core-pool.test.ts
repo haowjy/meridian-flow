@@ -1,4 +1,8 @@
-/** Pool routing per document (D19, D42), live undo routing, and read-version checks (D41). */
+/** Pool routing per document (D19, D42), live undo routing, and peer-cache lifecycle.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Reply destination pins and peer-cache lifecycle
+ */
 
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";

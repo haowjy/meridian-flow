@@ -1,4 +1,8 @@
-/** Resource-record state transitions protect the one-shot local content reservation. */
+/** Resource-record state transitions protect the one-shot local content reservation.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - One-shot exact-content reservation lifecycle
+ */
 import { expect, it } from "vitest";
 import { planResourceDeletion } from "./resource-deletion";
 import { prepareNamespaceAttempt } from "./resource-namespace";

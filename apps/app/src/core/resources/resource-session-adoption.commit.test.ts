@@ -2,6 +2,9 @@
  * Named-risk witnesses for the adoption commit, at the real seam: the coordinator, resource
  * content access, the registry's transfer facet, `Coordination` with Web Locks semantics, and the
  * authority store over fake IndexedDB. Only the availability answer is scripted.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - synchronous adoption commit hooks
  */
 import "fake-indexeddb/auto";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
@@ -356,12 +359,11 @@ it("settles a revocation that queues behind the commit without deadlock", async 
   void access;
 });
 
-it("keeps the commit hooks synchronous: an async hook does not typecheck", () => {
-  // The coordinator ignores a hook's return value, so a promise would run after the lock is gone.
-  // @ts-expect-error `undefined` rejects the promise an `async` hook returns
-  const prepare: LocalDocumentSessionTransfer["prepareCommit"] = async () => undefined;
-  expect(prepare).toBeTypeOf("function");
-});
+// The coordinator ignores a hook's return value, so a promise would run after the lock is gone.
+const asyncPrepare = async (): Promise<undefined> => undefined;
+// @ts-expect-error `undefined` rejects the promise an `async` hook returns.
+const asyncPrepareDoesNotTypecheck: LocalDocumentSessionTransfer["prepareCommit"] = asyncPrepare;
+void asyncPrepareDoesNotTypecheck;
 
 const accountId = "resource-session-adoption";
 const metadataName = `meridian:resource-metadata:v4:${encodeURIComponent(accountId)}`;

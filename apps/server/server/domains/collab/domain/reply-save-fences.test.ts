@@ -1,4 +1,8 @@
-/** The reply save fence: identity admission and reasoned refusal (contract §2.1). */
+/** The reply save fence: identity admission and reasoned refusal (contract §2.1).
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Closed-pin reason precedence and refusal effects
+ */
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";

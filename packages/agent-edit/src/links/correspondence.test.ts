@@ -1,4 +1,9 @@
-// Link correspondence contracts: ranking counterexamples, normalization, reorder identity and exhaustive ranking.
+/**
+ * Link correspondence contracts: ranking counterexamples, normalization, reorder identity and exhaustive ranking.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Six-component link correspondence ranking (kb/decisions/documents/identity/link-identity.md)
+ */
 // The 28 r7 reviewer fixtures run on the real write path (assign-refs.test.ts).
 import { expect, it } from "vitest";
 import {

@@ -1,4 +1,8 @@
-/** Hidden reviews repair canonical locators while retaining their selected Work and draft. */
+/** Hidden reviews repair canonical locators while retaining their selected Work and draft.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - hidden-tab label refresh policy
+ */
 import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { expect, it } from "vitest";
 import { canonicalDocumentAddress, canonicalReviewTabPatch } from "./document-address-canonical";

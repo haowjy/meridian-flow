@@ -7,6 +7,9 @@
  * subscribe at/below the capped window answers `gap`, anything beyond answers
  * `subscribed`. The transport must move its resume point to the gap's `toSeq`
  * and converge after a single resubscribe.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Replay-gap cursor recovery (kb/decisions/platform/client/chat-sync-boundaries.md)
  */
 import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";

@@ -1,5 +1,8 @@
-/** Authoring-gate coverage for unsafe generated migration patterns. */
-
+/** Authoring-gate coverage for unsafe generated migration patterns.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Migration authoring lint heuristics and severity policy
+ */
 import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

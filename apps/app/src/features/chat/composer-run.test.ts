@@ -1,3 +1,9 @@
+/**
+ * Composer run behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - run-state and pending-seed ownership split
+ */
 import type { Turn } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { composerRun } from "./composer-run";

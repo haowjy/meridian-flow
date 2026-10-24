@@ -1,4 +1,8 @@
-/** Contract tests for deterministic provenance replay and the reserved namespace. */
+/** Contract tests for deterministic provenance replay and the reserved namespace.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Provenance locator and materialization algorithm
+ */
 
 import type { SemanticEditIRV1, SemanticOutputRun } from "@meridian/agent-edit/integration";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";

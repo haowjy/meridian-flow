@@ -1,3 +1,9 @@
+/**
+ * Tests request map behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Anthropic reasoning, cache, and tool-schema mapping
+ */
 import { WriteToolInputSchema } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
 import { WorkCommandSchema } from "../../../tools/core-tools.js";

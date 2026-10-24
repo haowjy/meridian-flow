@@ -1,3 +1,10 @@
+/**
+ * Context uri behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - malformed-path degradation and default context scheme
+ * - Scratch URI ownership (kb/decisions/work/model/lineage-scratch.md)
+ */
 import { describe, expect, it } from "vitest";
 
 import { contextRouteTargetFromUri, contextUriFromWritePath } from "@/lib/context-uri";
