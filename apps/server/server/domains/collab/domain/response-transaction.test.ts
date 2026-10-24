@@ -1,4 +1,8 @@
-/** Response unit-of-work settlement behavior. */
+/** Response unit-of-work settlement behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Response participants abort in reverse enrollment order
+ */
 import { describe, expect, it, vi } from "vitest";
 import { enlistResponseParticipant, runResponseTransaction } from "./response-transaction.js";
 
