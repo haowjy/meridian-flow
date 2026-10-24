@@ -67,6 +67,10 @@ row list, which a document read cannot see.)
 14. Create a new document. It has **one review door**, and Apply all and Discard all appear
     in chat and in Work rows.
 
+## Chat list activity
+
+Open the project chat list beside two chats with distinct last-message times. Complete a reply in the older chat: it becomes the most recent and previews that conversation. Produce a hidden Work-context update and a background subagent completion: neither moves the chat nor replaces its preview. Move on from a failed reply: the abandoned exchange disappears from the preview. Switch to an earlier sibling response: the chat activity follows the selected response. Trash a direct child chat: it disappears from its parent’s activity, while a fork still shows inherited turns after its source is trashed.
+
 ## Project shell and dock
 
 15. Retained document A with B pending, switch to Chat: the **retained A** moves to
