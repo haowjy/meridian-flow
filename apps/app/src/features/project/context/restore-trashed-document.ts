@@ -6,7 +6,9 @@ import { restoreContextDocuments } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { announce } from "@/client/stores";
 
-export type TrashRestoreOutcome = "living" | "superseded" | "ancestor_taken" | "refused";
+export type TrashRestoreOutcome =
+  | { kind: "living"; landedAt?: string }
+  | { kind: "superseded" | "ancestor_taken" | "refused" };
 
 export async function restoreTrashedDocument(
   queryClient: QueryClient,
@@ -36,11 +38,14 @@ export async function restoreTrashedDocument(
     });
     if (result.outcome === "restored" && result.landedAt)
       announce(t`Restored at ${result.landedAt}.`);
-    return "living";
+    return {
+      kind: "living",
+      ...(result.outcome === "restored" && result.landedAt ? { landedAt: result.landedAt } : {}),
+    };
   }
   if (result.outcome === "superseded") {
     await queryClient.invalidateQueries({ queryKey: projectQueryKeys.documentTrash(projectId) });
-    return "superseded";
+    return { kind: "superseded" };
   }
-  return result.outcome;
+  return { kind: result.outcome };
 }

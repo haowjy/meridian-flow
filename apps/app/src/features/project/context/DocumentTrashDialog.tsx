@@ -4,14 +4,17 @@ import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ArchiveRestore, ChevronLeft } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useDocumentTrash, useTrashedDocument } from "@/client/query/useDocumentTrash";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { RuledList } from "../RuledList";
+import {
+  useCaptureProjectNavigation,
+  useProjectTrashNavigation,
+} from "../routing/ProjectNavigationContext";
 import { documentLocation, schemeLabel } from "./context-schemes";
 import { useOpenProjectDocument } from "./open-project-document";
 import { restoreTrashedDocument } from "./restore-trashed-document";
@@ -20,59 +23,58 @@ import { TextViewer } from "./viewers/TextViewer";
 
 type RowState = { kind: "restoring" } | { kind: "failed"; message: string };
 
-export function useDocumentTrashNavigation() {
-  const navigate = useNavigate();
-  return useCallback(
-    (destination: boolean | string) => {
-      void navigate({
-        to: ".",
-        search: (previous: Record<string, unknown>) => ({
-          ...previous,
-          trash: destination || undefined,
-        }),
-        state: (previous) => previous,
-      });
-    },
-    [navigate],
-  );
-}
+type RestoredNotice = { id: number; location: string };
 
 export function DocumentTrashDialog({ projectId }: { projectId: string }) {
-  const search = useSearch({ strict: false }) as { trash?: true | string };
-  const setOpen = useDocumentTrashNavigation();
-  const documentId = typeof search.trash === "string" ? search.trash : null;
+  const { destination, navigate } = useProjectTrashNavigation();
+  const documentId = typeof destination === "string" ? destination : null;
+  const [restored, setRestored] = useState<RestoredNotice | null>(null);
+  const dismissRestored = useCallback(() => setRestored(null), []);
 
   return (
-    <Dialog open={search.trash !== undefined} onOpenChange={(open) => !open && setOpen(false)}>
-      <DialogContent
-        className={
-          documentId
-            ? "flex h-[min(48rem,calc(100%-2rem))] max-h-[calc(100%-2rem)] max-w-[min(56rem,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0"
-            : "flex max-h-[min(42rem,calc(100%-2rem))] max-w-[min(40rem,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0"
-        }
+    <>
+      <Dialog
+        open={destination !== undefined}
+        onOpenChange={(open) => !open && void navigate(false)}
       >
-        {documentId ? (
-          <TrashedDocumentView
-            key={documentId}
-            projectId={projectId}
-            documentId={documentId}
-            onBack={() => setOpen(true)}
-            onClose={() => setOpen(false)}
-          />
-        ) : (
-          <DocumentTrashList projectId={projectId} onOpenDocument={setOpen} />
-        )}
-      </DialogContent>
-    </Dialog>
+        <DialogContent
+          className={
+            documentId
+              ? "flex h-[min(48rem,calc(100%-2rem))] max-h-[calc(100%-2rem)] max-w-[min(56rem,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0"
+              : "flex max-h-[min(42rem,calc(100%-2rem))] max-w-[min(40rem,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0"
+          }
+        >
+          {documentId ? (
+            <TrashedDocumentView
+              key={documentId}
+              projectId={projectId}
+              documentId={documentId}
+              onBack={() => void navigate(true)}
+              onClose={() => void navigate(false)}
+              onRestoredAt={(location) => setRestored({ id: Date.now(), location })}
+            />
+          ) : (
+            <DocumentTrashList
+              projectId={projectId}
+              onOpenDocument={(id) => void navigate(id)}
+              onRestoredAt={(location) => setRestored({ id: Date.now(), location })}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+      <RestoredAtNotice notice={restored} onDismiss={dismissRestored} />
+    </>
   );
 }
 
 function DocumentTrashList({
   projectId,
   onOpenDocument,
+  onRestoredAt,
 }: {
   projectId: string;
   onOpenDocument: (documentId: string) => void;
+  onRestoredAt: (location: string) => void;
 }) {
   const query = useDocumentTrash(projectId);
   const queryClient = useQueryClient();
@@ -84,15 +86,16 @@ function DocumentTrashList({
       setRowStates((current) => new Map(current).set(entry.documentId, { kind: "restoring" }));
       void restoreTrashedDocument(queryClient, projectId, entry)
         .then((outcome) => {
-          if (outcome === "living") {
+          if (outcome.kind === "living") {
             setRowStates((current) => {
               const next = new Map(current);
               next.delete(entry.documentId);
               return next;
             });
+            if (outcome.landedAt) onRestoredAt(outcome.landedAt);
             return;
           }
-          if (outcome === "superseded") {
+          if (outcome.kind === "superseded") {
             setRowStates((current) => {
               const next = new Map(current);
               next.delete(entry.documentId);
@@ -104,7 +107,7 @@ function DocumentTrashList({
             new Map(current).set(entry.documentId, {
               kind: "failed",
               message:
-                outcome === "ancestor_taken"
+                outcome.kind === "ancestor_taken"
                   ? t`Couldn't restore ${entry.name}. A file is in the way.`
                   : t`Couldn't restore ${entry.name}.`,
             }),
@@ -119,7 +122,7 @@ function DocumentTrashList({
           ),
         );
     },
-    [projectId, queryClient, rowStates],
+    [onRestoredAt, projectId, queryClient, rowStates],
   );
 
   return (
@@ -223,31 +226,40 @@ function TrashedDocumentView({
   documentId,
   onBack,
   onClose,
+  onRestoredAt,
 }: {
   projectId: string;
   documentId: string;
   onBack: () => void;
   onClose: () => void;
+  onRestoredAt: (location: string) => void;
 }) {
   const { i18n } = useLingui();
   const query = useTrashedDocument(projectId, documentId);
   const queryClient = useQueryClient();
   const openDocument = useOpenProjectDocument(projectId);
+  const captureNavigation = useCaptureProjectNavigation();
   const [state, setState] = useState<RowState>();
   const document = query.data;
 
   const restore = useCallback(() => {
     if (!document || state?.kind === "restoring") return;
     setState({ kind: "restoring" });
+    const isCurrent = captureNavigation?.() ?? (() => true);
     void restoreTrashedDocument(queryClient, projectId, document)
       .then(async (outcome) => {
-        if (outcome === "living") {
+        if (outcome.kind === "living") {
+          if (!isCurrent()) {
+            setState(undefined);
+            return;
+          }
           const opened = await openDocument({
             documentId,
             disposition: "current",
             refreshIdentity: true,
           });
           if (opened.kind === "committed") {
+            if (outcome.landedAt) onRestoredAt(outcome.landedAt);
             onClose();
             return;
           }
@@ -257,14 +269,14 @@ function TrashedDocumentView({
           });
           return;
         }
-        if (outcome === "superseded") {
+        if (outcome.kind === "superseded") {
           setState(undefined);
           return;
         }
         setState({
           kind: "failed",
           message:
-            outcome === "ancestor_taken"
+            outcome.kind === "ancestor_taken"
               ? t`Couldn't restore ${document.name}. A file is in the way.`
               : t`Couldn't restore ${document.name}.`,
         });
@@ -272,7 +284,17 @@ function TrashedDocumentView({
       .catch(() =>
         setState({ kind: "failed", message: t`Couldn't restore ${document.name}. Try again.` }),
       );
-  }, [document, documentId, onClose, openDocument, projectId, queryClient, state?.kind]);
+  }, [
+    captureNavigation,
+    document,
+    documentId,
+    onClose,
+    onRestoredAt,
+    openDocument,
+    projectId,
+    queryClient,
+    state?.kind,
+  ]);
 
   return (
     <>
@@ -366,6 +388,30 @@ function TrashNotice({
           {state.message}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function RestoredAtNotice({
+  notice,
+  onDismiss,
+}: {
+  notice: RestoredNotice | null;
+  onDismiss: () => void;
+}) {
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(onDismiss, 4_000);
+    return () => window.clearTimeout(timer);
+  }, [notice, onDismiss]);
+  if (!notice) return null;
+  return (
+    <div
+      key={notice.id}
+      role="status"
+      className="fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 rounded-md bg-foreground px-3 py-1.5 text-background text-caption shadow-card"
+    >
+      <Trans>Restored at {notice.location}.</Trans>
     </div>
   );
 }

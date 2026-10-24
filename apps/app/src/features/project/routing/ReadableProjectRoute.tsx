@@ -693,16 +693,24 @@ function ReadableProjectDestination({
     });
   }, []);
   const queryClient = useQueryClient();
-  const openTrash = useCallback(
-    (documentId: string) => {
+  const navigateTrash = useCallback(
+    (trash: boolean | string) => {
+      const current = router.history.location;
+      const query = new URLSearchParams(current.search);
+      if (trash) query.set("trash", String(trash));
+      else query.delete("trash");
+      const search = query.toString();
       return router.navigate({
-        to: ".",
-        search: (previous: Record<string, unknown>) => ({ ...previous, trash: documentId }),
-        state: (previous) => previous,
+        href: `${current.pathname}${search ? `?${search}` : ""}${current.hash}`,
+        state: { ...current.state },
       });
     },
     [router],
   );
+  const trashDestination =
+    location.search.trash === true || typeof location.search.trash === "string"
+      ? location.search.trash
+      : undefined;
   useEffect(() => {
     if (!closingRef || !closeState.closed || closeState.removed) return;
     const itemKey = closingRef.itemKey;
@@ -900,6 +908,7 @@ function ReadableProjectDestination({
       }}
       isCurrentNavigation={(ticket) => latest.current.navigation?.isCurrent(ticket) ?? false}
       captureNavigation={captureNavigation}
+      trash={{ destination: trashDestination, navigate: navigateTrash }}
       isCurrentContextRoute={isCurrentContextRoute}
       registerLeaveGuard={navigation?.registerGuard}
     >
@@ -907,7 +916,6 @@ function ReadableProjectDestination({
         <ProjectDocumentNavigationProvider
           projectId={projectId}
           captureNavigation={captureNavigation}
-          openTrash={openTrash}
         >
           {documentDestination && !localDocumentId ? (
             <ProjectAddressDocument
