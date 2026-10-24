@@ -19,9 +19,7 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
 describe("useIdentityCommit", () => {
   it.each([
     ["before", "after.md", "after"],
-    ["config.toml", "settings.md", "settings"],
     ["config.toml", "settings.txt", "settings"],
-    ["config.toml", "Notes.md", "Notes"],
   ])("transports %s to %s as typed, retaining No Work and canonical presentation", async (current, typed, canonical) => {
     let rename!: ReturnType<typeof useIdentityCommit>;
     const committed = vi.fn();

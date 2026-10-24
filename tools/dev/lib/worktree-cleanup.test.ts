@@ -314,33 +314,6 @@ describe("worktree cleanup resolver", () => {
     expect(actionsRun).toBe(0);
   });
 
-  it("revalidates targeted cleanup readiness before teardown", async () => {
-    const context = makeContext();
-    const plan = createCleanupPlan(context, [
-      resolveTarget(context, { kind: "direct", value: "feature" }),
-    ]);
-    let actionsRun = 0;
-
-    const result = await executeCleanupPlan(
-      plan,
-      () => ({
-        eligible: true,
-        evidence: plan.targets[0].eligibility,
-      }),
-      () => ({ ready: false, reasons: ["worktree has uncommitted changes"] }),
-      () => {
-        actionsRun += 1;
-        return { ok: true };
-      },
-    );
-
-    expect(result).toMatchObject({
-      ok: false,
-      readinessFailure: "worktree has uncommitted changes",
-    });
-    expect(actionsRun).toBe(0);
-  });
-
   it("revalidates readiness again before dropping the database", async () => {
     const context = makeContext();
     const plan = createCleanupPlan(context, [

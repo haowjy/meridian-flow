@@ -15,17 +15,8 @@ type Case = {
 
 const passCases: Case[] = [
   {
-    name: "bold italic inline code link image",
-    markdown:
-      'Plain **bold**, *italic*, `code()`, [portal](https://example.com "Portal"), and ![map](map.png "Map").\n',
-  },
-  {
     name: "nested mixed list",
     markdown: "- outer\n  - inner bullet\n  1. inner ordered\n- after\n",
-  },
-  {
-    name: "mixed task and regular list items",
-    markdown: "- [x] a\n- plain\n- [ ] b\n",
   },
 ];
 

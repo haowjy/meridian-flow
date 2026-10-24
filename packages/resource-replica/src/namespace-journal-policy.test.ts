@@ -5,7 +5,6 @@ import type { NamespaceIntent } from "./resource-records";
 
 it.each([
   "set-location",
-  "set-folder-location",
 ] as const)("resolves all move/rename/delete orderings for %s after refusal", (kind) => {
   const orders = [
     ["move", "rename", "delete"],

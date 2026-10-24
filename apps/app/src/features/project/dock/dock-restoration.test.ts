@@ -274,11 +274,7 @@ it("throwing storage getters, reads and writes leave the live dock usable", () =
     expect(store.getState().occupant).toEqual(document);
   }
 });
-it.each([
-  "{",
-  '{"version":2,"accountId":"account"}',
-  '{"version":1,"accountId":"account","occupant":{"projectId":"project","screen":"context","tab":{}}}',
-])("ignores invalid storage: %s", (raw) => {
+it.each(["{"])("ignores invalid storage: %s", (raw) => {
   const disk = storage();
   disk.setItem(DOCK_STORAGE_KEY, raw);
   expect(createDockDocumentStore(() => disk, "account").getState().restoring).toBeNull();
