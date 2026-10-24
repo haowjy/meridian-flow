@@ -141,7 +141,11 @@ changes included. `./mf` output never stands in for that run.
 
 ## Build and test
 
-`pnpm check` is the full gate. `pnpm test:db` forces the DB suite.
+`pnpm check` is the full local gate. Its final DB step uses Vitest's module
+graph to run the DB test files related to changes since `origin/main`, including
+uncommitted and untracked files. DB test infrastructure, dependency resolution
+and migrations force the full DB suite; `DB_GATE_FULL=1 pnpm check:db` does the
+same. `pnpm test:db` and CI's `db-tests` job always run the full DB suite.
 `pnpm test:all` runs unit and managed DB tests together.
 
 The test case count per file may not grow against

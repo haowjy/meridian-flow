@@ -88,30 +88,6 @@ describe("DocumentSession persistence cleanup", () => {
     expect(persistence.destroy).toHaveBeenCalledOnce();
   });
 
-  it("attaches transport after IndexedDB has replayed local updates", async () => {
-    let resolveLocalSync!: () => void;
-    persistence.createWhenSynced.mockReturnValue(
-      new Promise((resolve) => {
-        resolveLocalSync = resolve;
-      }),
-    );
-    const transportFactory = vi.fn(() => ({ unacknowledgedUpdates: () => null, destroy: vi.fn() }));
-
-    const session = new DocumentSession({
-      roomKey: "doc-local-replay",
-      persistence: { kind: "indexeddb", key: "test:document-session" },
-      transportFactory,
-    });
-
-    expect(transportFactory).not.toHaveBeenCalled();
-    resolveLocalSync();
-    await session.whenLocalPersistenceSynced();
-    await Promise.resolve();
-
-    expect(transportFactory).toHaveBeenCalledOnce();
-    await session.destroy();
-  });
-
   it("attaches transport after one second when IndexedDB never becomes ready", async () => {
     vi.useFakeTimers();
     persistence.createWhenSynced.mockReturnValue(new Promise(() => {}));

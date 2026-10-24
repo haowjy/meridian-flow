@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
+  clientSchemaVersionFromSubprotocolHeader,
   documentMarks,
   documentNodes,
   PROSEMIRROR_FRAGMENT_NAME,
@@ -265,5 +266,15 @@ describe("collaboration schema shape", () => {
   it("matches the latest recorded surface and version", () => {
     expect(currentSurface()).toEqual(baseline.surface);
     expect(COLLAB_SCHEMA_VERSION).toEqual(baseline.version);
+  });
+});
+
+describe("collab schema subprotocol offers", () => {
+  const sentinel = { major: 0, minor: 0, patch: 0 };
+
+  it.each([
+    ["meridian.collab.0.1.0, meridian.collab.0.2.0", "multiple matches"],
+  ])("maps an %s header (%s) to the sentinel", (header, _case) => {
+    expect(clientSchemaVersionFromSubprotocolHeader(header)).toEqual(sentinel);
   });
 });
