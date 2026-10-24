@@ -1276,7 +1276,6 @@ msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
 #: src/features/editor/EditorView.tsx
 #: src/features/links/FollowOutcomeContent.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Close"
 msgstr "Close"
 
