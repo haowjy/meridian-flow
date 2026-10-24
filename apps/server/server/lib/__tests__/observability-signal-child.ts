@@ -25,8 +25,9 @@ const gateway: Gateway = {
       if (request.signal?.aborted) resolve();
       else request.signal?.addEventListener("abort", () => resolve(), { once: true });
     });
-    // Keep the signal handler in its bounded drain while the paid result settles.
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Cross an event-loop turn so shutdown has to drain the paid result rather than observing a
+    // synchronously settled stream.
+    await new Promise((resolve) => setImmediate(resolve));
     yield {
       type: "end",
       result: {
