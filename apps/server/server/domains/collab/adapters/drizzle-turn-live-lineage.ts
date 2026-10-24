@@ -40,7 +40,8 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
             sql`${documentEdits.treeChange}->>'op' <> 'settle'`,
             sql`NOT EXISTS (
               SELECT 1 FROM document_edits AS materialized
-              WHERE materialized.tree_change->>'materializes' = ${documentEdits.id}::text
+              WHERE materialized.document_id = ${documentEdits.documentId}
+                AND materialized.tree_change->>'materializes' = ${documentEdits.id}::text
             )`,
             // A stopped reply's rollback reversed it: the turn didn't leave it moved or deleted.
             sql`NOT EXISTS (
