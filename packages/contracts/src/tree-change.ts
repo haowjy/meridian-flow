@@ -88,6 +88,8 @@ export type TreeTransitionChange = TreeTransition &
     landedAt?: string;
     /** What an undo, redo, revert or rollback reverses. */
     targets: TreeChangeTarget[];
+    /** Drafted tree entry this live transition materialized at Apply. */
+    materializes?: string;
   };
 
 /**

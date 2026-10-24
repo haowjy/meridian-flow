@@ -27,9 +27,15 @@ export const entryRows = (entry: Entry): { id: number; key: string }[] => [
 ];
 export function entries(document: InverseDocument, threadId: string): Entry[] {
   const map = new Map<string, Entry>();
+  const materialized = new Set(
+    document.tree.flatMap((row) =>
+      isTransitionEntry(row) && row.tree.materializes ? [row.tree.materializes] : [],
+    ),
+  );
   for (const row of document.tree)
     if (
       isTransitionEntry(row) &&
+      !materialized.has(row.editId) &&
       row.threadId === threadId &&
       row.actor === "agent" &&
       row.wId !== null &&

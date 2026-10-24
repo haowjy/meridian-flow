@@ -277,6 +277,8 @@ export function treeChangeFault(change: TreeChange): string | null {
       : typeof state === "object" && state !== null && (live ? "living" in state : "row" in state);
   if (!shaped(change.before) || !shaped(change.after))
     return `A ${change.destination.kind} transition joins ${change.destination.kind} states`;
+  if (change.materializes && (!live || change.op !== "delete"))
+    return "Only a live delete can materialize a drafted tree entry";
   if (isLiveTransition(change)) {
     const { before, after } = change;
     const fits =

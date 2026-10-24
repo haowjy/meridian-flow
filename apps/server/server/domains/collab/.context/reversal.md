@@ -72,8 +72,10 @@ still ignores live removal and accepts its own inverse (D79).
 Applied text is not a refusal. Model Undo and the card write its inverse as a forward
 `revert` in the active origin draft, leaving live untouched and making a pending change against
 the review base. Redo of an Undo whose inverse was applied reapplies the original parts through
-that same captured origin. Applied tree entries still keep their existing refusal or skip until
-tree reverts are implemented.
+that same captured origin. Apply of an effective drafted delete records a fresh live delete
+attributed to the drafting turn. The live entry names the exact draft entry it materialized, so
+history shows one delete and reversal restores the named removal. Applied moves and renames
+still refuse or skip until tree reverts are implemented.
 
 Review disposition is not otherwise inverse eligibility: an effective Undo that restores the
 review base has no shown change and can read discarded. In an active draft the kernel decides
