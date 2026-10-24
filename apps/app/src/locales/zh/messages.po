@@ -136,6 +136,11 @@ msgstr "{0}"
 msgid "{0} additional balance"
 msgstr ""
 
+#. placeholder {0}: relativeTime(entry.removal.time, now)
+#: src/features/project/context/DocumentTrashSection.tsx
+msgid "{0} ago"
+msgstr ""
+
 #. placeholder {0}: dock.files.length
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
@@ -280,7 +285,6 @@ msgstr ""
 msgid "{days, plural, one {# day ago} other {# days ago}}"
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr ""
@@ -623,6 +627,7 @@ msgid "Account settings."
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/context/DocumentTrashSection.tsx
 msgid "Actions"
 msgstr ""
 
@@ -1267,6 +1272,7 @@ msgstr ""
 
 #: src/features/editor/EditorView.tsx
 #: src/features/links/FollowOutcomeContent.tsx
+#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Close"
 msgstr ""
 
@@ -1656,8 +1662,8 @@ msgid "Couldn't load this file."
 msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
-msgid "Couldn't load Trash."
-msgstr ""
+#~ msgid "Couldn't load Trash."
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
@@ -1759,15 +1765,15 @@ msgstr ""
 msgid "Couldn't restore {0}. Try again."
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Couldn't restore {name}."
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Couldn't restore {name}. A file is in the way."
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Couldn't restore {name}. Try again."
 msgstr ""
 
@@ -2028,12 +2034,12 @@ msgid "Deleted a Work"
 msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
-msgid "Deleted by {actor} on {deleted}"
-msgstr ""
+#~ msgid "Deleted by {actor} on {deleted}"
+#~ msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
-msgid "Deleted documents."
-msgstr ""
+#~ msgid "Deleted documents."
+#~ msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
@@ -2750,7 +2756,6 @@ msgstr ""
 msgid "Left"
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Less than a day left"
 msgstr ""
@@ -2869,8 +2874,8 @@ msgid "Loading signed image URL…"
 msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
-msgid "Loading Trash…"
-msgstr ""
+#~ msgid "Loading Trash…"
+#~ msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -3316,6 +3321,10 @@ msgstr ""
 
 #: src/components/app/DrillInMenu.tsx
 msgid "Nothing here yet."
+msgstr ""
+
+#: src/features/project/context/DocumentTrashSection.tsx
+msgid "Nothing in the trash."
 msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -3823,6 +3832,7 @@ msgid "Response complete"
 msgstr "回复完成"
 
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/DocumentTrashSection.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore"
 msgstr ""
@@ -3846,12 +3856,13 @@ msgstr ""
 #. placeholder {0}: documentLocationName(result.landedAt)
 #. placeholder {0}: notice.location
 #: src/features/project/context/document-delete-undo.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
 #: src/features/project/context/restore-trashed-document.ts
 msgid "Restored at {0}."
 msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/DocumentTrashSection.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Restoring"
 msgstr ""
@@ -3878,6 +3889,7 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/features/editor/EditorView.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
+#: src/features/project/context/DocumentTrashSection.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/ProjectCreationNotice.tsx
@@ -5109,14 +5121,17 @@ msgstr ""
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
-#: src/features/project/shell/WorkspaceNavBody.tsx
+#: src/features/project/context/DocumentTrashSection.tsx
 msgid "Trash"
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
-msgid "Trash is empty."
+#: src/features/project/context/DocumentTrashSection.tsx
+msgid "Trash couldn’t load."
 msgstr ""
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+#~ msgid "Trash is empty."
+#~ msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Trashed document"

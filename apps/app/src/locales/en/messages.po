@@ -136,6 +136,11 @@ msgstr "{0}"
 msgid "{0} additional balance"
 msgstr "{0} additional balance"
 
+#. placeholder {0}: relativeTime(entry.removal.time, now)
+#: src/features/project/context/DocumentTrashSection.tsx
+msgid "{0} ago"
+msgstr "{0} ago"
+
 #. placeholder {0}: dock.files.length
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
@@ -280,7 +285,6 @@ msgstr "{count} documents were removed ({names})."
 msgid "{days, plural, one {# day ago} other {# days ago}}"
 msgstr "{days, plural, one {# day ago} other {# days ago}}"
 
-#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr "{days, plural, one {# day left} other {# days left}}"
@@ -623,6 +627,7 @@ msgid "Account settings."
 msgstr "Account settings."
 
 #: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/context/DocumentTrashSection.tsx
 msgid "Actions"
 msgstr "Actions"
 
@@ -1267,6 +1272,7 @@ msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
 #: src/features/editor/EditorView.tsx
 #: src/features/links/FollowOutcomeContent.tsx
+#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Close"
 msgstr "Close"
 
@@ -1656,8 +1662,8 @@ msgid "Couldn't load this file."
 msgstr "Couldn't load this file."
 
 #: src/features/project/context/DocumentTrashDialog.tsx
-msgid "Couldn't load Trash."
-msgstr "Couldn't load Trash."
+#~ msgid "Couldn't load Trash."
+#~ msgstr "Couldn't load Trash."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
@@ -1759,15 +1765,15 @@ msgstr "Couldn't restore {0}. A file is in the way."
 msgid "Couldn't restore {0}. Try again."
 msgstr "Couldn't restore {0}. Try again."
 
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Couldn't restore {name}."
 msgstr "Couldn't restore {name}."
 
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Couldn't restore {name}. A file is in the way."
 msgstr "Couldn't restore {name}. A file is in the way."
 
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Couldn't restore {name}. Try again."
 msgstr "Couldn't restore {name}. Try again."
 
@@ -2028,12 +2034,12 @@ msgid "Deleted a Work"
 msgstr "Deleted a Work"
 
 #: src/features/project/context/DocumentTrashDialog.tsx
-msgid "Deleted by {actor} on {deleted}"
-msgstr "Deleted by {actor} on {deleted}"
+#~ msgid "Deleted by {actor} on {deleted}"
+#~ msgstr "Deleted by {actor} on {deleted}"
 
 #: src/features/project/context/DocumentTrashDialog.tsx
-msgid "Deleted documents."
-msgstr "Deleted documents."
+#~ msgid "Deleted documents."
+#~ msgstr "Deleted documents."
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
@@ -2750,7 +2756,6 @@ msgstr "Leading or trailing whitespace detected in file or folder name."
 msgid "Left"
 msgstr "Left"
 
-#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Less than a day left"
 msgstr "Less than a day left"
@@ -2869,8 +2874,8 @@ msgid "Loading signed image URL…"
 msgstr "Loading signed image URL…"
 
 #: src/features/project/context/DocumentTrashDialog.tsx
-msgid "Loading Trash…"
-msgstr "Loading Trash…"
+#~ msgid "Loading Trash…"
+#~ msgstr "Loading Trash…"
 
 #: src/features/chat/CreationComposer.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -3317,6 +3322,10 @@ msgstr "Nothing here yet"
 #: src/components/app/DrillInMenu.tsx
 msgid "Nothing here yet."
 msgstr "Nothing here yet."
+
+#: src/features/project/context/DocumentTrashSection.tsx
+msgid "Nothing in the trash."
+msgstr "Nothing in the trash."
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Nothing opened yet"
@@ -3823,6 +3832,7 @@ msgid "Response complete"
 msgstr "Response complete"
 
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/DocumentTrashSection.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore"
 msgstr "Restore"
@@ -3846,12 +3856,13 @@ msgstr "Restored as {0}."
 #. placeholder {0}: documentLocationName(result.landedAt)
 #. placeholder {0}: notice.location
 #: src/features/project/context/document-delete-undo.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
 #: src/features/project/context/restore-trashed-document.ts
 msgid "Restored at {0}."
 msgstr "Restored at {0}."
 
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/DocumentTrashSection.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Restoring"
 msgstr "Restoring"
@@ -3878,6 +3889,7 @@ msgstr "Resume my documents on any device"
 #: src/features/editor/EditorView.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
+#: src/features/project/context/DocumentTrashSection.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/ProjectCreationNotice.tsx
@@ -5109,14 +5121,17 @@ msgstr "Tokens before"
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr "Top up any time. Extra usage carries over month to month."
 
-#: src/features/project/context/DocumentTrashDialog.tsx
-#: src/features/project/shell/WorkspaceNavBody.tsx
+#: src/features/project/context/DocumentTrashSection.tsx
 msgid "Trash"
 msgstr "Trash"
 
+#: src/features/project/context/DocumentTrashSection.tsx
+msgid "Trash couldn’t load."
+msgstr "Trash couldn’t load."
+
 #: src/features/project/context/DocumentTrashDialog.tsx
-msgid "Trash is empty."
-msgstr "Trash is empty."
+#~ msgid "Trash is empty."
+#~ msgstr "Trash is empty."
 
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Trashed document"

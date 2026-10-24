@@ -45,8 +45,8 @@ export type ProjectAddress = {
   itemKey?: string;
   /** Stable selected closure class within the addressed review. */
   changeId?: string;
-  /** Project Trash list, or the stable id of the trashed document being viewed. */
-  trash?: true | string;
+  /** Stable id of the trashed document being viewed. */
+  trash?: string;
   settings?: SettingsSection;
 };
 export type WorkView = "chats" | "files";
@@ -175,7 +175,7 @@ export function parseProjectAddress(
   }
   const settings = query.get("settings");
   const trashValue = query.get("trash");
-  const trash = trashValue === "true" ? true : trashValue || undefined;
+  const trash = trashValue && trashValue !== "true" ? trashValue : undefined;
   const workView =
     destination.kind === "work" && query.get("view") === "files" ? "files" : undefined;
   const view = query.get("view");
