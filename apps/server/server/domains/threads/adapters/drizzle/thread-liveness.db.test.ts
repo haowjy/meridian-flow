@@ -2,7 +2,7 @@
  * Database coverage for thread liveness.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current thread liveness persistence protocol (kb/decisions/chat/turns/linear-turns.md)
+ * - lease-backed running status in list and live projections (kb/decisions/chat/turns/linear-turns.md)
  */
 
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";

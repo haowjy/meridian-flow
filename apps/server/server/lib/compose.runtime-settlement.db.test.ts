@@ -2,7 +2,7 @@
  * Production-composition regression for response credit and staged-push settlement.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current compose runtime settlement persistence protocol
+ * - typed removed-model failure and locked No Work ownership of drafts
  */
 
 import { and, eq } from "drizzle-orm";

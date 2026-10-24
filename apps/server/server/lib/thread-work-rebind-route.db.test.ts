@@ -2,7 +2,7 @@
  * PostgreSQL coverage for the writer Work-rebind HTTP boundary.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current thread work rebind route persistence protocol
+ * - writer enqueue/rebind lock ordering, busy-thread refusal, and commit-time lifecycle recheck
  */
 
 import { setTimeout as delay } from "node:timers/promises";

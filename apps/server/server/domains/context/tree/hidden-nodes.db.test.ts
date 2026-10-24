@@ -2,7 +2,7 @@
  * Hidden-node lifecycle through the real commands (contract §6, §7, §12): a branch's create is an empty hidden row its drafts share (C-2); a live create at a hidden path reveals it and an aborted held write leaves live state alone (C-3); and the fences between a join, a reveal and a last use hold in both orders (I-1, I-2, I-3).
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current hidden nodes persistence protocol (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ * - shared hidden-row topology and join, reveal, and last-use fencing (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 
 import type { DocumentId } from "@meridian/contracts";

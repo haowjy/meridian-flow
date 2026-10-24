@@ -2,7 +2,7 @@
  * PostgreSQL conformance for durable upload identity, allocation, and cascade.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current upload intake persistence protocol
+ * - MIME and extension precedence for canonical upload names and Markdown conversion
  */
 
 import { createHash } from "node:crypto";

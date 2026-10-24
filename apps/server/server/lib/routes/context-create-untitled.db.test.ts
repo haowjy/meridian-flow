@@ -2,7 +2,7 @@
  * Postgres-backed coverage for work-scoped untitled creation, rollback and identity recovery.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current context create untitled persistence protocol
+ * - cross-scheme identity recovery without provisioning scanned sources
  */
 
 import { eq } from "drizzle-orm";

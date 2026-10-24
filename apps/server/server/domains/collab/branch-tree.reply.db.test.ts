@@ -2,7 +2,7 @@
  * A reply's drafted writes and the branch they land in (contract §2.5, ledger K-1, K-2): a read never makes a branch, draft or peer; the first write does.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current branch tree reply persistence protocol (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - lazy branch, draft, and peer provisioning on first write (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
  */
 
 import type { DocumentId, WorkId } from "@meridian/contracts";

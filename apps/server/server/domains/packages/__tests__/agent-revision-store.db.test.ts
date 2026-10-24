@@ -2,7 +2,7 @@
  * Postgres contracts for retained Agent identity, catalog ownership, and transactional binding.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current agent revision store persistence protocol
+ * - General seeding, agent-less binding overlays, and primary-agent revision eligibility
  */
 import { createDb } from "@meridian/database";
 import {

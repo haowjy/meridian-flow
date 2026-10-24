@@ -2,7 +2,7 @@
  * Real-Postgres contract coverage for catalog-derived destructive test resets.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current drizzle reset persistence protocol
+ * - catalog-derived FK graph planning for transactional destructive fixture resets
  */
 
 import { randomUUID } from "node:crypto";

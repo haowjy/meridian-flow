@@ -2,7 +2,7 @@
  * PostgreSQL contract for project bootstrap with locked No Work.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current project bootstrap persistence protocol
+ * - the default project, Manuscript, first chapter, and locked No Work bootstrap shape
  */
 
 import { beforeEach, describe, expect, it } from "vitest";

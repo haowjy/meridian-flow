@@ -2,7 +2,7 @@
  * Dirty-signal capture, semantic readiness, and exact-cut acknowledgement on PostgreSQL.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current drizzle trail signals persistence protocol
+ * - payload-triggered recursive dirty signals and transaction-bound snapshot consumption
  */
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";

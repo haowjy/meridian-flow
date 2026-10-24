@@ -2,7 +2,7 @@
  * Postgres coverage for model-context notice recording and transactional consumption.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current drizzle notice port persistence protocol
+ * - peek followed by explicit committed-ID acknowledgement
  */
 
 import { beforeEach, describe, expect, it } from "vitest";

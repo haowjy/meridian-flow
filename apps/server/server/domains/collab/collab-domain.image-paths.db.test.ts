@@ -2,7 +2,7 @@
  * Document-link scopes across doors: images in search, draft review, Apply and live reversal, and a reply's own create spelled alike by every reader and by a cold undo in the draft it changed.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current collab domain image paths persistence protocol
+ * - one captured link scope per search operation
  */
 import { folderDocumentName } from "@meridian/contracts/protocol";
 import { createDb } from "@meridian/database";

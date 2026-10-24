@@ -2,7 +2,7 @@
  * PostgreSQL races and recovery contracts for durable document derivation.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current drizzle document derivations persistence protocol
+ * - lazy-cut retirement, lock-scoped capture, persistence revalidation, and durable recovery sweeps
  */
 
 import { randomUUID } from "node:crypto";

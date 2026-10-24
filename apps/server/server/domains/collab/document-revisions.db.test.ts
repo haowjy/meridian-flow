@@ -2,7 +2,7 @@
  * Revision identity across live rooms, Work peers, response settlement and rebinding.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current document revisions persistence protocol (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - snapshot-derived freshness tokens across content, tree, receipt, peer, and flush boundaries (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
  */
 
 import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";

@@ -2,7 +2,7 @@
  * A writer frame acquires nothing (lock-free drafts, phase 1b): it judges against its committed replica and appends under its draft row hold.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current draft frame races persistence protocol (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - committed-prefix server authorship, deferred replica installation, and four-attempt inverse retries (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
  */
 
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";

@@ -2,7 +2,7 @@
  * Route seam coverage for create-with-content followed by the public read projection.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current context create read persistence protocol
+ * - upload-only binary creation, archived Scratch refusal, and lazy source provisioning
  */
 
 import { eq } from "drizzle-orm";
