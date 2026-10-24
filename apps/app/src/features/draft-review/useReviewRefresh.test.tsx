@@ -17,8 +17,10 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useReviewRefresh } from "./useReviewRefresh";
 
 let sessions: ReturnType<typeof createEditorSessions>;
+let editVersion = 0;
 beforeEach(() => {
   sessions = createEditorSessions();
+  editVersion = 0;
 });
 afterEach(async () => {
   await sessions.dispose();
@@ -56,7 +58,7 @@ async function mountOwner(run: (invalidated: () => string[]) => Promise<void>) {
 }
 
 const edit = (roomKey: string) =>
-  sessions.get(roomKey).document.getMap("edits").set("k", Math.random());
+  sessions.get(roomKey).document.getMap("edits").set("k", ++editVersion);
 const wait = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
 
 beforeEach(() => {
