@@ -113,7 +113,7 @@ export function createDrizzleDocumentTrash(deps: {
         JOIN ${branches} b ON b.id = p.branch_id
         JOIN ${works} w ON w.id = b.origin_work_id
         WHERE p.document_id IN (${sql.join(ids, sql`, `)})
-        ORDER BY p.document_id, w.name, w.id
+        ORDER BY p.document_id::text, w.name, w.id::text
       `);
       for (const row of pending) {
         const documentId = row.document_id as DocumentId;
