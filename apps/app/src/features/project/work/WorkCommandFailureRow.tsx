@@ -4,7 +4,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { WORK_DELETE_RETENTION_DAYS } from "@meridian/contracts/works";
+import { DELETION_RETENTION_DAYS } from "@meridian/contracts/works";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { HttpResponseError } from "@/client/api/http-client";
@@ -63,7 +63,7 @@ function restoreRefusal(error: Error): ReactNode {
   if (status === 410)
     return (
       <Trans>
-        This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored.
+        This Work was deleted more than {DELETION_RETENTION_DAYS} days ago and can’t be restored.
       </Trans>
     );
   return null;

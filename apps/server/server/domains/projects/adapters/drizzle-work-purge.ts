@@ -6,7 +6,7 @@
  */
 
 import type { WorkId } from "@meridian/contracts/runtime";
-import { workPurgeCutoff } from "@meridian/contracts/works";
+import { deletionPurgeCutoff } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
   branches,
@@ -197,7 +197,7 @@ export function createDrizzleWorkPurger(deps: {
   return {
     async sweep(): Promise<number> {
       const currentTime = now();
-      const cutoff = workPurgeCutoff(currentTime);
+      const cutoff = deletionPurgeCutoff(currentTime);
       let count = 0;
       let after: { id: WorkId; deletedAt: Date } | undefined;
       // Retained sources must not pin the oldest page and starve later eligible Works.

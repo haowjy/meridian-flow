@@ -5,7 +5,7 @@
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { WORK_DELETE_RETENTION_DAYS, type Work } from "@meridian/contracts/works";
+import { DELETION_RETENTION_DAYS, type Work } from "@meridian/contracts/works";
 import { RuledList } from "../RuledList";
 import { WorkCommandFailureRow } from "./WorkCommandFailureRow";
 import { daysUntilPurge, type ListedWorkEntry } from "./work-list-model";
@@ -22,7 +22,7 @@ export function DeletedWorkList({
   if (!entries.length)
     return (
       <p className="px-2 py-2 text-sm text-muted-foreground">
-        <Trans>Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days.</Trans>
+        <Trans>Deleted Work can be restored for {DELETION_RETENTION_DAYS} days.</Trans>
       </p>
     );
   return (
@@ -45,7 +45,7 @@ export function DeletedWorkList({
 }
 
 function DeletedRow({ work, now, onRestore }: { work: Work; now: number; onRestore: () => void }) {
-  const days = work.deletedAt ? daysUntilPurge(work.deletedAt, now) : WORK_DELETE_RETENTION_DAYS;
+  const days = work.deletedAt ? daysUntilPurge(work.deletedAt, now) : DELETION_RETENTION_DAYS;
   return (
     <div className="flex min-h-12 min-w-0 items-center gap-3 px-2 py-1.5">
       <div className="min-w-0 flex-1">
