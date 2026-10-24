@@ -32,7 +32,9 @@ else
     const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
+    const { closeTestDatabase, deleteDrizzleRows } = await import(
+      "../../../test-support/drizzle-reset.js"
+    );
     const { executionScenario } = await import("../../../test-support/execution-scenario.js");
     const { createLockedDrizzleInbox } = await import("../../../test-support/locked-inbox.js");
     const { createDetachedWorkTracker } = await import("../detached-work.js");
@@ -50,7 +52,7 @@ else
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
     const db = createDb(databaseUrl, { max: 8 });
     beforeEach(() => deleteDrizzleRows(db, [schema.users]));
-    afterAll(() => db.close());
+    afterAll(() => closeTestDatabase(db));
 
     async function handoffSeed() {
       const { ids, repos } = await executionScenario(db);
