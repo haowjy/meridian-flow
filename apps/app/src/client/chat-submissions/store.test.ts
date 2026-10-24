@@ -1,4 +1,8 @@
-/** Durable unresolved-submission journal codec + account fence. */
+/** Durable unresolved-submission journal codec + account fence.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - journal subscriber notification policy
+ */
 
 import { describe, expect, it } from "vitest";
 import { ComposerSessionDraft } from "@/client/composer-drafts";
@@ -12,7 +16,6 @@ import {
   type ChatSubmission,
   type ChatSubmissionStorage,
   DeviceChatSubmissionJournal,
-  submissionReplayChanged,
 } from "./store";
 
 function memory(): ChatSubmissionStorage & { raw(): Map<string, string> } {
@@ -186,28 +189,28 @@ it("rewrites a reminted submission in its stable key, retaining the draft and cr
 });
 
 it("notifies subscribers on writes, retirement and matching cross-tab storage changes", () => {
-  const { journal } = bound();
-  let notifications = 0;
+  const { storage, journal } = bound();
+  const observed: ChatSubmission[][] = [];
   const unsubscribe = journal.subscribe(() => {
-    notifications += 1;
+    observed.push(journal.entries());
   });
-  const envelope = (entry: ChatSubmission) => JSON.stringify({ payload: entry });
-  const before = envelope(existingThread());
-  const replay = envelope(existingThread({ occurrence: { requestId: "retry", attempt: 2 } }));
-  expect(submissionReplayChanged(before, replay)).toBe(false);
-  expect(submissionReplayChanged(null, before)).toBe(true);
-  expect(submissionReplayChanged(before, null)).toBe(true);
-  expect(submissionReplayChanged(before, envelope(existingThread({ state: "rejected" })))).toBe(
-    true,
-  );
   journal.record("account", existingThread());
-  journal.notifyStorageChange(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}account:another-record`);
+  const external = existingThread({ recordId: "sub-2", submissionId: "sub-2", seq: 2 });
+  storage.setItem(
+    `${CHAT_SUBMISSIONS_STORAGE_PREFIX}account:sub-2`,
+    JSON.stringify({
+      version: CHAT_SUBMISSIONS_SCHEMA_VERSION,
+      accountId: "account",
+      payload: external,
+    }),
+  );
+  journal.notifyStorageChange(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}account:sub-2`);
   journal.notifyStorageChange(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}account-other:record`);
   journal.retire("account", "sub-1");
-  expect(notifications).toBe(3);
+  expect(observed).toEqual([[existingThread()], [existingThread(), external], [external]]);
   unsubscribe();
   journal.notifyStorageChange(null);
-  expect(notifications).toBe(3);
+  expect(observed).toHaveLength(3);
 });
 
 it("unavailable record reads retain the last complete snapshot", () => {
