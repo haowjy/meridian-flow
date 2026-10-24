@@ -49,7 +49,14 @@ function deleted(
     },
     result: {
       ok: true,
-      value: { status: "deleted", deletedDocumentIds, availabilityGeneration: "9" },
+      value: {
+        status: "deleted",
+        removed: deletedDocumentIds.map((documentId) => ({
+          documentId,
+          removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+        })),
+        availabilityGeneration: "9",
+      },
     },
   };
 }
