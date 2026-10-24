@@ -1,4 +1,9 @@
-/** PostgreSQL coverage for the run-state publication participant: lock tracking, savepoints and the flush. */
+/**
+ * PostgreSQL coverage for the run-state publication participant: lock tracking, savepoints and the flush.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current drizzle run state persistence protocol (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
+ */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -23,9 +28,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
-    const { createDrizzleEventJournalWriter } = await import(
-      "../../threads/adapters/drizzle/event-writer.js"
-    );
     const { eventSeqForJournalEvent } = await import("../../threads/index.js");
     const { enlistDrizzleTransactionParticipant, runInDrizzleSavepoint, runInDrizzleTransaction } =
       await import("../../../shared/drizzle-transaction.js");

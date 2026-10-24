@@ -1,4 +1,9 @@
-/** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
+/**
+ * Control queue ordering, start consumption, and withdrawal against PostgreSQL.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current control protocol persistence protocol (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
+ */
 
 import type { Turn } from "@meridian/contracts/threads";
 import { eq, sql } from "drizzle-orm";

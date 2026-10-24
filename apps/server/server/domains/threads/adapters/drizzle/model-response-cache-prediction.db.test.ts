@@ -1,4 +1,9 @@
-/** PostgreSQL persistence and latest-response ordering for cache predictions. */
+/**
+ * PostgreSQL persistence and latest-response ordering for cache predictions.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current model response cache prediction persistence protocol (kb/decisions/chat/turns/linear-turns.md)
+ */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   resetThreadWorkRaceFixture,

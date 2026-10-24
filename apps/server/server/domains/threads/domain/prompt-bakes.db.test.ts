@@ -1,4 +1,9 @@
-/** PostgreSQL guards and epoch-transition behavior for immutable prompt bakes. */
+/**
+ * PostgreSQL guards and epoch-transition behavior for immutable prompt bakes.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current prompt bakes persistence protocol (kb/decisions/chat/turns/linear-turns.md)
+ */
 
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -22,7 +27,6 @@ else {
     const { createDrizzleRepositoriesForTest } = await import(
       "../adapters/drizzle/repositories.js"
     );
-    const { createDrizzleEventJournalWriter } = await import("../adapters/drizzle/event-writer.js");
     const { createDrizzleEventJournalReader } = await import("../adapters/drizzle/event-reader.js");
     const { beginPromptEpoch } = await import("../../runtime/loop/begin-prompt-epoch.js");
     const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");

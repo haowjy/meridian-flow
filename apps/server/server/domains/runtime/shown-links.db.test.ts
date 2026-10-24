@@ -1,12 +1,10 @@
 /**
- * E-1: shown-link evidence on PostgreSQL threads (contract §7.3), for both
- * store adapters. Dedup keeps the latest showing per key; rows survive a real
- * compaction; a fork reads its source's showings only up to its cutoff turn,
- * and a source's later repeat never takes one away; a handoff and a spawned
- * child inherit nothing; a showing recorded in a failed persistence rolls
- * back with it; a writer delayed after drawing its sequence never rewinds a
- * key's order.
+ * E-1: shown-link evidence on PostgreSQL threads (contract §7.3), for both store adapters.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current shown links persistence protocol (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
  */
+
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Thread, Turn } from "@meridian/contracts/threads";
 import type { SpelledLinkFact } from "@meridian/markup/links";
