@@ -21,7 +21,7 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   type DrizzleDb,
@@ -402,7 +402,10 @@ export async function restoreDocument(
 
 /** The `DocumentRemovals` port: `readRemovalRecords` in the caller's transaction, if any. */
 export function createRemovalRecords(db: DrizzleDb): DocumentRemovals {
-  return { lookup: (documentIds) => readRemovalRecords(currentDrizzleDb(db), documentIds) };
+  return {
+    lookup: (documentIds) =>
+      readRemovalRecords(currentDrizzleDb(db), documentIds, { retainedOnly: true }),
+  };
 }
 
 /**
@@ -413,6 +416,7 @@ export function createRemovalRecords(db: DrizzleDb): DocumentRemovals {
 export async function readRemovalRecords(
   db: Pick<DrizzleDb, "select">,
   documentIds: readonly DocumentId[],
+  options: { retainedOnly?: boolean } = {},
 ): Promise<ReadonlyMap<DocumentId, DocumentRemovalRecord>> {
   const records = new Map<DocumentId, DocumentRemovalRecord>();
   if (!documentIds.length) return records;
@@ -432,7 +436,13 @@ export async function readRemovalRecords(
     .leftJoin(users, eq(users.id, documents.deletedByUserId))
     .leftJoin(works, eq(works.id, documents.deletedByWorkId))
     .leftJoin(threads, eq(threads.id, documents.deletedByThreadId))
-    .where(and(inArray(documents.id, [...documentIds]), isNotNull(documents.deletedAt)));
+    .where(
+      and(
+        inArray(documents.id, [...documentIds]),
+        isNotNull(documents.deletedAt),
+        options.retainedOnly ? isNull(documents.contentPurgedAt) : undefined,
+      ),
+    );
   for (const row of rows) {
     records.set(row.id as DocumentId, {
       reason: row.reason as DocumentRemovalRecord["reason"],

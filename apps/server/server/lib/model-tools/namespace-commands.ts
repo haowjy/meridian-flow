@@ -31,6 +31,7 @@ import {
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { threadContainerTarget } from "../file-targets.js";
 import { documentGrant, fileAccessDeniedError, firstRefusal } from "./file-access.js";
+import { removedPathError } from "./inverse-address.js";
 import { namespaceContextRefusal, namespaceRefusal } from "./namespace-refusal.js";
 import {
   canonicalPath,
@@ -279,7 +280,13 @@ export async function runNamespaceCommand(
   ctx: ToolHandlerContext,
 ) {
   const source = await resolveSource(call, input);
-  if (isToolError(source)) return source;
+  if (isToolError(source)) {
+    const removed =
+      source.output.status === "document_not_found"
+        ? await removedPathError(deps, call, input.command, sourcePath(input), ctx.threadId)
+        : null;
+    return removed ?? source;
+  }
   const grant = await documentGrant(
     deps,
     call.principal,
