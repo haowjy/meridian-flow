@@ -28,23 +28,20 @@ const requestProjects = alias(projects, "document_trash_request_projects");
 
 /** The one lifecycle gate shared by trash reads and both stages of purge. */
 function trashEligible() {
-  return and(
-    isNotNull(documents.deletedAt),
-    eq(documents.deletionReason, "deleted"),
-    eq(documents.hidden, false),
-    isNull(documents.deletedByWorkId),
-    isNull(documents.contentPurgedAt),
-    isNull(contextSources.deletedAt),
-    isNull(sourceProjects.deletedAt),
-  )!;
+  return sql<boolean>`${isNotNull(documents.deletedAt)}
+    AND ${eq(documents.deletionReason, "deleted")}
+    AND ${eq(documents.hidden, false)}
+    AND ${isNull(documents.deletedByWorkId)}
+    AND ${isNull(documents.contentPurgedAt)}
+    AND ${isNull(contextSources.deletedAt)}
+    AND ${isNull(sourceProjects.deletedAt)}`;
 }
 
 /** A project owns its own sources plus its account's personal user:// source. */
 function projectTrashMember() {
-  return or(
-    eq(sourceProjects.id, requestProjects.id),
-    and(eq(contextSources.slug, "user"), eq(sourceProjects.userId, requestProjects.userId)),
-  )!;
+  return sql<boolean>`${eq(sourceProjects.id, requestProjects.id)}
+    OR (${eq(contextSources.slug, "user")}
+      AND ${eq(sourceProjects.userId, requestProjects.userId)})`;
 }
 
 export function createDrizzleDocumentTrash(deps: {
