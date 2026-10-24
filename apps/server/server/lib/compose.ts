@@ -48,7 +48,7 @@ import {
   createDrizzleDocumentArrivals,
   createDrizzleDocumentLinkHistory,
   createDrizzleDocumentLinkScopes,
-  createDrizzleDocumentTrashList,
+  createDrizzleDocumentTrash,
   createDrizzleFigureDocumentRepository,
   createDrizzleLineageScratchLifecycle,
   createDrizzleLinkAheadRegistry,
@@ -289,7 +289,7 @@ export type AppServices = {
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
   restoreRemovedDocuments: RestoreRemovedDocuments;
-  documentTrash: Pick<DocumentTrash, "list">;
+  documentTrash: DocumentTrash;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -380,7 +380,7 @@ export type ProductionAppPorts = {
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog & ContextCatalogMutationPort & ProjectCatalogLifecyclePort;
   restoreRemovedDocuments: RestoreRemovedDocuments;
-  documentTrash: Pick<DocumentTrash, "list">;
+  documentTrash: DocumentTrash;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -704,7 +704,7 @@ export async function createProductionAppPorts(input: {
       arrivals,
       catalog: contextCatalog,
     }),
-    documentTrash: createDrizzleDocumentTrashList(db),
+    documentTrash: createDrizzleDocumentTrash(db),
     projectContextAvailability,
     documentAddresses: createDocumentAddressResolver({
       locations: createDrizzleDocumentAddressStore(db),
@@ -1471,6 +1471,9 @@ export function createInMemoryAppServices(): AppServices {
     documentTrash: {
       async list() {
         return [];
+      },
+      async read() {
+        return null;
       },
     },
     documentAddresses: {

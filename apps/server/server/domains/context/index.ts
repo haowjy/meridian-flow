@@ -154,7 +154,7 @@ export {
   type ScratchOwner,
   scratchOwnerFor,
 } from "./scratch-owner.js";
-export { createDrizzleDocumentTrashList } from "./tree/drizzle-document-trash-list.js";
+export { createDrizzleDocumentTrash } from "./tree/drizzle-document-trash.js";
 export { createHiddenNodeRepair, type HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 export {
   createDocumentRemoval,
