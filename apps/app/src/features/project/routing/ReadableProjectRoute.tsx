@@ -3,7 +3,11 @@
 import { parseDraftItemKey } from "@meridian/contracts";
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
-import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import {
+  contextOwner,
+  type GetDocumentTrashResponse,
+  type ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
@@ -21,6 +25,7 @@ import {
   getProjectDocumentAddress,
 } from "@/client/api/projects-api";
 import type { ContextOwner } from "@/client/query/context-request-options";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { fetchCurrentDraftMetadata, useDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -693,6 +698,17 @@ function ReadableProjectDestination({
     });
   }, []);
   const queryClient = useQueryClient();
+  const openTrash = useCallback(
+    (documentId: string, document: GetDocumentTrashResponse) => {
+      queryClient.setQueryData(projectQueryKeys.trashedDocument(projectId, documentId), document);
+      return router.navigate({
+        to: ".",
+        search: (previous: Record<string, unknown>) => ({ ...previous, trash: documentId }),
+        state: (previous) => previous,
+      });
+    },
+    [projectId, queryClient, router],
+  );
   useEffect(() => {
     if (!closingRef || !closeState.closed || closeState.removed) return;
     const itemKey = closingRef.itemKey;
@@ -897,6 +913,7 @@ function ReadableProjectDestination({
         <ProjectDocumentNavigationProvider
           projectId={projectId}
           captureNavigation={captureNavigation}
+          openTrash={openTrash}
         >
           {documentDestination && !localDocumentId ? (
             <ProjectAddressDocument
