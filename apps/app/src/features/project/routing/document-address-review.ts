@@ -72,8 +72,6 @@ export function documentAddressQueryOptions(
     owner: ContextOwner;
     binding: DocumentAddressBinding;
     workResolved: boolean;
-    catalogGeneration?: string;
-    catalogRevision?: string;
   },
   read: typeof getProjectDocumentAddress,
 ) {
@@ -86,8 +84,6 @@ export function documentAddressQueryOptions(
       input.owner.rootThreadId ?? input.owner.workId,
       review?.workId,
       review?.itemKey,
-      input.catalogGeneration,
-      input.catalogRevision,
     ],
     queryFn: () => {
       if (!input.destination || input.binding.kind === "pending")
