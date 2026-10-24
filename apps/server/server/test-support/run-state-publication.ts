@@ -13,7 +13,6 @@
 import { randomInt } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { createDb, type Database } from "@meridian/database";
-import * as schema from "@meridian/database/schema";
 import { sql } from "drizzle-orm";
 import postgres from "postgres";
 import { readRunState } from "../domains/runtime/adapters/drizzle-run-state.js";
@@ -76,16 +75,16 @@ export async function openAuditedDatabase(
   const admin = postgres(urlFor("postgres"), { max: 1 });
   let db: Database | undefined;
   // Cleanup must never hang a suite, and a slow host (DROP DATABASE waits on a checkpoint) must not
-  // fail it. Dropping the clone WITH (FORCE) ends its sessions first, so a query a test left in
-  // flight cannot hold the pool open. Each step gets a bounded window; a drop that does not finish
-  // is warned about and left to the managed run's own cleanup, which collects by this name prefix.
+  // fail it. Close the suite's pool before dropping: a live pool may reconnect after FORCE kills its
+  // sessions and make the drop wait for the full timeout. A query left in flight gets a bounded pool
+  // close, then FORCE still ends it. The managed run collects a clone that remains after a timeout.
   const close = async () => {
+    await within(POOL_CLOSE_TIMEOUT_MS, `closing the pool of ${cloneName}`, db?.close());
     await within(
       DROP_TIMEOUT_MS,
       `dropping ${cloneName}; the managed cleanup collects it`,
       admin.unsafe(`DROP DATABASE IF EXISTS "${cloneName}" WITH (FORCE)`),
     );
-    await within(POOL_CLOSE_TIMEOUT_MS, `closing the pool of ${cloneName}`, db?.close());
     await within(
       POOL_CLOSE_TIMEOUT_MS,
       `closing the admin connection for ${cloneName}`,
@@ -151,24 +150,37 @@ async function installPublicationAudit(db: Database) {
 }
 
 export async function assertPublicationHooks(db: Database) {
-  const unpublished = await db.execute<{ txid: string; thread_id: string }>(sql`
-    SELECT DISTINCT i.txid::text, i.thread_id FROM run_state_audit i
-    WHERE i.kind = 'input'
-      AND EXISTS (SELECT 1 FROM threads t WHERE t.id = i.thread_id)
-      AND NOT EXISTS (SELECT 1 FROM run_state_audit r
-        WHERE r.kind = 'record' AND r.txid = i.txid AND r.thread_id = i.thread_id)`);
+  const audited = await db.execute<{
+    thread_id: string;
+    run_state: unknown;
+    unpublished: boolean;
+  }>(sql`
+    WITH affected AS (
+      SELECT DISTINCT thread_id FROM run_state_audit
+    )
+    SELECT
+      affected.thread_id,
+      (SELECT payload->'runState' FROM event_journal
+        WHERE thread_id = affected.thread_id AND event_type = 'run_state.changed'
+        ORDER BY seq DESC LIMIT 1) AS run_state,
+      EXISTS (
+        SELECT 1 FROM run_state_audit i
+        WHERE i.thread_id = affected.thread_id
+          AND i.kind = 'input'
+          AND NOT EXISTS (SELECT 1 FROM run_state_audit r
+            WHERE r.kind = 'record' AND r.txid = i.txid AND r.thread_id = i.thread_id)
+      ) AS unpublished
+    FROM affected
+    WHERE EXISTS (SELECT 1 FROM threads WHERE id = affected.thread_id)`);
   await db.execute(sql`TRUNCATE run_state_audit`);
+  const unpublished = audited.filter((row) => row.unpublished);
   if (unpublished.length > 0)
     throw new Error(
-      `Transactions changed run-state inputs without publishing a record: ${JSON.stringify(unpublished)}`,
+      `Transactions changed run-state inputs without publishing a record for threads: ${JSON.stringify(unpublished.map((row) => row.thread_id))}`,
     );
 
-  const chats = await db.select({ id: schema.threads.id }).from(schema.threads);
-  for (const { id } of chats) {
-    const [last] = await db.execute<{ run_state: unknown }>(sql`
-      SELECT payload->'runState' AS run_state FROM event_journal
-      WHERE thread_id = ${id} AND event_type = 'run_state.changed' ORDER BY seq DESC LIMIT 1`);
-    const fresh = await readRunState(db, id);
+  for (const row of audited) {
+    const fresh = await readRunState(db, row.thread_id);
     const quiet = {
       items: [],
       sentThrough: 0,
@@ -177,9 +189,9 @@ export async function assertPublicationHooks(db: Database) {
       blocked: null,
     };
     // jsonb reorders keys, so compare structurally.
-    if (!isDeepStrictEqual(last?.run_state ?? quiet, JSON.parse(JSON.stringify(fresh))))
+    if (!isDeepStrictEqual(row.run_state ?? quiet, JSON.parse(JSON.stringify(fresh))))
       throw new Error(
-        `Run state of ${id} disagrees with its rows: record ${JSON.stringify(last?.run_state ?? null)}, rows ${JSON.stringify(fresh)}`,
+        `Run state of ${row.thread_id} disagrees with its rows: record ${JSON.stringify(row.run_state ?? null)}, rows ${JSON.stringify(fresh)}`,
       );
   }
 }
