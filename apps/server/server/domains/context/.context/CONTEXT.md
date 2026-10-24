@@ -93,12 +93,17 @@ member or Work is restored. Document tombstones and lineage-hidden sources
 retain distinct status. Stable IDs never become capabilities without a policy
 check.
 
-Trash reads are separate from live `ContextPort` path resolution. The
-`DocumentTrash` port admits only a document's currently restorable delete:
-visible rather than hidden, not removed by a Work cascade, and still under a
-live source and project. Its list returns removal metadata only. Its identity
-read adds the retained Markdown projection for that one document. Both paths
-authorize through the project before exposing the tombstone or its text.
+`DocumentTrash` owns the deleted-document lifecycle outside live `ContextPort`
+path resolution. List and identity reads admit only a currently restorable
+delete: visible rather than hidden, not removed by a Work cascade, unpurged,
+and still under a live source and project. The list returns removal metadata;
+the identity read adds the retained Markdown projection. Both authorize
+through the project before exposing the tombstone or its text. The hourly
+purge releases content after the shared 30-day retention period while keeping
+the tombstone and incoming identity links. It takes the Work, branch,
+namespace, document, and draft locks before rechecking eligibility. Pending
+branch text or tree changes defer purge; otherwise collab closes active drafts
+before the storage-release kernel erases the content.
 
 ## Creation and hidden-node lifecycle
 
@@ -157,11 +162,6 @@ kind and, for a file, its initiating document id; a mismatch or replacement is
 Work deletion soft-deletes its owned sources, documents, and folders marked
 `deletedByWorkId`; restore clears only those, so separately deleted content
 stays deleted.
-
-The hourly trash purge releases a deleted document's content after 30 days while keeping its
-tombstone and incoming identity links. It takes the Work, branch, namespace, document, and draft
-locks before rechecking eligibility. Any pending branch text or tree change defers purge; otherwise
-collab closes the document's active drafts before the storage-release kernel erases its content.
 
 ## Catalog and publication
 
