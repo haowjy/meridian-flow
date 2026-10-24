@@ -163,6 +163,13 @@ end-to-end smoke scripts and written manual-testing steps in the
 [runtime probe catalog](docs/qa/README.md); add or update the recipe that
 covers what you changed.
 
+Assert what a decision produces (state, rows, events, text), not mocks, call
+counts or internal shapes, unless the internal detail is itself the decision.
+A test file that guards an implementation decision that could be redesigned
+lists it in its header under `Pins implementation decisions (rewrite or delete
+these cases when one changes):`. When you change such a decision, find its tests
+with `git grep` and rewrite or delete them in the same change.
+
 ## Git workflow
 
 Commit often, one self-contained change at a time.
