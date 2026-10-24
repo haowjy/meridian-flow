@@ -101,9 +101,9 @@ export type FileOwnerRef =
 /**
  * What a request is about. AI calls pass `document` and the policy picks live
  * or draft; `draft` is for the writer's draft preview, Apply and Discard;
- * `restore` is a deleted document where an inverse would bring it back: its own
- * folder and source, live, without its own delete (a folder or source deleted
- * above it still hides it).
+ * `restore` is a deleted document where an inverse would bring it back. Restore
+ * admission reads through document and folder tombstones because placement revives
+ * that chain; source, project, owner-Work, and ownership lifecycle still apply.
  */
 export type FileTarget =
   | { kind: "document"; documentId: DocumentId }

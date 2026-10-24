@@ -121,6 +121,7 @@ export function createDrizzleApplyClick(
     arrivals?: Pick<DocumentArrivals, "settle">;
     catalog: ContextCatalogMutationPort;
     removal: DocumentRemoval;
+    history: Pick<import("../contracts.js").AgentTreeHistory, "recordAgentTreeChange">;
     close: Pick<DraftClose, "closeDrafts">;
     /** After commit: delete a tombstoned creation's stored object, best effort. */
     releaseObjects(storageUrls: readonly string[]): Promise<void>;
@@ -553,6 +554,7 @@ export function createDrizzleApplyClick(
                       commandDocumentId: command.documentId,
                       userId,
                       removal: deps.removal,
+                      history: deps.history,
                       close: deps.close,
                       arrivals: deps.arrivals,
                       catalog: deps.catalog,

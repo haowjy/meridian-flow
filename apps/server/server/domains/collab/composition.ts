@@ -499,6 +499,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       arrivals: deps.arrivals,
       catalog: deps.catalogMutations,
       removal: deps.documentRemoval,
+      history: treeHistory,
       close: deps.draftClose,
       releaseObjects: (storageUrls) => deps.objects?.storageUrls(storageUrls) ?? Promise.resolve(),
       onCommitted: async (documentId) => {

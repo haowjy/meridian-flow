@@ -72,7 +72,7 @@ export function createDrizzleFileFacts(
       target.kind === "container"
         ? await loadContainer(db, target.scheme, target.owner)
         : ((await loadDocument(db, target.documentId, view, {
-            ownDelete: target.kind !== "restore",
+            includeTreeDeletion: target.kind !== "restore",
           })) ??
           (await loadBranchDeleted(db, target.documentId, view)) ??
           (target.kind === "restore" && branchWorkId
@@ -219,7 +219,7 @@ function documentBase(
   row: DocumentBaseRow,
   documentId: DocumentId,
   folders: readonly FolderRow[],
-  ownDelete = true,
+  includeTreeDeletion = true,
 ): Omit<BaseFacts, "scheme"> {
   if (!isContextUriScheme(row.scheme))
     throw new Error(`Document ${documentId} has an invalid source`);
@@ -231,9 +231,9 @@ function documentBase(
     ownerChatThreadId: row.chatThreadId,
     ownerWork: row.work ? workFacts(row.work) : null,
     deleted:
-      (ownDelete && row.documentDeletedAt !== null) ||
       row.sourceDeletedAt !== null ||
-      folders.some((folder) => folder.deleted),
+      (includeTreeDeletion &&
+        (row.documentDeletedAt !== null || folders.some((folder) => folder.deleted))),
     contentScheme: row.scheme,
     self: { kind: "document", id: documentId },
     ancestors: [
@@ -243,12 +243,12 @@ function documentBase(
   };
 }
 
-/** `ownDelete: false` reads a deleted document as where a restore would bring it back. */
+/** Restore admission reads through the tree tombstones that placement will revive. */
 async function loadDocument(
   db: Database,
   documentId: DocumentId,
   view: TreeView,
-  options: { ownDelete: boolean },
+  options: { includeTreeDeletion: boolean },
 ): Promise<BaseFacts | null> {
   const documents = identityDocuments(view);
   if (!isUuid(documentId)) return null;
@@ -258,7 +258,7 @@ async function loadDocument(
   if (!lineage) return null;
   const folders = lineage.folders;
   return {
-    ...documentBase(row, documentId, folders, options.ownDelete),
+    ...documentBase(row, documentId, folders, options.includeTreeDeletion),
     scheme: row.scheme,
   };
 }

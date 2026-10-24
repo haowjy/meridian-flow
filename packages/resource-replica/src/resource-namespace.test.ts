@@ -241,7 +241,12 @@ describe("namespace record transitions", () => {
         ok: true,
         value: {
           status: "deleted",
-          deletedDocumentIds: ["document"],
+          removed: [
+            {
+              documentId: "document",
+              removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+            },
+          ],
           availabilityGeneration: "2",
         },
       },
@@ -464,7 +469,12 @@ describe("namespace record transitions", () => {
             ok: true,
             value: {
               status: "deleted",
-              deletedDocumentIds: ["document"],
+              removed: [
+                {
+                  documentId: "document",
+                  removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+                },
+              ],
               availabilityGeneration: "2",
             },
           },
@@ -514,7 +524,12 @@ describe("namespace record transitions", () => {
             ok: true,
             value: {
               status: "deleted",
-              deletedDocumentIds: ["document"],
+              removed: [
+                {
+                  documentId: "document",
+                  removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+                },
+              ],
               availabilityGeneration: "2",
             },
           },
@@ -600,7 +615,12 @@ describe("a chat's Scratch owner", () => {
           ok: true,
           value: {
             status: "deleted",
-            deletedDocumentIds: ["document"],
+            removed: [
+              {
+                documentId: "document",
+                removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+              },
+            ],
             availabilityGeneration: "2",
           },
         },

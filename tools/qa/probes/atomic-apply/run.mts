@@ -18,6 +18,7 @@ import { createDrizzleBranchDiscard } from "../../../../apps/server/server/domai
 import { createDrizzleChangeTrailAggregateWriter } from "../../../../apps/server/server/domains/collab/adapters/drizzle-change-trail-aggregate.ts";
 import { createDraftClose } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-close.ts";
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
+import { createDrizzleTreeHistory } from "../../../../apps/server/server/domains/collab/adapters/drizzle-tree-history.ts";
 import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
 import { createStaticDocumentLinkScopes } from "../../../../apps/server/server/domains/collab/adapters/in-memory/static-document-link-scopes.ts";
 import { createApplyClickService } from "../../../../apps/server/server/domains/collab/domain/apply-click.ts";
@@ -142,6 +143,7 @@ async function fixture(
     catalog: { refreshSources: async () => "0" },
     arrivals: { settle: async () => 0 },
     removal: createTestDocumentRemoval(h.db),
+    history: createDrizzleTreeHistory(h.db, h.persistence.journal),
     close: createDraftClose(),
     releaseObjects: async () => {},
     onCommitted: async () => {},
