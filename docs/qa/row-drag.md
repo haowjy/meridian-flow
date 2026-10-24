@@ -41,7 +41,9 @@ browser reports no fine pointer, so rows render at touch height.
    Between the tree and Scratch, the rail reads "Moved 3 items to
    characters." with Undo and Dismiss; it covers nothing and stays until the
    next move or Dismiss.
-4. Press Undo: the chapters return to `Act 2`.
+4. Press Undo: the chapters return to `Act 2`. Repeat with the keyboard (Tab
+   to Undo, Enter) and with Dismiss: focus lands on a moved row, not the page
+   body. Drop a row, rename it, then Undo: the renamed row stays.
 4a. Open a row's `…` menu, Move… it into a collapsed folder: the same notice
    names the destination; Undo returns it.
 5. Drag `Part Two` onto `Act 2`: nothing lights, the hint reads "Can't go

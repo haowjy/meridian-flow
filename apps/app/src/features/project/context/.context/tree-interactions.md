@@ -177,8 +177,12 @@ files and `setFolderLocation` for folders.
 Catalog snapshots span areas, so menu lookups check source identity as well as
 entry identity; equal paths in different areas remain distinct destinations.
 
-Destination resolution, refusals, arrival naming and the replica call live in
-`move-entry.ts`, shared with dragging.
+Move… and dragging share every step. Refusal is judged by identity from the
+replica's placement graph (`moveRefusal` in `entry-drag/move-plan.ts`), so the
+picker and a hover agree even while a peer moves rows. `moveRows`
+(`entry-drag/execute-move.ts`) places, remembers each operation for its row's
+link-update note and returns the move result both report through the list's
+notice. Destination resolution and arrival naming live in `move-entry.ts`.
 
 The chat's Scratch renders one owner-bound `TreeEnvProvider` and `TreeChildren`
 per real catalog. Earlier notes is a navigation disclosure outside the second

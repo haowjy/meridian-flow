@@ -10,6 +10,7 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { PanelLeftClose } from "lucide-react";
+import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
@@ -106,6 +107,7 @@ function LeftSidebarRail({
   const dockDocument = useDockDocument(activeScreen, projectId);
   const projectedDock = useDockDocumentTab(projectId, dockDocument);
   const docked = activeScreen === "chat" && !projectedDock.gone ? projectedDock.tab : null;
+  const treePane = useRef<HTMLDivElement>(null);
 
   return (
     <nav
@@ -130,13 +132,14 @@ function LeftSidebarRail({
         activeScreen={activeScreen}
         onSelectScreen={onSelectScreen}
         presentation="desktop"
+        childrenRef={treePane}
         notice={<MoveNotice className="mx-2 my-1.5 shrink-0" />}
         scratch={
           <RailScratchSection
             projectId={projectId}
             threadId={chatThreadId}
             editorWorkId={editorWorkId}
-            resizable
+            resizeAgainst={treePane}
           />
         }
       >

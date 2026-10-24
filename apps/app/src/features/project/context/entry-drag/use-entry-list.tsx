@@ -82,12 +82,14 @@ export function useEntryList({
         projectId,
         siblingsAt: (parent) => siblingsAt(latest.current.areas, parent),
       };
-      publish?.(
-        describeMove(result, destinationName),
-        result.moved.length > 0
-          ? () => undoMove(result.moved, context).then(describeUndoFailure)
-          : null,
-      );
+      publish?.({
+        message: describeMove(result, destinationName),
+        undo:
+          result.moved.length > 0
+            ? () => undoMove(result.moved, context).then(describeUndoFailure)
+            : null,
+        refocus: () => latest.current.selection.focus(),
+      });
     },
     [resources, projectId],
   );

@@ -27,12 +27,22 @@ export type MoveResult = {
   failed: readonly { entry: EntryRef; name: string }[];
 };
 
+type MoveRow = {
+  entry: EntryRef;
+  name: string;
+  /** The name the writer asked for (a Move… retry keeps a refused rename); the row's own otherwise. */
+  typed?: string;
+  before: ParentRef;
+  after: ParentRef;
+};
+
 /**
- * One row at a time, so each predicted name also sees the rows that arrived
- * before it in the same drop (the catalogs have not caught up yet).
+ * Places rows one at a time, so each predicted name also sees the rows that
+ * arrived before it (the catalogs have not caught up yet). Move…, a drop and
+ * Undo all move rows here.
  */
-async function settle(
-  rows: readonly { entry: EntryRef; name: string; before: ParentRef; after: ParentRef }[],
+export async function moveRows(
+  rows: readonly MoveRow[],
   { resources, projectId, siblingsAt }: MoveContext,
 ): Promise<MoveResult> {
   const moved: MoveEffect[] = [];
@@ -54,10 +64,17 @@ async function settle(
         { ...row.entry, name: row.name },
         row.after,
         [...siblingsAt(row.after), ...arrived],
+        row.typed,
       );
       if (operationId)
         void renameOperationLifecycle(resources).remember(projectId, row.entry, operationId);
-      moved.push({ ...row, name, previousName: row.name });
+      moved.push({
+        entry: row.entry,
+        name,
+        previousName: row.name,
+        before: row.before,
+        after: row.after,
+      });
     } catch {
       failed.push({ entry: row.entry, name: row.name });
     }
@@ -73,7 +90,7 @@ export function executeMove(
 ): Promise<MoveResult> {
   const rows = plan.moves.map(({ ref, name, parent }) => ({ entry: ref, name, before: parent }));
   return after
-    ? settle(
+    ? moveRows(
         rows.map((row) => ({ ...row, after })),
         context,
       )
@@ -93,5 +110,5 @@ export async function undoMove(
     records: snapshot.records,
     placement: resourcePlacementForSnapshot(context.projectId, snapshot),
   };
-  return settle(planUndo(view, effects), context);
+  return moveRows(planUndo(view, effects), context);
 }

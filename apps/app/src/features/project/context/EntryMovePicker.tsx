@@ -8,21 +8,17 @@ import { useWorks } from "@/client/query/useWorks";
 import type { TabOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { Button } from "@/components/ui/button";
-import { useAccountResourceReplica } from "./account-feature-context";
+import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
 import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
+import { moveRows } from "./entry-drag/execute-move";
+import { moveRefusal, parentOf } from "./entry-drag/move-plan";
 import { useReportMove } from "./entry-drag/use-entry-list";
-import {
-  destinationParent,
-  type MoveDestination,
-  type MoveSubject,
-  moveRefusal,
-  placeEntry,
-} from "./move-entry";
+import { destinationParent, type MoveDestination } from "./move-entry";
 import { moveRepairTrail } from "./move-repair-trail";
 import { useProjectMenuSource } from "./use-project-menu-source";
 
-type MoveEntry = Pick<MoveSubject, "id" | "name" | "path" | "kind">;
+type MoveEntry = { kind: "file" | "folder"; id: string; name: string; path: string };
 
 type EntryMovePickerProps = {
   projectId: string;
@@ -32,7 +28,6 @@ type EntryMovePickerProps = {
   open: boolean;
   repairMove?: ResourceDestination;
   onOpenChange: (open: boolean) => void;
-  onMoved: (operationId: string) => void;
   children: ReactNode;
 };
 
@@ -55,11 +50,11 @@ function OpenMovePicker({
   open,
   repairMove,
   onOpenChange,
-  onMoved,
   rowRef,
 }: Omit<EntryMovePickerProps, "children"> & { rowRef: RefObject<HTMLDivElement | null> }) {
   const resources = useAccountResourceReplica();
   const reportMove = useReportMove();
+  const view = useAccountResourceProjection(projectId);
   const { works, noWork } = useWorks(projectId);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -73,7 +68,6 @@ function OpenMovePicker({
   );
   const source = useProjectMenuSource({ projectId, title: "", document, scratch });
   const currentTrail = source.own.openAt(entry.path);
-  const currentParentId = currentTrail.at(-1)?.id;
   const openAt = (repairMove && moveRepairTrail(source, repairMove, currentTrail)) || currentTrail;
   const name = moveEntryName(entry.name, repairMove);
   const failedFolder = repairMove
@@ -86,46 +80,33 @@ function OpenMovePicker({
     : null;
   const unavailable = t`This location is unavailable. Refresh and try again.`;
 
-  const subject: MoveSubject = {
-    ...entry,
-    catalogRootId: source.own.catalog?.root.entryId ?? null,
-    parentId: (currentParentId && source.folderFor(currentParentId)?.entryId) ?? null,
+  const ref = { kind: entry.kind, id: entry.id };
+  const refusalAt = (destination: MoveDestination) => {
+    const into = destinationParent(destination, works, noWork);
+    return into ? moveRefusal(view, ref, into) : null;
   };
-  const isForbidden = (destination: MoveDestination) =>
-    moveRefusal(subject, destination)?.kind === "inside-itself";
 
   async function move(trail: readonly DrillNode[]) {
     const folder = trail.at(-1);
     const destination = folder && source.folderFor(folder.id);
-    if (!destination || pending || moveRefusal(subject, destination)) return;
+    if (!destination || pending || refusalAt(destination)) return;
     setPending(true);
     setError(null);
     try {
-      const parent = destinationParent(destination, works, noWork);
-      if (!parent) throw new Error(unavailable);
-      const placed = await placeEntry(
-        resources,
-        projectId,
-        entry,
-        parent,
-        destination.catalog.children(destination.entryId),
-        name,
+      const after = destinationParent(destination, works, noWork);
+      const before = parentOf(view, ref);
+      if (!after || !before) throw new Error(unavailable);
+      const result = await moveRows(
+        [{ entry: ref, name: entry.name, typed: name, before, after }],
+        {
+          resources,
+          projectId,
+          siblingsAt: () => destination.catalog.children(destination.entryId),
+        },
       );
-      if (placed.operationId) onMoved(placed.operationId);
+      if (result.failed.length > 0) throw new Error(unavailable);
       // In a list, Move… ends like a drop: the row selected and the notice with Undo.
-      const current = currentParentId ? source.folderFor(currentParentId) : null;
-      const before = current ? destinationParent(current, works, noWork) : null;
-      const ref = { kind: entry.kind, id: entry.id };
-      if (reportMove && before)
-        reportMove(
-          {
-            moved: [
-              { entry: ref, name: placed.name, previousName: entry.name, before, after: parent },
-            ],
-            failed: [],
-          },
-          folder.name,
-        );
+      reportMove?.(result, folder.name);
       onOpenChange(false);
     } catch {
       setError(unavailable);
@@ -157,15 +138,16 @@ function OpenMovePicker({
       isDisabled={(node) => {
         if (!node.folder) return true;
         const folder = source.folderFor(node.id);
-        return !folder || isForbidden(folder);
+        return !folder || refusalAt(folder) === "inside-itself";
       }}
       onPick={() => undefined}
       actions={(trail) => {
         const folder = trail.at(-1);
         if (!folder) return [];
         const destination = source.folderFor(folder.id);
-        if (!destination || isForbidden(destination)) return [];
-        const already = folder.id === currentParentId;
+        const blocked = destination ? refusalAt(destination) : "inside-itself";
+        if (blocked === "inside-itself") return [];
+        const already = blocked === "already-there";
         return [
           {
             key: "move",
