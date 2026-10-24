@@ -1,4 +1,8 @@
-/** Exact presentation provenance must never alter the canonical stored document. */
+/** Exact presentation provenance must never alter the canonical stored document.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Byte-oriented presentation provenance and eligibility
+ */
 import { describe, expect, it } from "vitest";
 import { schema } from "./codec-test-support.js";
 import { markdownCodec, UNSCOPED_DOCUMENT_LINKS } from "./index.js";
