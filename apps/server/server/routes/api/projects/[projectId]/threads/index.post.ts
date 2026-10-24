@@ -17,7 +17,7 @@ import {
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const { repos, projectRepo, workRepo } = app;
+  const { threadRepos, projectRepo, workRepo } = app;
   const { userId } = user;
   const projectId = requireRequestId(getRouterParam(event, "projectId"), "projectId");
   const body = (await readBody<CreateThreadRequest>(event)) ?? ({} as CreateThreadRequest);
@@ -27,9 +27,9 @@ export default defineEventHandler(async (event) => {
       {
         projects: projectRepo,
         workRepo,
-        threads: repos.threads,
-        threadWorks: repos.threadWorks,
-        transaction: repos.transaction,
+        threads: threadRepos.threads,
+        threadWorks: threadRepos.threadWorks,
+        transaction: threadRepos.transaction,
         agentRevisions: app.agentRevisions,
         agentCatalog: app.agentCatalog,
         eventSink: app.eventSink,
