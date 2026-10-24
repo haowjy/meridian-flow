@@ -28,8 +28,10 @@ lock session. Domain-specific conversion stays beside its migration, not in tool
 
 Managed DB tests provision owned databases and route each worker to its own
 clone. Cleanup hands only this invocation's databases to the detached cleanup
-child, verifies owner liveness, and leaves failures for GC. Shared or deployed
-Postgres remains serial. Fixtures isolate state with rollback or the catalog-
+child, verifies owner liveness, and leaves failures for GC. CI clones 3 worker
+databases from the one its workflow migrated, on the runner's own loopback
+Postgres (`isCiRunnerPostgres`), and leaves them to die with the runner. Any
+other shared or deployed Postgres stays serial. Fixtures isolate state with rollback or the catalog-
 derived FK delete policy, not per-case truncation. Only managed worker URLs get
 `synchronous_commit=off` (a session startup setting); never change shared server
 settings or dev database durability. Do not scale workers with CPU count against

@@ -46,6 +46,18 @@ lives in packages or server domains.
   neighbours: the pointer can move onto it so a magnified reader can read it,
   and it still holds no controls.
 
+## Writer-facing screens
+
+- Separate adjacent facts with layout, typography, sentences, or parentheses,
+  never metadata-style `·`, `•`, `—`, or `|`; ordinary punctuation is fine
+  ([copy separation](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/writer-copy-separation.md)).
+- A row or menu shows only the actions that can succeed now; a fixed toolbar
+  greys one instead, with the reason on hover. Feedback never pushes content
+  down: it uses blank space or the end of a surface that grows downward
+  ([offer only what applies](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/offer-only-what-applies.md)).
+- A list row is one line until it has something to say
+  ([trust the user](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/trust-the-user.md)).
+
 ## Local references
 
 - Architecture and cross-layer contracts: [.context/CONTEXT.md](.context/CONTEXT.md)
