@@ -85,7 +85,7 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
        ├─ useCreateEntryForm ────────────────┤
        ├─ useEntryInteraction ───────────────┤
        │     └─ rename forms + move picker   │
-       ├─ useDeleteConfirmation ─────────────┤
+       ├─ useDeleteContextEntry ─────────────┤
        └─ ContextEntryActions (menus) ───────┘
                      │
       useInlineEdit (components/ui, shared core)
