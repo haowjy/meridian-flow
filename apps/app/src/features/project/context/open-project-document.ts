@@ -58,7 +58,11 @@ import {
   useContextTabsStore,
 } from "@/client/stores";
 import { useDockDocumentStore } from "../dock/dock-document-store";
-import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
+import {
+  type OpenContextRoute,
+  useOpenContextRoute,
+  useProjectTrashNavigation,
+} from "../routing/ProjectNavigationContext";
 import {
   useOptionalAccountResourceReplica,
   useOptionalContextRemovalCoordinator,
@@ -411,7 +415,19 @@ export class ProjectDocumentNavigationAdapter {
     const isCurrent = () => canCommit() && navigationIsCurrent?.() !== false;
 
     try {
-      if (trashed) return this.openTrash(documentId, controller.signal, isCurrent);
+      if (trashed) {
+        const resolution = await this.dependencies.opener.resolveIdentity(projectId, documentId);
+        if (!isCurrent()) return { kind: "cancelled" };
+        if (resolution.kind === "deleted")
+          return this.openTrash(documentId, controller.signal, isCurrent);
+        return {
+          kind: "refused",
+          reason:
+            resolution.kind === "failed" || resolution.kind === "malformed"
+              ? "lookup-failed"
+              : "gone",
+        };
+      }
       const projection = this.dependencies.resources?.readProjectionState(projectId);
       const record =
         projection?.kind === "ready"
@@ -616,13 +632,12 @@ export function ProjectDocumentNavigationProvider({
   projectId,
   children,
   captureNavigation,
-  openTrash,
 }: {
   projectId: string;
   children: ReactNode;
   captureNavigation?: () => () => boolean;
-  openTrash(documentId: string): Promise<unknown>;
 }) {
+  const { navigate: openTrash } = useProjectTrashNavigation();
   const opener = useProjectDocumentLiveOpener();
   const resources = useOptionalAccountResourceReplica();
   const removal = useOptionalContextRemovalCoordinator();

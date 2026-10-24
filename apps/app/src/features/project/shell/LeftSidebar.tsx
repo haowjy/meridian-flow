@@ -14,12 +14,12 @@ import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { serverTabFromFile } from "../context/context-tab-from-file";
-import { useDocumentTrashNavigation } from "../context/DocumentTrashDialog";
 import { DocumentDeleteUndoNotice } from "../context/document-delete-undo";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
 import { useDockPlacement } from "../dock/use-dock-placement";
+import { useProjectTrashNavigation } from "../routing/ProjectNavigationContext";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleButton } from "./PanelToggleButton";
 import type { ScreenKey } from "./screens";
@@ -69,7 +69,7 @@ export function LeftSidebar({
   // chat on the Chat screen (the dock hosts images, PDFs and binaries in its viewer too),
   // and the Editor path everywhere else (see `use-dock-placement`).
   const placement = useDockPlacement();
-  const setTrashOpen = useDocumentTrashNavigation();
+  const { navigate: navigateTrash } = useProjectTrashNavigation();
   const openDocument = useOpenProjectDocument(projectId);
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
@@ -141,7 +141,7 @@ export function LeftSidebar({
             }
             activePath={docked ? (docked.kind === "new" ? null : docked.path) : activeContextPath}
             onSelectFile={handleSelectFile}
-            onOpenTrash={() => setTrashOpen(true)}
+            onOpenTrash={() => void navigateTrash(true)}
           />
         ) : null}
       </WorkspaceNavBody>
