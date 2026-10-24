@@ -3,13 +3,8 @@
  * state, and which refused command it carries. `WorkCollection` only maps
  * these entries to rows.
  */
-import {
-  DAY_MS,
-  DELETION_RETENTION_DAYS,
-  deletionPurgeAt,
-  isWorkArchived,
-  type Work,
-} from "@meridian/contracts/works";
+import { DAY_MS, DELETION_RETENTION_DAYS, deletionPurgeAt } from "@meridian/contracts/retention";
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import type { AddressableWork } from "@/client/query/useWorks";
 import type { UncreatedWork, WorkCreation } from "@/client/query/work-command-projection";
 import type { WorkDeleteWindow } from "@/client/query/work-command-selectors";

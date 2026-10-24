@@ -9,6 +9,7 @@ export { createDrizzleDocumentAddressStore } from "./adapters/document-address.j
 export { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
 export { createDrizzleDocumentLinkScopes } from "./adapters/document-link-scope.js";
+export { createDrizzleDocumentTrash } from "./adapters/drizzle-document-trash.js";
 export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export {
@@ -112,6 +113,7 @@ export type {
   DocumentRemovals,
 } from "./ports/document-removal.js";
 export type { DocumentRevisions } from "./ports/document-revisions.js";
+export type { DocumentPurgeDraftDisposal, DocumentTrash } from "./ports/document-trash.js";
 export {
   type AheadRegistration,
   type LinkAheadRegistry,

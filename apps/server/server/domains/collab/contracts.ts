@@ -24,6 +24,7 @@ import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
+import type { DocumentPurgeDraftDisposal } from "../context/ports/document-trash.js";
 import type { WorkBranchDisposal } from "../projects/index.js";
 import type {
   RefusedResponseDocument,
@@ -426,6 +427,8 @@ export type CollabBranchResolver = {
   draftLinks: Pick<DraftAheadRegistration, "flush">;
   /** Work purge's disposal of the purged Work's branches through the locked Discard kernel (§2.6). */
   workBranchDisposal: WorkBranchDisposal;
+  /** Document trash purge's locked retirement of drafts whose content is being released. */
+  documentPurgeDraftDisposal: DocumentPurgeDraftDisposal;
 };
 
 export type TurnLiveLineageAccess = {
