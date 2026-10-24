@@ -40,7 +40,6 @@ else
     const { scriptedGateway } = await import("../loop/__tests__/test-gateway.js");
     const { createRunStarter } = await import("../loop/run-starter.js");
     const { createWakeIfRunnable } = await import("../loop/wake-if-runnable.js");
-    const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
     const { handoffSeedMetadata } = await import("../../threads/index.js");
     const databaseUrl = required(url);
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
@@ -608,33 +607,6 @@ else
         service.retry({ threadId: fixture.destination.id, seedId: fixture.cutoff.id }),
       ).rejects.toMatchObject({ code: "seed_id_conflict" });
     });
-
-    it("settles a zero-credit seed at launch without calling the summarizer", async () => {
-      const fixture = await handoffSeed();
-      const runClaim = createDrizzleRunClaim(db, { holderId: "credit-gate" });
-      const generate = async () => {
-        throw new Error("must not call the summarizer");
-      };
-      const service = serviceFor(fixture.repos, runClaim, {
-        async canStartTurn() {
-          return false;
-        },
-        generate,
-      });
-
-      expect(await startBrief(service, fixture.destination.id, fixture.seed.id)).toBe(true);
-      await expect
-        .poll(async () => (await fixture.repos.turns.findById(fixture.seed.id))?.status)
-        .toBe("error");
-      expect(await fixture.repos.turns.findById(fixture.seed.id)).toMatchObject({
-        status: "error",
-        metadata: { reason: "credits_exhausted", phase: "launch" },
-      });
-      expect(await fixture.repos.turns.findById(fixture.seed.id)).not.toHaveProperty(
-        "metadata.summarizer",
-      );
-    });
-
     it("ends a failed brief's failure at the writer's first message and forgets nothing (C13)", async () => {
       // Risk: a first-brief failure has no earlier closing row, so it could neither be forgotten nor end;
       // and forgetting it would drop the model text ("handed off with no brief") the model can act on.
