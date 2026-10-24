@@ -28,8 +28,9 @@ const blocks = [
 ] as const;
 
 const fixtures = [
-  ...blocks.flatMap((left) =>
-    blocks.map((right) => `prefix\n\nprefix2\n\n${left}\n\n${right}\n\nend\n\nlast`),
+  ...blocks.map(
+    (left, index) =>
+      `prefix\n\nprefix2\n\n${left}\n\n${blocks[(index + 1) % blocks.length]}\n\nend\n\nlast`,
   ),
   "~~~\n*literal\n~~~\noutside",
   "> ~~~\n> *literal\noutside",

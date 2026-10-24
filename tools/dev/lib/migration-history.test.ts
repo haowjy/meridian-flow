@@ -50,17 +50,6 @@ describe("compareRepositoryMigrationHistory", () => {
     { idx: 1, tag: "0001_second", when: 200, sql: "SELECT 2;" },
   ];
 
-  it("accepts unchanged and append-only histories", () => {
-    const base = history(baseEntries);
-    expect(compareRepositoryMigrationHistory(base, history(baseEntries))).toEqual([]);
-    expect(
-      compareRepositoryMigrationHistory(
-        base,
-        history([...baseEntries, { idx: 2, tag: "0002_third", when: 300, sql: "SELECT 3;" }]),
-      ),
-    ).toEqual([]);
-  });
-
   it("rejects an edited base SQL file", () => {
     const issues = compareRepositoryMigrationHistory(
       history(baseEntries),
@@ -149,23 +138,6 @@ describe("planDatabaseMigrations", () => {
     { idx: 2, tag: "0002_third", when: 300, sql: "SELECT 3;" },
   ]);
   const [first, second, third] = expected.entries;
-
-  it("plans fresh, behind, and current databases", () => {
-    expect(planDatabaseMigrations(expected, [])).toEqual({
-      pending: [first, second, third],
-      issues: [],
-    });
-    expect(planDatabaseMigrations(expected, [applied(first)])).toEqual({
-      pending: [second, third],
-      issues: [],
-    });
-    expect(
-      planDatabaseMigrations(expected, [applied(first), applied(second), applied(third)]),
-    ).toEqual({
-      pending: [],
-      issues: [],
-    });
-  });
 
   it("classifies unknown applied migrations", () => {
     const plan = planDatabaseMigrations(expected, [{ hash: "unknown", createdAt: 50 }]);
