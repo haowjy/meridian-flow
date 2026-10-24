@@ -10,7 +10,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import { serverTabFromFile } from "../context/context-tab-from-file";
-import { DocumentDeleteUndoRows, useDeleteContextEntry } from "../context/document-delete-undo";
+import { DocumentDeleteUndoNotice, useDeleteContextEntry } from "../context/document-delete-undo";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useDockDocument } from "../dock/dock-document-store";
@@ -76,7 +76,7 @@ export function WorkFilesView({
   files: WorkFiles;
 }) {
   const { scratch, intake } = files;
-  const scratchDelete = useDeleteContextEntry();
+  const scratchDelete = useDeleteContextEntry("work-files");
   const catalog = scratch.catalog;
   const openFile = useOpenDocumentInDock();
   const docked = useDockDocument(useProjectScreen(), projectId)?.tab.documentId;
@@ -186,8 +186,8 @@ export function WorkFilesView({
         {scratch.isError && catalog ? (
           <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
         ) : null}
-        <DocumentDeleteUndoRows scheme="scratch" owner={{ workId: work.id }} className="px-2" />
       </WorkFileGroup>
+      <DocumentDeleteUndoNotice surface="work-files" className="sticky bottom-2 mt-2 px-2" />
     </div>
   );
 }

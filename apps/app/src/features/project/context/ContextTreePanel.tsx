@@ -17,7 +17,7 @@ import {
   schemeIcon,
   schemeLabel,
 } from "./context-schemes";
-import { DocumentDeleteUndoRows, useDeleteContextEntry } from "./document-delete-undo";
+import { useDeleteContextEntry } from "./document-delete-undo";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 import { treeFolderIds } from "./tree-expansion-state";
@@ -101,16 +101,6 @@ export function ContextTreePanel({
           stay on one uninterrupted rail material beneath it. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
         {schemes.map(renderScheme)}
-      </div>
-      <div className="shrink-0">
-        {schemes.map((scheme) => (
-          <DocumentDeleteUndoRows
-            key={`${projectId}:undo:${scheme}`}
-            scheme={scheme}
-            owner={{ workId: editorWorkId }}
-            style={{ paddingLeft: rowPaddingLeft(1), paddingRight: 8 }}
-          />
-        ))}
       </div>
     </div>
   );

@@ -1,12 +1,9 @@
-/** Project-scoped writer delete windows and their replica-derived Undo lifecycle. */
+/** Project-scoped delete notices and their replica-derived Undo lifecycle. */
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { NamespaceIntent, ResourceProjectionSnapshot } from "@meridian/resource-replica";
-import { X } from "lucide-react";
 import {
-  type CSSProperties,
   createContext,
   type ReactNode,
   useCallback,
@@ -18,10 +15,9 @@ import {
 } from "react";
 import { getContextOperationReceipt, restoreContextDocuments } from "@/client/api/projects-api";
 import { announce, announceError, getContextTabs } from "@/client/stores";
-import { IconButton } from "@/components/ui/icon-button";
-import { cn } from "@/lib/utils";
 import { documentLocationName } from "../../chat/document-display-name";
 import { useDockDocumentStore } from "../dock/dock-document-store";
+import { SurfaceNotice, type SurfaceNoticeModel } from "../shell/SurfaceNotice";
 import {
   useAccountResourceProjection,
   useAccountResourceReplica,
@@ -29,10 +25,7 @@ import {
 } from "./account-feature-context";
 import type { DeleteTarget } from "./ContextEntryActions";
 
-type DeleteScope = {
-  scheme: ProjectContextTreeScheme;
-  owner: { workId?: string; rootThreadId?: string };
-};
+export type DeleteNoticeSurface = "sidebar" | "work-files" | "mobile" | "chat-files";
 
 type RestoreFeedback =
   | { kind: "restoring" }
@@ -41,41 +34,24 @@ type RestoreFeedback =
 type DeleteWindow = {
   label: string;
   kind: "file" | "folder";
-  scope: DeleteScope;
   feedback?: RestoreFeedback;
 };
 
-type PresentedDeleteWindow = DeleteWindow & { operationId: string };
+type PresentedDeleteWindow = DeleteWindow & {
+  operationId: string;
+  surface: DeleteNoticeSurface;
+};
 
 type DeleteOperationState = "pending" | "landed" | "refused" | "settled-locally";
 
 type DeleteUndoContextValue = {
-  windows: readonly PresentedDeleteWindow[];
-  requestDelete: (target: DeleteTarget) => void;
+  notices: readonly PresentedDeleteWindow[];
+  requestDelete: (target: DeleteTarget, surface: DeleteNoticeSurface) => void;
   undo: (operationId: string) => void;
   dismiss: (operationId: string) => void;
 };
 
 const DeleteUndoContext = createContext<DeleteUndoContextValue | null>(null);
-
-function normalizedScope(scheme: ProjectContextTreeScheme, owner: ContextOwner): DeleteScope {
-  if (scheme !== "scratch") return { scheme, owner: {} };
-  return {
-    scheme,
-    owner: {
-      ...(owner.workId ? { workId: owner.workId } : {}),
-      ...(owner.rootThreadId ? { rootThreadId: owner.rootThreadId } : {}),
-    },
-  };
-}
-
-function sameScope(left: DeleteScope, right: DeleteScope): boolean {
-  return (
-    left.scheme === right.scheme &&
-    left.owner.workId === right.owner.workId &&
-    left.owner.rootThreadId === right.owner.rootThreadId
-  );
-}
 
 function deleteOperationIndex(
   snapshot: ResourceProjectionSnapshot | null,
@@ -143,26 +119,27 @@ export function DocumentDeleteUndoProvider({
   const notices = useOptionalRemovedNotices();
   const { snapshot } = useAccountResourceProjection(projectId);
   const deleteIntents = useMemo(() => deleteOperationIndex(snapshot), [snapshot]);
-  const [windowsById, setWindowsById] = useState<ReadonlyMap<string, DeleteWindow>>(
-    () => new Map(),
-  );
+  const [noticesBySurface, setNoticesBySurface] = useState<
+    ReadonlyMap<DeleteNoticeSurface, PresentedDeleteWindow>
+  >(() => new Map());
   const emptyFolderChecks = useRef(new Set<string>());
   const emptyFolderRetryTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const [emptyFolderCheckRevision, retryEmptyFolderChecks] = useState(0);
   const restores = useRef(new Set<string>());
   const lifetime = useRef(new AbortController());
-  const windowsRef = useRef(windowsById);
-  windowsRef.current = windowsById;
+  const noticesRef = useRef(noticesBySurface);
+  noticesRef.current = noticesBySurface;
 
   const dismiss = useCallback((operationId: string) => {
     emptyFolderChecks.current.delete(operationId);
     const timer = emptyFolderRetryTimers.current.get(operationId);
     if (timer) clearTimeout(timer);
     emptyFolderRetryTimers.current.delete(operationId);
-    setWindowsById((current) => {
-      if (!current.has(operationId)) return current;
+    setNoticesBySurface((current) => {
+      const surface = [...current].find(([, notice]) => notice.operationId === operationId)?.[0];
+      if (!surface) return current;
       const next = new Map(current);
-      next.delete(operationId);
+      next.delete(surface);
       return next;
     });
   }, []);
@@ -180,7 +157,8 @@ export function DocumentDeleteUndoProvider({
   }, []);
 
   useEffect(() => {
-    for (const [operationId, window] of windowsById) {
+    for (const [surface, window] of noticesBySurface) {
+      const operationId = window.operationId;
       const state = deleteOperationState(deleteIntents, operationId);
       if (state === "refused" || state === "settled-locally") dismiss(operationId);
       if (
@@ -195,7 +173,11 @@ export function DocumentDeleteUndoProvider({
           if (removed?.length === 0) dismiss(operationId);
         })
         .catch(() => {
-          if (lifetime.current.signal.aborted || !windowsRef.current.has(operationId)) return;
+          if (
+            lifetime.current.signal.aborted ||
+            noticesRef.current.get(surface)?.operationId !== operationId
+          )
+            return;
           const prior = emptyFolderRetryTimers.current.get(operationId);
           if (prior) clearTimeout(prior);
           emptyFolderRetryTimers.current.set(
@@ -203,16 +185,20 @@ export function DocumentDeleteUndoProvider({
             setTimeout(() => {
               emptyFolderChecks.current.delete(operationId);
               emptyFolderRetryTimers.current.delete(operationId);
-              if (lifetime.current.signal.aborted || !windowsRef.current.has(operationId)) return;
+              if (
+                lifetime.current.signal.aborted ||
+                noticesRef.current.get(surface)?.operationId !== operationId
+              )
+                return;
               retryEmptyFolderChecks((revision) => revision + 1);
             }, 1_000),
           );
         });
     }
-  }, [deleteIntents, dismiss, emptyFolderCheckRevision, projectId, windowsById]);
+  }, [deleteIntents, dismiss, emptyFolderCheckRevision, noticesBySurface, projectId]);
 
   const requestDelete = useCallback(
-    (target: DeleteTarget) => {
+    (target: DeleteTarget, surface: DeleteNoticeSurface) => {
       const settleMark =
         notices?.markOwnRemoval(projectId, ownDeletedDocumentIds(projectId, target)) ??
         (() => undefined);
@@ -232,9 +218,17 @@ export function DocumentDeleteUndoProvider({
           const window: DeleteWindow = {
             label: target.name,
             kind: target.kind === "file" ? "file" : "folder",
-            scope: normalizedScope(target.scheme, target.owner),
           };
-          setWindowsById((current) => new Map(current).set(operationId, window));
+          setNoticesBySurface((current) => {
+            const previous = current.get(surface);
+            if (previous) {
+              emptyFolderChecks.current.delete(previous.operationId);
+              const timer = emptyFolderRetryTimers.current.get(previous.operationId);
+              if (timer) clearTimeout(timer);
+              emptyFolderRetryTimers.current.delete(previous.operationId);
+            }
+            return new Map(current).set(surface, { ...window, operationId, surface });
+          });
         } catch {
           settleMark("kept");
           announceError(t`Couldn't delete ${target.name}. Try again.`);
@@ -245,10 +239,12 @@ export function DocumentDeleteUndoProvider({
   );
 
   const updateFeedback = useCallback((operationId: string, feedback: RestoreFeedback) => {
-    setWindowsById((current) => {
-      const window = current.get(operationId);
+    setNoticesBySurface((current) => {
+      const surface = [...current].find(([, notice]) => notice.operationId === operationId)?.[0];
+      if (!surface) return current;
+      const window = current.get(surface);
       if (!window) return current;
-      return new Map(current).set(operationId, { ...window, feedback });
+      return new Map(current).set(surface, { ...window, feedback });
     });
   }, []);
 
@@ -298,7 +294,9 @@ export function DocumentDeleteUndoProvider({
 
   const undo = useCallback(
     (operationId: string) => {
-      const window = windowsById.get(operationId);
+      const window = [...noticesBySurface.values()].find(
+        (notice) => notice.operationId === operationId,
+      );
       if (!window || restores.current.has(operationId)) return;
       restores.current.add(operationId);
       updateFeedback(operationId, { kind: "restoring" });
@@ -369,17 +367,17 @@ export function DocumentDeleteUndoProvider({
         }
       })();
     },
-    [dismiss, projectId, updateFeedback, waitForSettlement, windowsById],
+    [dismiss, noticesBySurface, projectId, updateFeedback, waitForSettlement],
   );
 
   const value = useMemo<DeleteUndoContextValue>(
     () => ({
-      windows: [...windowsById].map(([operationId, window]) => ({ operationId, ...window })),
+      notices: [...noticesBySurface.values()],
       requestDelete,
       undo,
       dismiss,
     }),
-    [dismiss, requestDelete, undo, windowsById],
+    [dismiss, noticesBySurface, requestDelete, undo],
   );
   return <DeleteUndoContext.Provider value={value}>{children}</DeleteUndoContext.Provider>;
 }
@@ -390,89 +388,41 @@ function useDocumentDeleteUndo(): DeleteUndoContextValue {
   return value;
 }
 
-export function useDeleteContextEntry(): Pick<DeleteUndoContextValue, "requestDelete"> {
+export function useDeleteContextEntry(surface: DeleteNoticeSurface = "sidebar") {
   const { requestDelete } = useDocumentDeleteUndo();
-  return useMemo(() => ({ requestDelete }), [requestDelete]);
+  return useMemo(
+    () => ({ requestDelete: (target: DeleteTarget) => requestDelete(target, surface) }),
+    [requestDelete, surface],
+  );
 }
 
-export function DocumentDeleteUndoRows({
-  scheme,
-  owner,
+export function DocumentDeleteUndoNotice({
+  surface,
   className,
-  style,
 }: {
-  scheme: ProjectContextTreeScheme;
-  owner: ContextOwner;
+  surface: DeleteNoticeSurface;
   className?: string;
-  style?: CSSProperties;
 }) {
-  const { windows, undo, dismiss } = useDocumentDeleteUndo();
-  const scope = normalizedScope(scheme, owner);
-  const visible = windows.filter((window) => sameScope(window.scope, scope));
-  return visible.map((window) => (
-    <DocumentDeleteUndoRow
-      key={window.operationId}
-      window={window}
-      className={className}
-      style={style}
-      onUndo={() => undo(window.operationId)}
-      onDismiss={() => dismiss(window.operationId)}
-    />
-  ));
-}
-
-function DocumentDeleteUndoRow({
-  window,
-  className,
-  style,
-  onUndo,
-  onDismiss,
-}: {
-  window: PresentedDeleteWindow;
-  className?: string;
-  style?: CSSProperties;
-  onUndo: () => void;
-  onDismiss: () => void;
-}) {
-  const restoring = window.feedback?.kind === "restoring";
-  const row = (
-    <div
-      role="status"
-      className={cn(
-        "flex min-h-10 min-w-0 items-center gap-3 py-1.5 text-sm text-muted-foreground",
-        className,
-      )}
-      style={style}
-    >
-      <span className="min-w-0 truncate">
-        {restoring ? (
-          <Trans>Restoring {window.label}</Trans>
-        ) : (
-          <Trans>Deleted {window.label}</Trans>
-        )}
-      </span>
-      {!restoring && (window.feedback?.kind !== "failed" || window.feedback.retryable) ? (
-        <button type="button" className="text-button shrink-0 text-sm" onClick={onUndo}>
-          <Trans>Undo</Trans>
-        </button>
-      ) : null}
-      <IconButton
-        size="sm"
-        className="ml-auto shrink-0 [@media(pointer:coarse)]:size-11"
-        aria-label={t`Dismiss`}
-        onClick={onDismiss}
-      >
-        <X aria-hidden className="size-4" />
-      </IconButton>
-    </div>
-  );
-  if (window.feedback?.kind !== "failed") return row;
-  return (
-    <>
-      {row}
-      <div className="px-2 text-destructive text-xs">{window.feedback.message}</div>
-    </>
-  );
+  const { notices, undo, dismiss } = useDocumentDeleteUndo();
+  const notice = notices.find((candidate) => candidate.surface === surface);
+  const model: SurfaceNoticeModel | null = notice
+    ? {
+        message:
+          notice.feedback?.kind === "restoring" ? (
+            <Trans>Restoring {notice.label}</Trans>
+          ) : (
+            <Trans>Deleted {notice.label}</Trans>
+          ),
+        undo:
+          notice.feedback?.kind === "failed" && !notice.feedback.retryable
+            ? null
+            : () => undo(notice.operationId),
+        dismiss: () => dismiss(notice.operationId),
+        failure: notice.feedback?.kind === "failed" ? notice.feedback.message : undefined,
+        undoing: notice.feedback?.kind === "restoring",
+      }
+    : null;
+  return <SurfaceNotice notice={model} className={className} />;
 }
 
 /** The removals a landed delete recorded in its receipt; null while no successful delete receipt exists. */

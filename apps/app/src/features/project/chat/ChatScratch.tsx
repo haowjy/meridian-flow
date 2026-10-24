@@ -27,7 +27,7 @@ import type { DeleteTarget } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { serverTabFromFile } from "../context/context-tab-from-file";
-import { DocumentDeleteUndoRows, useDeleteContextEntry } from "../context/document-delete-undo";
+import { type DeleteNoticeSurface, useDeleteContextEntry } from "../context/document-delete-undo";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
@@ -138,6 +138,7 @@ export function RailScratchSection({
             threadId={threadId}
             editorWorkId={editorWorkId}
             onPicked={onPicked}
+            surface="sidebar"
           />
         </div>
       ) : null}
@@ -151,16 +152,18 @@ export function ChatScratchTree({
   threadId,
   editorWorkId = null,
   onPicked,
+  surface = "sidebar",
 }: {
   projectId: string;
   threadId: string | null;
   editorWorkId?: string | null;
   onPicked?: () => void;
+  surface?: DeleteNoticeSurface;
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
   const { primary, earlier } = useScratchCatalogs(projectId, scratch);
   const openId = useOpenDocumentId(projectId, editorWorkId);
-  const deletion = useDeleteContextEntry();
+  const deletion = useDeleteContextEntry(surface);
   const { works, noWork } = useWorks(projectId);
   const work =
     scratch?.owner.workId === noWork?.id
@@ -248,14 +251,6 @@ export function ChatScratchTree({
           }}
         />
       ) : null}
-      {scratch.earlierRootThreadId ? (
-        <DocumentDeleteUndoRows
-          scheme="scratch"
-          owner={{ rootThreadId: scratch.earlierRootThreadId }}
-          className="px-6"
-        />
-      ) : null}
-      <DocumentDeleteUndoRows scheme="scratch" owner={scratch.owner} className="px-6" />
     </>
   );
 }
