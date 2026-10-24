@@ -25,18 +25,7 @@ import { ReadOnlyViewerFrame } from "./viewers/ReadOnlyViewerFrame";
 import { TextViewer } from "./viewers/TextViewer";
 
 type RowState = { kind: "restoring" } | { kind: "failed"; message: string };
-type TrashEntry = Omit<DocumentTrashEntry, "deletedAt" | "purgeAt"> & {
-  retention:
-    | { kind: "scheduled"; purgeAt: string }
-    | { kind: "held"; works: Array<{ id: string; name: string }> };
-};
-
-// The server/contract lane lands `retention` with this client change. Keep the
-// temporary cast at that response boundary so the rest of this module uses the settled shape.
-const trashEntry = <T extends DocumentTrashEntry>(
-  entry: T,
-): Omit<T, "deletedAt" | "purgeAt"> & TrashEntry =>
-  entry as unknown as Omit<T, "deletedAt" | "purgeAt"> & TrashEntry;
+type TrashEntry = DocumentTrashEntry;
 
 type RestoredNotice = { id: number; location: string };
 
@@ -156,8 +145,7 @@ function DocumentTrashList({
           <InlineErrorRow message={t`Couldn't load Trash.`} onRetry={() => void query.refetch()} />
         ) : query.data?.documents.length ? (
           <RuledList
-            rows={query.data.documents.map((rawEntry) => {
-              const entry = trashEntry(rawEntry);
+            rows={query.data.documents.map((entry) => {
               return {
                 key: entry.documentId,
                 node: (
@@ -255,7 +243,7 @@ function TrashedDocumentView({
   const openDocument = useOpenProjectDocument(projectId);
   const captureNavigation = useCaptureProjectNavigation();
   const [state, setState] = useState<RowState>();
-  const document = query.data ? trashEntry(query.data) : undefined;
+  const document = query.data;
 
   const restore = useCallback(() => {
     if (!document || state?.kind === "restoring") return;
