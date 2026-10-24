@@ -2,8 +2,14 @@
 
 DB suites share a worker module cache and an owned database clone. Never export
 a live module-level connection or register suite hooks at helper import time.
-Each suite creates its own connections and closes them in `afterAll`; shared
-helpers accept those connections explicitly. Do not mock modules or process globals.
+Each suite creates its own connections and closes them in `afterAll`. Close
+`Database` clients with `closeTestDatabase`, which drains detached work before
+applying a bounded pool shutdown; close bespoke PostgreSQL clients explicitly.
+Shared helpers accept connections explicitly. The server DB setup drains
+detached work after each case, once file-local teardown finishes and before
+suite pool closers run. A file-level drain remains the backstop before the next
+file uses that worker. A file `afterAll` that starts detached DB work must use
+`closeTestDatabase`. Do not mock modules or process globals.
 
 Use `drizzle-reset.ts` for database isolation. Single-connection suites use
 `useRollbackTestDatabase`: read `current` inside hooks/tests and build adapters
@@ -62,4 +68,5 @@ Apply verb. `branch-tree-scenario.ts` joins the two, and `branch-tree-suite.ts`
 is the committing describe block those suites share. Assert through these verbs
 (what the writer or a reader sees), not raw tables. Seed only states the product
 can't reach yet. Lock races go through `lock-interleave.ts`: `race`
-names each run, so an order table reads the same outcome whichever ran first.
+names each run, so an order table reads the same outcome whichever ran first;
+`waitForPostgresLock` gives bespoke lock observations one ten-second deadline.

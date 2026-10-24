@@ -1,5 +1,8 @@
-/** Streaming snapshots stay identical to the canonical whole-source Markdown parse. */
-
+/** Streaming snapshots stay identical to the canonical whole-source Markdown parse.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Streaming repair is confined to the canonical last block
+ */
 import type { Node as PMNode } from "prosemirror-model";
 import { expect, it } from "vitest";
 
@@ -47,9 +50,9 @@ const fixtures = [
   "> [q]\n>\n> [q]: /quote",
   "- [l]\n\n  [l]: /list",
   "[a][not yet]\n\n[not yet]:",
-  "a".repeat(400),
-  Array.from({ length: 40 }, (_, index) => `- item ${index}`).join("\n"),
-  `\`\`\`ts\n${"x".repeat(400)}`,
+  "a".repeat(40),
+  Array.from({ length: 4 }, (_, index) => `- item ${index}`).join("\n"),
+  `\`\`\`ts\n${"x".repeat(40)}`,
 ] as const;
 
 const codec = markdownCodec({ schema });

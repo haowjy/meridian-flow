@@ -1,9 +1,14 @@
-/** PostgreSQL coverage for thread Work membership and lifecycle serialization. */
+/**
+ * PostgreSQL coverage for thread Work membership and lifecycle serialization.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Work-first lifecycle locking across attachment, rebind, append, and deletion races (kb/decisions/work/model/thread-work-rebind-parity.md)
+ */
 
-import { setTimeout as delay } from "node:timers/promises";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDocumentRemoval } from "../../../../test-support/document-removal.js";
+import { waitForPostgresLock } from "../../../../test-support/lock-interleave.js";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import { createDraftClose } from "../../../collab/adapters/drizzle-draft-close.js";
 import { createDrizzleLineageScratchLifecycle } from "../../../context/adapters/lineage-scratch-lifecycle.js";
@@ -77,17 +82,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     async function waitForLock(waitEvent: string): Promise<void> {
-      for (let attempt = 0; attempt < 200; attempt += 1) {
+      await waitForPostgresLock(`PostgreSQL ${waitEvent} lock`, async () => {
         const [row] = await control<{ count: string }[]>`
           SELECT count(*)::text AS count
           FROM pg_stat_activity
           WHERE datname = current_database()
             AND wait_event = ${waitEvent}
         `;
-        if (Number(row?.count ?? 0) > 0) return;
-        await delay(10);
-      }
-      throw new Error(`Timed out waiting for PostgreSQL ${waitEvent} lock`);
+        return Number(row?.count ?? 0) > 0 ? true : undefined;
+      });
     }
 
     it("serializes attachment before deletion and hides the newly bound thread", async () => {

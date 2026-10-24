@@ -1,4 +1,9 @@
-// Public read-command selection contracts and agent-facing output.
+/**
+ * Public read-command selection contracts and agent-facing output.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Read-command selection and display-hash rendering
+ */
 import { describe, expect, it } from "vitest";
 
 import {

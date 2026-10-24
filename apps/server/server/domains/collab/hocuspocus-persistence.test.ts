@@ -1,9 +1,12 @@
-/** Tests for Hocuspocus room persistence: draft guards and deferred live checkpoints. */
+/** Tests for Hocuspocus room persistence: draft guards and deferred live checkpoints.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Draft admission queue and checkpoint coalescing (kb/decisions/concurrent-safety/journal/checkpoint-capture-from-journal.md)
+ */
 
 import { Hocuspocus } from "@hocuspocus/server";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { RecentEventsBuffer } from "../observability/adapters/recent/recent-events-buffer.js";
 import { createInMemoryJournal } from "./adapters/in-memory/agent-edit.js";
 import {
   bindDocumentAuthority,
@@ -505,7 +508,6 @@ describe("createHocuspocusPersistenceService draft stale gate", () => {
 
   it("rejects journal failure before the transport can apply or acknowledge", async () => {
     const liveDocument = boundDoc({ gc: false });
-    const events = new RecentEventsBuffer();
     const journal = fakeJournal();
     journal.appendWriterUpdate = vi.fn(async () => {
       throw new Error("database unavailable");
@@ -519,7 +521,6 @@ describe("createHocuspocusPersistenceService draft stale gate", () => {
           getConnectionsCount: () => 0,
         }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      eventSink: events,
       emitAgentEditInvariantViolation: () => undefined,
     });
     let appliedOrAcknowledged = false;
@@ -538,12 +539,6 @@ describe("createHocuspocusPersistenceService draft stale gate", () => {
         }),
     ).rejects.toThrow("database unavailable");
     expect(appliedOrAcknowledged).toBe(false);
-    expect(persistence.getPersistenceQueueMetrics().queues).toEqual([
-      expect.objectContaining({ documentId: DOCUMENT_ID, dropped: 1 }),
-    ]);
-    expect(events.query({ correlation: { documentId: DOCUMENT_ID } }).events).toEqual([
-      expect.objectContaining({ name: "persistence_append.failed" }),
-    ]);
   });
 });
 

@@ -1,3 +1,10 @@
+/**
+ * Tests run state behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Whole-record run-state folds and intent retirement
+ */
+
 import type { ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
 /** The message folds over the run-state view: busy, the tray, the Stop body, what a hand-back hides, Retry retirement. */
 import type { PendingInboxItem, RunState } from "@meridian/contracts/threads";

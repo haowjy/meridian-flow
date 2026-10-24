@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** Witness: a cache reader above a `useQuery` that builds the key must not update mid-render. */
+/** Witness: a cache reader above a `useQuery` that builds the key must not update mid-render.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - observer-free snapshot cache subscription
+ */
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";

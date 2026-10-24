@@ -1,5 +1,8 @@
-/** Image sizes, source-less slots, and literal attributes survive both codec dialects. */
-
+/** Image sizes, source-less slots, and literal attributes survive both codec dialects.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - HTML image admission and canonical wire escalation
+ */
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import { components, docFrom, paragraph, parsedDoc, schema } from "./codec-test-support.js";

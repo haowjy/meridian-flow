@@ -1,4 +1,8 @@
-/** Production-adapter contract coverage for document transport status subscription. */
+/** Production-adapter contract coverage for document transport status subscription.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - transport status and update batching policy
+ */
 
 import { MessageType } from "@hocuspocus/provider";
 import { WS_CLOSE } from "@meridian/contracts/protocol";

@@ -1,6 +1,9 @@
 /**
  * Where each internal link's answer comes from: the scope's local index at
  * once, or the server, and which of the two wins when both speak.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - draft-only link review destination policy
  */
 
 import type { DocumentLinkAnswer } from "@meridian/contracts";

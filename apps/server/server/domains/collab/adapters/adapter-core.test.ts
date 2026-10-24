@@ -1,4 +1,8 @@
-/** Consolidated test contracts; each block retains its original fixture scope. */
+/** Consolidated test contracts; each block retains its original fixture scope.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Checkpoint capabilities and trail-change folding
+ */
 
 import { describe as __mergedSuite, expect, it } from "vitest";
 /** Checkpoint persistence accepts adapter identity, not copied coverage or replay functions. */

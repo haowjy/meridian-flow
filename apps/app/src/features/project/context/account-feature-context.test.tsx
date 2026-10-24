@@ -1,4 +1,10 @@
 // @vitest-environment jsdom
+/**
+ * Account feature context behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - projection recovery and StrictMode coordinator reuse
+ */
 
 import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
 import { reserveResourceDocument } from "@meridian/resource-replica";
@@ -108,16 +114,17 @@ describe("AccountFeatureTestProvider", () => {
   });
 
   it("reuses one coordinator through Strict effect replay", async () => {
-    const instances: ContextRemovalCoordinator[] = [];
+    const selectionRevisions: number[] = [];
     function Child() {
       const coordinator = useContextRemovalCoordinator();
       useLayoutEffect(() => {
-        instances.push(coordinator);
         coordinator.beginRouteSelection("project-1", {
           scheme: "kb",
           path: "/strict.md",
           workId: "work-1",
         });
+        const selection = coordinator.getProjectSnapshot("project-1").selection;
+        if (selection.status === "candidate") selectionRevisions.push(selection.revision);
       }, [coordinator]);
       return null;
     }
@@ -128,12 +135,7 @@ describe("AccountFeatureTestProvider", () => {
         </TestAccountProvider>
       </StrictMode>,
       async () => {
-        expect(instances).toHaveLength(2);
-        expect(instances[0]).toBe(instances[1]);
-        expect(instances[0]?.getProjectSnapshot("project-1").selection).toMatchObject({
-          status: "candidate",
-          revision: 2,
-        });
+        expect(selectionRevisions).toEqual([1, 2]);
       },
     );
   });

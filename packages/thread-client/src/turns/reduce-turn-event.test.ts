@@ -1,6 +1,9 @@
 /**
  * The reducer against `syncedTurnStore`: tool results, instance-owned
  * interrupt buffering, and the injected clock.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Injected-clock event reduction and interrupt buffering
  */
 import type { AGUIEvent, Turn } from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";

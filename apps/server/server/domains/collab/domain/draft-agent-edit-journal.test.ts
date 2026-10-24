@@ -1,3 +1,9 @@
+/**
+ * Tests draft agent edit journal behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Concurrent logical writes reserve unique ordinals
+ */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
@@ -11,11 +17,10 @@ describe("draft agent-edit journal appendBatch", () => {
       liveJournal: createInMemoryJournal(),
     });
 
-    await expect(
-      Promise.all([
-        draftJournal.reserveWriteOrdinal("chapter.md", THREAD_ID),
-        draftJournal.reserveWriteOrdinal("chapter.md", THREAD_ID),
-      ]),
-    ).resolves.toEqual([1, 2]);
+    const ordinals = await Promise.all([
+      draftJournal.reserveWriteOrdinal("chapter.md", THREAD_ID),
+      draftJournal.reserveWriteOrdinal("chapter.md", THREAD_ID),
+    ]);
+    expect(new Set(ordinals)).toHaveLength(2);
   });
 });

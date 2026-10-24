@@ -1,4 +1,8 @@
-/** Model edit history follows its immutable origins without requiring a current draft. */
+/** Model edit history follows its immutable origins without requiring a current draft.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Null draft views read archived-origin history
+ */
 import { describe, expect, it, vi } from "vitest";
 import { createModelDocumentEdits } from "./model-document-edits.js";
 

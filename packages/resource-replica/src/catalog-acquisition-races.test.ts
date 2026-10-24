@@ -1,4 +1,8 @@
-/** Catalog acquisition owns request ordering while metadata CAS owns cross-context races. */
+/** Catalog acquisition owns request ordering while metadata CAS owns cross-context races.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Serialized catalog acquisition and abort-on-close
+ */
 import type { CatalogChanges, CatalogScope, CatalogSnapshot } from "@meridian/contracts/protocol";
 import { expect, it, vi } from "vitest";
 import { ResourceCatalogAcquisition, type ResourceCatalogTransport } from "./catalog-acquisition";

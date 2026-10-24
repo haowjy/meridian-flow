@@ -1,4 +1,8 @@
-/** Behavioral coverage for the pure change-trail read kernel. */
+/** Behavioral coverage for the pure change-trail read kernel.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Trail navigation validity and same-block folding
+ */
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {

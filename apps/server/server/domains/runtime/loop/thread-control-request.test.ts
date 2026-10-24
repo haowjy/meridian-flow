@@ -1,4 +1,8 @@
-/** The control route's request shape: one discriminated union over every control kind. */
+/** The control route's request shape: one discriminated union over every control kind.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Strict thread-control request grammar
+ */
 import { describe, expect, it } from "vitest";
 import { threadControlRequestSchema } from "./thread-control-request.js";
 

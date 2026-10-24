@@ -1,6 +1,8 @@
 /**
- * PostgreSQL proof for the document-link scope: batched prepare, views, snapshot lifetime,
- * and how a link reads per view (contract §10: "in a draft", precedence, the pinned holder).
+ * PostgreSQL proof for the document-link scope: batched prepare, views, snapshot lifetime, and how a link reads per view (contract §10: "in a draft", precedence, the pinned holder).
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - prepared-snapshot loading, canonical historical spelling, and nested scope lifetime (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 import { folderDocumentName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";

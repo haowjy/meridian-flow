@@ -1,4 +1,8 @@
-/** Fixed reviewer schedules and the exact-ID refresh boundary behind their progress guarantee. */
+/** Fixed reviewer schedules and the exact-ID refresh boundary behind their progress guarantee.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Exact-ID refresh and namespace dependency ordering
+ */
 import assert from "node:assert/strict";
 import { expect, it } from "vitest";
 import { catalogViewFromSnapshot } from "./catalog";
