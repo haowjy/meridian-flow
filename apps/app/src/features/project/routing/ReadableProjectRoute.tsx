@@ -634,6 +634,7 @@ function ReadableProjectDestination({
     return {
       ...address,
       destination: next,
+      trash: undefined,
       itemKey: undefined,
       workView: undefined,
       worksView: undefined,
@@ -700,17 +701,15 @@ function ReadableProjectDestination({
       if (trash) query.set("trash", String(trash));
       else query.delete("trash");
       const search = query.toString();
-      return router.navigate({
-        href: `${current.pathname}${search ? `?${search}` : ""}${current.hash}`,
-        state: { ...current.state },
-      });
+      router.history.push(
+        `${current.pathname}${search ? `?${search}` : ""}${current.hash}`,
+        current.state,
+      );
+      return Promise.resolve();
     },
     [router],
   );
-  const trashDestination =
-    location.search.trash === true || typeof location.search.trash === "string"
-      ? location.search.trash
-      : undefined;
+  const trashDestination = address.trash;
   useEffect(() => {
     if (!closingRef || !closeState.closed || closeState.removed) return;
     const itemKey = closingRef.itemKey;
