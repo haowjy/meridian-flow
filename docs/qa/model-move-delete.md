@@ -33,7 +33,10 @@ model.
 3. **Name taken.** Press Redo (ch2 deleted again), create a document at `manuscript://ch2`
    (`./mf doc put`), then press Undo: the original returns at `manuscript://ch2 (2)` and the
    expanded card reads "Restored as ch2 (2)." The new ch2 stays where it was. Redo and Undo
-   again; the same document returns and the card names the committed path.
+   again; the same document returns and the card names the committed path. Then script a model
+   move of ch1 onto the occupied `manuscript://ch2`: its tool result, expanded turn receipt,
+   Undo/Redo landing copy and Recent dock entry all name the same committed suffixed path, not
+   the requested `ch2` path.
 4. **Absorbed folder.** In a draft-mode chat, move a document into a new `arc/` folder, then
    move it out. Create a live `arc/` folder so it absorbs the hidden draft folder. Model Undo
    of the second move returns the document inside the live `arc/`, not `folder_missing`.
