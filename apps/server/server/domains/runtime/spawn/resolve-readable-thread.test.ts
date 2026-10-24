@@ -1,4 +1,8 @@
-/** Connected history authority is shared by every inspection tool. */
+/** Connected history authority is shared by every inspection tool.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Connected-history visibility policy
+ */
 
 import type { Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";

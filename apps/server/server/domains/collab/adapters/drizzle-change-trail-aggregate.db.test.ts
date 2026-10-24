@@ -1,4 +1,9 @@
-/** PostgreSQL contracts for committed change-event replace-set projections. */
+/**
+ * PostgreSQL contracts for committed change-event replace-set projections.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - bounded two-pass trail reconciliation across cursor pages
+ */
 
 import type { TrailChangeV1 } from "@meridian/contracts";
 import type { TurnId } from "@meridian/contracts/runtime";

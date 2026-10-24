@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** Journal row ownership and Edit's safe transfer boundary. */
+/** Journal row ownership and Edit's safe transfer boundary.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - submission presentation and switch-card ownership
+ */
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";

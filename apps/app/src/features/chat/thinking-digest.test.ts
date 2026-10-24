@@ -1,4 +1,8 @@
-/** The digest leaves changed documents to the turn receipt. */
+/** The digest leaves changed documents to the turn receipt.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - receipt versus thinking-digest presentation
+ */
 import { i18n } from "@lingui/core";
 import { foldDigest, type ToolView } from "@meridian/thread-client";
 import { beforeEach, expect, it } from "vitest";

@@ -1,3 +1,10 @@
+/**
+ * Tests database targets behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - PID-derived test databases and ancestor-process ownership
+ */
+
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

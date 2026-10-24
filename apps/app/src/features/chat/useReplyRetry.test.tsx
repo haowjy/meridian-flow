@@ -3,6 +3,10 @@
  * Failed-reply Retry: the new reply first, the server's replaces it by id, a
  * refusal notes the failed reply, and a request whose execution closed without
  * its reply retires, read from the run-state record at or after its answer.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - optimistic reply retry reconciliation
+ * - bounded retry-pending polling
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 

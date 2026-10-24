@@ -2,7 +2,7 @@
 /** Navigate first: an explicit review launch commits its destination without waiting on a live-identity lookup. */
 import "fake-indexeddb/auto";
 import { createMemoryHistory } from "@tanstack/react-router";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
 import { applyContextRemovalSearchUpdate } from "./context-removal-route-repair";
 import { createEditorDocumentCommand } from "./editor-document-command";
@@ -11,6 +11,10 @@ import { createProjectNavigation } from "./project-navigation";
 
 const projectId = "550e8400-e29b-41d4-a716-446655440000";
 const workId = "700db898-57fb-4ffa-8366-46ad6a3880be";
+
+beforeEach(() => {
+  useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: true });
+});
 
 function setup(
   lookup: () => Promise<{ kind: "failed" }>,

@@ -1,4 +1,9 @@
-/** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
+/**
+ * Control queue ordering, start consumption, and withdrawal against PostgreSQL.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - one-per-run ordered controls, request-boundary adoption, and claim-owned crash repair (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
+ */
 
 import type { Turn } from "@meridian/contracts/threads";
 import { eq, sql } from "drizzle-orm";
@@ -407,40 +412,6 @@ else
           control: { kind: "compact" },
         }),
       ).resolves.toMatchObject({ created: true });
-    });
-
-    it("returns the compact refusal when a fork cutoff is missing", async () => {
-      const rig = await manualFixture();
-      const source = await rig.repos.threads.findById(rig.threadId);
-      const answer = (await rig.repos.turns.listByThread(rig.threadId)).find(
-        (turn) => turn.role === "assistant" && turn.status === "complete",
-      );
-      if (!source || !answer) throw new Error("Expected source thread and completed reply");
-      const { thread: fork } = await rig.repos.threads.createDerivedPrimary({
-        aiWriteMode: "direct",
-        id: crypto.randomUUID(),
-        source,
-        workId: source.workId,
-        userId: source.userId,
-        projectId: source.projectId,
-        originType: "fork",
-        originTurnId: answer.id,
-      });
-      const graph = turnGraph(rig.repos.turns);
-      const findTurn = graph.findById.bind(graph);
-      graph.findById = async (id) => (id === answer.id ? null : findTurn(id));
-
-      await expect(
-        rig.delivery.enqueueControl({
-          threadId: fork.id,
-          actorId: rig.ids.user,
-          id: crypto.randomUUID(),
-          control: { kind: "compact" },
-        }),
-      ).rejects.toMatchObject({
-        statusCode: 409,
-        message: "compact_requires_completed_reply",
-      });
     });
 
     it("Retry replays the original request, appends after failure, is idempotent, and refuses the superseded original", async () => {

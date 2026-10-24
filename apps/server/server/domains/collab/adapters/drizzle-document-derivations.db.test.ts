@@ -1,4 +1,9 @@
-/** PostgreSQL races and recovery contracts for durable document derivation. */
+/**
+ * PostgreSQL races and recovery contracts for durable document derivation.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - lazy-cut retirement, lock-scoped capture, persistence revalidation, and durable recovery sweeps
+ */
 
 import { randomUUID } from "node:crypto";
 import { folderDocumentName } from "@meridian/contracts/protocol";

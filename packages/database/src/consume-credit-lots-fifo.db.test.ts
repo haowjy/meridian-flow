@@ -1,3 +1,10 @@
+/**
+ * Database coverage for consume credit lots fifo.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - debt-lot representation and expiry-first credit consumption
+ */
+
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";

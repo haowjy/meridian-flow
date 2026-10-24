@@ -1,4 +1,8 @@
-/** A reply's save boundaries: where the orchestrator saves staged writes before the next call. */
+/** A reply's save boundaries: where the orchestrator saves staged writes before the next call.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Save-before-reversal edit scope
+ */
 
 import { modelResult, renderAgentEditResult } from "@meridian/agent-edit";
 import { describe, expect, it } from "vitest";

@@ -1,4 +1,8 @@
-/** Thread recovery and success reporting through the real transport boundary. */
+/** Thread recovery and success reporting through the real transport boundary.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Thread-scoped retry and observer-isolated transport
+ */
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FakeThreadSocket } from "../test-support/fake-thread-socket";
 import type { ConnectivityHint, ConnectivityHintsPort } from "./socket-ports";

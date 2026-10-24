@@ -1,6 +1,9 @@
 /**
  * The review projection's named risks: a move half-applied (duplicated or lost paragraph), ids that
  * churn when an unrelated change appears, and draft positions that decorate the wrong text.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Stable review grouping, move pairing, and draft mapping (kb/decisions/collab/drafts/review/draft-live-content-rebase.md)
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";

@@ -1,3 +1,10 @@
+/**
+ * Tests folder namespace behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Folder redispatch and ancestor pending projection
+ */
+
 import type { CatalogEntry, ContextOperationReceipt } from "@meridian/contracts/protocol";
 import { expect, it } from "vitest";
 import { planFolderLocation as planFolderLocationFromFolderNamespace } from "./folder-namespace";

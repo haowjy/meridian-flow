@@ -1,3 +1,10 @@
+/**
+ * Tests semantic edit ir behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Certified semantic-edit IR and client-keyed range algebra
+ */
+
 import {
   groupLineageRanges,
   intersectLineageRanges,

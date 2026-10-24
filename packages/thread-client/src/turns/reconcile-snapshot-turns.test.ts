@@ -1,3 +1,10 @@
+/**
+ * Tests reconcile snapshot turns behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Snapshot reconciliation preserves equal graph references
+ */
+
 import type { Block, Turn } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { reconcileSnapshotTurns } from "./reconcile-snapshot-turns";

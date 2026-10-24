@@ -1,4 +1,9 @@
-/** Drizzle half of the shared chat-feed repository conformance suite. */
+/**
+ * Drizzle half of the shared chat-feed repository conformance suite.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - literal folded search and filtered keyset pagination over historical Work membership (kb/decisions/chat/turns/linear-turns.md)
+ */
 import { beforeEach, describe, it } from "vitest";
 
 const DATABASE_URL = process.env.DATABASE_URL;

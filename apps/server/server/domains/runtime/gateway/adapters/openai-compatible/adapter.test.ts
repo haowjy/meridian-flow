@@ -1,4 +1,8 @@
-/** The gateway owns retries: the SDK client must not re-send a failed request on its own. */
+/** The gateway owns retries: the SDK client must not re-send a failed request on its own.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Gateway-owned provider retry policy (kb/decisions/engineering/runtime/model-call-gateway.md)
+ */
 import { afterEach, describe, expect, it } from "vitest";
 import { mockProviderConfig } from "../../config/providers.js";
 import { user } from "../../helpers/messages.js";

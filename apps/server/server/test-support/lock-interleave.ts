@@ -3,12 +3,29 @@
  * hook point, run `b` until it completes or waits on a lock `a` holds, then release `a`.
  * Depends only on the hook registry and the database's lock view.
  */
+
+import { setTimeout as delay } from "node:timers/promises";
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
 import { currentDrizzleDb, isInDrizzleTransaction } from "../shared/drizzle-transaction.js";
 import { setTestHook, type TestHookPoint } from "../shared/test-hooks.js";
 
 export type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown };
+
+/** Wait for a query to observe a PostgreSQL lock, with one load-tolerant deadline. */
+export async function waitForPostgresLock<T>(
+  description: string,
+  observe: () => Promise<T | undefined>,
+  timeoutMs = 10_000,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const observed = await observe();
+    if (observed !== undefined) return observed;
+    await delay(10);
+  }
+  throw new Error(`Timed out after ${timeoutMs}ms waiting for ${description}`);
+}
 
 function settle<T>(run: () => Promise<T>): Promise<Settled<T>> {
   return run().then(

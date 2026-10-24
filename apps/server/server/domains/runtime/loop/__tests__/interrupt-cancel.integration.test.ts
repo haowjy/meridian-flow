@@ -1,3 +1,9 @@
+/**
+ * Tests interrupt cancel behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Lease cancellation liveness protocol
+ */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createThreadWebSocketSession, type WsPeer } from "../../../../lib/ws-thread-handler.js";
