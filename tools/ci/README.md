@@ -120,8 +120,8 @@ every unit and DB run and compares the **expanded case count per test file**
   collection (`allTests()`), so skipped cases and `it.each` rows count.
 - The same reporter prints the run wall time and warns when it exceeds
   `TEST_DURATION_REFERENCE_SECONDS`: 150 for the unit suite, 600 for the DB
-  suite, which runs serially in CI and so pays the sum of every test rather than
-  a fraction of it. The warning never fails the run. Wall time tracks the machine
+  suite (a serial DB run pays the sum of every test; CI runs it on 3 workers).
+  The warning never fails the run. Wall time tracks the machine
   and the worker count, not only the suite, so identical work has measured 45 s to
   104 s on the unit side and 89 s to 322 s on the DB side. Read it as a signal to
   check what changed, not as a gate.
