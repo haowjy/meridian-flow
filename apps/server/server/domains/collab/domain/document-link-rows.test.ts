@@ -1,4 +1,8 @@
-/** Link-index keys for every stored occurrence kind (contract §11, L5). */
+/** Link-index keys for every stored occurrence kind (contract §11, L5).
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Link-index row keying and occurrence aggregation
+ */
 import { expect, it } from "vitest";
 import { deriveDocumentLinkRows } from "./document-link-rows.js";
 

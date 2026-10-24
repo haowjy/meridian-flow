@@ -1,4 +1,9 @@
-/** Consolidated test contracts; each block retains its original fixture scope. */
+/** Consolidated test contracts; each block retains its original fixture scope.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Keyed mutex scheduling
+ * - In-memory optimistic transaction isolation
+ */
 
 import { describe as __mergedSuite, afterEach, expect, it, vi } from "vitest";
 /** Cross-participant invariants and entity isolation in hermetic transactions. */

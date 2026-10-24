@@ -1,4 +1,8 @@
-/** Behavioral contract for the single writer-turn admission owner. */
+/** Behavioral contract for the single writer-turn admission owner.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Current message and skill admission grammar
+ */
 
 import { spellDocumentHref } from "@meridian/contracts";
 import type { UserTurnAdmissionInput } from "@meridian/contracts/protocol";

@@ -1,4 +1,8 @@
-/** thread_message authority: background is lineage, foreground is subtree. */
+/** thread_message authority: background is lineage, foreground is subtree.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Connected-lineage messaging policy
+ */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread, Turn } from "@meridian/contracts/threads";

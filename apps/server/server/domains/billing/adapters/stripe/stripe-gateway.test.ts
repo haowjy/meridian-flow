@@ -1,3 +1,9 @@
+/**
+ * Tests stripe gateway behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Stripe customer and Checkout wire mapping
+ */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createStripeBillingGateway } from "./stripe-gateway.js";
 
