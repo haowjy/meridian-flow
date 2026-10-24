@@ -114,9 +114,10 @@ ContextPaneController
 
 Document trash is a server snapshot separate from the live catalog projection.
 The tree doesn't read it: the Trash row is a fixed navigation row below Scratch
-(`WorkspaceNavBody`), always shown. The routed
-`DocumentTrashDialog` lists its records and opens a selected record by Document
-ID. The detail route reads the server's last Markdown projection and composes
+(`WorkspaceNavBody`), always shown. The routed `DocumentTrashDialog` owns the
+newest-first list and the selected read-only record in one popup. Desktop keeps
+the list and record side by side; phone shows the list or record, with Back to
+return to the list. The detail reads the server's last Markdown projection and composes
 `ReadOnlyViewerFrame` with `TextViewer`; it never uses the live path-based read.
 Stable-ID navigation confirms a deleted document through that endpoint before
 opening the detail. List and detail restore through one command using the exact

@@ -167,28 +167,33 @@ the tab/tree update without an error. Capture a screenshot outside this repo.
 1. Create one document at a scheme root and one inside a folder. In a third
    document, use the Editor's link picker to link to the first one; choosing
    the result stores the target document's stable ID. Delete the linked
-   document, then delete the folder. The collapsed Trash section sits below
-   Scratch in the sidebar whether or not anything is deleted.
-2. Expand Trash. Both documents appear newest first as file rows. Each row has
-   its full former location, a relative deletion time, and a row menu with
-   Restore. Reload and confirm the section remembers whether it was expanded.
-3. Select the linked document's row. A read-only view shows its last settled text and the
-   banner "In the trash. Deleted by <name> on <date>. Gone for good in <n>
-   days." Close and reopen the view by following a stable link to that document;
-   the link chip may still say "No longer available".
-4. Restore that document from its banner. Restore remains disabled with
-   "Restoring" until the response. The Trash view closes into the live document,
+   document, then delete the folder. The Trash row remains below Scratch in
+   the sidebar whether or not anything is deleted.
+2. Open Trash from the sidebar. One popup shows the newest-first list on the
+   left and the newest document's read-only view on the right. Each row shows
+   its full former location, relative deletion time, and a row menu with
+   Restore. Select the other row and confirm the right pane changes without
+   adding another browser-history step.
+3. Confirm the selected document shows its last settled text and the banner
+   "In the trash. Deleted by <name> on <date>. Gone for good in <n> days."
+   Close the popup and follow the stable link to the deleted document. The
+   same popup opens with that document selected; the link chip may still say
+   "No longer available".
+4. Restore the linked document from its banner. Restore remains disabled with
+   "Restoring" until the response. The popup closes into the live document,
    and the catalog stream returns it to the context tree.
 5. Restore one document from its row menu. Its row says Restoring until the
-   response, leaves Trash after success, and the catalog stream returns it to
-   the context tree.
-6. Create a document at the other deleted document's former path, then restore
-   the deleted document. Confirm the row leaves Trash and the success message
-   names the alternate location where it landed.
-7. Empty Trash by restoring the remaining rows. The expanded section says
-   "Nothing in the trash." and its header stays. Repeat through the phone
-   navigation drawer; the same section expands in place, and choosing a row
-   closes the drawer before opening its read-only view.
+   response, then leaves the list. The popup stays open and selects the next
+   entry.
+6. Create a document at another deleted document's former path, then restore
+   the deleted document from its row menu. Confirm the row leaves, the popup
+   stays open, and the success message names the alternate location where it
+   landed.
+7. Restore every remaining row. The popup says "Nothing in the trash." Close
+   it and confirm the sidebar row remains.
+8. Repeat with a 390 by 844 coarse-pointer viewport. The row opens a full-screen
+   list. Selecting a row shows the read-only document, and Back returns to the
+   list.
 
 An already-open live tab still follows terminal resource cleanup when another
 actor deletes its document: the tab closes and the removal notice appears. The
