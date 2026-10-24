@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** React disclosure ownership survives remount and storage failure without scope bleed. */
+/** React disclosure ownership survives remount and storage failure without scope bleed.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - tab-local tree expansion persistence
+ */
 import { act, useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";

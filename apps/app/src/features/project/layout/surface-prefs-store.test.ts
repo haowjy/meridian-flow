@@ -1,3 +1,9 @@
+/**
+ * Surface prefs store behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - project rail preference persistence
+ */
 import { afterEach, expect, it, vi } from "vitest";
 import {
   DEFAULT_RAIL_PREFS,

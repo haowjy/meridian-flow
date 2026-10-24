@@ -4,6 +4,10 @@
  * announces, and when; how the record's delivery state words a pending switch; and when a
  * change in the record's switches marks the Works reads stale. The display itself is
  * `switch-view.test.ts`.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - write-mode switch delivery presentation
+ * - write-mode cache invalidation ownership
  */
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 

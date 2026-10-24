@@ -1,3 +1,9 @@
+/**
+ * Project navigation behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - intent and native-history coordination
+ */
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";

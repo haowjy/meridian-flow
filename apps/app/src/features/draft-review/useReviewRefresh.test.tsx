@@ -3,6 +3,9 @@
  * The review's one refresh owner: what makes the open review read its draft
  * again, and how often. Independent live Yjs documents and a real query client; the clock
  * is the only fake.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - review refresh debounce and invalidation ownership
  */
 
 import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
