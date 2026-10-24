@@ -8,6 +8,7 @@ import type {
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import {
   type ResourcePlacement,
+  type ResourceProjectionSnapshot,
   type ResourceRecord,
   resourcePlacementForSnapshot,
 } from "@meridian/resource-replica";
@@ -330,7 +331,7 @@ type NavigationAdapterDependencies = {
   openTrash(documentId: string): Promise<unknown>;
   resources?: Pick<
     import("@/core/resources/account-resource-replica").AccountResourceReplica,
-    "accountId" | "readProjectionState"
+    "accountId" | "observeProjection" | "readProjectionState"
   > | null;
   reconcileInstalledTab?: (projectId: string, tab: ContextTab) => void;
 };
@@ -476,6 +477,25 @@ export class ProjectDocumentNavigationAdapter {
         };
       }
 
+      if (refreshIdentity && this.dependencies.resources) {
+        // Restoring a deleted ancestor republishes the document through the catalog. Do not
+        // install its tab while the replica still holds the prior terminal record: that record
+        // would immediately close the tab and clear the destination.
+        try {
+          await waitForLivingProjection(
+            this.dependencies.resources,
+            projectId,
+            documentId,
+            controller.signal,
+          );
+        } catch {
+          return controller.signal.aborted
+            ? { kind: "cancelled" }
+            : { kind: "refused", reason: "lookup-failed" };
+        }
+        if (!isCurrent()) return { kind: "cancelled" };
+      }
+
       if (disposition === "current" && !this.dependencies.openRoute)
         throw new Error("Opening a project document requires the project route owner");
       const committed = await this.commitFile({
@@ -612,6 +632,42 @@ export class ProjectDocumentNavigationAdapter {
     }
     return input.canCommit() ? { kind: "applied", placement: "background" } : { kind: "cancelled" };
   }
+}
+
+function waitForLivingProjection(
+  resources: NonNullable<NavigationAdapterDependencies["resources"]>,
+  projectId: string,
+  documentId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const living = (snapshot: ResourceProjectionSnapshot) =>
+    snapshot.records.some(
+      (record) =>
+        record.resource.identity.documentId === documentId &&
+        record.resource.lifecycle.kind !== "terminal",
+    );
+  const state = resources.readProjectionState(projectId);
+  if (state.kind === "ready" && living(state.snapshot)) return Promise.resolve();
+  if (state.kind === "failed") return Promise.reject(state.error);
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    let stop: () => void = () => undefined;
+    const finish = (settle: () => void) => {
+      signal.removeEventListener("abort", abort);
+      stop();
+      settle();
+    };
+    const abort = () => finish(() => reject(signal.reason));
+    stop = resources.observeProjection(
+      projectId,
+      (snapshot) => {
+        if (living(snapshot)) finish(resolve);
+      },
+      (error) => finish(() => reject(error)),
+    );
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+  });
 }
 
 function schemeForEntry(entry: CatalogFileEntry): ProjectContextTreeScheme | null {
