@@ -153,6 +153,7 @@ async function commitLive(
             ...common,
             op: "move",
             landedAt: committedLanding(landedAt, "model move"),
+            requestedAt: wantedAt ?? input.path,
           })
         : history.recordAgentTreeChange({ ...common, op: "delete" }))
     ).handle;
@@ -254,6 +255,7 @@ async function commitDrafted(
             ...common,
             op: "move",
             landedAt: committedLanding(landedAt, "drafted move"),
+            requestedAt: wantedAt ?? input.path,
           })
         : history.recordAgentTreeChange({ ...common, op: "delete" }))
     ).handle;

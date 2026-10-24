@@ -43,7 +43,10 @@ import { testHook } from "../../../shared/test-hooks.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
-import { readBranchTreeFacts } from "../../context/tree/branch-tree-store.js";
+import {
+  readBranchTreeFacts,
+  recordStandingBranchTreeEdit,
+} from "../../context/tree/branch-tree-store.js";
 import { resolveAbsorbedFolders } from "../../context/tree/folder-normalization.js";
 import { readLiveTreeStates } from "../../context/tree/live-tree-state.js";
 import { acquireTreeScope, TreeScopeChangedError } from "../../context/tree/mutation-scope.js";
@@ -583,7 +586,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const treeRuns = sequence.flatMap(({ plan, step }) =>
         step.kind === "tree" ? [{ document: plan.document, planned: step.planned }] : [],
       );
-      const batchTreeDocumentIds = new Set(treeRuns.map(({ document }) => document.documentId));
       const grants = await admitInverse(sequence, query, userId);
       const commit = () =>
         withLiveDocuments([...new Set(liveIds)].sort(), () =>
@@ -626,13 +628,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                   if (!entry) throw new Error("A step's plan is not among the commit's plans");
                   const outcome =
                     step.kind === "tree"
-                      ? await commitTreeStep(
-                          entry,
-                          step,
-                          userId,
-                          query,
-                          query.model ? undefined : batchTreeDocumentIds,
-                        )
+                      ? await commitTreeStep(entry, step, userId, query)
                       : await commitTextStep(entry, step, userId, query);
                   if (typeof outcome === "string") {
                     if (outcome) handles.push(outcome);
@@ -794,7 +790,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     step: Extract<InverseStep, { kind: "tree" }>,
     userId: UserId | undefined,
     query: TurnInverseQuery,
-    deferredDocumentIds?: ReadonlySet<DocumentId>,
   ): Promise<
     | {
         handle: string;
@@ -806,13 +801,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     const document = entry.plan.document;
     try {
       return await runInDrizzleSavepoint(input.db, async () => {
-        const operation = await treeOperations.commit(
-          entry,
-          planned,
-          userId,
-          query,
-          deferredDocumentIds,
-        );
+        const operation = await treeOperations.commit(entry, planned, userId, query);
         const landedAt = await treeOperations.address(entry.documentId, operation.transition);
         const requestedAt = planned.requestedAt;
         const handle = await recordStep(
@@ -901,11 +890,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         op: step.planned.op,
         shownAt: entry.plan.document.uri,
         ...(committed.landedAt ? { landedAt: committed.landedAt } : {}),
+        ...(step.planned.requestedAt ? { requestedAt: step.planned.requestedAt } : {}),
+        ...(step.planned.requestedLeaf ? { requestedLeaf: step.planned.requestedLeaf } : {}),
         seq: await nextEditSeq(db()),
         targets: [{ editId: step.planned.entry.editId, direction: step.planned.direction }],
       };
     }
-    await recordDocumentEdit(db(), {
+    const editId = await recordDocumentEdit(db(), {
       documentId,
       ...(query.model
         ? {
@@ -927,6 +918,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       receipts,
       ...(treeChange ? { treeChange } : {}),
     });
+    if (treeChange?.destination.kind === "draft")
+      await recordStandingBranchTreeEdit(input.db, {
+        branchId: treeChange.destination.branchId,
+        documentId,
+        editId,
+      });
     if ("receipts" in committed) {
       count(entry, committed.branchId, receipts.length);
       entry.outcomes.push({ documentId, branchId: committed.branchId, draftId: committed.draftId });

@@ -31,11 +31,17 @@ the per-document branch hints all read it; write admission does not.
 `deleteInBranch`) and their inverses (`writeBackBranchFacts`) through the one
 facts writer (`writeBranchTreeFacts`: a new `revision` from its sequence per
 write, the first `base_version` kept). A moved row keeps both its valid current
-placement and the leaf name it requested. When another branch write vacates
-that requested name, the earliest waiting arrival takes it; its standing tree
-entry is rewritten to the new landing so receipts and inverses keep describing
-the branch's actual state. A multi-document inverse may leave a transient clash
-inside its transaction when a later step removes the other arrival. The row's
+placement and the leaf name it requested. Every facts write and terminal row drop
+ends with `reconcileBranchNames`: it reads the branch's visible namespace, gives a
+shared name to its physical occupant or the earlier drafted request, reallocates
+the other arrivals, then repeatedly settles waiting requests in request order.
+The invariant therefore holds after each inverse step as well as after direct
+moves, deletes and Discard. Reconciliation scans the branch's visible documents
+and folders, so tree mutation scope locks the full branch even for a one-document
+write. Each moved row points directly to its standing tree entry; a landing rewrite
+updates that entry and emits dirty signals for its turn and chat owners without
+scanning the document's history. The requested leaf stored on the immutable entry
+survives Undo/Redo even when its effective landing changes. The row's
 `changed_thread_id` is the chat
 whose turn the entry or its inverse belongs to, also when the writer's card or a
 rollback runs the inverse: the chat's dock lists the pending item by it. Every folder a moved fact names is

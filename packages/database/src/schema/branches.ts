@@ -30,6 +30,7 @@ import {
 import { createdAt, idColumn, updatedAt } from "./_shared";
 import { threads, turns } from "./agent-threads";
 import { projects, works } from "./content";
+import { documentEdits } from "./document-edits";
 import { users } from "./users";
 
 export type BranchStatus = "active" | "closed";
@@ -121,6 +122,10 @@ export const branchTreeChanges = pgTable(
     requestedExtension: text("requested_extension"),
     /** Stable ordering when more than one pending arrival asks for the same vacated name. */
     requestedOrder: bigint("requested_order", { mode: "bigint" }),
+    /** The effective tree entry whose landing changes when this arrival is reconciled. */
+    standingTreeEditId: uuid("standing_tree_edit_id").references(() => documentEdits.id, {
+      onDelete: "set null",
+    }),
     /** `documents.location_version` when the branch first moved or deleted it. */
     baseVersion: bigint("base_version", { mode: "bigint" }),
     /**

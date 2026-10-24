@@ -18,16 +18,17 @@ import type {
   TurnId,
   UserId,
 } from "@meridian/contracts";
-import { sameBranchFacts } from "@meridian/contracts";
+import { allocateFilename, folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
   branchTreeChanges,
   branchTreeFolders,
   branchTreeUnsettled,
+  changeTrailDirtyLog,
   documentEdits,
   folders,
 } from "@meridian/database/schema";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { nextEditSeq } from "../../../shared/edit-history-seq.js";
 import {
@@ -38,7 +39,7 @@ import {
 import { tombstoneFolders } from "./node-rows.js";
 import { loadFolderChains } from "./tree-addresses.js";
 import type { NodeRef } from "./tree-view.js";
-import { isUnusedHiddenFolder } from "./tree-view-sql.js";
+import { isUnusedHiddenFolder, visibleDocuments, visibleFolders } from "./tree-view-sql.js";
 
 /** The branch created (or joined) this document; its place is the document row's. The branch can't already have the row. */
 export async function recordCreated(
@@ -143,6 +144,7 @@ export async function dropDocumentRows(
         inArray(branchTreeChanges.nodeId, [...input.documentIds]),
       ),
     );
+  await reconcileBranchNames(db, input.branchId);
   return pruned;
 }
 
@@ -383,13 +385,29 @@ export async function readBranchTreeFacts(
   return out;
 }
 
-/** The earliest visible drafted move still waiting for `placement`'s requested leaf. */
-export async function requestedArrivalAt(
+type Arrival = {
+  documentId: DocumentId;
+  created: boolean;
+  contextSourceId: ContextSourceId;
+  folderId: FolderId | null;
+  name: string;
+  extension: string;
+  requestedName: string | null;
+  requestedExtension: string | null;
+  requestedOrder: bigint | null;
+  standingTreeEditId: string | null;
+};
+
+function slotKey(row: Pick<Arrival, "contextSourceId" | "folderId">, filename: string): string {
+  return JSON.stringify([row.contextSourceId, row.folderId, filename]);
+}
+
+/** The branch serializes tree writes; callers lock these documents before one may be reconciled. */
+export async function branchMovedDocumentIds(
   db: Pick<DrizzleDb, "select">,
   branchId: BranchId,
-  placement: TreePlacement,
-): Promise<DocumentId | null> {
-  const [row] = await db
+): Promise<DocumentId[]> {
+  const rows = await db
     .select({ documentId: branchTreeChanges.nodeId })
     .from(branchTreeChanges)
     .where(
@@ -397,115 +415,57 @@ export async function requestedArrivalAt(
         eq(branchTreeChanges.branchId, branchId),
         eq(branchTreeChanges.nodeKind, "document"),
         eq(branchTreeChanges.moved, true),
-        eq(branchTreeChanges.deleted, false),
-        placement.folderId
-          ? eq(branchTreeChanges.movedFolderId, placement.folderId)
-          : placement.rootSourceId
-            ? eq(branchTreeChanges.movedRootSourceId, placement.rootSourceId)
-            : isNull(branchTreeChanges.movedRootSourceId),
-        eq(branchTreeChanges.requestedName, placement.name),
-        eq(branchTreeChanges.requestedExtension, placement.extension),
-        sql`(${branchTreeChanges.movedName}, ${branchTreeChanges.movedExtension}) IS DISTINCT FROM (${placement.name}, ${placement.extension})`,
       ),
-    )
-    .orderBy(asc(branchTreeChanges.requestedOrder), asc(branchTreeChanges.nodeId))
-    .limit(1);
-  return (row?.documentId as DocumentId | undefined) ?? null;
+    );
+  return rows.map((row) => row.documentId as DocumentId);
 }
 
-/** Move one pending arrival into the requested leaf that this transaction just vacated. */
-export async function settleRequestedArrival(
+/** Point reconciliation at the transition just recorded for the branch's current facts. */
+export async function recordStandingBranchTreeEdit(
   db: Database,
-  input: { branchId: BranchId; documentId: DocumentId; placement: TreePlacement },
+  input: { branchId: BranchId; documentId: DocumentId; editId: string },
 ): Promise<void> {
-  const before = (
-    await readBranchTreeFacts(currentDrizzleDb(db), [input.branchId], [input.documentId])
-  )
-    .get(input.branchId)
-    ?.get(input.documentId);
-  if (!before?.moved || before.deleted) return;
-  const after: BranchTreeFacts = {
-    ...before,
-    moved: { ...before.moved, name: input.placement.name, extension: input.placement.extension },
-  };
   await currentDrizzleDb(db)
     .update(branchTreeChanges)
-    .set({
-      movedName: input.placement.name,
-      movedExtension: input.placement.extension,
-      revision: sql`nextval('branch_tree_change_revision')`,
-      updatedAt: new Date(),
-    })
+    .set({ standingTreeEditId: input.editId })
     .where(
       and(
         eq(branchTreeChanges.branchId, input.branchId),
         eq(branchTreeChanges.nodeKind, "document"),
         eq(branchTreeChanges.nodeId, input.documentId),
+        eq(branchTreeChanges.moved, true),
       ),
     );
-  await rewriteStandingMove(db, input.branchId, input.documentId, before, after);
 }
 
-/** A pending move's free-name landing is mutable until Apply; keep its inverse and receipt exact. */
+/** A pending move's landing is mutable until Apply; keep its inverse, receipt and owner current. */
 async function rewriteStandingMove(
   db: Database,
-  branchId: BranchId,
-  documentId: DocumentId,
-  before: BranchTreeFacts,
+  standingTreeEditId: string | null,
   after: BranchTreeFacts,
 ): Promise<void> {
+  if (!standingTreeEditId) return;
   const tx = currentDrizzleDb(db);
-  const rows = await tx
+  const [row] = await tx
     .select({
-      id: documentEdits.id,
-      editId: documentEdits.id,
-      kind: documentEdits.kind,
+      threadId: documentEdits.threadId,
+      turnId: documentEdits.turnId,
       treeChange: documentEdits.treeChange,
     })
     .from(documentEdits)
-    .where(
-      and(
-        eq(documentEdits.documentId, documentId),
-        sql`${documentEdits.treeChange}->'destination'->>'branchId' = ${branchId}`,
-      ),
-    );
-  const history: TreeRow[] = rows.flatMap((row) =>
-    row.treeChange
-      ? [
-          {
-            id: row.treeChange.seq,
-            editId: row.editId,
-            kind: row.kind,
-            targets: row.treeChange.targets,
-            tree: row.treeChange,
-          },
-        ]
-      : [],
-  );
-  history.sort((a, b) => a.id - b.id);
-  let standing: (TreeTransitionChange & BranchTreeTransition) | null = null;
-  let standingEditId: string | null = null;
-  for (const row of [...history].reverse()) {
-    if (!isTransitionEntry(row) || row.tree.destination.kind !== "draft") continue;
-    const tree = row.tree as TreeTransitionChange & BranchTreeTransition;
-    if (!sameBranchFacts(tree.after, before)) continue;
-    if (!latestTransition(row, history, new Set()).stands) continue;
-    standing = tree;
-    standingEditId = row.editId;
-    break;
-  }
-  // Tree-domain callers can draft moves without a model edit history entry. There is then no
-  // user-facing transition to rewrite; the branch placement still settles normally.
-  if (!standing || !standingEditId) return;
+    .where(eq(documentEdits.id, standingTreeEditId));
+  const standing = row?.treeChange;
+  if (!standing || !("after" in standing) || standing.destination.kind !== "draft") return;
+  const branchStanding = standing as TreeTransitionChange & BranchTreeTransition;
   const moved = after.moved;
-  if (!moved) throw new Error(`A settled drafted move lost its placement for ${documentId}`);
-  const landedAt = standing.landedAt;
+  if (!moved) throw new Error("A reconciled drafted move lost its placement");
+  const landedAt = branchStanding.landedAt;
   const slash = landedAt?.lastIndexOf("/") ?? -1;
   await tx
     .update(documentEdits)
     .set({
       treeChange: {
-        ...standing,
+        ...branchStanding,
         after,
         ...(landedAt
           ? {
@@ -514,7 +474,181 @@ async function rewriteStandingMove(
           : {}),
       },
     })
-    .where(eq(documentEdits.id, standingEditId));
+    .where(eq(documentEdits.id, standingTreeEditId));
+  if (row.threadId) {
+    const owners = [
+      { threadId: row.threadId, turnId: row.turnId },
+      ...(row.turnId ? [{ threadId: row.threadId, turnId: null }] : []),
+    ];
+    await tx.insert(changeTrailDirtyLog).values(owners);
+  }
+}
+
+/**
+ * Restore the branch namespace after a facts write. The scan is linear in the branch's visible
+ * documents and folders; only moved documents can be rewritten. Duplicate arrivals yield to a
+ * physical occupant, then to the earlier request. Waiting arrivals settle in request order until
+ * no newly vacated requested leaf remains.
+ */
+export async function reconcileBranchNames(db: Database, branchId: BranchId): Promise<void> {
+  const tx = currentDrizzleDb(db);
+  const view = { kind: "branch", branchId } as const;
+  const vd = visibleDocuments(view);
+  const vf = visibleFolders(view);
+  const documents = await tx
+    .select({
+      documentId: vd.id,
+      contextSourceId: vd.contextSourceId,
+      folderId: vd.folderId,
+      name: vd.name,
+      extension: vd.extension,
+    })
+    .from(vd);
+  const visibleFolderRows = await tx
+    .select({ contextSourceId: vf.contextSourceId, folderId: vf.parentId, name: vf.name })
+    .from(vf);
+  const requests = await tx
+    .select({
+      documentId: branchTreeChanges.nodeId,
+      created: branchTreeChanges.created,
+      requestedName: branchTreeChanges.requestedName,
+      requestedExtension: branchTreeChanges.requestedExtension,
+      requestedOrder: branchTreeChanges.requestedOrder,
+      standingTreeEditId: branchTreeChanges.standingTreeEditId,
+    })
+    .from(branchTreeChanges)
+    .where(
+      and(
+        eq(branchTreeChanges.branchId, branchId),
+        eq(branchTreeChanges.nodeKind, "document"),
+        eq(branchTreeChanges.moved, true),
+        eq(branchTreeChanges.deleted, false),
+      ),
+    );
+  const requestByDocument = new Map(requests.map((row) => [row.documentId, row]));
+  const arrivals: Arrival[] = documents.map((row) => {
+    const request = requestByDocument.get(row.documentId);
+    return {
+      ...row,
+      created: request?.created ?? false,
+      requestedName: request?.requestedName ?? null,
+      requestedExtension: request?.requestedExtension ?? null,
+      requestedOrder: request?.requestedOrder ?? null,
+      standingTreeEditId: request?.standingTreeEditId ?? null,
+    };
+  });
+  const folderSlots = new Set(
+    visibleFolderRows.map((row) => slotKey(row, folderDocumentName(row.name))),
+  );
+  const documentCounts = new Map<string, number>();
+  const currentKey = (row: Arrival) => slotKey(row, renderFilename(row.name, row.extension));
+  for (const row of arrivals) {
+    const key = currentKey(row);
+    documentCounts.set(key, (documentCounts.get(key) ?? 0) + 1);
+  }
+  const move = async (row: Arrival, name: string, extension: string) => {
+    const before: BranchTreeFacts = {
+      row: true,
+      created: row.created,
+      moved: {
+        folderId: row.folderId,
+        rootSourceId: row.folderId ? null : row.contextSourceId,
+        name: row.name,
+        extension: row.extension,
+      },
+      deleted: false,
+    };
+    const oldKey = currentKey(row);
+    const oldCount = documentCounts.get(oldKey) ?? 0;
+    if (oldCount <= 1) documentCounts.delete(oldKey);
+    else documentCounts.set(oldKey, oldCount - 1);
+    row.name = name;
+    row.extension = extension;
+    const newKey = currentKey(row);
+    documentCounts.set(newKey, (documentCounts.get(newKey) ?? 0) + 1);
+    const after: BranchTreeFacts = {
+      ...before,
+      moved: {
+        folderId: row.folderId,
+        rootSourceId: row.folderId ? null : row.contextSourceId,
+        name,
+        extension,
+      },
+    };
+    await tx
+      .update(branchTreeChanges)
+      .set({
+        movedName: name,
+        movedExtension: extension,
+        revision: sql`nextval('branch_tree_change_revision')`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(branchTreeChanges.branchId, branchId),
+          eq(branchTreeChanges.nodeKind, "document"),
+          eq(branchTreeChanges.nodeId, row.documentId),
+          eq(branchTreeChanges.moved, true),
+          eq(branchTreeChanges.deleted, false),
+        ),
+      );
+    await rewriteStandingMove(db, row.standingTreeEditId, after);
+  };
+  const earlier = (left: Arrival, right: Arrival) => {
+    if (left.requestedOrder === null || right.requestedOrder === null) {
+      if (left.requestedOrder === right.requestedOrder)
+        return left.documentId.localeCompare(right.documentId);
+      return left.requestedOrder === null ? 1 : -1;
+    }
+    return left.requestedOrder === right.requestedOrder
+      ? left.documentId.localeCompare(right.documentId)
+      : left.requestedOrder < right.requestedOrder
+        ? -1
+        : 1;
+  };
+  const groups = new Map<string, Arrival[]>();
+  for (const row of arrivals)
+    groups.set(currentKey(row), [...(groups.get(currentKey(row)) ?? []), row]);
+  for (const [key, group] of groups) {
+    if (group.length < 2 && !folderSlots.has(key)) continue;
+    const ordered = [...group].sort((a, b) => {
+      const aMoved = a.requestedOrder !== null;
+      const bMoved = b.requestedOrder !== null;
+      if (aMoved !== bMoved) return aMoved ? 1 : -1;
+      return earlier(a, b);
+    });
+    const losers = folderSlots.has(key) ? ordered : ordered.slice(1);
+    for (const loser of losers) {
+      if (loser.requestedOrder === null)
+        throw new Error(`Branch ${branchId} has an unreconcilable physical namespace clash`);
+      const filename = await allocateFilename(
+        { kind: "document", name: loser.name, extension: loser.extension },
+        ({ filename }) => {
+          const candidate = slotKey(loser, filename);
+          return folderSlots.has(candidate) || (documentCounts.get(candidate) ?? 0) > 0;
+        },
+      );
+      const name = loser.extension ? filename.slice(0, -(loser.extension.length + 1)) : filename;
+      await move(loser, name, loser.extension);
+    }
+  }
+  const waiting = arrivals
+    .filter((row) => row.requestedName !== null && row.requestedExtension !== null)
+    .sort(earlier);
+  for (;;) {
+    let settled = false;
+    for (const row of waiting) {
+      const requestedName = row.requestedName;
+      const requestedExtension = row.requestedExtension;
+      if (requestedName === null || requestedExtension === null) continue;
+      if (row.name === requestedName && row.extension === requestedExtension) continue;
+      const requestedKey = slotKey(row, renderFilename(requestedName, requestedExtension));
+      if (folderSlots.has(requestedKey) || (documentCounts.get(requestedKey) ?? 0) > 0) continue;
+      await move(row, requestedName, requestedExtension);
+      settled = true;
+    }
+    if (!settled) break;
+  }
 }
 
 /**
@@ -540,7 +674,7 @@ export async function writeBranchTreeFacts(
     /** Reinstates attribution when a creation inverse recreates its deleted facts row. */
     createdBy?: { threadId: ThreadId; turnId?: TurnId } | null;
   },
-): Promise<void> {
+): Promise<BranchTreeFacts> {
   const tx = currentDrizzleDb(db);
   const { facts } = input;
   const key = and(
@@ -555,7 +689,8 @@ export async function writeBranchTreeFacts(
     .onConflictDoNothing();
   if (!facts.row || !(facts.created || facts.moved || facts.deleted)) {
     await tx.delete(branchTreeChanges).where(key);
-    return;
+    await reconcileBranchNames(db, input.branchId);
+    return NO_FACTS;
   }
   const changed = facts.moved !== null || facts.deleted;
   const moved: TreePlacement | null = facts.moved;
@@ -606,6 +741,7 @@ export async function writeBranchTreeFacts(
               requestedOrder: branchTreeChanges.requestedOrder,
             }
           : {}),
+        ...(!moved ? { standingTreeEditId: null } : {}),
         revision: sql`nextval('branch_tree_change_revision')`,
         baseVersion: changed
           ? sql`coalesce(${branchTreeChanges.baseVersion}, ${input.locationVersion}::bigint)`
@@ -623,4 +759,10 @@ export async function writeBranchTreeFacts(
         folderId: moved.folderId as FolderId,
       })
       .onConflictDoNothing();
+  await reconcileBranchNames(db, input.branchId);
+  return (
+    (await readBranchTreeFacts(tx, [input.branchId], [input.documentId]))
+      .get(input.branchId)
+      ?.get(input.documentId) ?? NO_FACTS
+  );
 }

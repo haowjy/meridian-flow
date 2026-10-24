@@ -66,6 +66,10 @@ export type TreeTransitionChange = TreeTransition &
     op: TreeChangeOp;
     /** Where a model's move left it, for the turn's receipt line; the move's own row sets it. */
     landedAt?: string;
+    /** The destination requested before allocation; reconciliation never rewrites it. */
+    requestedAt?: string;
+    /** The requested leaf for replay after the effective landing is reconciled. */
+    requestedLeaf?: { name: string; extension: string };
     /** What an undo, redo, revert or rollback reverses. */
     targets: TreeChangeTarget[];
   };

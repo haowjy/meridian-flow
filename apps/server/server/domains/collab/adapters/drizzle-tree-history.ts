@@ -11,6 +11,7 @@ import { branches, documentDrafts, works } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { nextEditSeq } from "../../../shared/edit-history-seq.js";
+import { recordStandingBranchTreeEdit } from "../../context/tree/branch-tree-store.js";
 import { readLiveTreeStates } from "../../context/tree/live-tree-state.js";
 import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
 import type { AgentTreeHistory } from "../contracts.js";
@@ -44,7 +45,7 @@ export function createDrizzleTreeHistory(
             }
           : { destination: { kind: "live" }, before: change.before, after: await liveAfter(input) };
       const wId = await journal.reserveWriteOrdinal(input.documentId, input.threadId);
-      await recordDocumentEdit(tx(), {
+      const editId = await recordDocumentEdit(tx(), {
         documentId: input.documentId,
         actor: "agent",
         wId,
@@ -60,10 +61,20 @@ export function createDrizzleTreeHistory(
           ...transition,
           shownAt: input.shownAt,
           ...(input.landedAt ? { landedAt: input.landedAt } : {}),
+          ...(input.op === "move" && input.requestedAt ? { requestedAt: input.requestedAt } : {}),
+          ...(change.destination === "draft" && change.requestedLeaf
+            ? { requestedLeaf: change.requestedLeaf }
+            : {}),
           seq: await nextEditSeq(tx()),
           targets: [],
         },
       });
+      if (transition.destination.kind === "draft")
+        await recordStandingBranchTreeEdit(db, {
+          branchId: transition.destination.branchId,
+          documentId: input.documentId,
+          editId,
+        });
       return { handle: editHandle(wId) };
     },
 

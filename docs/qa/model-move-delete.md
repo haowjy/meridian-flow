@@ -77,7 +77,12 @@ the text it found or a block hash from that read.
    document at `swap-b`. Card Undo removes both moves, Redo restores the swap, and Apply lands
    the two requested names through the existing atomic cycle path. Repeat with a three-name
    chain. When two arrivals request one vacated name, the earlier request takes it and the later
-   one keeps its suffix.
+   one keeps its suffix. Discard either half of a drafted swap: the restored live occupant keeps
+   its name and the remaining arrival returns to its suffix, with no ambiguous path. Also move
+   two documents onto `a`, delete `a`, then undo that delete; the restored document takes a free
+   suffix and the two waiting moves remain distinct. Delete and undo-delete one waiting move,
+   then vacate its requested name; it must still settle there. Make the first move in a different
+   chat in the same Work and confirm its receipt refreshes when the later chat vacates its name.
 8. **Scratch crossing.** Script `create` `scratch://@w1/sect-notes`, then `move` it to
    `manuscript://sect-notes`. The result starts "not applied yet", the dock lists sect-notes at
    its manuscript destination, and live still has it in Scratch. Script `undo` by either path:

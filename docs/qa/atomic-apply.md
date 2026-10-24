@@ -79,6 +79,7 @@ that only the frozen words reach live and that the review never resurrects an
 already recorded click. Capture screenshots and independently read live and
 both draft fragments. API-core probe success is not evidence for that UI flow.
 
-For drafted name swaps and chains, also run the model move recipe's Apply case. The branch must
-first settle each waiting arrival to its requested name; this runner only proves the existing
-vacate-then-claim Apply path once those placements reach it.
+For drafted name swaps and chains, also run the model move recipe's Apply case. Check the branch
+after the draft, after card Undo, and after Redo: each state has distinct visible names, and Redo
+restores every requested name. Apply must then use the exact swap or chain, without introducing
+a suffix. Read each live document independently to prove its content followed the intended name.

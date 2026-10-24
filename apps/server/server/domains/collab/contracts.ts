@@ -185,7 +185,7 @@ type AgentTreeChange = {
         before: import("@meridian/contracts").LiveTreeState | null;
       }
     /** Drafted: the branch row's facts on either side, as the branch write returned them. */
-    | ({ destination: "draft" } & Omit<
+    | ({ destination: "draft"; requestedLeaf?: { name: string; extension: string } } & Omit<
         import("@meridian/contracts").BranchTreeTransition,
         "destination"
       > & { branchId: import("@meridian/contracts").BranchId });
@@ -197,6 +197,8 @@ type AgentTreeChange = {
       op: "move";
       /** The canonical destination committed by the tree write, never the requested path. */
       landedAt: string;
+      /** The canonical destination the model asked for, before free-name allocation. */
+      requestedAt?: string;
     }
 );
 

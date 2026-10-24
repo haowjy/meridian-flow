@@ -19,13 +19,16 @@ import { loadBranchTreeRows, loadDocumentIdentityRows } from "./tree-view-sql.js
 
 /** What a tree mutation touches: documents, and every source they or a branch's held folders sit in. */
 export type TreeScope = {
+  /** Documents the requested mutation acts on. */
   documentIds: readonly DocumentId[];
+  /** Documents locked because reconciliation may move them. */
+  lockedDocumentIds: readonly DocumentId[];
   sourceIds: readonly ContextSourceId[];
 };
 
 /**
- * What to lock: each branch's documents with a row or unsettled entries (all of them, or the
- * named ones) where they sit, where the branch has them, and where every folder its drafted moves
+ * What to lock: each named branch's documents with a row or unsettled entries where they sit,
+ * where the branch has them, and where every folder its drafted moves
  * hold sits now (the effective placement is a read model; cleanup prunes all of these), other
  * documents where they sit now (an item's text, a document Apply restores, a node a read
  * repairs), and sources a mutation writes into that no row names yet. Tombstones count where
@@ -56,27 +59,41 @@ export class TreeScopeChangedError extends Error {
 export async function readTreeScope(db: Database, request: TreeScopeRequest): Promise<TreeScope> {
   const tx = currentDrizzleDb(db);
   const documentIds = new Set<DocumentId>();
+  const lockedDocumentIds = new Set<DocumentId>();
   const sourceIds = new Set<ContextSourceId>();
   const others = new Set(request.documentIds ?? []);
+  const lockOthers = new Set(request.documentIds ?? []);
   for (const { branchId, documentIds: named } of request.branches ?? []) {
-    for (const row of await loadBranchTreeRows(tx, branchId, named)) {
-      documentIds.add(row.id);
+    for (const row of await loadBranchTreeRows(tx, branchId, named)) documentIds.add(row.id);
+    // Branch name reconciliation can move any waiting arrival after the requested write.
+    for (const row of await loadBranchTreeRows(tx, branchId)) {
+      lockedDocumentIds.add(row.id);
       sourceIds.add(row.contextSourceId);
       sourceIds.add(row.effective.contextSourceId);
     }
     // Every document with unsettled entries (an undo may have removed its row) and every folder
     // its moves hold: settlement names the one and prunes the other, so cleanup locks them.
-    const holds = await readBranchHolds(tx, branchId, named);
-    for (const id of holds.documentIds) others.add(id);
-    for (const id of holds.sourceIds) sourceIds.add(id);
+    const requestedHolds = await readBranchHolds(tx, branchId, named);
+    for (const id of requestedHolds.documentIds) others.add(id);
+    const lockHolds = await readBranchHolds(tx, branchId);
+    for (const id of lockHolds.documentIds) lockOthers.add(id);
+    for (const id of lockHolds.sourceIds) sourceIds.add(id);
   }
   for (const row of await loadDocumentIdentityRows(tx, [...others])) {
     documentIds.add(row.id);
     sourceIds.add(row.contextSourceId);
   }
+  for (const row of await loadDocumentIdentityRows(tx, [...lockOthers])) {
+    lockedDocumentIds.add(row.id);
+    sourceIds.add(row.contextSourceId);
+  }
   for (const id of await placementSources(db, request.placements ?? [])) sourceIds.add(id);
   for (const id of request.sourceIds ?? []) sourceIds.add(id);
-  return { documentIds: [...documentIds].sort(), sourceIds: [...sourceIds].sort() };
+  return {
+    documentIds: [...documentIds].sort(),
+    lockedDocumentIds: [...lockedDocumentIds].sort(),
+    sourceIds: [...sourceIds].sort(),
+  };
 }
 
 /**
@@ -92,14 +109,14 @@ export async function acquireTreeScope(
   const scope = await readTreeScope(db, request);
   await lockDocumentNamespaces(db, [], scope.sourceIds);
   const again = await readTreeScope(db, request);
-  const documents = new Set(scope.documentIds);
+  const documents = new Set(scope.lockedDocumentIds);
   const sources = new Set(scope.sourceIds);
   if (
-    !again.documentIds.every((id) => documents.has(id)) ||
+    !again.lockedDocumentIds.every((id) => documents.has(id)) ||
     !again.sourceIds.every((id) => sources.has(id))
   ) {
     throw new TreeScopeChangedError();
   }
-  await lockDocuments(db, scope.documentIds);
+  await lockDocuments(db, scope.lockedDocumentIds);
   return scope;
 }

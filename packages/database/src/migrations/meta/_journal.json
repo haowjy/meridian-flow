@@ -687,6 +687,20 @@
       "when": 1792868400001,
       "tag": "0103_branch_move_requests_online",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1792868400002,
+      "tag": "0104_branch_tree_standing_edit",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1792868400003,
+      "tag": "0105_branch_tree_standing_edit_online",
+      "breakpoints": true
     }
   ]
 }

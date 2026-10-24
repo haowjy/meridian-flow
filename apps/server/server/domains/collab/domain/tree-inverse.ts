@@ -87,6 +87,7 @@ export type PlannedTreeInverse = (PlannedLiveTransition | BranchTreeTransition) 
   op: TreeChangeOp;
   /** The placement requested by this application, before free-name allocation. */
   requestedAt: string | null;
+  requestedLeaf?: { name: string; extension: string } | null;
 };
 
 /**
@@ -340,7 +341,7 @@ export function planTreeInverse(
           ? latest.tree.shownAt
           : direction === "invert"
             ? entry.tree.shownAt
-            : (entry.tree.landedAt ?? entry.tree.shownAt),
+            : (entry.tree.requestedAt ?? entry.tree.landedAt ?? entry.tree.shownAt),
   };
   const { tree } = entry;
   // The state the destination holds, which `holdsAfter` matched: a removal still to be made
@@ -364,28 +365,37 @@ export function planTreeInverse(
                 : tree.after,
         }
       : null;
+  const after =
+    tree.op === "create"
+      ? direction === "invert"
+        ? {
+            ...branchFacts(states, tree.destination.branchId),
+            row: true,
+            created: true,
+            deleted: true,
+          }
+        : {
+            ...branchFacts(states, tree.destination.branchId),
+            row: true,
+            created: true,
+            deleted: false,
+          }
+      : direction === "invert"
+        ? tree.before
+        : tree.after;
   return {
     ...common,
     destination: tree.destination,
     before: branchFacts(states, tree.destination.branchId),
-    after:
-      tree.op === "create"
-        ? direction === "invert"
-          ? {
-              ...branchFacts(states, tree.destination.branchId),
-              row: true,
-              created: true,
-              deleted: true,
-            }
-          : {
-              ...branchFacts(states, tree.destination.branchId),
-              row: true,
-              created: true,
-              deleted: false,
-            }
-        : direction === "invert"
-          ? tree.before
-          : tree.after,
+    after,
+    requestedLeaf: after.moved
+      ? direction === "reapply"
+        ? (tree.requestedLeaf ?? {
+            name: after.moved.name,
+            extension: after.moved.extension,
+          })
+        : { name: after.moved.name, extension: after.moved.extension }
+      : null,
   };
 }
 
