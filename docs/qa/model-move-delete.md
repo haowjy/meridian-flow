@@ -74,10 +74,15 @@ the text it found or a block hash from that read.
    live now has sect-notes in the manuscript and not in Scratch. Move `manuscript://ch2` to
    `scratch://@w1/ch2`: the branch sees it in Scratch while live keeps ch2 in the manuscript;
    Discard removes the row and leaves live unchanged.
-9. **Undo after Apply.** Apply a drafted text replacement and a drafted move. Script `undo` for
+9. **Undo after Apply.** Apply a drafted text replacement, a drafted move and a drafted delete.
+   Script `undo` for
    the text edit: it reports `reverted`, restores the old text as a pending draft change, and
    leaves live unchanged. Script `undo` for the applied move: "Couldn't undo ch1-old"; the model
-   reads `cant_undo_applied`. Applied tree behavior is unchanged.
+   reads `cant_undo_applied`. Script `undo` for the applied delete: it restores the same document.
+   Redo deletes it again. Apply another drafted delete, then use the turn card's Undo; it restores
+   the document. Apply once more, stop the reply so rollback runs, and verify rollback restores it.
+   `write edits` lists each applied delete once. Moves and renames remain applied and cannot be
+   undone ([#1024](https://github.com/haowjy/meridian-flow/issues/1024)).
 
 With more than one file, the dock's Apply asks the same question in its footer
 ("Applying deletes ch2.") before it sends.
