@@ -290,6 +290,8 @@ export type KnownDocumentIdentity = {
 
 export type OpenProjectDocumentRequest = {
   documentId: string;
+  /** The caller has already resolved this identity as deleted. */
+  trashed?: true;
   known?: KnownDocumentIdentity;
   /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
   workId?: string;
@@ -382,6 +384,7 @@ export class ProjectDocumentNavigationAdapter {
     projectId: string,
     {
       documentId,
+      trashed,
       known,
       workId,
       disposition = "current",
@@ -407,6 +410,7 @@ export class ProjectDocumentNavigationAdapter {
     const isCurrent = () => canCommit() && navigationIsCurrent?.() !== false;
 
     try {
+      if (trashed) return this.openTrash(projectId, documentId, controller.signal, isCurrent);
       const projection = this.dependencies.resources?.readProjectionState(projectId);
       const record =
         projection?.kind === "ready"
