@@ -52,6 +52,11 @@ function sourcePath(input: NamespaceInput): string {
   return input.command === "move" ? input.from.path : input.path;
 }
 
+function committedLanding(landedAt: string | undefined, operation: string): string {
+  if (!landedAt) throw new Error(`A committed ${operation} did not report its destination`);
+  return landedAt;
+}
+
 /** Whether `uri` names a folder: its parent lists a folder by that name. */
 async function isFolder(port: ContextPort, uri: string): Promise<boolean> {
   const trimmed = uri.replace(/\/+$/, "");
@@ -134,18 +139,23 @@ async function commitLive(
   };
   let recorded: string | undefined;
   const record = async (landedAt?: string) => {
+    const common = {
+      documentId: source.documentId,
+      threadId: ctx.threadId as ThreadId,
+      ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
+      ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+      ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
+      change: { destination: "live" as const, before },
+      shownAt: source.uri,
+    };
     recorded = (
-      await history.recordAgentTreeChange({
-        documentId: source.documentId,
-        threadId: ctx.threadId as ThreadId,
-        ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
-        ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
-        ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
-        op: input.command,
-        change: { destination: "live", before },
-        shownAt: source.uri,
-        ...(landedAt ? { landedAt } : {}),
-      })
+      await (input.command === "move"
+        ? history.recordAgentTreeChange({
+            ...common,
+            op: "move",
+            landedAt: committedLanding(landedAt, "model move"),
+          })
+        : history.recordAgentTreeChange({ ...common, op: "delete" }))
     ).handle;
   };
   const refuse = (error: ContextError) =>
@@ -230,18 +240,23 @@ async function commitDrafted(
             wanted.value.authority,
           )
         : undefined;
+    const common = {
+      documentId: source.documentId,
+      threadId,
+      ...(turnId ? { turnId } : {}),
+      ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+      ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
+      change: { destination: "draft" as const, ...change },
+      shownAt: source.uri,
+    };
     recorded = (
-      await history.recordAgentTreeChange({
-        documentId: source.documentId,
-        threadId,
-        ...(turnId ? { turnId } : {}),
-        ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
-        ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
-        op: input.command,
-        change: { destination: "draft", ...change },
-        shownAt: source.uri,
-        ...(landedAt ? { landedAt } : {}),
-      })
+      await (input.command === "move"
+        ? history.recordAgentTreeChange({
+            ...common,
+            op: "move",
+            landedAt: committedLanding(landedAt, "drafted move"),
+          })
+        : history.recordAgentTreeChange({ ...common, op: "delete" }))
     ).handle;
   };
   const command = {

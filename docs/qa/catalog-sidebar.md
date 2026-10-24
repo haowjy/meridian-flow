@@ -55,7 +55,7 @@ A removed subtree has no surviving entries. The installed checkpoint contains
 only the complete resulting entries, never a persistent invalidated/hidden set.
 
 For deterministic repair-order evidence, run `pnpm test
-packages/resource-replica/src/catalog.test.ts` and `pnpm test:db
+packages/resource-replica/src/catalog-state.test.ts` and `pnpm test:db
 context-catalog.db.test.ts`; runtime timing need not produce split commits on
 every move.
 
@@ -227,10 +227,9 @@ Focused automated proofs: `indexeddb-resource-metadata.test.ts` (atomic folder s
    permit navigation but expose no create, rename, move or delete controls.
    These recovery rows do not establish server visibility or catalog completeness.
 
-Automated boundary evidence: `folder-placement-selectors.test.ts` exercises the
-real tree and tab selectors through pending, accepted and folder-only refreshed
-placements, absent-row/absent-catalog repair, and placement-relative deletion.
-`cross-owner-placement.test.ts` guards qualified alias binding. The folder
+Automated boundary evidence: `useRecentDocuments.test.tsx` covers pending
+folder and file deletes, refusal restoring them, and a delete with no loaded catalog.
+`folder-namespace.test.ts` guards qualified alias binding. The folder
 schedule suite retains its full schedule inventory and validates that any new
 non-catalog rows belong to a reachable journal repair chain.
 

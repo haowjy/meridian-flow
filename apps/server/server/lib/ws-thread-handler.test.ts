@@ -43,7 +43,6 @@ function createDelayedDeliveryHarness(
   const app = {
     eventSink: createNoopEventSink(),
     threadEventHub: hub,
-    hub,
     threadRuntime: {
       async requireOwnedThread() {},
       async liveState() {

@@ -48,6 +48,8 @@ export function createDrizzleTreeHistory(
     },
 
     async recordAgentTreeChange(input) {
+      if (input.op === "move" && !input.landedAt)
+        throw new Error("A recorded move requires its committed destination");
       const { change } = input;
       const materialized = input.materializes
         ? await tx()

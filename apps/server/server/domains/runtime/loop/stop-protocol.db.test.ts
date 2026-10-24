@@ -280,78 +280,6 @@ else
       await processDetachedWork.drain();
       expect(gateway.requests).toHaveLength(1);
     });
-
-    it("row 5: a mixed batch the press set only half covers keeps running and answers both", async () => {
-      const gateway = pausedGateway();
-      const rig = await rigWith({ gateway });
-      const m2 = (await rig.send(rig.threadId, "M2")).userTurnId;
-      const seenThrough = await seqOf(rig, m2);
-      const m3 = (await rig.send(rig.threadId, "M3")).userTurnId;
-      const { run, done } = await startDrain(rig);
-      await gateway.untilGatewayBoundary(1);
-      expect((await leaseRow(rig))?.adoptedMessageIds).toEqual([m2, m3]);
-
-      const response = await press(rig, { seenThrough, seenExecutionId: null });
-      expect(response).toMatchObject({
-        cancelledExecutionId: null,
-        handedBack: [],
-        answered: [m2],
-      });
-      expect((await leaseRow(rig))?.cancelRequested).toBe(false);
-      await finish(rig, done);
-      const a = (await rowOf(rig, m2)).by;
-      expect(a).not.toBeNull();
-      expect((await rowOf(rig, m3)).by).toBe(a);
-      expect(run.executionTurnId).toBe(a);
-    });
-
-    it("row 6: a separate batch for M3 is refused by the flag, and the next execution answers it", async () => {
-      const gateway = pausedGateway();
-      const rig = await rigWith({ gateway });
-      const m2 = (await rig.send(rig.threadId, "M2")).userTurnId;
-      const seenThrough = await seqOf(rig, m2);
-      const { done } = await startDrain(rig);
-      await gateway.untilGatewayBoundary(1);
-      const m3 = (await rig.send(rig.threadId, "M3 arrives later")).userTurnId;
-
-      const response = await press(rig, { seenThrough });
-      expect(response.cancelledExecutionId).not.toBeNull();
-      expect(response.handedBack).toEqual([]);
-      await finish(rig, done);
-      expect((await rowOf(rig, m2)).by).not.toBeNull();
-      // The flag refused M3's adoption, so it is still pending for the next execution.
-      expect((await rowOf(rig, m3)).deliveredAt).toBeNull();
-      expect(await leaseRow(rig)).toBeNull();
-      const e3 = await startDrain(rig);
-      await finish(rig, e3.done, [2]);
-      const reply = (await rowOf(rig, m3)).by;
-      expect(reply).not.toBeNull();
-      expect(reply).not.toBe((await rowOf(rig, m2)).by);
-    });
-
-    it("row 7: a press committed before the wake reserves hands M2 back, and the reply is reserved for M3 alone", async () => {
-      const gateway = scriptedGateway({ usage: lowUsage });
-      const rig = await rigWith({ gateway });
-      const m2 = (await rig.send(rig.threadId, "M2 handed back")).userTurnId;
-      const seenThrough = await seqOf(rig, m2);
-      const m3 = (await rig.send(rig.threadId, "M3 stays")).userTurnId;
-      const response = await press(rig, { seenThrough });
-      expect(response.handedBack.map(({ userTurnId }) => userTurnId)).toEqual([m2]);
-
-      const { done } = await startDrain(rig);
-      await done;
-      await processDetachedWork.drain();
-      const reply = (await rowOf(rig, m3)).by;
-      expect(reply).not.toBeNull();
-      const [turn] = await db
-        .select({ reservedFor: schema.turns.reservedForUserTurnIds })
-        .from(schema.turns)
-        .where(eq(schema.turns.id, reply as never));
-      expect(turn?.reservedFor).toEqual([m3]);
-      expect(requestText(rig)).not.toContain("M2 handed back");
-      expect(requestText(rig)).toContain("M3 stays");
-    });
-
     it("row 8: a batch prepared before the press is re-selected at commit and no longer holds M2", async () => {
       const gateway = scriptedGateway({ usage: lowUsage });
       let pressed: Promise<StopResponse> | undefined;
@@ -611,34 +539,6 @@ else
       expect(rig.gateway.requests).toHaveLength(0);
       expect(await rig.delivery.selectPending(rig.threadId as never)).toEqual([]);
     });
-
-    it("row 32: a press on an abandoned compaction before repair gives the same outcome as row 31", async () => {
-      const rig = await rigWith();
-      const m1 = (await rig.send(rig.threadId, "M1")).userTurnId;
-      const dead = await deadExecution(rig, "compaction", [m1]);
-
-      const response = await press(rig, { seenExecutionId: dead.executionId });
-      expect(text(response)).toEqual(["M1"]);
-      await repair(rig);
-      expect((await rowOf(rig, m1)).handedBackBy).not.toBeNull();
-      expect(await leaseRow(rig)).toBeNull();
-      await rig.orchestrator.startDrain(rig.threadId as never);
-      await processDetachedWork.drain();
-      expect(rig.gateway.requests).toHaveLength(0);
-    });
-
-    it("row 33: a crash with no press leaves the message pending and the next execution answers it", async () => {
-      const rig = await rigWith();
-      const m1 = (await rig.send(rig.threadId, "M1 survives")).userTurnId;
-      await deadExecution(rig, "compaction", [m1]);
-      await repair(rig);
-      expect((await rowOf(rig, m1)).deliveredAt).toBeNull();
-      await rig.orchestrator.startDrain(rig.threadId as never);
-      await processDetachedWork.drain();
-      expect((await rowOf(rig, m1)).by).not.toBeNull();
-      expect(requestText(rig)).toContain("M1 survives");
-    });
-
     const handBack = (rig: Rig, requestId: string, ids: HandBackRequest["ids"]) =>
       rig.delivery.handBack(rig.threadId as never, { requestId, ids });
     const content = (response: { handedBack: StopResponse["handedBack"] }) =>

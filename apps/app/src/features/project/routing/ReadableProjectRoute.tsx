@@ -394,8 +394,6 @@ function ReadableProjectDestination({
         owner: addressOwner,
         binding: addressBinding,
         workResolved: editorWork.status === "present",
-        catalogGeneration: addressCatalog?.normalized.generation,
-        catalogRevision: addressCatalog?.normalized.appliedRevision,
       },
       getProjectDocumentAddress,
     ),

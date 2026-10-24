@@ -1338,6 +1338,12 @@ describe("a name the writer typed with a prose suffix", () => {
     expect(intent?.attempts[0]?.request).toMatchObject({ body: { newName: "Chapter 14.md" } });
     // The optimistic location is already the name the server answers with.
     expect(projectResourceLocation("project", submitted)).toMatchObject({ name: "Chapter 14" });
+    const needsRepair = structuredClone(submitted);
+    needsRepair.intents = needsRepair.intents.map((item) => ({
+      ...item,
+      state: "needs-repair",
+    }));
+    expect(projectResourceNeedsRepair("project", needsRepair)?.name).toBe("Chapter 14.md");
     expect(
       recordNamespaceOutcome(
         submitted,
