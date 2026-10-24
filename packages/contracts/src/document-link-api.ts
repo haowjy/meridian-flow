@@ -50,7 +50,7 @@ export type DocumentLinkAnswer =
       settled?: true;
     }
   /** A ref the reader cannot reach: no uri, no title. `settled` as on `document`. */
-  | { state: "gone"; settled?: true }
+  | { state: "gone"; settled?: true; trashedDocumentId?: string }
   /** An unsettled ahead ref, or a no-ref address with nothing there: Create. */
   | { state: "missing"; uri: string }
   /** External, malformed, or contextual outside any Work. */
