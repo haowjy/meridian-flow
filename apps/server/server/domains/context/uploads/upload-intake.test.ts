@@ -1,4 +1,8 @@
-/** Conformance tests for the UploadIntake aggregate independent of adapters. */
+/** Conformance tests for the UploadIntake aggregate independent of adapters.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Server-side upload content taxonomy
+ */
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { createNoopEventSink } from "../../observability/index.js";

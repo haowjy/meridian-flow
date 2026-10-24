@@ -6,6 +6,9 @@
  * confirms only after the authoritative ledger shows an attributable delta
  * against the same-tab baseline, and otherwise reports an honest outcome. A
  * portal handoff is distinguished from a checkout cancellation.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - checkout return handoff and polling lifecycle
  */
 import type {
   BillingBalanceResponse,

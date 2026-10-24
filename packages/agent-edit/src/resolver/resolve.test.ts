@@ -1,3 +1,10 @@
+/**
+ * Tests resolve behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Mapped-edit lowering, selector scope, and receipt segmentation
+ */
+
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import {
   buildDocumentSchema,

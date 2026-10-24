@@ -1,3 +1,10 @@
+/**
+ * Tests contract boundaries behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Interrupt answers unwrap exactly one envelope
+ */
+
 import { describe, expect, it } from "vitest";
 import { parseTrailChangesV1, type TrailChangeV1 } from "./change-trails.js";
 import { normalizeInterruptAnswerValue } from "./components/index.js";

@@ -1,4 +1,8 @@
-/** Run admission is lazy; one owner settles cancellation, crashes, and cleanup. */
+/** Run admission is lazy; one owner settles cancellation, crashes, and cleanup.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Run lease, publication, and descendant-lifetime protocol
+ */
 
 import type { TurnId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";

@@ -1,4 +1,8 @@
-/** Response grouping across a write-mode divider. */
+/** Response grouping across a write-mode divider.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Write-mode dividers split response groups
+ */
 import type { Turn } from "@meridian/contracts/protocol";
 import { expect, it } from "vitest";
 import { buildTranscriptModel } from "./transcript-model";

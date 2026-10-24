@@ -1,4 +1,9 @@
-/** PostgreSQL coverage for the drizzle DeliveryStore and lease-backed RunClaim adapters. */
+/**
+ * PostgreSQL coverage for the drizzle DeliveryStore and lease-backed RunClaim adapters.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - durable delivery sweeps, token-fenced leases, physical claims, and usage-block lifecycle (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
+ */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";

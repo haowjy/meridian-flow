@@ -1,3 +1,10 @@
+/**
+ * Tests codec markdown behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Markdown empty-document and link grammar normalization
+ */
+
 import { describe, expect, it } from "vitest";
 import {
   blocksOf,

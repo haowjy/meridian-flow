@@ -1,3 +1,9 @@
+/**
+ * Resource namespace transport behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - namespace retry and outcome classification
+ */
 import "fake-indexeddb/auto";
 /** Typed final refusals and persisted receipts prove outcomes; network failures do not. */
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";

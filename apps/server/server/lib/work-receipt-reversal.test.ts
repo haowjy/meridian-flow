@@ -1,4 +1,8 @@
-/** Typed Work receipt reversal behavior and ordering. */
+/** Typed Work receipt reversal behavior and ordering.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Work reversal aggregation, transaction notices, and unchanged filtering
+ */
 
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { WorkReceipt } from "@meridian/contracts/works";

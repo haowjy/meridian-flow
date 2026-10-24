@@ -1,4 +1,8 @@
-/** A dock create's focus-on-open belongs to that open, not to the document that later reopens. */
+/** A dock create's focus-on-open belongs to that open, not to the document that later reopens.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - dock focus claim by tab instance
+ */
 import { type ResourcePlacement, reserveResourceDocument } from "@meridian/resource-replica";
 import { expect, it, vi } from "vitest";
 import type { ContextTab } from "@/client/stores";

@@ -554,15 +554,6 @@ it.each([
   ).toBe('<a data-meridian-link="original.md">x</a>');
 });
 
-it("qualifies plain-text Scratch and Uploads without confusing their owners", () => {
-  const state = EditorState.create({ schema, plugins: [clipboard("scratch://@c12/holder.md")] });
-  const scope = clipboardLinkScope(state);
-  expect(scope.spellLink({ ref: null, href: "scratch://note.md#gate" }).href).toBe(
-    "scratch://@c12/note.md#gate",
-  );
-  expect(scope.spellLink({ ref: null, href: "uploads://seal.md" }).href).toBe("uploads://seal.md");
-});
-
 it("copies contextual links through the plugin's plain-text scope by applicable owner", () => {
   const rows = [
     ["uploads://@c15/holder.md", "scratch://note.md#gate", "scratch://note.md#gate"],

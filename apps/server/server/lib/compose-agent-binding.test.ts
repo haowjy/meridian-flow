@@ -1,4 +1,8 @@
-/** App-owned transactions include both new threads and their exact Agent bindings. */
+/** App-owned transactions include both new threads and their exact Agent bindings.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - In-memory transaction visibility and rollback
+ */
 import { describe, expect, it } from "vitest";
 import { seedGeneralAgent } from "../domains/packages/index.js";
 import { createInMemoryAppServices } from "./compose.js";

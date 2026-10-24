@@ -1,3 +1,9 @@
+/**
+ * Link policy behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - internal-link normalization and labeling policy
+ */
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 

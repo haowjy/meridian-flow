@@ -1,4 +1,9 @@
-/** Postgres proof for the tree view: the live and branch relations, identity status and tree state. */
+/**
+ * Postgres proof for the tree view: the live and branch relations, identity status and tree state.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - relational live and branch tree projection with identity status (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ */
 import type { BranchId, DocumentId, FolderId } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";

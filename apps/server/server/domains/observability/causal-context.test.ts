@@ -1,4 +1,8 @@
-/** Consolidated test contracts; each block retains its original fixture scope. */
+/** Consolidated test contracts; each block retains its original fixture scope.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Bounded stdout queue and drop policy (kb/decisions/engineering/observability/observability-consumption-seam.md)
+ */
 
 import { describe as __mergedSuite, expect, it, vi } from "vitest";
 import { LocalEventSink } from "./adapters/local/local-event-sink.js";

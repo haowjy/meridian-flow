@@ -1,3 +1,9 @@
+/**
+ * Tests image context behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Bounded image retention and refill policy
+ */
 import type { Block, Thread } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";

@@ -1,4 +1,8 @@
-/** Context router metadata propagation at the adapter-to-public-port boundary. */
+/** Context router metadata propagation at the adapter-to-public-port boundary.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Stale-target translation and owner-list row shape
+ */
 import { describe, expect, it, vi } from "vitest";
 import { Err, Ok } from "../../../shared/result.js";
 import { testWorkHandle } from "../../../test-support/work-handle.js";

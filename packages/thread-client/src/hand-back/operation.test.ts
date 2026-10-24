@@ -1,4 +1,8 @@
-/** The hand-back operation over in-memory ports: the state transitions the app and ./mf share. */
+/** The hand-back operation over in-memory ports: the state transitions the app and ./mf share.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Shared hand-back lifecycle (kb/decisions/chat/composer/stop-hands-back-waiting-messages.md)
+ */
 import type { HandBackResult, PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { handBackCards } from "../cards/hand-back-cards";

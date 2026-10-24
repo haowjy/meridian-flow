@@ -1,9 +1,8 @@
 /**
- * A thread's list checks manifest membership inside the namespace-locked
- * command transaction; that check must never wait on a lock its own
- * transaction holds. Releasing a live room must never wait on a document lock
- * a caller holds. The model's create onto an existing document is covered by
- * context-thread-existing-document.db.test.ts.
+ * A thread's list checks manifest membership inside the namespace-locked command transaction; that check must never wait on a lock its own transaction holds.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - post-commit room release outside the namespace-lock transaction
  */
 
 import { afterAll, afterEach, beforeEach, describe, it } from "vitest";

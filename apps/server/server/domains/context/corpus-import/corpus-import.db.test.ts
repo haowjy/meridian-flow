@@ -1,4 +1,9 @@
-/** Corpus intake preserves writer titles and allocates against live KB names. */
+/**
+ * Corpus intake preserves writer titles and allocates against live KB names.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - fixed import destination and live-name allocation for preserved corpus titles
+ */
 
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { documents, projects, users, works } from "@meridian/database/schema";

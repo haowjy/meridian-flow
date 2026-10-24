@@ -1,4 +1,8 @@
-/** Installed-router ingress retains duplicates without leaking parser metadata into URLs. */
+/** Installed-router ingress retains duplicates without leaking parser metadata into URLs.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - TanStack JSON search metadata stripping
+ */
 import {
   createMemoryHistory,
   createRootRoute,
