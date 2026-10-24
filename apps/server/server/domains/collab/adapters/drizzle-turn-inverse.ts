@@ -631,7 +631,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const admitted = await (async () => {
         try {
           if (treeRuns.length)
-            return runTreeEditAdmission({
+            return await runTreeEditAdmission({
               db: input.db,
               fileAccess: input.fileAccess,
               grants,

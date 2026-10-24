@@ -220,11 +220,12 @@ otherwise, A's tabs are live tabs.
   deleted after that confirmation answers `needs_restore` the same way.
 - The app's surfaces for a Work with pending changes to a deleted document
   (seed with `./mf`: a draft-mode chat's reply edits the document, then delete
-  it from the tree). The delete dialog says "<title> will be deleted." and
-  names the Work: "The Work <name> has changes to it. Applying them brings it
-  back." (never a handle like `w3`). After the delete the chat dock row and the
-  Work page's Changes to review row keep the file with "Deleted from the
-  manuscript" on its status line; an open draft tab stays open. A dock with
+  it from the tree). There is no confirmation dialog. The live row leaves at
+  once, and its Files surface ends with `Deleted <title>` and Undo; no Work
+  explanation appears there. The chat dock row and the Work page's Changes to
+  review row keep the file with "Deleted from the manuscript" on its status
+  line; an open draft tab stays open. Choose Undo and confirm the exact document
+  returns, then delete it again for the Apply checks below. A dock with
   several files, or Work Files' "Apply all changes", asks first: "Applying
   brings back <title>, which was deleted from the manuscript." with Cancel and
   Apply, in the footer below the rows (as Discard all's question does): no row
