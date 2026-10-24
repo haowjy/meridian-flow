@@ -21,7 +21,11 @@ export function DraftCommandStatus({
   const state = useDraftCommandState(itemKey);
   const content = state.stalled ? (
     <>
-      <Trans>Apply is waiting for confirmation.</Trans>
+      {state.unapplying ? (
+        <Trans>Undo is waiting for confirmation.</Trans>
+      ) : (
+        <Trans>Apply is waiting for confirmation.</Trans>
+      )}
       <button
         type="button"
         className="text-button [@media(pointer:coarse)]:min-h-11"
@@ -30,6 +34,8 @@ export function DraftCommandStatus({
         <Trans>Retry</Trans>
       </button>
     </>
+  ) : state.unapplying ? (
+    <Trans>Undoing Apply</Trans>
   ) : state.applying ? (
     <Trans>Applying</Trans>
   ) : state.failure ? (

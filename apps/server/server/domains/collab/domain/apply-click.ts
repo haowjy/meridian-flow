@@ -17,6 +17,7 @@ import type {
   ApplyClickAnswer,
   ApplyClickRefusalReason,
   ApplyClickResult,
+  UnapplyClickAnswer,
 } from "@meridian/contracts/branches";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
@@ -30,26 +31,47 @@ import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 import type { TrailOwner } from "./trail-read-kernel.js";
 
 export type ApplyClickCommand = Parameters<CollabBranches["draftReview"]["applyClick"]>[0];
+type UnapplyClickCommand = Parameters<CollabBranches["draftReview"]["unapplyClick"]>[0];
+type StoredApplyEffect = {
+  ordinal: number;
+  groupId: string;
+  liveUpdateSeq: number | null;
+  baseBefore: unknown[];
+  baseAfter: unknown[];
+};
+type PreparedUnapply = {
+  base: DraftBase;
+  branchId: import("@meridian/contracts").BranchId;
+  effects: StoredApplyEffect[];
+};
 export type CompiledClick = {
   schema: import("prosemirror-model").Schema;
   optimistic: readonly PMNode[];
   patched: readonly PMNode[];
-  record: ApplyEntry;
+  groups: CompiledApplyGroup[];
   owners: readonly TrailOwner[];
   effects: { side: "base" | "draft"; index: number; owners: readonly TrailOwner[] }[];
 };
-export interface ApplyClickStore {
+type CompiledApplyGroup = {
+  groupId: string;
+  patched: readonly PMNode[];
+  record: ApplyEntry;
+  owners: readonly TrailOwner[];
+};
+export interface ApplyCommandStore {
   loadBase(command: ApplyClickCommand): Promise<DraftBase | null>;
   /**
    * Applies exactly the click's cuts in one transaction: the tree cut first (the move, delete
    * or creation its frozen revision holds), then the text cut at the result.
    */
-  execute(
+  apply(
     command: ApplyClickCommand,
     prepared:
       | { kind: "text"; base: DraftBase; click: CompiledClick; tree?: TreeCut }
       | { kind: "tree"; branchId: import("@meridian/contracts").BranchId; tree: TreeCut },
   ): Promise<ApplyClickAnswer>;
+  loadUnapply(command: UnapplyClickCommand): Promise<PreparedUnapply | null>;
+  unapply(command: UnapplyClickCommand, prepared: PreparedUnapply): Promise<UnapplyClickAnswer>;
   measured?(input: { commandId: string; compileClickMs: number }): void;
 }
 /** The branch row revision a click froze. */
@@ -119,49 +141,66 @@ export function compileClick(
       { ...provenance, snapshot },
       { record: true },
     );
-    const members = new Set(
-      request.groupIds.flatMap((id) => classifications.get(id)?.members ?? []),
-    );
-    const owners = new Map<string, TrailOwner>();
-    for (const index of members) {
-      const part = provenance.parts[index];
-      if (part?.threadId && part.turnId)
-        owners.set(`${part.threadId}:${part.turnId}`, {
-          threadId: part.threadId,
-          turnId: part.turnId,
-        });
-    }
-    const effects: CompiledClick["effects"] = [];
-    const selectedHunks = new Map<import("@meridian/agent-edit/diff").Hunk, TrailOwner[]>();
-    for (const group of projection.groups) {
-      if (!request.groupIds.includes(group.id)) continue;
-      const groupOwners = (classifications.get(group.id)?.members ?? []).flatMap((index) => {
+    const compileGroup = (groupId: string): CompiledApplyGroup => {
+      const group = projection.groups.find((candidate) => candidate.id === groupId);
+      if (!group) throw new ApplyClickRefused("malformed");
+      const owners = new Map<string, TrailOwner>();
+      for (const index of classifications.get(groupId)?.members ?? []) {
         const part = provenance.parts[index];
-        return part?.threadId && part.turnId
-          ? [{ threadId: part.threadId, turnId: part.turnId }]
-          : [];
-      });
-      for (const h of group.hunks) selectedHunks.set(projection.diff.hunks[h.index], groupOwners);
-    }
+        if (part?.threadId && part.turnId)
+          owners.set(`${part.threadId}:${part.turnId}`, {
+            threadId: part.threadId,
+            turnId: part.turnId,
+          });
+      }
+      const groupOwners = [...owners.values()];
+      const hunks = group.hunks.map((hunk) => projection.diff.hunks[hunk.index]);
+      const patches = composeHunks(schema, projection.diff, hunks, "apply");
+      return {
+        groupId,
+        patched: applySpanPatches(optimistic, patches, "base"),
+        record: {
+          ...applyRecordOf(classifications, [groupId]),
+          commandId: request.commandId,
+          groupId,
+        },
+        owners: groupOwners,
+      };
+    };
+    const groups = request.groupIds.map(compileGroup);
+    const owners = new Map(
+      groups.flatMap((group) =>
+        group.owners.map((owner) => [`${owner.threadId}:${owner.turnId}`, owner] as const),
+      ),
+    );
+    const selected = projection.groups.filter((group) => request.groupIds.includes(group.id));
+    const ownerByHunk = new Map(
+      selected.flatMap((group) => {
+        const compiled = groups.find((candidate) => candidate.groupId === group.id);
+        return group.hunks.map((hunk) => [hunk.index, compiled?.owners ?? []] as const);
+      }),
+    );
+    const effects: CompiledClick["effects"] = [];
     const selectedPatches = composeHunks(
       schema,
       projection.diff,
-      selectedHunks.keys(),
+      selected.flatMap((group) => group.hunks.map((hunk) => projection.diff.hunks[hunk.index])),
       "apply",
-      (h, blocks) => {
-        const owners = selectedHunks.get(h) ?? [];
-        for (const index of blocks) effects.push({ side: "draft", index, owners });
+      (hunk, blocks) => {
+        const hunkIndex = projection.diff.hunks.indexOf(hunk);
+        const effectOwners = ownerByHunk.get(hunkIndex) ?? [];
+        for (const index of blocks) effects.push({ side: "draft", index, owners: effectOwners });
         const baseSide = projection.diff.base;
         const deleted = new Set<number>();
-        for (let i = h.from; i < h.to; i++) {
-          const index = baseSide.blockOf[i];
+        for (let offset = hunk.from; offset < hunk.to; offset++) {
+          const index = baseSide.blockOf[offset];
           if (
             !blocks.length ||
-            (h.from <= baseSide.starts[index] && h.to >= baseSide.starts[index + 1])
+            (hunk.from <= baseSide.starts[index] && hunk.to >= baseSide.starts[index + 1])
           )
             deleted.add(index);
         }
-        for (const index of deleted) effects.push({ side: "base", index, owners });
+        for (const index of deleted) effects.push({ side: "base", index, owners: effectOwners });
       },
     );
     return {
@@ -169,7 +208,7 @@ export function compileClick(
       optimistic,
       effects,
       patched: applySpanPatches(optimistic, selectedPatches, "base"),
-      record: { ...applyRecordOf(classifications, request.groupIds), commandId: request.commandId },
+      groups,
       owners: [...owners.values()],
     };
   } finally {
@@ -181,9 +220,9 @@ export function createApplyClickService(input: {
   identity: BranchReviewIdentity;
   commands: BranchCommands;
   evidence: DraftDispositionStore;
-  store: ApplyClickStore;
+  store: ApplyCommandStore;
 }) {
-  return async (command: ApplyClickCommand): Promise<ApplyClickAnswer> => {
+  const apply = async (command: ApplyClickCommand): Promise<ApplyClickAnswer> => {
     const commandId = command.envelope.commandId;
     const lookup = async (): Promise<ApplyClickAnswer | null> => {
       const found = await input.commands.lookup(command.envelope);
@@ -208,7 +247,7 @@ export function createApplyClickService(input: {
         if (!tree) throw new ApplyClickRefused("malformed");
         const resolved = await input.identity.resolveReviewItemByDocument(command);
         if (!resolved) throw new ApplyClickRefused("not_found");
-        return await input.store.execute(command, {
+        return await input.store.apply(command, {
           kind: "tree",
           branchId: resolved.branchId,
           tree,
@@ -242,7 +281,7 @@ export function createApplyClickService(input: {
       } finally {
         input.store.measured?.({ commandId, compileClickMs: performance.now() - start });
       }
-      const result = await input.store.execute(command, {
+      const result = await input.store.apply(command, {
         kind: "text",
         base,
         click,
@@ -259,4 +298,30 @@ export function createApplyClickService(input: {
       throw cause;
     }
   };
+  const unapply = async (command: UnapplyClickCommand): Promise<UnapplyClickAnswer> => {
+    const commandId = command.envelope.commandId;
+    const lookup = async (): Promise<UnapplyClickAnswer | null> => {
+      const found = await input.commands.lookup(command.envelope);
+      if (found.kind === "none") return null;
+      if (found.kind === "done")
+        return found.commandKind === "unapply_click"
+          ? (found.result as import("@meridian/contracts/branches").UnapplyClickResult)
+          : { status: "conflict", commandId };
+      return { status: found.kind, commandId };
+    };
+    const first = await lookup();
+    if (first) return first;
+    try {
+      const prepared = await input.store.loadUnapply(command);
+      if (!prepared) return (await lookup()) ?? { status: "refused", commandId };
+      return await input.store.unapply(command, prepared);
+    } catch (cause) {
+      if (cause instanceof BranchCommandExistsError)
+        return (await lookup()) ?? { status: "pending", commandId };
+      if (cause instanceof ApplyClickRefused)
+        return (await lookup()) ?? { status: "refused", commandId };
+      throw cause;
+    }
+  };
+  return { apply, unapply };
 }

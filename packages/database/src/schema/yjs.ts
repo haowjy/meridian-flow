@@ -521,12 +521,41 @@ export const branchCommands = pgTable(
     index("branch_commands_work").on(table.workId),
     check(
       "branch_commands_kind_valid",
-      sql`${table.kind} IN ('apply_click', 'apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_branch')`,
+      sql`${table.kind} IN ('apply_click', 'unapply_click', 'apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_branch')`,
     ),
     check("branch_commands_state_valid", sql`${table.state} IN ('pending', 'done')`),
     check(
       "branch_commands_done_shape",
       sql`(${table.state} = 'done') = (${table.completedAt} IS NOT NULL)`,
     ),
+  ],
+);
+
+/** The actual text effect of each frozen Apply group, independent of compactable journals. */
+export const applyCommandEffects = pgTable(
+  "apply_command_effects",
+  {
+    commandId: uuid("command_id")
+      .$type<BranchCommandId>()
+      .notNull()
+      .references(() => branchCommands.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    groupId: text("group_id").notNull(),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    draftId: text("draft_id").notNull(),
+    /** Null means live already held the group's text: Un-Apply removes no live or base text. */
+    liveUpdateSeq: bigint("live_update_seq", { mode: "number" }),
+    /** The command's base before its first group; stored once rather than once per group. */
+    baseStart: jsonb("base_start").$type<unknown[]>(),
+    /** This group's bounded change to the preceding committed base. */
+    baseDelta: jsonb("base_delta").$type<unknown[]>().notNull(),
+    unappliedBy: uuid("unapplied_by").$type<BranchCommandId>(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.commandId, table.ordinal] }),
+    uniqueIndex("apply_command_effects_group").on(table.commandId, table.groupId),
   ],
 );

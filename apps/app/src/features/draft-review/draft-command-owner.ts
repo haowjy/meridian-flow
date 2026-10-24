@@ -18,13 +18,13 @@ import type {
   ThreadDraftListItem,
 } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
-import type { Node as PMNode } from "@tiptap/pm/model";
 import * as Y from "yjs";
 import {
   applyDraftClick,
   discardCreatedDraft,
   discardWorkDrafts,
   observeDraftClick,
+  unapplyDraftClick,
 } from "@/client/api/branches-api";
 import type { DocumentSession } from "@/core/editor/document-session";
 import {
@@ -32,6 +32,7 @@ import {
   type DraftRoomRegistry,
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
+import type { EditorHistoryHandle } from "@/core/editor/editor-history";
 import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./apply-click-queue";
 import { startDraftDiscardSession } from "./draft-discard-session";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
@@ -41,6 +42,7 @@ import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
 
 export type DraftCommandState = {
   applying: boolean;
+  unapplying: boolean;
   stalled: boolean;
   pending: boolean;
   hidden: boolean;
@@ -54,6 +56,7 @@ export type DraftCommandState = {
 };
 const EMPTY: DraftCommandState = {
   applying: false,
+  unapplying: false,
   stalled: false,
   pending: false,
   hidden: false,
@@ -262,6 +265,7 @@ export class DraftCommandOwner {
       queue: new ApplyClickQueue({
         send: (body) => applyDraftClick(ref, body),
         lookup: (body) => observeDraftClick(ref, body),
+        unapply: (body) => unapplyDraftClick(ref, body),
         changed: () => {
           for (const entry of item.rooms) {
             entry.binding?.runtime.invalidateBase();
@@ -278,10 +282,16 @@ export class DraftCommandOwner {
 
   /** The item's schedule, on the generation its state follows: the one publication path. */
   private publishQueue({ ref, queue }: Item) {
+    const unapplying = queue.unapplies.length > 0;
+    const stalled = queue.stalled;
     this.setState(ref.itemKey, {
-      pending: queue.clicks.length > 0,
+      pending: queue.pending,
       applying: queue.applying,
-      stalled: queue.clicks[0]?.stalled ?? false,
+      unapplying,
+      stalled,
+      ...(stalled && unapplying
+        ? { failure: { code: "unapply-refused" as const, serverCode: "unknown" } }
+        : {}),
     });
   }
 
@@ -292,7 +302,9 @@ export class DraftCommandOwner {
 
   /** A draft with clicks outstanding keeps its room read, surface or not, to observe their record. */
   private holdRoom(entry: Entry) {
-    const pending = this.textClicks(entry).length > 0;
+    const pending =
+      this.textClicks(entry).length > 0 ||
+      entry.item.queue.unapplies.some((command) => command.draftId === entry.draftId);
     if (pending && !entry.lease) {
       const lease = readDraftRoom(this.registry, entry.roomKey);
       entry.lease = lease;
@@ -330,19 +342,22 @@ export class DraftCommandOwner {
     };
     entry.binding = binding;
     binding.runtime.setBaseProvider((_room, schema) => {
-      const recorded = new Set(readApplyRecord(session.document).map((row) => row.commandId));
-      let base: readonly PMNode[] = readBase(session.document, schema);
-      for (const click of this.textClicks(entry))
-        if (!recorded.has(click.body.commandId))
-          base = applyBase(schema, base, click.optimistic, click.patched);
-      return base;
+      return entry.item.queue.project(
+        entry.draftId,
+        readBase(session.document, schema),
+        (base, before, after) => applyBase(schema, base, before, after),
+      );
     });
     const record = session.document.getArray(APPLY_RECORD_ROOT);
     const observe = () => {
       binding.runtime.invalidateBase();
+      const rows = readApplyRecord(session.document);
+      this.publishQueue(entry.item);
       entry.item.queue.observe(
         entry.draftId,
-        readApplyRecord(session.document).flatMap((row) => (row.commandId ? [row.commandId] : [])),
+        rows.flatMap((row) =>
+          row.commandId ? [{ commandId: row.commandId, groupId: row.groupId }] : [],
+        ),
       );
     };
     record.observeDeep(observe);
@@ -516,7 +531,12 @@ export class DraftCommandOwner {
   }
 
   private releaseIdle(entry: Entry) {
-    if (entry.users || this.textClicks(entry).length || this.entries.get(entry.draftId) !== entry)
+    if (
+      entry.users ||
+      this.textClicks(entry).length ||
+      entry.item.queue.unapplies.some((command) => command.draftId === entry.draftId) ||
+      this.entries.get(entry.draftId) !== entry
+    )
       return;
     this.detach(entry);
     this.entries.delete(entry.draftId);
@@ -526,8 +546,7 @@ export class DraftCommandOwner {
   }
 
   private releaseItem(item: Item) {
-    if (item.rooms.size || item.queue.clicks.length || this.items.get(item.ref.itemKey) !== item)
-      return;
+    if (item.rooms.size || item.queue.pending || this.items.get(item.ref.itemKey) !== item) return;
     this.items.delete(item.ref.itemKey);
   }
 
@@ -598,6 +617,7 @@ export class DraftCommandOwner {
     target: ChangeTarget,
     restore = false,
     requested?: { revision: string | null },
+    history?: EditorHistoryHandle | null,
   ): CapturedApply | null {
     if (!this.active || this.state(ref.itemKey).discarding) return null;
     // A tree cut already on its way is not sent twice; the same revision would answer `changed`.
@@ -614,7 +634,7 @@ export class DraftCommandOwner {
           entry?.binding?.runtime.state().ready && entry.binding.runtime.projectNow()?.groups.length
         ));
     if (textless) return tree ? this.captureTree(ref, tree, restore) : null;
-    return this.captureText(ref, target, restore, tree);
+    return this.captureText(ref, target, restore, tree, history);
   }
 
   private blockedApply() {
@@ -678,6 +698,7 @@ export class DraftCommandOwner {
     target: TextTarget,
     restore: boolean,
     tree: { revision: string | null } | undefined,
+    history?: EditorHistoryHandle | null,
   ): CapturedApply | null {
     const entry = this.byItem.get(ref.itemKey);
     const binding = entry?.binding;
@@ -721,12 +742,30 @@ export class DraftCommandOwner {
     const acknowledged = binding.session.whenCurrentChangesAcknowledged();
     const barrier = sendBarrier();
     this.setState(ref.itemKey, { failure: null });
-    const result = entry.item.queue.enqueue(
-      { body, optimistic, patched, acknowledged },
-      barrier.promise,
-    );
+    const frozen = { body, optimistic, patched, acknowledged } satisfies FrozenApply;
+    const scheduled = history
+      ? entry.item.queue.enqueueHistory({
+          frozen,
+          release: barrier.promise,
+          patchFor: (groupIds) =>
+            applySpanPatches(optimistic, composeGroups(schema, frame, groupIds, "apply"), "base"),
+          intent: () => this.setState(entry.ref.itemKey, { failure: null }),
+          applyRefused: (answer) =>
+            this.setState(entry.ref.itemKey, {
+              failure: {
+                code: "apply-refused",
+                serverCode: answer.status === "applied" ? "text_not_applied" : refusalCode(answer),
+              },
+            }),
+          unapplyRefused: (answer) =>
+            this.setState(entry.ref.itemKey, {
+              failure: { code: "unapply-refused", serverCode: answer.status },
+            }),
+        })
+      : { outcome: entry.item.queue.enqueue(frozen, barrier.promise), handle: null };
+    if (scheduled.handle) history?.captureApply(scheduled.handle);
     binding.runtime.projectNow();
-    const outcome = result.then((answer) => this.settled(ref, entry.draftId, answer));
+    const outcome = scheduled.outcome.then((answer) => this.settled(ref, entry.draftId, answer));
     let released = false;
     return {
       release: ({ omitTree = false, cancel = false } = {}) => {
@@ -783,6 +822,7 @@ export class DraftCommandOwner {
   }
 
   retry(itemKey: string) {
+    if (this.items.get(itemKey)?.queue.stalled) this.setState(itemKey, { failure: null });
     this.items.get(itemKey)?.queue.retry();
   }
   /** Server-only lifecycle commands share this account owner, never the Apply-all route. */

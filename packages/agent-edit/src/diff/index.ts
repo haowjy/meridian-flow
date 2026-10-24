@@ -6,6 +6,7 @@ export {
   type ApplyEntry,
   appendApplyRecord,
   readApplyRecord,
+  removeApplyRecords,
 } from "./apply-record.js";
 export {
   type AttributionPart,

@@ -304,8 +304,8 @@ export function createEditorExtensions({
       wikilinkPaste,
     }),
     ...collaboration,
-    // Undo exists only alongside collaboration's UndoManager, so its owned key
-    // bindings mount with it rather than in the standalone set.
+    // Mounted history depends on collaboration's UndoManager, so its key bindings
+    // mount with collaboration rather than in the standalone set.
     UndoRedoKeymapExtension,
     // A document with no shared room has no "uploading elsewhere", so the
     // ephemeral half of image ingress mounts here rather than beside the door.

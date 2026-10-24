@@ -25,6 +25,7 @@ import {
   type DraftMetadataResponse,
   type ThreadDraftListItem,
   type ThreadDraftListResponse,
+  type UnapplyClickAnswer,
 } from "@meridian/contracts/branches";
 import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { draftRoomName, meridianErrorFromSystem } from "@meridian/contracts/protocol";
@@ -131,6 +132,10 @@ const ApplyClickBody = z
     tree: z.strictObject({ revision: z.string().regex(/^\d+$/).nullable() }).optional(),
   })
   .refine((body) => Boolean(body.snapshot) === Boolean(body.draftId));
+const UnapplyClickBody = z.strictObject({
+  commandId: BranchCommandIdSchema,
+  applyCommandId: BranchCommandIdSchema,
+});
 const DiscardBody = z.strictObject(Base);
 
 function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, what: string): z.infer<S> {
@@ -226,7 +231,7 @@ async function recorded(
 export async function handleBranchCommandObservation(
   deps: BranchRouteServices,
   input: CommandScope & { commandId: string },
-): Promise<ApplyClickObservation | BranchCommandObservation> {
+): Promise<ApplyClickObservation | UnapplyClickAnswer | BranchCommandObservation> {
   await requireBranchWorkIdentity(deps, input);
   const id = BranchCommandIdSchema.safeParse(input.commandId);
   if (!id.success) throw createError({ statusCode: 404, message: BRANCH_COMMAND_UNKNOWN_CODE });
@@ -242,9 +247,9 @@ export async function handleBranchCommandObservation(
     case "pending":
       return { status: "pending", commandId: id.data as BranchCommandId };
     case "done":
-      return found.commandKind === "apply_click"
-        ? (found.result as ApplyClickAnswer)
-        : { state: "done", result: found.result as BranchCommandResult };
+      if (found.commandKind === "apply_click") return found.result as ApplyClickAnswer;
+      if (found.commandKind === "unapply_click") return found.result as UnapplyClickAnswer;
+      return { state: "done", result: found.result as BranchCommandResult };
   }
 }
 
@@ -635,6 +640,64 @@ export async function handleApplyClickRequest(
     }),
   );
   return result.ok ? result.value : denied(result.refusal.refused[0]);
+}
+
+/** Reverse only the text effect owned by one Apply command. */
+export async function handleUnapplyClickRequest(
+  deps: BranchRouteServices,
+  input: CommandScope & { documentId: DocumentId; request: unknown },
+): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer> {
+  await requireBranchWorkIdentity(deps, input);
+  const parsed = UnapplyClickBody.safeParse(input.request);
+  if (!parsed.success) throw createError({ statusCode: 400, message: "Invalid Un-Apply request" });
+  const request = parsed.data as import("@meridian/contracts/branches").UnapplyClick;
+  const envelope: BranchCommandEnvelope = {
+    commandId: request.commandId,
+    accountId: input.userId,
+    workId: input.workId,
+    kind: "unapply_click",
+    branchId: null,
+    digest: commandDigest({
+      accountId: input.userId,
+      projectId: input.projectId,
+      workId: input.workId,
+      kind: "unapply_click",
+      selectors: { documentId: input.documentId },
+      body: request,
+    }),
+  };
+  const lookup = async () => {
+    const found = await deps.documentSync.draftReview.lookupCommand(envelope);
+    if (found.kind === "none") return null;
+    if (found.kind === "done")
+      return found.commandKind === "unapply_click"
+        ? (found.result as import("@meridian/contracts/branches").UnapplyClickResult)
+        : ({ status: "conflict", commandId: request.commandId } as const);
+    return {
+      status: found.kind === "conflict" ? ("conflict" as const) : ("pending" as const),
+      commandId: request.commandId,
+    };
+  };
+  const recorded = await lookup();
+  if (recorded) return recorded;
+  const grant = await deps.fileAccess.authorize(
+    { accountId: input.userId },
+    documentTarget(input.documentId),
+    "edit",
+  );
+  if (isFileAccessDenied(grant))
+    return (await lookup()) ?? { status: "refused", commandId: request.commandId };
+  const result = await runWithEditGrants(deps.fileAccess, [grant], () =>
+    deps.documentSync.draftReview.unapplyClick({
+      workId: input.workId,
+      documentId: input.documentId,
+      request,
+      envelope,
+    }),
+  );
+  return result.ok
+    ? result.value
+    : ((await lookup()) ?? { status: "refused", commandId: request.commandId });
 }
 
 /** An item the branch no longer holds, as a 200 body status. */

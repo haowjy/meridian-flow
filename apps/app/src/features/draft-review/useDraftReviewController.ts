@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { type Dispatch, useCallback, useMemo, useReducer, useRef } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { editorHistory } from "@/core/editor/editor-history";
 import {
   type DraftReviewSelection,
   draftReviewReducer,
@@ -122,9 +123,20 @@ export function useDraftReviewController({
   const workId = work?.id ?? "";
   const queryClient = useQueryClient();
   const { state, dispatch } = stateOwner;
-  const commands = useWorkBranchCommands({ projectId, work, threadId, surface: "editor" });
   const stateRef = useRef(state);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
+  const commands = useWorkBranchCommands({
+    projectId,
+    work,
+    threadId,
+    surface: "editor",
+    editorHistory: (draft) => {
+      const runtime = inlineRuntimeRef.current;
+      return runtime?.documentId === draft.documentId && runtime.itemKey === draft.itemKey
+        ? editorHistory(runtime.editor)
+        : null;
+    },
+  });
   stateRef.current = state;
 
   const inlineReview = inlineReviewFromState(state);

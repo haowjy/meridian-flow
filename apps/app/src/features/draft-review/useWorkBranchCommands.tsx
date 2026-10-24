@@ -13,6 +13,7 @@ import {
 } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { documentBasename } from "@/client/query/work-branch-files";
+import type { EditorHistoryHandle } from "@/core/editor/editor-history";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import type { CapturedApply, CommandOutcome, DiscardNotice } from "./draft-command-owner";
@@ -40,11 +41,13 @@ export function useWorkBranchCommands({
   work,
   threadId = null,
   surface = "dock",
+  editorHistory,
 }: {
   projectId: string;
   work: Work | null;
   threadId?: string | null;
   surface?: "editor" | "dock";
+  editorHistory?: (draft: DraftReviewSelection) => EditorHistoryHandle | null;
 }) {
   const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
@@ -151,6 +154,7 @@ export function useWorkBranchCommands({
         target,
         bringBack,
         (tree && item?.tree) || undefined,
+        editorHistory?.(draft),
       );
       if (!captured) return null;
       const present = (outcome: CommandOutcome) => {
@@ -355,7 +359,7 @@ export function useWorkBranchCommands({
         });
       },
     };
-  }, [owner, locked, projectId, workId, threadId, surface, queryClient, notice]);
+  }, [owner, locked, projectId, workId, threadId, surface, editorHistory, queryClient, notice]);
 }
 
 const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);
