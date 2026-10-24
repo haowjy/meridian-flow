@@ -1,4 +1,9 @@
-/** PostgreSQL proof for project-final lookup authority and watermark atomicity. */
+/**
+ * PostgreSQL proof for project-final lookup authority and watermark atomicity.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current project context availability persistence protocol
+ */
 import { folderDocumentName } from "@meridian/contracts/protocol";
 import { createDb, type Database } from "@meridian/database";
 import {
