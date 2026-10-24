@@ -31,8 +31,8 @@ import {
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { threadContainerTarget } from "../file-targets.js";
 import { documentGrant, fileAccessDeniedError, firstRefusal } from "./file-access.js";
-import { removedPathError } from "./inverse-address.js";
 import { namespaceContextRefusal, namespaceRefusal } from "./namespace-refusal.js";
+import { removedPathError } from "./removed-path.js";
 import {
   canonicalPath,
   isToolError,
