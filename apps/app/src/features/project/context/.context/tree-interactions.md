@@ -95,7 +95,7 @@ explicitly reveals every target ancestor in the stored expansion model before
 the request starts. Clicking any scheme or folder disclosure while the row is
 open cancels creation and then performs the requested toggle; disclosure clicks
 must never feel inert. Sibling-collision
-validation uses the target folder's children. Editor trees list only project schemes (Manuscript, KB, User, Unfiled), and creation there is never Work-scoped: Scratch notes are made only from a Work's Files tab (New note) and by the AI, and Uploads are intake only (`schemeAllowsCreation`). Starting a creation anywhere
+validation uses the target folder's children. The rail's Files tree lists the project's own areas (Manuscript, KB, Unfiled) and User sits docked below it; creation in either is never Work-scoped: Scratch notes are made only from a Work's Files tab (New note) and by the AI, and Uploads are intake only (`schemeAllowsCreation`). Starting a creation anywhere
 replaces a pending one; Escape/blur semantics are the shared
 `useInlineEdit` contract.
 
@@ -184,7 +184,8 @@ replica's placement graph (`moveRefusal` in `entry-drag/move-plan.ts`), so the
 picker and a hover agree even while a peer moves rows. `moveRows`
 (`entry-drag/execute-move.ts`) places, remembers each operation for its row's
 link-update note and returns the move result both report through the list's
-notice. Destination resolution and arrival naming live in `move-entry.ts`.
+notice. Destination resolution lives in `move-entry.ts`; arrival naming is
+`arrivals` in `execute-move.ts`, over `context-entry-name.ts`.
 
 The chat's Scratch renders one owner-bound `TreeEnvProvider` and `TreeChildren`
 per real catalog. Earlier notes is a navigation disclosure outside the second
@@ -235,7 +236,7 @@ planning in `move-plan.ts`) answers every hovered target: accept ("Move to Act 2
 itself", a folder over its own subtree), or nothing (the row is already there, the target is a
 navigation-only folder, or the drag comes from another system, which Move or
 Copy will handle). A taken name never refuses: each row arrives at the next free
-name (`chapter-2 (2)`), predicted by `arrivalNames` against the destination's
+name (`chapter-2 (2)`), predicted (`arrivals` in `execute-move.ts`) against the destination's
 rows plus the rows placed before it in the same drop; the server decides the
 final name. The hover shows that prediction before the drop: an accept whose
 rows would arrive renamed carries a warning, drawn as a second line under the
@@ -245,8 +246,9 @@ Letting go accepts it; Escape or another target declines it. A drop moves every 
 own `reveal`, the same one the spring calls) and shows "Moved chapter-3 to Act
 2." (or "Moved chapter-3 to Act 2 as chapter-3 (2).") with Undo on the surface
 that took the drop (`MoveNotice` in that surface's `MoveNoticeHost`: in the
-rail between the Files tree and Scratch, or under Work Files, which stays
-visible with the sidebar collapsed). The notice is part of the surface's
+rail between the Files tree and User, under Work Files (visible with the
+sidebar collapsed), at the end of the chat Files menu, and on phone in the
+navigation drawer and at the end of the folder browser). The notice is part of the surface's
 layout: it takes height from the tree's scroll area and never covers a
 control. It stays until the next move, Dismiss, or the project changing, so
 Undo is never a race. A host keeps only its latest result, as data. Undo shows

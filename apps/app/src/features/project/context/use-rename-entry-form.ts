@@ -22,6 +22,7 @@ import type { ContextEntrySibling } from "./context-entry-name";
 import {
   allocateContextEntryArrivalName,
   entryNameStemEnd,
+  nameOccupancy,
   validateContextEntryName,
 } from "./context-entry-name";
 import { destinationOwner } from "./identity-location";
@@ -82,7 +83,12 @@ export function useRenameEntryForm({
       if (!authority) throw unavailable();
       const destination = {
         parent: await resources.parentForEntry(projectId, entryId),
-        name: allocateContextEntryArrivalName(name, filteredSiblings, kind, currentName),
+        name: allocateContextEntryArrivalName(
+          name,
+          nameOccupancy(filteredSiblings),
+          kind,
+          currentName,
+        ),
       };
       if (kind === "folder") {
         return resources

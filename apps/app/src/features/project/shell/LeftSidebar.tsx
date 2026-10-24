@@ -17,7 +17,6 @@ import { ContextTreePanel, UserRailSection } from "../context/ContextTreePanel";
 import { serverTabFromFile } from "../context/context-tab-from-file";
 import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import { DragHint } from "../context/tree-drop/drag-hint";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
 import { useDockPlacement } from "../dock/use-dock-placement";
@@ -171,7 +170,6 @@ function LeftSidebarRail({
           />
         ) : null}
       </WorkspaceNavBody>
-      <DragHint />
     </nav>
   );
 }

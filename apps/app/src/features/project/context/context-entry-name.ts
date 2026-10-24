@@ -6,9 +6,10 @@ import {
 } from "@meridian/contracts/context-entry-validation";
 import {
   filenameCandidates,
+  type NamespaceNameClaim,
+  namespaceName,
   parseDocumentFilename,
   renderFilename,
-  sameNamespaceName,
   storedFilename,
 } from "@meridian/contracts/protocol";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -130,10 +131,37 @@ export function moveEntryName(currentName: string, repair?: { name: string }): s
   return repair?.name ?? currentName;
 }
 
+/**
+ * The names a folder's rows hold, indexed once so each candidate checks in
+ * constant time. A claim collides with the same kind by its literal name and
+ * with the other kind by its alias (`sameNamespaceName`).
+ */
+export type NameOccupancy = {
+  taken: (candidate: NamespaceNameClaim) => boolean;
+  claim: (candidate: NamespaceNameClaim) => void;
+};
+
+export function nameOccupancy(siblings: readonly ContextEntrySibling[]): NameOccupancy {
+  const literal = { document: new Set<string>(), folder: new Set<string>() };
+  const alias = { document: new Set<string>(), folder: new Set<string>() };
+  const claim = (candidate: NamespaceNameClaim) => {
+    literal[candidate.kind].add(candidate.filename);
+    alias[candidate.kind].add(namespaceName(candidate));
+  };
+  for (const sibling of siblings)
+    claim({ kind: sibling.kind === "dir" ? "folder" : "document", filename: sibling.name });
+  return {
+    taken: (candidate) =>
+      literal[candidate.kind].has(candidate.filename) ||
+      alias[candidate.kind === "folder" ? "document" : "folder"].has(namespaceName(candidate)),
+    claim,
+  };
+}
+
 /** Predict the first free name for a rename or move; the server remains authoritative. */
 export function allocateContextEntryArrivalName(
   typed: string,
-  siblings: readonly ContextEntrySibling[],
+  occupied: NameOccupancy,
   kind: ContextCreateKind,
   current?: string,
 ): string {
@@ -146,14 +174,7 @@ export function allocateContextEntryArrivalName(
         extension: stored.filename.extension,
       } as const)
     : ({ kind: "folder", name: typed.trim() } as const);
-  for (const candidate of filenameCandidates(desired)) {
-    const taken = siblings.some((sibling) =>
-      sameNamespaceName(candidate, {
-        kind: sibling.kind === "dir" ? "folder" : "document",
-        filename: sibling.name,
-      }),
-    );
-    if (!taken) return candidate.filename;
-  }
+  for (const candidate of filenameCandidates(desired))
+    if (!occupied.taken(candidate)) return candidate.filename;
   throw new Error("unreachable");
 }

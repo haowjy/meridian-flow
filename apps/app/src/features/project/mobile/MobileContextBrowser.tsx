@@ -10,6 +10,8 @@ import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/Cont
 import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
+import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
+import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useTreeExpansion } from "../context/use-tree-expansion";
@@ -36,11 +38,9 @@ export type MobileContextBrowserProps = Pick<
 export function MobileContextBrowser(props: MobileContextBrowserProps) {
   if (props.activeContextScheme)
     return (
-      <MobileFolderTree
-        key={`${props.projectId}:${props.activeContextScheme}:${props.editorWorkId}`}
-        {...props}
-        scheme={props.activeContextScheme}
-      />
+      <MoveNoticeHost key={`${props.projectId}:${props.activeContextScheme}:${props.editorWorkId}`}>
+        <MobileFolderTree {...props} scheme={props.activeContextScheme} />
+      </MoveNoticeHost>
     );
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-background">
@@ -77,6 +77,11 @@ function MobileFolderTree({
   });
   const deletion = useDeleteConfirmation({ projectId });
   const openDocument = useOpenProjectDocument(projectId);
+  // One list, so Move… here ends as everywhere else: the row selected and the note with Undo.
+  const list = useEntryList({
+    projectId,
+    areas: catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, movable: true }] : [],
+  });
   const [localCreate, setLocalCreate] = useState<{
     kind: ContextCreateKind;
     parentPath: string;
@@ -167,11 +172,13 @@ function MobileFolderTree({
             },
           }}
         >
-          <TreeChildren
-            parentId={dir.entryId}
-            parentPath={dir.entryId === catalog.root.entryId ? "" : dir.path}
-            depth={0}
-          />
+          <EntryList list={list}>
+            <TreeChildren
+              parentId={dir.entryId}
+              parentPath={dir.entryId === catalog.root.entryId ? "" : dir.path}
+              depth={0}
+            />
+          </EntryList>
           {!pending && catalog.children(dir.entryId).length === 0 ? (
             <p className="p-4 text-sm text-muted-foreground">
               <Trans>This folder is empty.</Trans>
@@ -182,6 +189,7 @@ function MobileFolderTree({
       {catalog && isError ? (
         <InlineErrorRow message={t`Could not load files.`} onRetry={refetch} />
       ) : null}
+      <MoveNotice className="mx-3 my-2 shrink-0" />
       <DeleteConfirmationDialog
         projectId={projectId}
         target={deletion.target}
