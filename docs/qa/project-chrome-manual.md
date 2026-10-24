@@ -103,6 +103,18 @@ review?" confirmation; each chat owns its write mode.
     composer has a **Draft or Auto-apply menu** showing "Drafts (N)" while N changes
     wait for review. Switching one chat's mode leaves the others as they were.
 
+## Creation, Work goals, and account settings
+
+32. Hold a new project's create request. The app navigates to that project's
+    Chat screen before the request settles. Refuse the request. The destination
+    stays open and offers Retry. Retry uses the same project identity and title.
+33. Edit a Work goal, then try to leave before saving. Choose to keep editing;
+    the goal remains. Try again and discard it; navigation continues. Archive a
+    Work with an unsaved goal, refuse its save, and confirm the draft remains
+    without exposing the raw server error.
+34. Hold the account-settings request open. Settings that require the account
+    record, including Sync, remain disabled until the request settles.
+
 ## Rename feedback and hand-off
 
 25. Move a folder whose record is missing locally, then let a fresh receipt arrive.

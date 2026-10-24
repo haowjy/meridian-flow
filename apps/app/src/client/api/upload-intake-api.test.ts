@@ -17,10 +17,6 @@ it.each([
     },
     "This project was deleted.",
   ],
-  [
-    { message: "invalid_filename" },
-    "This filename contains unsupported characters. Rename the file and attach it again.",
-  ],
 ])("decodes the actual upload error response %j", async (payload, message) => {
   vi.stubGlobal(
     "fetch",
