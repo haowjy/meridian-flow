@@ -362,7 +362,7 @@ describe("planCompaction", () => {
     ).toBe(true);
   });
 
-  it("plans 2,000 default-estimated turns in under 1.5 seconds", () => {
+  it("pins the last request across 2,000 default-estimated turns", () => {
     const turns: Turn[] = [];
     const blocks: Block[] = [];
     for (let index = 0; index < 2_000; index++) {
