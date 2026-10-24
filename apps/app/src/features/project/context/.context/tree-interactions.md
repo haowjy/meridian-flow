@@ -261,8 +261,9 @@ Move… inside a list ends the same way: `EntryMovePicker` places through
 `move-entry.ts`, then reports to its list (`useReportMove`), which selects the
 moved row and publishes the same notice and Undo. Move… does not reveal a
 collapsed destination (expansion belongs to each section); moving the open
-document reveals it through the active-document reveal. Outside a list (the
-phone browser, the chat's Files menu) Move… reports nothing beyond the row.
+document reveals it through the active-document reveal. Every surface with a
+Move… mounts its rows in a list under a host, so none reports less than this;
+a Move… outside a list would report nothing beyond the row.
 
 Placement is optimistic, exactly as for Move…: each placement's operation is
 remembered, so the row's link-update note follows its receipt and a later server

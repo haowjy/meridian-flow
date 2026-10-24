@@ -77,52 +77,53 @@ export function NavigationDrawer({
     onOpenChange(nextOpen);
   };
   return (
-    // A project's move note leaves with it, as in the desktop rail.
-    <MoveNoticeHost key={projectId}>
-      <Sheet open={open} onOpenChange={handleOpenChange}>
-        <SheetContent
-          side="left"
-          showCloseButton={false}
-          // Radix Dialog auto-focuses the first focusable on open; with the close
-          // button hidden that's a nav item, and iOS Safari paints :focus-visible
-          // on that programmatic focus. Prevent the default, then focus the sheet
-          // container itself (event.target — Radix dispatches this event on the
-          // content element, which has tabIndex=-1 via FocusScope). The explicit
-          // focus matters: Radix's focus trap only engages once focus enters the
-          // scope, so preventDefault alone lets Tab escape to content behind the
-          // overlay. Keyboard tabbing from here still rings nav items as usual.
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            (event.target as HTMLElement | null)?.focus({ preventScroll: true });
-          }}
-          // Width leaves a >=56px scrim tap target on small phones (375px ->
-          // 319px drawer); 320px cap matches standard mobile nav-drawer sizing.
-          // The animated SheetContent stays visually bare (transparent, no
-          // radius/clip/shadow): WebKit has a compositing bug where
-          // overflow:hidden + border-radius on a transform-animated element drops
-          // child content (blank rects) while rasterizing during the slide. All
-          // drawer chrome lives on the full-size inner wrapper below instead.
-          className="w-[85vw] max-w-[320px] gap-0 border-r-0 bg-transparent p-0 text-foreground shadow-none"
-        >
-          <SheetTitle className="visually-hidden">
-            <Trans>Workspace navigation</Trans>
-          </SheetTitle>
-          <SheetDescription className="visually-hidden">
-            <Trans>Switch screens or manage your account.</Trans>
-          </SheetDescription>
-          {/* Chrome wrapper — rounded-r-xl + shadow-rail-left carry the desktop
+    <Sheet open={open} onOpenChange={handleOpenChange}>
+      <SheetContent
+        side="left"
+        showCloseButton={false}
+        // Radix Dialog auto-focuses the first focusable on open; with the close
+        // button hidden that's a nav item, and iOS Safari paints :focus-visible
+        // on that programmatic focus. Prevent the default, then focus the sheet
+        // container itself (event.target — Radix dispatches this event on the
+        // content element, which has tabIndex=-1 via FocusScope). The explicit
+        // focus matters: Radix's focus trap only engages once focus enters the
+        // scope, so preventDefault alone lets Tab escape to content behind the
+        // overlay. Keyboard tabbing from here still rings nav items as usual.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          (event.target as HTMLElement | null)?.focus({ preventScroll: true });
+        }}
+        // Width leaves a >=56px scrim tap target on small phones (375px ->
+        // 319px drawer); 320px cap matches standard mobile nav-drawer sizing.
+        // The animated SheetContent stays visually bare (transparent, no
+        // radius/clip/shadow): WebKit has a compositing bug where
+        // overflow:hidden + border-radius on a transform-animated element drops
+        // child content (blank rects) while rasterizing during the slide. All
+        // drawer chrome lives on the full-size inner wrapper below instead.
+        className="w-[85vw] max-w-[320px] gap-0 border-r-0 bg-transparent p-0 text-foreground shadow-none"
+      >
+        <SheetTitle className="visually-hidden">
+          <Trans>Workspace navigation</Trans>
+        </SheetTitle>
+        <SheetDescription className="visually-hidden">
+          <Trans>Switch screens or manage your account.</Trans>
+        </SheetDescription>
+        {/* Chrome wrapper — rounded-r-xl + shadow-rail-left carry the desktop
             rail chrome (desktop-layout.ts) instead of a hairline border. It is
             NOT the animated element (see WebKit note above), so it can safely
             clip; safe-area paddings live here so the drawer background still
             fills under the notch/home-indicator regions. */}
-          <div
-            className="flex h-full min-h-0 flex-col overflow-hidden rounded-r-xl bg-sidebar shadow-rail-left"
-            style={{
-              paddingTop: "env(safe-area-inset-top)",
-              paddingLeft: "env(safe-area-inset-left)",
-              paddingRight: "env(safe-area-inset-right)",
-            }}
-          >
+        <div
+          className="flex h-full min-h-0 flex-col overflow-hidden rounded-r-xl bg-sidebar shadow-rail-left"
+          style={{
+            paddingTop: "env(safe-area-inset-top)",
+            paddingLeft: "env(safe-area-inset-left)",
+            paddingRight: "env(safe-area-inset-right)",
+          }}
+        >
+          {/* The sheet's content unmounts on close, and the note leaves with the lists that
+              retire its Undo. */}
+          <MoveNoticeHost key={projectId}>
             <nav aria-label={t`Workspace navigation`} className="flex h-full min-h-0 flex-col">
               <div className="flex h-12 shrink-0 items-center border-b border-border-subtle px-3">
                 <InlineProjectTitle
@@ -181,9 +182,9 @@ export function NavigationDrawer({
                 ) : null}
               </WorkspaceNavBody>
             </nav>
-          </div>
-        </SheetContent>
-      </Sheet>
-    </MoveNoticeHost>
+          </MoveNoticeHost>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
