@@ -164,12 +164,14 @@ the tab/tree update without an error. Capture a screenshot outside this repo.
 
 ## Document trash
 
-1. Create one document at a scheme root and one inside a folder. Delete the
+1. Create one document at a scheme root and one inside a folder. In a third
+   document, use the Editor's link picker to link to the first one; choosing
+   the result stores the target document's stable ID. Delete the linked
    document, then delete the folder. The sidebar adds Trash above Scratch.
 2. Open Trash. Both documents appear newest first with their former area and
    folder, deletion actor and date, days left, and Restore. Reload while the
    list is open; the same list remains.
-3. Select a document row. A read-only view shows its last settled text and the
+3. Select the linked document's row. A read-only view shows its last settled text and the
    banner "In the trash. Deleted by <name> on <date>. Gone for good in <n>
    days." Close and reopen the view by following a stable link to that document;
    the link chip may still say "No longer available".
