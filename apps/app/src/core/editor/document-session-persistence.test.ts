@@ -1,4 +1,9 @@
-/** Regression coverage for detached-session IndexedDB cleanup. */
+/** Regression coverage for detached-session IndexedDB cleanup.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - IndexedDB teardown policy and retry
+ * - one-second persistence readiness timeout
+ */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 

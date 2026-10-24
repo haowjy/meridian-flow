@@ -1,4 +1,9 @@
-/** Refused commands retain parent identity, separating rename from move repair. */
+/** Refused commands retain parent identity, separating rename from move repair.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - refused-move parent comparison
+ * - client catalog projection over replica placement
+ */
 import {
   catalogViewFromSnapshot,
   createResourcePlacement,

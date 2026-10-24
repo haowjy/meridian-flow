@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** Conformance tests for the patched native-history restoration boundary. */
+/** Conformance tests for the patched native-history restoration boundary.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - patched native POP restoration
+ */
 import { createBrowserHistory } from "@tanstack/react-router";
 import { expect, it, vi } from "vitest";
 import { createProjectNavigation } from "./project-navigation";

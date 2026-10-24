@@ -1,4 +1,9 @@
-// End-to-end write(command=...) coverage with in-memory port fakes.
+/**
+ * End-to-end write(command=...) coverage with in-memory port fakes.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Closed-response idempotency classification
+ */
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { isAgentEditResultEnvelope } from "./model-result.js";

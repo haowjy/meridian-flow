@@ -1,4 +1,8 @@
-/** Consolidated test contracts; each block retains its original fixture scope. */
+/** Consolidated test contracts; each block retains its original fixture scope.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Tool repair versus execution-report semantics
+ */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { describe as __mergedSuite, expect, it, vi } from "vitest";

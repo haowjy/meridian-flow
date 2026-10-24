@@ -1,4 +1,9 @@
-/** PostgreSQL contracts for fork cutoffs, idempotency, retained bindings, and provenance. */
+/**
+ * PostgreSQL contracts for fork cutoffs, idempotency, retained bindings, and provenance.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - settled-prefix cutoffs, retained binding snapshots, destination claims, and idempotent derivation (kb/decisions/agents/conversations/fork-and-handoff-derivation.md)
+ */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
@@ -19,9 +24,7 @@ else
     const { createBoundAgentCatalog, createDrizzleAgentRevisionStore } = await import(
       "../../packages/index.js"
     );
-    const { createDrizzleEventJournalReader, createDrizzleEventJournalWriter } = await import(
-      "../index.js"
-    );
+    const { createDrizzleEventJournalReader } = await import("../index.js");
     const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const {

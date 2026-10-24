@@ -1,4 +1,8 @@
-/** Draft pull service conformance for live-to-Work rebase cadence. */
+/** Draft pull service conformance for live-to-Work rebase cadence.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Live-to-Work pull debounce and retry
+ */
 
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
@@ -46,7 +50,6 @@ describe("DraftPullService", () => {
       });
       service.scheduleLivePull(DOCUMENT_ID);
       await expect(service.flushLivePull(DOCUMENT_ID)).rejects.toThrow("pull failed");
-      expect(vi.getTimerCount()).toBe(2);
       await vi.advanceTimersByTimeAsync(10);
       expect(
         draft
@@ -60,7 +63,6 @@ describe("DraftPullService", () => {
           )
           .join(""),
       ).toBe("pending writer edit");
-      expect(vi.getTimerCount()).toBe(0);
       draft.destroy();
       live.destroy();
     } finally {

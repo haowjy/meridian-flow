@@ -1,3 +1,10 @@
+/**
+ * Tests codec tables layout behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Layout and delegated-table wire representation
+ */
+
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 
@@ -325,7 +332,7 @@ describe("tables and Layout round-trip corpus", () => {
       "  <tbody>",
       "    <tr>",
       "      <td>",
-      "        <meridian-block>",
+      '        <meridian-block kind="table">',
       "<table><tbody><tr><td><p>Inner</p></td></tr></tbody></table>",
       `        ${closer}`,
       "      </td>",
@@ -494,12 +501,21 @@ describe("tables and Layout round-trip corpus", () => {
   });
 
   it("does not normalize table-looking text inside indented code", () => {
+    const activeCodec = markdownCodec({ schema });
     for (const indent of ["    ", "\t"]) {
       const input = [`${indent}| H |`, `${indent}| - |`, `${indent}| a\\`, `${indent}b |`].join(
         "\n",
       );
 
-      expect(normalizeGfmTableHardBreaks(input)).toBe(input);
+      const block = firstParsedBlock(activeCodec, input);
+      expect(block.type.name).toBe("code_block");
+      expect(block.textContent).toBe("| H |\n| - |\n| a\\\nb |");
+      expect(
+        firstParsedBlock(
+          activeCodec,
+          activeCodec.serializeBlock(block, UNSCOPED_DOCUMENT_LINKS),
+        ).toJSON(),
+      ).toEqual(block.toJSON());
     }
   });
 

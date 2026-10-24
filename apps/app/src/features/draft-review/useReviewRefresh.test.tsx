@@ -3,6 +3,9 @@
  * The review's one refresh owner: what makes the open review read its draft
  * again, and how often. Independent live Yjs documents and a real query client; the clock
  * is the only fake.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - review refresh debounce and invalidation ownership
  */
 
 import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
@@ -14,8 +17,10 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useReviewRefresh } from "./useReviewRefresh";
 
 let sessions: ReturnType<typeof createEditorSessions>;
+let editVersion = 0;
 beforeEach(() => {
   sessions = createEditorSessions();
+  editVersion = 0;
 });
 afterEach(async () => {
   await sessions.dispose();
@@ -53,7 +58,7 @@ async function mountOwner(run: (invalidated: () => string[]) => Promise<void>) {
 }
 
 const edit = (roomKey: string) =>
-  sessions.get(roomKey).document.getMap("edits").set("k", Math.random());
+  sessions.get(roomKey).document.getMap("edits").set("k", ++editVersion);
 const wait = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
 
 beforeEach(() => {

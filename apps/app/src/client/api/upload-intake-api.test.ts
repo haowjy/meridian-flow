@@ -1,23 +1,20 @@
-/** Upload failures preserve canonical project deletion copy and filename guidance. */
+/** Upload failures preserve their structured API identity through the intake adapter. */
 import { afterEach, expect, it, vi } from "vitest";
+import { MeridianApiError } from "./meridian-error";
 import { uploadIntakePort } from "./upload-intake-api";
 
 afterEach(() => vi.unstubAllGlobals());
-it.each([
-  [
-    {
-      kind: "error",
-      error: {
-        code: "project_deleted",
-        message: "project_deleted",
-        retryable: false,
-        source: "system",
-        details: { authenticatedUserId: "owner" },
-      },
+it("decodes the structured upload error response", async () => {
+  const payload = {
+    kind: "error",
+    error: {
+      code: "project_deleted",
+      message: "project_deleted",
+      retryable: false,
+      source: "system",
+      details: { authenticatedUserId: "owner" },
     },
-    "This project was deleted.",
-  ],
-])("decodes the actual upload error response %j", async (payload, message) => {
+  };
   vi.stubGlobal(
     "fetch",
     async () =>
@@ -26,11 +23,17 @@ it.each([
         headers: { "content-type": "application/json" },
       }),
   );
-  await expect(
-    uploadIntakePort.intake({
-      file: new File(["words"], "draft.txt"),
-      intakeId: "intake",
-      scope: { kind: "chat", projectId: "deleted", chatId: "chat" },
-    }),
-  ).rejects.toThrow(message);
+  const result = uploadIntakePort.intake({
+    file: new File(["words"], "draft.txt"),
+    intakeId: "intake",
+    scope: { kind: "chat", projectId: "deleted", chatId: "chat" },
+  });
+  await expect(result).rejects.toBeInstanceOf(MeridianApiError);
+  await expect(result).rejects.toMatchObject({
+    code: "project_deleted",
+    retryable: false,
+    source: "system",
+    details: { authenticatedUserId: "owner" },
+    status: 404,
+  });
 });

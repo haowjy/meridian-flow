@@ -1,4 +1,8 @@
-/** WS message dispatch contracts for interruption settlement and subscription replay. */
+/** WS message dispatch contracts for interruption settlement and subscription replay.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Request-correlated socket settlement routing
+ */
 import type { MeridianError } from "@meridian/contracts/interrupt";
 import type { WsServerMessage } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";

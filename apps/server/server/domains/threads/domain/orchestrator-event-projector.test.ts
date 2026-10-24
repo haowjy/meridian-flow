@@ -1,6 +1,9 @@
 /**
  * Projector wire contracts: the client-facing custom event names and payloads
  * for durable block lifecycle facts. Pins the names the app reducer reads.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Replies without run identity use the turn identity
  */
 import { EventType } from "@meridian/contracts/protocol";
 import {

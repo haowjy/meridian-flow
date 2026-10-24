@@ -1,3 +1,9 @@
+/**
+ * Context entry name behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - rename-field selection and codec error propagation
+ */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -111,13 +117,6 @@ describe("validateContextEntryName", () => {
       validateContextEntryName("Vol. 2", [{ entryId: "sibling", name: "Vol. 1", kind: "file" }]),
     ).toBeNull();
   });
-});
-
-it("reports a colliding folder as a folder, not a file", () => {
-  expect(
-    validateContextEntryName("Lore", [{ entryId: "sibling", name: "Lore", kind: "dir" }], "file")
-      ?.message,
-  ).toContain("A folder named Lore");
 });
 
 it("compares folders literally and reports the occupant kind", () => {

@@ -1,5 +1,8 @@
-/** Local port liveness + wait-for-free coverage for deterministic restarts (issue #331). */
-
+/** Local port liveness + wait-for-free coverage for deterministic restarts (issue #331).
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - TERM-then-KILL fixed-port restart policy
+ */
 import net from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { releaseFixedPorts, waitForPortsFree } from "./port-lifecycle";

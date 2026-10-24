@@ -1,4 +1,9 @@
-/** Postgres file facts: ownership, lifecycle and the ancestor chain. */
+/**
+ * Postgres file facts: ownership, lifecycle and the ancestor chain.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - ordered ancestor, owner-Work, and branch-Work fact assembly (kb/decisions/documents/access/file-access-policy.md)
+ */
 import { folderDocumentName } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -27,12 +32,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const a = "00000000-0000-4000-8000-000000000a03";
     const manuscript = "00000000-0000-4000-8000-000000000a10";
     const scratch = "00000000-0000-4000-8000-000000000a11";
-    const noWorkScratch = "00000000-0000-4000-8000-000000000a12";
+    const lineageScratch = "00000000-0000-4000-8000-000000000a12";
+    const rootThread = "00000000-0000-4000-8000-000000000a13";
     const chapters = "00000000-0000-4000-8000-000000000a20";
     const arc = "00000000-0000-4000-8000-000000000a21";
     const chapter = "00000000-0000-4000-8000-000000000a30";
     const note = "00000000-0000-4000-8000-000000000a31";
-    const noWorkNote = "00000000-0000-4000-8000-000000000a32";
+    const lineageNote = "00000000-0000-4000-8000-000000000a32";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
@@ -48,7 +54,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(contextSources).values([
         { id: manuscript, projectId: p, name: "Manuscript", slug: "manuscript" },
         { id: scratch, workId: a, scope: "work", name: "Scratch", slug: "scratch" },
-        { id: noWorkScratch, workId: noWork, scope: "work", name: "Scratch", slug: "scratch" },
+        {
+          id: lineageScratch,
+          projectId: p,
+          rootThreadId: rootThread,
+          scope: "lineage",
+          name: "Scratch",
+          slug: "scratch",
+        },
       ]);
       await db.insert(folders).values([
         {
@@ -68,7 +81,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(documents).values([
         { id: chapter, contextSourceId: manuscript, folderId: arc, name: "ch1" },
         { id: note, contextSourceId: scratch, name: "notes" },
-        { id: noWorkNote, contextSourceId: noWorkScratch, name: "notes" },
+        { id: lineageNote, contextSourceId: lineageScratch, name: "notes" },
       ]);
     });
 
@@ -108,11 +121,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { kind: "project", id: p },
       ]);
 
-      // No Work owns its scratch like any Work (D55).
-      const noWorkScratchNote = await facts.load({
-        target: { kind: "document", documentId: noWorkNote },
+      const lineageScratchNote = await facts.load({
+        target: { kind: "document", documentId: lineageNote },
       });
-      expect(noWorkScratchNote?.ownerWork).toMatchObject({ id: noWork, isNoWork: true });
+      expect(lineageScratchNote).toMatchObject({
+        ownerWork: null,
+        ownerRootThreadId: rootThread,
+        ancestors: [
+          { kind: "source", id: lineageScratch },
+          { kind: "project", id: p },
+        ],
+      });
 
       const drafted = await facts.load({
         target: { kind: "document", documentId: chapter },

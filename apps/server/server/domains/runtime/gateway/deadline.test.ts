@@ -1,4 +1,8 @@
-/** Unit coverage for the stall/ceiling attempt signal: arming, re-arming, disabling, classification. */
+/** Unit coverage for the stall/ceiling attempt signal: arming, re-arming, disabling, classification.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Stall and total attempt deadlines
+ */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createModelAttemptSignal,

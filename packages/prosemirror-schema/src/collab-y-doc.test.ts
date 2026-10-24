@@ -1,3 +1,10 @@
+/**
+ * Tests collab y doc behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Random authoring clients avoid the server-reserved identity band
+ */
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createCollabYDoc, RESERVED_CLIENT_ID_MAX } from "./index.js";
 
