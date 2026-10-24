@@ -1,3 +1,10 @@
+/**
+ * Tests context uri behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Context URI canonicalization, titles, and draftable schemes (kb/decisions/documents/identity/owner-handles.md)
+ */
+
 import { describe, expect, it } from "vitest";
 
 import {
