@@ -28,7 +28,6 @@ it("restores Scratch expansion and height and Recent expansion together", async 
   expect(store.getState().railPrefs).toEqual({
     scratchExpanded: true,
     recentExpanded: false,
-    trashExpanded: false,
     scratchHeight: 234,
   });
 });

@@ -695,7 +695,7 @@ function ReadableProjectDestination({
   }, []);
   const queryClient = useQueryClient();
   const navigateTrash = useCallback(
-    (trash: false | string) => {
+    (trash: false | true | string) => {
       const current = router.history.location;
       const query = new URLSearchParams(current.search);
       if (trash) query.set("trash", String(trash));
