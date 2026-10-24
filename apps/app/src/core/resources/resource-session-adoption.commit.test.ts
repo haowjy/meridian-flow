@@ -77,7 +77,7 @@ function conflictingLocks(): CrossContextLockManager {
   };
 }
 
-function adoptingRecord(legacyPin: boolean): ResourceRecord {
+function adoptingRecord(): ResourceRecord {
   const reserved = reserveResourceDocument({
     projectId,
     handle: pending.lineageHandle,
@@ -109,9 +109,6 @@ function adoptingRecord(legacyPin: boolean): ResourceRecord {
   const adopted = received && settleNamespaceOutcome(received.next);
   if (!adopted) throw new Error("Expected adopted resource");
   adopted.next.resource.revision = 1;
-  const obligation = adopted.next.resource.obligations.sessionAdoption;
-  // A record the removed pin wrote: an extra field the new protocol must simply ignore.
-  if (legacyPin && obligation) Object.assign(obligation, { generation: "7" });
   return adopted.next;
 }
 
@@ -132,12 +129,12 @@ const connectedTransport: DocumentSessionTransportFactory = () => ({
 });
 
 async function seam(
-  seed: "owed" | "reserved" | "legacy-reserved" | "committed" = "owed",
+  seed: "owed" | "reserved" | "committed" = "owed",
   transportFactory?: DocumentSessionTransportFactory,
 ) {
   const accountId = `adoption-commit-${++sequence}`;
   const metadata = new IndexedDbResourceMetadata(accountId, vi.fn());
-  const initial = adoptingRecord(seed === "legacy-reserved");
+  const initial = adoptingRecord();
   expect(await metadata.commitResource({ expectedRevision: null, next: initial })).toBe(
     "committed",
   );
@@ -188,7 +185,6 @@ async function seam(
 
   const store = new DocumentSessionAuthorityStore(accountId as never);
   if (seed !== "owed") await store.beginLocalAdoption(pending);
-  if (seed === "legacy-reserved") await patchRoom(accountId, { targetGeneration: "7" });
   if (seed === "committed") {
     await store.admit({
       documentId,
@@ -234,27 +230,6 @@ async function seam(
     room: async () => (await store.readRoom(documentId)).persistence,
     store,
   };
-}
-
-async function patchRoom(accountId: string, patch: Record<string, unknown>): Promise<void> {
-  const database = await new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(
-      `meridian:document-session-authority:${encodeURIComponent(accountId)}`,
-    );
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-  const transaction = database.transaction("room-order", "readwrite");
-  const rooms = transaction.objectStore("room-order");
-  const room = await new Promise<{ persistence: object }>((resolve) => {
-    const request = rooms.get(documentId);
-    request.onsuccess = () => resolve(request.result);
-  });
-  rooms.put({ ...room, persistence: { ...room.persistence, ...patch } });
-  await new Promise<void>((resolve) => {
-    transaction.oncomplete = () => resolve();
-  });
-  database.close();
 }
 
 afterEach(async () => {
