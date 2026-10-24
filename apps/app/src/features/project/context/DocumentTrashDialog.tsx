@@ -6,10 +6,12 @@ import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArchiveRestore, ChevronLeft } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { httpErrorStatus } from "@/client/api/http-client";
 import { useDocumentTrash, useTrashedDocument } from "@/client/query/useDocumentTrash";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { daysUntilPurge } from "../deletion-retention";
 import { RuledList } from "../RuledList";
 import {
   useCaptureProjectNavigation,
@@ -17,11 +19,24 @@ import {
 } from "../routing/ProjectNavigationContext";
 import { documentLocation, schemeLabel } from "./context-schemes";
 import { useOpenProjectDocument } from "./open-project-document";
+import { type RemovalVoice, removalVoice } from "./RemovedDocumentNotice";
 import { restoreTrashedDocument } from "./restore-trashed-document";
 import { ReadOnlyViewerFrame } from "./viewers/ReadOnlyViewerFrame";
 import { TextViewer } from "./viewers/TextViewer";
 
 type RowState = { kind: "restoring" } | { kind: "failed"; message: string };
+type TrashEntry = Omit<DocumentTrashEntry, "deletedAt" | "purgeAt"> & {
+  retention:
+    | { kind: "scheduled"; purgeAt: string }
+    | { kind: "held"; works: Array<{ id: string; name: string }> };
+};
+
+// The server/contract lane lands `retention` with this client change. Keep the
+// temporary cast at that response boundary so the rest of this module uses the settled shape.
+const trashEntry = <T extends DocumentTrashEntry>(
+  entry: T,
+): Omit<T, "deletedAt" | "purgeAt"> & TrashEntry =>
+  entry as unknown as Omit<T, "deletedAt" | "purgeAt"> & TrashEntry;
 
 type RestoredNotice = { id: number; location: string };
 
@@ -81,7 +96,7 @@ function DocumentTrashList({
   const [rowStates, setRowStates] = useState<ReadonlyMap<string, RowState>>(() => new Map());
 
   const restore = useCallback(
-    (entry: DocumentTrashEntry) => {
+    (entry: TrashEntry) => {
       if (rowStates.get(entry.documentId)?.kind === "restoring") return;
       setRowStates((current) => new Map(current).set(entry.documentId, { kind: "restoring" }));
       void restoreTrashedDocument(queryClient, projectId, entry)
@@ -106,10 +121,7 @@ function DocumentTrashList({
           setRowStates((current) =>
             new Map(current).set(entry.documentId, {
               kind: "failed",
-              message:
-                outcome.kind === "ancestor_taken"
-                  ? t`Couldn't restore ${entry.name}. A file is in the way.`
-                  : t`Couldn't restore ${entry.name}.`,
+              message: restoreFailureMessage(entry.name, outcome.kind),
             }),
           );
         })
@@ -117,7 +129,7 @@ function DocumentTrashList({
           setRowStates((current) =>
             new Map(current).set(entry.documentId, {
               kind: "failed",
-              message: t`Couldn't restore ${entry.name}. Try again.`,
+              message: restoreFailureMessage(entry.name, "network"),
             }),
           ),
         );
@@ -140,17 +152,20 @@ function DocumentTrashList({
           <InlineErrorRow message={t`Couldn't load Trash.`} onRetry={() => void query.refetch()} />
         ) : query.data?.documents.length ? (
           <RuledList
-            rows={query.data.documents.map((entry) => ({
-              key: entry.documentId,
-              node: (
-                <TrashRow
-                  entry={entry}
-                  state={rowStates.get(entry.documentId)}
-                  onOpen={() => onOpenDocument(entry.documentId)}
-                  onRestore={() => restore(entry)}
-                />
-              ),
-            }))}
+            rows={query.data.documents.map((rawEntry) => {
+              const entry = trashEntry(rawEntry);
+              return {
+                key: entry.documentId,
+                node: (
+                  <TrashRow
+                    entry={entry}
+                    state={rowStates.get(entry.documentId)}
+                    onOpen={() => onOpenDocument(entry.documentId)}
+                    onRestore={() => restore(entry)}
+                  />
+                ),
+              };
+            })}
           />
         ) : query.isPending ? (
           <p role="status" className="px-2 py-3 text-sm text-muted-foreground">
@@ -172,7 +187,7 @@ function TrashRow({
   onOpen,
   onRestore,
 }: {
-  entry: DocumentTrashEntry;
+  entry: TrashEntry;
   state?: RowState;
   onOpen: () => void;
   onRestore: () => void;
@@ -182,9 +197,9 @@ function TrashRow({
   const location = documentLocation(entry.scheme, folder) || schemeLabel(entry.scheme);
   const actor = removalActor(entry);
   const deleted = new Intl.DateTimeFormat(i18n.locale, { dateStyle: "medium" }).format(
-    new Date(entry.deletedAt),
+    new Date(entry.removal.time),
   );
-  const days = Math.max(0, Math.ceil((Date.parse(entry.purgeAt) - Date.now()) / 86_400_000));
+  const retention = retentionSentence(entry, i18n.locale, "list");
   const restoring = state?.kind === "restoring";
   return (
     <div className="px-2 py-2.5">
@@ -197,11 +212,7 @@ function TrashRow({
               Deleted by {actor} on {deleted}
             </Trans>
           </span>
-          <span className="block text-xs text-ink-subtle">
-            {days <= 1
-              ? t`Less than a day left`
-              : plural(days, { one: "# day left", other: "# days left" })}
-          </span>
+          <span className="block text-xs text-ink-subtle">{retention}</span>
         </button>
         <button
           type="button"
@@ -240,7 +251,7 @@ function TrashedDocumentView({
   const openDocument = useOpenProjectDocument(projectId);
   const captureNavigation = useCaptureProjectNavigation();
   const [state, setState] = useState<RowState>();
-  const document = query.data;
+  const document = query.data ? trashEntry(query.data) : undefined;
 
   const restore = useCallback(() => {
     if (!document || state?.kind === "restoring") return;
@@ -275,14 +286,14 @@ function TrashedDocumentView({
         }
         setState({
           kind: "failed",
-          message:
-            outcome.kind === "ancestor_taken"
-              ? t`Couldn't restore ${document.name}. A file is in the way.`
-              : t`Couldn't restore ${document.name}.`,
+          message: restoreFailureMessage(document.name, outcome.kind),
         });
       })
       .catch(() =>
-        setState({ kind: "failed", message: t`Couldn't restore ${document.name}. Try again.` }),
+        setState({
+          kind: "failed",
+          message: restoreFailureMessage(document.name, "network"),
+        }),
       );
   }, [
     captureNavigation,
@@ -311,10 +322,16 @@ function TrashedDocumentView({
       <div className="min-h-0 flex-1">
         {query.isError ? (
           <div className="p-4">
-            <InlineErrorRow
-              message={t`Couldn't load this document.`}
-              onRetry={() => void query.refetch()}
-            />
+            {httpErrorStatus(query.error) === 404 ? (
+              <p className="text-sm text-muted-foreground">
+                <Trans>No longer available</Trans>
+              </p>
+            ) : (
+              <InlineErrorRow
+                message={t`Couldn't load this document.`}
+                onRetry={() => void query.refetch()}
+              />
+            )}
           </div>
         ) : query.isPending || !document ? (
           <p role="status" className="p-4 text-sm text-muted-foreground">
@@ -346,20 +363,16 @@ function TrashNotice({
   state,
   onRestore,
 }: {
-  entry: DocumentTrashEntry;
+  entry: TrashEntry;
   locale: string;
   state?: RowState;
   onRestore: () => void;
 }) {
   const actor = removalActor(entry);
   const deleted = new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(
-    new Date(entry.deletedAt),
+    new Date(entry.removal.time),
   );
-  const days = Math.max(0, Math.ceil((Date.parse(entry.purgeAt) - Date.now()) / 86_400_000));
-  const remaining = plural(days, {
-    one: "Gone for good in # day.",
-    other: "Gone for good in # days.",
-  });
+  const retention = retentionSentence(entry, locale, "notice");
   return (
     <div className="shrink-0 px-4 pt-3">
       <div
@@ -371,7 +384,7 @@ function TrashNotice({
           <Trans>
             In the trash. Deleted by {actor} on {deleted}.
           </Trans>{" "}
-          {remaining}
+          {retention}
         </p>
         <Button
           size="sm"
@@ -416,17 +429,51 @@ function RestoredAtNotice({
   );
 }
 
-function removalActor(entry: DocumentTrashEntry): string {
-  switch (entry.actor?.kind) {
-    case "user":
-      return entry.actor.displayName?.trim() || t`a writer`;
+function restoreFailureMessage(
+  name: string,
+  outcome: "superseded" | "ancestor_taken" | "refused" | "network",
+): string {
+  if (outcome === "ancestor_taken") return t`Couldn't restore ${name}. A file is in the way.`;
+  if (outcome === "network") return t`Couldn't restore ${name}. Try again.`;
+  return t`Couldn't restore ${name}.`;
+}
+
+function retentionSentence(entry: TrashEntry, locale: string, surface: "list" | "notice"): string {
+  if (entry.retention.kind === "held") {
+    const works = new Intl.ListFormat(locale, { type: "conjunction" }).format(
+      entry.retention.works.map(({ name }) => name),
+    );
+    return entry.retention.works.length === 1
+      ? t`Kept while ${works} has changes to it.`
+      : t`Kept while ${works} have changes to it.`;
+  }
+  const days = daysUntilPurge(entry.retention.purgeAt, Date.now());
+  if (surface === "list")
+    return days <= 1
+      ? t`Less than a day left`
+      : plural(days, { one: "# day left", other: "# days left" });
+  return plural(days, {
+    one: "Gone for good in # day.",
+    other: "Gone for good in # days.",
+  });
+}
+
+function removalActor(entry: TrashEntry): string {
+  const voice: RemovalVoice = removalVoice({
+    reason: "deleted",
+    actor: entry.actor,
+    time: entry.removal.time,
+  });
+  switch (voice.kind) {
+    case "person":
+      return voice.name;
     case "agent":
-      return entry.actor.chatTitle ? t`AI in ${entry.actor.chatTitle}` : t`AI in a chat`;
+      return voice.chat ? t`AI in ${voice.chat}` : t`AI in a chat`;
     case "work":
-      return entry.actor.name;
-    case "system":
+      return voice.name;
+    case "unfinished-reply":
       return t`the system`;
-    default:
-      return t`an unknown writer`;
+    case "anonymous":
+      return t`a writer`;
   }
 }
