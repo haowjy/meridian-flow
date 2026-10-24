@@ -51,7 +51,11 @@ and document; query carries Work, view, settings, and draft overlays:
 /p/<id>/editor/<scheme>/<path>[?work=…&item=…]
 /p/<id>/editor/browse[/<scheme>/<path>]
 ?settings=<section>
+?trash=true
 ```
+
+Settings and Trash are routed auxiliary overlays. They leave the primary
+screen mounted while the query selects the overlay.
 
 Legacy slug, screen/thread query, and old context path shapes are invalid rather
 than compatibility aliases. Invalid required identity stays in place and shows

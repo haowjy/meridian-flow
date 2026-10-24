@@ -693,6 +693,16 @@ function ReadableProjectDestination({
     });
   }, []);
   const queryClient = useQueryClient();
+  const openTrash = useCallback(
+    (documentId: string) => {
+      return router.navigate({
+        to: ".",
+        search: (previous: Record<string, unknown>) => ({ ...previous, trash: documentId }),
+        state: (previous) => previous,
+      });
+    },
+    [router],
+  );
   useEffect(() => {
     if (!closingRef || !closeState.closed || closeState.removed) return;
     const itemKey = closingRef.itemKey;
@@ -897,6 +907,7 @@ function ReadableProjectDestination({
         <ProjectDocumentNavigationProvider
           projectId={projectId}
           captureNavigation={captureNavigation}
+          openTrash={openTrash}
         >
           {documentDestination && !localDocumentId ? (
             <ProjectAddressDocument

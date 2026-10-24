@@ -3,7 +3,7 @@
  * once, or the server, and which of the two wins when both speak.
  */
 
-import type { DocumentLinkAnswer } from "@meridian/contracts";
+import { type DocumentLinkAnswer, parseLinkRef } from "@meridian/contracts";
 import { expect, it, vi } from "vitest";
 
 import { resolveDocumentLinks } from "@/client/api/document-links-api";
@@ -317,7 +317,7 @@ it("routes each link to the local index or the server", async () => {
     if (row.heard) expect.soft(heard, row.rule).toBe(true);
     if (click) expect.soft(show(await click), row.rule).toBe(row.clicked);
 
-    // A gone link is not followed: nothing opens, and nothing is said.
+    // A gone stable document ref reaches navigation, which confirms whether it is in Trash.
     const [link] = row.links;
     const target = link && classifyLinkTarget(link.href);
     if (row.after[0] === "gone" && link && target) {
@@ -336,7 +336,10 @@ it("routes each link to the local index or the server", async () => {
         },
         signal: new AbortController().signal,
       });
-      expect.soft(events, row.rule).toEqual(["clear"]);
+      const parsed = parseLinkRef(link.ref);
+      expect
+        .soft(events, row.rule)
+        .toEqual(["clear", ...(parsed?.kind === "doc" ? [`open:${parsed.documentId}`] : [])]);
     }
 
     // Later catalogs: the documents move, and the server answers again or cannot be reached.

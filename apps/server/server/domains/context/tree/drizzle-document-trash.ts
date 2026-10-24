@@ -1,14 +1,24 @@
-/** Expired document-trash content purge; tombstone identity and incoming links remain. */
-import type { DocumentId } from "@meridian/contracts";
-import { deletionPurgeCutoff } from "@meridian/contracts/retention";
+/** Drizzle adapter for restorable document trash and permanent content purge. */
+import { type DocumentId, type ProjectId, serializeRemovalIdentity } from "@meridian/contracts";
+import type { DocumentTrashEntry, GetDocumentTrashResponse } from "@meridian/contracts/protocol";
+import { deletionPurgeAt, deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
-import { branches, contextSources, documents, projects, works } from "@meridian/database/schema";
-import { and, asc, eq, gt, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  branches,
+  contextSources,
+  documentMarkdownProjections,
+  documents,
+  projects,
+  works,
+} from "@meridian/database/schema";
+import { and, asc, desc, eq, gt, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import { createObjectRelease, type ObjectStorePort } from "../../storage/index.js";
 import type { DocumentPurgeDraftDisposal, DocumentTrash } from "../ports/document-trash.js";
 import { releaseDocumentStorage } from "./node-rows.js";
+import { readRemovalRecords } from "./removal.js";
+import { loadDocumentAddresses } from "./tree-addresses.js";
 import { pendingDocuments } from "./tree-view-sql.js";
 
 const DOCUMENT_PURGE_BATCH_LIMIT = 100;
@@ -32,6 +42,73 @@ export function createDrizzleDocumentTrash(deps: {
       });
     },
   });
+
+  const rows = async (projectId: ProjectId, documentId?: DocumentId) => {
+    const tx = currentDrizzleDb(deps.db);
+    return tx
+      .select({
+        documentId: documents.id,
+        name: documents.name,
+        extension: documents.extension,
+        deletedAt: sql<Date>`${documents.deletedAt}`.mapWith(documents.deletedAt),
+        locationVersion: documents.locationVersion,
+      })
+      .from(documents)
+      .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+      .leftJoin(works, eq(works.id, contextSources.workId))
+      .innerJoin(
+        projects,
+        eq(projects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
+      )
+      .where(
+        and(
+          eq(projects.id, projectId),
+          documentId ? eq(documents.id, documentId) : undefined,
+          isNotNull(documents.deletedAt),
+          eq(documents.deletionReason, "deleted"),
+          eq(documents.hidden, false),
+          isNull(documents.deletedByWorkId),
+          isNull(documents.contentPurgedAt),
+          isNull(contextSources.deletedAt),
+          isNull(projects.deletedAt),
+        ),
+      )
+      .orderBy(desc(documents.deletedAt), desc(documents.id));
+  };
+
+  const entries = async (
+    result: Awaited<ReturnType<typeof rows>>,
+  ): Promise<DocumentTrashEntry[]> => {
+    const tx = currentDrizzleDb(deps.db);
+    const ids = result.map(({ documentId }) => documentId as DocumentId);
+    const [addresses, removals] = await Promise.all([
+      loadDocumentAddresses(deps.db, { ids }),
+      readRemovalRecords(tx, ids),
+    ]);
+    const addressesById = new Map(addresses.map((address) => [address.documentId, address]));
+
+    return result.flatMap((row): DocumentTrashEntry[] => {
+      const documentId = row.documentId as DocumentId;
+      const address = addressesById.get(documentId);
+      const record = removals.get(documentId);
+      if (!address || !record || !row.deletedAt) return [];
+      return [
+        {
+          documentId,
+          name: row.extension ? `${row.name}.${row.extension}` : row.name,
+          scheme: address.scheme,
+          formerPath: address.path,
+          removal: serializeRemovalIdentity({
+            time: row.deletedAt,
+            locationVersion: row.locationVersion,
+          }),
+          actor: record.actor,
+          deletedAt: record.time,
+          purgeAt: deletionPurgeAt(row.deletedAt).toISOString(),
+        },
+      ];
+    });
+  };
 
   async function purgeOne(
     documentId: DocumentId,
@@ -101,6 +178,19 @@ export function createDrizzleDocumentTrash(deps: {
   }
 
   return {
+    async list(projectId): Promise<readonly DocumentTrashEntry[]> {
+      return entries(await rows(projectId));
+    },
+    async read(projectId, documentId): Promise<GetDocumentTrashResponse | null> {
+      const entry = (await entries(await rows(projectId, documentId)))[0];
+      if (!entry) return null;
+      const [projection] = await currentDrizzleDb(deps.db)
+        .select({ markdown: documentMarkdownProjections.markdown })
+        .from(documentMarkdownProjections)
+        .where(eq(documentMarkdownProjections.documentId, documentId))
+        .limit(1);
+      return { ...entry, markdown: projection?.markdown ?? "" };
+    },
     async purge(): Promise<number> {
       const cutoff = deletionPurgeCutoff(now());
       let count = 0;
