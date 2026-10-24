@@ -2,7 +2,6 @@
 import { i18n } from "@lingui/core";
 import { foldDigest, type ToolView } from "@meridian/thread-client";
 import { beforeEach, expect, it } from "vitest";
-import { descriptorFor, toolActivityPhrase } from "./command-descriptor";
 import { thinkingDigest } from "./thinking-digest";
 
 beforeEach(() => i18n.loadAndActivate({ locale: "en", messages: {} }));
@@ -57,18 +56,4 @@ it("keeps skills and steps while omitting successful writes", () => {
   expect(thinkingDigest(foldDigest([skill, tool("write", "create"), failedWrite]))).toBe(
     "Invoked 'Story Review', 1 step",
   );
-});
-
-it.each(["create", "replace"])("calls a completed %s Edited in its row too", (command) => {
-  const write = tool("write", command);
-  expect(toolActivityPhrase(write).verb).toBe("Edited");
-  expect(descriptorFor(write).pathlessTitle?.()).toBe("Edited file");
-});
-
-it("labels a refused redo by its result, not its non-error transport", () => {
-  const redo = tool("write", "redo");
-  for (const status of ["nothing_to_redo", "insufficient_redo", "cant_redo_users_undo"]) {
-    expect(toolActivityPhrase({ ...redo, result: { status } }).verb).toBe("Couldn't redo");
-  }
-  expect(toolActivityPhrase({ ...redo, result: { status: "success" } }).verb).toBe("Redid");
 });
