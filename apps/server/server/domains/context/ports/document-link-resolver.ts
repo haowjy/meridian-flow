@@ -18,15 +18,17 @@ export interface ResolveDocumentLinkInput {
   /** The chat holding the link, when it is a chat's own; a document holder has none. */
   chatId?: string | null;
   target: DocumentLinkTarget;
-  /** Chat only: a link with no holder may follow a vacated path to the document that left it. */
-  previousLocations?: boolean;
+  /** Whether a vacated path follows its living document or only reports that it is gone. */
+  previousLocations?: "follow" | "gone";
 }
 
 export interface DocumentLinkResolver {
-  resolve(input: ResolveDocumentLinkInput): Promise<ResolvedDocumentLink | null>;
+  resolve(input: ResolveDocumentLinkInput): Promise<ResolvedDocumentLink | { kind: "gone" } | null>;
 }
 
-/** Chat-only previous-location fallback, filtered to documents the reader may name. */
+export type PreviousDocumentLink = { kind: "living"; uri: string } | { kind: "gone" };
+
+/** Scoped previous-location lookup, filtered to documents the reader may name. */
 export interface DocumentLinkHistory {
   previous(
     input: ResolveDocumentLinkInput,
@@ -35,5 +37,5 @@ export interface DocumentLinkHistory {
       scheme: import("@meridian/contracts").ContextUriScheme;
       path: string;
     },
-  ): Promise<string | null>;
+  ): Promise<PreviousDocumentLink | null>;
 }

@@ -323,7 +323,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         userId: u,
         target: { kind: "scheme" as const, uri: "manuscript://old" },
       };
-      const chat = { ...input, previousLocations: true };
+      const chat = { ...input, previousLocations: "follow" as const };
       expect(await r.resolve(chat)).toMatchObject({
         documentId: targetId,
         uri: "manuscript://new",

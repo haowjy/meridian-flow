@@ -79,8 +79,8 @@ export function createDocumentLinkResolver({
   async function atUri(
     input: ResolveDocumentLinkInput,
     uri: string,
-    allowHistory: boolean,
-  ): Promise<ResolvedDocumentLink | null> {
+    historyMode: ResolveDocumentLinkInput["previousLocations"],
+  ): Promise<ResolvedDocumentLink | { kind: "gone" } | null> {
     const address = await location(input, uri);
     if (!address) return null;
     const files = (await catalog.snapshot(address.scope)).entries.flatMap((entry) => {
@@ -92,8 +92,9 @@ export function createDocumentLinkResolver({
     });
     const match = matchDocumentPath(files, address.path, (file) => file.path);
     if (match) return resolvedLink(match.entry);
-    const previous = allowHistory ? await history?.previous(input, address) : null;
-    return previous ? atUri(input, previous, false) : null;
+    const previous = historyMode ? await history?.previous(input, address) : null;
+    if (!previous || (previous.kind === "living" && historyMode === "gone")) return null;
+    return previous.kind === "gone" ? previous : atUri(input, previous.uri, undefined);
   }
   return {
     async resolve(input) {
@@ -103,7 +104,7 @@ export function createDocumentLinkResolver({
           ? resolveDocumentHref(target.uri, null)
           : resolveDocumentHref(target.path, target.baseUri);
       if (!resolved) return null;
-      return atUri(input, resolved.uri, input.previousLocations === true);
+      return atUri(input, resolved.uri, input.previousLocations);
     },
   };
 }
