@@ -252,6 +252,7 @@ export async function restoreDocument(
       extension: documents.extension,
       hidden: documents.hidden,
       deletedAt: documents.deletedAt,
+      contentPurgedAt: documents.contentPurgedAt,
       reason: documents.deletionReason,
       byWork: documents.deletedByWorkId,
       locationVersion: documents.locationVersion,
@@ -278,6 +279,7 @@ export async function restoreDocument(
     (row.reason !== "deleted" && !(input.created && row.reason === "discarded")) ||
     (!input.created && row.hidden) ||
     row.byWork !== null ||
+    row.contentPurgedAt !== null ||
     row.sourceDeleted ||
     row.projectDeleted
   )

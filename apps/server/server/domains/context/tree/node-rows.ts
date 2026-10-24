@@ -8,18 +8,30 @@ import { type DocumentRemovalCause, folderDocumentName } from "@meridian/contrac
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import {
+  agentEditWidCounters,
+  applyCommandEffects,
+  changeTrailDocumentDetails,
   documentDerivations,
   documentDrafts,
+  documentEdits,
+  documentForwards,
   documentLinks,
   documentMarkdownProjections,
+  documentPreviousLocations,
   documents,
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsUpdates,
   draftWriteJournal,
   folders,
+  observationFrontiers,
+  pushLineage,
+  threadDocuments,
+  threadShownLinks,
+  turnDocumentTouches,
+  userRecentDocuments,
 } from "@meridian/database/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { inArray, like, or } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { renderFilename } from "../context/paths.js";
@@ -125,13 +137,14 @@ export async function tombstoneFolders(db: Database, ids: readonly FolderId[]): 
 }
 
 /**
- * A tombstoned hidden document's storage goes (R8, contract §12.2 step 4): its live Yjs,
- * the closed drafts' journals and inline bytes, its derived rows and its own outgoing link rows. The row itself and
- * every record pointing at it stay: a bound link or ahead ref still resolves it to gone.
+ * Releases a tombstoned document's byte stores. Discard retains non-byte history; permanent
+ * trash purge removes document-owned histories too. The row and incoming identity links stay,
+ * so a bound link still resolves the tombstone to gone.
  */
 export async function releaseDocumentStorage(
   db: Database,
   ids: readonly DocumentId[],
+  options: { retainHistory?: boolean } = {},
 ): Promise<void> {
   if (ids.length === 0) return;
   const tx = currentDrizzleDb(db);
@@ -140,34 +153,56 @@ export async function releaseDocumentStorage(
   await tx.delete(documentYjsCheckpoints).where(inArray(documentYjsCheckpoints.documentId, list));
   await tx.delete(documentYjsUpdates).where(inArray(documentYjsUpdates.documentId, list));
   const drafts = await tx
-    .select({
-      draftId: documentDrafts.id,
-    })
+    .select({ draftId: documentDrafts.id, status: documentDrafts.status })
     .from(documentDrafts)
-    .where(and(inArray(documentDrafts.documentId, list), eq(documentDrafts.status, "closed")));
-  if (drafts.length) {
-    await tx.delete(draftWriteJournal).where(
-      inArray(
-        draftWriteJournal.draftId,
-        drafts.map((row) => row.draftId),
-      ),
-    );
-    await tx
-      .update(documentDrafts)
-      .set({
-        state: Buffer.alloc(0),
-        stateVector: Buffer.alloc(0),
-      })
-      .where(
-        inArray(
-          documentDrafts.id,
-          drafts.map((row) => row.draftId),
-        ),
-      );
-  }
+    .where(inArray(documentDrafts.documentId, list));
   await tx.delete(documentDerivations).where(inArray(documentDerivations.documentId, list));
   await tx
     .delete(documentMarkdownProjections)
     .where(inArray(documentMarkdownProjections.documentId, list));
   await tx.delete(documentLinks).where(inArray(documentLinks.sourceDocumentId, list));
+  if (options.retainHistory !== false) {
+    const closedDraftIds = drafts
+      .filter((row) => row.status === "closed")
+      .map((row) => row.draftId);
+    if (closedDraftIds.length) {
+      await tx.delete(draftWriteJournal).where(inArray(draftWriteJournal.draftId, closedDraftIds));
+      await tx
+        .update(documentDrafts)
+        .set({
+          state: Buffer.alloc(0),
+          stateVector: Buffer.alloc(0),
+        })
+        .where(inArray(documentDrafts.id, closedDraftIds));
+    }
+    return;
+  }
+
+  const draftIds = drafts.map((row) => row.draftId);
+  // Observation frontiers intentionally have no document FK. Their stable room-key format is
+  // the only ownership index for snapshots whose source document is now being purged.
+  await tx
+    .delete(observationFrontiers)
+    .where(
+      or(
+        ...list.map((id) => like(observationFrontiers.roomKey, `live:${id}:%`)),
+        ...draftIds.map((id) => like(observationFrontiers.roomKey, `draft:${id}`)),
+      ),
+    );
+  await tx.delete(applyCommandEffects).where(inArray(applyCommandEffects.documentId, list));
+  await tx
+    .delete(changeTrailDocumentDetails)
+    .where(inArray(changeTrailDocumentDetails.documentId, list));
+  await tx.delete(pushLineage).where(inArray(pushLineage.documentId, list));
+  await tx.delete(threadShownLinks).where(inArray(threadShownLinks.documentId, list));
+  await tx.delete(threadDocuments).where(inArray(threadDocuments.documentId, list));
+  await tx.delete(turnDocumentTouches).where(inArray(turnDocumentTouches.documentId, list));
+  await tx.delete(userRecentDocuments).where(inArray(userRecentDocuments.documentId, list));
+  await tx
+    .delete(documentPreviousLocations)
+    .where(inArray(documentPreviousLocations.documentId, list));
+  await tx.delete(documentForwards).where(inArray(documentForwards.toDocumentId, list));
+  await tx.delete(agentEditWidCounters).where(inArray(agentEditWidCounters.documentId, list));
+  await tx.delete(documentEdits).where(inArray(documentEdits.documentId, list));
+  await tx.delete(documentDrafts).where(inArray(documentDrafts.documentId, list));
 }

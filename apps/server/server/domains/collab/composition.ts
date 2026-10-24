@@ -68,6 +68,7 @@ import {
   type AheadRegistrationRecovery,
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
+import { createDrizzleDocumentPurgeDisposal } from "./adapters/drizzle-document-purge-disposal.js";
 import type { DraftClose } from "./adapters/drizzle-draft-close.js";
 import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
 import { createDrizzleDraftReplayJournalReads } from "./adapters/drizzle-draft-journal-reads.js";
@@ -649,6 +650,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         close: deps.draftClose,
         branches: workBranches,
         catalog: deps.catalogMutations,
+      }),
+      documentPurgeDraftDisposal: createDrizzleDocumentPurgeDisposal(deps.db, {
+        branches: workBranches,
+        close: deps.draftClose,
+        workProjection: deps.workProjectionMutation,
       }),
     },
     documentCreation,

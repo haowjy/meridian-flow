@@ -4,7 +4,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { DELETION_RETENTION_DAYS } from "@meridian/contracts/works";
+import { DELETION_RETENTION_DAYS } from "@meridian/contracts/retention";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { HttpResponseError } from "@/client/api/http-client";

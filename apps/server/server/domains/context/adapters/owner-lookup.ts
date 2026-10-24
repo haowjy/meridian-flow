@@ -1,6 +1,8 @@
 /** Drizzle wiring of the owner lookup: Works, chats, subagents and the chats that hold files. */
+
+import { DAY_MS, DELETION_RETENTION_DAYS } from "@meridian/contracts/retention";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { DAY_MS, DELETION_RETENTION_DAYS, decodeWorkHandle } from "@meridian/contracts/works";
+import { decodeWorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, threads, threadWorks, works } from "@meridian/database/schema";
 import { and, eq, isNull, or, sql } from "drizzle-orm";

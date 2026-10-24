@@ -1,5 +1,6 @@
 /** Pure restore policy shared by every Work repository adapter. */
-import { deletionPurgeAt, type Work } from "@meridian/contracts/works";
+import { deletionPurgeAt } from "@meridian/contracts/retention";
+import type { Work } from "@meridian/contracts/works";
 import { WorkRestoreExpiredError } from "../ports/work-repository.js";
 
 export type WorkRestoreDecision = "restore" | "unchanged";

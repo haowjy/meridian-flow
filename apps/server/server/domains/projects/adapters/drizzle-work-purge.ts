@@ -5,8 +5,8 @@
  * deleted/cutoff proof, every hidden document they created tombstoned and released.
  */
 
+import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { WorkId } from "@meridian/contracts/runtime";
-import { deletionPurgeCutoff } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
   branches,

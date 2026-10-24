@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./context-uri": "./src/context-uri.ts",
+    "./retention": "./src/deletion-retention.ts",
     "./handles": "./src/handles.ts",
     "./request-id": "./src/request-id.ts",
     "./context-entry-validation": "./src/context-entry-validation.ts",

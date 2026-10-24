@@ -64,7 +64,9 @@ actors may be unknown. Only a Work cascade sets `deleted_by_work_id`, which
 remains its restore marker. Restore clears all removal fields. A closed draft
 has its own `closed_cause`, independent of the document's current removal
 (`discarded` or `document_removed`), so Work restore does not erase why a
-draft closed. Migrations 0072–0074 add the record, backfill in bounded,
+draft closed. `content_purged_at` marks a tombstone whose document bytes and content history have
+been released after the retention window; placement and the removal record remain. Migrations
+0072–0074 add the record, backfill in bounded,
 re-runnable no-transaction pages, retire existing tombstones' active drafts
 and tree uses, then validate. The pending-part pass is independently paged;
 an interrupted cutover must finish before serving traffic.

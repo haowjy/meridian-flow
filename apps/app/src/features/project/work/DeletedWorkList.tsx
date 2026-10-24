@@ -5,7 +5,8 @@
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { DELETION_RETENTION_DAYS, type Work } from "@meridian/contracts/works";
+import { DELETION_RETENTION_DAYS } from "@meridian/contracts/retention";
+import type { Work } from "@meridian/contracts/works";
 import { RuledList } from "../RuledList";
 import { WorkCommandFailureRow } from "./WorkCommandFailureRow";
 import { daysUntilPurge, type ListedWorkEntry } from "./work-list-model";
