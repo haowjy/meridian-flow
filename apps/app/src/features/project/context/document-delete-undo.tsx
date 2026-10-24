@@ -15,6 +15,7 @@ import {
 } from "react";
 import { getContextOperationReceipt, restoreContextDocuments } from "@/client/api/projects-api";
 import { announce, announceError, getContextTabs } from "@/client/stores";
+import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { documentLocationName } from "../../chat/document-display-name";
 import { useDockDocumentStore } from "../dock/dock-document-store";
 import { SurfaceNotice, type SurfaceNoticeModel } from "../shell/SurfaceNotice";
@@ -43,6 +44,16 @@ type PresentedDeleteWindow = DeleteWindow & {
 };
 
 type DeleteOperationState = "pending" | "landed" | "refused" | "settled-locally" | "aborted";
+
+type DeleteReceiptResolution = {
+  state: DeleteOperationState;
+  documents: Awaited<ReturnType<typeof readDeleteRemovals>>;
+};
+
+type DeleteReceiptTask = {
+  controller: AbortController;
+  promise: Promise<DeleteReceiptResolution>;
+};
 
 type DeleteUndoContextValue = {
   notices: readonly PresentedDeleteWindow[];
@@ -122,83 +133,62 @@ export function DocumentDeleteUndoProvider({
   const [noticesBySurface, setNoticesBySurface] = useState<
     ReadonlyMap<DeleteNoticeSurface, PresentedDeleteWindow>
   >(() => new Map());
-  const emptyFolderChecks = useRef(new Set<string>());
-  const emptyFolderRetryTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  const [emptyFolderCheckRevision, retryEmptyFolderChecks] = useState(0);
+  const receiptTasks = useRef(new Map<string, DeleteReceiptTask>());
   const restores = useRef(new Set<string>());
-  const lifetime = useRef(new AbortController());
   const mounted = useRef(true);
-  const noticesRef = useRef(noticesBySurface);
-  noticesRef.current = noticesBySurface;
 
-  const dismiss = useCallback((operationId: string) => {
-    emptyFolderChecks.current.delete(operationId);
-    const timer = emptyFolderRetryTimers.current.get(operationId);
-    if (timer) clearTimeout(timer);
-    emptyFolderRetryTimers.current.delete(operationId);
-    setNoticesBySurface((current) => {
-      const surface = [...current].find(([, notice]) => notice.operationId === operationId)?.[0];
-      if (!surface) return current;
-      const next = new Map(current);
-      next.delete(surface);
-      return next;
-    });
+  const cancelReceiptTask = useCallback((operationId: string) => {
+    receiptTasks.current.get(operationId)?.controller.abort();
+    receiptTasks.current.delete(operationId);
   }, []);
 
+  const dismiss = useCallback(
+    (operationId: string) => {
+      cancelReceiptTask(operationId);
+      setNoticesBySurface((current) => {
+        const surface = [...current].find(([, notice]) => notice.operationId === operationId)?.[0];
+        if (!surface) return current;
+        const next = new Map(current);
+        next.delete(surface);
+        return next;
+      });
+    },
+    [cancelReceiptTask],
+  );
+
   useEffect(() => {
-    // React Strict Mode replays effects during development. Allocate the
-    // controller in the effect so that replay cleanup cannot poison the
-    // controller used by the live provider instance.
-    const controller = new AbortController();
-    lifetime.current = controller;
     mounted.current = true;
     return () => {
       mounted.current = false;
-      controller.abort();
-      for (const timer of emptyFolderRetryTimers.current.values()) clearTimeout(timer);
+      for (const task of receiptTasks.current.values()) task.controller.abort();
+      receiptTasks.current.clear();
     };
   }, []);
 
+  const receiptTask = useCallback(
+    (operationId: string) => {
+      const existing = receiptTasks.current.get(operationId);
+      if (existing) return existing;
+      const controller = new AbortController();
+      const promise = resolveDeleteReceipt(resources, projectId, operationId, controller.signal);
+      const task = { controller, promise };
+      receiptTasks.current.set(operationId, task);
+      return task;
+    },
+    [projectId, resources],
+  );
+
   useEffect(() => {
-    for (const [surface, window] of noticesBySurface) {
+    const active = new Set([...noticesBySurface.values()].map(({ operationId }) => operationId));
+    for (const operationId of receiptTasks.current.keys()) {
+      if (!active.has(operationId)) cancelReceiptTask(operationId);
+    }
+    for (const window of noticesBySurface.values()) {
       const operationId = window.operationId;
       const state = deleteOperationState(deleteIntents, operationId);
       if (state === "refused" || state === "settled-locally") dismiss(operationId);
-      if (
-        window.kind !== "folder" ||
-        state !== "landed" ||
-        emptyFolderChecks.current.has(operationId)
-      )
-        continue;
-      emptyFolderChecks.current.add(operationId);
-      void readDeleteRemovals(projectId, operationId, lifetime.current.signal)
-        .then((removed) => {
-          if (removed?.length === 0) dismiss(operationId);
-        })
-        .catch(() => {
-          if (
-            lifetime.current.signal.aborted ||
-            noticesRef.current.get(surface)?.operationId !== operationId
-          )
-            return;
-          const prior = emptyFolderRetryTimers.current.get(operationId);
-          if (prior) clearTimeout(prior);
-          emptyFolderRetryTimers.current.set(
-            operationId,
-            setTimeout(() => {
-              emptyFolderChecks.current.delete(operationId);
-              emptyFolderRetryTimers.current.delete(operationId);
-              if (
-                lifetime.current.signal.aborted ||
-                noticesRef.current.get(surface)?.operationId !== operationId
-              )
-                return;
-              retryEmptyFolderChecks((revision) => revision + 1);
-            }, 1_000),
-          );
-        });
     }
-  }, [deleteIntents, dismiss, emptyFolderCheckRevision, noticesBySurface, projectId]);
+  }, [cancelReceiptTask, deleteIntents, dismiss, noticesBySurface]);
 
   const requestDelete = useCallback(
     (target: DeleteTarget, surface: DeleteNoticeSurface) => {
@@ -223,22 +213,22 @@ export function DocumentDeleteUndoProvider({
             kind: target.kind === "file" ? "file" : "folder",
           };
           setNoticesBySurface((current) => {
-            const previous = current.get(surface);
-            if (previous) {
-              emptyFolderChecks.current.delete(previous.operationId);
-              const timer = emptyFolderRetryTimers.current.get(previous.operationId);
-              if (timer) clearTimeout(timer);
-              emptyFolderRetryTimers.current.delete(previous.operationId);
-            }
             return new Map(current).set(surface, { ...window, operationId, surface });
           });
+          const task = receiptTask(operationId);
+          if (window.kind === "folder")
+            void task.promise
+              .then(({ state, documents }) => {
+                if (state === "landed" && documents?.length === 0) dismiss(operationId);
+              })
+              .catch(() => undefined);
         } catch {
           settleMark("kept");
           announceError(t`Couldn't delete ${target.name}. Try again.`);
         }
       })();
     },
-    [notices, projectId, resources],
+    [dismiss, notices, projectId, receiptTask, resources],
   );
 
   const updateFeedback = useCallback((operationId: string, feedback: RestoreFeedback) => {
@@ -251,54 +241,6 @@ export function DocumentDeleteUndoProvider({
     });
   }, []);
 
-  const waitForSettlement = useCallback(
-    (operationId: string) =>
-      new Promise<DeleteOperationState>((resolve, reject) => {
-        const signal = lifetime.current.signal;
-        let stop: (() => void) | null = null;
-        let done = false;
-        const cleanup = () => {
-          signal.removeEventListener("abort", abort);
-          stop?.();
-          stop = null;
-        };
-        function finish(state: DeleteOperationState) {
-          if (done) return;
-          done = true;
-          cleanup();
-          resolve(state);
-        }
-        function fail(error: unknown) {
-          if (done) return;
-          done = true;
-          cleanup();
-          reject(error);
-        }
-        function abort() {
-          finish("aborted");
-        }
-        try {
-          stop = resources.observeProjection(
-            projectId,
-            (current) => {
-              const state = deleteOperationState(deleteOperationIndex(current), operationId);
-              if (state !== "pending") finish(state);
-            },
-            fail,
-          );
-        } catch (error) {
-          fail(error);
-        }
-        if (done) {
-          cleanup();
-          return;
-        }
-        signal.addEventListener("abort", abort, { once: true });
-        if (signal.aborted) abort();
-      }),
-    [projectId, resources],
-  );
-
   const undo = useCallback(
     (operationId: string) => {
       const window = [...noticesBySurface.values()].find(
@@ -309,19 +251,14 @@ export function DocumentDeleteUndoProvider({
       updateFeedback(operationId, { kind: "restoring" });
       void (async () => {
         try {
-          const projected = deleteOperationState(deleteIntents, operationId);
-          const state = projected === "pending" ? await waitForSettlement(operationId) : projected;
+          const task = receiptTask(operationId);
+          const { state, documents } = await task.promise;
           if (state === "refused" || state === "settled-locally") {
             dismiss(operationId);
             return;
           }
           if (state === "aborted") throw new Error("Delete settlement was interrupted");
           if (state !== "landed") throw new Error("Delete settlement is unavailable");
-          const documents = await readDeleteRemovals(
-            projectId,
-            operationId,
-            lifetime.current.signal,
-          );
           if (!documents) throw new Error("Delete receipt is unavailable");
           if (documents.length === 0) {
             dismiss(operationId);
@@ -331,7 +268,7 @@ export function DocumentDeleteUndoProvider({
             projectId,
             { documents },
             {
-              signal: lifetime.current.signal,
+              signal: task.controller.signal,
             },
           );
           const fault = response.documents.find(
@@ -376,7 +313,7 @@ export function DocumentDeleteUndoProvider({
         }
       })();
     },
-    [deleteIntents, dismiss, noticesBySurface, projectId, updateFeedback, waitForSettlement],
+    [dismiss, noticesBySurface, projectId, receiptTask, updateFeedback],
   );
 
   const value = useMemo<DeleteUndoContextValue>(
@@ -440,4 +377,99 @@ async function readDeleteRemovals(projectId: string, operationId: string, signal
   if (!receipt?.result.ok) return null;
   const value = receipt.result.value;
   return "removed" in value ? value.removed : null;
+}
+
+async function resolveDeleteReceipt(
+  resources: Pick<AccountResourceReplica, "observeProjection">,
+  projectId: string,
+  operationId: string,
+  signal: AbortSignal,
+): Promise<DeleteReceiptResolution> {
+  const state = await waitForDeleteSettlement(resources, projectId, operationId, signal);
+  return {
+    state,
+    documents: state === "landed" ? await retryReceiptRead(projectId, operationId, signal) : null,
+  };
+}
+
+function waitForDeleteSettlement(
+  resources: Pick<AccountResourceReplica, "observeProjection">,
+  projectId: string,
+  operationId: string,
+  signal: AbortSignal,
+): Promise<DeleteOperationState> {
+  return new Promise((resolve, reject) => {
+    let stop: (() => void) | null = null;
+    let done = false;
+    const cleanup = () => {
+      signal.removeEventListener("abort", abort);
+      stop?.();
+      stop = null;
+    };
+    function finish(state: DeleteOperationState) {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve(state);
+    }
+    function fail(error: unknown) {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(error);
+    }
+    function abort() {
+      finish("aborted");
+    }
+    try {
+      stop = resources.observeProjection(
+        projectId,
+        (current) => {
+          const state = deleteOperationState(deleteOperationIndex(current), operationId);
+          if (state !== "pending") finish(state);
+        },
+        fail,
+      );
+    } catch (error) {
+      fail(error);
+    }
+    if (done) {
+      cleanup();
+      return;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+  });
+}
+
+async function retryReceiptRead(projectId: string, operationId: string, signal: AbortSignal) {
+  while (!signal.aborted) {
+    try {
+      return await readDeleteRemovals(projectId, operationId, signal);
+    } catch (error) {
+      if (signal.aborted) throw error;
+      await abortableDelay(1_000, signal);
+    }
+  }
+  throw signal.reason;
+}
+
+function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(finish, milliseconds);
+    function cleanup() {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+    }
+    function finish() {
+      cleanup();
+      resolve();
+    }
+    function abort() {
+      cleanup();
+      reject(signal.reason);
+    }
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+  });
 }
