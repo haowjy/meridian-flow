@@ -1,3 +1,10 @@
+/**
+ * Tests catalog state behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Catalog checkpoint and strict-freshness installation
+ */
+
 import type {
   CatalogEntry,
   CatalogFolderEntry,

@@ -1,4 +1,9 @@
-// ProseMirror mapping proofs for the semantic continuation seam.
+/**
+ * ProseMirror mapping proofs for the semantic continuation seam.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - ProseMirror mappings carry semantic continuation roots
+ */
 
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";

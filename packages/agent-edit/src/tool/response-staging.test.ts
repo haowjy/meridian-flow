@@ -1,4 +1,9 @@
-// Response-staging lifecycle and commit/rollback contracts.
+/**
+ * Response-staging lifecycle and commit/rollback contracts.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Staged-create rollback and per-document commit batching
+ */
 import { describe, expect, it, vi } from "vitest";
 import { renderAgentEditResult } from "./result-text.js";
 import {

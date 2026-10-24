@@ -1,3 +1,10 @@
+/**
+ * Tests worktree cleanup behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Cleanup planning order and compare-and-swap ref deletion
+ */
+
 import { describe, expect, it } from "vitest";
 import {
   buildCleanupContext,

@@ -1,3 +1,10 @@
+/**
+ * Tests wire contracts behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Projection excerpts are capped at encoding time
+ */
+
 import { describe, expect, it } from "vitest";
 import type { ControlBody } from "../threads/index.js";
 import { assertAvailabilityGeneration } from "./context-availability.js";
