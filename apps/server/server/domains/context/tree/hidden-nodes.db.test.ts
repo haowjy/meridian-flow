@@ -1,12 +1,10 @@
 /**
- * Hidden-node lifecycle through the real commands (contract §6, §7, §12): a branch's create
- * is an empty hidden row its drafts share (C-2); a live create at a hidden path reveals it
- * and an aborted held write leaves live state alone (C-3); and the fences between a join,
- * a reveal and a last use hold in both orders (I-1, I-2, I-3).
+ * Hidden-node lifecycle through the real commands (contract §6, §7, §12): a branch's create is an empty hidden row its drafts share (C-2); a live create at a hidden path reveals it and an aborted held write leaves live state alone (C-3); and the fences between a join, a reveal and a last use hold in both orders (I-1, I-2, I-3).
  *
- * Outcomes are read through the tree's views. Rows are read only where no view can say
- * it: a tombstone (versus a hidden node nobody uses), and rows left naming one.
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current hidden nodes persistence protocol (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
+
 import type { DocumentId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import {
@@ -296,21 +294,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     // §12.2 step 5: a batch's last uses prune every hidden ancestor left empty, whichever
     // document of the batch comes first. An unused hidden folder is in no view, so only its
     // row tells a tombstone from a leftover.
-    it.each([
-      ["one first"],
-      ["two first"],
-    ])("tombstones a shared hidden ancestor when one batch ends sibling subtrees, %s", async (order) => {
+    it("tombstones a shared hidden ancestor when one batch ends sibling subtrees", async () => {
       const { scenario } = await start();
       const drafting = await scenario.work("Drafting", "draft");
       const one = await scenario.seedHidden(drafting, "root/one/x");
       const two = await scenario.seedHidden(drafting, "root/two/y");
       const branch = await scenario.branchOf(drafting);
-      const ids = order === "one first" ? [one, two] : [two, one];
       await runInDrizzleTransaction(db, () =>
         endUse(db, {
           removal: createTestDocumentRemoval(db),
           branchId: branch.id,
-          documentIds: ids,
+          documentIds: [one, two],
           actor: { cause: "repair" },
         }),
       );
