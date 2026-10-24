@@ -18,6 +18,7 @@ import {
   contextTreeFileRowClassName,
   contextTreeRowClassName,
   contextTreeRowGrowClassName,
+  contextTreeSelectedRowClassName,
 } from "./context-row-geometry";
 import { EntryNameField } from "./EntryNameField";
 import { dragEntry } from "./entry-drag/entry";
@@ -216,7 +217,7 @@ function DirRow({
           {...drop.dropProps}
           className={cn(
             "group focus-ring mx-2 flex items-center rounded-md pr-1 text-sm text-foreground",
-            row.selected ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/50",
+            row.selected ? contextTreeSelectedRowClassName : "hover:bg-sidebar-accent/50",
             contextTreeRowGrowClassName,
           )}
           style={{ paddingLeft: rowPaddingLeft(depth) }}

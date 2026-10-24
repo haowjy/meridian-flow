@@ -38,8 +38,12 @@ browser reports no fine pointer, so rows render at touch height.
    inside it: the folder and its rows light, the hint reads "Move to
    characters". Drop. The three chapters appear under `characters`, stay
    selected, and the open document's path reads Knowledge Base › characters.
-   The sidebar foot reads "Moved 3 items to characters." with Undo.
-4. Press Undo before the notice leaves: the chapters return to `Act 2`.
+   Between the tree and the account row, the rail reads "Moved 3 items to
+   characters." with Undo and Dismiss; it covers nothing and stays until the
+   next move or Dismiss.
+4. Press Undo: the chapters return to `Act 2`.
+4a. Open a row's `…` menu, Move… it into a collapsed folder: the same notice
+   names the destination; Undo returns it.
 5. Drag `Part Two` onto `Act 2`: nothing lights, the hint reads "Can't go
    inside itself", and releasing changes nothing.
 6. Drag a row over its own folder: no light, no hint, no change.

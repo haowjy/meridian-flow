@@ -208,7 +208,7 @@ function WorkFilesList({ projectId, work, search, files }: WorkFilesViewProps) {
           </WorkFileGroup>
         </ScratchDropGroup>
       </EntryList>
-      <MoveNotice className="sticky bottom-2 mt-2" />
+      <MoveNotice className="mt-2" />
       <DeleteConfirmationDialog
         projectId={projectId}
         target={scratchDelete.target}

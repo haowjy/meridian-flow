@@ -1,14 +1,16 @@
 /**
- * "Moved chapter-3 to Act 2." with Undo, at the foot of the surface the rows
- * were dropped in. A surface that can take drops (the sidebar, or Work Files,
- * which stays on screen when the sidebar is collapsed) wraps its lists in a
- * `MoveNoticeHost`; a list publishes to the host it sits in. The host holds its
- * latest notice as state, so one notice shows per host and a host that has
- * left the screen takes its notice with it. It leaves after a few seconds
- * unless the pointer or focus is on it.
+ * "Moved chapter-3 to Act 2." with Undo, at the foot of the surface that took
+ * the move (a drop or Move…). A surface that can take moves (the sidebar, or
+ * Work Files, which stays on screen when the sidebar is collapsed) wraps its
+ * lists in a `MoveNoticeHost`; a list publishes to the host it sits in. The
+ * host holds its latest notice as state, so one notice shows per host and a
+ * host that has left the screen takes its notice with it. The notice sits in
+ * the surface's own layout, never over other controls, and stays until the
+ * next move, Dismiss, or the host leaving: Undo is not a race.
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { X } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -21,11 +23,10 @@ import {
 } from "react";
 import { announce } from "@/client/stores";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
+import type { EntryRef } from "./entry";
 import type { MoveResult } from "./execute-move";
-import type { ReadyMovePlan } from "./move-plan";
-
-const VISIBLE_MS = 6000;
 
 /** Puts the move back; resolves to what to say when some of it couldn't go back. */
 export type UndoMove = () => Promise<string | null>;
@@ -77,13 +78,7 @@ export function MoveNotice({ className }: { className?: string }) {
   const host = useContext(HostContext);
   if (!host) throw new Error("MoveNotice requires a MoveNoticeHost");
   const { notice: current, settle } = host;
-  const [held, setHeld] = useState(false);
   const [undoing, setUndoing] = useState(false);
-  useEffect(() => {
-    if (!current || held || undoing) return;
-    const timer = setTimeout(() => settle(current, null), VISIBLE_MS);
-    return () => clearTimeout(timer);
-  }, [current, held, undoing, settle]);
   if (!current) return null;
 
   const undo = async (put: UndoMove) => {
@@ -102,14 +97,9 @@ export function MoveNotice({ className }: { className?: string }) {
   };
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: hovering only keeps the notice open.
     <div
-      onPointerEnter={() => setHeld(true)}
-      onPointerLeave={() => setHeld(false)}
-      onFocus={() => setHeld(true)}
-      onBlur={() => setHeld(false)}
       className={cn(
-        "z-20 flex items-center gap-2 rounded-md border border-border bg-popover px-2.5 py-2 text-sm text-popover-foreground shadow-sm",
+        "flex items-center gap-2 rounded-md border border-border bg-popover py-1 pr-1 pl-2.5 text-sm text-popover-foreground",
         className,
       )}
     >
@@ -125,6 +115,13 @@ export function MoveNotice({ className }: { className?: string }) {
           <Trans>Undo</Trans>
         </Button>
       ) : null}
+      <IconButton
+        className="shrink-0 [@media(pointer:coarse)]:size-11"
+        aria-label={t`Dismiss`}
+        onClick={() => settle(current, null)}
+      >
+        <X aria-hidden className="size-3.5" />
+      </IconButton>
     </div>
   );
 }
@@ -133,12 +130,16 @@ export function MoveNotice({ className }: { className?: string }) {
  * "Moved 3 items to Act 2." and, when the replica refused some, which. A lone
  * row that arrived under the next free name says so.
  */
-export function describeMove(result: MoveResult, plan: ReadyMovePlan): string {
+export function describeMove(
+  result: MoveResult,
+  destinationName: string,
+  /** Each row's name before it moved. */
+  names: readonly { ref: EntryRef; name: string }[],
+): string {
   const { moved, failed } = result;
-  const { destinationName } = plan;
   const parts: string[] = [];
   const [first] = moved;
-  const requested = first && plan.moves.find((move) => move.ref.id === first.entry.id)?.name;
+  const requested = first && names.find((row) => row.ref.id === first.entry.id)?.name;
   if (moved.length === 1 && first && requested && requested !== first.name)
     parts.push(t`Moved ${requested} to ${destinationName} as ${first.name}.`);
   else if (moved.length === 1 && first) parts.push(t`Moved ${first.name} to ${destinationName}.`);

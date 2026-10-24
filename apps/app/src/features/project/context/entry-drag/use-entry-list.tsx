@@ -3,11 +3,20 @@
  * drop scope. The Files tree is one list over its four areas, a chat's Scratch
  * one over the current and Earlier notes, a Work's Files one over its Scratch.
  * Shells declare the catalogs they show; this owns the rest: what a hovered
- * target would do, what a drop does, and the notice it leaves.
+ * target would do, what a drop does, and what any move from the list (a drop
+ * or Move…) leaves behind: the moved rows selected and a notice with Undo.
  */
 import { t } from "@lingui/core/macro";
 import type { ParentRef } from "@meridian/resource-replica";
-import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { useWorks } from "@/client/query/useWorks";
 import {
   useAccountResourceProjection,
@@ -18,13 +27,31 @@ import { menuEntryFor } from "../menu-tree";
 import { destinationParent } from "../move-entry";
 import { type EntriesRoute, TreeDropScope } from "../tree-drop/tree-drop";
 import { activeEntryDrag } from "./drag-session";
-import { type DragEntry, entryKey } from "./entry";
-import { executeMove, type MoveContext, undoMove } from "./execute-move";
+import { type DragEntry, type EntryRef, entryKey } from "./entry";
+import { executeMove, type MoveContext, type MoveResult, undoMove } from "./execute-move";
 import { describeMove, describeUndoFailure, useMoveNoticePublisher } from "./move-notice";
 import { type MoveArea, planMove, sameParent, withoutNested } from "./move-plan";
 import { type EntrySelection, EntrySelectionProvider, useEntrySelection } from "./selection";
 
-export type EntryListController = { selection: EntrySelection; route: EntriesRoute };
+/** Reports a finished move: selects what moved and leaves the notice. `requested` names rows as they were. */
+export type ReportMove = (
+  result: MoveResult,
+  destinationName: string,
+  requested: readonly { ref: EntryRef; name: string }[],
+) => void;
+
+export type EntryListController = {
+  selection: EntrySelection;
+  route: EntriesRoute;
+  moved: ReportMove;
+};
+
+const MovedContext = createContext<ReportMove | null>(null);
+
+/** The list a row sits in, for Move… to report like a drop; null outside a list (the phone). */
+export function useReportMove(): ReportMove | null {
+  return useContext(MovedContext);
+}
 
 export function useEntryList({
   projectId,
@@ -49,6 +76,26 @@ export function useEntryList({
     latest.current = { areas, projection, works, noWork, publish, selection };
   });
 
+  const moved = useCallback<ReportMove>(
+    (result, destinationName, requested) => {
+      const { publish, selection } = latest.current;
+      if (result.moved.length > 0)
+        selection.replace(result.moved.map((effect) => entryKey(effect.entry)));
+      const context: MoveContext = {
+        resources,
+        projectId,
+        siblingsAt: (parent) => siblingsAt(latest.current.areas, parent),
+      };
+      publish?.(
+        describeMove(result, destinationName, requested),
+        result.moved.length > 0
+          ? () => undoMove(result.moved, context).then(describeUndoFailure)
+          : null,
+      );
+    },
+    [resources, projectId],
+  );
+
   const route = useMemo<EntriesRoute>(() => {
     const plan = (target: Parameters<EntriesRoute["verdict"]>[0]) => {
       const entries = activeEntryDrag();
@@ -67,27 +114,18 @@ export function useEntryList({
       drop(target) {
         const planned = plan(target);
         if (planned?.kind !== "ready") return;
-        const { works, noWork, publish, selection } = latest.current;
-        selection.replace(planned.moves.map((move) => entryKey(move.ref)));
+        const { works, noWork } = latest.current;
         const after = destinationParent(planned.destination, works, noWork);
-        const context: MoveContext = {
+        void executeMove(planned, after, {
           resources,
           projectId,
           siblingsAt: (parent) => siblingsAt(latest.current.areas, parent),
-        };
-        void executeMove(planned, after, context).then((result) =>
-          publish?.(
-            describeMove(result, planned),
-            result.moved.length > 0
-              ? () => undoMove(result.moved, context).then(describeUndoFailure)
-              : null,
-          ),
-        );
+        }).then((result) => moved(result, planned.destinationName, planned.moves));
       },
     };
-  }, [resources, projectId]);
+  }, [resources, projectId, moved]);
 
-  return useMemo(() => ({ selection, route }), [selection, route]);
+  return useMemo(() => ({ selection, route, moved }), [selection, route, moved]);
 }
 
 /** What `parent` holds in the catalogs the list shows; empty when it shows none of them. */
@@ -106,7 +144,9 @@ function siblingsAt(areas: readonly MoveArea[], parent: ParentRef): readonly Con
 export function EntryList({ list, children }: { list: EntryListController; children: ReactNode }) {
   return (
     <TreeDropScope route={list.route}>
-      <EntrySelectionProvider selection={list.selection}>{children}</EntrySelectionProvider>
+      <EntrySelectionProvider selection={list.selection}>
+        <MovedContext.Provider value={list.moved}>{children}</MovedContext.Provider>
+      </EntrySelectionProvider>
     </TreeDropScope>
   );
 }
