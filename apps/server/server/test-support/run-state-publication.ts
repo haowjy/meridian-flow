@@ -14,10 +14,9 @@ import { randomInt } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { createDb, type Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
-import { and, asc, inArray, isNull, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import postgres from "postgres";
-import { toInboxMessage } from "../domains/runtime/adapters/drizzle-inbox.js";
-import { projectRunState } from "../domains/runtime/loop/run-state.js";
+import { readRunState } from "../domains/runtime/adapters/drizzle-run-state.js";
 
 // A suite that drains detached work (up to 8 s) and then closes must fit the 30 s hook timeout:
 // 8 + 12 + 3 + 3 = 26 s.
@@ -153,98 +152,24 @@ async function installPublicationAudit(db: Database) {
 }
 
 export async function assertPublicationHooks(db: Database) {
-  const threads = await db.execute<{
-    thread_id: string;
-    mode: "direct" | "draft";
-    blocked_reason: "credits_exhausted" | null;
-    run_state: unknown;
-    unpublished: boolean;
-  }>(sql`
-    WITH latest AS (
-      SELECT DISTINCT ON (thread_id)
-        thread_id, payload->'runState' AS run_state
-      FROM event_journal
-      WHERE event_type = 'run_state.changed'
-      ORDER BY thread_id, seq DESC
-    ), unpublished AS (
-      SELECT DISTINCT i.thread_id
-      FROM run_state_audit i
-      WHERE i.kind = 'input'
-        AND NOT EXISTS (SELECT 1 FROM run_state_audit r
-          WHERE r.kind = 'record' AND r.txid = i.txid AND r.thread_id = i.thread_id)
-    )
-    SELECT
-      threads.id AS thread_id,
-      threads.ai_write_mode AS mode,
-      threads.inbox_blocked_reason AS blocked_reason,
-      latest.run_state,
-      unpublished.thread_id IS NOT NULL AS unpublished
-    FROM threads
-    LEFT JOIN latest ON latest.thread_id = threads.id
-    LEFT JOIN unpublished ON unpublished.thread_id = threads.id`);
+  const unpublished = await db.execute<{ txid: string; thread_id: string }>(sql`
+    SELECT DISTINCT i.txid::text, i.thread_id FROM run_state_audit i
+    WHERE i.kind = 'input'
+      AND EXISTS (SELECT 1 FROM threads t WHERE t.id = i.thread_id)
+      AND NOT EXISTS (SELECT 1 FROM run_state_audit r
+        WHERE r.kind = 'record' AND r.txid = i.txid AND r.thread_id = i.thread_id)`);
   await db.execute(sql`TRUNCATE run_state_audit`);
-  const unpublished = threads.filter((row) => row.unpublished);
   if (unpublished.length > 0)
     throw new Error(
-      `Transactions changed run-state inputs without publishing a record for threads: ${JSON.stringify(unpublished.map((row) => row.thread_id))}`,
+      `Transactions changed run-state inputs without publishing a record: ${JSON.stringify(unpublished)}`,
     );
-  if (threads.length === 0) return;
 
-  const threadIds = threads.map((row) => row.thread_id);
-  const [messages, leases, sentRows, carrierRows] = await Promise.all([
-    db
-      .select()
-      .from(schema.threadInboxMessages)
-      .where(
-        and(
-          inArray(schema.threadInboxMessages.threadId, threadIds),
-          isNull(schema.threadInboxMessages.deliveredAt),
-        ),
-      )
-      .orderBy(asc(schema.threadInboxMessages.threadId), asc(schema.threadInboxMessages.seq)),
-    db
-      .select({
-        threadId: schema.threadRunLeases.threadId,
-        executionId: schema.threadRunLeases.executionId,
-        turnId: schema.threadRunLeases.turnId,
-        adoptedMessageIds: schema.threadRunLeases.adoptedMessageIds,
-      })
-      .from(schema.threadRunLeases)
-      .where(inArray(schema.threadRunLeases.threadId, threadIds)),
-    db.execute<{ thread_id: string; seq: number | null }>(sql`
-      SELECT thread_id, max(seq)::integer AS seq
-      FROM thread_inbox_messages
-      WHERE thread_id IN ${threadIds}
-        AND intent = 'message'
-        AND provenance->>'kind' = 'writer'
-      GROUP BY thread_id`),
-    db.execute<{ thread_id: string }>(sql`
-      SELECT DISTINCT leases.thread_id
-      FROM thread_run_leases leases
-      JOIN turns ON turns.thread_id = leases.thread_id
-        AND turns.execution_id::text = leases.execution_id
-      WHERE leases.thread_id IN ${threadIds}`),
-  ]);
-  const messagesByThread = new Map<string, typeof messages>();
-  for (const message of messages) {
-    const group = messagesByThread.get(message.threadId) ?? [];
-    group.push(message);
-    messagesByThread.set(message.threadId, group);
-  }
-  const leasesByThread = new Map(leases.map((lease) => [lease.threadId, lease]));
-  const sentByThread = new Map(sentRows.map((row) => [row.thread_id, Number(row.seq ?? 0)]));
-  const openExecutions = new Set(carrierRows.map((row) => row.thread_id));
-
-  for (const row of threads) {
-    const lease = leasesByThread.get(row.thread_id) ?? null;
-    const fresh = projectRunState({
-      messages: (messagesByThread.get(row.thread_id) ?? []).map(toInboxMessage),
-      lease,
-      executionOpen: openExecutions.has(row.thread_id),
-      sentThrough: sentByThread.get(row.thread_id) ?? 0,
-      mode: row.mode,
-      blockedReason: row.blocked_reason,
-    });
+  const chats = await db.select({ id: schema.threads.id }).from(schema.threads);
+  for (const { id } of chats) {
+    const [last] = await db.execute<{ run_state: unknown }>(sql`
+      SELECT payload->'runState' AS run_state FROM event_journal
+      WHERE thread_id = ${id} AND event_type = 'run_state.changed' ORDER BY seq DESC LIMIT 1`);
+    const fresh = await readRunState(db, id);
     const quiet = {
       items: [],
       sentThrough: 0,
@@ -253,9 +178,9 @@ export async function assertPublicationHooks(db: Database) {
       blocked: null,
     };
     // jsonb reorders keys, so compare structurally.
-    if (!isDeepStrictEqual(row.run_state ?? quiet, JSON.parse(JSON.stringify(fresh))))
+    if (!isDeepStrictEqual(last?.run_state ?? quiet, JSON.parse(JSON.stringify(fresh))))
       throw new Error(
-        `Run state of ${row.thread_id} disagrees with its rows: record ${JSON.stringify(row.run_state ?? null)}, rows ${JSON.stringify(fresh)}`,
+        `Run state of ${id} disagrees with its rows: record ${JSON.stringify(last?.run_state ?? null)}, rows ${JSON.stringify(fresh)}`,
       );
   }
 }
