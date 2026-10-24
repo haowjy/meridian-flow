@@ -19,15 +19,18 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { announce, announceError, getContextTabs } from "@/client/stores";
 import { documentLocationName } from "../../chat/document-display-name";
 import { useDockDocumentStore } from "../dock/dock-document-store";
-import { SurfaceNotice, type SurfaceNoticeModel } from "../shell/SurfaceNotice";
+import {
+  type NoticeSurface,
+  SurfaceNotice,
+  type SurfaceNoticeModel,
+  useNoticeSlot,
+} from "../shell/SurfaceNotice";
 import {
   useAccountResourceProjection,
   useAccountResourceReplica,
   useOptionalRemovedNotices,
 } from "./account-feature-context";
 import type { DeleteTarget } from "./ContextEntryActions";
-
-export type DeleteNoticeSurface = "sidebar" | "work-files" | "mobile" | "chat-files";
 
 type RestoreFeedback =
   | { kind: "restoring" }
@@ -42,7 +45,9 @@ type DeleteWindow = {
 
 type PresentedDeleteWindow = DeleteWindow & {
   operationId: string;
-  surface: DeleteNoticeSurface;
+  surface: NoticeSurface;
+  /** False once a newer notice took its surface while its restore still runs. */
+  shown: boolean;
 };
 
 type DeleteOperationState = "pending" | "landed" | "refused" | "settled-locally";
@@ -54,7 +59,7 @@ type ProviderLifetime = {
 
 type DeleteUndoContextValue = {
   notices: readonly PresentedDeleteWindow[];
-  requestDelete: (target: DeleteTarget, surface: DeleteNoticeSurface) => void;
+  requestDelete: (target: DeleteTarget, surface: NoticeSurface) => void;
   undo: (operationId: string) => void;
   dismiss: (operationId: string) => void;
 };
@@ -126,30 +131,46 @@ export function DocumentDeleteUndoProvider({
   const resources = useAccountResourceReplica();
   const notices = useOptionalRemovedNotices();
   const queryClient = useQueryClient();
+  const slots = useNoticeSlot();
   const { snapshot } = useAccountResourceProjection(projectId);
   const deleteIntents = useMemo(() => deleteOperationIndex(snapshot), [snapshot]);
-  const [noticesBySurface, setNoticesBySurface] = useState<
-    ReadonlyMap<DeleteNoticeSurface, PresentedDeleteWindow>
-  >(() => new Map());
+  // By operation: a notice replaced on its surface while its Undo runs stays here, unshown,
+  // until the restore finishes.
+  const [windows, setWindows] = useState<ReadonlyMap<string, PresentedDeleteWindow>>(
+    () => new Map(),
+  );
   const restores = useRef(new Set<string>());
   const folderChecks = useRef(new Set<string>());
   const lifetime = useRef<ProviderLifetime | null>(null);
+  const windowsRef = useRef(windows);
+  windowsRef.current = windows;
 
   const dismiss = useCallback(
     (operationId: string) => {
       void queryClient.cancelQueries({
         queryKey: deleteOperationQueryKey(projectId, operationId),
       });
-      setNoticesBySurface((current) => {
-        const surface = [...current].find(([, notice]) => notice.operationId === operationId)?.[0];
-        if (!surface) return current;
+      setWindows((current) => {
+        if (!current.has(operationId)) return current;
         const next = new Map(current);
-        next.delete(surface);
+        next.delete(operationId);
         return next;
       });
     },
     [projectId, queryClient],
   );
+
+  /** A newer notice took the surface: close this one, unless its Undo is already running. */
+  const release = useCallback((operationId: string) => {
+    setWindows((current) => {
+      const window = current.get(operationId);
+      if (!window) return current;
+      const next = new Map(current);
+      if (window.feedback?.kind === "restoring") next.set(operationId, { ...window, shown: false });
+      else next.delete(operationId);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     const owner: ProviderLifetime = { controller: new AbortController(), mounted: true };
@@ -165,7 +186,7 @@ export function DocumentDeleteUndoProvider({
   }, [projectId, queryClient]);
 
   useEffect(() => {
-    const active = new Set([...noticesBySurface.values()].map(({ operationId }) => operationId));
+    const active = new Set([...windows.values()].map(({ operationId }) => operationId));
     void queryClient.cancelQueries({
       predicate: ({ queryKey, state }) =>
         state.fetchStatus === "fetching" &&
@@ -174,10 +195,10 @@ export function DocumentDeleteUndoProvider({
         typeof queryKey[2] === "string" &&
         !active.has(queryKey[2]),
     });
-  }, [noticesBySurface, projectId, queryClient]);
+  }, [windows, projectId, queryClient]);
 
   const requestDelete = useCallback(
-    (target: DeleteTarget, surface: DeleteNoticeSurface) => {
+    (target: DeleteTarget, surface: NoticeSurface) => {
       const owner = lifetime.current;
       if (!owner) return;
       const settleMark =
@@ -200,9 +221,10 @@ export function DocumentDeleteUndoProvider({
             label: target.name,
             kind: target.kind === "file" ? "file" : "folder",
           };
-          setNoticesBySurface((current) => {
-            return new Map(current).set(surface, { ...window, operationId, surface });
-          });
+          setWindows((current) =>
+            new Map(current).set(operationId, { ...window, operationId, surface, shown: true }),
+          );
+          slots.take(surface, () => release(operationId));
         } catch {
           settleMark("kept");
           if (!isActive(owner)) return;
@@ -210,17 +232,21 @@ export function DocumentDeleteUndoProvider({
         }
       })();
     },
-    [notices, projectId, resources],
+    [notices, projectId, release, resources, slots],
   );
 
   const updateFeedback = useCallback((operationId: string, feedback: RestoreFeedback) => {
-    setNoticesBySurface((current) => {
-      const surface = [...current].find(([, notice]) => notice.operationId === operationId)?.[0];
-      if (!surface) return current;
-      const window = current.get(surface);
+    setWindows((current) => {
+      const window = current.get(operationId);
       if (!window) return current;
-      return new Map(current).set(surface, { ...window, feedback });
+      const next = new Map(current);
+      // An unshown notice has no card to fail on; the newer notice keeps its place.
+      if (!window.shown && feedback.kind === "failed") next.delete(operationId);
+      else next.set(operationId, { ...window, feedback });
+      return next;
     });
+    const window = windowsRef.current.get(operationId);
+    if (window && !window.shown && feedback.kind === "failed") announceError(feedback.message);
   }, []);
 
   const undo = useCallback(
@@ -302,7 +328,7 @@ export function DocumentDeleteUndoProvider({
   useEffect(() => {
     const owner = lifetime.current;
     if (!owner) return;
-    for (const window of noticesBySurface.values()) {
+    for (const window of windows.values()) {
       const { operationId } = window;
       const state = deleteOperationState(deleteIntents, operationId);
       if (state === "refused" || state === "settled-locally") {
@@ -323,16 +349,16 @@ export function DocumentDeleteUndoProvider({
         );
       }
     }
-  }, [deleteIntents, dismiss, noticesBySurface, projectId, queryClient, runRestore]);
+  }, [deleteIntents, dismiss, windows, projectId, queryClient, runRestore]);
 
   const value = useMemo<DeleteUndoContextValue>(
     () => ({
-      notices: [...noticesBySurface.values()],
+      notices: [...windows.values()].filter((window) => window.shown),
       requestDelete,
       undo,
       dismiss,
     }),
-    [dismiss, noticesBySurface, requestDelete, undo],
+    [dismiss, windows, requestDelete, undo],
   );
   return <DeleteUndoContext.Provider value={value}>{children}</DeleteUndoContext.Provider>;
 }
@@ -343,7 +369,7 @@ function useDocumentDeleteUndo(): DeleteUndoContextValue {
   return value;
 }
 
-export function useDeleteContextEntry(surface: DeleteNoticeSurface = "sidebar") {
+export function useDeleteContextEntry(surface: NoticeSurface = "sidebar") {
   const { requestDelete } = useDocumentDeleteUndo();
   return useMemo(
     () => ({ requestDelete: (target: DeleteTarget) => requestDelete(target, surface) }),
@@ -355,7 +381,7 @@ export function DocumentDeleteUndoNotice({
   surface,
   className,
 }: {
-  surface: DeleteNoticeSurface;
+  surface: NoticeSurface;
   className?: string;
 }) {
   const { notices, undo, dismiss } = useDocumentDeleteUndo();

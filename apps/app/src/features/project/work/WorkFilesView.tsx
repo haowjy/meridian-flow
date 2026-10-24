@@ -10,9 +10,9 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import { serverTabFromFile } from "../context/context-tab-from-file";
-import { DocumentDeleteUndoNotice, useDeleteContextEntry } from "../context/document-delete-undo";
-import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
+import { useDeleteContextEntry } from "../context/document-delete-undo";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
+import { SurfaceNotices } from "../context/project-notices";
 import { DropRegion } from "../context/tree-drop/DropRegion";
 import { useTreeDropTarget } from "../context/tree-drop/tree-drop";
 import { treeFolderIds } from "../context/tree-expansion-state";
@@ -75,16 +75,7 @@ type WorkFilesViewProps = {
   files: WorkFiles;
 };
 
-/** Drops here report under the list, which stays visible with the sidebar collapsed. */
-export function WorkFilesView(props: WorkFilesViewProps) {
-  return (
-    <MoveNoticeHost>
-      <WorkFilesList {...props} />
-    </MoveNoticeHost>
-  );
-}
-
-function WorkFilesList({ projectId, work, search, files }: WorkFilesViewProps) {
+export function WorkFilesView({ projectId, work, search, files }: WorkFilesViewProps) {
   const { scratch, intake } = files;
   const scratchDelete = useDeleteContextEntry("work-files");
   const catalog = scratch.catalog;
@@ -137,7 +128,7 @@ function WorkFilesList({ projectId, work, search, files }: WorkFilesViewProps) {
       catalog ? [{ scheme: "scratch" as const, owner, catalog, movable: files.editable }] : [],
     [catalog, owner, files.editable],
   );
-  const list = useEntryList({ projectId, areas });
+  const list = useEntryList({ projectId, surface: "work-files", areas });
   const matchesSearch = workFileSearch(search);
   const hasRows = catalog
     ?.children(catalog.root.entryId)
@@ -208,8 +199,8 @@ function WorkFilesList({ projectId, work, search, files }: WorkFilesViewProps) {
           </WorkFileGroup>
         </ScratchDropGroup>
       </EntryList>
-      <MoveNotice className="mt-2" />
-      <DocumentDeleteUndoNotice surface="work-files" className="sticky bottom-2 mt-2 px-2" />
+      {/* Under the list, which stays visible with the sidebar collapsed. */}
+      <SurfaceNotices surface="work-files" className="sticky bottom-2 mt-2 px-2" />
     </div>
   );
 }

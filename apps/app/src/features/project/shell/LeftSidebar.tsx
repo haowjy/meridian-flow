@@ -15,9 +15,8 @@ import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel, UserRailSection } from "../context/ContextTreePanel";
 import { serverTabFromFile } from "../context/context-tab-from-file";
-import { DocumentDeleteUndoNotice } from "../context/document-delete-undo";
-import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
 import { useOpenProjectDocument } from "../context/open-project-document";
+import { SurfaceNotices } from "../context/project-notices";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
 import { useDockPlacement } from "../dock/use-dock-placement";
@@ -53,16 +52,7 @@ type LeftSidebarProps = {
   onCollapse: () => void;
 };
 
-/** Moves anywhere in the rail report between the tree and Scratch; a project's notice leaves with it. */
-export function LeftSidebar(props: LeftSidebarProps) {
-  return (
-    <MoveNoticeHost key={props.projectId}>
-      <LeftSidebarRail {...props} />
-    </MoveNoticeHost>
-  );
-}
-
-function LeftSidebarRail({
+export function LeftSidebar({
   projectId,
   projectTitle,
   titleEdit,
@@ -141,12 +131,7 @@ function LeftSidebarRail({
         onSelectScreen={onSelectScreen}
         presentation="desktop"
         childrenRef={treePane}
-        notice={
-          <>
-            <DocumentDeleteUndoNotice surface="sidebar" className="mx-2 mb-1" />
-            <MoveNotice className="mx-2 my-1.5 shrink-0" />
-          </>
-        }
+        notice={<SurfaceNotices surface="sidebar" className="mx-2 my-1 shrink-0" />}
         onOpenTrash={() => void trashNavigation.navigate(true)}
         user={
           contextLive ? (

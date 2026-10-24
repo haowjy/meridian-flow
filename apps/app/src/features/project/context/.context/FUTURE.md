@@ -62,12 +62,6 @@ here is a known defect.
 
 For `document-delete-undo.tsx` and `shell/SurfaceNotice.tsx`.
 
-- A long document name truncates in the foot card ("Deleted personal-n…") with no
-  way to read the rest. Show the full name on hover or let the card wrap to two
-  lines, if writers with long chapter titles miss it.
 - A restore that lands at another name says so only through `announce()`, so a
   sighted writer learns the new name by scanning the tree. Keep the card open for
   a moment with "Restored at ‹location›" if that confuses anyone.
-- The sidebar move notice from #837 has its own store. Whichever of #837 and
-  this notice merges second puts both behind one project-scoped slot per
-  surface; `SurfaceNotice` is the shared renderer.

@@ -9,9 +9,8 @@ import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel, UserRailSection } from "../context/ContextTreePanel";
-import { DocumentDeleteUndoNotice } from "../context/document-delete-undo";
-import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
 import { useOpenProjectDocument } from "../context/open-project-document";
+import { SurfaceNotices } from "../context/project-notices";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
 import { useProjectTrashNavigation } from "../routing/ProjectNavigationContext";
 import { InlineProjectTitle, type ProjectTitleEdit } from "../shell/InlineProjectTitle";
@@ -124,64 +123,34 @@ export function NavigationDrawer({
             paddingRight: "env(safe-area-inset-right)",
           }}
         >
-          {/* The sheet's content unmounts on close, and the note leaves with the lists that
-              retire its Undo. */}
-          <MoveNoticeHost key={projectId}>
-            <nav aria-label={t`Workspace navigation`} className="flex h-full min-h-0 flex-col">
-              <div className="flex h-12 shrink-0 items-center border-b border-border-subtle px-3">
-                <InlineProjectTitle
-                  title={projectTitle}
-                  {...titleEdit}
-                  showRenameHint
-                  className="focus-ring flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-semibold hover:bg-sidebar-accent"
-                  inputClassName="min-h-11 px-2 text-sm font-semibold"
-                />
-              </div>
+          <nav aria-label={t`Workspace navigation`} className="flex h-full min-h-0 flex-col">
+            <div className="flex h-12 shrink-0 items-center border-b border-border-subtle px-3">
+              <InlineProjectTitle
+                title={projectTitle}
+                {...titleEdit}
+                showRenameHint
+                className="focus-ring flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-semibold hover:bg-sidebar-accent"
+                inputClassName="min-h-11 px-2 text-sm font-semibold"
+              />
+            </div>
 
-              {/* Selecting a destination also closes the drawer — a chrome
+            {/* Selecting a destination also closes the drawer — a chrome
                 concern the shared body stays unaware of. */}
-              <WorkspaceNavBody
-                activeScreen={activeScreen}
-                onSelectScreen={(screen) => {
-                  onSelectScreen(screen);
-                  onOpenChange(false);
-                }}
-                presentation="phone"
-                notice={
-                  <>
-                    <DocumentDeleteUndoNotice surface="sidebar" className="mx-3 mb-1" />
-                    <MoveNotice className="mx-3 my-1.5 shrink-0" />
-                  </>
-                }
-                onOpenTrash={() => {
-                  void trashNavigation.navigate(true);
-                  onOpenChange(false);
-                }}
-                user={
-                  contextLive ? (
-                    <UserRailSection
-                      projectId={projectId}
-                      editorWorkId={editorWorkId}
-                      activeScheme={activeContextScheme}
-                      activePath={activeContextPath}
-                      onSelectFile={handleSelectFile}
-                      creating={creating}
-                      onRequestCreate={setCreating}
-                      onCreateDone={() => setCreating(null)}
-                    />
-                  ) : null
-                }
-                scratch={
-                  <RailScratchSection
-                    projectId={projectId}
-                    threadId={chatThreadId}
-                    editorWorkId={editorWorkId}
-                    onPicked={() => onOpenChange(false)}
-                  />
-                }
-              >
-                {contextLive ? (
-                  <ContextTreePanel
+            <WorkspaceNavBody
+              activeScreen={activeScreen}
+              onSelectScreen={(screen) => {
+                onSelectScreen(screen);
+                onOpenChange(false);
+              }}
+              presentation="phone"
+              notice={<SurfaceNotices surface="sidebar" className="mx-3 my-1 shrink-0" />}
+              onOpenTrash={() => {
+                void trashNavigation.navigate(true);
+                onOpenChange(false);
+              }}
+              user={
+                contextLive ? (
+                  <UserRailSection
                     projectId={projectId}
                     editorWorkId={editorWorkId}
                     activeScheme={activeContextScheme}
@@ -191,10 +160,31 @@ export function NavigationDrawer({
                     onRequestCreate={setCreating}
                     onCreateDone={() => setCreating(null)}
                   />
-                ) : null}
-              </WorkspaceNavBody>
-            </nav>
-          </MoveNoticeHost>
+                ) : null
+              }
+              scratch={
+                <RailScratchSection
+                  projectId={projectId}
+                  threadId={chatThreadId}
+                  editorWorkId={editorWorkId}
+                  onPicked={() => onOpenChange(false)}
+                />
+              }
+            >
+              {contextLive ? (
+                <ContextTreePanel
+                  projectId={projectId}
+                  editorWorkId={editorWorkId}
+                  activeScheme={activeContextScheme}
+                  activePath={activeContextPath}
+                  onSelectFile={handleSelectFile}
+                  creating={creating}
+                  onRequestCreate={setCreating}
+                  onCreateDone={() => setCreating(null)}
+                />
+              ) : null}
+            </WorkspaceNavBody>
+          </nav>
         </div>
       </SheetContent>
     </Sheet>

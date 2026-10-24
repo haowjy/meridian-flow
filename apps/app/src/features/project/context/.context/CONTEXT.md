@@ -92,10 +92,16 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
                      │
           validateContextEntryName (pure)
 
-Delete Undo notices are owned by `DocumentDeleteUndoProvider` and rendered as
-one replaceable `SurfaceNotice` per host surface. The sidebar host sits between
-the tree and Scratch; Work Files and the mobile browser host theirs at their
-own foot.
+Delete and move notices share one notice place per surface (sidebar, Work
+Files, phone browser, chat Files menu), drawn with `SurfaceNotice`: a newer
+notice of either kind replaces the older (`useNoticeSlot`). Each kind has one
+owner per project, mounted together by `ProjectNoticesProvider`:
+`DocumentDeleteUndoProvider` for deletes, `MoveNoticesProvider`
+(`entry-drag/move-notice.tsx`) for moves. Each owner keeps its notice's Undo
+and decides from the replica when Undo still applies, so a notice outlives the
+list that published it. `SurfaceNotices` renders a surface's place: in the
+rail between the tree and User; at the foot of Work Files, the phone browser
+and the chat Files menu.
 
 ContextPaneController
        ├─ route ↔ server-tab reconciliation

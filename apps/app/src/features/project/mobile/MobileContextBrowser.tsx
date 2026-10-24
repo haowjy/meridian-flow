@@ -9,10 +9,10 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
-import { DocumentDeleteUndoNotice, useDeleteContextEntry } from "../context/document-delete-undo";
-import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
+import { useDeleteContextEntry } from "../context/document-delete-undo";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { useOpenProjectDocument } from "../context/open-project-document";
+import { SurfaceNotices } from "../context/project-notices";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import type { ResolvedProjectViewProps } from "../ProjectView";
@@ -37,11 +37,7 @@ export type MobileContextBrowserProps = Pick<
 
 export function MobileContextBrowser(props: MobileContextBrowserProps) {
   if (props.activeContextScheme)
-    return (
-      <MoveNoticeHost key={`${props.projectId}:${props.activeContextScheme}:${props.editorWorkId}`}>
-        <MobileFolderTree {...props} scheme={props.activeContextScheme} />
-      </MoveNoticeHost>
-    );
+    return <MobileFolderTree {...props} scheme={props.activeContextScheme} />;
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-background">
       {EDITOR_CONTEXT_SCHEMES.map((scheme) => {
@@ -80,6 +76,7 @@ function MobileFolderTree({
   // One list, so Move… here ends as everywhere else: the row selected and the note with Undo.
   const list = useEntryList({
     projectId,
+    surface: "mobile",
     areas: catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, movable: true }] : [],
   });
   const [localCreate, setLocalCreate] = useState<{
@@ -189,8 +186,7 @@ function MobileFolderTree({
       {catalog && isError ? (
         <InlineErrorRow message={t`Could not load files.`} onRetry={refetch} />
       ) : null}
-      <MoveNotice className="mx-3 my-2 shrink-0" />
-      <DocumentDeleteUndoNotice surface="mobile" className="sticky bottom-2 mx-2 mt-2" />
+      <SurfaceNotices surface="mobile" className="sticky bottom-2 mx-2 mt-2" />
     </div>
   );
 }

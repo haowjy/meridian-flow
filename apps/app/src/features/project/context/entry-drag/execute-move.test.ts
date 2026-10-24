@@ -4,14 +4,21 @@
  * again since (or gone) stays. A placement the replica refuses is reported without
  * losing the rows that did move, and Undo still covers those.
  */
-import type { ParentRef, ResourceLocation } from "@meridian/resource-replica";
+import type { CatalogEntry } from "@meridian/contracts/protocol";
+import type { ParentRef } from "@meridian/resource-replica";
 import { expect, it } from "vitest";
-import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
-import { executeMove } from "./execute-move";
+import { moveRows, type NamingView } from "./execute-move";
 import { type MoveEffect, type PlacementView, planUndo } from "./move-plan";
 
 const folder = (folderId: string): ParentRef => ({ kind: "folder", folderId });
+const holding = (names: string[]): NamingView => ({
+  records: [],
+  placement: {
+    childrenAt: () =>
+      names.map((name) => ({ kind: "folder", entryId: `held-${name}`, name }) as CatalogEntry),
+  },
+});
 const effect = (id: string): MoveEffect => ({
   entry: { kind: "folder", id },
   name: id,
@@ -46,21 +53,15 @@ it("reports a refused row and keeps the rest to undo", async () => {
       return { operationId: null };
     },
   } as unknown as AccountResourceReplica;
-  const catalog = { root: { entryId: "root" } } as CatalogContextView;
-  const result = await executeMove(
-    {
-      kind: "ready",
-      destination: { scheme: "manuscript", owner: {}, catalog, entryId: "act", path: "/Act" },
-      destinationName: "Act",
-      moves: ["a", "b"].map((id) => ({
-        ref: { kind: "folder", id },
-        name: id,
-        parent: folder("book"),
-        location: {} as ResourceLocation,
-      })),
-    },
-    folder("act"),
-    { resources, projectId: "p", siblingsAt: () => [] },
+  const result = await moveRows(
+    ["a", "b"].map((id) => ({
+      entry: { kind: "folder", id },
+      name: id,
+      before: folder("book"),
+      after: folder("act"),
+    })),
+    { resources, projectId: "p" },
+    holding([]),
   );
   expect(result.moved.map((moved) => moved.entry.id)).toEqual(["a"]);
   expect(result.moved[0]).toMatchObject({ before: folder("book"), after: folder("act") });
@@ -76,25 +77,15 @@ it("gives rows arriving under one name in the same drop distinct free names", as
       return { operationId: null };
     },
   } as unknown as AccountResourceReplica;
-  const catalog = { root: { entryId: "root" } } as CatalogContextView;
-  const result = await executeMove(
-    {
-      kind: "ready",
-      destination: { scheme: "manuscript", owner: {}, catalog, entryId: "act", path: "/Act" },
-      destinationName: "Act",
-      moves: ["a", "b"].map((id) => ({
-        ref: { kind: "folder", id },
-        name: "Notes",
-        parent: folder(id),
-        location: {} as ResourceLocation,
-      })),
-    },
-    folder("act"),
-    {
-      resources,
-      projectId: "p",
-      siblingsAt: () => [{ entryId: "held", name: "Notes", kind: "dir" }],
-    },
+  const result = await moveRows(
+    ["a", "b"].map((id) => ({
+      entry: { kind: "folder", id },
+      name: "Notes",
+      before: folder(id),
+      after: folder("act"),
+    })),
+    { resources, projectId: "p" },
+    holding(["Notes"]),
   );
   expect(placed).toEqual(["Notes (2)", "Notes (3)"]);
   expect(result.moved.map((moved) => moved.name)).toEqual(["Notes (2)", "Notes (3)"]);
