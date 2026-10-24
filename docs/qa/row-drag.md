@@ -38,7 +38,7 @@ browser reports no fine pointer, so rows render at touch height.
    inside it: the folder and its rows light, the hint reads "Move to
    characters". Drop. The three chapters appear under `characters`, stay
    selected, and the open document's path reads Knowledge Base › characters.
-   Between the tree and the account row, the rail reads "Moved 3 items to
+   Between the tree and Scratch, the rail reads "Moved 3 items to
    characters." with Undo and Dismiss; it covers nothing and stays until the
    next move or Dismiss.
 4. Press Undo: the chapters return to `Act 2`.

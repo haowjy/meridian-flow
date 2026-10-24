@@ -57,7 +57,7 @@ async function settle(
       );
       if (operationId)
         void renameOperationLifecycle(resources).remember(projectId, row.entry, operationId);
-      moved.push({ ...row, name });
+      moved.push({ ...row, name, previousName: row.name });
     } catch {
       failed.push({ entry: row.entry, name: row.name });
     }

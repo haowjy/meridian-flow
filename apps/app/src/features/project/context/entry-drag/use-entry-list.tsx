@@ -27,20 +27,16 @@ import { menuEntryFor } from "../menu-tree";
 import { destinationParent } from "../move-entry";
 import { type EntriesRoute, TreeDropScope } from "../tree-drop/tree-drop";
 import { activeEntryDrag } from "./drag-session";
-import { type DragEntry, type EntryRef, entryKey } from "./entry";
+import { type DragEntry, entryKey } from "./entry";
 import { executeMove, type MoveContext, type MoveResult, undoMove } from "./execute-move";
 import { describeMove, describeUndoFailure, useMoveNoticePublisher } from "./move-notice";
 import { type MoveArea, planMove, sameParent, withoutNested } from "./move-plan";
 import { type EntrySelection, EntrySelectionProvider, useEntrySelection } from "./selection";
 
-/** Reports a finished move: selects what moved and leaves the notice. `requested` names rows as they were. */
-export type ReportMove = (
-  result: MoveResult,
-  destinationName: string,
-  requested: readonly { ref: EntryRef; name: string }[],
-) => void;
+/** Reports a finished move: selects what moved and leaves the notice. */
+type ReportMove = (result: MoveResult, destinationName: string) => void;
 
-export type EntryListController = {
+type EntryListController = {
   selection: EntrySelection;
   route: EntriesRoute;
   moved: ReportMove;
@@ -77,7 +73,7 @@ export function useEntryList({
   });
 
   const moved = useCallback<ReportMove>(
-    (result, destinationName, requested) => {
+    (result, destinationName) => {
       const { publish, selection } = latest.current;
       if (result.moved.length > 0)
         selection.replace(result.moved.map((effect) => entryKey(effect.entry)));
@@ -87,7 +83,7 @@ export function useEntryList({
         siblingsAt: (parent) => siblingsAt(latest.current.areas, parent),
       };
       publish?.(
-        describeMove(result, destinationName, requested),
+        describeMove(result, destinationName),
         result.moved.length > 0
           ? () => undoMove(result.moved, context).then(describeUndoFailure)
           : null,
@@ -120,7 +116,7 @@ export function useEntryList({
           resources,
           projectId,
           siblingsAt: (parent) => siblingsAt(latest.current.areas, parent),
-        }).then((result) => moved(result, planned.destinationName, planned.moves));
+        }).then((result) => moved(result, planned.destinationName));
       },
     };
   }, [resources, projectId, moved]);

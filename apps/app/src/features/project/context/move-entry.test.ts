@@ -1,6 +1,7 @@
 /**
- * Move… and dragging refuse for the same reasons. A folder dropped inside its
- * own subtree would orphan it, and a taken name would be overwritten.
+ * Move… and dragging refuse for the same reason: a folder dropped inside its
+ * own subtree would orphan it. A taken name never refuses (`Notes` already
+ * holds an `Act 2`); the row arrives at the next free name.
  */
 import { expect, it } from "vitest";
 import type { CatalogContextView, CatalogNode } from "@/client/query/context-catalog-projection";

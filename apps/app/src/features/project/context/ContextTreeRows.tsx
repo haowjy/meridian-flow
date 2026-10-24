@@ -135,11 +135,11 @@ export function rowPaddingLeft(depth: number): number {
   return depth * 16;
 }
 
-function activateOnKey(handler: () => void) {
+function activateOnKey(handler: (event: KeyboardEvent) => void) {
   return (event: KeyboardEvent) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      handler();
+      handler(event);
     }
   };
 }
@@ -212,7 +212,7 @@ function DirRow({
           aria-expanded={isOpen}
           aria-label={t`Toggle folder ${dir.name}`}
           onClick={row.activate(toggle)}
-          onKeyDown={activateOnKey(toggle)}
+          onKeyDown={activateOnKey(row.activate(toggle))}
           {...row.rowProps}
           {...drop.dropProps}
           className={cn(
@@ -303,7 +303,7 @@ function FileRow({
         role="button"
         tabIndex={0}
         onClick={row.activate(select)}
-        onKeyDown={activateOnKey(select)}
+        onKeyDown={activateOnKey(row.activate(select))}
         {...row.rowProps}
         {...dropProps}
         className={cn("focus-ring", contextTreeFileRowClassName(active, row.selected))}

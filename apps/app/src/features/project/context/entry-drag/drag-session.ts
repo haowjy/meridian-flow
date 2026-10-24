@@ -24,7 +24,7 @@ export function startEntryDrag(event: DragEvent, entries: readonly DragEntry[]) 
   window.addEventListener("dragend", endEntryDrag, { once: true });
 }
 
-export function endEntryDrag() {
+function endEntryDrag() {
   active = null;
 }
 

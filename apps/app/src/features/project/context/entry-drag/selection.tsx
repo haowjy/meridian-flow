@@ -162,10 +162,14 @@ export function useEntrySelectionRow(entry: DragEntry, active: boolean) {
   const selection = useContext(SelectionContext);
   const key = entryKey(entry.ref);
   useLayoutEffect(() => selection?.register(entry, active), [selection, entry, active]);
+  const selected = selection?.isSelected(key) ?? false;
   return {
     selection,
-    selected: selection?.isSelected(key) ?? false,
-    /** Spread on the row so range selection can read screen order. */
-    rowProps: { [KEY_ATTRIBUTE]: key },
+    selected,
+    /**
+     * Spread on the row so range selection can read screen order. Rows are buttons, so
+     * the selection is their pressed state; outside an explicit selection they aren't toggles.
+     */
+    rowProps: { [KEY_ATTRIBUTE]: key, "aria-pressed": selected || undefined },
   };
 }

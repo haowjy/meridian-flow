@@ -39,7 +39,7 @@ export type MoveDestination = {
   path: string;
 };
 
-export type MoveRefusal = { kind: "inside-itself" } | { kind: "already-there" };
+type MoveRefusal = { kind: "inside-itself" } | { kind: "already-there" };
 
 type WorkDirectory = Parameters<typeof destinationOwner>[1];
 type NoWork = Parameters<typeof destinationOwner>[2];
