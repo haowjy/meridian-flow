@@ -3,7 +3,12 @@
 import { fork, spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
-import { cloneDatabaseForUrl, ensureDatabaseForUrl, isLocalDevPostgres } from "./lib/dev-db";
+import {
+  cloneDatabaseForUrl,
+  ensureDatabaseForUrl,
+  isCiRunnerPostgres,
+  isLocalDevPostgres,
+} from "./lib/dev-db";
 import { resolveCurrentRepoRoot, resolveMainDatabaseNames } from "./lib/dev-env";
 import { managedTestDatabaseUrl, managedTestDatabaseWorkerUrl } from "./lib/test-db-lifecycle";
 
@@ -63,26 +68,27 @@ async function main(): Promise<void> {
   // are whole processes, so this is the largest per-run memory knob in the repo
   // — nearly twice the unit suite's 3.1GB. Override with DB_TEST_WORKERS=1..8.
   //
-  // Workers are local-only: each needs its own cloned database, and only the
-  // local path provisions them. CI points DATABASE_URL at its own throwaway
-  // database and gets no worker URLs, so vitest.db.config.ts falls to
-  // maxWorkers 1 with fileParallelism false. The CI suite is serial, and its
-  // wall clock is the sum of every test rather than a fraction of it.
-  const workerCount = Number(process.env.DB_TEST_WORKERS ?? (local ? "4" : "1"));
+  // Each worker needs its own database. Locally they are cloned from the owned,
+  // freshly migrated template. CI clones them from the database its workflow
+  // already migrated, on the runner's own Postgres; 3 rather than 4 because a
+  // 4-core runner also hosts Postgres, and 4 workers peaked near the 4GB
+  // memory ceiling. A clone costs under 0.1s against ~2s for the migration chain.
+  const ci = !local && isCiRunnerPostgres(databaseUrl);
+  const workerCount = Number(process.env.DB_TEST_WORKERS ?? (local ? "4" : ci ? "3" : "1"));
   if (!Number.isInteger(workerCount) || workerCount < 1 || workerCount > 8) {
     throw new Error(
       "DB_TEST_WORKERS must be an integer from 1 to 8 (shared Postgres connection budget).",
     );
   }
-  const workerDatabaseUrls = local
-    ? Array.from({ length: workerCount }, (_, index) =>
-        managedTestDatabaseWorkerUrl(databaseUrl, index + 1),
-      )
-    : [];
-  // Test-bound against real Postgres and serial in CI, so the DB suite's wall
-  // clock is the sum of every test: 266-322s on a CI runner against 89s at four
-  // local workers. Wall time warns rather than blocks, and this is the value the
-  // warning compares against, so the DB suite's serial shape gets its own.
+  const workerDatabaseUrls =
+    local || ci
+      ? Array.from({ length: workerCount }, (_, index) =>
+          managedTestDatabaseWorkerUrl(databaseUrl, index + 1),
+        )
+      : [];
+  // Test-bound against real Postgres: a serial run pays the sum of every test
+  // (266-322s on a CI runner before CI had workers). Wall time warns rather than
+  // blocks, and this is the value the warning compares against.
   // `pnpm test:all` inherits it for the unit half too; that run is not in
   // `pnpm check`.
   const durationReferenceSeconds = process.env.TEST_DURATION_REFERENCE_SECONDS ?? "600";
@@ -104,6 +110,13 @@ async function main(): Promise<void> {
           console.log(`DB tests: cloned worker database ${workerDb}.`);
         }),
       );
+    } else if (ci) {
+      await Promise.all(
+        workerDatabaseUrls.map((workerDatabaseUrl) =>
+          cloneDatabaseForUrl(databaseUrl, workerDatabaseUrl),
+        ),
+      );
+      console.log(`DB tests: cloned ${workerDatabaseUrls.length} CI worker databases.`);
     }
 
     const testExit = await run(
