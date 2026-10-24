@@ -2,6 +2,9 @@
  * A confirmed deletion is owned by the server version that confirmed it. A strictly newer
  * server observation of the same identity as present (Apply's restore, F9) supersedes it;
  * stale pages and receipts never resurrect it.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Canonical refresh retires older deletion evidence
  */
 import type {
   CatalogEntry,

@@ -1,3 +1,10 @@
+/**
+ * Tests resource state behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Stable adoption witnesses and committed generations
+ */
+
 import { expect, it } from "vitest";
 import {
   prepareNamespaceAttempt,

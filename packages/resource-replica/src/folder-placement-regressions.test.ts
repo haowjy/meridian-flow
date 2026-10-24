@@ -1,3 +1,10 @@
+/**
+ * Tests folder placement regressions behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Bounded projection and canonical cycle repair
+ */
+
 import { execFile } from "node:child_process";
 /**
  * Projection must remain bounded and preserve real recovery identities without catalogs.

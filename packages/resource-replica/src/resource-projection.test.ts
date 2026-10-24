@@ -1,3 +1,10 @@
+/**
+ * Tests resource projection behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Pending placement chooses the latest applicable intent
+ */
+
 import { expect, it } from "vitest";
 import { createResourcePlacement } from "./folder-projection";
 import { entries, move, node } from "./namespace-schedule-fixtures";

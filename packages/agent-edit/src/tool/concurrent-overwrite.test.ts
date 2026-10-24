@@ -1,4 +1,9 @@
-// Regression coverage for concurrent typing during whole-document overwrites.
+/**
+ * Regression coverage for concurrent typing during whole-document overwrites.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Whole-document overwrite conflict policy
+ */
 import { describe, expect, it } from "vitest";
 import { blockTexts, expectOutcome, humanText } from "./test-support/assertions.js";
 import { context, harness, type WriteToolHarness } from "./test-support/write-tool-harness.js";
