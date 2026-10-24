@@ -643,8 +643,8 @@ export class AccountResourceReplica {
     );
   }
 
-  async deleteFolder(projectId: string, folderId: string): Promise<void> {
-    await this.commitFolderPlan(projectId, folderId, planFolderDeletion);
+  async deleteFolder(projectId: string, folderId: string): Promise<{ operationId?: string }> {
+    return this.commitFolderPlan(projectId, folderId, planFolderDeletion);
   }
 
   private async commitFolderPlan(
@@ -681,11 +681,19 @@ export class AccountResourceReplica {
     }
   }
 
-  async deleteDocument(projectId: string, key: ResourceKey): Promise<void> {
-    await this.commitPlan(key, (record) =>
-      planResourceDeletion(record, projectId, crypto.randomUUID()),
-    );
+  async deleteDocument(projectId: string, key: ResourceKey): Promise<{ operationId?: string }> {
+    const operationId = crypto.randomUUID();
+    let undoable = false;
+    const admitted = await this.commitPlan(key, (record) => {
+      const write = planResourceDeletion(record, projectId, crypto.randomUUID(), operationId);
+      undoable =
+        write?.next.intents.some(
+          (intent) => intent.operationId === operationId && intent.state !== "settled-locally",
+        ) ?? false;
+      return write;
+    });
     this.reconciler.schedule(key);
+    return admitted === "committed" && undoable ? { operationId } : {};
   }
 
   private async commitPlan(

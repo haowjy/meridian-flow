@@ -110,6 +110,12 @@ settles the folder and exact descendant identities atomically. Pending deletion
 hides the subtree; refusal restores rows with a failure mark. Tree absence never
 proves document removal.
 
+Writer deletion has no confirmation step. One project-scoped owner keeps the short-lived
+Undo windows for all mounted tree surfaces, while delete progress remains derived from the
+namespace journal. Undo waits for a pending intent, reads the delete receipt, and restores the
+receipt's named removals. The catalog stream makes restored identities visible again. A local
+document that never reached the server and an empty folder deletion have no Undo window.
+
 ## Downlinks
 
 - [Server context domain](../../../../../../../apps/server/server/domains/context/AGENTS.md)
