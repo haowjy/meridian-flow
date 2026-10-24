@@ -44,13 +44,14 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
   const { destination, navigate } = useProjectTrashNavigation();
   const documentId = typeof destination === "string" ? destination : null;
   const [restored, setRestored] = useState<RestoredNotice | null>(null);
+  const [restoringView, setRestoringView] = useState(false);
   const dismissRestored = useCallback(() => setRestored(null), []);
 
   return (
     <>
       <Dialog
         open={destination !== undefined}
-        onOpenChange={(open) => !open && void navigate(false)}
+        onOpenChange={(open) => !open && !restoringView && void navigate(false)}
       >
         <DialogContent
           className={
@@ -65,8 +66,8 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
               projectId={projectId}
               documentId={documentId}
               onBack={() => void navigate(true)}
-              onClose={() => void navigate(false)}
               onRestoredAt={(location) => setRestored({ id: Date.now(), location })}
+              onRestoreStateChange={setRestoringView}
             />
           ) : (
             <DocumentTrashList
@@ -236,14 +237,14 @@ function TrashedDocumentView({
   projectId,
   documentId,
   onBack,
-  onClose,
   onRestoredAt,
+  onRestoreStateChange,
 }: {
   projectId: string;
   documentId: string;
   onBack: () => void;
-  onClose: () => void;
   onRestoredAt: (location: string) => void;
+  onRestoreStateChange: (restoring: boolean) => void;
 }) {
   const { i18n } = useLingui();
   const query = useTrashedDocument(projectId, documentId);
@@ -256,6 +257,7 @@ function TrashedDocumentView({
   const restore = useCallback(() => {
     if (!document || state?.kind === "restoring") return;
     setState({ kind: "restoring" });
+    onRestoreStateChange(true);
     const isCurrent = captureNavigation?.() ?? (() => true);
     void restoreTrashedDocument(queryClient, projectId, document)
       .then(async (outcome) => {
@@ -271,7 +273,6 @@ function TrashedDocumentView({
           });
           if (opened.kind === "committed") {
             if (outcome.landedAt) onRestoredAt(outcome.landedAt);
-            onClose();
             return;
           }
           setState({
@@ -294,13 +295,14 @@ function TrashedDocumentView({
           kind: "failed",
           message: restoreFailureMessage(document.name, "network"),
         }),
-      );
+      )
+      .finally(() => onRestoreStateChange(false));
   }, [
     captureNavigation,
     document,
     documentId,
-    onClose,
     onRestoredAt,
+    onRestoreStateChange,
     openDocument,
     projectId,
     queryClient,
