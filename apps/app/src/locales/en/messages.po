@@ -285,6 +285,10 @@ msgstr "{days, plural, one {# day ago} other {# days ago}}"
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr "{days, plural, one {# day left} other {# days left}}"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "{days, plural, one {Gone for good in # day.} other {Gone for good in # days.}}"
+msgstr "{days, plural, one {Gone for good in # day.} other {Gone for good in # days.}}"
+
 #: src/lib/date-groups.ts
 msgid "{days}d"
 msgstr "{days}d"
@@ -1659,6 +1663,10 @@ msgstr "Couldn't load references."
 msgid "Couldn't load the conversation this fork continues."
 msgstr "Couldn't load the conversation this fork continues."
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Couldn't load this document."
+msgstr "Couldn't load this document."
+
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
@@ -1757,6 +1765,7 @@ msgstr "Couldn’t rename this Work. Try again."
 msgid "Couldn't rename. Use Rename in the file list to try again."
 msgstr "Couldn't rename. Use Rename in the file list to try again."
 
+#. placeholder {0}: document.name
 #. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
@@ -1764,6 +1773,7 @@ msgstr "Couldn't rename. Use Rename in the file list to try again."
 msgid "Couldn't restore {0}."
 msgstr "Couldn't restore {0}."
 
+#. placeholder {0}: document.name
 #. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
@@ -1771,6 +1781,7 @@ msgstr "Couldn't restore {0}."
 msgid "Couldn't restore {0}. A file is in the way."
 msgstr "Couldn't restore {0}. A file is in the way."
 
+#. placeholder {0}: document.name
 #. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
@@ -2616,6 +2627,10 @@ msgstr "Images need a project before they can be uploaded."
 msgid "In a draft"
 msgstr "In a draft"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "In the trash. Deleted by {actor} on {deleted}."
+msgstr "In the trash. Deleted by {actor} on {deleted}."
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Inline code"
 msgstr "Inline code"
@@ -2828,6 +2843,10 @@ msgstr "Loading agents…"
 #: src/features/project/chat-index/ChatIndexLoading.tsx
 msgid "Loading chats"
 msgstr "Loading chats"
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Loading document…"
+msgstr "Loading document…"
 
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/rich-content/ImageBlock.tsx
@@ -3615,6 +3634,10 @@ msgstr "Read file"
 msgid "Read report from {line}"
 msgstr "Read report from {line}"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Read-only document in Trash."
+msgstr "Read-only document in Trash."
+
 #: src/features/project/context/document-presentation.ts
 msgid "Read-only live document"
 msgstr "Read-only live document"
@@ -3837,7 +3860,7 @@ msgstr "Restored as {0}."
 #. placeholder {0}: alternateLocations.join(", ")
 #. placeholder {0}: result.landedAt
 #: src/features/project/context/document-delete-undo.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/restore-trashed-document.ts
 msgid "Restored at {0}."
 msgstr "Restored at {0}."
 
@@ -5127,6 +5150,10 @@ msgstr "Trash"
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Trash is empty."
 msgstr "Trash is empty."
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Trashed document"
+msgstr "Trashed document"
 
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/TurnEditsReceipt.tsx

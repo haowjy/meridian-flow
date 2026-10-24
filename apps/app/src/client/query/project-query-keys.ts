@@ -58,6 +58,8 @@ export const projectQueryKeys = {
   detail: (projectId: string) => ["projects", "detail", projectId] as const,
   documentAddresses: (projectId: string) => ["projects", projectId, "document-addresses"] as const,
   documentTrash: (projectId: string) => ["projects", projectId, "document-trash"] as const,
+  trashedDocument: (projectId: string, documentId: string) =>
+    [...projectQueryKeys.documentTrash(projectId), documentId] as const,
   threads: (projectId: string) => ["projects", projectId, "threads"] as const,
   works: (projectId: string) => ["projects", projectId, "works"] as const,
   chatFeed: (projectId: string) => ["projects", projectId, "chat-feed"] as const,

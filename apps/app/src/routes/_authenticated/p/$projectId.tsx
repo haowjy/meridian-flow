@@ -17,8 +17,13 @@ import { Route as AuthenticatedRoute } from "../../_authenticated";
 
 export const Route = createFileRoute("/_authenticated/p/$projectId")({
   ...PERSISTENT_SHELL_OPTIONS,
-  validateSearch: (search: Record<string, unknown>): { trash?: true } => ({
-    trash: search.trash === true || search.trash === "true" ? true : undefined,
+  validateSearch: (search: Record<string, unknown>): { trash?: true | string } => ({
+    trash:
+      search.trash === true || search.trash === "true"
+        ? true
+        : typeof search.trash === "string" && search.trash.length > 0
+          ? search.trash
+          : undefined,
   }),
   // A creation this tab started owns the destination until it confirms: the
   // shell renders from the creation record while the POST is in flight.

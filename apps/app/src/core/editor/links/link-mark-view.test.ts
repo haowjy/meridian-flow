@@ -16,7 +16,7 @@ import { LINK_SURFACE_NAME } from "./link-storage";
 const GONE_REF = "doc:00000000-0000-4000-8000-0000000000aa";
 const KAEL = "manuscript://Kael.md";
 
-it("marks a gone link present at mount on its <a>, and hands its presses to the editor", async () => {
+it("marks a gone stable link at mount and keeps it followable", async () => {
   const onUpdate = vi.fn();
   const gone = { type: "link", attrs: { href: KAEL, ref: GONE_REF } };
   const editor = new Editor({
@@ -61,7 +61,7 @@ it("marks a gone link present at mount on its <a>, and hands its presses to the 
     });
 
     const anchors = () => editor.view.dom.querySelectorAll("a");
-    await vi.waitFor(() => expect(anchors()[0]?.getAttribute("aria-disabled")).toBe("true"));
+    await vi.waitFor(() => expect(anchors()[0]?.getAttribute("aria-description")).toBeTruthy());
     const anchor = anchors()[0];
     expect.soft(anchors(), "one <a> per label").toHaveLength(2);
     expect
@@ -91,10 +91,9 @@ it("marks a gone link present at mount on its <a>, and hands its presses to the 
     expect
       .soft(anchors()[0]?.getAttribute("data-link-chip"), "after a remote rebuild")
       .toBe("dashed");
-    expect.soft(anchors()[0]?.getAttribute("aria-disabled")).toBe("true");
+    expect.soft(anchors()[0]?.getAttribute("aria-disabled")).toBeNull();
 
-    // Known gone, a press is the editor's: the click falls through to place
-    // the caret, and Enter and Alt+Enter mean what they mean in text.
+    // A stable gone ref can lead to the read-only Trash view.
     const navigate = vi.fn();
     editor.storage[LINK_SURFACE_NAME].surface.registerNavigator(navigate);
     const click = editor.view.state.plugins.find((plugin) =>
@@ -102,10 +101,8 @@ it("marks a gone link present at mount on its <a>, and hands its presses to the 
     )?.props.handleDOMEvents?.click;
     const press = new MouseEvent("click", { button: 0, bubbles: true });
     anchors()[0]?.dispatchEvent(press);
-    expect
-      .soft(click?.call(null as never, editor.view, press as PointerEvent), "click")
-      .toBe(false);
-    expect.soft(navigate, "click follows nothing").not.toHaveBeenCalled();
+    expect.soft(click?.call(null as never, editor.view, press as PointerEvent), "click").toBe(true);
+    expect.soft(navigate, "click follows the stable ref").toHaveBeenCalled();
     editor.commands.setTextSelection(6);
     anchors()[0]?.focus();
     const enter = (altKey: boolean) =>
@@ -114,11 +111,11 @@ it("marks a gone link present at mount on its <a>, and hands its presses to the 
       );
     navigate.mockClear();
     enter(true);
-    expect.soft(navigate, "Alt+Enter follows nothing").not.toHaveBeenCalled();
+    expect.soft(navigate, "Alt+Enter follows the stable ref").toHaveBeenCalled();
     navigate.mockClear();
     enter(false);
-    expect.soft(navigate, "Enter follows nothing").not.toHaveBeenCalled();
-    expect.soft(editor.state.doc.childCount, "Enter splits the paragraph").toBe(2);
+    expect.soft(navigate, "Enter follows the focused stable ref").toHaveBeenCalled();
+    expect.soft(editor.state.doc.childCount, "following preserves the paragraph").toBe(1);
 
     // A destroyed mark view releases its link: the next generation asks only
     // about the link still on the page.

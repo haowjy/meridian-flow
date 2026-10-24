@@ -62,6 +62,7 @@ export { createLinkRequester, type LinkRequester } from "./link-requester";
 export {
   createLinkAnswerCache,
   type DocumentAnswer,
+  goneLinkDocumentId,
   type InternalLinkResolver,
   type LinkAnswer,
   type LinkAnswerCache,

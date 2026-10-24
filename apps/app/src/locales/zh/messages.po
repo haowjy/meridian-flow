@@ -285,6 +285,10 @@ msgstr ""
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr ""
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "{days, plural, one {Gone for good in # day.} other {Gone for good in # days.}}"
+msgstr ""
+
 #: src/lib/date-groups.ts
 msgid "{days}d"
 msgstr "{days}天"
@@ -1659,6 +1663,10 @@ msgstr ""
 msgid "Couldn't load the conversation this fork continues."
 msgstr ""
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Couldn't load this document."
+msgstr ""
+
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
@@ -1757,6 +1765,7 @@ msgstr ""
 msgid "Couldn't rename. Use Rename in the file list to try again."
 msgstr ""
 
+#. placeholder {0}: document.name
 #. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
@@ -1764,6 +1773,7 @@ msgstr ""
 msgid "Couldn't restore {0}."
 msgstr ""
 
+#. placeholder {0}: document.name
 #. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
@@ -1771,6 +1781,7 @@ msgstr ""
 msgid "Couldn't restore {0}. A file is in the way."
 msgstr ""
 
+#. placeholder {0}: document.name
 #. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
@@ -2616,6 +2627,10 @@ msgstr ""
 msgid "In a draft"
 msgstr ""
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "In the trash. Deleted by {actor} on {deleted}."
+msgstr ""
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Inline code"
 msgstr ""
@@ -2827,6 +2842,10 @@ msgstr ""
 
 #: src/features/project/chat-index/ChatIndexLoading.tsx
 msgid "Loading chats"
+msgstr ""
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Loading document…"
 msgstr ""
 
 #: src/core/editor/images/ImageNodeView.tsx
@@ -3615,6 +3634,10 @@ msgstr ""
 msgid "Read report from {line}"
 msgstr "已读取来自 {line} 的报告"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Read-only document in Trash."
+msgstr ""
+
 #: src/features/project/context/document-presentation.ts
 msgid "Read-only live document"
 msgstr ""
@@ -3837,7 +3860,7 @@ msgstr ""
 #. placeholder {0}: alternateLocations.join(", ")
 #. placeholder {0}: result.landedAt
 #: src/features/project/context/document-delete-undo.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/restore-trashed-document.ts
 msgid "Restored at {0}."
 msgstr ""
 
@@ -5126,6 +5149,10 @@ msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Trash is empty."
+msgstr ""
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Trashed document"
 msgstr ""
 
 #: src/features/chat/ChatCards.tsx
