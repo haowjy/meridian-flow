@@ -30,6 +30,8 @@ export type WorkspaceNavBodyProps = {
   children?: ReactNode;
   /** The pane holding `children`, for a section below that resizes against it. */
   childrenRef?: Ref<HTMLDivElement>;
+  /** The User section, docked above Scratch: the writer's documents, not the project's. */
+  user?: ReactNode;
   /** The chat's Scratch section, pinned above the account row. */
   scratch?: ReactNode;
   /** A move's notice: it takes height from the body above, so nothing shifts or is covered. */
@@ -42,6 +44,7 @@ export function WorkspaceNavBody({
   presentation,
   children,
   childrenRef,
+  user,
   scratch,
   notice,
 }: WorkspaceNavBodyProps) {
@@ -79,7 +82,8 @@ export function WorkspaceNavBody({
       </div>
       {notice}
 
-      {/* The Scratch section draws its own divider, so none shows with no chat on screen. */}
+      {/* Docked sections draw their own dividers, so none shows for an absent one. */}
+      {user}
       {scratch}
 
       <div

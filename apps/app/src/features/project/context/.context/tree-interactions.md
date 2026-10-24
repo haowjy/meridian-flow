@@ -199,8 +199,10 @@ and dialog serve all Scratch rows, retaining each target's owner. The actual own
 
 The Files tree, the chat's Scratch and a Work's Files are each one list:
 `useEntryList` owns its selection, its entries route and, through `EntryList`,
-its drop scope (the Files tree is one list over all four areas, with each
-section keeping its own expansion). Rows join through `EntrySelectionProvider`.
+its drop scope (the Files tree is one list over the project's three areas,
+with each section keeping its own expansion). User is its own list and system,
+docked above Scratch (`UserRailSection` over the shared `DockedRailSection`),
+so a drag between it and the tree stays quiet. Rows join through `EntrySelectionProvider`.
 Selection keys are `kind:id` and carry no scheme or place, so a moved row keeps
 its key and stays selected. A plain click opens or toggles the row as before and leaves no
 selection of its own: until the writer Ctrl/Cmd- or Shift-clicks, the selection

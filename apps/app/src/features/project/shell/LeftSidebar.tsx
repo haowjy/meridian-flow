@@ -13,7 +13,7 @@ import { PanelLeftClose } from "lucide-react";
 import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { RailScratchSection } from "../chat/ChatScratch";
-import { ContextTreePanel } from "../context/ContextTreePanel";
+import { ContextTreePanel, UserRailSection } from "../context/ContextTreePanel";
 import { serverTabFromFile } from "../context/context-tab-from-file";
 import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
 import { useOpenProjectDocument } from "../context/open-project-document";
@@ -108,6 +108,12 @@ function LeftSidebarRail({
   const projectedDock = useDockDocumentTab(projectId, dockDocument);
   const docked = activeScreen === "chat" && !projectedDock.gone ? projectedDock.tab : null;
   const treePane = useRef<HTMLDivElement>(null);
+  const treeActiveScheme = docked
+    ? docked.kind === "new"
+      ? "unfiled"
+      : docked.scheme
+    : activeContextScheme;
+  const treeActivePath = docked ? (docked.kind === "new" ? null : docked.path) : activeContextPath;
 
   return (
     <nav
@@ -134,6 +140,18 @@ function LeftSidebarRail({
         presentation="desktop"
         childrenRef={treePane}
         notice={<MoveNotice className="mx-2 my-1.5 shrink-0" />}
+        user={
+          contextLive ? (
+            <UserRailSection
+              projectId={projectId}
+              editorWorkId={editorWorkId}
+              activeScheme={treeActiveScheme}
+              activePath={treeActivePath}
+              onSelectFile={handleSelectFile}
+              resizeAgainst={treePane}
+            />
+          ) : null
+        }
         scratch={
           <RailScratchSection
             projectId={projectId}
@@ -147,10 +165,8 @@ function LeftSidebarRail({
           <ContextTreePanel
             projectId={projectId}
             editorWorkId={editorWorkId}
-            activeScheme={
-              docked ? (docked.kind === "new" ? "unfiled" : docked.scheme) : activeContextScheme
-            }
-            activePath={docked ? (docked.kind === "new" ? null : docked.path) : activeContextPath}
+            activeScheme={treeActiveScheme}
+            activePath={treeActivePath}
             onSelectFile={handleSelectFile}
           />
         ) : null}

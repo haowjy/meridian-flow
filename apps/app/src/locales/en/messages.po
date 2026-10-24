@@ -3789,13 +3789,18 @@ msgstr "Reset column widths"
 msgid "Reset size"
 msgstr "Reset size"
 
+#. placeholder {0}: schemeLabel(id)
+#: src/features/project/shell/DockedRailSection.tsx
+msgid "Resize {0}"
+msgstr "Resize {0}"
+
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize right rail"
 msgstr "Resize right rail"
 
 #: src/features/project/chat/ChatScratch.tsx
-msgid "Resize Scratch"
-msgstr "Resize Scratch"
+#~ msgid "Resize Scratch"
+#~ msgstr "Resize Scratch"
 
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize sidebar"

@@ -5,15 +5,16 @@ import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { DockedRailSection } from "../shell/DockedRailSection";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
 import { TreeChildren, type TreeEnv, TreeEnvProvider, TreeGroup } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
 import {
-  EDITOR_CONTEXT_SCHEMES,
+  PROJECT_TREE_SCHEMES,
   schemeAllowsCreation,
   schemeIcon,
   schemeLabel,
@@ -59,16 +60,62 @@ type ContextTreePanelProps = {
  * auto-opens it once; after that the user's toggle wins, even while the
  * section holds the active doc.
  */
-export function ContextTreePanel({
-  projectId,
-  editorWorkId,
-  activeScheme,
-  activePath,
-  onSelectFile,
-  creating: controlledCreating,
-  onRequestCreate: controlledRequestCreate,
-  onCreateDone: controlledCreateDone,
-}: ContextTreePanelProps) {
+export function ContextTreePanel(props: ContextTreePanelProps) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const { list, renderScheme } = useSchemeTree(props, PROJECT_TREE_SCHEMES);
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col">
+      {/* The destination rows own the sidebar's single rule. Explorer panes
+          stay on one uninterrupted rail material beneath it. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: a drag is a pointer shortcut; every drop has a menu path (Move… on the row). */}
+      <div
+        ref={scroller}
+        onDragOver={(event) => dragEdgeScroll(scroller.current, event)}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2"
+      >
+        <EntryList list={list}>
+          {PROJECT_TREE_SCHEMES.map((scheme) => renderScheme(scheme))}
+        </EntryList>
+      </div>
+    </div>
+  );
+}
+
+const USER_SCHEMES = ["user"] as const;
+
+/**
+ * The writer's User documents, docked above the account row like Scratch. Its
+ * own list, so a drag between it and the project tree stays quiet until a
+ * crossing can offer Move or Copy.
+ */
+export function UserRailSection({
+  resizeAgainst,
+  ...props
+}: ContextTreePanelProps & { resizeAgainst?: RefObject<HTMLElement | null> }) {
+  const { list, renderScheme } = useSchemeTree(props, USER_SCHEMES);
+  return (
+    <DockedRailSection id="user" resizeAgainst={resizeAgainst}>
+      {(pane) => <EntryList list={list}>{renderScheme("user", pane)}</EntryList>}
+    </DockedRailSection>
+  );
+}
+
+type PaneState = { expanded: boolean; setExpanded: (next: boolean) => void };
+
+/** One list over `schemes`, and each scheme's section. */
+function useSchemeTree(
+  {
+    projectId,
+    editorWorkId,
+    activeScheme,
+    activePath,
+    onSelectFile,
+    creating: controlledCreating,
+    onRequestCreate: controlledRequestCreate,
+    onCreateDone: controlledCreateDone,
+  }: ContextTreePanelProps,
+  schemes: readonly ProjectContextTreeScheme[],
+) {
   const controller = useOptionalTreeCreation();
   const creating = controlledCreating ?? controller?.request ?? null;
   const onRequestCreate = controlledRequestCreate ?? controller?.requestCreate;
@@ -76,23 +123,22 @@ export function ContextTreePanel({
   if (!onRequestCreate || !onCreateDone) {
     throw new Error("ContextTreePanel requires creation controls");
   }
-  const schemes = EDITOR_CONTEXT_SCHEMES;
-  const scroller = useRef<HTMLDivElement>(null);
   const catalogs = useContextCatalogViews(projectId, schemes, { workId: editorWorkId });
   const list = useEntryList({
     projectId,
     areas: schemes.flatMap((scheme) => {
-      const catalog = catalogs[scheme].catalog;
+      const catalog = catalogs[scheme]?.catalog;
       return catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, movable: true }] : [];
     }),
   });
-  const renderScheme = (scheme: (typeof EDITOR_CONTEXT_SCHEMES)[number]) => (
+  const renderScheme = (scheme: ProjectContextTreeScheme, pane?: PaneState) => (
     <SchemeSection
       key={`${projectId}:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`}
       projectId={projectId}
       editorWorkId={editorWorkId}
       scheme={scheme}
       catalogState={catalogs[scheme]}
+      pane={pane}
       activeScheme={activeScheme}
       activePath={activePath}
       onSelectFile={onSelectFile}
@@ -105,21 +151,7 @@ export function ContextTreePanel({
       onCreateDone={onCreateDone}
     />
   );
-
-  return (
-    <div className="flex h-full min-h-0 w-full flex-col">
-      {/* The destination rows own the sidebar's single rule. Explorer panes
-          stay on one uninterrupted rail material beneath it. */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: a drag is a pointer shortcut; every drop has a menu path (Move… on the row). */}
-      <div
-        ref={scroller}
-        onDragOver={(event) => dragEdgeScroll(scroller.current, event)}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2"
-      >
-        <EntryList list={list}>{schemes.map(renderScheme)}</EntryList>
-      </div>
-    </div>
-  );
+  return { list, renderScheme };
 }
 
 function SchemeSection({
@@ -127,6 +159,7 @@ function SchemeSection({
   projectId,
   editorWorkId,
   scheme,
+  pane,
   activeScheme,
   activePath,
   onSelectFile,
@@ -138,6 +171,8 @@ function SchemeSection({
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
+  /** A docked section's open state, owned by the rail instead of the tree. */
+  pane?: PaneState;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
   onSelectFile: (
@@ -164,11 +199,14 @@ function SchemeSection({
         .map((entry) => entry.entryId),
     );
   }, [catalog, isComplete]);
-  const { expanded, setExpanded, isExpanded, toggleEntry, setExpandedEntryIds } = useTreeExpansion(
+  const tree = useTreeExpansion(
     projectId,
     `editor:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`,
     folderIds,
   );
+  const { isExpanded, toggleEntry, setExpandedEntryIds } = tree;
+  const expanded = pane?.expanded ?? tree.expanded;
+  const setExpanded = pane?.setExpanded ?? tree.setExpanded;
   const activeLocationPath = activeScheme === scheme ? activePath : null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
   const revealed = useRef<string | null>(null);
@@ -308,16 +346,18 @@ function SchemeSection({
   );
 
   return (
-    <section>
+    <section className={pane ? "flex min-h-0 flex-col" : undefined}>
       <AreaDropRegion
         scheme={scheme}
         catalogRootId={catalog?.root.entryId ?? null}
         reveal={() => !expanded && setExpanded(true)}
         header={header}
+        className={pane ? "flex min-h-0 flex-col" : undefined}
       >
         {expanded && catalog && env ? (
           <TreeEnvProvider value={env}>
-            <div>
+            {/* Docked, the header stays put and the rows scroll under it. */}
+            <div className={pane ? "min-h-0 overflow-y-auto overflow-x-hidden pb-1" : undefined}>
               <TreeGroup depth={1}>
                 <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
               </TreeGroup>

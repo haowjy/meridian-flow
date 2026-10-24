@@ -67,28 +67,37 @@ type PersistedSurfacePrefsBlob = {
   railPrefs?: Partial<RailPrefs> | null;
 };
 
-export type RailSectionId = "scratch" | "recent";
+export type RailSectionId = "scratch" | "user" | "recent";
+/** The rail sections docked above the account row, each trading height with the tree. */
+export type DockedRailSectionId = "scratch" | "user";
 export type RailPrefs = {
   scratchExpanded: boolean;
+  userExpanded: boolean;
   recentExpanded: boolean;
   scratchHeight: number | null;
+  userHeight: number | null;
 };
 export const DEFAULT_RAIL_PREFS: RailPrefs = {
   scratchExpanded: false,
+  userExpanded: false,
   recentExpanded: true,
   scratchHeight: null,
+  userHeight: null,
 };
+
+function savedHeight(height: unknown): number | null {
+  return typeof height === "number" && Number.isFinite(height) && height > 0
+    ? Math.round(height)
+    : null;
+}
 
 export function normalizeRailPrefs(prefs?: Partial<RailPrefs> | null): RailPrefs {
   return {
     scratchExpanded: typeof prefs?.scratchExpanded === "boolean" ? prefs.scratchExpanded : false,
+    userExpanded: typeof prefs?.userExpanded === "boolean" ? prefs.userExpanded : false,
     recentExpanded: typeof prefs?.recentExpanded === "boolean" ? prefs.recentExpanded : true,
-    scratchHeight:
-      typeof prefs?.scratchHeight === "number" &&
-      Number.isFinite(prefs.scratchHeight) &&
-      prefs.scratchHeight > 0
-        ? Math.round(prefs.scratchHeight)
-        : null,
+    scratchHeight: savedHeight(prefs?.scratchHeight),
+    userHeight: savedHeight(prefs?.userHeight),
   };
 }
 
@@ -106,7 +115,7 @@ export type SurfacePrefsActions = {
   setDockWidth: (widthPx: number) => void;
   setDockCollapsed: (collapsed: boolean) => void;
   setRailExpanded: (id: RailSectionId, expanded: boolean) => void;
-  setScratchHeight: (height: number | null) => void;
+  setRailHeight: (id: DockedRailSectionId, height: number | null) => void;
   setHydrated: () => void;
 };
 
@@ -195,9 +204,9 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
           set((state) => ({ slotPrefs: patchDockPrefs(state.slotPrefs, { collapsed }) })),
         setRailExpanded: (id, expanded) =>
           set((state) => ({ railPrefs: { ...state.railPrefs, [`${id}Expanded`]: expanded } })),
-        setScratchHeight: (height) =>
+        setRailHeight: (id, height) =>
           set((state) => ({
-            railPrefs: normalizeRailPrefs({ ...state.railPrefs, scratchHeight: height }),
+            railPrefs: normalizeRailPrefs({ ...state.railPrefs, [`${id}Height`]: height }),
           })),
         setHydrated: () => set({ _hydrated: true }),
       }),
@@ -257,7 +266,7 @@ export function useProjectSurfacePrefsActions(): SurfacePrefsActions {
       setDockWidth: state.setDockWidth,
       setDockCollapsed: state.setDockCollapsed,
       setRailExpanded: state.setRailExpanded,
-      setScratchHeight: state.setScratchHeight,
+      setRailHeight: state.setRailHeight,
       setHydrated: state.setHydrated,
     })),
   );

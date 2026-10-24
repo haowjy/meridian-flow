@@ -20,6 +20,12 @@ export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = CONTEXT_URI_
 export const EDITOR_CONTEXT_SCHEMES = PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
 
 /**
+ * The project's own areas, the rail's Files tree. User is the writer's across
+ * every project, so the rail docks it at the bottom beside Scratch instead.
+ */
+export const PROJECT_TREE_SCHEMES = EDITOR_CONTEXT_SCHEMES.filter((scheme) => scheme !== "user");
+
+/**
  * Whether the writer can create files/folders inside a scheme from a browse
  * surface. Uploads is intake only (Jimmy's ruling, 2026-08-06): its files
  * arrive by uploading, never by in-tree creation. Scratch notes are made only
