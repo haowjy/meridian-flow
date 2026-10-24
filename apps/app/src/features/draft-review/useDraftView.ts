@@ -6,7 +6,7 @@ import type { DraftChangesView } from "./draft-changes";
 import { useChangeItems } from "./draft-changes";
 import type { DraftRef } from "./review-command-types";
 import { listedItemChanges, targetOfChanges } from "./review-model";
-import { hasTreeLine } from "./tree-line";
+import { hasTreeLine, treeChange, treeLineOf } from "./tree-line";
 import { useRoomReview } from "./useRoomReview";
 import type { WorkBranchCommands } from "./useWorkBranchCommands";
 export function useDraftView(
@@ -28,8 +28,13 @@ export function useDraftView(
   const withoutText = item?.hasDraft === false || item?.tree?.deleted === true;
   const read = useRoomReview(enabled && !withoutText ? draft : null);
   const status = !enabled ? "idle" : withoutText ? "ready" : read.status;
+  const deleteLine = item?.tree?.deleted && !item.isNew ? treeLineOf(item) : null;
   const changes =
-    item && enabled ? listedItemChanges(item, read.listedChanges) : read.listedChanges;
+    item && enabled
+      ? deleteLine
+        ? [treeChange(item, deleteLine)]
+        : listedItemChanges(item, read.listedChanges)
+      : read.listedChanges;
   const treeLine = !!item && hasTreeLine(item);
   const { items } = useChangeItems(draft, changes);
   return {

@@ -397,10 +397,6 @@ msgstr ""
 msgid "{name}: Deleted"
 msgstr ""
 
-#: src/features/draft-review/tree-line.ts
-#~ msgid "{name}: deleting"
-#~ msgstr ""
-
 #. placeholder {0}: line.place
 #: src/features/draft-review/tree-line.ts
 msgid "{name}: moving to {0}"
@@ -719,7 +715,7 @@ msgstr ""
 msgid "AI assistant"
 msgstr ""
 
-#. placeholder {0}: entry.actor.chatTitle
+#. placeholder {0}: voice.chat
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "AI in {0}"
 msgstr ""
@@ -795,10 +791,6 @@ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "An entry named {name} already exists in this location."
-msgstr ""
-
-#: src/features/project/context/DocumentTrashDialog.tsx
-msgid "an unknown writer"
 msgstr ""
 
 #: src/client/query/work-update-failure.ts
@@ -1752,28 +1744,31 @@ msgstr ""
 msgid "Couldn't rename. Use Rename in the file list to try again."
 msgstr ""
 
-#. placeholder {0}: document.name
-#. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Couldn't restore {0}."
 msgstr ""
 
-#. placeholder {0}: document.name
-#. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Couldn't restore {0}. A file is in the way."
 msgstr ""
 
-#. placeholder {0}: document.name
-#. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Couldn't restore {0}. Try again."
+msgstr ""
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Couldn't restore {name}."
+msgstr ""
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Couldn't restore {name}. A file is in the way."
+msgstr ""
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Couldn't restore {name}. Try again."
 msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
@@ -2714,6 +2709,14 @@ msgstr ""
 msgid "Keep editing"
 msgstr ""
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Kept while {works} has changes to it."
+msgstr ""
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Kept while {works} have changes to it."
+msgstr ""
+
 #: src/features/project/context/context-schemes.ts
 msgid "Knowledge Base"
 msgstr ""
@@ -3225,6 +3228,7 @@ msgstr ""
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
+#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/rich-content/TranscriptReference.tsx
 msgid "No longer available"
 msgstr ""
@@ -3839,8 +3843,10 @@ msgid "Restored as {0}."
 msgstr ""
 
 #. placeholder {0}: alternateLocations.join(", ")
+#. placeholder {0}: notice.location
 #. placeholder {0}: result.landedAt
 #: src/features/project/context/document-delete-undo.tsx
+#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/context/restore-trashed-document.ts
 msgid "Restored at {0}."
 msgstr ""
