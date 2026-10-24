@@ -4,6 +4,7 @@ import { editHandle, type PreparedEditRoots } from "@meridian/agent-edit/integra
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
 import {
   isTransitionEntry,
+  materializedTreeEditIds,
   type StoredTreeEntry,
   type TransitionEntry,
   treeKey,
@@ -27,11 +28,7 @@ export const entryRows = (entry: Entry): { id: number; key: string }[] => [
 ];
 export function entries(document: InverseDocument, threadId: string): Entry[] {
   const map = new Map<string, Entry>();
-  const materialized = new Set(
-    document.tree.flatMap((row) =>
-      isTransitionEntry(row) && row.tree.materializes ? [row.tree.materializes] : [],
-    ),
-  );
+  const materialized = materializedTreeEditIds(document.tree);
   for (const row of document.tree)
     if (
       isTransitionEntry(row) &&

@@ -71,6 +71,14 @@ export const isTransitionEntry = <T extends Pick<StoredTreeEntry, "tree">>(
   row: T,
 ): row is T & { tree: TreeTransitionChange } => row.tree.op !== "settle";
 
+/** Drafted transitions replaced in history by the live transition that Apply materialized. */
+export const materializedTreeEditIds = (tree: readonly StoredTreeEntry[]) =>
+  new Set(
+    tree.flatMap((row) =>
+      isTransitionEntry(row) && row.tree.materializes ? [row.tree.materializes] : [],
+    ),
+  );
+
 /** A planned live transition starts where the inverse's earlier steps leave the document. */
 export type PlannedLiveTransition = {
   destination: { kind: "live" };
