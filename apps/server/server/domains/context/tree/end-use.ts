@@ -84,7 +84,10 @@ export async function tombstoneUnused(
     reason: "discarded",
     ...options.actor,
   });
-  const tombstoned: NodeRef[] = removed.map((id) => ({ kind: "document" as const, id }));
+  const tombstoned: NodeRef[] = removed.map(({ documentId: id }) => ({
+    kind: "document" as const,
+    id,
+  }));
   const releasedObjects = ending.flatMap((row) => (row.storageUrl ? [row.storageUrl] : []));
   if (options.keepFolders) return { tombstoned, releasedObjects };
   tombstoned.push(

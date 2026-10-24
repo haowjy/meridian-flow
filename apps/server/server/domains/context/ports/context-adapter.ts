@@ -7,6 +7,7 @@
 
 import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
 import type {
+  DeleteContextEntryResult,
   Filetype,
   InvalidOperationReason,
   NamespaceNameClaim,
@@ -126,7 +127,7 @@ export type AdapterMoveResult = {
 };
 
 export type AdapterDeleteResult = {
-  deletedDocumentIds: string[];
+  removed: DeleteContextEntryResult["removed"];
   availabilityGeneration: string;
 };
 

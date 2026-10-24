@@ -1,4 +1,5 @@
 /** Atomic move/delete CAS operations over the shared in-memory context backing. */
+import { serializeRemovalIdentity } from "@meridian/contracts";
 import {
   allocateFilename,
   parseDocumentFilename,
@@ -578,7 +579,15 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         this.markMutatorWrite();
         this.backing.availabilityGeneration.value += 1n;
         return Ok({
-          deletedDocumentIds: [doc.id],
+          removed: [
+            {
+              documentId: doc.id,
+              removal: serializeRemovalIdentity({
+                time: new Date(now),
+                locationVersion: this.backing.availabilityGeneration.value,
+              }),
+            },
+          ],
           availabilityGeneration: String(this.backing.availabilityGeneration.value),
         });
       }
@@ -612,7 +621,13 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       this.markMutatorWrite();
       this.backing.availabilityGeneration.value += 1n;
       return Ok({
-        deletedDocumentIds,
+        removed: deletedDocumentIds.map((documentId) => ({
+          documentId,
+          removal: serializeRemovalIdentity({
+            time: new Date(now),
+            locationVersion: this.backing.availabilityGeneration.value,
+          }),
+        })),
         availabilityGeneration: String(this.backing.availabilityGeneration.value),
       });
     });

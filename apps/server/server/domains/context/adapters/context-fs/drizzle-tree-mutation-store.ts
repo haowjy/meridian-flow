@@ -393,7 +393,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       if (token.kind === "file") {
         await lockDocuments(this.db, [token.nodeId]);
         await this.runBeforeDestructiveWrite();
-        const deletedDocumentIds = await this.removal.remove({
+        const removed = await this.removal.remove({
           documentIds: [token.nodeId as DocumentId],
           reason: command.removal?.reason ?? "deleted",
           cause: command.removal?.cause,
@@ -404,7 +404,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           [token.sourceId],
           [token.nodeId],
         );
-        return Ok({ deletedDocumentIds: [...deletedDocumentIds], availabilityGeneration });
+        return Ok({ removed: [...removed], availabilityGeneration });
       }
 
       // Splitting also updates hidden boundary document rows. Lock the complete
@@ -444,7 +444,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           ),
         );
       await this.runBeforeDestructiveWrite();
-      const deletedDocumentIds = await this.removal.remove({
+      const removed = await this.removal.remove({
         documentIds: documentClosure.map((row) => row.id),
         reason: command.removal?.reason ?? "deleted",
         cause: command.removal?.cause,
@@ -469,7 +469,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         [token.sourceId],
         [token.nodeId],
       );
-      return Ok({ deletedDocumentIds: [...deletedDocumentIds], availabilityGeneration });
+      return Ok({ removed: [...removed], availabilityGeneration });
     });
   }
 }

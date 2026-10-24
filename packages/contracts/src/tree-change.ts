@@ -3,6 +3,7 @@
  * transition it made in its destination, so an inverse restores the prior state rather than
  * coordinates. A tree entry has no Yjs parts; `seq` places it on the same axis as text parts.
  */
+import { z } from "zod";
 import type { BranchId } from "./ids.js";
 
 /** A document's placement: its folder (or, at a source's root, that source), name and extension. */
@@ -14,7 +15,26 @@ export type TreePlacement = {
 };
 
 /** A removal as the row held it right after: its time and the `location_version` it wrote. */
-export type TreeRemoval = { time: string; locationVersion: string };
+export const removalIdentitySchema = z.object({
+  time: z.string().datetime({ offset: true }),
+  locationVersion: z.string().regex(/^(0|[1-9]\d*)$/),
+});
+export type RemovalIdentity = z.infer<typeof removalIdentitySchema>;
+export type TreeRemoval = RemovalIdentity;
+
+export function serializeRemovalIdentity(input: {
+  time: Date;
+  locationVersion: bigint;
+}): RemovalIdentity {
+  return { time: input.time.toISOString(), locationVersion: input.locationVersion.toString() };
+}
+
+export function deserializeRemovalIdentity(input: RemovalIdentity): {
+  time: Date;
+  locationVersion: bigint;
+} {
+  return { time: new Date(input.time), locationVersion: BigInt(input.locationVersion) };
+}
 
 /** Live has one state per document: living at a placement, or removed by one removal. */
 export type LiveTreeState =

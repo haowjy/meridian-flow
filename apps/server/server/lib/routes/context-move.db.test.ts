@@ -366,7 +366,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const operationId = crypto.randomUUID();
       const options = { operationId, expected: { kind: "file" as const, documentId: DOCUMENT_ID } };
       const deleted = await port.delete(uri, options);
-      expect(deleted).toMatchObject({ ok: true, value: { deletedDocumentIds: [DOCUMENT_ID] } });
+      expect(deleted).toMatchObject({
+        ok: true,
+        value: { removed: [{ documentId: DOCUMENT_ID }] },
+      });
       const replacement = await port.createTrackedDocument(uri, "replacement writing");
       expect(replacement.ok).toBe(true);
       await expect(port.delete(uri, options)).resolves.toEqual(deleted);

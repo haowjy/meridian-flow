@@ -33,6 +33,7 @@ import type {
   TurnUsage,
 } from "../threads/index.js";
 import { threadSchema } from "../threads/thread.js";
+import { removalIdentitySchema } from "../tree-change.js";
 import type { AiWriteMode, Work, WorkHandle, WorksSnapshot } from "../works/index.js";
 import { type Filetype, filetypeSchema, type YjsTrackedSchemaType } from "./filetype.js";
 import { admissionReceiptShape, type SubmittedReference } from "./user-turn-admission.js";
@@ -184,7 +185,7 @@ export type CreateUntitledContextDocumentAnswer =
 /** Exact identities committed by one successful context-tree deletion. */
 export const deleteContextEntryResultSchema = z.object({
   status: z.literal("deleted"),
-  deletedDocumentIds: z.array(z.string().min(1)),
+  removed: z.array(z.object({ documentId: z.string().min(1), removal: removalIdentitySchema })),
   availabilityGeneration: z.string().regex(/^(0|[1-9]\d*)$/),
 });
 export type DeleteContextEntryResult = z.infer<typeof deleteContextEntryResultSchema>;
