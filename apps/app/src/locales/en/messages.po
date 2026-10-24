@@ -1549,6 +1549,11 @@ msgstr "Couldn’t create this Work."
 msgid "Couldn't delete"
 msgstr "Couldn't delete"
 
+#. placeholder {0}: target.name
+#: src/features/project/context/document-delete-undo.tsx
+msgid "Couldn't delete {0}. Try again."
+msgstr "Couldn't delete {0}. Try again."
+
 #: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "Couldn't delete {title}"
 msgstr "Couldn't delete {title}"
@@ -3783,11 +3788,14 @@ msgid "Restore {0}"
 msgstr "Restore {0}"
 
 #. placeholder {0}: documentDisplayName(landing.landedAt)
-#. placeholder {0}: restoredName(renamed.landedAt)
 #: src/features/chat/TurnEditsReceipt.tsx
-#: src/features/project/context/document-delete-undo.tsx
 msgid "Restored as {0}."
 msgstr "Restored as {0}."
+
+#. placeholder {0}: alternateLocations.join(", ")
+#: src/features/project/context/document-delete-undo.tsx
+msgid "Restored at {0}."
+msgstr "Restored at {0}."
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "Restoring"
