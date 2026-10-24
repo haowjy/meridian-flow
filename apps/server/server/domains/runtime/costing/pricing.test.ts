@@ -1,5 +1,8 @@
 /**
  * Purpose: Tests deterministic pricing conversion and registry-sourced pinned rates.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Gateway price-source precedence and missing-price refusal (kb/decisions/auth-billing/gateway-registry-pricing.md)
  */
 import { describe, expect, it } from "vitest";
 import { mapUsage as mapAnthropicUsage } from "../gateway/adapters/anthropic/stream-collect.js";

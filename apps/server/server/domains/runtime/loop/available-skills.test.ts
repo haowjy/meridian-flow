@@ -1,4 +1,8 @@
-/** User slash catalog versus model-available catalog, body load, and Send-slug authorization. */
+/** User slash catalog versus model-available catalog, body load, and Send-slug authorization.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Separate user and model skill catalogs
+ */
 import { describe, expect, it } from "vitest";
 import {
   type AgentSourceSnapshot,
