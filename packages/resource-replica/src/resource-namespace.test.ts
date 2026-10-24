@@ -1,4 +1,8 @@
-/** Durable namespace policy protects request bytes, response-loss recovery and newer intentions. */
+/** Durable namespace policy protects request bytes, response-loss recovery and newer intentions.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Durable-before-send namespace attempts and CAS replay
+ */
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { planResourceDeletion } from "./resource-deletion";
