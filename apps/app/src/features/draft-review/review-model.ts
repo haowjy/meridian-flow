@@ -69,8 +69,9 @@ export function itemChange(
 }
 
 /**
- * An item's rows: a whole item (a creation, a picture) is one row; otherwise its move or
- * delete, if any, comes first, then its text changes.
+ * An item's rows: a whole item (a creation, a picture) is one row. A drafted delete is
+ * also one row because its document-level disposition supersedes its text details;
+ * otherwise a move comes first, then the text changes.
  */
 export function listedItemChanges(
   item: Pick<
@@ -80,7 +81,10 @@ export function listedItemChanges(
   text: readonly ReviewChange[],
 ): readonly ReviewChange[] {
   const line = item.isNew ? null : treeLineOf(item);
-  if (line) return item.wholeItem ? [treeChange(item, line)] : [treeChange(item, line), ...text];
+  if (line)
+    return item.wholeItem || line.kind === "delete"
+      ? [treeChange(item, line)]
+      : [treeChange(item, line), ...text];
   return item.wholeItem ? [itemChange(item)] : text;
 }
 

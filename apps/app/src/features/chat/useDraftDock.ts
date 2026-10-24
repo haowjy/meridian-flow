@@ -69,7 +69,7 @@ export function useDraftDock({
   const targets = useMemo(
     () =>
       candidates
-        .filter((row) => row.draft.hasDraft)
+        .filter((row) => row.draft.hasDraft && row.draft.tree?.deleted !== true)
         .map((row) => ({
           projectId,
           workId,
@@ -84,7 +84,7 @@ export function useDraftDock({
   const files = candidates
     .map((row) => {
       const read = reads[targets.findIndex((target) => target.itemKey === row.draft.itemKey)];
-      const withoutText = row.draft.hasDraft === false;
+      const withoutText = row.draft.hasDraft === false || row.draft.tree?.deleted === true;
       const file = dockFile(
         row,
         reviewFileTargetName(row, untitled),

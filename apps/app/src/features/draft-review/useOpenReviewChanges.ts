@@ -1,8 +1,8 @@
 /**
  * Open review rows are the room runtime's group projection, without command or focus ownership,
- * after the item's pending move or delete (its tree line) when it has one: a review isn't done
- * while its document is still being renamed, moved or deleted. Focus and stepping walk the text
- * changes (`changes`) alone; the tree line has no place in the text.
+ * after the item's pending move (its tree line) when it has one. A delete replaces the text rows:
+ * its banner and single document row are the review. Focus and stepping walk the visible text
+ * changes (`changes`) alone; a tree line has no place in the text.
  */
 import { useQuery } from "@tanstack/react-query";
 import { workBranchDraftsQueryOptions } from "@/client/query/useWorkBranchDrafts";
@@ -32,15 +32,16 @@ export function useOpenReviewChanges(
   });
   const item = draft ? listed.data?.find((row) => row.itemKey === draft.itemKey) : undefined;
   const line = item && !item.isNew ? treeLineOf(item) : null;
+  const changes = line?.kind === "delete" ? [] : read.changes;
   const { items } = useChangeItems(
     draft,
-    item && line ? [treeChange(item, line), ...read.changes] : read.changes,
+    item && line ? [treeChange(item, line), ...changes] : changes,
   );
   return {
     inline,
     documentId: inline?.documentId ?? null,
     itemKey: inline?.itemKey ?? null,
-    changes: read.changes,
+    changes,
     retry: read.retry,
     items,
     status: read.status as DraftChangesData["status"],
