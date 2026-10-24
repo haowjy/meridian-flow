@@ -18,7 +18,7 @@ import { t } from "@lingui/core/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { Folder } from "lucide-react";
-import { type CSSProperties, useMemo, useRef } from "react";
+import { type CSSProperties, type RefObject, useMemo, useRef } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabs } from "@/client/stores";
@@ -31,7 +31,9 @@ import {
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { serverTabFromFile } from "../context/context-tab-from-file";
+import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { RailPaneHeader } from "../context/RailPaneHeader";
+import { AreaDropRegion } from "../context/tree-drop/AreaDropRegion";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
 import { useScratchCatalogs } from "../context/use-scratch-catalogs";
@@ -63,7 +65,7 @@ export function RailScratchSection({
   threadId,
   editorWorkId,
   onPicked,
-  resizable = false,
+  resizeAgainst,
 }: {
   projectId: string;
   /** The chat on screen: the centre chat on the Chat screen, the dock's chat elsewhere. */
@@ -71,8 +73,11 @@ export function RailScratchSection({
   editorWorkId: string | null;
   /** Called after a note is picked (the phone drawer closes over the document). */
   onPicked?: () => void;
-  /** Desktop only: a handle on the divider above the expanded section resizes it. */
-  resizable?: boolean;
+  /**
+   * Desktop only: the pane above, which a handle on the divider trades height
+   * with when the section is expanded.
+   */
+  resizeAgainst?: RefObject<HTMLElement | null>;
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
   const expanded = useProjectSurfacePrefsStore((state) => state.railPrefs.scratchExpanded);
@@ -80,6 +85,33 @@ export function RailScratchSection({
   const setExpanded = useProjectSurfacePrefsStore((state) => state.setRailExpanded);
   const setHeight = useProjectSurfacePrefsStore((state) => state.setScratchHeight);
   const sectionRef = useRef<HTMLElement | null>(null);
+  const { primary, earlier, editable } = useChatScratchCatalogs(projectId, scratch);
+  const areas = useMemo(
+    () => [
+      ...(primary.catalog && scratch
+        ? [
+            {
+              scheme: "scratch" as const,
+              owner: scratch.owner,
+              catalog: primary.catalog,
+              movable: editable,
+            },
+          ]
+        : []),
+      ...(earlier.catalog && scratch?.earlierRootThreadId
+        ? [
+            {
+              scheme: "scratch" as const,
+              owner: { rootThreadId: scratch.earlierRootThreadId },
+              catalog: earlier.catalog,
+              movable: true,
+            },
+          ]
+        : []),
+    ],
+    [primary.catalog, earlier.catalog, scratch, editable],
+  );
+  const list = useEntryList({ projectId, areas });
   if (!scratch) return null;
   const changeExpanded = (next: boolean) => {
     setExpanded("scratch", next);
@@ -101,7 +133,7 @@ export function RailScratchSection({
           : undefined
       }
     >
-      {resizable && expanded ? (
+      {resizeAgainst && expanded ? (
         <ResizeHandle
           gridRef={sectionRef}
           cssVariableName={HEIGHT_VAR}
@@ -112,10 +144,8 @@ export function RailScratchSection({
           dragDirection={-1}
           ariaLabel={t`Resize Scratch`}
           measure={() => {
-            const section = sectionRef.current;
-            const tree = section?.previousElementSibling;
-            const own = section?.getBoundingClientRect().height ?? MIN_PANE_PX;
-            const above = tree?.getBoundingClientRect().height ?? 0;
+            const own = sectionRef.current?.getBoundingClientRect().height ?? MIN_PANE_PX;
+            const above = resizeAgainst.current?.getBoundingClientRect().height ?? 0;
             return { value: own, min: MIN_PANE_PX, max: own + above - MIN_PANE_PX };
           }}
           onCommit={(next) => {
@@ -126,29 +156,59 @@ export function RailScratchSection({
           }}
         />
       ) : null}
-      <RailPaneHeader
-        label={schemeLabel("scratch")}
-        icon={schemeIcon("scratch")}
-        title={scratch.heading}
-        ariaLabel={scratch.heading}
-        expanded={expanded}
-        onExpandedChange={changeExpanded}
-      />
-      {expanded ? (
-        <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
-          <ChatScratchTree
-            projectId={projectId}
-            threadId={threadId}
-            editorWorkId={editorWorkId}
-            onPicked={onPicked}
-          />
-        </div>
-      ) : null}
+      <EntryList list={list}>
+        <AreaDropRegion
+          scheme="scratch"
+          catalogRootId={primary.catalog?.root.entryId ?? null}
+          reveal={() => !expanded && changeExpanded(true)}
+          className="flex min-h-0 flex-col"
+          header={(dropProps) => (
+            <RailPaneHeader
+              label={schemeLabel("scratch")}
+              icon={schemeIcon("scratch")}
+              title={scratch.heading}
+              ariaLabel={scratch.heading}
+              expanded={expanded}
+              onExpandedChange={changeExpanded}
+              dropProps={dropProps}
+            />
+          )}
+        >
+          {expanded ? (
+            <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
+              <ChatScratchTree
+                projectId={projectId}
+                threadId={threadId}
+                editorWorkId={editorWorkId}
+                onPicked={onPicked}
+              />
+            </div>
+          ) : null}
+        </AreaDropRegion>
+      </EntryList>
     </section>
   );
 }
 
-/** Shared Scratch browser for the rail, phone drawer and chat Files menu. */
+/** The chat's Scratch catalogs, and whether its owner still accepts edits. */
+function useChatScratchCatalogs(
+  projectId: string,
+  scratch: ReturnType<typeof useChatScratchSource>,
+) {
+  const { primary, earlier } = useScratchCatalogs(projectId, scratch);
+  const { works, noWork } = useWorks(projectId);
+  const work =
+    scratch?.owner.workId === noWork?.id
+      ? noWork
+      : works?.find((work) => work.id === scratch?.owner.workId);
+  const editable = !scratch?.owner.workId || Boolean(work && !isWorkArchived(work));
+  return { primary, earlier, editable };
+}
+
+/**
+ * Shared Scratch browser for the rail, phone drawer and chat Files menu. Rows
+ * select and drag only inside the rail section's list.
+ */
 export function ChatScratchTree({
   projectId,
   threadId,
@@ -161,15 +221,9 @@ export function ChatScratchTree({
   onPicked?: () => void;
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
-  const { primary, earlier } = useScratchCatalogs(projectId, scratch);
+  const { primary, earlier, editable } = useChatScratchCatalogs(projectId, scratch);
   const openId = useOpenDocumentId(projectId, editorWorkId);
   const deletion = useDeleteConfirmation({ projectId });
-  const { works, noWork } = useWorks(projectId);
-  const work =
-    scratch?.owner.workId === noWork?.id
-      ? noWork
-      : works?.find((work) => work.id === scratch?.owner.workId);
-  const editable = !scratch?.owner.workId || Boolean(work && !isWorkArchived(work));
   const hasEarlier = Boolean(scratch?.earlierRootThreadId && earlier.catalog?.files().length);
   const ready = primary.isComplete && (!scratch?.earlierRootThreadId || earlier.isComplete);
   const isError = primary.isError || (Boolean(scratch?.earlierRootThreadId) && earlier.isError);

@@ -20,6 +20,19 @@ chat resources rather than ordinary Editor tabs.
   deletion hides descendants; refusal restores rows with passive failure
   evidence. File targets retain `documentId`; folder targets retain catalog
   `entryId`.
+- A row changes folders only through `moveRows` (`entry-drag/execute-move.ts`,
+  over `move-entry.ts`): Move…, a drop and a drop's Undo resolve the destination
+  by folder ID (or an area root with its authority), share one identity-based
+  refusal (`moveRefusal` in `move-plan.ts`: inside itself; already there is a
+  quiet no-op), and arrive at the next free name. Don't place entries anywhere else.
+- Selection and dragging (`entry-drag/`): one list is one selection, one drop
+  route and one drop scope (`useEntryList`/`EntryList`). They carry identities,
+  never placement; plans read placement from the replica at hover, drop and
+  Undo. Rows move within one system only. Desktop only; phones use Move…, and
+  every drop also has that menu path.
+- Drop dispatch (`tree-drop/`) is the one scope that row moves and desktop
+  import (#798) share; add a route, not a second scope. A refused drop is not
+  an error: no fill, no red, the pointer hint names the reason.
 - Inline create and rename use `useInlineEdit`/`EntryNameField`; do not fork a
   form protocol. Uploads omit generic Delete. Closed move pickers acquire no
   catalogs.

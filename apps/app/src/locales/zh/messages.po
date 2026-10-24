@@ -106,6 +106,16 @@ msgstr "{0, plural, other {# 次调用}}"
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 msgstr ""
 
+#. placeholder {0}: failed.length
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
+msgstr ""
+
+#. placeholder {0}: failed.length
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
+msgstr ""
+
 #. placeholder {0}: card.count
 #: src/features/chat/chat-card-copy.ts
 msgid "{0, plural, one {Couldn't move your queued message to the message box.} other {Couldn't move your queued messages to the message box.}}"
@@ -114,6 +124,11 @@ msgstr ""
 #. placeholder {0}: card.count
 #: src/features/chat/chat-card-copy.ts
 msgid "{0, plural, one {Couldn't move your queued message.} other {Couldn't move your queued messages.}}"
+msgstr ""
+
+#. placeholder {0}: moved.length
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0, plural, one {Moved # item to {destinationName}.} other {Moved # items to {destinationName}.}}"
 msgstr ""
 
 #. placeholder {0}: digest.readDocuments
@@ -981,6 +996,10 @@ msgstr ""
 msgid "Can't delete {source}: it changed during the delete."
 msgstr ""
 
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+msgid "Can't go inside itself"
+msgstr ""
+
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source} to that location."
 msgstr ""
@@ -1654,6 +1673,20 @@ msgstr ""
 msgid "Couldn't move"
 msgstr ""
 
+#. placeholder {0}: lost.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Couldn't move {0} back."
+msgstr ""
+
+#. placeholder {0}: lost.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Couldn't move {0}."
+msgstr ""
+
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Couldn't move it back."
+msgstr ""
+
 #: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't move this entry. Try again."
 msgstr ""
@@ -1674,10 +1707,6 @@ msgstr ""
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Couldn't open this document."
 msgstr ""
-
-#: src/features/project/shell/ContextSidebar.tsx
-#~ msgid "Couldn’t open this document."
-#~ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't open this draft. Try again."
@@ -2099,6 +2128,7 @@ msgstr ""
 #: src/features/draft-review/ReviewToast.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/SchemaNotices.tsx
+#: src/features/project/context/entry-drag/move-notice.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
@@ -2422,10 +2452,6 @@ msgstr ""
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Goal: {0}. "
 msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Got the latest text of"
-#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "grid"
@@ -2942,6 +2968,10 @@ msgstr ""
 msgid "Move to {0}"
 msgstr ""
 
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+msgid "Move to {destinationName}"
+msgstr ""
+
 #: src/features/chat/UserTurn.tsx
 msgid "Move to the message box"
 msgstr ""
@@ -2957,6 +2987,22 @@ msgstr ""
 #: src/features/chat/command-descriptor.ts
 msgid "Moved"
 msgstr ""
+
+#. placeholder {0}: first.previousName
+#. placeholder {1}: first.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Moved {0} to {destinationName} as {1}."
+msgstr ""
+
+#. placeholder {0}: first.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Moved {0} to {destinationName}."
+msgstr ""
+
+#. placeholder {0}: first.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+#~ msgid "Moved {requested} to {destinationName} as {0}."
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Moved {source} to"
@@ -2976,11 +3022,6 @@ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Moved since"
-msgstr ""
-
-#. placeholder {0}: folder ?? ""
-#: src/features/project/context/LinkUpdateNote.tsx
-msgid "Moved to {0}"
 msgstr ""
 
 #. placeholder {0}: documentLocationName(landing.landedAt, names)
@@ -4378,10 +4419,6 @@ msgid "That change can't be redone here because it was already applied to your m
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-#~ msgid "That change can't be redone here because the chat now writes somewhere else."
-#~ msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone because it was discarded."
 msgstr ""
 
@@ -4396,10 +4433,6 @@ msgstr ""
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone here because it was already applied to your manuscript."
 msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "That change can't be undone here because the chat now writes somewhere else."
-#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change couldn't be made in {name}."
@@ -5121,6 +5154,7 @@ msgstr ""
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/CommandNotice.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+#: src/features/project/context/entry-drag/move-notice.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
 msgstr "撤销"
@@ -5145,10 +5179,6 @@ msgstr ""
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undoing…"
 msgstr ""
-
-#: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "Undone in your drafts. Apply them to change your manuscript."
-#~ msgstr "已在你的草稿中撤销。应用后才会更改你的正文。"
 
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"

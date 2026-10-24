@@ -13,7 +13,7 @@
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
@@ -28,8 +28,12 @@ export type WorkspaceNavBodyProps = {
   presentation: WorkspaceNavPresentation;
   /** Persistent navigation content between the controls and account row. */
   children?: ReactNode;
+  /** The pane holding `children`, for a section below that resizes against it. */
+  childrenRef?: Ref<HTMLDivElement>;
   /** The chat's Scratch section, pinned above the account row. */
   scratch?: ReactNode;
+  /** A move's notice: it takes height from the body above, so nothing shifts or is covered. */
+  notice?: ReactNode;
 };
 
 export function WorkspaceNavBody({
@@ -37,7 +41,9 @@ export function WorkspaceNavBody({
   onSelectScreen,
   presentation,
   children,
+  childrenRef,
   scratch,
+  notice,
 }: WorkspaceNavBodyProps) {
   const phone = presentation === "phone";
   const failed = useRailSwitchFailed();
@@ -68,7 +74,10 @@ export function WorkspaceNavBody({
         ))}
       </div>
 
-      <div className={cn("min-h-0 flex-1", !phone && "min-h-[120px]")}>{children}</div>
+      <div ref={childrenRef} className={cn("min-h-0 flex-1", !phone && "min-h-[120px]")}>
+        {children}
+      </div>
+      {notice}
 
       {/* The Scratch section draws its own divider, so none shows with no chat on screen. */}
       {scratch}

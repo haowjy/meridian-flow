@@ -153,8 +153,8 @@ appears in every mounted surface. Observation starts at admission and ends on
 positive terminal evidence or the receipt's deadline (settlement plus four
 seconds), independently of row mounts. Missing cached records are not terminal
 evidence. Each operation announces once through the app's polite region.
-Picker moves with zero updated links show "Moved to <folder>" after successful
-settlement, with the same lifetime and announcement. Refused moves show nothing.
+A move that updated no links shows nothing: the writer just did it and can see
+where the row went (owner, 2026-10-14). Refused moves show nothing.
 Refused row moves retain the journal destination in the catalog projection. Comparing that destination with the projected parent and owner distinguishes them from name-only refusals: the failure mark stays on the row, and reopening Move shows the failed destination with retry guidance, never an automatic rename field. Retry validation and submission use the retained
 destination name, including a cancelled rename/move chain; fresh moves use the
 entry's current name. Work Files uses the same picker and repair decision.
@@ -171,10 +171,18 @@ the current parent for a new move. A retry opens at the refused destination
 when it still resolves (matching owner and full path), otherwise at the
 current parent with the refusal message. It disables files and the moved folder's subtree, and offers no
 commit at the area list. The current parent reads "Already in <folder>".
-Destination collisions use the inline-name validator before namespace admission;
-files keep their name through `setLocation`, folders through `setFolderLocation`.
+A taken name never refuses: the row arrives at the next free name (predicted
+from the destination's rows, decided by the server) through `setLocation` for
+files and `setFolderLocation` for folders.
 Catalog snapshots span areas, so menu lookups check source identity as well as
 entry identity; equal paths in different areas remain distinct destinations.
+
+Move… and dragging share every step. Refusal is judged by identity from the
+replica's placement graph (`moveRefusal` in `entry-drag/move-plan.ts`), so the
+picker and a hover agree even while a peer moves rows. `moveRows`
+(`entry-drag/execute-move.ts`) places, remembers each operation for its row's
+link-update note and returns the move result both report through the list's
+notice. Destination resolution and arrival naming live in `move-entry.ts`.
 
 The chat's Scratch renders one owner-bound `TreeEnvProvider` and `TreeChildren`
 per real catalog. Earlier notes is a navigation disclosure outside the second
@@ -184,3 +192,88 @@ files open directly with their known owner. Rename, Move… and Delete share the
 operation selection. Creation is absent. One surface-owned deletion coordinator
 and dialog serve all Scratch rows, retaining each target's owner. The actual owning Work determines editability (`isWorkArchived`); archived or unavailable Work owners remain navigable with no mutation controls. Shared rows receive explicit action capabilities from their surface. The synthetic
 "Earlier notes" group is navigation only, not a mutable folder.
+
+## Selecting and dragging rows
+
+The Files tree, the chat's Scratch and a Work's Files are each one list:
+`useEntryList` owns its selection, its entries route and, through `EntryList`,
+its drop scope (the Files tree is one list over all four areas, with each
+section keeping its own expansion). Rows join through `EntrySelectionProvider`.
+Selection keys are `kind:id` and carry no scheme or place, so a moved row keeps
+its key and stays selected. A plain click opens or toggles the row as before and leaves no
+selection of its own: until the writer Ctrl/Cmd- or Shift-clicks, the selection
+is just the open row, shown by the open row's own highlight. Ctrl/Cmd-click
+starts an explicit selection from the open row and adds or removes rows;
+Shift-click selects the on-screen range from the last clicked row, read from the
+DOM (`data-entry-key`) so it always matches what is visible; Escape returns to
+the open row. Only explicit selections get the selection fill
+(`sidebar-selected`, the row fill with a little jade), which reads apart from
+hover and from the open row's fill, so the open row stays findable inside a
+selection. Adjacent selected rows join into one block rounded only at its ends:
+after each commit the selection marks each row's place in its run
+(`data-selection-run`) in one pass over screen order. The same
+modifiers with Enter or Space select from the keyboard, and a selected row
+reports `aria-pressed` (rows are buttons, not tree items, so that is the state
+they can carry).
+
+Dragging a selected row carries the selection in screen order, minus rows inside
+a selected folder; dragging an unselected row carries only it. A row drags only
+when its surface grants Move (an archived Work's Scratch doesn't), and a
+selection that spans systems or holds an unmovable row moves nowhere rather than
+silently dropping rows. `drag-session.ts` holds the drag (a browser hides drag
+data until the drop). The transfer carries only Meridian's entries type, no
+`text/plain` or `text/uri-list` fallback: a surface that can't take rows yet
+(the composer, the editor, until mention drops land) ignores the drop instead of
+pasting names that look like a half-made link.
+
+Each list has a `TreeDropScope` whose entries route (`use-entry-list.tsx`,
+planning in `move-plan.ts`) answers every hovered target: accept ("Move to Act 2"), refuse ("Can't go inside
+itself", a folder over its own subtree), or nothing (the row is already there, the target is a
+navigation-only folder, or the drag comes from another system, which Move or
+Copy will handle). A taken name never refuses: each row arrives at the next free
+name (`chapter-2 (2)`), predicted against the destination's rows plus the rows
+placed before it in the same drop, so `execute-move.ts` places rows one at a
+time; the server decides the final name. A drop moves every carried row through
+`move-entry.ts` (`execute-move.ts`), reselects them, reveals the destination (the target's
+own `reveal`, the same one the spring calls) and shows "Moved chapter-3 to Act
+2." (or "Moved chapter-3 to Act 2 as chapter-3 (2).") with Undo on the surface
+that took the drop (`MoveNotice` in that surface's `MoveNoticeHost`: in the
+rail between the Files tree and Scratch, or under Work Files, which stays
+visible with the sidebar collapsed). The notice is part of the surface's
+layout: it takes height from the tree's scroll area and never covers a
+control. It stays until the next move, Dismiss, or the project changing, so
+Undo is never a race. A host keeps only its latest result, as data. Undo shows
+only while it has something to put back: the publishing list watches the
+replica and retires Undo once every moved row was renamed, moved again or
+deleted (only after the move has shown in the replica, which can trail the
+placement by a moment); the message stays until dismissed.
+
+Move… inside a list ends the same way: `EntryMovePicker` places through
+`move-entry.ts`, then reports to its list (`useReportMove`), which selects the
+moved row and publishes the same notice and Undo. Move… does not reveal a
+collapsed destination (expansion belongs to each section); moving the open
+document reveals it through the active-document reveal. Outside a list (the
+phone browser, the chat's Files menu) Move… reports nothing beyond the row.
+
+Placement is optimistic, exactly as for Move…: each placement's operation is
+remembered, so the row's link-update note follows its receipt and a later server
+refusal lands on the row as its failure mark. A row the replica won't admit is
+named in the notice, and Undo still covers the rows that moved. Undo returns
+each row to its previous parent (the next free name there if its own was taken
+since; the list that took the drop supplies the siblings), skips a row renamed
+or moved again since, or gone (the writer's newer choice), and reads the replica as it
+is when pressed, not as it was at the drop. Verdicts likewise resolve each
+dragged row by identity from the replica's placement graph (rows another list
+dragged included), so a peer's rename or move during the drag can't slip a
+folder inside itself. A lone moved row stays selected on its own (an explicit
+selection of one), not the open row, and Undo needs no reselect because keys
+never change.
+
+Targets: a folder row is its folder; a file row hands its drop to its folder (or
+the area); an area header, and in Work Files the whole Scratch group, is the
+catalog's top level. Every target names its catalog root, so a list showing
+several catalogs (Scratch and its earlier notes) resolves the right one. The
+scope counts hovered elements per target and the innermost target claims each
+event; `DropRegion` lights the folder row and everything open under it as one
+block. Hovering a
+closed folder or area for 600 ms reveals it, and so does an accepted drop on it. The phone shell has no drag.

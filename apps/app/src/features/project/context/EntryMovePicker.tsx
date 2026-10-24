@@ -1,6 +1,5 @@
 /** Row-anchored folder placement using the same project tree as document paths. */
 import { t } from "@lingui/core/macro";
-import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ResourceDestination } from "@meridian/resource-replica";
 import { FolderInput } from "lucide-react";
@@ -9,20 +8,17 @@ import { useWorks } from "@/client/query/useWorks";
 import type { TabOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { Button } from "@/components/ui/button";
-import { useAccountResourceReplica } from "./account-feature-context";
-import { allocateContextEntryArrivalName, moveEntryName } from "./context-entry-name";
+import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
+import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
-import { destinationOwner } from "./identity-location";
-import { isFolderWithin } from "./menu-tree";
+import { moveRows } from "./entry-drag/execute-move";
+import { moveRefusal, parentOf } from "./entry-drag/move-plan";
+import { useReportMove } from "./entry-drag/use-entry-list";
+import { destinationParent, type MoveDestination } from "./move-entry";
 import { moveRepairTrail } from "./move-repair-trail";
 import { useProjectMenuSource } from "./use-project-menu-source";
 
-export type MoveEntry = {
-  id: string;
-  name: string;
-  path: string;
-  kind: "file" | "folder";
-};
+type MoveEntry = { kind: "file" | "folder"; id: string; name: string; path: string };
 
 type EntryMovePickerProps = {
   projectId: string;
@@ -32,7 +28,6 @@ type EntryMovePickerProps = {
   open: boolean;
   repairMove?: ResourceDestination;
   onOpenChange: (open: boolean) => void;
-  onMoved: (operationId: string) => void;
   children: ReactNode;
 };
 
@@ -55,10 +50,11 @@ function OpenMovePicker({
   open,
   repairMove,
   onOpenChange,
-  onMoved,
   rowRef,
 }: Omit<EntryMovePickerProps, "children"> & { rowRef: RefObject<HTMLDivElement | null> }) {
   const resources = useAccountResourceReplica();
+  const reportMove = useReportMove();
+  const view = useAccountResourceProjection(projectId);
   const { works, noWork } = useWorks(projectId);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -72,7 +68,6 @@ function OpenMovePicker({
   );
   const source = useProjectMenuSource({ projectId, title: "", document, scratch });
   const currentTrail = source.own.openAt(entry.path);
-  const currentParentId = currentTrail.at(-1)?.id;
   const openAt = (repairMove && moveRepairTrail(source, repairMove, currentTrail)) || currentTrail;
   const name = moveEntryName(entry.name, repairMove);
   const failedFolder = repairMove
@@ -85,54 +80,33 @@ function OpenMovePicker({
     : null;
   const unavailable = t`This location is unavailable. Refresh and try again.`;
 
-  const isForbidden = (folder: NonNullable<ReturnType<typeof source.folderFor>>) =>
-    entry.kind === "folder" &&
-    folder.catalog === source.own.catalog &&
-    isFolderWithin(folder.path, entry.path);
+  const ref = { kind: entry.kind, id: entry.id };
+  const refusalAt = (destination: MoveDestination) => {
+    const into = destinationParent(destination, works, noWork);
+    return into ? moveRefusal(view, ref, into) : null;
+  };
 
   async function move(trail: readonly DrillNode[]) {
     const folder = trail.at(-1);
     const destination = folder && source.folderFor(folder.id);
-    if (!destination || isForbidden(destination) || folder.id === currentParentId || pending)
-      return;
+    if (!destination || pending || refusalAt(destination)) return;
     setPending(true);
     setError(null);
     try {
-      const parsed = parseContextUri(destination.catalog.root.uri);
-      const targetOwner: TabOwner =
-        destination.owner.rootThreadId && parsed.ok && parsed.value.authority.kind === "lineage"
-          ? {
-              rootThreadId: destination.owner.rootThreadId,
-              rootThreadRef: parsed.value.authority.rootThreadRef,
-            }
-          : { workId: destination.owner.workId ?? undefined };
-      const authority = destinationOwner(
-        { scheme: destination.scheme, ...targetOwner },
-        works,
-        noWork,
+      const after = destinationParent(destination, works, noWork);
+      const before = parentOf(view, ref);
+      if (!after || !before) throw new Error(unavailable);
+      const result = await moveRows(
+        [{ entry: ref, name: entry.name, typed: name, before, after }],
+        {
+          resources,
+          projectId,
+          siblingsAt: () => destination.catalog.children(destination.entryId),
+        },
       );
-      if (!authority) throw new Error(unavailable);
-      const location: ResourceDestination = {
-        parent:
-          destination.entryId === destination.catalog.root.entryId
-            ? { kind: "root", scheme: destination.scheme, owner: authority }
-            : { kind: "folder", folderId: destination.entryId },
-        name: await allocateContextEntryArrivalName(
-          name,
-          destination.catalog.children(destination.entryId),
-          entry.kind,
-          entry.name,
-        ),
-      };
-      const result =
-        entry.kind === "folder"
-          ? await resources.setFolderLocation(projectId, entry.id, location, name)
-          : await (async () => {
-              const key = await resources.keyForDocument(projectId, entry.id);
-              if (!key) throw new Error(unavailable);
-              return resources.setLocation(projectId, key, location, name);
-            })();
-      if (result.operationId) onMoved(result.operationId);
+      if (result.failed.length > 0) throw new Error(unavailable);
+      // In a list, Move… ends like a drop: the row selected and the notice with Undo.
+      reportMove?.(result, folder.name);
       onOpenChange(false);
     } catch {
       setError(unavailable);
@@ -164,15 +138,16 @@ function OpenMovePicker({
       isDisabled={(node) => {
         if (!node.folder) return true;
         const folder = source.folderFor(node.id);
-        return !folder || isForbidden(folder);
+        return !folder || refusalAt(folder) === "inside-itself";
       }}
       onPick={() => undefined}
       actions={(trail) => {
         const folder = trail.at(-1);
         if (!folder) return [];
         const destination = source.folderFor(folder.id);
-        if (!destination || isForbidden(destination)) return [];
-        const already = folder.id === currentParentId;
+        const blocked = destination ? refusalAt(destination) : "inside-itself";
+        if (blocked === "inside-itself") return [];
+        const already = blocked === "already-there";
         return [
           {
             key: "move",

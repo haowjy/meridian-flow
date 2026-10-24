@@ -18,8 +18,11 @@ import {
   schemeIcon,
   schemeLabel,
 } from "./context-schemes";
+import { EntryList, useEntryList } from "./entry-drag/use-entry-list";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
+import { AreaDropRegion } from "./tree-drop/AreaDropRegion";
+import { dragEdgeScroll } from "./tree-drop/tree-drop";
 import { treeFolderIds } from "./tree-expansion-state";
 import { useTreeExpansion } from "./use-tree-expansion";
 
@@ -28,7 +31,7 @@ function rowPaddingLeft(depth: number): number {
   return 8 + depth * 16;
 }
 
-export type ContextTreePanelProps = {
+type ContextTreePanelProps = {
   projectId: string;
   /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
   editorWorkId: string | null;
@@ -74,7 +77,15 @@ export function ContextTreePanel({
     throw new Error("ContextTreePanel requires creation controls");
   }
   const schemes = EDITOR_CONTEXT_SCHEMES;
+  const scroller = useRef<HTMLDivElement>(null);
   const catalogs = useContextCatalogViews(projectId, schemes, { workId: editorWorkId });
+  const list = useEntryList({
+    projectId,
+    areas: schemes.flatMap((scheme) => {
+      const catalog = catalogs[scheme].catalog;
+      return catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, movable: true }] : [];
+    }),
+  });
   const renderScheme = (scheme: (typeof EDITOR_CONTEXT_SCHEMES)[number]) => (
     <SchemeSection
       key={`${projectId}:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`}
@@ -99,8 +110,13 @@ export function ContextTreePanel({
     <div className="flex h-full min-h-0 w-full flex-col">
       {/* The destination rows own the sidebar's single rule. Explorer panes
           stay on one uninterrupted rail material beneath it. */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
-        {schemes.map(renderScheme)}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: a drag is a pointer shortcut; every drop has a menu path (Move… on the row). */}
+      <div
+        ref={scroller}
+        onDragOver={(event) => dragEdgeScroll(scroller.current, event)}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2"
+      >
+        <EntryList list={list}>{schemes.map(renderScheme)}</EntryList>
       </div>
     </div>
   );
@@ -212,13 +228,14 @@ function SchemeSection({
     setPendingOpenPath(null);
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 
+  const owner = useMemo(() => ({ workId: editorWorkId }), [editorWorkId]);
   const deleteConfirm = useDeleteConfirmation({ projectId });
   const env = useMemo<TreeEnv | null>(
     () =>
       catalog
         ? ({
             projectId,
-            owner: { workId: editorWorkId },
+            owner,
             scheme,
             capabilities: [
               "rename",
@@ -244,7 +261,7 @@ function SchemeSection({
         : null,
     [
       projectId,
-      editorWorkId,
+      owner,
       scheme,
       activeScheme,
       activePath,
@@ -264,12 +281,13 @@ function SchemeSection({
     setExpanded(next);
   };
 
-  const header = (
+  const header = (dropProps: React.HTMLAttributes<HTMLElement>) => (
     <RailPaneHeader
       label={schemeLabel(scheme)}
       icon={schemeIcon(scheme)}
       expanded={expanded}
       onExpandedChange={handleExpandedChange}
+      dropProps={dropProps}
       actions={
         schemeAllowsCreation(scheme) ? (
           <>
@@ -291,27 +309,33 @@ function SchemeSection({
 
   return (
     <section>
-      {header}
-      {expanded && catalog && env ? (
-        <TreeEnvProvider value={env}>
-          <div>
-            <TreeGroup depth={1}>
-              <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
-            </TreeGroup>
-            {/* "No context files yet." is a claim about the tree, so it waits
+      <AreaDropRegion
+        scheme={scheme}
+        catalogRootId={catalog?.root.entryId ?? null}
+        reveal={() => !expanded && setExpanded(true)}
+        header={header}
+      >
+        {expanded && catalog && env ? (
+          <TreeEnvProvider value={env}>
+            <div>
+              <TreeGroup depth={1}>
+                <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
+              </TreeGroup>
+              {/* "No context files yet." is a claim about the tree, so it waits
                 for a RESOLVED tree. While the query is in flight with nothing
                 cached the pane body stays blank (no spinner) — prefetch at
                 mount makes that window nearly unhittable. */}
-            {isError ? (
-              <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
-            ) : catalog.children(catalog.root.entryId).length === 0 && !creating ? (
-              <EmptyHint depth={1}>
-                <Trans>No context files yet.</Trans>
-              </EmptyHint>
-            ) : null}
-          </div>
-        </TreeEnvProvider>
-      ) : null}
+              {isError ? (
+                <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
+              ) : catalog.children(catalog.root.entryId).length === 0 && !creating ? (
+                <EmptyHint depth={1}>
+                  <Trans>No context files yet.</Trans>
+                </EmptyHint>
+              ) : null}
+            </div>
+          </TreeEnvProvider>
+        ) : null}
+      </AreaDropRegion>
       <DeleteConfirmationDialog
         projectId={projectId}
         target={deleteConfirm.target}

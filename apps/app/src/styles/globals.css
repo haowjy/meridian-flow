@@ -700,6 +700,7 @@
   background-color: var(--color-shelf);
   --color-sidebar: var(--color-shelf);
   --color-sidebar-accent: var(--color-shelf-active);
+  --color-sidebar-selected: color-mix(in oklab, var(--color-sidebar-accent) 88%, var(--color-brand-jade));
   --color-ink-subtle: var(--color-shelf-ink-subtle);
   --color-muted-foreground: var(--color-shelf-ink-muted);
   --color-border-subtle: var(--color-shelf-border);

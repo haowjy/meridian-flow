@@ -121,11 +121,6 @@ export function menuEntryFor(catalog: CatalogContextView, rowId: string): Catalo
   return catalog.findPath(`/${entry.path.join("/")}`);
 }
 
-/** Segment-aware containment for forbidding a folder's own subtree as a destination. */
-export function isFolderWithin(path: string, ancestor: string): boolean {
-  return path === ancestor || path.startsWith(`${ancestor}/`);
-}
-
 /** A crumb opens the list it sits in; an area absent from the root opens inside itself. */
 export function crumbTrailFor(
   area: MenuArea | null | undefined,

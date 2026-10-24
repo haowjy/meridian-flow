@@ -118,7 +118,6 @@ export function useEntryInteraction({
       repairMove: node.namespaceRepairMove,
       open: moving && actions.includes("move"),
       onOpenChange: setMoving,
-      onMoved: remember,
     },
   };
 }

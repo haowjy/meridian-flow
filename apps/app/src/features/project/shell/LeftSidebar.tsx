@@ -10,11 +10,14 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { PanelLeftClose } from "lucide-react";
+import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { serverTabFromFile } from "../context/context-tab-from-file";
+import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
 import { useOpenProjectDocument } from "../context/open-project-document";
+import { DragHint } from "../context/tree-drop/drag-hint";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
 import { useDockPlacement } from "../dock/use-dock-placement";
@@ -32,7 +35,7 @@ import { WorkspaceNavBody } from "./WorkspaceNavBody";
  * The collapse control sits at the far-left (same x as the PaneHeader expand
  * control) so toggling the rail never moves the cursor.
  */
-export type LeftSidebarProps = {
+type LeftSidebarProps = {
   projectId: string;
   projectTitle: string;
   titleEdit: ProjectTitleEdit;
@@ -49,7 +52,16 @@ export type LeftSidebarProps = {
   onCollapse: () => void;
 };
 
-export function LeftSidebar({
+/** Moves anywhere in the rail report between the tree and Scratch; a project's notice leaves with it. */
+export function LeftSidebar(props: LeftSidebarProps) {
+  return (
+    <MoveNoticeHost key={props.projectId}>
+      <LeftSidebarRail {...props} />
+    </MoveNoticeHost>
+  );
+}
+
+function LeftSidebarRail({
   projectId,
   projectTitle,
   titleEdit,
@@ -95,11 +107,12 @@ export function LeftSidebar({
   const dockDocument = useDockDocument(activeScreen, projectId);
   const projectedDock = useDockDocumentTab(projectId, dockDocument);
   const docked = activeScreen === "chat" && !projectedDock.gone ? projectedDock.tab : null;
+  const treePane = useRef<HTMLDivElement>(null);
 
   return (
     <nav
       aria-label={t`Workspace navigation`}
-      className="flex h-full min-h-0 w-full flex-col text-foreground"
+      className="relative flex h-full min-h-0 w-full flex-col text-foreground"
     >
       <div className="flex h-10 shrink-0 items-center gap-1 px-2">
         <PanelToggleButton
@@ -119,12 +132,14 @@ export function LeftSidebar({
         activeScreen={activeScreen}
         onSelectScreen={onSelectScreen}
         presentation="desktop"
+        childrenRef={treePane}
+        notice={<MoveNotice className="mx-2 my-1.5 shrink-0" />}
         scratch={
           <RailScratchSection
             projectId={projectId}
             threadId={chatThreadId}
             editorWorkId={editorWorkId}
-            resizable
+            resizeAgainst={treePane}
           />
         }
       >
@@ -140,6 +155,7 @@ export function LeftSidebar({
           />
         ) : null}
       </WorkspaceNavBody>
+      <DragHint />
     </nav>
   );
 }
