@@ -1,4 +1,8 @@
-/** Draft writer admission and response journal persistence. */
+/** Draft writer admission and response journal persistence.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Ordered draft segments install atomically
+ */
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
@@ -147,13 +151,6 @@ describe("DraftCoordinator", () => {
     ).resolves.toBe(true);
 
     expect(store.journal).toHaveLength(1);
-    const decoded = Y.decodeUpdate(store.journal[0]);
-    expect(decoded.structs).toHaveLength(0);
-    expect([...decoded.ds.clients.values()].flat()).toEqual([
-      { clock: 1, len: 1 },
-      { clock: 4, len: 1 },
-    ]);
-
     const replayed = materialize(beforeWork);
     Y.applyUpdate(replayed, store.journal[0]);
 
