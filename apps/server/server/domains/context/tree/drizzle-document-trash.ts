@@ -39,9 +39,9 @@ function trashEligible() {
 
 /** A project owns its own sources plus its account's personal user:// source. */
 function projectTrashMember() {
-  return sql<boolean>`${eq(sourceProjects.id, requestProjects.id)}
+  return sql<boolean>`(${eq(sourceProjects.id, requestProjects.id)}
     OR (${eq(contextSources.slug, "user")}
-      AND ${eq(sourceProjects.userId, requestProjects.userId)})`;
+      AND ${eq(sourceProjects.userId, requestProjects.userId)}))`;
 }
 
 export function createDrizzleDocumentTrash(deps: {
