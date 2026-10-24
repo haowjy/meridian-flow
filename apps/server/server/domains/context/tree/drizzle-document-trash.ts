@@ -27,7 +27,6 @@ export function createDrizzleDocumentTrash(db: Database): DocumentTrash {
         extension: documents.extension,
         deletedAt: sql<Date>`${documents.deletedAt}`.mapWith(documents.deletedAt),
         locationVersion: documents.locationVersion,
-        markdown: documentMarkdownProjections.markdown,
       })
       .from(documents)
       .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
@@ -35,10 +34,6 @@ export function createDrizzleDocumentTrash(db: Database): DocumentTrash {
       .innerJoin(
         projects,
         eq(projects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
-      )
-      .leftJoin(
-        documentMarkdownProjections,
-        eq(documentMarkdownProjections.documentId, documents.id),
       )
       .where(
         and(
@@ -57,7 +52,7 @@ export function createDrizzleDocumentTrash(db: Database): DocumentTrash {
 
   const entries = async (
     result: Awaited<ReturnType<typeof rows>>,
-  ): Promise<Array<GetDocumentTrashResponse>> => {
+  ): Promise<DocumentTrashEntry[]> => {
     const tx = currentDrizzleDb(db);
     const ids = result.map(({ documentId }) => documentId as DocumentId);
     const [addresses, removals] = await Promise.all([
@@ -66,7 +61,7 @@ export function createDrizzleDocumentTrash(db: Database): DocumentTrash {
     ]);
     const addressesById = new Map(addresses.map((address) => [address.documentId, address]));
 
-    return result.flatMap((row): GetDocumentTrashResponse[] => {
+    return result.flatMap((row): DocumentTrashEntry[] => {
       const documentId = row.documentId as DocumentId;
       const address = addressesById.get(documentId);
       const record = removals.get(documentId);
@@ -84,7 +79,6 @@ export function createDrizzleDocumentTrash(db: Database): DocumentTrash {
           actor: record.actor,
           deletedAt: record.time,
           purgeAt: new Date(row.deletedAt.getTime() + DOCUMENT_RETENTION_MS).toISOString(),
-          markdown: row.markdown ?? "",
         },
       ];
     });
@@ -92,12 +86,17 @@ export function createDrizzleDocumentTrash(db: Database): DocumentTrash {
 
   return {
     async list(projectId): Promise<readonly DocumentTrashEntry[]> {
-      return (await entries(await rows(projectId))).map(
-        ({ markdown: _markdown, ...entry }) => entry,
-      );
+      return entries(await rows(projectId));
     },
     async read(projectId, documentId): Promise<GetDocumentTrashResponse | null> {
-      return (await entries(await rows(projectId, documentId)))[0] ?? null;
+      const entry = (await entries(await rows(projectId, documentId)))[0];
+      if (!entry) return null;
+      const [projection] = await currentDrizzleDb(db)
+        .select({ markdown: documentMarkdownProjections.markdown })
+        .from(documentMarkdownProjections)
+        .where(eq(documentMarkdownProjections.documentId, documentId))
+        .limit(1);
+      return { ...entry, markdown: projection?.markdown ?? "" };
     },
   };
 }

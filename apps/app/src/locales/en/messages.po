@@ -3852,6 +3852,11 @@ msgstr "Restore"
 msgid "Restore {0}"
 msgstr "Restore {0}"
 
+#. placeholder {0}: document.name
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Restored {0}, but couldn't open it. Try again from the file list."
+msgstr "Restored {0}, but couldn't open it. Try again from the file list."
+
 #. placeholder {0}: documentDisplayName(landing.landedAt)
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Restored as {0}."

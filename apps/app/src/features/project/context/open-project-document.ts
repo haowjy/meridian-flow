@@ -2,7 +2,6 @@ import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   AvailabilityGeneration,
   CatalogFileEntry,
-  GetDocumentTrashResponse,
   LiveDocumentSessionLease,
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
@@ -12,7 +11,6 @@ import {
   type ResourceRecord,
   resourcePlacementForSnapshot,
 } from "@meridian/resource-replica";
-import { getTrashedDocument } from "@/client/api/projects-api";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { DocumentSessionAuthorityError } from "@/core/editor/document-session-coordination-contract";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
@@ -292,6 +290,8 @@ export type OpenProjectDocumentRequest = {
   documentId: string;
   /** The caller has already resolved this identity as deleted. */
   trashed?: true;
+  /** Ignore a local identity projection known to predate a completed mutation. */
+  refreshIdentity?: true;
   known?: KnownDocumentIdentity;
   /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
   workId?: string;
@@ -323,7 +323,7 @@ type NavigationAdapterDependencies = {
   ): import("@/client/stores").OpenEditorTabResult;
   openRoute: OpenContextRoute | null;
   captureNavigation?: () => () => boolean;
-  openTrash(documentId: string, document: GetDocumentTrashResponse): Promise<unknown>;
+  openTrash(documentId: string): Promise<unknown>;
   resources?: Pick<
     import("@/core/resources/account-resource-replica").AccountResourceReplica,
     "accountId" | "readProjectionState"
@@ -385,6 +385,7 @@ export class ProjectDocumentNavigationAdapter {
     {
       documentId,
       trashed,
+      refreshIdentity,
       known,
       workId,
       disposition = "current",
@@ -410,7 +411,7 @@ export class ProjectDocumentNavigationAdapter {
     const isCurrent = () => canCommit() && navigationIsCurrent?.() !== false;
 
     try {
-      if (trashed) return this.openTrash(projectId, documentId, controller.signal, isCurrent);
+      if (trashed) return this.openTrash(documentId, controller.signal, isCurrent);
       const projection = this.dependencies.resources?.readProjectionState(projectId);
       const record =
         projection?.kind === "ready"
@@ -418,11 +419,11 @@ export class ProjectDocumentNavigationAdapter {
               (candidate) => candidate.resource.identity.documentId === documentId,
             )
           : undefined;
-      if (record?.resource.lifecycle.kind === "terminal")
-        return this.openTrash(projectId, documentId, controller.signal, isCurrent);
+      if (!refreshIdentity && record?.resource.lifecycle.kind === "terminal")
+        return this.openTrash(documentId, controller.signal, isCurrent);
 
-      let identity = known;
-      if (!identity && projection?.kind === "ready" && record) {
+      let identity = refreshIdentity ? undefined : known;
+      if (!refreshIdentity && !identity && projection?.kind === "ready" && record) {
         identity =
           identityForRecord(
             projectId,
@@ -436,7 +437,7 @@ export class ProjectDocumentNavigationAdapter {
         const resolution = await this.dependencies.opener.resolveIdentity(projectId, documentId);
         if (!isCurrent()) return { kind: "cancelled" };
         if (resolution.kind === "deleted")
-          return this.openTrash(projectId, documentId, controller.signal, isCurrent);
+          return this.openTrash(documentId, controller.signal, isCurrent);
         if (resolution.kind !== "available") {
           return {
             kind: "refused",
@@ -488,19 +489,13 @@ export class ProjectDocumentNavigationAdapter {
   }
 
   private async openTrash(
-    projectId: string,
     documentId: string,
     signal: AbortSignal,
     isCurrent: () => boolean,
   ): Promise<OpenDocumentOutcome> {
-    let document: GetDocumentTrashResponse;
-    try {
-      document = await getTrashedDocument(projectId, documentId, { signal });
-    } catch {
-      return signal.aborted ? { kind: "cancelled" } : { kind: "refused", reason: "gone" };
-    }
+    if (signal.aborted) return { kind: "cancelled" };
     if (!isCurrent()) return { kind: "cancelled" };
-    await this.dependencies.openTrash(documentId, document);
+    await this.dependencies.openTrash(documentId);
     return { kind: "trashed", documentId };
   }
 
@@ -626,7 +621,7 @@ export function ProjectDocumentNavigationProvider({
   projectId: string;
   children: ReactNode;
   captureNavigation?: () => () => boolean;
-  openTrash(documentId: string, document: GetDocumentTrashResponse): Promise<unknown>;
+  openTrash(documentId: string): Promise<unknown>;
 }) {
   const opener = useProjectDocumentLiveOpener();
   const resources = useOptionalAccountResourceReplica();
