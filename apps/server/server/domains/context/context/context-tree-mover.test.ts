@@ -1,4 +1,8 @@
-/** Result and CAS semantics at the ContextTreeMover production owner. */
+/** Result and CAS semantics at the ContextTreeMover production owner.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Independent mover commands do not share a callback barrier
+ */
 import { describe, expect, it, vi } from "vitest";
 import { Err, Ok } from "../../../shared/result.js";
 import type { ContextSchemeAdapter } from "../ports/context-adapter.js";

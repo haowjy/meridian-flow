@@ -1,4 +1,8 @@
-/** Trail projection coverage for durable locations across split structural writes. */
+/** Trail projection coverage for durable locations across split structural writes.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Trail identity and navigation projection
+ */
 import {
   createAgentEditCodecFactory,
   getBlockItemId,

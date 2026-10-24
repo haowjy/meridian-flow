@@ -1,4 +1,8 @@
-/** Non-retryable errors must reach the caller even with cross-provider fallback enabled. */
+/** Non-retryable errors must reach the caller even with cross-provider fallback enabled.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Context overflow bypasses provider fallback
+ */
 import { expect, it } from "vitest";
 import { createMockScriptQueue } from "./adapters/mock/script-queue.js";
 import { createMockOpenAICompatibleServer } from "./adapters/mock/server.js";

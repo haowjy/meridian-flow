@@ -1,3 +1,9 @@
+/**
+ * Tests lineage behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Parent-chain lineage traversal (kb/decisions/agents/conversations/fork-and-handoff-derivation.md)
+ */
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { isInSubtree, type LineageThread } from "./lineage.js";

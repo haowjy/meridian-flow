@@ -1,3 +1,9 @@
+/**
+ * Tests request map behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Registry-owned automatic cache TTL
+ */
 import { describe, expect, it } from "vitest";
 import { toOpenAIChatCompletionParams } from "./request-map.js";
 

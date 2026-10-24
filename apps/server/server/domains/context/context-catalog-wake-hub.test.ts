@@ -1,3 +1,9 @@
+/**
+ * Tests context catalog wake hub behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Catalog wake hints are lossy
+ */
 import type { CatalogWakeHint } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { createContextCatalogWakeHub } from "./context-catalog-wake-hub.js";

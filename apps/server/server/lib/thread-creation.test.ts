@@ -1,4 +1,8 @@
-/** Exact root binding, ownership create-or-get, and atomic failure in the app transaction. */
+/** Exact root binding, ownership create-or-get, and atomic failure in the app transaction.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Work-default write mode and reserved Agent revision recovery (kb/decisions/work/write-mode/chat-write-mode.md)
+ */
 import { describe, expect, it } from "vitest";
 import { createBoundAgentCatalog, seedGeneralAgent } from "../domains/packages/index.js";
 import {

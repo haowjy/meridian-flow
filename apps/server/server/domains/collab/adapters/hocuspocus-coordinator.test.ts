@@ -1,4 +1,8 @@
-/** Tests for the Hocuspocus-backed DocumentCoordinator adapter. */
+/** Tests for the Hocuspocus-backed DocumentCoordinator adapter.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Per-document coordination and room sharing
+ */
 
 import type { Hocuspocus } from "@hocuspocus/server";
 import type {

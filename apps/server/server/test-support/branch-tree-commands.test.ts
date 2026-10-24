@@ -1,4 +1,8 @@
-/** Reader probes must distinguish absence from a failed observation. */
+/** Reader probes must distinguish absence from a failed observation.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Branch-tree harness absence and malformed-result handling
+ */
 import { describe, expect, it } from "vitest";
 import type { ContextPort } from "../domains/context/ports/context-port.js";
 import { branchTreeCommands } from "./branch-tree-commands.js";

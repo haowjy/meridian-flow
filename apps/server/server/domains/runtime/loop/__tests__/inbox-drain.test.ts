@@ -1,4 +1,8 @@
-/** Loop-level inbox drain: batch delivery, request-only rendering, and the final-claim continuation. */
+/** Loop-level inbox drain: batch delivery, request-only rendering, and the final-claim continuation.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Delivery and context-row ownership
+ */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
