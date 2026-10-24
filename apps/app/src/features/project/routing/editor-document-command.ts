@@ -262,6 +262,7 @@ export function prepareEditorDestination(
     address: {
       ...previous,
       destination,
+      trash: undefined,
       work: target.rootThreadId
         ? { kind: "absent" }
         : workSelectionFor(destination, target.workId, noWorkId),

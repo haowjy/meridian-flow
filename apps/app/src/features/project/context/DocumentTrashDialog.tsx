@@ -46,6 +46,9 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
   const [restored, setRestored] = useState<RestoredNotice | null>(null);
   const [restoringView, setRestoringView] = useState(false);
   const dismissRestored = useCallback(() => setRestored(null), []);
+  useEffect(() => {
+    if (destination === undefined) setRestoringView(false);
+  }, [destination]);
 
   return (
     <>
@@ -259,6 +262,7 @@ function TrashedDocumentView({
     setState({ kind: "restoring" });
     onRestoreStateChange(true);
     const isCurrent = captureNavigation?.() ?? (() => true);
+    let navigationCommitted = false;
     void restoreTrashedDocument(queryClient, projectId, document)
       .then(async (outcome) => {
         if (outcome.kind === "living") {
@@ -272,6 +276,7 @@ function TrashedDocumentView({
             refreshIdentity: true,
           });
           if (opened.kind === "committed") {
+            navigationCommitted = true;
             if (outcome.landedAt) onRestoredAt(outcome.landedAt);
             return;
           }
@@ -296,7 +301,9 @@ function TrashedDocumentView({
           message: restoreFailureMessage(document.name, "network"),
         }),
       )
-      .finally(() => onRestoreStateChange(false));
+      .finally(() => {
+        if (!navigationCommitted) onRestoreStateChange(false);
+      });
   }, [
     captureNavigation,
     document,
@@ -324,7 +331,7 @@ function TrashedDocumentView({
       <div className="min-h-0 flex-1">
         {query.isError ? (
           <div className="p-4">
-            {httpErrorStatus(query.error) === 404 ? (
+            {[404, 410].includes(httpErrorStatus(query.error) ?? 0) ? (
               <p className="text-sm text-muted-foreground">
                 <Trans>No longer available</Trans>
               </p>
