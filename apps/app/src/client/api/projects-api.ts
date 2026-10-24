@@ -68,6 +68,40 @@ type RequestInitOptions = {
   signal?: AbortSignal;
 };
 
+// Temporary local mirror of the restore contract. The server lane will move these DTOs and
+// the route builder into @meridian/contracts; this import is the only swap needed after merge.
+export type RestoreContextDocumentsRequest = {
+  documents: Array<{
+    documentId: string;
+    removal: { time: string; locationVersion: string };
+  }>;
+};
+
+export type RestoreContextDocumentResult = {
+  documentId: string;
+  outcome: "restored" | "superseded" | "already_living" | "ancestor_taken" | "refused";
+  landedAt?: string;
+};
+
+export type RestoreContextDocumentsResponse = {
+  documents: RestoreContextDocumentResult[];
+};
+
+export type DeleteRestoreOperationReceipt = {
+  operationId: string;
+  command: { kind: "delete" };
+  result:
+    | {
+        ok: true;
+        value: {
+          status: "deleted";
+          removed: RestoreContextDocumentsRequest["documents"];
+          availabilityGeneration: string;
+        };
+      }
+    | { ok: false };
+};
+
 function urlFor(path: string, init?: RequestInitOptions): string {
   return init?.origin ? new URL(path, init.origin).toString() : path;
 }
@@ -372,6 +406,30 @@ export async function getContextOperationReceipt(
     { headers: init?.headers, signal: init?.signal },
   );
   return result.receipt;
+}
+
+export async function getDeleteRestoreOperationReceipt(
+  projectId: string,
+  operationId: string,
+  init?: RequestInitOptions,
+): Promise<DeleteRestoreOperationReceipt | null> {
+  const result = await getJson<{ receipt: DeleteRestoreOperationReceipt | null }>(
+    urlFor(apiProjectContextOperationPath(projectId, operationId), init),
+    { headers: init?.headers, signal: init?.signal },
+  );
+  return result.receipt;
+}
+
+export function restoreContextDocuments(
+  projectId: string,
+  body: RestoreContextDocumentsRequest,
+  init?: RequestInitOptions,
+): Promise<RestoreContextDocumentsResponse> {
+  return postJson(
+    urlFor(`/api/projects/${encodeURIComponent(projectId)}/context/restore`, init),
+    body,
+    { headers: init?.headers, signal: init?.signal },
+  );
 }
 
 export async function deleteContextEntry(
