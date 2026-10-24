@@ -57,14 +57,10 @@ import {
   keptDraftReader,
   removalBehind,
 } from "./file-access.js";
-import {
-  currentUri,
-  removedPathError,
-  resolveDisplacedTarget,
-  resolveInverseTarget,
-} from "./inverse-address.js";
+import { currentUri, resolveDisplacedTarget, resolveInverseTarget } from "./inverse-address.js";
 import { runNamespaceCommand } from "./namespace-commands.js";
 import { readDocument } from "./read-document.js";
+import { removedPathError } from "./removed-path.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import { evidenceOf, threadShownLinks } from "./shown-link-capture.js";
 import {
