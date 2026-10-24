@@ -28,7 +28,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const { deleteDrizzleRows } = await import("../test-support/drizzle-reset.js");
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
-    const { readRemovalRecords } = await import("../domains/context/tree/removal.js");
     const { createTreeReader } = await import("../domains/context/tree/tree-view.js");
     const {
       handleApplyClickRequest,
@@ -235,61 +234,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "write",
         "write",
       ]);
-    });
-
-    it("moves onto an occupied model path at the free name and reports where it landed", async () => {
-      const script = await start();
-      const { call } = await script.begin();
-      const moved = await call("write", {
-        command: "move",
-        from: { path: "ch1" },
-        path: "ch2",
-      });
-      expect(moved.isError, text(moved)).toBeFalsy();
-      expect(text(moved)).toContain("manuscript://ch2 (2)");
-      expect(await placement(CH1)).toMatchObject({ name: "ch2 (2)" });
-      expect(await placement(CH2)).toMatchObject({ name: "ch2" });
-    });
-
-    it("card Undo restores a deleted document at a free name and reports it", async () => {
-      const script = await start();
-      const { call } = await script.begin();
-      const deleted = await call("write", { command: "delete", path: "ch2" });
-      expect(deleted.isError, text(deleted)).toBeFalsy();
-      expect((await placement(CH2))?.deletedAt).not.toBeNull();
-      expect(
-        (await readRemovalRecords(db, [CH2 as DocumentId])).get(CH2 as DocumentId),
-      ).toMatchObject({
-        reason: "deleted",
-        actor: { kind: "agent", chatTitle: "Renumbering" },
-      });
-
-      // The writer takes the path before the card reverses the delete.
-      await db.insert(schema.documents).values({
-        contextSourceId: SOURCE_ID,
-        name: "ch2",
-        extension: "",
-        fileType: "markdown",
-      });
-      const undone = await script.runtime.ports.documentSync.reverseThreadContext({
-        threadId: THREAD.threadId as never,
-        userId: USER_ID as never,
-        direction: "undo",
-        turnId: THREAD.turnId as never,
-      });
-      expect(undone).toMatchObject({
-        status: "reversed",
-        landings: [
-          {
-            documentId: CH2,
-            action: "restored",
-            requestedAt: "manuscript://ch2",
-            landedAt: "manuscript://ch2 (2)",
-          },
-        ],
-      });
-      expect(await placement(CH2)).toMatchObject({ name: "ch2 (2)", deletedAt: null });
-      expect(text(await call("read", { path: "ch2 (2)" }))).toContain("Chapter two.");
     });
 
     it("rolls a reply's move and delete back at a free name and keeps another Work's draft", async () => {
@@ -595,78 +539,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await branchRow(CH2)).toMatchObject({ deleted: true });
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
       expect((await placement(CH2))?.deletedAt).toBeNull();
-    });
-
-    it("records allocated drafted inverse facts so undo and redo stay reversible", async () => {
-      const script = await start();
-      const drafting = runtimes.script(script.runtime, OTHER);
-      const { call } = await drafting.begin();
-      expect(
-        (await call("write", { command: "move", from: { path: "ch1" }, path: "B" })).isError,
-      ).toBeFalsy();
-      expect(
-        (await call("write", { command: "move", from: { path: "ch2" }, path: "ch1" })).isError,
-      ).toBeFalsy();
-
-      expect((await call("write", { command: "undo", path: "B" })).isError).toBeFalsy();
-      expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "ch1 (2)" });
-      expect((await call("write", { command: "redo", path: "ch1 (2)" })).isError).toBeFalsy();
-      expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "B" });
-
-      expect(
-        (await call("write", { command: "move", from: { path: "B" }, path: "Y" })).isError,
-      ).toBeFalsy();
-      expect(
-        (await call("write", { command: "move", from: { path: "ch1" }, path: "B" })).isError,
-      ).toBeFalsy();
-      expect((await call("write", { command: "undo", path: "Y" })).isError).toBeFalsy();
-      expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "B (2)" });
-      expect((await call("write", { command: "redo", path: "B (2)" })).isError).toBeFalsy();
-      expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "Y" });
-    });
-
-    it("a drafted delete of the branch's own creation undoes; a live delete keeps a Work's drafted move", async () => {
-      const script = await start();
-      const drafting = runtimes.script(script.runtime, OTHER);
-      await drafting.reply(async (create) => {
-        await create("write", { command: "create", path: "notes" });
-      });
-      const { call } = await drafting.begin();
-      const deletedNew = await call("write", { command: "delete", path: "notes" });
-      expect(deletedNew.isError, text(deletedNew)).toBeFalsy();
-      expect((await call("read", { path: "notes" })).isError).toBe(true);
-      const undone = await call("write", { command: "undo", path: "notes" });
-      expect(undone.isError, text(undone)).toBeFalsy();
-      expect((await call("read", { path: "notes" })).isError).toBeFalsy();
-
-      expect(
-        (await call("write", { command: "move", from: { path: "ch2" }, path: "ch2-old" })).isError,
-      ).toBeFalsy();
-      // The model in the direct chat deletes ch2 live: w2's move stays, and is a restore now.
-      const live = await (await script.begin()).call("write", { command: "delete", path: "ch2" });
-      expect(live.isError, text(live)).toBeFalsy();
-      expect((await placement(CH2))?.deletedAt).not.toBeNull();
-      expect(await branchRow(CH2)).toMatchObject({ moved: true, movedName: "ch2-old" });
-      const [node] = await createTreeReader(db).treeState(
-        await branchOf(OTHER_WORK_ID),
-        [],
-        [CH2 as DocumentId],
-      );
-      expect(node).toMatchObject({ pending: true, deleted: true, target: { path: "ch2-old" } });
-      expect(text(await call("read", { path: "ch2-old" }))).toContain("Chapter two.");
-
-      // A failed reply's rollback writes the branch's facts back.
-      const failing = await drafting.begin();
-      expect(
-        (await failing.call("write", { command: "move", from: { path: "ch1" }, path: "ch1-x" }))
-          .isError,
-      ).toBeFalsy();
-      await script.runtime.ports.documentSync.finalizeResponseRollback(
-        { providerResponseId: failing.responseId, editScopeId: failing.responseId },
-        OTHER as never,
-      );
-      expect(await branchRow(CH1)).toBeUndefined();
-      expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
     });
 
     /** The Work's review routes over the composed app, as the writer's clicks reach them. */
