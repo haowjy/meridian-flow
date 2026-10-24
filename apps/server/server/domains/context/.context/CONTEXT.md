@@ -93,6 +93,13 @@ member or Work is restored. Document tombstones and lineage-hidden sources
 retain distinct status. Stable IDs never become capabilities without a policy
 check.
 
+Trash reads are separate from live `ContextPort` path resolution. The
+`DocumentTrash` port admits only a document's currently restorable delete:
+visible rather than hidden, not removed by a Work cascade, and still under a
+live source and project. Its list returns removal metadata only. Its identity
+read adds the retained Markdown projection for that one document. Both paths
+authorize through the project before exposing the tombstone or its text.
+
 ## Creation and hidden-node lifecycle
 
 Content placement and branch tree visibility are separate. Scratch content writes stay live in
