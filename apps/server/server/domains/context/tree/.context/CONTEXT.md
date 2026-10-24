@@ -174,7 +174,7 @@ included, before the split updates any document row. Rollback delivers nothing.
 
 `restoreDocument` is the one restore of a deleted document: Apply of a draft
 that outlived the delete (D79), a reply's rollback, the turn card's Undo, and
-writer Undo through the project restore endpoint. Interactive restores share
+writer Undo or Trash Restore through the project restore endpoint. Interactive restores share
 `context/tree-edit-admission.ts`: bound grants enter the Work projection seam
 before `acquireTreeScope`; each caller owns the transaction retry. A reversing
 caller names the removal it reverses (its
