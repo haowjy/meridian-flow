@@ -77,27 +77,26 @@ function sameScope(left: DeleteScope, right: DeleteScope): boolean {
   );
 }
 
-function deleteIntent(
+function deleteOperationIndex(
   snapshot: ResourceProjectionSnapshot | null,
-  operationId: string,
-): NamespaceIntent | undefined {
-  if (!snapshot) return undefined;
-  for (const record of snapshot.records) {
-    const intent = record.intents.find((candidate) => candidate.operationId === operationId);
-    if (intent?.desired.kind === "delete") return intent;
+): ReadonlyMap<string, NamespaceIntent> {
+  const index = new Map<string, NamespaceIntent>();
+  if (!snapshot) return index;
+  for (const intent of [
+    ...snapshot.records.flatMap((record) => record.intents),
+    ...snapshot.folders.flatMap((folder) => folder.intents),
+  ]) {
+    if (intent.operationId && intent.desired.kind === "delete")
+      index.set(intent.operationId, intent);
   }
-  for (const folder of snapshot.folders) {
-    const intent = folder.intents.find((candidate) => candidate.operationId === operationId);
-    if (intent?.desired.kind === "delete") return intent;
-  }
-  return undefined;
+  return index;
 }
 
 function deleteOperationState(
-  snapshot: ResourceProjectionSnapshot | null,
+  intents: ReadonlyMap<string, NamespaceIntent>,
   operationId: string,
 ): DeleteOperationState {
-  const intent = deleteIntent(snapshot, operationId);
+  const intent = intents.get(operationId);
   switch (intent?.state) {
     case "settled":
       return "landed";
@@ -124,8 +123,9 @@ function ownDeletedDocumentIds(projectId: string, target: DeleteTarget): string[
   return presented.flatMap((tab) =>
     tab.kind !== "new" &&
     tab.scheme === target.scheme &&
-    (target.owner.workId == null || tab.workId === target.owner.workId) &&
-    tab.rootThreadId === target.owner.rootThreadId &&
+    (target.scheme !== "scratch" ||
+      ((target.owner.workId == null || tab.workId === target.owner.workId) &&
+        tab.rootThreadId === target.owner.rootThreadId)) &&
     tab.path.replace(/^\/+/, "").startsWith(folder)
       ? [tab.documentId]
       : [],
@@ -142,6 +142,7 @@ export function DocumentDeleteUndoProvider({
   const resources = useAccountResourceReplica();
   const notices = useOptionalRemovedNotices();
   const { snapshot } = useAccountResourceProjection(projectId);
+  const deleteIntents = useMemo(() => deleteOperationIndex(snapshot), [snapshot]);
   const [windowsById, setWindowsById] = useState<ReadonlyMap<string, DeleteWindow>>(
     () => new Map(),
   );
@@ -150,6 +151,8 @@ export function DocumentDeleteUndoProvider({
   const [emptyFolderCheckRevision, retryEmptyFolderChecks] = useState(0);
   const restores = useRef(new Set<string>());
   const lifetime = useRef(new AbortController());
+  const windowsRef = useRef(windowsById);
+  windowsRef.current = windowsById;
 
   const dismiss = useCallback((operationId: string) => {
     emptyFolderChecks.current.delete(operationId);
@@ -174,7 +177,7 @@ export function DocumentDeleteUndoProvider({
 
   useEffect(() => {
     for (const [operationId, window] of windowsById) {
-      const state = deleteOperationState(snapshot, operationId);
+      const state = deleteOperationState(deleteIntents, operationId);
       if (state === "refused" || state === "settled-locally") dismiss(operationId);
       if (
         window.kind !== "folder" ||
@@ -188,17 +191,21 @@ export function DocumentDeleteUndoProvider({
           if (removed?.length === 0) dismiss(operationId);
         })
         .catch(() => {
+          if (lifetime.current.signal.aborted || !windowsRef.current.has(operationId)) return;
+          const prior = emptyFolderRetryTimers.current.get(operationId);
+          if (prior) clearTimeout(prior);
           emptyFolderRetryTimers.current.set(
             operationId,
             setTimeout(() => {
               emptyFolderChecks.current.delete(operationId);
               emptyFolderRetryTimers.current.delete(operationId);
+              if (lifetime.current.signal.aborted || !windowsRef.current.has(operationId)) return;
               retryEmptyFolderChecks((revision) => revision + 1);
             }, 1_000),
           );
         });
     }
-  }, [dismiss, emptyFolderCheckRevision, projectId, snapshot, windowsById]);
+  }, [deleteIntents, dismiss, emptyFolderCheckRevision, projectId, windowsById]);
 
   const requestDelete = useCallback(
     (target: DeleteTarget) => {
@@ -253,19 +260,30 @@ export function DocumentDeleteUndoProvider({
           stop?.();
           resolve(state);
         }
+        function fail(error: unknown) {
+          if (done) return;
+          done = true;
+          lifetime.current.signal.removeEventListener("abort", abort);
+          stop?.();
+          reject(error);
+        }
         function abort() {
           finish("refused");
         }
-        stop = resources.observeProjection(
-          projectId,
-          (current) => {
-            const state = deleteOperationState(current, operationId);
-            if (state !== "pending") finish(state);
-          },
-          reject,
-        );
+        try {
+          stop = resources.observeProjection(
+            projectId,
+            (current) => {
+              const state = deleteOperationState(deleteOperationIndex(current), operationId);
+              if (state !== "pending") finish(state);
+            },
+            fail,
+          );
+        } catch (error) {
+          fail(error);
+        }
         if (done) {
-          stop();
+          stop?.();
           return;
         }
         lifetime.current.signal.addEventListener("abort", abort, { once: true });
@@ -283,10 +301,11 @@ export function DocumentDeleteUndoProvider({
       void (async () => {
         try {
           const state = await waitForSettlement(operationId);
-          if (state !== "landed") {
+          if (state === "refused" || state === "settled-locally") {
             dismiss(operationId);
             return;
           }
+          if (state !== "landed") throw new Error("Delete settlement is unavailable");
           const documents = await readDeleteRemovals(
             projectId,
             operationId,
@@ -316,6 +335,14 @@ export function DocumentDeleteUndoProvider({
                   ? t`Couldn't restore ${window.label}. A file is in the way.`
                   : t`Couldn't restore ${window.label}.`,
             });
+            return;
+          }
+          if (
+            response.documents.some(
+              (result) => result.outcome === "superseded" || result.outcome === "already_living",
+            )
+          ) {
+            dismiss(operationId);
             return;
           }
           const alternateLocations = response.documents.flatMap((result) =>
@@ -404,7 +431,7 @@ function DocumentDeleteUndoRow({
   onDismiss: () => void;
 }) {
   const restoring = window.feedback?.kind === "restoring";
-  return (
+  const row = (
     <div
       role="status"
       className={cn(
@@ -413,13 +440,9 @@ function DocumentDeleteUndoRow({
       )}
       style={style}
     >
-      <span
-        className={cn("min-w-0 truncate", window.feedback?.kind === "failed" && "text-destructive")}
-      >
+      <span className="min-w-0 truncate">
         {restoring ? (
           <Trans>Restoring {window.label}</Trans>
-        ) : window.feedback?.kind === "failed" ? (
-          window.feedback.message
         ) : (
           <Trans>Deleted {window.label}</Trans>
         )}
@@ -438,6 +461,13 @@ function DocumentDeleteUndoRow({
         <X aria-hidden className="size-4" />
       </IconButton>
     </div>
+  );
+  if (window.feedback?.kind !== "failed") return row;
+  return (
+    <>
+      {row}
+      <div className="px-2 text-destructive text-xs">{window.feedback.message}</div>
+    </>
   );
 }
 
