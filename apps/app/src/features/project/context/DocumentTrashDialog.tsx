@@ -3,7 +3,7 @@ import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
-import { ArchiveRestore, X } from "lucide-react";
+import { ArchiveRestore } from "lucide-react";
 import { useCallback } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { useTrashedDocument } from "@/client/query/useDocumentTrash";
@@ -43,7 +43,6 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
             key={documentId}
             projectId={projectId}
             documentId={documentId}
-            onClose={() => void navigate(false)}
             state={states.get(documentId)}
             onRestore={restore}
           />
@@ -56,13 +55,11 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
 function TrashedDocumentView({
   projectId,
   documentId,
-  onClose,
   state,
   onRestore,
 }: {
   projectId: string;
   documentId: string;
-  onClose: () => void;
   state?: TrashRestoreState;
   onRestore: (entry: TrashEntry, afterRestore?: AfterRestore) => void;
 }) {
@@ -90,16 +87,10 @@ function TrashedDocumentView({
 
   return (
     <>
-      <header className="flex shrink-0 items-center gap-2 border-b border-border-subtle px-3 py-2">
-        <Button variant="quiet" size="sm" onClick={onClose}>
-          <X className="size-4" aria-hidden />
-          <Trans>Close</Trans>
-        </Button>
-        <DialogTitle className="sr-only">{document?.name ?? t`Trashed document`}</DialogTitle>
-        <DialogDescription className="sr-only">
-          <Trans>Read-only document in Trash.</Trans>
-        </DialogDescription>
-      </header>
+      <DialogTitle className="sr-only">{document?.name ?? t`Trashed document`}</DialogTitle>
+      <DialogDescription className="sr-only">
+        <Trans>Read-only document in Trash.</Trans>
+      </DialogDescription>
       <div className="min-h-0 flex-1">
         {query.isError ? (
           <div className="p-4">
