@@ -48,6 +48,7 @@ import {
   createDrizzleDocumentArrivals,
   createDrizzleDocumentLinkHistory,
   createDrizzleDocumentLinkScopes,
+  createDrizzleDocumentTrashList,
   createDrizzleFigureDocumentRepository,
   createDrizzleLineageScratchLifecycle,
   createDrizzleLinkAheadRegistry,
@@ -68,6 +69,7 @@ import {
   type DocumentAddressResolver,
   type DocumentLinkResolver,
   type DocumentRemovals,
+  type DocumentTrash,
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
@@ -287,6 +289,7 @@ export type AppServices = {
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
   restoreRemovedDocuments: RestoreRemovedDocuments;
+  documentTrash: Pick<DocumentTrash, "list">;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -377,6 +380,7 @@ export type ProductionAppPorts = {
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog & ContextCatalogMutationPort & ProjectCatalogLifecyclePort;
   restoreRemovedDocuments: RestoreRemovedDocuments;
+  documentTrash: Pick<DocumentTrash, "list">;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -700,6 +704,7 @@ export async function createProductionAppPorts(input: {
       arrivals,
       catalog: contextCatalog,
     }),
+    documentTrash: createDrizzleDocumentTrashList(db),
     projectContextAvailability,
     documentAddresses: createDocumentAddressResolver({
       locations: createDrizzleDocumentAddressStore(db),
@@ -1140,6 +1145,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     contextPorts: ports.contextPorts,
     contextCatalog: ports.contextCatalog,
     restoreRemovedDocuments: ports.restoreRemovedDocuments,
+    documentTrash: ports.documentTrash,
     projectContextAvailability: ports.projectContextAvailability,
     documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
@@ -1461,6 +1467,11 @@ export function createInMemoryAppServices(): AppServices {
     contextCatalog,
     async restoreRemovedDocuments() {
       throw new Error("Document restore is unavailable in memory");
+    },
+    documentTrash: {
+      async list() {
+        return [];
+      },
     },
     documentAddresses: {
       async resolveById() {
