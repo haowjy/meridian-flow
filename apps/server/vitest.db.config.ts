@@ -58,7 +58,6 @@ const expectedSuites = [
   "apps/server/server/domains/collab/branch-tree.user-source.db.test.ts",
   "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/context-fs.create-untitled.db.test.ts",
-  "apps/server/server/domains/context/adapters/context-fs/document-names-migration.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/drizzle-store.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/drizzle-tree-mutation-store.db.test.ts",
   "apps/server/server/domains/context/adapters/drizzle-link-ahead-registry.db.test.ts",
@@ -128,11 +127,6 @@ const expectedSuites = [
   "apps/server/server/test-support/drizzle-reset.db.test.ts",
   "packages/database/src/consume-credit-lots-fifo.db.test.ts",
   "packages/database/src/fresh-migrations.db.test.ts",
-  "packages/database/src/owner-handles-migration.db.test.ts",
-  "packages/database/src/saved-subagent-contracts-migration.db.test.ts",
-  "apps/server/server/test-support/scratch-archive-migration.db.test.ts",
-  "apps/server/server/test-support/work-branch-foundation-migration.db.test.ts",
-  "apps/server/server/test-support/chat-write-mode-migration.db.test.ts",
   "tools/dev/lib/migration-runner.db.test.ts",
 ] as const;
 const discoveredSuites = globSync("{apps/server,packages/database,tools/dev}/**/*.db.test.ts", {
