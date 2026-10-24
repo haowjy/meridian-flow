@@ -1,3 +1,9 @@
+/**
+ * Api http dev proxy plugin behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - app-owned versus server-owned dev proxy routes
+ */
 import { describe, expect, it } from "vitest";
 
 import { shouldProxyApiHttpPath } from "./api-http-dev-proxy-plugin";

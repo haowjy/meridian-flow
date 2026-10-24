@@ -1,6 +1,9 @@
 /**
  * A manifest wake hint is how another page's Apply or Discard reaches this page's draft lists.
  * A Work-scoped hint re-reads that Work's list only, and a hint that installs nothing new re-reads none.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - catalog-wake invalidation policy
  */
 import type { CatalogWakeHint } from "@meridian/contracts/protocol";
 import { QueryClient } from "@tanstack/react-query";
@@ -22,6 +25,10 @@ const workHint = (workId: string, headRevision = "5") =>
 const installed = (appliedRevision: string) => ({ appliedRevision, entries: new Map() });
 const invalidated = (queryClient: QueryClient, workId: string) =>
   queryClient.getQueryState(projectQueryKeys.workBranchDrafts("project-a", workId))?.isInvalidated;
+const settleHint = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
 
 it("re-reads the project's draft lists once the pulled catalog is installed, and no other project's", async () => {
   const queryClient = new QueryClient();
@@ -34,7 +41,8 @@ it("re-reads the project's draft lists once the pulled catalog is installed, and
   const resources = { hintCatalog: vi.fn().mockResolvedValue({ entries: new Map() }) };
 
   pullContextCatalogOnHint(queryClient, resources, "project-a", hint);
-  await vi.waitFor(() => expect(queryClient.getQueryState(mine)?.isInvalidated).toBe(true));
+  await settleHint();
+  expect(queryClient.getQueryState(mine)?.isInvalidated).toBe(true);
   expect(queryClient.getQueryState(other)?.isInvalidated).toBe(false);
   // A document's draft hints are re-read on the same signal.
   expect(queryClient.getQueryState(hints)?.isInvalidated).toBe(true);
@@ -48,7 +56,8 @@ it("re-reads only the hinted Work's draft list for a Work-scoped hint", async ()
   const resources = { hintCatalog: vi.fn().mockResolvedValue(installed("5")) };
 
   pullContextCatalogOnHint(queryClient, resources, "project-a", workHint("work-1"));
-  await vi.waitFor(() => expect(invalidated(queryClient, "work-1")).toBe(true));
+  await settleHint();
+  expect(invalidated(queryClient, "work-1")).toBe(true);
   expect(invalidated(queryClient, "work-0")).toBe(false);
   expect(invalidated(queryClient, "work-2")).toBe(false);
 });
@@ -60,7 +69,8 @@ it("does not re-read again for a hint whose catalog revision was already handled
   const hintCatalog = vi.fn().mockResolvedValue(installed("5"));
 
   pullContextCatalogOnHint(queryClient, { hintCatalog }, "project-a", workHint("work-1"));
-  await vi.waitFor(() => expect(invalidated(queryClient, "work-1")).toBe(true));
+  await settleHint();
+  expect(invalidated(queryClient, "work-1")).toBe(true);
   // The list was re-read and is fresh again; the same revision arrives twice more.
   queryClient.setQueryData(key, []);
   for (const headRevision of ["5", "4"]) {
@@ -71,14 +81,15 @@ it("does not re-read again for a hint whose catalog revision was already handled
       workHint("work-1", headRevision),
     );
   }
-  await vi.waitFor(() => expect(hintCatalog).toHaveBeenCalledTimes(3));
-  await Promise.resolve();
+  expect(hintCatalog).toHaveBeenCalledTimes(3);
+  await settleHint();
   expect(invalidated(queryClient, "work-1")).toBe(false);
 
   // A newer revision is a real change.
   hintCatalog.mockResolvedValue(installed("6"));
   pullContextCatalogOnHint(queryClient, { hintCatalog }, "project-a", workHint("work-1", "6"));
-  await vi.waitFor(() => expect(invalidated(queryClient, "work-1")).toBe(true));
+  await settleHint();
+  expect(invalidated(queryClient, "work-1")).toBe(true);
 });
 
 it("still re-reads every Work's list of the project for a project-wide manifest hint, once per revision", async () => {
@@ -90,13 +101,14 @@ it("still re-reads every Work's list of the project for a project-wide manifest 
   const hintCatalog = vi.fn().mockResolvedValue(installed("7"));
 
   pullContextCatalogOnHint(queryClient, { hintCatalog }, "project-a", hint);
-  await vi.waitFor(() => expect(invalidated(queryClient, "work-1")).toBe(true));
+  await settleHint();
+  expect(invalidated(queryClient, "work-1")).toBe(true);
   expect(invalidated(queryClient, "work-2")).toBe(true);
 
   for (const key of keys) queryClient.setQueryData(key, []);
   pullContextCatalogOnHint(queryClient, { hintCatalog }, "project-a", hint);
-  await vi.waitFor(() => expect(hintCatalog).toHaveBeenCalledTimes(2));
-  await Promise.resolve();
+  expect(hintCatalog).toHaveBeenCalledTimes(2);
+  await settleHint();
   expect(invalidated(queryClient, "work-1")).toBe(false);
 });
 
@@ -110,8 +122,7 @@ it("leaves project draft lists alone for a user-scoped hint", async () => {
   } as unknown as CatalogWakeHint;
 
   pullContextCatalogOnHint(queryClient, { hintCatalog }, "project-a", userHint);
-  await vi.waitFor(() => expect(hintCatalog).toHaveBeenCalledTimes(1));
-  await Promise.resolve();
-  await Promise.resolve();
+  expect(hintCatalog).toHaveBeenCalledTimes(1);
+  await settleHint();
   expect(invalidated(queryClient, "work-1")).toBe(false);
 });

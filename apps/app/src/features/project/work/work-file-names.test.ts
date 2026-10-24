@@ -1,3 +1,9 @@
+/**
+ * Work file names behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Work note name allocation (kb/decisions/documents/naming/document-names.md)
+ */
 import { describe, expect, it } from "vitest";
 
 import { uniqueScratchNoteName } from "./work-file-names";

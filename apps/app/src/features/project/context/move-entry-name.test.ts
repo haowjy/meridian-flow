@@ -1,4 +1,8 @@
-/** Move retries must not discard the name from a cancelled rename/move chain. */
+/** Move retries must not discard the name from a cancelled rename/move chain.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - move-repair retained-name precedence
+ */
 import { expect, it } from "vitest";
 import { moveEntryName } from "./context-entry-name";
 

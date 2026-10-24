@@ -4,6 +4,9 @@
  * playing the server. The provider's own `unsyncedChanges` counter is exactly
  * what these tests refuse to trust: after a reconnect it can reach zero while
  * messages are still unacknowledged.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - transport acknowledgement ledger
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";

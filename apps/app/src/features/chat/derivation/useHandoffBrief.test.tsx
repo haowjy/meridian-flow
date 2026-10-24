@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** Brief Retry and Stop: the card first, the server's seed replaces it by id, failure lands on the card. */
+/** Brief Retry and Stop: the card first, the server's seed replaces it by id, failure lands on the card.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - handoff attempt card lifecycle
+ */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/core/macro", () => ({

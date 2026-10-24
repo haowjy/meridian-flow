@@ -8,6 +8,10 @@
  * connected & first-sync is done, `offline` whenever the socket is
  * disconnected, `access-lost` on permanent auth denial, `syncing` while in flight, and live transitions on
  * every connection-state change — never a frozen startup value.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - nested presence suspension
+ * - staged document-session destruction
  */
 
 import { type ChangeEventWsMessage, WS_CLOSE } from "@meridian/contracts/protocol";

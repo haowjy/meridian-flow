@@ -1,4 +1,10 @@
 // @vitest-environment jsdom
+/**
+ * Sanitize paste behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - paste schema and image attribute allowlists
+ */
 
 import { describe, expect, it } from "vitest";
 

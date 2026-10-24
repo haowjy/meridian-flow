@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** A fork's inherited view: pages folded into owned turns, the optimistic prefix, and paging. */
+/** A fork's inherited view: pages folded into owned turns, the optimistic prefix, and paging.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - inherited transcript paging and filtering
+ */
 import type { TranscriptPageResponse, Turn } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, createElement } from "react";

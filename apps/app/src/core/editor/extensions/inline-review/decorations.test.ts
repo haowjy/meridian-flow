@@ -2,6 +2,10 @@
 /**
  * The review's paint: where a hunk's green and red land in the editor, and the two risks that make the
  * review lie: a removal drawn at the wrong block boundary, and a review repainted from a stale base.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - inline-review recompute and composition schedule
+ * - review-base provider cache
  */
 
 import type { Editor } from "@tiptap/core";
