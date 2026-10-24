@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
 import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
-import { moveRows } from "./entry-drag/execute-move";
+import { moveRows, renamesOnArrival } from "./entry-drag/execute-move";
+import { describeRenames } from "./entry-drag/move-notice";
 import { moveRefusal, parentOf } from "./entry-drag/move-plan";
 import { useReportMove } from "./entry-drag/use-entry-list";
 import { destinationParent, type MoveDestination } from "./move-entry";
@@ -148,12 +149,19 @@ function OpenMovePicker({
         const blocked = destination ? refusalAt(destination) : "inside-itself";
         if (blocked === "inside-itself") return [];
         const already = blocked === "already-there";
+        const after = destination && !already && destinationParent(destination, works, noWork);
+        const renamed = after
+          ? renamesOnArrival([{ entry: ref, name: entry.name, typed: name, after }], () =>
+              destination.catalog.children(destination.entryId),
+            )
+          : [];
         return [
           {
             key: "move",
             icon: FolderInput,
             label: already ? t`Already in ${folder.name}` : t`Move to ${folder.name}`,
             disabled: already || pending,
+            note: describeRenames(renamed),
             onSelect: () => {
               void move(trail);
             },

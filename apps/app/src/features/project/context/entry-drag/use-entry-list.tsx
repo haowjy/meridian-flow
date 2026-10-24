@@ -29,8 +29,19 @@ import { destinationParent } from "../move-entry";
 import { type EntriesRoute, TreeDropScope } from "../tree-drop/tree-drop";
 import { activeEntryDrag } from "./drag-session";
 import { type DragEntry, entryKey } from "./entry";
-import { executeMove, type MoveContext, type MoveResult, undoMove } from "./execute-move";
-import { describeMove, describeUndoFailure, useMoveNoticePublisher } from "./move-notice";
+import {
+  executeMove,
+  type MoveContext,
+  type MoveResult,
+  renamesOnArrival,
+  undoMove,
+} from "./execute-move";
+import {
+  describeMove,
+  describeRenames,
+  describeUndoFailure,
+  useMoveNoticePublisher,
+} from "./move-notice";
 import {
   type MoveArea,
   type MoveEffect,
@@ -140,7 +151,19 @@ export function useEntryList({
           return { kind: "refuse", label: t`Can't go inside itself` };
         if (planned?.kind !== "ready") return null;
         const { destinationName } = planned;
-        return { kind: "accept", label: t`Move to ${destinationName}` };
+        const { works, noWork, areas } = latest.current;
+        const after = destinationParent(planned.destination, works, noWork);
+        const renamed = after
+          ? renamesOnArrival(
+              planned.moves.map(({ ref, name }) => ({ entry: ref, name, after })),
+              (parent) => siblingsAt(areas, parent),
+            )
+          : [];
+        return {
+          kind: "accept",
+          label: t`Move to ${destinationName}`,
+          warning: describeRenames(renamed),
+        };
       },
       drop(target) {
         const planned = plan(target);

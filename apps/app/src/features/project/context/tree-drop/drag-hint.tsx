@@ -1,13 +1,22 @@
 /**
- * The line beside the pointer that says what dropping here will do ("Move to
- * Act 2", "Can't go inside itself"). The lit target sets it; it follows the
- * pointer and goes away when the drag leaves every target or ends.
+ * The label beside the pointer that says what dropping here will do ("Move to
+ * Act 2", "Can't go inside itself"), with a warning line under it when the drop
+ * will also rename rows. The lit target sets it; it follows the pointer and goes
+ * away when the drag leaves every target or ends.
  */
 import { type DragEvent, useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
+import type { EntriesVerdict } from "./tree-drop";
 
-type Hint = { owner: string; label: string; refused: boolean; x: number; y: number };
+type Hint = {
+  owner: string;
+  label: string;
+  warning: string | null;
+  refused: boolean;
+  x: number;
+  y: number;
+};
 
 let hint: Hint | null = null;
 const listeners = new Set<() => void>();
@@ -19,19 +28,21 @@ function set(next: Hint | null) {
 
 export function showDragHint(
   owner: string,
-  verdict: { kind: "accept" | "refuse"; label: string },
+  verdict: EntriesVerdict,
   event: Pick<DragEvent, "clientX" | "clientY">,
 ) {
   const refused = verdict.kind === "refuse";
+  const warning = verdict.kind === "accept" ? (verdict.warning ?? null) : null;
   if (
     hint?.owner === owner &&
     hint.label === verdict.label &&
+    hint.warning === warning &&
     hint.refused === refused &&
     hint.x === event.clientX &&
     hint.y === event.clientY
   )
     return;
-  set({ owner, label: verdict.label, refused, x: event.clientX, y: event.clientY });
+  set({ owner, label: verdict.label, warning, refused, x: event.clientX, y: event.clientY });
 }
 
 /** Only the target that set the hint clears it, so the next target's hint survives. */
@@ -64,14 +75,23 @@ export function DragHint() {
   return createPortal(
     <div
       aria-hidden
-      className={cn(
-        "pointer-events-none fixed z-50 rounded-md px-2 py-1 text-xs shadow-sm",
-        // A refusal is not an error: ink, not the deletion red.
-        current.refused ? "bg-foreground text-background" : "bg-primary text-primary-foreground",
-      )}
+      className="pointer-events-none fixed z-50 max-w-72 overflow-hidden rounded-md text-xs shadow-sm"
       style={{ left: current.x + 14, top: current.y + 18 }}
     >
-      {current.label}
+      <div
+        className={cn(
+          "px-2 py-1",
+          // A refusal is not an error: ink, not the deletion red.
+          current.refused ? "bg-foreground text-background" : "bg-primary text-primary-foreground",
+        )}
+      >
+        {current.label}
+      </div>
+      {current.warning ? (
+        <div className="border-x border-b border-warning-border rounded-b-md bg-warning-bg px-2 py-1 text-warning-foreground">
+          {current.warning}
+        </div>
+      ) : null}
     </div>,
     document.body,
   );

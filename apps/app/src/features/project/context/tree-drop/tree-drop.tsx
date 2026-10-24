@@ -31,9 +31,13 @@ export type TreeDropTarget = {
 /**
  * What dropping an internal payload on a target would do. `accept` lights the
  * target and allows the drop; `refuse` leaves it unlit with the no-drop cursor and says why. A
- * null verdict leaves the target quiet (the drop would change nothing).
+ * null verdict leaves the target quiet (the drop would change nothing). An
+ * accept's `warning` says what the drop will also do that the writer may not
+ * expect (rows arriving renamed), while there is still time to let go elsewhere.
  */
-export type EntriesVerdict = { kind: "accept" | "refuse"; label: string };
+export type EntriesVerdict =
+  | { kind: "accept"; label: string; warning?: string | null }
+  | { kind: "refuse"; label: string };
 
 export type EntriesRoute = {
   verdict(target: TreeDropTarget): EntriesVerdict | null;

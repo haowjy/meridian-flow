@@ -24,7 +24,9 @@ chat resources rather than ordinary Editor tabs.
   over `move-entry.ts`): Move…, a drop and a drop's Undo resolve the destination
   by folder ID (or an area root with its authority), share one identity-based
   refusal (`moveRefusal` in `move-plan.ts`: inside itself; already there is a
-  quiet no-op), and arrive at the next free name. Don't place entries anywhere else.
+  quiet no-op), and arrive at the next free name that `arrivalNames` predicts.
+  The hover hint and Move… warn with that same prediction before a row arrives
+  renamed. Don't place entries anywhere else.
 - Selection and dragging (`entry-drag/`): one list is one selection, one drop
   route and one drop scope (`useEntryList`/`EntryList`). They carry identities,
   never placement; plans read placement from the replica at hover, drop and

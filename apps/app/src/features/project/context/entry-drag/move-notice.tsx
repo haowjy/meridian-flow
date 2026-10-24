@@ -184,6 +184,17 @@ export function describeMove(result: MoveResult, destinationName: string): strin
   return parts.join(" ");
 }
 
+/** The warning before a move whose rows would arrive renamed; null when none would. */
+export function describeRenames(renamed: readonly { name: string; as: string }[]): string | null {
+  const [only] = renamed;
+  if (!only) return null;
+  if (renamed.length === 1) return t`${only.name} will be renamed ${only.as}`;
+  return plural(renamed.length, {
+    one: "# item will be renamed",
+    other: "# items will be renamed",
+  });
+}
+
 /** Null when every row went back. */
 export function describeUndoFailure({ failed }: MoveResult): string | null {
   if (failed.length === 0) return null;

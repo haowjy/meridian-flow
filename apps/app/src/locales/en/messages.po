@@ -101,6 +101,11 @@ msgstr "“{name}” doesn't exist yet"
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, one {# call} other {# calls}}"
 
+#. placeholder {0}: renamed.length
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
+msgstr "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
+
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
@@ -222,6 +227,12 @@ msgstr "{0} subagents finished ({1} stopped)"
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} tok/s"
 msgstr "{0} tok/s"
+
+#. placeholder {0}: only.name
+#. placeholder {1}: only.as
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0} will be renamed {1}"
+msgstr "{0} will be renamed {1}"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."

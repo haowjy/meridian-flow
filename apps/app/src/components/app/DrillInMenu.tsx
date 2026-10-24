@@ -10,7 +10,15 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
-import { type ReactElement, type ReactNode, useCallback, useRef, useState } from "react";
+import {
+  Fragment,
+  type ReactElement,
+  type ReactNode,
+  useCallback,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
 import {
   DropdownMenu,
@@ -46,6 +54,8 @@ export type DrillAction = {
   icon: LucideIcon;
   onSelect: () => void;
   disabled?: boolean;
+  /** A warning under the label: what the action will also do (rows arriving renamed). */
+  note?: string | null;
 };
 
 export type DrillInMenuProps = {
@@ -136,6 +146,7 @@ export function DrillInMenuBody({
   const folder = trail.at(-1) ?? null;
   const entries = tree.children(folder?.id ?? null);
   const currentActions = actions?.(trail) ?? [];
+  const noteId = useId();
 
   return (
     <DropdownMenuContent
@@ -194,17 +205,27 @@ export function DrillInMenuBody({
       ) : null}
       {currentActions.length > 0 ? <DropdownMenuSeparator /> : null}
       {currentActions.map((action) => (
-        <DropdownMenuItem
-          key={action.key}
-          disabled={action.disabled}
-          onSelect={(event) => {
-            event.preventDefault();
-            action.onSelect();
-          }}
-        >
-          <action.icon aria-hidden />
-          {action.label}
-        </DropdownMenuItem>
+        <Fragment key={action.key}>
+          <DropdownMenuItem
+            disabled={action.disabled}
+            aria-describedby={action.note ? `${noteId}-${action.key}` : undefined}
+            onSelect={(event) => {
+              event.preventDefault();
+              action.onSelect();
+            }}
+          >
+            <action.icon aria-hidden />
+            {action.label}
+          </DropdownMenuItem>
+          {action.note ? (
+            <p
+              id={`${noteId}-${action.key}`}
+              className="mx-1 mb-1 rounded-sm border border-warning-border bg-warning-bg px-2 py-1 text-xs text-warning-foreground"
+            >
+              {action.note}
+            </p>
+          ) : null}
+        </Fragment>
       ))}
     </DropdownMenuContent>
   );
