@@ -389,8 +389,12 @@ msgid "{name} was removed when the reply that created it didn't finish, so this 
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
-msgid "{name}: deleting"
+msgid "{name}: Deleted"
 msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+#~ msgid "{name}: deleting"
+#~ msgstr ""
 
 #. placeholder {0}: line.place
 #: src/features/draft-review/tree-line.ts
@@ -806,6 +810,7 @@ msgid "Applied to the manuscript"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/draft-review/DraftedDeleteNotice.tsx
 #: src/features/draft-review/ReviewChangeBar.tsx
 #: src/features/draft-review/ReviewChangeRow.tsx
 #: src/features/editor/DraftReviewBand.tsx
@@ -1995,6 +2000,10 @@ msgstr ""
 msgid "Deleted from the manuscript"
 msgstr ""
 
+#: src/features/draft-review/DraftedDeleteNotice.tsx
+msgid "Deleted in this draft"
+msgstr ""
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Deleted since"
 msgstr ""
@@ -2054,6 +2063,7 @@ msgid "Diagram"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/draft-review/DraftedDeleteNotice.tsx
 #: src/features/draft-review/ReviewChangeBar.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx
 #: src/features/editor/DraftReviewBand.tsx
