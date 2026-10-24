@@ -301,8 +301,38 @@ export function createResourcePlacement(
     });
   }
 
+  const placedRows = new WeakMap<readonly ResourceRecord[], Map<string, CatalogEntry[]>>();
+  /** The files and folders a parent holds as placed (the catalogs with every pending move), by parent ID. */
+  function childrenAt(
+    parent: ParentRef,
+    records: readonly ResourceRecord[],
+  ): readonly CatalogEntry[] {
+    let byParent = placedRows.get(records);
+    if (!byParent) {
+      byParent = new Map();
+      for (const row of projectCatalog(entries, records)) {
+        if (row.kind !== "file" && row.kind !== "folder") continue;
+        const siblings = byParent.get(row.parentId);
+        if (siblings) siblings.push(row);
+        else byParent.set(row.parentId, [row]);
+      }
+      placedRows.set(records, byParent);
+    }
+    const parentId =
+      parent.kind === "folder"
+        ? parent.folderId
+        : entries.find(
+            (candidate) =>
+              candidate.kind === "source" &&
+              candidate.scheme === parent.scheme &&
+              ownerListedInScope(parent.owner, parent.scheme, candidate.scope, projectId),
+          )?.entryId;
+    return (parentId && byParent.get(parentId)) || [];
+  }
+
   return {
     resourceLocation,
+    childrenAt,
     resourcePlacementPending: (record: ResourceRecord) => {
       const own = projectResourceLocation(projectId, record);
       const effective = resourceLocation(record);

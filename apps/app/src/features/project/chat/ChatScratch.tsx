@@ -27,8 +27,7 @@ import type { DeleteTarget } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { serverTabFromFile } from "../context/context-tab-from-file";
-import { type DeleteNoticeSurface, useDeleteContextEntry } from "../context/document-delete-undo";
-import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
+import { useDeleteContextEntry } from "../context/document-delete-undo";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { AreaDropRegion } from "../context/tree-drop/AreaDropRegion";
@@ -41,6 +40,7 @@ import { useOpenScratchNote } from "../dock/use-open-scratch-note";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import { DockedRailSection } from "../shell/DockedRailSection";
 import { RailEmptyHint, RailFolderRow } from "../shell/RailSection";
+import type { NoticeSurface } from "../shell/SurfaceNotice";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
 /** The document open beside the writer, if any: the dock's on the Chat screen, the selected tab in the Editor. */
@@ -73,7 +73,7 @@ export function RailScratchSection({
   resizeAgainst?: RefObject<HTMLElement | null>;
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
-  const { list, primary } = useChatScratchList(projectId, scratch);
+  const { list, primary } = useChatScratchList(projectId, scratch, "sidebar");
   if (!scratch) return null;
   return (
     <DockedRailSection id="scratch" resizeAgainst={resizeAgainst}>
@@ -114,7 +114,11 @@ export function RailScratchSection({
 }
 
 /** One list over a chat's Scratch: its current catalog and its Earlier notes. */
-function useChatScratchList(projectId: string, scratch: ReturnType<typeof useChatScratchSource>) {
+function useChatScratchList(
+  projectId: string,
+  scratch: ReturnType<typeof useChatScratchSource>,
+  surface: NoticeSurface,
+) {
   const { primary, earlier, editable } = useChatScratchCatalogs(projectId, scratch);
   const areas = useMemo(
     () => [
@@ -141,26 +145,14 @@ function useChatScratchList(projectId: string, scratch: ReturnType<typeof useCha
     ],
     [primary.catalog, earlier.catalog, scratch, editable],
   );
-  return { list: useEntryList({ projectId, areas }), primary };
+  return { list: useEntryList({ projectId, surface, areas }), primary };
 }
 
 /**
- * A chat's Scratch in its Files menu: the same rows as the rail, its own list,
- * and the move note at its end, so Move… there ends like everywhere else.
+ * A chat's Scratch in its Files menu: the same rows as the rail in its own list,
+ * so Move… there ends like everywhere else (its notice shows at the menu's foot).
  */
-export function MenuScratchSection(props: {
-  projectId: string;
-  threadId: string | null;
-  onPicked?: () => void;
-}) {
-  return (
-    <MoveNoticeHost>
-      <MenuScratchList {...props} />
-    </MoveNoticeHost>
-  );
-}
-
-function MenuScratchList({
+export function MenuScratchSection({
   projectId,
   threadId,
   onPicked,
@@ -170,7 +162,7 @@ function MenuScratchList({
   onPicked?: () => void;
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
-  const { list } = useChatScratchList(projectId, scratch);
+  const { list } = useChatScratchList(projectId, scratch, "chat-files");
   if (!scratch) return null;
   return (
     <section aria-label={scratch.heading}>
@@ -183,7 +175,6 @@ function MenuScratchList({
           surface="chat-files"
         />
       </EntryList>
-      <MoveNotice className="mx-2 my-1.5" />
     </section>
   );
 }
@@ -218,7 +209,7 @@ function ChatScratchTree({
   threadId: string | null;
   editorWorkId?: string | null;
   onPicked?: () => void;
-  surface?: DeleteNoticeSurface;
+  surface?: NoticeSurface;
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
   const { primary, earlier, editable } = useChatScratchCatalogs(projectId, scratch);

@@ -33,7 +33,7 @@ export type PlacementView = {
   records: readonly ResourceRecord[];
   placement: Pick<
     ResourcePlacement,
-    "resourceLocation" | "parentForResource" | "folderLocation" | "parentForFolder"
+    "resourceLocation" | "parentForResource" | "folderLocation" | "parentForFolder" | "childrenAt"
   >;
 };
 

@@ -1,16 +1,13 @@
 /**
- * "Moved chapter-3 to Act 2." with Undo, at the foot of the surface that took
- * the move (a drop or Move…). A surface that can take moves (the sidebar, or
- * Work Files, which stays on screen when the sidebar is collapsed) wraps its
- * lists in a `MoveNoticeHost`; a list publishes to the host it sits in. The
- * host holds its latest notice as state, so one notice shows per host and a
- * host that has left the screen takes its notice with it. The notice sits in
- * the surface's own layout, never over other controls, and stays until the
- * next move, Dismiss, or the host leaving: Undo is not a race.
+ * "Moved chapter-3 to Act 2." with Undo, on the surface that took the move (a
+ * drop or Move…). One owner per project holds each surface's latest move: its
+ * rows, whether Undo still has something to put back (read from the replica,
+ * so it needs no list on screen), and Undo itself. The notice shares its
+ * surface's one notice place with delete notices (`useNoticeSlot`); a newer
+ * notice of either kind replaces it. It stays until then, Dismiss, or leaving
+ * the project: Undo is not a race.
  */
 import { plural, t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
-import { X } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -21,51 +18,58 @@ import {
   useRef,
   useState,
 } from "react";
-import { announce } from "@/client/stores";
-import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
-import { cn } from "@/lib/utils";
-import type { MoveResult } from "./execute-move";
+import { type NoticeSurface, SurfaceNotice, useNoticeSlot } from "../../shell/SurfaceNotice";
+import {
+  useAccountResourceProjection,
+  useAccountResourceReplica,
+} from "../account-feature-context";
+import { type MoveResult, undoMove } from "./execute-move";
+import { type MoveEffect, planUndo } from "./move-plan";
 
-/** Puts the move back; resolves to what to say when some of it couldn't go back. */
-type UndoMove = () => Promise<string | null>;
-
-type Notice = {
-  /** Stays with the notice when Undo goes or its message changes. */
+type MoveWindow = {
+  /** Stays with the notice while its message or Undo changes. */
   id: number;
   message: string;
-  /** Absent when nothing moved. */
-  undo: UndoMove | null;
+  effects: readonly MoveEffect[];
+  /** The replica has shown the move; until then a missing row means "not yet", not "gone". */
+  applied: boolean;
+  /** Something is still where the move put it. */
+  undoable: boolean;
+  undoing: boolean;
   /** Puts focus back in the list the move came from, when the notice leaves under it. */
   refocus: () => void;
 };
 
-type NoticePublisher = {
-  /** Shows a notice in place of any other; resolves to its id. */
-  publish: (notice: Omit<Notice, "id">) => number;
-  /** Drops the notice's Undo once nothing it would put back is still in place. */
-  retire: (id: number) => void;
+type MoveNotices = {
+  windows: ReadonlyMap<NoticeSurface, MoveWindow>;
+  publish: (
+    surface: NoticeSurface,
+    result: MoveResult,
+    destinationName: string,
+    refocus: () => void,
+  ) => void;
+  /** Resolves true once every row went back and the notice closed. */
+  undo: (surface: NoticeSurface, id: number) => Promise<boolean>;
+  dismiss: (surface: NoticeSurface, id: number) => void;
 };
 
-const HostContext = createContext<
-  | (NoticePublisher & {
-      notice: Notice | null;
-      /** Replace or clear notice `id`, unless a newer notice has taken its place. */
-      settle: (id: number, to: Notice | null) => void;
-    })
-  | null
->(null);
+const MoveNoticesContext = createContext<MoveNotices | null>(null);
 
 let nextNoticeId = 1;
 
-/** Where a list in this surface publishes its drops; inert outside a host. */
-export function useMoveNoticePublisher(): NoticePublisher | null {
-  return useContext(HostContext);
-}
-
-/** A surface that takes drops and shows their notice (`MoveNotice`) somewhere inside it. */
-export function MoveNoticeHost({ children }: { children: ReactNode }) {
-  const [notice, setNotice] = useState<Notice | null>(null);
+export function MoveNoticesProvider({
+  projectId,
+  children,
+}: {
+  projectId: string;
+  children: ReactNode;
+}) {
+  const resources = useAccountResourceReplica();
+  const projection = useAccountResourceProjection(projectId);
+  const slots = useNoticeSlot();
+  const [windows, setWindows] = useState<ReadonlyMap<NoticeSurface, MoveWindow>>(() => new Map());
+  const latest = useRef(projection);
+  latest.current = projection;
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -73,86 +77,123 @@ export function MoveNoticeHost({ children }: { children: ReactNode }) {
       mounted.current = false;
     };
   }, []);
-  // A drop can finish after its surface has gone; there is nowhere to say so.
-  const publish = useCallback((next: Omit<Notice, "id">) => {
-    const id = nextNoticeId++;
-    if (!mounted.current) return id;
-    setNotice({ ...next, id });
-    announce(next.message);
-    return id;
-  }, []);
-  const settle = useCallback((id: number, to: Notice | null) => {
-    if (mounted.current) setNotice((now) => (now?.id === id ? to : now));
-  }, []);
-  const retire = useCallback((id: number) => {
-    if (mounted.current)
-      setNotice((now) => (now?.id === id && now.undo ? { ...now, undo: null } : now));
-  }, []);
-  const value = useMemo(
-    () => ({ notice, publish, settle, retire }),
-    [notice, publish, settle, retire],
+
+  /** Replaces or clears notice `id`, unless a newer one has taken its surface. */
+  const settle = useCallback(
+    (surface: NoticeSurface, id: number, next: (now: MoveWindow) => MoveWindow | null) => {
+      if (!mounted.current) return;
+      setWindows((current) => {
+        const now = current.get(surface);
+        if (now?.id !== id) return current;
+        const replaced = next(now);
+        const map = new Map(current);
+        if (replaced) map.set(surface, replaced);
+        else map.delete(surface);
+        return map;
+      });
+    },
+    [],
   );
-  return <HostContext.Provider value={value}>{children}</HostContext.Provider>;
+  const dismiss = useCallback(
+    (surface: NoticeSurface, id: number) => settle(surface, id, () => null),
+    [settle],
+  );
+
+  const publish = useCallback<MoveNotices["publish"]>(
+    (surface, result, destinationName, refocus) => {
+      // A move can finish after its project has gone; there is nowhere to say so.
+      if (!mounted.current) return;
+      const id = nextNoticeId++;
+      const effects = result.moved;
+      setWindows((current) =>
+        new Map(current).set(surface, {
+          id,
+          message: describeMove(result, destinationName),
+          effects,
+          applied: planUndo(latest.current, effects).length > 0,
+          undoable: effects.length > 0,
+          undoing: false,
+          refocus,
+        }),
+      );
+      slots.take(surface, () => dismiss(surface, id));
+    },
+    [dismiss, slots],
+  );
+
+  // Undo leaves once nothing it would put back is still in place: renamed, moved again or
+  // deleted since. The replica can show a move just after it resolves, so it retires only
+  // once it has applied and then stops applying.
+  useEffect(() => {
+    for (const [surface, window] of windows) {
+      if (!window.undoable || window.undoing) continue;
+      const live = planUndo(projection, window.effects).length > 0;
+      if (live && !window.applied) settle(surface, window.id, (now) => ({ ...now, applied: true }));
+      else if (!live && window.applied)
+        settle(surface, window.id, (now) => ({ ...now, undoable: false }));
+    }
+  }, [projection, windows, settle]);
+
+  const undo = useCallback<MoveNotices["undo"]>(
+    async (surface, id) => {
+      const window = windows.get(surface);
+      if (window?.id !== id || !window.undoable) return false;
+      settle(surface, id, (now) => ({ ...now, undoing: true }));
+      const failure = await undoMove(window.effects, { resources, projectId }).then(
+        describeUndoFailure,
+        () => t`Couldn't move it back.`,
+      );
+      settle(surface, id, (now) =>
+        failure ? { ...now, message: failure, undoable: false, undoing: false } : null,
+      );
+      return !failure;
+    },
+    [windows, settle, resources, projectId],
+  );
+
+  const value = useMemo(
+    () => ({ windows, publish, undo, dismiss }),
+    [windows, publish, undo, dismiss],
+  );
+  return <MoveNoticesContext.Provider value={value}>{children}</MoveNoticesContext.Provider>;
 }
 
-export function MoveNotice({ className }: { className?: string }) {
-  const host = useContext(HostContext);
-  if (!host) throw new Error("MoveNotice requires a MoveNoticeHost");
-  const { notice: current, settle } = host;
-  const [undoing, setUndoing] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  if (!current) return null;
+/** Where a list publishes its moves. */
+export function useMoveNotices(): MoveNotices {
+  const notices = useContext(MoveNoticesContext);
+  if (!notices) throw new Error("MoveNoticesProvider is required");
+  return notices;
+}
 
+export function MoveNotice({ surface, className }: { surface: NoticeSurface; className?: string }) {
+  const { windows, undo, dismiss } = useMoveNotices();
+  const ref = useRef<HTMLDivElement>(null);
+  const window = windows.get(surface);
+  if (!window) return null;
   // Asked before anything awaits: Undo's button disables while it runs and drops focus.
   const holdsFocus = () => ref.current?.contains(document.activeElement) ?? false;
-  const close = (next: Notice | null, focused: boolean) => {
-    settle(current.id, next);
-    if (!next && focused) current.refocus();
-  };
-
-  const undo = async (put: UndoMove) => {
-    const focused = holdsFocus();
-    setUndoing(true);
-    let next: Notice | null = null;
-    try {
-      const failure = await put();
-      if (failure) next = { ...current, message: failure, undo: null };
-    } catch {
-      next = { ...current, message: t`Couldn't move it back.`, undo: null };
-    } finally {
-      setUndoing(false);
-    }
-    close(next, focused);
-    if (next) announce(next.message);
-  };
-
   return (
-    <div
-      ref={ref}
-      className={cn(
-        "flex items-center gap-2 rounded-md border border-border bg-popover py-1 pr-1 pl-2.5 text-sm text-popover-foreground",
-        className,
-      )}
-    >
-      <span className="min-w-0 flex-1">{current.message}</span>
-      {current.undo ? (
-        <Button
-          variant="link"
-          size="meta"
-          disabled={undoing}
-          onClick={() => current.undo && void undo(current.undo)}
-          className="text-jade-text"
-        >
-          <Trans>Undo</Trans>
-        </Button>
-      ) : null}
-      <IconButton
-        className="shrink-0 [@media(pointer:coarse)]:size-11"
-        aria-label={t`Dismiss`}
-        onClick={() => close(null, holdsFocus())}
-      >
-        <X aria-hidden className="size-3.5" />
-      </IconButton>
+    <div ref={ref} className="contents">
+      <SurfaceNotice
+        className={className}
+        notice={{
+          message: window.message,
+          undoing: window.undoing,
+          undo: window.undoable
+            ? () => {
+                const focused = holdsFocus();
+                void undo(surface, window.id).then((closed) => {
+                  if (closed && focused) window.refocus();
+                });
+              }
+            : null,
+          dismiss: () => {
+            const focused = holdsFocus();
+            dismiss(surface, window.id);
+            if (focused) window.refocus();
+          },
+        }}
+      />
     </div>
   );
 }

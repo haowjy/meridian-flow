@@ -99,11 +99,7 @@ function OpenMovePicker({
       if (!after || !before) throw new Error(unavailable);
       const result = await moveRows(
         [{ entry: ref, name: entry.name, typed: name, before, after }],
-        {
-          resources,
-          projectId,
-          siblingsAt: () => destination.catalog.children(destination.entryId),
-        },
+        { resources, projectId },
       );
       if (result.failed.length > 0) throw new Error(unavailable);
       // In a list, Move… ends like a drop: the row selected and the notice with Undo.
@@ -151,9 +147,7 @@ function OpenMovePicker({
         const already = blocked === "already-there";
         const after = destination && !already && destinationParent(destination, works, noWork);
         const renamed = after
-          ? renamesOnArrival([{ entry: ref, name: entry.name, typed: name, after }], () =>
-              destination.catalog.children(destination.entryId),
-            )
+          ? renamesOnArrival([{ entry: ref, name: entry.name, typed: name, after }], view)
           : [];
         return [
           {

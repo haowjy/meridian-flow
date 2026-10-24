@@ -1,11 +1,42 @@
-/** A small, replaceable notice card shared by project surfaces. */
+/**
+ * The notice card project surfaces show after a delete or a move, and the one
+ * notice place each surface has. A surface shows one notice: a newer one, of
+ * either kind, replaces the older (`useNoticeSlot`).
+ */
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef } from "react";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
+
+export type NoticeSurface = "sidebar" | "work-files" | "mobile" | "chat-files";
+
+type NoticeSlots = {
+  /** Claims a surface's notice place; `release` closes whatever held it before. */
+  take: (surface: NoticeSurface, release: () => void) => void;
+};
+
+const NoticeSlotsContext = createContext<NoticeSlots | null>(null);
+
+/** One per project, around every surface that shows notices. */
+export function NoticeSlotsProvider({ children }: { children: ReactNode }) {
+  const holders = useRef(new Map<NoticeSurface, () => void>());
+  const take = useCallback((surface: NoticeSurface, release: () => void) => {
+    const previous = holders.current.get(surface);
+    holders.current.set(surface, release);
+    previous?.();
+  }, []);
+  const value = useMemo(() => ({ take }), [take]);
+  return <NoticeSlotsContext.Provider value={value}>{children}</NoticeSlotsContext.Provider>;
+}
+
+export function useNoticeSlot(): NoticeSlots {
+  const slots = useContext(NoticeSlotsContext);
+  if (!slots) throw new Error("NoticeSlotsProvider is required");
+  return slots;
+}
 
 export type SurfaceNoticeModel = {
   message: ReactNode;
@@ -29,7 +60,7 @@ export function SurfaceNotice({
         role="status"
         className="flex min-h-10 min-w-0 items-center gap-3 rounded-md border border-border bg-popover px-2.5 py-1.5 text-sm text-popover-foreground shadow-sm"
       >
-        <span className="min-w-0 flex-1 truncate">{notice.message}</span>
+        <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{notice.message}</span>
         {notice.undo ? (
           <button
             type="button"

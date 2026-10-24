@@ -5,10 +5,10 @@
  * Files one over its Scratch.
  * Shells declare the catalogs they show; this owns the rest: what a hovered
  * target would do, what a drop does, and what any move from the list (a drop
- * or Move…) leaves behind: the moved rows selected and a notice with Undo.
+ * or Move…) leaves behind: the moved rows selected and a notice with Undo on
+ * the list's surface, whose owner then keeps it (`move-notice.tsx`).
  */
 import { t } from "@lingui/core/macro";
-import type { ParentRef } from "@meridian/resource-replica";
 import {
   createContext,
   type ReactNode,
@@ -20,37 +20,18 @@ import {
   useRef,
 } from "react";
 import { useWorks } from "@/client/query/useWorks";
+import type { NoticeSurface } from "../../shell/SurfaceNotice";
 import {
   useAccountResourceProjection,
   useAccountResourceReplica,
 } from "../account-feature-context";
-import type { ContextEntrySibling } from "../context-entry-name";
-import { menuEntryFor } from "../menu-tree";
 import { destinationParent } from "../move-entry";
 import { type EntriesRoute, type EntriesVerdict, TreeDropScope } from "../tree-drop/tree-drop";
 import { activeEntryDrag } from "./drag-session";
 import { type DragEntry, entryKey } from "./entry";
-import {
-  executeMove,
-  type MoveContext,
-  type MoveResult,
-  renamesOnArrival,
-  undoMove,
-} from "./execute-move";
-import {
-  describeMove,
-  describeRenames,
-  describeUndoFailure,
-  useMoveNoticePublisher,
-} from "./move-notice";
-import {
-  type MoveArea,
-  type MoveEffect,
-  planMove,
-  planUndo,
-  sameParent,
-  withoutNested,
-} from "./move-plan";
+import { executeMove, type MoveResult, renamesOnArrival } from "./execute-move";
+import { describeRenames, useMoveNotices } from "./move-notice";
+import { type MoveArea, planMove, withoutNested } from "./move-plan";
 import { type EntrySelection, EntrySelectionProvider, useEntrySelection } from "./selection";
 
 /** Reports a finished move: selects what moved and leaves the notice. */
@@ -71,16 +52,19 @@ export function useReportMove(): ReportMove | null {
 
 export function useEntryList({
   projectId,
+  surface,
   areas,
 }: {
   projectId: string;
+  /** Where the list's move notices show. */
+  surface: NoticeSurface;
   /** Every catalog this list shows; a target names its catalog by root ID. */
   areas: readonly MoveArea[];
 }): EntryListController {
   const resources = useAccountResourceReplica();
   const { works, noWork } = useWorks(projectId);
   const projection = useAccountResourceProjection(projectId);
-  const notices = useMoveNoticePublisher();
+  const notices = useMoveNotices();
   // Hovers plan from the latest observation without remaking the route (and re-rendering every target).
   const prune = useCallback(
     (entries: DragEntry[]) => withoutNested(latest.current.projection, entries),
@@ -92,51 +76,14 @@ export function useEntryList({
     latest.current = { areas, projection, works, noWork, notices, selection };
   });
 
-  // The notice this list last published, while its Undo still has something to put back.
-  // The replica may not show a move until just after it resolves, so Undo retires only
-  // once it has applied and then stops applying.
-  const undoable = useRef<{ id: number; effects: readonly MoveEffect[]; applied: boolean } | null>(
-    null,
-  );
-  useEffect(() => {
-    const live = undoable.current;
-    if (!live) return;
-    if (planUndo(projection, live.effects).length > 0) {
-      live.applied = true;
-    } else if (live.applied) {
-      undoable.current = null;
-      notices?.retire(live.id);
-    }
-  }, [projection, notices]);
-
   const moved = useCallback<ReportMove>(
     (result, destinationName) => {
       const { notices, selection } = latest.current;
       if (result.moved.length > 0)
         selection.replace(result.moved.map((effect) => entryKey(effect.entry)));
-      const context: MoveContext = {
-        resources,
-        projectId,
-        siblingsAt: (parent) => siblingsAt(latest.current.areas, parent),
-      };
-      const id = notices?.publish({
-        message: describeMove(result, destinationName),
-        undo:
-          result.moved.length > 0
-            ? () => undoMove(result.moved, context).then(describeUndoFailure)
-            : null,
-        refocus: () => latest.current.selection.focus(),
-      });
-      undoable.current =
-        id !== undefined && result.moved.length > 0
-          ? {
-              id,
-              effects: result.moved,
-              applied: planUndo(latest.current.projection, result.moved).length > 0,
-            }
-          : null;
+      notices.publish(surface, result, destinationName, () => latest.current.selection.focus());
     },
-    [resources, projectId],
+    [surface],
   );
 
   const route = useMemo<EntriesRoute>(() => {
@@ -151,12 +98,12 @@ export function useEntryList({
         return { kind: "refuse", label: t`Can't go inside itself` };
       if (planned?.kind !== "ready") return null;
       const { destinationName } = planned;
-      const { works, noWork, areas } = latest.current;
+      const { works, noWork, projection } = latest.current;
       const after = destinationParent(planned.destination, works, noWork);
       const renamed = after
         ? renamesOnArrival(
             planned.moves.map(({ ref, name }) => ({ entry: ref, name, after })),
-            (parent) => siblingsAt(areas, parent),
+            projection,
           )
         : [];
       return {
@@ -185,28 +132,14 @@ export function useEntryList({
         if (planned?.kind !== "ready") return;
         const { works, noWork } = latest.current;
         const after = destinationParent(planned.destination, works, noWork);
-        void executeMove(planned, after, {
-          resources,
-          projectId,
-          siblingsAt: (parent) => siblingsAt(latest.current.areas, parent),
-        }).then((result) => moved(result, planned.destinationName));
+        void executeMove(planned, after, { resources, projectId }).then((result) =>
+          moved(result, planned.destinationName),
+        );
       },
     };
   }, [resources, projectId, moved]);
 
   return useMemo(() => ({ selection, route, moved }), [selection, route, moved]);
-}
-
-/** What `parent` holds in the catalogs the list shows; empty when it shows none of them. */
-function siblingsAt(areas: readonly MoveArea[], parent: ParentRef): readonly ContextEntrySibling[] {
-  for (const { catalog, scheme, owner } of areas) {
-    if (parent.kind === "folder") {
-      if (menuEntryFor(catalog, parent.folderId)?.kind === "dir")
-        return catalog.children(parent.folderId);
-    } else if (sameParent(parent, { kind: "root", scheme, owner }))
-      return catalog.children(catalog.root.entryId);
-  }
-  return [];
 }
 
 /** Gives a list's rows and targets its selection and drop scope. */

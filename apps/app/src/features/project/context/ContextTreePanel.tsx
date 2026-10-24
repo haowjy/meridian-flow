@@ -126,6 +126,7 @@ function useSchemeTree(
   const catalogs = useContextCatalogViews(projectId, schemes, { workId: editorWorkId });
   const list = useEntryList({
     projectId,
+    surface: "sidebar",
     areas: schemes.flatMap((scheme) => {
       const catalog = catalogs[scheme]?.catalog;
       return catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, movable: true }] : [];

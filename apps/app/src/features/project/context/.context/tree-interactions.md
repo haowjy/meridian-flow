@@ -251,32 +251,34 @@ Letting go accepts it; Escape or another target declines it. A drop moves every 
 `move-entry.ts` (`execute-move.ts`), reselects them, reveals the destination (the target's
 own `reveal`, the same one the spring calls) and shows "Moved chapter-3 to Act
 2." (or "Moved chapter-3 to Act 2 as chapter-3 (2).") with Undo on the surface
-that took the drop (`MoveNotice` in that surface's `MoveNoticeHost`: in the
-rail between the Files tree and User, under Work Files (visible with the
-sidebar collapsed), at the end of the chat Files menu, and on phone in the
-navigation drawer and at the end of the folder browser). The notice is part of the surface's
-layout: it takes height from the tree's scroll area and never covers a
-control. It stays until the next move, Dismiss, or the project changing, so
-Undo is never a race. A host keeps only its latest result, as data. Undo shows
-only while it has something to put back: the publishing list watches the
-replica and retires Undo once every moved row was renamed, moved again or
-deleted (only after the move has shown in the replica, which can trail the
-placement by a moment); the message stays until dismissed.
+that took the drop, in that surface's one notice place, shared with delete
+notices (see `CONTEXT.md`): in the rail (and the phone drawer) between the
+Files tree and User, under Work Files (visible with the sidebar collapsed), at
+the end of the chat Files menu, and at the end of the phone folder browser. The
+notice is part of the surface's layout: it takes height from the tree's scroll
+area and never covers a control. It stays until the next move or delete on
+that surface, Dismiss, or the project changing, so Undo is never a race.
+`MoveNoticesProvider` keeps each surface's latest move, as data, whether or
+not the list that made it is still on screen. Undo shows only while it has
+something to put back: the provider watches the replica and retires Undo once
+every moved row was renamed, moved again or deleted (only after the move has
+shown in the replica, which can trail the placement by a moment); the message
+stays until dismissed.
 
 Move… inside a list ends the same way: `EntryMovePicker` places through
 `move-entry.ts`, then reports to its list (`useReportMove`), which selects the
 moved row and publishes the same notice and Undo. Move… does not reveal a
 collapsed destination (expansion belongs to each section); moving the open
 document reveals it through the active-document reveal. Every surface with a
-Move… mounts its rows in a list under a host, so none reports less than this;
-a Move… outside a list would report nothing beyond the row.
+Move… mounts its rows in a list, so none reports less than this; a Move…
+outside a list would report nothing beyond the row.
 
 Placement is optimistic, exactly as for Move…: each placement's operation is
 remembered, so the row's link-update note follows its receipt and a later server
 refusal lands on the row as its failure mark. A row the replica won't admit is
 named in the notice, and Undo still covers the rows that moved. Undo returns
 each row to its previous parent (the next free name there if its own was taken
-since; the list that took the drop supplies the siblings), skips a row renamed
+since, read from the replica's placement with `childrenAt`), skips a row renamed
 or moved again since, or gone (the writer's newer choice), and reads the replica as it
 is when pressed, not as it was at the drop. Verdicts likewise resolve each
 dragged row by identity from the replica's placement graph (rows another list
