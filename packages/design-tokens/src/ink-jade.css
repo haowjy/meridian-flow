@@ -107,6 +107,12 @@
      shy of yellow; same hue family as the shelf, one step brighter. */
   --color-sidebar: oklch(0.932 0.018 84);
   --color-sidebar-accent: oklch(0.882 0.02 84);
+  /* A row in an explicit multi-row selection: the row fill with a breath of
+     jade, so it reads apart from hover (lighter grey-gold) and the open row
+     (full grey-gold). Short runs of rows only, never a pane wash. Literal
+     because @theme compiles references to the light values; the dark theme and
+     surfaces that re-point `sidebar-accent` (the shelf) re-declare it. */
+  --color-sidebar-selected: color-mix(in oklab, oklch(0.882 0.02 84) 88%, oklch(0.536 0.082 175));
 
   /* Dock surface — draft chrome (DraftDock strip, review banner, reviewing
      tab). The chrome's own grey-gold family (hue 84, c .012) one step darker

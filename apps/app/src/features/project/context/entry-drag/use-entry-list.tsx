@@ -13,6 +13,7 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -30,7 +31,14 @@ import { activeEntryDrag } from "./drag-session";
 import { type DragEntry, entryKey } from "./entry";
 import { executeMove, type MoveContext, type MoveResult, undoMove } from "./execute-move";
 import { describeMove, describeUndoFailure, useMoveNoticePublisher } from "./move-notice";
-import { type MoveArea, planMove, sameParent, withoutNested } from "./move-plan";
+import {
+  type MoveArea,
+  type MoveEffect,
+  planMove,
+  planUndo,
+  sameParent,
+  withoutNested,
+} from "./move-plan";
 import { type EntrySelection, EntrySelectionProvider, useEntrySelection } from "./selection";
 
 /** Reports a finished move: selects what moved and leaves the notice. */
@@ -60,21 +68,38 @@ export function useEntryList({
   const resources = useAccountResourceReplica();
   const { works, noWork } = useWorks(projectId);
   const projection = useAccountResourceProjection(projectId);
-  const publish = useMoveNoticePublisher();
+  const notices = useMoveNoticePublisher();
   // Hovers plan from the latest observation without remaking the route (and re-rendering every target).
   const prune = useCallback(
     (entries: DragEntry[]) => withoutNested(latest.current.projection, entries),
     [],
   );
   const selection = useEntrySelection(prune);
-  const latest = useRef({ areas, projection, works, noWork, publish, selection });
+  const latest = useRef({ areas, projection, works, noWork, notices, selection });
   useLayoutEffect(() => {
-    latest.current = { areas, projection, works, noWork, publish, selection };
+    latest.current = { areas, projection, works, noWork, notices, selection };
   });
+
+  // The notice this list last published, while its Undo still has something to put back.
+  // The replica may not show a move until just after it resolves, so Undo retires only
+  // once it has applied and then stops applying.
+  const undoable = useRef<{ id: number; effects: readonly MoveEffect[]; applied: boolean } | null>(
+    null,
+  );
+  useEffect(() => {
+    const live = undoable.current;
+    if (!live) return;
+    if (planUndo(projection, live.effects).length > 0) {
+      live.applied = true;
+    } else if (live.applied) {
+      undoable.current = null;
+      notices?.retire(live.id);
+    }
+  }, [projection, notices]);
 
   const moved = useCallback<ReportMove>(
     (result, destinationName) => {
-      const { publish, selection } = latest.current;
+      const { notices, selection } = latest.current;
       if (result.moved.length > 0)
         selection.replace(result.moved.map((effect) => entryKey(effect.entry)));
       const context: MoveContext = {
@@ -82,7 +107,7 @@ export function useEntryList({
         projectId,
         siblingsAt: (parent) => siblingsAt(latest.current.areas, parent),
       };
-      publish?.({
+      const id = notices?.publish({
         message: describeMove(result, destinationName),
         undo:
           result.moved.length > 0
@@ -90,6 +115,14 @@ export function useEntryList({
             : null,
         refocus: () => latest.current.selection.focus(),
       });
+      undoable.current =
+        id !== undefined && result.moved.length > 0
+          ? {
+              id,
+              effects: result.moved,
+              applied: planUndo(latest.current.projection, result.moved).length > 0,
+            }
+          : null;
     },
     [resources, projectId],
   );

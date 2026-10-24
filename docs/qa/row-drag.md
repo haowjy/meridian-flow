@@ -43,7 +43,8 @@ browser reports no fine pointer, so rows render at touch height.
    next move or Dismiss.
 4. Press Undo: the chapters return to `Act 2`. Repeat with the keyboard (Tab
    to Undo, Enter) and with Dismiss: focus lands on a moved row, not the page
-   body. Drop a row, rename it, then Undo: the renamed row stays.
+   body. Drop a row, then rename it: Undo leaves the notice and the message
+   stays with Dismiss.
 4a. Open a row's `…` menu, Move… it into a collapsed folder: the same notice
    names the destination; Undo returns it.
 5. Drag `Part Two` onto `Act 2`: nothing lights, the hint reads "Can't go

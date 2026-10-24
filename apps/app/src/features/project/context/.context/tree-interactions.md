@@ -206,8 +206,12 @@ is just the open row, shown by the open row's own highlight. Ctrl/Cmd-click
 starts an explicit selection from the open row and adds or removes rows;
 Shift-click selects the on-screen range from the last clicked row, read from the
 DOM (`data-entry-key`) so it always matches what is visible; Escape returns to
-the open row. Only explicit selections get the selection fill, a lighter tint of
-the open row's fill, so the open row stays findable inside a selection. The same
+the open row. Only explicit selections get the selection fill
+(`sidebar-selected`, the row fill with a little jade), which reads apart from
+hover and from the open row's fill, so the open row stays findable inside a
+selection. Adjacent selected rows join into one block rounded only at its ends:
+after each commit the selection marks each row's place in its run
+(`data-selection-run`) in one pass over screen order. The same
 modifiers with Enter or Space select from the keyboard, and a selected row
 reports `aria-pressed` (rows are buttons, not tree items, so that is the state
 they can carry).
@@ -238,7 +242,11 @@ rail between the Files tree and Scratch, or under Work Files, which stays
 visible with the sidebar collapsed). The notice is part of the surface's
 layout: it takes height from the tree's scroll area and never covers a
 control. It stays until the next move, Dismiss, or the project changing, so
-Undo is never a race. A host keeps only its latest result, as data.
+Undo is never a race. A host keeps only its latest result, as data. Undo shows
+only while it has something to put back: the publishing list watches the
+replica and retires Undo once every moved row was renamed, moved again or
+deleted (only after the move has shown in the replica, which can trail the
+placement by a moment); the message stays until dismissed.
 
 Move… inside a list ends the same way: `EntryMovePicker` places through
 `move-entry.ts`, then reports to its list (`useReportMove`), which selects the

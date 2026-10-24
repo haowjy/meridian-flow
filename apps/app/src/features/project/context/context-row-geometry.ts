@@ -8,11 +8,13 @@ export const contextTreeRowClassName =
 export const contextTreeRowGrowClassName =
   "min-h-8 [@media(hover:none)]:min-h-11 [@media(pointer:coarse)]:min-h-11";
 
-/**
- * A row in an explicit selection: a lighter tint of the open row's fill, so the
- * open row stays findable inside a selection.
- */
-export const contextTreeSelectedRowClassName = "bg-sidebar-accent/65";
+// Adjacent selected rows join into one block, rounded only at the run's ends
+// (`data-selection-run`, set by the list's selection).
+const selectionRunShape =
+  "data-[selection-run=start]:rounded-b-none data-[selection-run=middle]:rounded-none data-[selection-run=end]:rounded-t-none";
+
+/** A row in an explicit selection: its own fill, apart from hover and from the open row's. */
+export const contextTreeSelectedRowClassName = cn("bg-sidebar-selected", selectionRunShape);
 
 /**
  * A file row's frame: the tree's own rows, the right rail's Recent rows and the
@@ -26,7 +28,7 @@ export function contextTreeFileRowClassName(active: boolean, selected = false): 
     contextTreeRowGrowClassName,
     active && "font-medium",
     active
-      ? "bg-sidebar-accent"
+      ? cn("bg-sidebar-accent", selected && selectionRunShape)
       : selected
         ? contextTreeSelectedRowClassName
         : "hover:bg-sidebar-accent/50",

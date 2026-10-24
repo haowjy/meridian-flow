@@ -41,6 +41,7 @@
 
   --color-sidebar: oklch(0.25 0.012 84);
   --color-sidebar-accent: oklch(0.31 0.014 84);
+  --color-sidebar-selected: color-mix(in oklab, oklch(0.31 0.014 84) 88%, oklch(0.68 0.09 175));
   --color-dock-surface: oklch(0.235 0.012 84);
 
   --color-shelf: oklch(0.215 0.012 84);

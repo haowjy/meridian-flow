@@ -53,6 +53,8 @@ export type EntrySelection = {
 };
 
 const KEY_ATTRIBUTE = "data-entry-key";
+/** Set on a selected row: `start`, `middle`, `end` or `single` within its run. */
+const RUN_ATTRIBUTE = "data-selection-run";
 // Long enough for the catalogs to catch up with a move and remount its rows.
 const FOCUS_RECLAIM_MS = 2000;
 
@@ -70,6 +72,38 @@ export function useEntrySelection(
   const registry = useRef(new Map<string, { entry: DragEntry; active: boolean }>());
   const root = useRef<HTMLDivElement>(null);
   const focusUntil = useRef(0);
+  const shown = useRef<ReadonlySet<string> | null>(null);
+  shown.current = explicit;
+  const painting = useRef(false);
+
+  /**
+   * Marks where each run of adjacent selected rows starts and ends, so a run
+   * draws as one block. Rows sit at different depths under separate wrappers,
+   * so neighbours are found in screen order, once per commit, not per row.
+   */
+  const paintRuns = useCallback(() => {
+    if (painting.current) return;
+    painting.current = true;
+    queueMicrotask(() => {
+      painting.current = false;
+      const rows = Array.from(
+        root.current?.querySelectorAll<HTMLElement>(`[${KEY_ATTRIBUTE}]`) ?? [],
+      );
+      const on = rows.map((row) => shown.current?.has(row.getAttribute(KEY_ATTRIBUTE) ?? ""));
+      rows.forEach((row, index) => {
+        if (!on[index]) {
+          row.removeAttribute(RUN_ATTRIBUTE);
+          return;
+        }
+        const above = on[index - 1] === true;
+        const below = on[index + 1] === true;
+        row.setAttribute(
+          RUN_ATTRIBUTE,
+          above && below ? "middle" : above ? "end" : below ? "start" : "single",
+        );
+      });
+    });
+  }, []);
   const draggable = usePhoneShell() !== true;
 
   const screenOrder = useCallback((): string[] => {
@@ -150,12 +184,14 @@ export function useEntrySelection(
       register(entry, active) {
         const key = entryKey(entry.ref);
         registry.current.set(key, { entry, active });
+        paintRuns();
         return () => {
           if (registry.current.get(key)?.entry === entry) registry.current.delete(key);
+          paintRuns();
         };
       },
     };
-  }, [explicit, draggable, screenOrder, openKey, prune]);
+  }, [explicit, draggable, screenOrder, openKey, prune, paintRuns]);
 }
 
 const SelectionContext = createContext<EntrySelection | null>(null);
