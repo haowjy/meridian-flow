@@ -1,6 +1,6 @@
 /** Drizzle wiring of the owner lookup: Works, chats, subagents and the chats that hold files. */
 
-import { DAY_MS, DELETION_RETENTION_DAYS } from "@meridian/contracts/retention";
+import { DAY_MS, deletionPurgeAt } from "@meridian/contracts/retention";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { decodeWorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
@@ -45,7 +45,7 @@ function toWorkOwner(row: {
   const handle = decodeWorkHandle(row.handle);
   if (!handle) return null;
   const remaining = row.deletedAt
-    ? Math.ceil((row.deletedAt.getTime() + DELETION_RETENTION_DAYS * DAY_MS - Date.now()) / DAY_MS)
+    ? Math.ceil((deletionPurgeAt(row.deletedAt).getTime() - Date.now()) / DAY_MS)
     : null;
   return {
     handle,
