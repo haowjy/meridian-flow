@@ -16,15 +16,14 @@ import type {
 import type { Database } from "@meridian/database";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { FileAccess, FileGrant } from "../../file-policy/index.js";
-import { isFileAccessDenied, targetDocumentId } from "../../file-policy/index.js";
+import { isFileAccessDenied, runEditAdmission, targetDocumentId } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
 import { branchMayHold } from "../tree/branch-ownership.js";
-import { TreeScopeChangedError } from "../tree/mutation-scope.js";
+import { acquireTreeScope, TreeScopeChangedError } from "../tree/mutation-scope.js";
 import { restoreDocument } from "../tree/removal.js";
 import { loadDocumentAddresses } from "../tree/tree-addresses.js";
-import { runTreeEditAdmission } from "./tree-edit-admission.js";
 
 const MAX_SCOPE_ATTEMPTS = 4;
 
@@ -90,15 +89,14 @@ async function restoreAttempt(
 
   const before = new Map<DocumentId, Awaited<ReturnType<typeof loadDocumentAddresses>>[number]>();
   const restored = new Map<DocumentId, RestoreContextDocumentResult>();
-  const admitted = await runTreeEditAdmission({
-    db: deps.db,
+  const admitted = await runEditAdmission({
     fileAccess: deps.fileAccess,
     grants,
     workProjection: deps.workProjection,
     works: {},
-    tree: { documentIds: admittedIds },
     commitScope: (operation) => runInDrizzleTransaction(deps.db, operation),
-    async afterTreeLock() {
+    async acquireMutationScope() {
+      await acquireTreeScope(deps.db, { documentIds: admittedIds });
       for (const address of await loadDocumentAddresses(deps.db, { ids: admittedIds }))
         before.set(address.documentId, address);
     },
