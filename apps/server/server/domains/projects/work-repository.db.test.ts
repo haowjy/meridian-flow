@@ -12,6 +12,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
+import { waitForPostgresLock } from "../../test-support/lock-interleave.js";
 import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
 import { createPostgresWorkBranchDisposal } from "../collab/test-support/work-branch-disposal.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
@@ -101,17 +102,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     async function waitForLock(waitEvent: string, minimum = 1): Promise<void> {
-      for (let attempt = 0; attempt < 200; attempt += 1) {
+      await waitForPostgresLock(`${minimum} PostgreSQL ${waitEvent} lock(s)`, async () => {
         const [row] = await control<{ count: string }[]>`
           SELECT count(*)::text AS count
           FROM pg_stat_activity
           WHERE datname = current_database()
             AND wait_event = ${waitEvent}
         `;
-        if (Number(row?.count ?? 0) >= minimum) return;
-        await delay(10);
-      }
-      throw new Error(`Timed out waiting for ${minimum} PostgreSQL ${waitEvent} lock(s)`);
+        return Number(row?.count ?? 0) >= minimum ? true : undefined;
+      });
     }
 
     it("deletes and restores archived management identity without unarchiving it", async () => {
