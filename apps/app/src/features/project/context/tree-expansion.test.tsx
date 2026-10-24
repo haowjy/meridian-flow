@@ -3,7 +3,13 @@
 import { act, useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { treeExpansionKey } from "./tree-expansion-state";
+import {
+  EMPTY_TREE_EXPANSION,
+  pruneTreeExpansion,
+  readTreeExpansion,
+  treeExpansionKey,
+  writeTreeExpansion,
+} from "./tree-expansion-state";
 import { useTreeExpansion } from "./use-tree-expansion";
 
 vi.mock("./account-feature-context", () => ({ useAccountId: () => "account" }));
@@ -70,4 +76,55 @@ it("does not prune unloaded catalogs and restores independent tree scopes", asyn
     await act(async () => buttons[2]?.click());
     expect(document.querySelector("output")?.textContent).toBe('{"kept":true}');
   });
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
+it("restores only this tab's account, project, and tree, including explicit collapses", () => {
+  const values = new Map<string, string>();
+  vi.stubGlobal("window", {
+    sessionStorage: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    },
+  });
+  const key = treeExpansionKey("account", "project", "manuscript");
+  const state = { expanded: true, entries: { folder: true, closed: false } };
+  writeTreeExpansion(key, "account", state);
+  expect(readTreeExpansion(key, "account")).toEqual(state);
+  for (const other of [
+    treeExpansionKey("other", "project", "manuscript"),
+    treeExpansionKey("account", "other", "manuscript"),
+    treeExpansionKey("account", "project", "scratch"),
+  ]) {
+    expect(readTreeExpansion(other, "account")).toEqual(EMPTY_TREE_EXPANSION);
+    values.set(other, values.get(key) ?? "");
+    expect(readTreeExpansion(other, "account")).toEqual(EMPTY_TREE_EXPANSION);
+  }
+  values.clear(); // a fresh tab has no expansion seed
+  expect(readTreeExpansion(key, "account")).toEqual(EMPTY_TREE_EXPANSION);
+});
+
+it("rejects malformed tree data: broken", () => {
+  const raw = "broken";
+  vi.stubGlobal("window", { sessionStorage: { getItem: () => raw } });
+  expect(readTreeExpansion("tree", "account")).toEqual(EMPTY_TREE_EXPANSION);
+});
+
+it("drops missing folders and keeps explicit closed folders", () => {
+  expect(
+    pruneTreeExpansion({ expanded: true, entries: { gone: true, kept: false } }, ["kept"]),
+  ).toEqual({ expanded: true, entries: { kept: false } });
+});
+
+it("tolerates blocked storage", () => {
+  vi.stubGlobal("window", {
+    get sessionStorage() {
+      throw Error("blocked");
+    },
+  });
+  expect(readTreeExpansion("tree", "account")).toEqual(EMPTY_TREE_EXPANSION);
+  expect(() =>
+    writeTreeExpansion("tree", "account", { expanded: true, entries: {} }),
+  ).not.toThrow();
 });
