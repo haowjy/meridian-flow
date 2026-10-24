@@ -103,6 +103,12 @@ Keep provider-specific auth details in `server/lib/auth.ts` and app-side AuthKit
 helpers. Domain repositories should depend on user IDs and explicit access
 checks, not on WorkOS client objects.
 
+Development uses a WorkOS staging environment, currently shared with the
+sibling voluma project. Startup guards (`server/lib/startup-guards.ts`) accept a
+`sk_test_` API key only when `APP_ENV=staging`, and production rejects
+placeholder credentials. `pnpm bootstrap` applies schema only; the dev user is
+provisioned on first dev login.
+
 ## ThreadEventHub
 
 In-process fan-out over a durable event journal. The orchestrator writes events

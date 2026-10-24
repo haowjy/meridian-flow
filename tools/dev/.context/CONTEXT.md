@@ -38,6 +38,12 @@ once in one worktree. `pnpm test:all` runs unit and DB projects together; its DB
 reporter rejects a run with no passed or failed DB test, so a unit-only result
 is not combined-run evidence.
 
+The DB Vitest config refuses to run unless `RUN_DB_TESTS=1` and a throwaway
+`DATABASE_URL` are set. A managed run migrates a template database from empty
+and clones one database per worker from it. Managed names carry the owner's PID
+for GC, and `test-run-`, `test-manual-` and `migrations_` are reserved
+worktree-slug prefixes, so a worktree database can't pass for a managed one.
+
 `pnpm check` ends with `check-db-gate.ts`: it skips loudly only when the
 configured Postgres server is absent or unreachable (the static CI job has no
 database service), and otherwise runs the full managed `pnpm test:db` suite and
