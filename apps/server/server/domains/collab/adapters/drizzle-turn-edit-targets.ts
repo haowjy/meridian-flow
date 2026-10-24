@@ -69,7 +69,8 @@ export async function readTurnEditTargets(
         query.documentIds ? inArray(documentEdits.documentId, query.documentIds) : undefined,
         sql`NOT EXISTS (
           SELECT 1 FROM document_edits AS materialized
-          WHERE materialized.tree_change->>'materializes' = ${documentEdits.id}::text
+          WHERE materialized.document_id = ${documentEdits.documentId}
+            AND materialized.tree_change->>'materializes' = ${documentEdits.id}::text
         )`,
       ),
     )
