@@ -9,7 +9,12 @@
  */
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
-import type { ContextOperationReceipt, ProjectChatFeedPage } from "@meridian/contracts/protocol";
+import type {
+  ContextOperationReceipt,
+  ProjectChatFeedPage,
+  RestoreContextDocumentsRequest,
+  RestoreContextDocumentsResponse,
+} from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
   apiProjectChatFeedPath,
@@ -66,40 +71,6 @@ type RequestInitOptions = {
   headers?: HeadersInit;
   keepalive?: boolean;
   signal?: AbortSignal;
-};
-
-// Temporary local mirror of the restore contract. The server lane will move these DTOs and
-// the route builder into @meridian/contracts; this import is the only swap needed after merge.
-export type RestoreContextDocumentsRequest = {
-  documents: Array<{
-    documentId: string;
-    removal: { time: string; locationVersion: string };
-  }>;
-};
-
-export type RestoreContextDocumentResult = {
-  documentId: string;
-  outcome: "restored" | "superseded" | "already_living" | "ancestor_taken" | "refused";
-  landedAt?: string;
-};
-
-export type RestoreContextDocumentsResponse = {
-  documents: RestoreContextDocumentResult[];
-};
-
-export type DeleteRestoreOperationReceipt = {
-  operationId: string;
-  command: { kind: "delete" };
-  result:
-    | {
-        ok: true;
-        value: {
-          status: "deleted";
-          removed: RestoreContextDocumentsRequest["documents"];
-          availabilityGeneration: string;
-        };
-      }
-    | { ok: false };
 };
 
 function urlFor(path: string, init?: RequestInitOptions): string {
@@ -402,18 +373,6 @@ export async function getContextOperationReceipt(
   init?: RequestInitOptions,
 ): Promise<ContextOperationReceipt | null> {
   const result = await getJson<{ receipt: ContextOperationReceipt | null }>(
-    urlFor(apiProjectContextOperationPath(projectId, operationId), init),
-    { headers: init?.headers, signal: init?.signal },
-  );
-  return result.receipt;
-}
-
-export async function getDeleteRestoreOperationReceipt(
-  projectId: string,
-  operationId: string,
-  init?: RequestInitOptions,
-): Promise<DeleteRestoreOperationReceipt | null> {
-  const result = await getJson<{ receipt: DeleteRestoreOperationReceipt | null }>(
     urlFor(apiProjectContextOperationPath(projectId, operationId), init),
     { headers: init?.headers, signal: init?.signal },
   );
