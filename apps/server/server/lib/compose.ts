@@ -867,6 +867,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     readChainPermission: ports.readChainPermission,
     shownLinks: ports.shownLinks,
     documentRemovals: ports.documentRemovals,
+    documentTrash: ports.documentTrash,
   };
   for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
