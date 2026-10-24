@@ -1,3 +1,11 @@
+/**
+ * Tests policy behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - File lifecycle and scheme access exceptions (kb/decisions/documents/access/file-access-policy.md)
+ * - Draft routing and Work caps
+ * - Skill admission channels (kb/decisions/agents/tools/skills-as-files.md)
+ */
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { describe, expect, it } from "vitest";
 import { decide, type NodeGrant, skillLevel } from "./policy.js";
