@@ -695,13 +695,13 @@ function ReadableProjectDestination({
   }, []);
   const queryClient = useQueryClient();
   const navigateTrash = useCallback(
-    (trash: false | true | string) => {
+    (trash: false | true | string, options?: { replace?: boolean }) => {
       const current = router.history.location;
       const query = new URLSearchParams(current.search);
       if (trash) query.set("trash", String(trash));
       else query.delete("trash");
       const search = query.toString();
-      router.history.push(
+      router.history[options?.replace ? "replace" : "push"](
         `${current.pathname}${search ? `?${search}` : ""}${current.hash}`,
         current.state,
       );

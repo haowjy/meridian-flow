@@ -1,11 +1,8 @@
 /** Shared restore command for the Trash list and read-only Trash view. */
-import { t } from "@lingui/core/macro";
 import type { DocumentTrashEntry, ListDocumentTrashResponse } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 import { restoreContextDocuments } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { announce } from "@/client/stores";
-import { documentLocationName } from "../../chat/document-display-name";
 
 export type TrashRestoreOutcome =
   | { kind: "living"; landedAt?: string }
@@ -37,8 +34,6 @@ export async function restoreTrashedDocument(
       queryKey: projectQueryKeys.trashedDocument(projectId, entry.documentId),
       exact: true,
     });
-    if (result.outcome === "restored" && result.landedAt)
-      announce(t`Restored at ${documentLocationName(result.landedAt)}.`);
     return {
       kind: "living",
       ...(result.outcome === "restored" && result.landedAt ? { landedAt: result.landedAt } : {}),
