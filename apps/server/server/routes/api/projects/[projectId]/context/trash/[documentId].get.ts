@@ -15,6 +15,10 @@ export default defineEventHandler(async (event): Promise<GetDocumentTrashRespons
   ) as DocumentId;
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
   const document = await app.documentTrash.read(projectId, documentId);
-  if (!document) throw createError({ statusCode: 404, statusMessage: "Document not in trash" });
+  if (!document) {
+    if (await app.documentTrash.wasPurged(projectId, documentId))
+      throw createError({ statusCode: 410, statusMessage: "Document no longer available" });
+    throw createError({ statusCode: 404, statusMessage: "Document not in trash" });
+  }
   return document;
 });

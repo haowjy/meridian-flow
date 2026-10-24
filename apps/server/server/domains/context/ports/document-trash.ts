@@ -18,6 +18,8 @@ export type DocumentTrash = {
   list(projectId: ProjectId): Promise<readonly DocumentTrashEntry[]>;
   /** Reads one restorable removal and its last settled text. */
   read(projectId: ProjectId, documentId: DocumentId): Promise<GetDocumentTrashResponse | null>;
+  /** Whether a missing trash entry belonged here and has since been permanently purged. */
+  wasPurged(projectId: ProjectId, documentId: DocumentId): Promise<boolean>;
   /** Permanently releases the content of eligible deleted documents. */
   purge(): Promise<number>;
 };

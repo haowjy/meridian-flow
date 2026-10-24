@@ -57,7 +57,7 @@ the text it found or a block hash from that read.
 6. **Pending rows and the notice.** Script `move` ch1 → ch1-old, `delete` ch3, `move` ch5 →
    ch6, `move` ch4 → ch5, then (next reply) a `replace` in ch1-old. The live tree keeps ch1 to
    ch5. The dock and Work page Files list "ch1: renaming to ch1-old" with the text change
-   under it, "ch3: deleting", "ch4: renaming to ch5", and "ch5: renaming to ch6", each with
+   under it, "ch3: Deleted", "ch4: renaming to ch5", and "ch5: renaming to ch6", each with
    Discard and Apply. Open live ch1: the
    identity row reads "Ascension is renaming this to ch1-old." (at 390 px, "Pending rename",
    its popover the sentence); ch3 reads "Ascension is deleting this.". The prose doesn't move.

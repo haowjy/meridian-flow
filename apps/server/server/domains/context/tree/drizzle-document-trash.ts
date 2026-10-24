@@ -12,6 +12,7 @@ import {
   works,
 } from "@meridian/database/schema";
 import { and, asc, desc, eq, gt, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import { createObjectRelease, type ObjectStorePort } from "../../storage/index.js";
@@ -22,15 +23,33 @@ import { loadDocumentAddresses } from "./tree-addresses.js";
 import { pendingDocuments } from "./tree-view-sql.js";
 
 const DOCUMENT_PURGE_BATCH_LIMIT = 100;
+const sourceProjects = alias(projects, "document_trash_source_projects");
+const requestProjects = alias(projects, "document_trash_request_projects");
+
+/** The one lifecycle gate shared by trash reads and both stages of purge. */
+function trashEligible() {
+  return sql<boolean>`${isNotNull(documents.deletedAt)}
+    AND ${eq(documents.deletionReason, "deleted")}
+    AND ${eq(documents.hidden, false)}
+    AND ${isNull(documents.deletedByWorkId)}
+    AND ${isNull(documents.contentPurgedAt)}
+    AND ${isNull(contextSources.deletedAt)}
+    AND ${isNull(sourceProjects.deletedAt)}`;
+}
+
+/** A project owns its own sources plus its account's personal user:// source. */
+function projectTrashMember() {
+  return sql<boolean>`${eq(sourceProjects.id, requestProjects.id)}
+    OR (${eq(contextSources.slug, "user")}
+      AND ${eq(sourceProjects.userId, requestProjects.userId)})`;
+}
 
 export function createDrizzleDocumentTrash(deps: {
   db: Database;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
   drafts: DocumentPurgeDraftDisposal;
-  now?: () => Date;
 }): DocumentTrash {
-  const now = deps.now ?? (() => new Date());
   const objects = createObjectRelease({
     objectStore: deps.objectStore,
     onFailure(key, error) {
@@ -57,20 +76,16 @@ export function createDrizzleDocumentTrash(deps: {
       .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
       .leftJoin(works, eq(works.id, contextSources.workId))
       .innerJoin(
-        projects,
-        eq(projects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
+        sourceProjects,
+        eq(sourceProjects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
       )
+      .innerJoin(requestProjects, eq(requestProjects.id, projectId))
       .where(
         and(
-          eq(projects.id, projectId),
+          projectTrashMember(),
+          isNull(requestProjects.deletedAt),
           documentId ? eq(documents.id, documentId) : undefined,
-          isNotNull(documents.deletedAt),
-          eq(documents.deletionReason, "deleted"),
-          eq(documents.hidden, false),
-          isNull(documents.deletedByWorkId),
-          isNull(documents.contentPurgedAt),
-          isNull(contextSources.deletedAt),
-          isNull(projects.deletedAt),
+          trashEligible(),
         ),
       )
       .orderBy(desc(documents.deletedAt), desc(documents.id));
@@ -85,6 +100,25 @@ export function createDrizzleDocumentTrash(deps: {
       loadDocumentAddresses(deps.db, { ids }),
       readRemovalRecords(tx, ids),
     ]);
+    const held = new Map<DocumentId, Array<{ id: string; name: string }>>();
+    if (ids.length) {
+      const pending = await tx.execute<{ document_id: string; id: string; name: string }>(sql`
+        SELECT DISTINCT p.document_id::text, w.id::text, w.name
+        FROM (${pendingDocuments(
+          sql`SELECT ${branches.id} FROM ${branches} WHERE ${branches.status} = 'active'`,
+        )}) p
+        JOIN ${branches} b ON b.id = p.branch_id
+        JOIN ${works} w ON w.id = b.origin_work_id
+        WHERE p.document_id IN (${sql.join(ids, sql`, `)})
+        ORDER BY p.document_id::text, w.name, w.id::text
+      `);
+      for (const row of pending) {
+        const documentId = row.document_id as DocumentId;
+        const retaining = held.get(documentId) ?? [];
+        retaining.push({ id: row.id, name: row.name });
+        held.set(documentId, retaining);
+      }
+    }
     const addressesById = new Map(addresses.map((address) => [address.documentId, address]));
 
     return result.flatMap((row): DocumentTrashEntry[] => {
@@ -103,8 +137,9 @@ export function createDrizzleDocumentTrash(deps: {
             locationVersion: row.locationVersion,
           }),
           actor: record.actor,
-          deletedAt: record.time,
-          purgeAt: deletionPurgeAt(row.deletedAt).toISOString(),
+          retention: held.has(documentId)
+            ? { kind: "held", works: held.get(documentId) ?? [] }
+            : { kind: "scheduled", purgeAt: deletionPurgeAt(row.deletedAt).toISOString() },
         },
       ];
     });
@@ -121,19 +156,14 @@ export function createDrizzleDocumentTrash(deps: {
           .select({
             deletedAt: documents.deletedAt,
             storageUrl: documents.storageUrl,
-            eligible: sql<boolean>`${documents.deletionReason} = 'deleted'
-              AND NOT ${documents.hidden}
-              AND ${documents.deletedByWorkId} IS NULL
-              AND ${documents.contentPurgedAt} IS NULL
-              AND ${contextSources.deletedAt} IS NULL
-              AND ${projects.deletedAt} IS NULL`,
+            eligible: trashEligible(),
           })
           .from(documents)
           .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
           .leftJoin(works, eq(works.id, contextSources.workId))
           .innerJoin(
-            projects,
-            eq(projects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
+            sourceProjects,
+            eq(sourceProjects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
           )
           .where(eq(documents.id, documentId));
         if (!row?.eligible || !row.deletedAt || row.deletedAt.getTime() > cutoff.getTime()) {
@@ -152,7 +182,7 @@ export function createDrizzleDocumentTrash(deps: {
 
         await disposeDrafts();
         await releaseDocumentStorage(deps.db, [documentId], { retainHistory: false });
-        const purgedAt = now();
+        const purgedAt = new Date();
         const updated = await tx
           .update(documents)
           .set({
@@ -191,8 +221,30 @@ export function createDrizzleDocumentTrash(deps: {
         .limit(1);
       return { ...entry, markdown: projection?.markdown ?? "" };
     },
+    async wasPurged(projectId, documentId): Promise<boolean> {
+      const [row] = await currentDrizzleDb(deps.db)
+        .select({ id: documents.id })
+        .from(documents)
+        .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+        .leftJoin(works, eq(works.id, contextSources.workId))
+        .innerJoin(
+          sourceProjects,
+          eq(sourceProjects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
+        )
+        .innerJoin(requestProjects, eq(requestProjects.id, projectId))
+        .where(
+          and(
+            eq(documents.id, documentId),
+            projectTrashMember(),
+            isNull(requestProjects.deletedAt),
+            isNotNull(documents.contentPurgedAt),
+          ),
+        )
+        .limit(1);
+      return row !== undefined;
+    },
     async purge(): Promise<number> {
-      const cutoff = deletionPurgeCutoff(now());
+      const cutoff = deletionPurgeCutoff(new Date());
       let count = 0;
       let after: { id: DocumentId; deletedAt: Date } | undefined;
       while (count < DOCUMENT_PURGE_BATCH_LIMIT) {
@@ -205,19 +257,13 @@ export function createDrizzleDocumentTrash(deps: {
           .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
           .leftJoin(works, eq(works.id, contextSources.workId))
           .innerJoin(
-            projects,
-            eq(projects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
+            sourceProjects,
+            eq(sourceProjects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
           )
           .where(
             and(
-              isNotNull(documents.deletedAt),
               lte(documents.deletedAt, cutoff),
-              eq(documents.deletionReason, "deleted"),
-              eq(documents.hidden, false),
-              isNull(documents.deletedByWorkId),
-              isNull(documents.contentPurgedAt),
-              isNull(contextSources.deletedAt),
-              isNull(projects.deletedAt),
+              trashEligible(),
               after
                 ? or(
                     gt(documents.deletedAt, after.deletedAt),
