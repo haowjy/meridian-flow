@@ -32,7 +32,7 @@ const TEST_FILE = /\.test\./;
 // The escape hatch for UI-file diffs that change no pixels (pure refactors,
 // type-only churn). Writing it is a reviewable claim, not a free pass.
 const NO_VISUAL_CLAIM = /no visual change/i;
-const IMAGE = /!\[[^\]]*\]\([^)]+\)|<img\s/;
+const IMAGE = /!\[[^\]]*\](?:\([^)]+\)|\[[^\]]+\])|<img\s/;
 
 const template = readFileSync(TEMPLATE_PATH, "utf8");
 const headings = template
