@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
     await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
     return serializeTransport(
       await getProjectChatFeedPage({
-        repository: app.repos.chatFeed,
+        repository: app.threadRepos.chatFeed,
         works: app.workRepo,
         projectId,
         userId: user.userId,
