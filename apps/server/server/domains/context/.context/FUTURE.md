@@ -22,3 +22,13 @@ name predicate can still scan a project's Works on explicit Scratch receipts.
 Measure query plans at representative Work counts before changing it. If material,
 index one shared normalized-name key; keep corrections and labels in the existing
 owner resolver, without adding address aliases.
+
+## Document purge cleanup and sweep cost
+
+Object-store deletion runs after a document purge commits. A failed object deletion is logged
+but is not retried, because the document no longer enters a later purge sweep. Add durable retry
+ownership before treating physical object erasure as guaranteed.
+
+The purge batch bounds completed purges, not inspected candidates. Documents held by pending Work
+changes can make each sweep scan the full overdue backlog. Measure that backlog before changing the
+query or adding a held-candidate cursor.

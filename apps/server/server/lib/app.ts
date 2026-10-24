@@ -22,7 +22,7 @@ const CHANGE_TRAIL_POLL_MS = 1_000;
 const SYSTEM_UPDATE_SWEEP_MS = 1_000;
 /** A draft badge a crash left stale converges within this, without another key (design §3.5). */
 const DRAFT_EFFECT_SWEEP_MS = 30_000;
-const WORK_PURGE_INTERVAL_MS = 60 * 60 * 1_000;
+const RETENTION_PURGE_INTERVAL_MS = 60 * 60 * 1_000;
 const WAKE_SWEEP_INTERVAL_MS = resolveWakeSweepIntervalMs(process.env.WAKE_SWEEP_INTERVAL_MS);
 
 let initPromise: Promise<AppServices> | undefined;
@@ -48,10 +48,10 @@ async function createAppServices(): Promise<AppServices> {
     [
       { name: "wake-scan", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.scanWakes },
       { name: "orphan-repair", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.repairOrphans },
-      { name: "work-purge", delayMs: WORK_PURGE_INTERVAL_MS, run: app.recovery.purgeWorks },
+      { name: "work-purge", delayMs: RETENTION_PURGE_INTERVAL_MS, run: app.recovery.purgeWorks },
       {
         name: "document-purge",
-        delayMs: WORK_PURGE_INTERVAL_MS,
+        delayMs: RETENTION_PURGE_INTERVAL_MS,
         run: app.recovery.purgeDocuments,
       },
       {

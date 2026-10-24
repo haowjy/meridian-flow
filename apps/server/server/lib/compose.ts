@@ -1485,6 +1485,9 @@ export function createInMemoryAppServices(): AppServices {
       async read() {
         return null;
       },
+      async wasPurged() {
+        return false;
+      },
       async purge() {
         return 0;
       },
