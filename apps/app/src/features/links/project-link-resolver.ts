@@ -26,6 +26,7 @@ import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/conte
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
 import { resolveDocumentLinks } from "@/client/api/document-links-api";
+import { getDocumentTrash } from "@/client/api/projects-api";
 import {
   type DocumentAnswer,
   type InternalLinkResolver,
@@ -64,7 +65,10 @@ export type LinkResolutionScope = {
   holderDocumentId?: string | null;
 };
 
-const GONE: LinkAnswer = Object.freeze({ state: "gone", document: null });
+const GONE: Extract<LinkAnswer, { state: "gone" }> = Object.freeze({
+  state: "gone",
+  document: null,
+});
 const MISSING: LinkAnswer = Object.freeze({ state: "missing", document: null });
 const UNASKED: LocalLinkAnswer = Object.freeze({ kind: "unasked" });
 
@@ -118,13 +122,26 @@ export function createProjectLinkResolver(
       });
       if (response.answers.length !== questions.length)
         throw new Error("link resolution answered out of shape");
+      const needsTrash = response.answers.some(
+        (answer, at) => answer?.state === "gone" && !directDocumentId(questions[at]?.ref ?? null),
+      );
+      const trash = needsTrash
+        ? await getDocumentTrash(projectId).then(
+            ({ documents }) => documents,
+            () => [],
+          )
+        : [];
       return response.answers.map((answer, at) => {
         if (!answer) return null;
-        const ahead = parseLinkRef(questions[at]?.ref);
+        const question = questions[at];
+        const ahead = parseLinkRef(question?.ref);
         const settledOn = settlementOf(answer);
         if (ahead?.kind === "ahead" && settledOn !== undefined)
           memo.learn(ahead.aheadId, settledOn);
-        return serverAnswer(answer);
+        return serverAnswer(
+          answer,
+          question ? trashedDocumentAt(question, baseUri, trash) : undefined,
+        );
       });
     },
   };
@@ -135,7 +152,27 @@ export function createProjectLinkResolver(
  * server could not ask the question, which is not "nothing there", so it never
  * draws dashed or offers Create.
  */
-function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
+function directDocumentId(ref: string | null): string | null {
+  const parsed = parseLinkRef(ref);
+  return parsed?.kind === "doc" ? parsed.documentId : null;
+}
+
+function trashedDocumentAt(
+  question: { ref: string | null; target: import("@/core/editor/links").LinkTarget },
+  baseUri: string | null,
+  trash: Awaited<ReturnType<typeof getDocumentTrash>>["documents"],
+): string | undefined {
+  if (directDocumentId(question.ref)) return undefined;
+  const address = linkTargetAddress(question.target, baseUri);
+  const parsed = address ? parseContextUri(address) : null;
+  if (!parsed?.ok) return undefined;
+  const matches = trash.filter(
+    (entry) => entry.scheme === parsed.value.scheme && entry.formerPath === parsed.value.path,
+  );
+  return matches.length === 1 ? matches[0]?.documentId : undefined;
+}
+
+function serverAnswer(answer: DocumentLinkAnswer, trashedDocumentId?: string): LinkAnswer | null {
   switch (answer.state) {
     case "document": {
       const { document } = answer;
@@ -152,7 +189,7 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
         : found;
     }
     case "gone":
-      return GONE;
+      return trashedDocumentId ? { ...GONE, trashedDocumentId } : GONE;
     case "missing":
       return MISSING;
     case "unresolvable":
