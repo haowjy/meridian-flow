@@ -22,7 +22,6 @@ type AfterRestore = (
 
 type RestoreContextValue = {
   states: ReadonlyMap<string, TrashRestoreState>;
-  restoring: boolean;
   restore: (entry: DocumentTrashEntry, afterRestore?: AfterRestore) => void;
 };
 
@@ -40,10 +39,6 @@ export function DocumentTrashRestoreProvider({
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState<RestoredNotice | null>(null);
   const [states, setStates] = useState<ReadonlyMap<string, TrashRestoreState>>(() => new Map());
-  const restoring = useMemo(
-    () => [...states.values()].some((state) => state.kind === "restoring"),
-    [states],
-  );
   const restore = useCallback(
     (entry: DocumentTrashEntry, afterRestore?: AfterRestore) => {
       if (states.get(entry.documentId)?.kind === "restoring") return;
@@ -94,7 +89,7 @@ export function DocumentTrashRestoreProvider({
     },
     [projectId, queryClient, states],
   );
-  const value = useMemo(() => ({ states, restoring, restore }), [states, restoring, restore]);
+  const value = useMemo(() => ({ states, restore }), [states, restore]);
   return (
     <RestoreContext.Provider value={value}>
       {children}
