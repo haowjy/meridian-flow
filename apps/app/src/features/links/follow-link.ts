@@ -8,10 +8,11 @@
  * own destination and host rather than by writing a second follow.
  */
 
-import { draftItemKey, parseLinkRef } from "@meridian/contracts";
+import { draftItemKey } from "@meridian/contracts";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import {
   type DocumentAnswer as DocumentEntry,
+  goneLinkDocumentId,
   type LinkAnswerCache,
   type LinkFollowDisposition,
   type LinkFollowOutcome,
@@ -129,7 +130,7 @@ export async function followProjectLink({
   if (known?.state === "gone") {
     settle();
     reporter.clear();
-    const documentId = directDocumentId(ref);
+    const documentId = goneLinkDocumentId(known, link);
     // Trash is one routed auxiliary surface, not an Editor tab. A modified
     // follow therefore opens that surface instead of inventing a background tab.
     if (documentId) await open({ documentId, trashed: true }, "current");
@@ -148,7 +149,7 @@ export async function followProjectLink({
 
   if (entry?.state === "gone") {
     reporter.clear();
-    const documentId = directDocumentId(ref);
+    const documentId = goneLinkDocumentId(entry, link);
     if (documentId) await open({ documentId, trashed: true }, "current");
     return;
   }
@@ -162,11 +163,6 @@ export async function followProjectLink({
     return;
   }
   reporter.report(outcome("missing"));
-}
-
-function directDocumentId(ref: string | null): string | null {
-  const parsed = parseLinkRef(ref);
-  return parsed?.kind === "doc" ? parsed.documentId : null;
 }
 
 function documentRef(found: DocumentEntry): LinkDocumentRef {
