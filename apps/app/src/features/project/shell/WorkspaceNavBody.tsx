@@ -30,6 +30,8 @@ export type WorkspaceNavBodyProps = {
   children?: ReactNode;
   /** The chat's Scratch section, pinned above the account row. */
   scratch?: ReactNode;
+  /** A move's notice: it takes height from the body above, so nothing shifts or is covered. */
+  notice?: ReactNode;
 };
 
 export function WorkspaceNavBody({
@@ -38,6 +40,7 @@ export function WorkspaceNavBody({
   presentation,
   children,
   scratch,
+  notice,
 }: WorkspaceNavBodyProps) {
   const phone = presentation === "phone";
   const failed = useRailSwitchFailed();
@@ -69,6 +72,7 @@ export function WorkspaceNavBody({
       </div>
 
       <div className={cn("min-h-0 flex-1", !phone && "min-h-[120px]")}>{children}</div>
+      {notice}
 
       {/* The Scratch section draws its own divider, so none shows with no chat on screen. */}
       {scratch}

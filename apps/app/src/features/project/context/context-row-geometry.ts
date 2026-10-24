@@ -9,6 +9,12 @@ export const contextTreeRowGrowClassName =
   "min-h-8 [@media(hover:none)]:min-h-11 [@media(pointer:coarse)]:min-h-11";
 
 /**
+ * A row in an explicit selection: a lighter tint of the open row's fill, so the
+ * open row stays findable inside a selection.
+ */
+export const contextTreeSelectedRowClassName = "bg-sidebar-accent/65";
+
+/**
  * A file row's frame: the tree's own rows, the right rail's Recent rows and the
  * left rail's Scratch rows wear it, so height, padding, text and the hover and selected
  * fills cannot drift apart. Hover is inactive-only: the active row keeps its
@@ -19,7 +25,11 @@ export function contextTreeFileRowClassName(active: boolean, selected = false): 
     "group mx-2 flex items-center rounded-md pr-1 text-sm text-foreground",
     contextTreeRowGrowClassName,
     active && "font-medium",
-    active || selected ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/50",
+    active
+      ? "bg-sidebar-accent"
+      : selected
+        ? contextTreeSelectedRowClassName
+        : "hover:bg-sidebar-accent/50",
   );
 }
 

@@ -201,7 +201,8 @@ is just the open row, shown by the open row's own highlight. Ctrl/Cmd-click
 starts an explicit selection from the open row and adds or removes rows;
 Shift-click selects the on-screen range from the last clicked row, read from the
 DOM (`data-entry-key`) so it always matches what is visible; Escape returns to
-the open row. Only explicit selections get the selection fill.
+the open row. Only explicit selections get the selection fill, a lighter tint of
+the open row's fill, so the open row stays findable inside a selection.
 
 Dragging a selected row carries the selection in screen order, minus rows inside
 a selected folder; dragging an unselected row carries only it. A row drags only
@@ -223,9 +224,20 @@ placed before it in the same drop, so `execute-move.ts` places rows one at a
 time; the server decides the final name. A drop moves every carried row through
 `move-entry.ts` (`execute-move.ts`), reselects them, reveals the destination (the target's
 own `reveal`, the same one the spring calls) and shows "Moved chapter-3 to Act
-2." (or "Moved chapter-3 to Act 2 as chapter-3 (2).") with Undo on the surface that took the drop (`MoveNotice` in that surface's
-`MoveNoticeHost`: the sidebar foot, or under Work Files, which stays visible
-with the sidebar collapsed). A project keeps only its latest result, as data.
+2." (or "Moved chapter-3 to Act 2 as chapter-3 (2).") with Undo on the surface
+that took the drop (`MoveNotice` in that surface's `MoveNoticeHost`: in the
+rail between the Files tree and Scratch, or under Work Files, which stays
+visible with the sidebar collapsed). The notice is part of the surface's
+layout: it takes height from the tree's scroll area and never covers a
+control. It stays until the next move, Dismiss, or the project changing, so
+Undo is never a race. A host keeps only its latest result, as data.
+
+Move… inside a list ends the same way: `EntryMovePicker` places through
+`move-entry.ts`, then reports to its list (`useReportMove`), which selects the
+moved row and publishes the same notice and Undo. Move… does not reveal a
+collapsed destination (expansion belongs to each section); moving the open
+document reveals it through the active-document reveal. Outside a list (the
+phone browser, the chat's Files menu) Move… reports nothing beyond the row.
 
 Placement is optimistic, exactly as for Move…: each placement's operation is
 remembered, so the row's link-update note follows its receipt and a later server

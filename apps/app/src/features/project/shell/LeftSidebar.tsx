@@ -51,10 +51,10 @@ type LeftSidebarProps = {
   onCollapse: () => void;
 };
 
-/** Drops anywhere in the rail report at its foot. */
+/** Moves anywhere in the rail report between the tree and Scratch; a project's notice leaves with it. */
 export function LeftSidebar(props: LeftSidebarProps) {
   return (
-    <MoveNoticeHost>
+    <MoveNoticeHost key={props.projectId}>
       <LeftSidebarRail {...props} />
     </MoveNoticeHost>
   );
@@ -130,6 +130,7 @@ function LeftSidebarRail({
         activeScreen={activeScreen}
         onSelectScreen={onSelectScreen}
         presentation="desktop"
+        notice={<MoveNotice className="mx-2 my-1.5 shrink-0" />}
         scratch={
           <RailScratchSection
             projectId={projectId}
@@ -151,7 +152,6 @@ function LeftSidebarRail({
           />
         ) : null}
       </WorkspaceNavBody>
-      <MoveNotice className="absolute inset-x-2 bottom-2" />
       <DragHint />
     </nav>
   );

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useAccountResourceReplica } from "./account-feature-context";
 import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
+import { useReportMove } from "./entry-drag/use-entry-list";
 import {
   destinationParent,
   type MoveDestination,
@@ -58,6 +59,7 @@ function OpenMovePicker({
   rowRef,
 }: Omit<EntryMovePickerProps, "children"> & { rowRef: RefObject<HTMLDivElement | null> }) {
   const resources = useAccountResourceReplica();
+  const reportMove = useReportMove();
   const { works, noWork } = useWorks(projectId);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -101,7 +103,7 @@ function OpenMovePicker({
     try {
       const parent = destinationParent(destination, works, noWork);
       if (!parent) throw new Error(unavailable);
-      const { operationId } = await placeEntry(
+      const placed = await placeEntry(
         resources,
         projectId,
         entry,
@@ -109,7 +111,17 @@ function OpenMovePicker({
         destination.catalog.children(destination.entryId),
         name,
       );
-      if (operationId) onMoved(operationId);
+      if (placed.operationId) onMoved(placed.operationId);
+      // In a list, Move… ends like a drop: the row selected and the notice with Undo.
+      const current = currentParentId ? source.folderFor(currentParentId) : null;
+      const before = current ? destinationParent(current, works, noWork) : null;
+      const ref = { kind: entry.kind, id: entry.id };
+      if (reportMove && before)
+        reportMove(
+          { moved: [{ entry: ref, name: placed.name, before, after: parent }], failed: [] },
+          folder.name,
+          [{ ref, name }],
+        );
       onOpenChange(false);
     } catch {
       setError(unavailable);
