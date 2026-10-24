@@ -8,7 +8,7 @@
  * own destination and host rather than by writing a second follow.
  */
 
-import { draftItemKey } from "@meridian/contracts";
+import { draftItemKey, parseLinkRef } from "@meridian/contracts";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import {
   type DocumentAnswer as DocumentEntry,
@@ -124,6 +124,13 @@ export async function followProjectLink({
   // The common case: the link was resolved to draw it, so following is
   // instant and nothing is ever shown.
   const known = resolution.read(link);
+  if (known?.state === "gone") {
+    settle();
+    reporter.clear();
+    const documentId = directDocumentId(ref);
+    if (documentId) await open({ documentId }, gesture);
+    return;
+  }
   if (known?.state === "document") {
     settle();
     reporter.clear();
@@ -137,6 +144,8 @@ export async function followProjectLink({
 
   if (entry?.state === "gone") {
     reporter.clear();
+    const documentId = directDocumentId(ref);
+    if (documentId) await open({ documentId }, gesture);
     return;
   }
   if (entry?.state === "document") {
@@ -149,6 +158,11 @@ export async function followProjectLink({
     return;
   }
   reporter.report(outcome("missing"));
+}
+
+function directDocumentId(ref: string | null): string | null {
+  const parsed = parseLinkRef(ref);
+  return parsed?.kind === "doc" ? parsed.documentId : null;
 }
 
 function documentRef(found: DocumentEntry): LinkDocumentRef {

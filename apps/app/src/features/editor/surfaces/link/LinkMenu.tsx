@@ -36,6 +36,7 @@ import { useState } from "react";
 import {
   canFollowLink,
   followLink,
+  goneLinkDocumentId,
   type LinkMenuRequest,
   type LinkSurface,
   linkMenuRange,
@@ -80,7 +81,9 @@ export function LinkMenu({
         ? linkTargetLabel(menu.target)
         : menu.href;
   // A gone link goes nowhere, so the menu has no Open verb for it (law 5).
-  const followable = canFollowLink(menu.target, surface.navigator) && resolution?.state !== "gone";
+  const followable =
+    canFollowLink(menu.target, surface.navigator) &&
+    (resolution?.state !== "gone" || Boolean(goneLinkDocumentId(resolution, { ref: menu.ref })));
   // A refusal is remembered for as long as this menu is open: the row greys
   // where the writer pressed it, in the same words the clipboard block below
   // uses. The next open asks the browser again, because capability can come
