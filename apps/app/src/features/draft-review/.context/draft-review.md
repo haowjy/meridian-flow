@@ -269,9 +269,11 @@ or delete the server already settled (#763): the owner ends the text notice at
 once (the accepted write keeps its paint opportunity, then releases its room), and
 the surface shows "Discarded" without Undo.
 
-The move or delete is a row of its own, the item's tree line (`tree-line.ts`):
-a `ReviewChange` with no frame and `tree` set, listed before the text changes
-(`listedItemChanges`). A selection's target says whether the line is in it
+The move is a row of its own, the item's tree line (`tree-line.ts`): a
+`ReviewChange` with no frame and `tree` set, listed before the text changes
+(`listedItemChanges`). A delete instead supersedes the text rows: the dock and
+Work Files show one Deleted row, while an open review presents its tree command
+in `DraftedDeleteNotice`. A selection's target says whether the line is in it
 (`{ kind: "tree" }` alone, `groups.tree` beside text groups), so the line's
 Apply sends only the tree cut and its Discard drops only the move or delete,
 keeping the text. A tree-only item needs no room, so Work Files shows its line

@@ -39,6 +39,8 @@ it never partitions the text.
 - Components own layout, receive command callbacks, and keep attribution and controls
   on one line; locked rows offer no disposition controls. `PaintHold` owns pane
   continuity; feedback never displaces prose.
+- A drafted delete is one document-level disposition, not a set of text changes. Its
+  open review uses the top banner; Work Files and the dock keep one Deleted row.
 - A draft's failure shows once per surface: the focused change's bar while it
   shows, else the identity row's notices (`useReviewFailures`); a file's status
   line (`DraftCommandStatus`) in Work Files and the dock, never its rows. The

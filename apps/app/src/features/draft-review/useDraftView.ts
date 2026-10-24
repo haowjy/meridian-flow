@@ -1,4 +1,4 @@
-/** Listed rows retain their room even without an editor and share its projection with open review. */
+/** Listed text rows retain their room without an editor; document-only rows need no room. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
@@ -23,7 +23,9 @@ export function useDraftView(
 ): DraftChangesView {
   const owner = useDraftCommandOwner();
   const discarding = Boolean(owner.state(draft.itemKey).discarding);
-  const withoutText = item?.hasDraft === false;
+  // A delete's text projection is deliberately not part of review. Its tree
+  // command can run without opening the room, just like any other tree-only row.
+  const withoutText = item?.hasDraft === false || item?.tree?.deleted === true;
   const read = useRoomReview(enabled && !withoutText ? draft : null);
   const status = !enabled ? "idle" : withoutText ? "ready" : read.status;
   const changes =

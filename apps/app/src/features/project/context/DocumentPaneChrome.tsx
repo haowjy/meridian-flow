@@ -11,6 +11,7 @@ import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts
 import type { Work } from "@meridian/contracts/works";
 import type { ContextTab } from "@/client/stores";
 import { isDraftOnly } from "@/client/stores";
+import { DraftedDeleteNotice } from "@/features/draft-review/DraftedDeleteNotice";
 import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
@@ -69,6 +70,7 @@ export function DocumentPaneChrome({
           onOpenExisting={identity.onOpenExisting}
         />
       ) : null}
+      <DraftedDeleteNotice documentId={tab.documentId} />
       {/* Other Works' drafts of this document are discoverable wherever it is shown, live or in review. */}
       <DocumentDraftHint projectId={projectId} tab={tab} />
     </>

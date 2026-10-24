@@ -59,7 +59,7 @@ export function treeChange(
   };
 }
 
-/** "ch12: renaming to ch12-old", "ch13: deleting". */
+/** "ch12: renaming to ch12-old", "ch13: Deleted". */
 export function treeLineSentence(line: TreeLine): string {
   const { name } = line;
   switch (line.kind) {
@@ -68,7 +68,7 @@ export function treeLineSentence(line: TreeLine): string {
     case "move":
       return t`${name}: moving to ${line.place}`;
     case "delete":
-      return t`${name}: deleting`;
+      return t`${name}: Deleted`;
   }
 }
 
