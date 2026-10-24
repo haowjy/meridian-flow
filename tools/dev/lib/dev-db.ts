@@ -194,13 +194,24 @@ export async function ensureDatabaseForUrl(
   }
 }
 
-/** Clone a migrated local test database without replaying the migration chain. */
+/** A CI runner's own loopback Postgres: discarded with the runner, so test databases may be made on it. */
+export function isCiRunnerPostgres(databaseUrl: string): boolean {
+  if (process.env.CI !== "true") return false;
+  try {
+    const { hostname } = new URL(databaseUrl);
+    return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
+/** Clone a migrated test database without replaying the migration chain. */
 export async function cloneDatabaseForUrl(
   templateDatabaseUrl: string,
   targetDatabaseUrl: string,
 ): Promise<{ targetDb: string }> {
-  assertLocalDevPostgresEndpoint(templateDatabaseUrl, "clone test database");
-  assertLocalDevPostgresEndpoint(targetDatabaseUrl, "clone test database");
+  for (const url of [templateDatabaseUrl, targetDatabaseUrl])
+    if (!isCiRunnerPostgres(url)) assertLocalDevPostgresEndpoint(url, "clone test database");
   const template = parseTargetDatabase(templateDatabaseUrl);
   const target = parseTargetDatabase(targetDatabaseUrl);
   validateDbName(template.targetDb);
