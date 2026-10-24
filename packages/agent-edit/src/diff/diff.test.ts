@@ -1,6 +1,9 @@
 /**
 The diff core's named risks: word salad in review and partial
  * Apply or Discard that corrupts text. Seeded, so a failure replays.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Word-level review hunk cleanup and edit categorization
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Mark, Node as PMNode } from "prosemirror-model";

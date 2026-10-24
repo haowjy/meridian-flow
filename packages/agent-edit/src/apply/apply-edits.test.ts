@@ -1,3 +1,10 @@
+/**
+ * Tests apply edits behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Touched-block echo windows and weighted ordered matching
+ */
+
 import { weightedOrderedMatches } from "../ordered-matching.js";
 
 // Behavioral coverage for inline replacement, update replay fidelity, and echo.

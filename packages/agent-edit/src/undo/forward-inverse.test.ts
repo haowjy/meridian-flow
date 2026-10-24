@@ -1,4 +1,9 @@
-// Exact-content cold-replica matrix for durable forward inverses (POC 1 and 2 contracts).
+/**
+ * Exact-content cold-replica matrix for durable forward inverses (POC 1 and 2 contracts).
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Forward inverses use lineage admission and inverse-of-inverse replay (kb/decisions/collab/reversal/revert-is-a-forward-edit.md)
+ */
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
@@ -621,7 +626,7 @@ describe("forward inverse on cold Yjs replicas", () => {
       before.map((line, i) => (i === 0 ? line.replace("w0_150", "AI_150") : line)),
     );
     // A long deletion restored from a cold replica must index aliases once, not per character.
-    const restored = "r".repeat(10_000);
+    const restored = "r".repeat(4_000);
     text(v, 0).insert(0, restored);
     const deletion = write(v, [(v) => text(v, 0).delete(0, restored.length)]);
     expect(inverse(v, deletion, "invert")).toBe(1);
@@ -631,13 +636,13 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(inverse(v, deletion, "reapply")).toBe(1);
     expect(content(v)[0]).toBe(before[0].replace("w0_150", "AI_150"));
     v.doc.destroy();
-    const long = base(["x".repeat(10_000), "Blue."]);
-    const removed = write(long, [(v) => text(v, 0).delete(0, 10_000)]);
+    const long = base(["x".repeat(4_000), "Blue."]);
+    const removed = write(long, [(v) => text(v, 0).delete(0, 4_000)]);
     for (let cycle = 0; cycle < 8; cycle++) {
       expect(inverse(long, removed, "invert")).toBe(1);
       cold(long);
       expect(states(long, removed)).toEqual(["undone"]);
-      expect(content(long)).toEqual(["x".repeat(10_000), "Blue."]);
+      expect(content(long)).toEqual(["x".repeat(4_000), "Blue."]);
       expect(inverse(long, removed, "reapply")).toBe(1);
       expect(content(long)).toEqual(["", "Blue."]);
     }

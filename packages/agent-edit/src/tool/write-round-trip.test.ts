@@ -1,4 +1,9 @@
-// Writing a document's own exported Markdown back over it must change nothing.
+/**
+ * Writing a document's own exported Markdown back over it must change nothing.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - No-op writes retain the current envelope and receipt shape
+ */
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";

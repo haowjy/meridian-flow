@@ -4,6 +4,9 @@
  * applied while a change still holds it. Every row asserts byline and membership; the server suite checks real status.
  * Each row also runs on a gc-on reload of the draft, which has only what the draft itself carries (the
  * restoration links Undo recorded into it), and must give the same answer.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Conservative attribution when Apply evidence is unavailable
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
