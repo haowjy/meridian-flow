@@ -71,7 +71,10 @@ export function WorkspaceNavBody({
         ))}
       </div>
 
-      <div className={cn("min-h-0 flex-1", !phone && "min-h-[120px]")}>{children}</div>
+      {/* Scratch's resize handle measures this pane by its marker; a notice may sit between them. */}
+      <div data-rail-tree className={cn("min-h-0 flex-1", !phone && "min-h-[120px]")}>
+        {children}
+      </div>
       {notice}
 
       {/* The Scratch section draws its own divider, so none shows with no chat on screen. */}

@@ -118,9 +118,13 @@ function OpenMovePicker({
       const ref = { kind: entry.kind, id: entry.id };
       if (reportMove && before)
         reportMove(
-          { moved: [{ entry: ref, name: placed.name, before, after: parent }], failed: [] },
+          {
+            moved: [
+              { entry: ref, name: placed.name, previousName: entry.name, before, after: parent },
+            ],
+            failed: [],
+          },
           folder.name,
-          [{ ref, name }],
         );
       onOpenChange(false);
     } catch {

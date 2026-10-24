@@ -2988,6 +2988,12 @@ msgstr "Move…"
 msgid "Moved"
 msgstr "Moved"
 
+#. placeholder {0}: first.previousName
+#. placeholder {1}: first.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Moved {0} to {destinationName} as {1}."
+msgstr "Moved {0} to {destinationName} as {1}."
+
 #. placeholder {0}: first.name
 #: src/features/project/context/entry-drag/move-notice.tsx
 msgid "Moved {0} to {destinationName}."
@@ -2995,8 +3001,8 @@ msgstr "Moved {0} to {destinationName}."
 
 #. placeholder {0}: first.name
 #: src/features/project/context/entry-drag/move-notice.tsx
-msgid "Moved {requested} to {destinationName} as {0}."
-msgstr "Moved {requested} to {destinationName} as {0}."
+#~ msgid "Moved {requested} to {destinationName} as {0}."
+#~ msgstr "Moved {requested} to {destinationName} as {0}."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Moved {source} to"

@@ -171,8 +171,9 @@ the current parent for a new move. A retry opens at the refused destination
 when it still resolves (matching owner and full path), otherwise at the
 current parent with the refusal message. It disables files and the moved folder's subtree, and offers no
 commit at the area list. The current parent reads "Already in <folder>".
-Destination collisions use the inline-name validator before namespace admission;
-files keep their name through `setLocation`, folders through `setFolderLocation`.
+A taken name never refuses: the row arrives at the next free name (predicted
+from the destination's rows, decided by the server) through `setLocation` for
+files and `setFolderLocation` for folders.
 Catalog snapshots span areas, so menu lookups check source identity as well as
 entry identity; equal paths in different areas remain distinct destinations.
 
@@ -202,7 +203,10 @@ starts an explicit selection from the open row and adds or removes rows;
 Shift-click selects the on-screen range from the last clicked row, read from the
 DOM (`data-entry-key`) so it always matches what is visible; Escape returns to
 the open row. Only explicit selections get the selection fill, a lighter tint of
-the open row's fill, so the open row stays findable inside a selection.
+the open row's fill, so the open row stays findable inside a selection. The same
+modifiers with Enter or Space select from the keyboard, and a selected row
+reports `aria-pressed` (rows are buttons, not tree items, so that is the state
+they can carry).
 
 Dragging a selected row carries the selection in screen order, minus rows inside
 a selected folder; dragging an unselected row carries only it. A row drags only
@@ -243,9 +247,9 @@ Placement is optimistic, exactly as for Move…: each placement's operation is
 remembered, so the row's link-update note follows its receipt and a later server
 refusal lands on the row as its failure mark. A row the replica won't admit is
 named in the notice, and Undo still covers the rows that moved. Undo returns
-each row to its previous parent under its current name (the next free one if
-that name was taken since; the list that took the drop supplies the siblings), skips a row that moved
-again since or is gone (the writer's newer choice), and reads the replica as it
+each row to its previous parent (the next free name there if its own was taken
+since; the list that took the drop supplies the siblings), skips a row renamed
+or moved again since, or gone (the writer's newer choice), and reads the replica as it
 is when pressed, not as it was at the drop. Verdicts likewise resolve each
 dragged row by identity from the replica's placement graph (rows another list
 dragged included), so a peer's rename or move during the drag can't slip a

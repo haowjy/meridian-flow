@@ -142,7 +142,7 @@ export function RailScratchSection({
           ariaLabel={t`Resize Scratch`}
           measure={() => {
             const section = sectionRef.current;
-            const tree = section?.previousElementSibling;
+            const tree = section?.parentElement?.querySelector(":scope > [data-rail-tree]");
             const own = section?.getBoundingClientRect().height ?? MIN_PANE_PX;
             const above = tree?.getBoundingClientRect().height ?? 0;
             return { value: own, min: MIN_PANE_PX, max: own + above - MIN_PANE_PX };

@@ -1,7 +1,7 @@
 /**
  * Undo is judged against the replica as it is when pressed: a row still where
- * the drop put it goes back under its current name, one that moved again since
- * (or is gone) stays. A placement the replica refuses is reported without
+ * the drop put it, under its arrival name, goes back; one renamed or moved
+ * again since (or gone) stays. A placement the replica refuses is reported without
  * losing the rows that did move, and Undo still covers those.
  */
 import type { ParentRef, ResourceLocation } from "@meridian/resource-replica";
@@ -15,14 +15,16 @@ const folder = (folderId: string): ParentRef => ({ kind: "folder", folderId });
 const effect = (id: string): MoveEffect => ({
   entry: { kind: "folder", id },
   name: id,
+  previousName: `${id}-before`,
   before: folder("book"),
   after: folder("act"),
 });
 
-it("returns only rows still where the drop put them, under their current names", () => {
+it("returns only rows still where and as the drop left them", () => {
   const now: Record<string, { name: string; parent: ParentRef }> = {
-    a: { name: "renamed", parent: folder("act") },
+    a: { name: "a", parent: folder("act") },
     b: { name: "b", parent: folder("elsewhere") },
+    c: { name: "renamed", parent: folder("act") },
   };
   const view = {
     records: [],
@@ -31,8 +33,8 @@ it("returns only rows still where the drop put them, under their current names",
       parentForFolder: (id: string) => now[id]?.parent ?? null,
     },
   } as unknown as PlacementView;
-  expect(planUndo(view, [effect("a"), effect("b"), effect("gone")])).toEqual([
-    { entry: effect("a").entry, name: "renamed", before: folder("act"), after: folder("book") },
+  expect(planUndo(view, [effect("a"), effect("b"), effect("c"), effect("gone")])).toEqual([
+    { entry: effect("a").entry, name: "a-before", before: folder("act"), after: folder("book") },
   ]);
 });
 

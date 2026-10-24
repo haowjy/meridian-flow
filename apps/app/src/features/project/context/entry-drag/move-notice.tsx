@@ -25,11 +25,10 @@ import { announce } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
-import type { EntryRef } from "./entry";
 import type { MoveResult } from "./execute-move";
 
 /** Puts the move back; resolves to what to say when some of it couldn't go back. */
-export type UndoMove = () => Promise<string | null>;
+type UndoMove = () => Promise<string | null>;
 
 type Notice = {
   message: string;
@@ -130,18 +129,12 @@ export function MoveNotice({ className }: { className?: string }) {
  * "Moved 3 items to Act 2." and, when the replica refused some, which. A lone
  * row that arrived under the next free name says so.
  */
-export function describeMove(
-  result: MoveResult,
-  destinationName: string,
-  /** Each row's name before it moved. */
-  names: readonly { ref: EntryRef; name: string }[],
-): string {
+export function describeMove(result: MoveResult, destinationName: string): string {
   const { moved, failed } = result;
   const parts: string[] = [];
   const [first] = moved;
-  const requested = first && names.find((row) => row.ref.id === first.entry.id)?.name;
-  if (moved.length === 1 && first && requested && requested !== first.name)
-    parts.push(t`Moved ${requested} to ${destinationName} as ${first.name}.`);
+  if (moved.length === 1 && first && first.previousName !== first.name)
+    parts.push(t`Moved ${first.previousName} to ${destinationName} as ${first.name}.`);
   else if (moved.length === 1 && first) parts.push(t`Moved ${first.name} to ${destinationName}.`);
   else if (moved.length > 1)
     parts.push(
