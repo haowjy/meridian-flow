@@ -51,11 +51,12 @@ and document; query carries Work, view, settings, and draft overlays:
 /p/<id>/editor/<scheme>/<path>[?work=…&item=…]
 /p/<id>/editor/browse[/<scheme>/<path>]
 ?settings=<section>
-?trash=true
+?trash=<document-id>
 ```
 
-Settings and Trash are routed auxiliary overlays. They leave the primary
-screen mounted while the query selects the overlay.
+Settings and the read-only view of a trashed document are routed auxiliary
+overlays. They leave the primary screen mounted while the query selects the
+overlay. The Trash list itself is a pinned, collapsible sidebar tree section.
 
 Legacy slug, screen/thread query, and old context path shapes are invalid rather
 than compatibility aliases. Invalid required identity stays in place and shows
