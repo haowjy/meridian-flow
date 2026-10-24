@@ -138,8 +138,8 @@ msgstr ""
 
 #. placeholder {0}: relativeTime(entry.removal.time, now)
 #: src/features/project/context/DocumentTrashSection.tsx
-msgid "{0} ago"
-msgstr ""
+#~ msgid "{0} ago"
+#~ msgstr ""
 
 #. placeholder {0}: dock.files.length
 #: src/features/chat/DraftDock.tsx
@@ -212,6 +212,10 @@ msgstr "{0} 个子代理已完成（{1} 个已停止）"
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} tok/s"
 msgstr "{0} 词元/秒"
+
+#: src/features/project/context/DocumentTrashSection.tsx
+msgid "{age} ago"
+msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -3340,6 +3344,7 @@ msgid "Nothing to undo yet."
 msgstr ""
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
+#: src/features/project/context/DocumentTrashSection.tsx
 #: src/lib/date-groups.ts
 msgid "now"
 msgstr "刚刚"

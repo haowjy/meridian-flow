@@ -106,6 +106,7 @@ function TrashRow({
 }) {
   const location = `${schemeLabel(entry.scheme)}/${entry.formerPath}`;
   const restoring = state?.kind === "restoring";
+  const age = relativeTime(entry.removal.time, now);
   return (
     <div>
       {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
@@ -126,17 +127,16 @@ function TrashRow({
         <span className="ml-0.5 min-w-0 flex-1">
           <span className="block truncate">{entry.name}</span>
           <span className="flex min-w-0 items-baseline gap-2 text-xs text-ink-subtle">
-            <span
-              className="min-w-0 flex-1 truncate text-left [direction:rtl] [unicode-bidi:plaintext]"
-              title={location}
-            >
+            <span className="min-w-0 flex-1 truncate text-left [direction:rtl]" title={location}>
               {location}
             </span>
             <span className="shrink-0 tabular-nums">
               {restoring ? (
                 <Trans>Restoring</Trans>
+              ) : age === "now" ? (
+                <Trans>now</Trans>
               ) : (
-                <Trans>{relativeTime(entry.removal.time, now)} ago</Trans>
+                <Trans>{age} ago</Trans>
               )}
             </span>
           </span>
