@@ -67,17 +67,15 @@ type PersistedSurfacePrefsBlob = {
   railPrefs?: Partial<RailPrefs> | null;
 };
 
-export type RailSectionId = "scratch" | "recent" | "trash";
+export type RailSectionId = "scratch" | "recent";
 export type RailPrefs = {
   scratchExpanded: boolean;
   recentExpanded: boolean;
-  trashExpanded: boolean;
   scratchHeight: number | null;
 };
 export const DEFAULT_RAIL_PREFS: RailPrefs = {
   scratchExpanded: false,
   recentExpanded: true,
-  trashExpanded: false,
   scratchHeight: null,
 };
 
@@ -85,7 +83,6 @@ export function normalizeRailPrefs(prefs?: Partial<RailPrefs> | null): RailPrefs
   return {
     scratchExpanded: typeof prefs?.scratchExpanded === "boolean" ? prefs.scratchExpanded : false,
     recentExpanded: typeof prefs?.recentExpanded === "boolean" ? prefs.recentExpanded : true,
-    trashExpanded: typeof prefs?.trashExpanded === "boolean" ? prefs.trashExpanded : false,
     scratchHeight:
       typeof prefs?.scratchHeight === "number" &&
       Number.isFinite(prefs.scratchHeight) &&
