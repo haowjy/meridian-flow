@@ -1,23 +1,22 @@
-// Immutable edit capture and placement shared by writer inverses and the model stack.
+// Immutable edit capture shared by writer inverses and the model stack.
 import {
   type CapturedPart,
   captureEditFrontier,
   captureEditParts,
   type EditTarget,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type { DocumentId, ThreadId, TreeChange, TurnId, UserId } from "@meridian/contracts";
 import {
-  branchWriteJournal,
   type Database,
   documentEditParts,
   documentEdits,
   documentYjsUpdates,
+  draftWriteJournal,
   type EditOrigin,
-  type EditPlacement,
-  documentBranches as importedDocumentBranches,
 } from "@meridian/database";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { treeChangeFault } from "../domain/tree-inverse.js";
 
 type Db = Pick<Database, "select" | "insert" | "update">;
 export interface ReceiptWrite {
@@ -26,6 +25,7 @@ export interface ReceiptWrite {
   turnId?: TurnId | null;
   responseId?: string | null;
   editScopeId?: string | null;
+  toolCallId?: string | null;
   actor: "agent" | "human" | "system";
   /** Reserved once by the logical model edit; never allocated at capture. */
   wId?: number;
@@ -34,11 +34,16 @@ export interface ReceiptWrite {
   actionId?: string;
   consumes?: string[];
   receipts: (CapturedPart & { origin: EditOrigin; targets?: EditTarget[] })[];
+  /** A tree entry: a move, delete, restore or settlement, recorded with no parts. */
+  treeChange?: TreeChange;
 }
-/** Caller holds the authoritative document/branch mutation lock and its event transaction. */
+
+/** Caller holds the authoritative document/draft mutation lock and its event transaction. */
 export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<string> {
   if (input.actor === "agent" && input.threadId && input.wId === undefined)
     throw new Error("Model edit capture requires its reserved ordinal");
+  const fault = input.treeChange && treeChangeFault(input.treeChange);
+  if (fault) throw new Error(fault);
   const wId = input.actor === "agent" ? (input.wId ?? null) : null;
   const [edit] = await db
     .insert(documentEdits)
@@ -48,15 +53,21 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       turnId: input.turnId,
       responseId: input.responseId,
       editScopeId: input.editScopeId,
+      toolCallId: input.toolCallId,
       actor: input.actor,
       actorUserId: input.actorUserId,
       kind: input.kind ?? "write",
       wId,
       actionId: input.actionId,
       consumes: input.consumes,
+      treeChange: input.treeChange,
     })
     .returning({ id: documentEdits.id });
   if (!edit) throw new Error("Edit receipt was not inserted");
+  if (!input.receipts.length) {
+    if (!input.treeChange) throw new Error("An edit with no parts must be a tree entry");
+    return edit.id;
+  }
   await db.insert(documentEditParts).values(
     input.receipts.map((p, ordinal) => ({
       editId: edit.id,
@@ -67,17 +78,16 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       aliases: p.aliases,
       targets: p.targets ?? [],
       origin: p.origin,
-      placement: p.origin,
     })),
   );
   for (const [ordinal, p] of input.receipts.entries()) {
     if (p.origin.kind !== "pending") continue;
     await db
-      .update(branchWriteJournal)
+      .update(draftWriteJournal)
       .set({
-        updateMeta: sql`coalesce(${branchWriteJournal.updateMeta}, '{}'::jsonb) || ${JSON.stringify({ documentEdit: { editId: edit.id, ordinal } })}::jsonb`,
+        updateMeta: sql`coalesce(${draftWriteJournal.updateMeta}, '{}'::jsonb) || ${JSON.stringify({ documentEdit: { editId: edit.id, ordinal } })}::jsonb`,
       })
-      .where(eq(branchWriteJournal.id, p.origin.rowId));
+      .where(eq(draftWriteJournal.id, p.origin.rowId));
   }
   const live = input.receipts.filter((p) => p.origin.kind === "live");
   for (const seq of new Set(live.map((p) => (p.origin.kind === "live" ? p.origin.seq : 0)))) {
@@ -105,56 +115,4 @@ export function captureReceiptRows(
     ...captureEditParts(doc, [receipt])[0],
     origin: rows[i].origin,
   }));
-}
-export async function placeDraftRows(
-  db: Db,
-  branchId: string,
-  generation: number,
-  rowIds: readonly number[],
-  placement: EditPlacement,
-): Promise<void> {
-  if (!rowIds.length) return;
-  const placed = await db
-    .update(documentEditParts)
-    .set({ placement })
-    .where(
-      and(
-        sql`${documentEditParts.placement}->>'kind' = 'pending'`,
-        sql`${documentEditParts.placement}->>'branchId' = ${branchId}`,
-        sql`(${documentEditParts.placement}->>'generation')::integer = ${generation}`,
-        sql`(${documentEditParts.placement}->>'rowId')::bigint IN (${sql.join(
-          rowIds.map((id) => sql`${id}`),
-          sql`,`,
-        )})`,
-      ),
-    )
-    .returning({ editId: documentEditParts.editId, ordinal: documentEditParts.ordinal });
-  if (placed.length)
-    await db
-      .update(importedDocumentBranches)
-      .set({ blocking: false })
-      .where(eq(importedDocumentBranches.id, branchId));
-  if (placement.kind === "live" && placed.length === 1) {
-    await db
-      .update(documentYjsUpdates)
-      .set({ editId: placed[0].editId, editPartOrdinal: placed[0].ordinal })
-      .where(eq(documentYjsUpdates.id, placement.seq));
-  }
-}
-export async function settleDraftGeneration(
-  db: Db,
-  branchId: string,
-  generation: number,
-  kind: "discarded" | "retired",
-): Promise<void> {
-  await db
-    .update(documentEditParts)
-    .set({ placement: { kind } })
-    .where(
-      and(
-        sql`${documentEditParts.placement}->>'kind' = 'pending'`,
-        sql`${documentEditParts.placement}->>'branchId' = ${branchId}`,
-        sql`(${documentEditParts.placement}->>'generation')::integer = ${generation}`,
-      ),
-    );
 }

@@ -1,7 +1,8 @@
 // Shared fixtures for hash-prefix collision regressions.
 
 import type { BlockRef } from "../../handles.js";
-import { fullHashForItemId, getBlockItemId } from "../../model/block-hash.js";
+import { unwrapBlock } from "../../handles.js";
+import { blockIdentityForItem, fullHashForItemId, getBlockItemId } from "../../model/block-hash.js";
 import type { DocumentModel } from "../../ports/model.js";
 
 export interface HashCollisionCandidate {
@@ -28,7 +29,7 @@ export function prefixCollisionFixture(
   const candidates = blocks.map((block) => ({
     block,
     displayHash: model.getBlockId(block),
-    fullHash: fullHashForItemId(getBlockItemId(block)),
+    fullHash: fullBlockHash(block),
   }));
   const groups = new Map<string, HashCollisionCandidate[]>();
   for (const candidate of candidates) {
@@ -54,4 +55,10 @@ export function prefixCollisionFixture(
   throw new Error(
     `Expected at least two blocks with a shared ${prefixLength}-character prefix and unique display hashes`,
   );
+}
+
+function fullBlockHash(block: BlockRef): string {
+  const doc = unwrapBlock(block).doc;
+  if (!doc) throw new Error("Hash collision fixture requires an integrated block");
+  return fullHashForItemId(blockIdentityForItem(doc, getBlockItemId(block)));
 }

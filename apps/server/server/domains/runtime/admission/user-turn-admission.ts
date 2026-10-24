@@ -1,5 +1,6 @@
 /** Authoritative parsing, identity, replay, and settlement for writer turns. */
 import { createHash } from "node:crypto";
+import { spellDocumentHref } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   AcceptedAdmission,
@@ -15,6 +16,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { JsonValue } from "@meridian/contracts/threads";
+import { markdownLinkDestination } from "@meridian/markup/links";
 import type { ProjectContextAvailabilityPort } from "../../context/index.js";
 import type { RunClaim } from "../loop/ports.js";
 
@@ -239,6 +241,19 @@ export function parseSubmittedReferences(value: unknown): SubmittedReference[] {
   });
 }
 
+/**
+ * Re-spells an occurrence's destination through the canonical serializer (names with spaces,
+ * `#` or `%` are escaped there), keeping the label exactly as the writer's composer wrote it.
+ * Text that is not the canonical spelling of `from` is left as submitted.
+ */
+function requalifyLinkText(text: string, from: string, to: string): string {
+  const closing = (uri: string) => `](${markdownLinkDestination(spellDocumentHref(null, uri))})`;
+  const old = closing(from);
+  return text.startsWith("[") && text.endsWith(old)
+    ? `${text.slice(0, -old.length)}${closing(to)}`
+    : text;
+}
+
 function referenceIdentity(reference: { documentId: string; uri: string }): string {
   return `${reference.documentId}\0${reference.uri}`;
 }
@@ -355,7 +370,11 @@ export function createUserTurnAdmission(deps: {
   runClaim: Pick<RunClaim, "withExclusiveThread">;
   availability: ProjectContextAvailabilityPort;
   threadProject(threadId: string): Promise<string | null>;
-  verifyDraftUpload?(reference: SubmittedReference & { intakeId: string }): Promise<boolean>;
+  /** Identity, not spelling: the intake, its document, and that the thread's top chat owns it. */
+  verifyDraftUpload?(
+    reference: SubmittedReference & { intakeId: string },
+    threadId: string,
+  ): Promise<boolean>;
   authorizeActivatedSkills?(input: { threadId: string; slugs: readonly string[] }): Promise<void>;
   producer: AdmissionWriterProducer;
   now?: () => Date;
@@ -445,31 +464,59 @@ export function createUserTurnAdmission(deps: {
           .map((item) => [item.documentId, item]),
       );
       const admittedReferences: AuthorizedReference[] = [];
-      const admittedIdentities = new Set<string>();
+      const admittedUris = new Map<string, string>();
       for (const reference of references) {
         const identity = available.get(reference.documentId);
-        if (!identity || identity.entry.uri !== reference.uri) continue;
+        if (!identity) continue;
+        // A New-chat upload was attached before the chat had a handle, so its atom holds the
+        // chat-relative spelling while the catalog now answers the handle one. A draft upload is
+        // admitted by its verified intake and owner, and records the address it now has.
+        const draftUpload = reference.purpose === "draft-upload";
+        if (!draftUpload && identity.entry.uri !== reference.uri) continue;
         if (
-          reference.purpose === "draft-upload" &&
+          draftUpload &&
           deps.verifyDraftUpload &&
-          !(await deps.verifyDraftUpload(reference as SubmittedReference & { intakeId: string }))
+          !(await deps.verifyDraftUpload(
+            reference as SubmittedReference & { intakeId: string },
+            input.threadId,
+          ))
         ) {
           continue;
         }
-        admittedIdentities.add(referenceIdentity(reference));
+        // The one admitted occurrence: stored blocks and reference metadata both take this uri.
+        const admittedUri = draftUpload ? identity.entry.uri : reference.uri;
+        admittedUris.set(referenceIdentity(reference), admittedUri);
         admittedReferences.push({
           ...reference,
-          relationship: reference.purpose === "draft-upload" ? "created" : "reading",
+          uri: admittedUri,
+          relationship: draftUpload ? "created" : "reading",
         });
       }
       const admittedBlocks = blocks.flatMap((block): UserMessageBlock[] => {
         if (block.type === "text" || block.type === "skill") return [block];
-        if (admittedIdentities.has(referenceIdentity(block))) return [block];
-        return block.type === "reference" ? [{ type: "text", text: block.text }] : [];
+        const admittedUri = admittedUris.get(referenceIdentity(block));
+        if (admittedUri === undefined) {
+          return block.type === "reference" ? [{ type: "text", text: block.text }] : [];
+        }
+        if (admittedUri === block.uri) return [block];
+        // Requalify the link's href only; the label the writer saw stays.
+        return [
+          block.type === "reference"
+            ? {
+                ...block,
+                uri: admittedUri,
+                text: requalifyLinkText(block.text, block.uri, admittedUri),
+              }
+            : { ...block, uri: admittedUri },
+        ];
       });
+      const admittedText = admittedBlocks
+        .filter((block) => block.type !== "image")
+        .map((block) => block.text)
+        .join("");
       try {
         return await deps.producer.enqueue({
-          admission: { ...input, activatedSkillSlugs },
+          admission: { ...input, text: admittedText, activatedSkillSlugs },
           fingerprint,
           blocks: admittedBlocks,
           references: admittedReferences,

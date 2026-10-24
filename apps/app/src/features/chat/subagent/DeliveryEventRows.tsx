@@ -1,39 +1,30 @@
 /** Quiet inline rows for child completion and delivery events. */
 import { i18n } from "@lingui/core";
 import { Trans } from "@lingui/react/macro";
-import type { Block, Turn } from "@meridian/contracts/protocol";
+import type { DeliveryEvent, DeliveryGroup } from "@meridian/thread-client";
 import { MessageSquareText } from "lucide-react";
 import { ActivityRow } from "../ActivityRow";
 import { useSubagentDisclosure } from "./DisclosureStore";
 import { subagentStatus } from "./display";
 import type { SubagentRun } from "./run-model";
 import { SubagentIdentity, SubagentRow } from "./SubagentRow";
-import type { SubagentUpdateMetadata } from "./update";
-import { groupAdjacentSubagentUpdates } from "./update";
 
-export type DeliveryEvent = {
-  turn: Turn;
-  childThreadId?: string;
-  title?: string;
-  subagentUpdate: SubagentUpdateMetadata | null;
-};
-
-export function DeliveryEventRows({ events }: { events: DeliveryEvent[] }) {
-  const groups = groupAdjacentSubagentUpdates(events);
+/** Draws the view model's delivery groups: a group of several is one merged row. */
+export function DeliveryEventRows({ groups }: { groups: readonly DeliveryGroup[] }) {
   return (
     <>
-      {groups.map((group) =>
-        group.length > 1 ? (
-          <MergedCompletionRow key={group.map((event) => event.turn.id).join(":")} events={group} />
-        ) : group[0] ? (
-          <DeliveryEventRow key={group[0].turn.id} {...group[0]} />
-        ) : null,
-      )}
+      {groups.map((group) => (
+        <DeliveryGroupRow key={group.id} group={group} />
+      ))}
     </>
   );
 }
 
-function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
+function DeliveryGroupRow({ group }: { group: DeliveryGroup }) {
+  const { events } = group;
+  const [expanded, setExpanded] = useSubagentDisclosure(`delivery:${group.id}`);
+  const only = events[0];
+  if (events.length === 1 && only) return <DeliveryEventRow {...only} />;
   const entries = events.map((event) => {
     const update = event.subagentUpdate;
     const run = deliveryRun(event);
@@ -46,8 +37,6 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
   const list = (values: string[]) =>
     new Intl.ListFormat(i18n.locale, { style: "long", type: "conjunction" }).format(values);
   const childIds = entries.flatMap(({ run }) => (run.threadId ? [run.threadId] : []));
-  const key = `merged:${events.map((event) => event.turn.id).join(":")}`;
-  const [expanded, setExpanded] = useSubagentDisclosure(key);
   const summary =
     names.length > 3 || new Set(names).size < names.length ? (
       stopped.length ? (
@@ -109,14 +98,10 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
 
 function DeliveryEventRow(event: DeliveryEvent) {
   if (!event.subagentUpdate) {
-    const body = event.turn.blocks
-      .filter((block: Block) => block.blockType === "text")
-      .map((block) => block.textContent ?? "")
-      .join("");
     return (
       <ActivityRow Icon={MessageSquareText}>
         <span className="whitespace-pre-wrap text-foreground">
-          {body || <Trans>Shared an attachment</Trans>}
+          {event.message || <Trans>Shared an attachment</Trans>}
         </span>
       </ActivityRow>
     );

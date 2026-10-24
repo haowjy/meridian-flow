@@ -5,8 +5,10 @@ import {
   validateContextEntryName as validateSharedContextEntryName,
 } from "@meridian/contracts/context-entry-validation";
 import {
+  allocateFilename,
   parseDocumentFilename,
   renderFilename,
+  sameNamespaceName,
   storedFilename,
 } from "@meridian/contracts/protocol";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -38,7 +40,7 @@ function validationReason(error: ContextEntryValidationError): string {
     case "name/reserved":
       return t`'.' and '..' cannot be used as names`;
     case "name/reserved-authority-qualifier":
-      return t`Names cannot begin with '@'. That prefix is reserved for authority qualifiers`;
+      return t`Names cannot begin with '@' or '~'. Those prefixes are reserved for authority qualifiers`;
     case "name/invalid-character":
       return t`Names cannot contain “${error.character ?? ""}”`;
     case "path/empty-segment":
@@ -126,4 +128,34 @@ export function validateContextEntryName(
 /** A move retry preserves the complete refused intent, including a queued rename. */
 export function moveEntryName(currentName: string, repair?: { name: string }): string {
   return repair?.name ?? currentName;
+}
+
+/** Predict the first free name for a rename or move; the server remains authoritative. */
+export async function allocateContextEntryArrivalName(
+  typed: string,
+  siblings: readonly ContextEntrySibling[],
+  kind: ContextCreateKind,
+  current?: string,
+): Promise<string> {
+  if (kind === "folder")
+    return allocateFilename({ kind: "folder", name: typed.trim() }, (candidate) =>
+      siblings.some((sibling) =>
+        sameNamespaceName(candidate, {
+          kind: sibling.kind === "dir" ? "folder" : "document",
+          filename: sibling.name,
+        }),
+      ),
+    );
+  const stored = storedFilename(typed, current);
+  if (!stored.ok) return typed.trim();
+  return allocateFilename(
+    { kind: "document", name: stored.filename.name, extension: stored.filename.extension },
+    (candidate) =>
+      siblings.some((sibling) =>
+        sameNamespaceName(candidate, {
+          kind: sibling.kind === "dir" ? "folder" : "document",
+          filename: sibling.name,
+        }),
+      ),
+  );
 }

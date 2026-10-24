@@ -19,7 +19,7 @@ import {
   placeEntry,
 } from "./move-entry";
 import { moveRepairTrail } from "./move-repair-trail";
-import { useProjectMenuSource } from "./use-catalog-menu-source";
+import { useProjectMenuSource } from "./use-project-menu-source";
 
 type MoveEntry = Pick<MoveSubject, "id" | "name" | "path" | "kind">;
 
@@ -90,24 +90,25 @@ function OpenMovePicker({
     parentId: (currentParentId && source.folderFor(currentParentId)?.entryId) ?? null,
   };
   const isForbidden = (destination: MoveDestination) =>
-    moveRefusal(subject, destination, name)?.kind === "inside-itself";
+    moveRefusal(subject, destination)?.kind === "inside-itself";
 
   async function move(trail: readonly DrillNode[]) {
     const folder = trail.at(-1);
     const destination = folder && source.folderFor(folder.id);
-    if (!destination || pending) return;
-    const refusal = moveRefusal(subject, destination, name);
-    if (refusal?.kind === "name-taken") {
-      setError(refusal.message);
-      return;
-    }
-    if (refusal) return;
+    if (!destination || pending || moveRefusal(subject, destination)) return;
     setPending(true);
     setError(null);
     try {
       const parent = destinationParent(destination, works, noWork);
       if (!parent) throw new Error(unavailable);
-      const operationId = await placeEntry(resources, projectId, entry, { parent, name });
+      const { operationId } = await placeEntry(
+        resources,
+        projectId,
+        entry,
+        parent,
+        destination.catalog.children(destination.entryId),
+        name,
+      );
       if (operationId) onMoved(operationId);
       onOpenChange(false);
     } catch {

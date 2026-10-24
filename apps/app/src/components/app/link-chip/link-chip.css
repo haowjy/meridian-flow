@@ -67,6 +67,14 @@
   color: var(--color-muted-foreground);
 }
 
+/* A document that exists only in a draft: reachable, but not live text yet.
+   A dotted outline at reading contrast sets it apart from a published target
+   (filled) and from nothing (dashed, muted). */
+[data-link-chip="draft"] {
+  border-color: var(--color-muted-foreground);
+  border-style: dotted;
+}
+
 /* Prose gives bold its own ink; inside a quiet chip it stays quiet. */
 [data-link-chip="dashed"] strong {
   color: inherit;
@@ -94,11 +102,8 @@
   box-shadow: none;
 }
 
-/* The outbound arrow: the Editor's external mark (`data-link-kind`) and the
-   transcript's (Streamdown's link control). A link still streaming in has no
-   destination yet and wears none. */
-a[data-link-kind="external"]::after,
-[data-streamdown="link"]:not([data-incomplete="true"])::after {
+/* The shared outbound arrow follows explicit external link marks. */
+a[data-link-kind="external"]::after {
   display: inline-block;
   width: 0.625em;
   height: 0.625em;

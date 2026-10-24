@@ -63,6 +63,13 @@ export async function executeCompaction({
     revisions: deps.documentRevisions,
     assertNoResponseScope,
   });
+  // The last check before the captured history reaches the summarizer. A Stop on another server has no
+  // local abort: it flags the lease in the transaction that hands the adopted message back, so a set
+  // flag means this history may hold a message that left the chat. The loop's catch turns the throw
+  // into the cancel exit. Stop cancels an expired lease that is still held, so the read is this
+  // execution's own row whatever its expiry; a missing or reassigned row never authorizes the history.
+  const owned = await deps.runClaim.readOwned(input.lease);
+  if (!owned || owned.cancelRequested) throw new CompactionCancelledError();
   let summary: SummaryOutcome;
   try {
     input.signal?.throwIfAborted();
@@ -172,20 +179,21 @@ export async function executeCompaction({
         turns: next.turns,
         blocks: next.blocks,
         requiresSplit: true,
-        context: next.assembled,
+        context: { assembled: next.assembled, continuation: { kind: "ordinary" as const } },
         compaction: next.compaction,
       };
     },
   };
   const successor = await deps.delivery.splitAndContinue(successorBoundary);
-  return {
-    successor,
-    preparedContext: successor.context,
-    summaryBlock:
-      successor.preparedCurrent?.kind === "usable"
-        ? successor.preparedCurrent.summaryBlock
-        : undefined,
-  };
+  return { successor };
+}
+
+/** The run was cancelled before the summarizer was called: no history left the process. */
+export class CompactionCancelledError extends Error {
+  constructor() {
+    super("Compaction cancelled before summarization");
+    this.name = "CompactionCancelledError";
+  }
 }
 
 export async function recordCompactionSummary(

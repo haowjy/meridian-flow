@@ -1,10 +1,9 @@
 /** Normalized identity and lifecycle for every writer-facing subagent surface. */
 
-import { parseInvocationCard } from "@meridian/contracts/components";
 import type { Thread, Turn } from "@meridian/contracts/protocol";
 import type { ThreadActivityNode } from "@meridian/contracts/threads";
+import { turnSubagentFacts } from "@meridian/thread-client";
 import { subagentCurrentToolLabel } from "./display";
-import { readSubagentUpdateMetadata } from "./update";
 
 export type SubagentRunStatus = "running" | "done" | "stopped" | "unknown";
 export type SubagentRun = {
@@ -121,38 +120,37 @@ export function buildSubagentRuns(
   const byThread = new Map(nodes.map((node) => [node.threadId, runFromActivity(node)]));
   const runs = new Map<string, SubagentRun>();
   for (const turn of turns) {
-    for (const block of turn.blocks) {
-      const card = parseInvocationCard(block.content);
-      if (card) {
-        const live = byThread.get(card.childThreadId ?? "");
-        const running = card.terminalAt === null;
-        const status = statusFromSources({
-          savedRunning: running,
-          outcome: card.outcome,
-          live: live?.status === "running",
-          endedAt: live?.endedAt ?? card.terminalAt,
-        });
-        const run: SubagentRun = {
-          threadId: card.childThreadId ?? null,
-          ref: live?.ref ?? null,
-          execution: card.execution ?? null,
-          agentName: card.agentName || live?.agentName || "Subagent",
-          name: card.title?.trim() || live?.name || null,
-          status,
-          startedAt: card.startedAt,
-          endedAt: card.terminalAt ?? live?.endedAt ?? null,
-          liveTool: live?.liveTool ?? null,
-          originTurnId: turn.id,
-          parentThreadId: turn.threadId,
-          deliveryMode: card.deliveryMode,
-        };
-        runs.set(`execution:${card.execution ?? card.toolCallId}`, run);
-        if (run.threadId) runs.set(`thread:${run.threadId}`, run);
-        if (run.ref) runs.set(`ref:${run.ref}`, run);
-      }
+    const facts = turnSubagentFacts(turn);
+    for (const { card } of facts.invocations) {
+      const live = byThread.get(card.childThreadId ?? "");
+      const running = card.terminalAt === null;
+      const status = statusFromSources({
+        savedRunning: running,
+        outcome: card.outcome,
+        live: live?.status === "running",
+        endedAt: live?.endedAt ?? card.terminalAt,
+      });
+      const run: SubagentRun = {
+        threadId: card.childThreadId ?? null,
+        ref: live?.ref ?? null,
+        execution: card.execution ?? null,
+        agentName: card.agentName || live?.agentName || "Subagent",
+        name: card.title?.trim() || live?.name || null,
+        status,
+        startedAt: card.startedAt,
+        endedAt: card.terminalAt ?? live?.endedAt ?? null,
+        liveTool: live?.liveTool ?? null,
+        originTurnId: turn.id,
+        parentThreadId: turn.threadId,
+        deliveryMode: card.deliveryMode,
+      };
+      runs.set(`execution:${card.execution ?? card.toolCallId}`, run);
+      if (run.threadId) runs.set(`thread:${run.threadId}`, run);
+      if (run.ref) runs.set(`ref:${run.ref}`, run);
     }
-    const update = readSubagentUpdateMetadata(turn.metadata);
-    if (update) {
+    const completion = facts.completion;
+    if (completion) {
+      const update = completion.update;
       const live = byThread.get(update.childThreadId);
       // The launch card came first; it keeps identity when activity is empty.
       const card = runs.get(`thread:${update.childThreadId}`);
@@ -164,10 +162,10 @@ export function buildSubagentRuns(
         name: live?.name ?? card?.name ?? null,
         status: statusFromSources({ outcome: update.outcome }),
         startedAt: live?.startedAt ?? card?.startedAt ?? null,
-        endedAt: turn.completedAt ?? live?.endedAt ?? null,
+        endedAt: completion.completedAt ?? live?.endedAt ?? null,
         liveTool: null,
         originTurnId: live?.originTurnId ?? card?.originTurnId ?? null,
-        parentThreadId: turn.threadId,
+        parentThreadId: completion.threadId,
         deliveryMode: live?.deliveryMode ?? card?.deliveryMode ?? null,
       };
       runs.set(`thread:${run.threadId}`, run);

@@ -4,12 +4,28 @@
  * subscribe/cursor, and projects orchestrator events into AG-UI events for
  * subscribers. Owns the realtime delivery layer over the event journal.
  */
+import type { FailureRecord } from "@meridian/contracts/failures";
 import type { MeridianError } from "@meridian/contracts/interrupt";
-import { type AGUIEvent, EventType, type SequencedEvent } from "@meridian/contracts/protocol";
+import {
+  type AGUIEvent,
+  EventType,
+  RUN_STATE_EVENT,
+  type SequencedEvent,
+} from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
-import { createOrchestratorEventProjector } from "./domain/orchestrator-event-projector.js";
+import { recordFailureAfterCommit } from "../../shared/failure-records.js";
+import type { InMemoryTransactionOwner } from "../../shared/in-memory-transaction.js";
+import {
+  type EventSink,
+  emitEvent,
+  recordFailure,
+  unknownToEventPayload,
+} from "../observability/index.js";
+import {
+  createOrchestratorEventProjector,
+  PROJECTOR_RESET_EVENT_TYPES,
+} from "./domain/orchestrator-event-projector.js";
 import type { EventJournalReader, EventJournalWriter } from "./ports/index.js";
 
 const HOT_CACHE_LIMIT = 500;
@@ -35,6 +51,8 @@ type ThreadEventHubDeps = {
   journalReader: EventJournalReader;
   eventSink: EventSink;
   scheduleAfterCommit?: (callback: () => void | Promise<void>) => void;
+  /** In-memory composition: failure records follow this owner's commit instead of a Drizzle transaction's. */
+  inMemoryTransactionOwner?: InMemoryTransactionOwner;
 };
 
 export type ThreadEventHubOptions = {
@@ -44,11 +62,13 @@ export type ThreadEventHubOptions = {
 
 export type ThreadEventHub = ReturnType<typeof createThreadEventHub>;
 
-function eventSeqForJournalEvent(journalSeq: bigint, projectedIndex: number): bigint {
+/** The socket seq of a journal row's `projectedIndex`-th frame. */
+export function eventSeqForJournalEvent(journalSeq: bigint, projectedIndex: number): bigint {
   return journalSeq * EVENT_SEQ_FACTOR + BigInt(projectedIndex);
 }
 
-function cursorSeqForJournalHead(journalSeq: bigint): bigint {
+/** The socket seq of the last frame a journal row can carry; the snapshot's `nextSeq - 1`. */
+export function cursorSeqForJournalHead(journalSeq: bigint): bigint {
   if (journalSeq === 0n) return 0n;
   return journalSeq * EVENT_SEQ_FACTOR + EVENT_SEQ_CURSOR_OFFSET;
 }
@@ -67,16 +87,25 @@ function errorEnvelopeForProjectedEvent(
   return orchestratorEvent.error;
 }
 
+/** A run-state frame is a whole `RunState` at its own stream seq; live and replayed frames stamp the same value. */
+function stampRunStateVersion(event: AGUIEvent, seq: bigint): AGUIEvent {
+  if (event.type !== EventType.CUSTOM || event.name !== RUN_STATE_EVENT) return event;
+  return { ...event, value: { ...(event.value as object), version: seq.toString() } };
+}
+
 function toSequencedEvents(
   journalSeq: bigint,
   events: AGUIEvent[],
   orchestratorEvent: OrchestratorEvent,
 ): SequencedEventInternal[] {
-  return events.map((event, index) => ({
-    seq: eventSeqForJournalEvent(journalSeq, index),
-    event,
-    error: errorEnvelopeForProjectedEvent(orchestratorEvent, event),
-  }));
+  return events.map((event, index) => {
+    const seq = eventSeqForJournalEvent(journalSeq, index);
+    return {
+      seq,
+      event: stampRunStateVersion(event, seq),
+      error: errorEnvelopeForProjectedEvent(orchestratorEvent, event),
+    };
+  });
 }
 
 export function createThreadEventHub(
@@ -162,7 +191,13 @@ export function createThreadEventHub(
   ): Promise<SequencedEventInternal[]> {
     const projector = createOrchestratorEventProjector();
     const replayed: SequencedEventInternal[] = [];
-    let cursor = 0n;
+    // A cursor can split a multi-frame row. Reconstruct that row from the last reset
+    // strictly before it, so both the remaining frames and their sub-indexes stay identical.
+    let cursor = await deps.journalReader.lastSeqBefore(
+      threadId,
+      journalSeqForEventSeq(afterEventSeq),
+      PROJECTOR_RESET_EVENT_TYPES,
+    );
     while (cursor < throughJournalSeq) {
       const entries = await deps.journalReader.readAfter(threadId, cursor, JOURNAL_PAGE_SIZE);
       if (entries.length === 0) break;
@@ -197,15 +232,6 @@ export function createThreadEventHub(
         if (entries.length === 0) break;
         for (const entry of entries) {
           const event = entry.payload as OrchestratorEvent;
-          if (event.type === "turn.error") {
-            emitEvent(eventSink, {
-              level: "error",
-              source: "threads.event-hub",
-              name: "turn.error",
-              correlation: { threadId, turnId: event.turn.id, runId: event.turn.id },
-              payload: { threadId, turnId: event.turn.id, error: event.error },
-            });
-          }
           const projected = toSequencedEvents(entry.seq, state.projector.project(event), event);
           state.journalCursor = entry.seq;
           cacheHot(state, projected);
@@ -250,12 +276,25 @@ export function createThreadEventHub(
 
   return {
     invalidateCommittedJournal,
-    async appendEvent(threadId: ThreadId, orchestratorEvent: OrchestratorEvent): Promise<bigint> {
-      const journalSeq = await deps.journalWriter.appendEvent(threadId, orchestratorEvent);
+    recordFailure(record: FailureRecord): void {
+      recordFailureAfterCommit(
+        record,
+        (emitted) => recordFailure(eventSink, emitted),
+        deps.inMemoryTransactionOwner,
+      );
+    },
+    async appendEvents(
+      threadId: ThreadId,
+      orchestratorEvents: readonly OrchestratorEvent[],
+    ): Promise<bigint> {
+      const journalSeq = await deps.journalWriter.appendEvents(threadId, orchestratorEvents);
       const invalidate = () => invalidateCommittedJournal(threadId);
       if (deps.scheduleAfterCommit) deps.scheduleAfterCommit(invalidate);
       else await drainCommittedJournal(threadId);
       return journalSeq;
+    },
+    async appendEvent(threadId: ThreadId, orchestratorEvent: OrchestratorEvent): Promise<bigint> {
+      return this.appendEvents(threadId, [orchestratorEvent]);
     },
 
     async catchup(threadId: ThreadId, afterSeq: bigint = 0n): Promise<SequencedEventInternal[]> {
@@ -337,7 +376,5 @@ export function createThreadEventHub(
         await deps.journalReader.readModelProjectionWatermark(threadId),
       );
     },
-
-    journalSeqForEventSeq,
   };
 }

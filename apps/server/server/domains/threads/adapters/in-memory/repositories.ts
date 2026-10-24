@@ -5,7 +5,7 @@
  */
 
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
-import type { PromptBakeId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { PromptBakeId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type {
   Block,
   ModelResponse,
@@ -14,7 +14,11 @@ import type {
   Turn,
   TurnUsage,
 } from "@meridian/contracts/threads";
-import { formatThreadRef, isPendingPlaceholder } from "@meridian/contracts/threads";
+import {
+  formatThreadRef,
+  isConversationTurn,
+  isPendingPlaceholder,
+} from "@meridian/contracts/threads";
 import { workLifecycleState } from "@meridian/contracts/works";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
@@ -23,7 +27,6 @@ import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
-import { isConversationTurn } from "../../domain/turn-metadata.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import { isVisibleConversationalTurn } from "../../domain/visible-conversation-policy.js";
 import { orderTurnsByPosition } from "../../order-turns.js";
@@ -57,6 +60,7 @@ import {
   ThreadMembershipUnavailableError,
   ThreadWorkProjectMismatchError,
 } from "../../ports/repositories.js";
+import { TURN_GRAPH, type TurnGraph } from "../../ports/turn-graph.js";
 import { createInMemoryExecutionReportRepository } from "./execution-report-repository.js";
 import { createInMemoryProjectChatAdapter } from "./project-chat-adapter.js";
 
@@ -110,6 +114,8 @@ function defaultThread(input: CreateThreadInput): Thread {
     id,
     projectId: input.projectId,
     workId: null,
+    aiWriteMode: input.aiWriteMode,
+    effectiveAiWriteMode: input.aiWriteMode,
     userId: input.userId,
     kind: normalized.kind,
     status: "idle",
@@ -143,6 +149,10 @@ function defaultTurn(input: CreateTurnInput): Omit<Turn, "position"> {
     origin: input.origin,
     writeMode: input.writeMode ?? null,
     status: input.status ?? "pending",
+    executionId: input.executionId ?? null,
+    reservedForUserTurnIds: [...(input.reservedForUserTurnIds ?? [])],
+    delivery: null,
+    forgottenBy: null,
     promptBakeId: input.promptBakeId ?? null,
     compactionModel: input.compactionModel ?? null,
     parentTurnId: input.prevTurnId ?? null,
@@ -193,7 +203,7 @@ export interface InMemoryRepositoriesOptions {
 
 export function createInMemoryRepositories(
   options: InMemoryRepositoriesOptions = {},
-): InternalThreadRepositories {
+): InternalThreadRepositories & { readonly transactionOwner: InMemoryTransactionOwner } {
   const transactionOwner = options.transactionOwner ?? new InMemoryTransactionOwner();
   const threads = transactionOwner.map<string, Thread>();
   const turns = transactionOwner.map<string, Turn>();
@@ -444,6 +454,16 @@ export function createInMemoryRepositories(
       threads.set(id, updated);
       return projectThread(updated);
     },
+    async setAiWriteMode(id, mode) {
+      const thread = threads.get(id);
+      if (!thread) throw new Error(`Thread not found: ${id}`);
+      threads.set(id, {
+        ...thread,
+        aiWriteMode: mode,
+        effectiveAiWriteMode: mode,
+        updatedAt: toIsoString(new Date()),
+      });
+    },
     async bakeInitialPrompt(id, input) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);
@@ -584,7 +604,26 @@ export function createInMemoryRepositories(
     },
   };
 
+  // The in-memory inbox never hands a message back, so the graph and the conversation are one list.
+  const turnGraph: TurnGraph = {
+    async listByThread(threadId) {
+      return orderTurnsByPosition([...turns.values()].filter((t) => t.threadId === threadId));
+    },
+    async findById(id) {
+      return turns.get(id) ?? null;
+    },
+    async latest(threadId) {
+      return (await turnGraph.listByThread(threadId)).at(-1) ?? null;
+    },
+  };
+  /** Whether the turn left the conversation by a stamp whose forgetting turn is inside the span (null: always). */
+  const forgottenInSpan = (turn: Turn, throughPosition: number | null) => {
+    if (!turn.forgottenBy) return false;
+    const forgetter = turns.get(turn.forgottenBy);
+    return !!forgetter && (throughPosition === null || forgetter.position <= throughPosition);
+  };
   const turnRepo: TurnRepository = {
+    [TURN_GRAPH]: turnGraph,
     async create(input) {
       const turnDraft = defaultTurn(input);
       const existing = turns.get(turnDraft.id);
@@ -652,13 +691,27 @@ export function createInMemoryRepositories(
       );
     },
     async listByThread(threadId) {
-      return orderTurnsByPosition([...turns.values()].filter((t) => t.threadId === threadId));
+      return orderTurnsByPosition(
+        [...turns.values()].filter((t) => t.threadId === threadId && !forgottenInSpan(t, null)),
+      );
+    },
+    async forgetTurns(turnIds, byTurnId) {
+      const threadId = turns.get(byTurnId)?.threadId;
+      const stamped: TurnId[] = [];
+      for (const id of turnIds) {
+        const turn = turns.get(id);
+        if (!turn || turn.threadId !== threadId || turn.forgottenBy) continue;
+        turns.set(id, { ...turn, forgottenBy: byTurnId });
+        stamped.push(id);
+      }
+      return stamped;
     },
     async listLatestLocalRequesterText(threadIds) {
       const requested = new Set(threadIds);
       const latest = new Map<ThreadId, Turn>();
       for (const turn of turns.values()) {
         if (!requested.has(turn.threadId as ThreadId) || turn.role !== "user") continue;
+        if (forgottenInSpan(turn, null)) continue;
         const thread = threads.get(turn.threadId);
         const metadata = turn.metadata as import("@meridian/contracts/threads").JsonObject | null;
         const requester =
@@ -704,7 +757,8 @@ export function createInMemoryRepositories(
           (turn) =>
             turn.threadId === span.threadId &&
             turn.position > span.afterPosition &&
-            (span.throughPosition === null || turn.position <= span.throughPosition),
+            (span.throughPosition === null || turn.position <= span.throughPosition) &&
+            !forgottenInSpan(turn, span.throughPosition),
         );
         for (const turn of localTurns) {
           const ownedBlocks = [...blocks.values()].filter((block) => block.turnId === turn.id);
@@ -765,7 +819,8 @@ export function createInMemoryRepositories(
             (span) =>
               turn.threadId === span.threadId &&
               turn.position > span.afterPosition &&
-              (span.throughPosition === null || turn.position <= span.throughPosition),
+              (span.throughPosition === null || turn.position <= span.throughPosition) &&
+              !forgottenInSpan(turn, span.throughPosition),
           ),
       ).length;
     },
@@ -778,7 +833,8 @@ export function createInMemoryRepositories(
             (span) =>
               turn.threadId === span.threadId &&
               turn.position > span.afterPosition &&
-              (span.throughPosition === null || turn.position <= span.throughPosition),
+              (span.throughPosition === null || turn.position <= span.throughPosition) &&
+              !forgottenInSpan(turn, span.throughPosition),
           ),
       );
       return orderTurnsByPosition(matches)[ordinal - 1] ?? null;
@@ -796,6 +852,35 @@ export function createInMemoryRepositories(
         ),
       );
       return matches.sort((left, right) => left.position - right.position)[0] ?? null;
+    },
+    async listByExecution(threadId, executionId) {
+      return orderTurnsByPosition(
+        [...turns.values()].filter(
+          (turn) => turn.threadId === threadId && turn.executionId === executionId,
+        ),
+      );
+    },
+    async findRetryReservation(threadId, replyTurnId) {
+      return (
+        orderTurnsByPosition(
+          [...turns.values()].filter(
+            (turn) =>
+              turn.threadId === threadId &&
+              typeof turn.metadata === "object" &&
+              turn.metadata !== null &&
+              !Array.isArray(turn.metadata) &&
+              turn.metadata.retryReplyId === replyTurnId,
+          ),
+        )[0] ?? null
+      );
+    },
+    // The in-memory inbox lives in the runtime adapter, which does not hand messages back.
+    async listHandedBackIds() {
+      return new Set<string>();
+    },
+    // The in-memory inbox lives in the runtime adapter; deliveries read as unknown.
+    async listMessageDeliveries() {
+      return new Map();
     },
     async listUnsettledForThread(threadId) {
       return orderTurnsByPosition(
@@ -848,10 +933,6 @@ export function createInMemoryRepositories(
           role,
           status,
         }));
-    },
-    async getLatestByThread(threadId) {
-      const threadTurns = await this.listByThread(threadId);
-      return threadTurns.at(-1) ?? null;
     },
     async findRunningAssistantId(threadId, options) {
       const createdAfter = options?.createdAfter?.toISOString();
@@ -1027,6 +1108,14 @@ export function createInMemoryRepositories(
       return [...blocks.values()]
         .filter((b) => b.turnId === turnId)
         .sort((a, b) => a.sequence - b.sequence);
+    },
+    async listByTurnIds(turnIds: readonly TurnId[]) {
+      const wanted = new Set<string>(turnIds);
+      return [...blocks.values()]
+        .filter((b) => wanted.has(b.turnId as string))
+        .sort((a, b) =>
+          a.turnId === b.turnId ? a.sequence - b.sequence : a.turnId < b.turnId ? -1 : 1,
+        );
     },
     async listByThread(threadId: ThreadId) {
       const orderedTurns = orderTurnsByPosition(
@@ -1336,6 +1425,7 @@ export function createInMemoryRepositories(
       blocks,
       projects: options.projects,
     }),
+    transactionOwner,
     readSnapshot: (operation) => transactionOwner.run(operation),
     threadDocuments: threadDocumentRepo,
     documentTouches: documentTouchRepo,
@@ -1351,4 +1441,5 @@ export function createInMemoryRepositories(
   };
 }
 
+/** The repositories plus the owner of their data, so a journal writer follows the same commits. */
 export type InMemoryRepositories = ReturnType<typeof createInMemoryRepositories>;

@@ -1,5 +1,5 @@
 ---
-description: One verified commit per plan phase; lefthook gates; CHANGELOG at commit time
+description: One verified commit per plan phase; lefthook gates; PR Changelog at commit time
 alwaysApply: true
 ---
 
@@ -11,8 +11,14 @@ Branch history is how reviewers and future agents replay verified work. Each `gi
 
 ## Hooks
 
-**pre-commit** (staged): `biome check`, then `pnpm typecheck`.  
-**pre-push**: `pnpm test`.
+**pre-commit**: staged Biome and migration lint, then `pnpm typecheck:staged`.
+Documentation-only commits skip TypeScript. Other staged paths select Nx projects
+and their dependent consumers; shared configuration selects the wider set.
+Selection reads the Git index, but project checks read the working tree, including
+unstaged edits. No staged snapshot is created and nothing is stashed.
+
+**pre-push**: debug-probe checks and `pnpm --filter @meridian/database test`.
+**Full gates**: `pnpm typecheck`, `pnpm check` and CI still check every project.
 
 When hooks fail, fix and commit again. Use `--no-verify` only when the user explicitly allows it.
 
@@ -21,7 +27,7 @@ When hooks fail, fix and commit again. Use `--no-verify` only when the user expl
 1. Finish one plan phase or logical step
 2. Stage only files for that step
 3. `git commit` with a message that states what and why
-4. Add a matching bullet under `CHANGELOG.md` → `## [Unreleased]`
+4. Add the matching entry to the PR body's `## Changelog`; never edit `CHANGELOG.md`
 5. Start the next phase
 
 Use separate commits for separate packages (e.g. `apps/app`, then `tools/dev`). Fold review fixes into that phase's commit or a small immediate follow-up.

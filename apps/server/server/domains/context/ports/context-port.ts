@@ -18,6 +18,8 @@ import type {
   DocumentFileType,
   Filetype,
   MoveContextEntryRequest,
+  NamespaceNameClaim,
+  RetractionCause,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { SpelledLinkFact } from "@meridian/markup/links";
@@ -25,12 +27,14 @@ import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type { WorkRef } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
+import type { BranchChangeAuthor, RecordedBranchTreeChange } from "./branch-tree.js";
 
 /**
  * Registered context URI schemes.
  *
  * Project-scoped: `manuscript`/`kb`/`user` (bare paths default to `manuscript`).
- * Work-scoped: `scratch`/`uploads` (wire qualifiers use `scheme://@<work-slug>/...`).
+ * Owned: `scratch` (a Work's, `scratch://@w3/...`, or a lineage's, `scratch://@c12/...`)
+ * and `uploads` (a chat's, `uploads://@c15/...`). Only Scratch belongs to a Work.
  */
 export type { ContextError, ContextMoveResult } from "@meridian/contracts/protocol";
 export type ContextScheme = ContextUriScheme;
@@ -42,12 +46,23 @@ export type ContextScheme = ContextUriScheme;
  */
 export interface ThreadContextView {
   scratchOwner?: import("../scratch-owner.js").ScratchOwner;
+  /** The chat whose uploads bare `uploads://` names: this thread's top primary (a subagent's parent). */
+  uploadsOwner?: UploadsOwner;
   threadId: string;
   /** The reply in progress, whose own staged writes reads still see. */
   responseId?: string | null;
-  /** The Work whose draft this thread's drafted writes land in; null outside draft mode (D40). */
-  draftWork: WorkRef | null;
+  /** The Work whose branch this thread's drafted writes land in; null outside draft mode (D40). */
+  branchWork: WorkRef | null;
   version?: "draft" | "live";
+}
+
+/**
+ * A chat as the owner of uploads. `chatRef` is null while the chat's row does not exist yet
+ * (a New chat's first uploads), so its files have no handle to spell.
+ */
+export interface UploadsOwner {
+  chatId: string;
+  chatRef: string | null;
 }
 
 /** Schemes provisioned at project scope in the unified context port. */
@@ -71,6 +86,12 @@ export interface ContextWriteResult {
   updateSeq?: number;
 }
 
+/** A binary write's outcome: where it landed, as the adapter's placement decided (§2.3). */
+export interface ContextBinaryWriteResult extends ContextWriteResult {
+  documentId: string;
+  placement: "live" | "draft";
+}
+
 export interface ContextEnsureTrackedDocumentResult {
   uri: string;
   documentId: string;
@@ -86,8 +107,19 @@ export type ContextCreateUntitledDocumentResult =
   | {
       status: "created";
       documentId: string;
+      scheme: ContextScheme;
       path: string;
       name: string;
+      workId?: string;
+    }
+  /** The create joined a branch's document; `documentId` is that document, at its current address. */
+  | {
+      status: "joined";
+      documentId: string;
+      scheme: ContextScheme;
+      path: string;
+      name: string;
+      workId?: string;
     }
   | {
       status: "already-materialized";
@@ -102,6 +134,24 @@ export type ContextCreateUntitledDocumentResult =
 export interface ContextCreateUntitledDocumentOptions {
   documentId: string;
   origin: WriteProvenance;
+  /**
+   * The writer's chosen place for this document, the same identity-based address a move
+   * carries. The create joins a branch's hidden document waiting there. Without it the
+   * create is nameless: `Untitled N` in the home URI's folder.
+   */
+  destination?: { parent: NonNullable<MoveContextEntryRequest["destinationParent"]>; name: string };
+  /** Refuses a destination the caller may not edit; given the resolved destination URI. */
+  authorizeDestination?: (uri: string) => Promise<boolean>;
+}
+
+/** What the router hands an adapter: the destination resolved to a folder path and a leaf. */
+export interface AdapterCreateUntitledOptions {
+  documentId: string;
+  origin: WriteProvenance;
+  /** The typed leaf filename; absent for a nameless create. */
+  name?: string;
+  /** The folder identity the destination named: a stale one is retried, never made again. */
+  expectFolderId?: string;
 }
 
 interface BaseListEntry {
@@ -234,13 +284,11 @@ export interface ContextWriteOptions {
   /** Extension inherited by an extensionless copy destination. */
   sourceExtension?: string;
   origin?: WriteProvenance;
-  /** Stable identity reserved by an authoritative aggregate before content creation. */
-  documentId?: string;
   /**
-   * Create only the context row for a tracked document; the caller must ensure
-   * the live Y.Doc before committed content is applied.
+   * Stable identity reserved by an authoritative aggregate before content creation (an
+   * upload's reservation): a create mints it.
    */
-  deferDocumentSync?: boolean;
+  documentId?: string;
   /** Recorded in `documents.metadata` when this call creates the document; never on an existing one. */
   metadata?: DocumentCreationMetadata;
 }
@@ -251,15 +299,32 @@ export interface ContextLocationOptions extends ContextWriteOptions {
   authorizeDestination?: (uri: string) => Promise<boolean>;
   operationId?: string;
   expected?: MoveContextEntryRequest["expected"];
+  /**
+   * Runs inside the move's own transaction once its rows are written, so a caller's record of
+   * the move (the model's edit history) commits or rolls back with it.
+   */
+  inTransaction?: (moved: ContextMoveResult) => Promise<void>;
 }
 
 export interface ContextMoveOptions extends ContextWriteOptions {
   overwrite?: boolean;
 }
 
+/** What `changeInBranch` does: the document it names must be at the source address. */
+export type ContextBranchTreeCommand = {
+  documentId: string;
+  changedBy: BranchChangeAuthor;
+  record(change: RecordedBranchTreeChange): Promise<void>;
+} & ({ op: "move"; sourceUri: string; destinationUri: string } | { op: "delete"; uri: string });
+
+export type ContextBranchTreeResult = { uri: string; moved: boolean };
+
 export interface ContextDeleteOptions extends ContextWriteOptions {
+  removal?: { reason: "discarded"; cause: RetractionCause };
   operationId?: string;
   expected: DeleteContextEntryRequest["expected"];
+  /** Runs inside the delete's own transaction once the removal is written (see the move's). */
+  inTransaction?: (deleted: DeleteContextEntryResult) => Promise<void>;
 }
 
 /** Input for writing a binary (storage-backed) document through {@link ContextPort.writeBinary}. */
@@ -285,7 +350,7 @@ export interface ContextPort {
   /** Read a text file by URI. `not_found` if it does not exist. */
   read(uri: string): Promise<Result<ContextReadResult, ContextError>>;
 
-  /** Write text content to a URI, creating parent folders as needed. */
+  /** Overwrite the document at a URI with text. `not_found` when none lives there: it never creates. */
   write(
     uri: string,
     content: string,
@@ -310,6 +375,14 @@ export interface ContextPort {
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
 
+  /** Allocate the first free leaf at `uri`, then create its identity and initial content together. */
+  createTrackedDocumentAtFreeName(
+    uri: string,
+    markdown: string,
+    reserved: readonly NamespaceNameClaim[],
+    options?: ContextWriteOptions,
+  ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
+
   /**
    * `createTrackedDocument` with content `bindTrackedDocument` made for
    * this URI (null: empty); safe inside a transaction.
@@ -320,6 +393,14 @@ export interface ContextPort {
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
 
+  /**
+   * Where this reader sees a document, by id: its URI in the first of this port's sources
+   * that shows it (the scan untitled creation uses to find a materialized id), or null.
+   */
+  locate(
+    documentId: string,
+  ): Promise<Result<{ documentId: string; uri: string } | null, ContextError>>;
+
   /** Allocate and persist an empty client-seeded document under a home directory URI. */
   createUntitledDocument(
     homeUri: string,
@@ -329,20 +410,41 @@ export interface ContextPort {
   /** Ensure a tracked text document row and empty Yjs document exist without replacing content. */
   ensureTrackedDocument(
     uri: string,
-    options?: ContextWriteOptions,
+    options?: import("./context-adapter.js").ContextEnsureTrackedOptions,
   ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>>;
+
+  /**
+   * Reverse a create this port made, for a rolled-back reply or a failed create write
+   * (contract §12.5): a live create is deleted; a branch's create ends the branch's use of
+   * the document unless the document's draft already holds committed text. A draft-mode
+   * port's `delete` never reverses a branch's create.
+   */
+  retractCreate(
+    uri: string,
+    options: { documentId: string; cause: RetractionCause },
+  ): Promise<Result<void, ContextError>>;
 
   /** Write a binary (storage-backed) file to a URI. Creates parent folders as needed. */
   writeBinary(
     uri: string,
     options: ContextWriteBinaryOptions,
-  ): Promise<Result<ContextWriteResult, ContextError>>;
+  ): Promise<Result<ContextBinaryWriteResult, ContextError>>;
 
   move(
     sourceUri: string,
     destinationUri: string,
     options?: ContextMoveOptions,
   ): Promise<Result<ContextMoveResult, ContextError>>;
+
+  /**
+   * A draft-mode chat's move or delete (D26, D45): facts in its Work's branch, never the
+   * shared tree and never the mover. Each end must participate in the branch tree; its content
+   * placement may remain live, as Scratch's does. `record` runs in the same transaction. A move
+   * to where the branch already has the document answers `moved: false` and records nothing.
+   */
+  changeInBranch(
+    command: ContextBranchTreeCommand,
+  ): Promise<Result<ContextBranchTreeResult, ContextError>>;
 
   /** Commit a file's exact writer-facing identity and end provisional naming. */
   commitWriterLocation(

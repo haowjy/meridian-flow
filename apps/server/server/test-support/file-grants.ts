@@ -14,6 +14,7 @@ import {
   type FileGrant,
 } from "../domains/file-policy/index.js";
 import { runWithEditConfirmation } from "../shared/edit-confirmation.js";
+import { createTestWorkProjectionMutation } from "./work-projection.js";
 
 export function testFileGrant(
   destination: FileDestination = { kind: "live" },
@@ -21,7 +22,17 @@ export function testFileGrant(
 ): FileGrant<"edit"> {
   const target = { kind: "document", documentId: documentId as DocumentId } as const;
   return {
-    principal: { accountId: "test-user" as UserId },
+    principal: {
+      accountId: "test-user" as UserId,
+      ...(destination.kind === "draft"
+        ? {
+            agent: {
+              chain: [],
+              branchWork: { id: destination.workId, handle: destination.workHandle },
+            },
+          }
+        : {}),
+    },
     facts: {
       target,
       projectId: "test-project" as ProjectId,
@@ -34,9 +45,9 @@ export function testFileGrant(
       ancestors: [],
       ...(destination.kind === "draft"
         ? {
-            draftWork: {
+            branchWork: {
               id: destination.workId,
-              slug: destination.workSlug,
+              handle: destination.workHandle,
               isNoWork: false,
               archived: false,
               deleted: false,
@@ -51,7 +62,7 @@ export function testFileGrant(
 /** The real policy over Postgres facts, for routes and readers whose access is under test. */
 export function drizzleFileAccess(db: Database): FileAccess {
   return createFileAccess({
-    facts: createDrizzleFileFacts(db),
+    facts: createDrizzleFileFacts(db, createTestWorkProjectionMutation(db)),
     grants: createOwnerFileGrants(),
     readAgentChain: async () => {
       throw new Error("This test's file access has no agent chains");

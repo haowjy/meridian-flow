@@ -1,0 +1,108 @@
+/** View-local transient review paint, deliberately excluded from decoration equality. */
+import { i18n } from "@lingui/core";
+import type { EditorState } from "@tiptap/pm/state";
+import type { EditorView } from "@tiptap/pm/view";
+import type { InlineReviewPluginState } from "./DraftInlineReviewExtension";
+import { CHANGE_ATTR, inlineReviewClassNames, RENDER_ATTR } from "./decorations";
+import { updateRemovalElement } from "./removal-widget";
+
+export function createReviewPaintView(
+  view: EditorView,
+  read: (state: EditorState) => InlineReviewPluginState | undefined,
+  relocalize: () => void,
+) {
+  let consumedPulse = 0;
+  const arrivals = new Set<string>();
+  // PM's observer must not parse decoration-only DOM writes as manuscript edits.
+  // stop() preserves pending native mutations; start() observes again after our paint.
+  const observer = (view as EditorView & { domObserver: { stop(): void; start(): void } })
+    .domObserver;
+  const paintDOM = (write: () => void) => {
+    observer.stop();
+    try {
+      write();
+    } finally {
+      observer.start();
+    }
+  };
+  const update = () => {
+    const state = read(view.state);
+    if (!state) return;
+    // Remember arrival render keys even while composition defers DOM writes. Subsequent
+    // composing text can change its command hash without losing or replaying that arrival.
+    if (state.pulseRevision !== consumedPulse) {
+      consumedPulse = state.pulseRevision;
+      for (const group of state.review?.groups ?? []) {
+        if (!state.arrivals.has(group.id)) continue;
+        for (const hunk of group.hunks) arrivals.add(state.renderKeys.get(hunk.index) ?? "");
+      }
+    }
+    if (state.composing) return;
+    const changes = new Map<string, string>();
+    for (const group of state.review?.groups ?? [])
+      for (const hunk of group.hunks) changes.set(state.renderKeys.get(hunk.index) ?? "", group.id);
+    const animateArrival =
+      arrivals.size > 0 && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    paintDOM(() => {
+      for (const element of view.dom.querySelectorAll<HTMLElement>(
+        `[${RENDER_ATTR}],[${CHANGE_ATTR}]`,
+      )) {
+        const key = element.getAttribute(RENDER_ATTR) ?? "";
+        const id = changes.get(key);
+        if (!id) {
+          // PM removes its decoration attributes, but semantic IDs are owned by this view.
+          // A moved/undone node can survive after its decoration, so retire our attributes too.
+          element.removeAttribute(CHANGE_ATTR);
+          element.classList.remove(
+            inlineReviewClassNames.emphasized,
+            inlineReviewClassNames.arrived,
+          );
+          continue;
+        }
+        if (element.getAttribute(CHANGE_ATTR) !== id) element.setAttribute(CHANGE_ATTR, id);
+        element.classList.toggle(inlineReviewClassNames.emphasized, id === state.activeChangeId);
+        if (animateArrival && arrivals.has(key))
+          element.classList.add(inlineReviewClassNames.arrived);
+        const plan = state.removals.get(key);
+        if (plan && element.classList.contains(inlineReviewClassNames.removal))
+          updateRemovalElement(element, plan, state.expandedRemovals.has(key));
+      }
+    });
+    arrivals.clear();
+  };
+  const endAnimation = (event: AnimationEvent) => {
+    const element = event.target;
+    if (element instanceof HTMLElement)
+      paintDOM(() => element.classList.remove(inlineReviewClassNames.arrived));
+  };
+  view.dom.addEventListener("animationend", endAnimation);
+  view.dom.addEventListener("animationcancel", endAnimation);
+  const unsubscribe = i18n.on("change", () => relocalize());
+  update();
+  return {
+    update: (_view: EditorView, oldState: EditorState) => {
+      const before = read(oldState);
+      const after = read(view.state);
+      if (!after) return;
+      // PM finalizes composition with updateState(view.state), recreating wrappers without
+      // changing decorations or plugin state. Hydrate that DOM too; ordinary keystrokes
+      // still map the tree without a scan until a projection or paint intent.
+      if (
+        oldState === view.state ||
+        before?.review !== after.review ||
+        before?.activeChangeId !== after.activeChangeId ||
+        before?.expandedRemovals !== after.expandedRemovals ||
+        before?.pulseRevision !== after.pulseRevision ||
+        before?.marksVisible !== after.marksVisible ||
+        before?.composing !== after.composing ||
+        (oldState.doc === view.state.doc && before !== after)
+      )
+        update();
+    },
+    destroy: () => {
+      unsubscribe();
+      view.dom.removeEventListener("animationend", endAnimation);
+      view.dom.removeEventListener("animationcancel", endAnimation);
+    },
+  };
+}

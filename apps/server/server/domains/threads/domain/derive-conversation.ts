@@ -1,7 +1,9 @@
 /** Domain operations for explicit agent handoff/fork into a new primary thread. */
 import type { AgentSelection } from "@meridian/contracts/agents";
+import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import type {
   AgentRevisionBinding,
   AgentRevisionStore,
@@ -38,6 +40,8 @@ export interface ThreadAgentSwapDeps {
   agentCatalog: BoundAgentCatalog;
   agentRevisions: AgentRevisionStore;
   eventWriter: EventJournalWriter;
+  /** The mode the writer sees on the source chat: a derived chat starts in it. */
+  effectiveWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
 }
 
 export class SubagentDerivationError extends Error {
@@ -145,6 +149,7 @@ export async function handoffThreadAgent(
         userId: lockedSource.userId,
         projectId: lockedSource.projectId,
         workId,
+        aiWriteMode: await deps.effectiveWriteMode(lockedSource.id as ThreadId),
         source: owner,
         initialPromptBakeId: inheritedBake?.id ?? null,
         originType: "handoff",
@@ -227,6 +232,7 @@ export async function forkThreadAgent(
       userId: lockedSource.userId,
       projectId: lockedSource.projectId,
       workId: sourceWorkId,
+      aiWriteMode: await deps.effectiveWriteMode(lockedSource.id as ThreadId),
       source: lockedSource,
       originType: "fork",
       originTurnId: cutoff.turn.id as TurnId,
@@ -268,7 +274,15 @@ export async function forkThreadAgent(
       await deps.eventWriter.appendEvent(target.id as ThreadId, event);
     }
     await inheritEditingDocuments(deps, lockedSource, target);
-    await seedSystemTurn(deps, target, `Forked conversation through turn ${cutoff.turn.id}.`);
+    // The files of the inherited turns sit with the chat that owns the cutoff turn, which is
+    // the source's ancestor when the fork was cut inside inherited history.
+    const owner =
+      (await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId)) ?? lockedSource;
+    await seedSystemTurn(
+      deps,
+      target,
+      `Forked conversation through turn ${cutoff.turn.id}.\n${continuesFromLine(owner.ref ?? owner.id)}`,
+    );
     await deps.eventWriter.appendEvent(source.id as ThreadId, {
       type: "agent.fork",
       sourceThreadId: source.id,
@@ -451,6 +465,12 @@ async function inheritEditingDocuments(
         deps.threadDocuments.attach(target.id as ThreadId, document.documentId, "editing"),
       ),
   );
+}
+
+/** Tells a derived chat which chat it continues and where that chat's files are. */
+export function continuesFromLine(sourceRef: string): string {
+  const uploads = formatParsedContextUri("uploads", "", { kind: "chat", chatRef: sourceRef });
+  return `Continues from ${sourceRef}. Source uploads: ${uploads}.`;
 }
 
 async function seedSystemTurn(deps: ThreadAgentSwapDeps, thread: Thread, text: string) {

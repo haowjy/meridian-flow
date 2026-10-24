@@ -25,6 +25,7 @@ export function createScopedDocumentLinks(input: {
         holders: [holder(request.documentId, request.context)],
         docs: request.docs,
         written: request.written,
+        ...(request.context?.uploadsChat ? { uploadsChat: request.context.uploadsChat } : {}),
         stored: request.stored,
         refs: [...(request.shown ?? []).map((showing) => showing.ref), ...(request.refs ?? [])],
         addresses: request.addresses,
@@ -38,13 +39,14 @@ export function createScopedDocumentLinks(input: {
 }
 
 /** The live utility core: every command reads and writes the live tree. */
-export function liveViewFor(_documentId: string, context: WriteContext | undefined): LinkView {
-  return context?.responseIdentity?.editScopeId
-    ? { kind: "live", responseId: context.responseIdentity.editScopeId }
-    : { kind: "live" };
+export function liveViewFor(_documentId: string, _context: WriteContext | undefined): LinkView {
+  return { kind: "live" };
 }
 
-/** The registry rows for minted ahead refs: each under the project its holder scope had. */
+/**
+ * The registry rows for minted ahead refs: each under the project its holder scope had,
+ * and in the branch its holder was minted in (B7), so the branch's occupant settles it there.
+ */
 export function aheadRegistrations(mints: readonly AheadMint[]) {
   return mints.map((mint) => {
     const parsed = parseLinkRef(mint.ref);
@@ -55,6 +57,7 @@ export function aheadRegistrations(mints: readonly AheadMint[]) {
       aheadId: parsed.aheadId,
       holderProjectId: mint.holderProjectId,
       address: mint.address,
+      ...(mint.view.kind === "branch" ? { branchId: mint.view.branchId } : {}),
     };
   });
 }

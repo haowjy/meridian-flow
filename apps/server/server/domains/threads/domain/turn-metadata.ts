@@ -1,5 +1,6 @@
 /** Typed metadata codecs, constructors, and history classification for durable turns. */
 
+import type { TypedFailureReason } from "@meridian/contracts/failures";
 import { SummaryRejectionReasonCodec } from "@meridian/contracts/runtime";
 import type {
   JsonObject,
@@ -7,6 +8,7 @@ import type {
   ProviderErrorResponse,
   Turn,
 } from "@meridian/contracts/threads";
+import { aiWriteModeSchema } from "@meridian/contracts/works";
 import { z } from "zod";
 
 export const SystemUpdateMetadataCodec = z
@@ -84,7 +86,7 @@ export const HandoffSeedMetadataCodec = DerivationSeedMetadataCodec.extend({
 const modelElisionsCodec = z.array(
   z.object({
     blockId: z.string(),
-    treatment: z.enum(["stale_read", "stale_write"]),
+    treatment: z.enum(["stale_read", "stale_write", "reshown"]),
     uris: z.array(z.string()),
     content: z.json(),
   }),
@@ -116,6 +118,14 @@ export const CompactionFailureOutcomeCodec = z.object({
 });
 
 export type CompactionFailureOutcome = z.infer<typeof CompactionFailureOutcomeCodec>;
+
+// A reason added to either codec must be classified in `@meridian/contracts/failures`: the constraint
+// fails to compile for an unclassified member (a conditional type resolving to `never` would not).
+type AssertClassified<_Reason extends TypedFailureReason> = true;
+type _FailureReasonsAreClassified = [
+  AssertClassified<z.infer<typeof HandoffFailureReasonCodec>>,
+  AssertClassified<z.infer<typeof CompactionFailureReasonCodec>>,
+];
 
 const compactionFailureMetadataFields = {
   reason: CompactionFailureReasonCodec.optional(),
@@ -177,6 +187,14 @@ export const PromptEpochMetadataCodec = z.union([
 
 export const SteerMetadataCodec = z.object({ delivery: z.literal("steer") }).passthrough();
 
+/** An applied write-mode switch: a complete `system` turn whose text block is the model's notice. */
+export const WriteModeSwitchMetadataCodec = z.object({
+  kind: z.literal("write_mode_switch"),
+  mode: aiWriteModeSchema,
+  controlMessageId: z.string().min(1),
+});
+export type WriteModeSwitchMetadata = z.infer<typeof WriteModeSwitchMetadataCodec>;
+
 export type ImageContextBreak = z.infer<typeof ImageContextBreakCodec>;
 export type ImageInclusionMetadata = z.infer<typeof ImageInclusionMetadataCodec>;
 export type CompactionMetadata = z.infer<typeof CompactionMetadataCodec>;
@@ -193,6 +211,7 @@ export type HistoryItemClass =
   | { kind: "work_update" }
   | { kind: "notice" }
   | { kind: "skill_body" }
+  | { kind: "compaction_notes" }
   | { kind: "image_update" }
   | { kind: "fork_or_handoff_seed"; derivation: "fork" | "handoff" }
   | { kind: "compaction"; metadata?: CompactionMetadata }
@@ -248,12 +267,29 @@ export function workUpdateMetadata(): JsonObject {
   return systemUpdateMetadata("work_context");
 }
 
+export function writeModeSwitchMetadata(input: Omit<WriteModeSwitchMetadata, "kind">): JsonObject {
+  return { kind: "write_mode_switch", mode: input.mode, controlMessageId: input.controlMessageId };
+}
+
+export function isWriteModeSwitchTurn(turn: Pick<Turn, "role" | "metadata">): boolean {
+  return turn.role === "system" && WriteModeSwitchMetadataCodec.safeParse(turn.metadata).success;
+}
+
 export function noticesMetadata(): JsonObject {
   return systemUpdateMetadata("notices");
 }
 
 export function skillBodyMetadata(): JsonObject {
   return systemUpdateMetadata("skill_body");
+}
+
+export function compactionNotesMetadata(): JsonObject {
+  return systemUpdateMetadata("compaction_notes");
+}
+
+export function isCompactionNotesTurn(turn: Pick<Turn, "role" | "metadata">): boolean {
+  const parsed = SystemUpdateMetadataCodec.safeParse(turn.metadata);
+  return turn.role === "system" && parsed.success && parsed.data.section === "compaction_notes";
 }
 
 export function compactionSummaryMetadata(): JsonObject {
@@ -380,25 +416,6 @@ export function isPromptEpochMetadata(metadata: Turn["metadata"]): boolean {
 }
 
 /** Classifies stored turns once so compaction and history inspection share the same rules. */
-/** Metadata kinds that make a user or assistant turn a system message rather than conversation. */
-export const SYSTEM_TURN_KINDS = ["system_update", "derivation_seed", "subagent_update"] as const;
-
-/**
- * A conversation turn: a writer request, an agent request, or an assistant
- * reply. History numbers only these. The rule reads role, origin and
- * `metadata.kind` alone so a repository can count it in one query.
- */
-export function isConversationTurn(turn: Pick<Turn, "role" | "origin" | "metadata">): boolean {
-  const kind =
-    turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
-      ? (turn.metadata as { kind?: unknown }).kind
-      : undefined;
-  if ((SYSTEM_TURN_KINDS as readonly unknown[]).includes(kind)) return false;
-  if (turn.role === "user")
-    return turn.origin === "writer" || (turn.origin === "system" && kind === "inbox_message");
-  return turn.role === "assistant" && turn.origin === "assistant";
-}
-
 export function classifyHistoryItem(
   turn: Pick<Turn, "role" | "origin" | "metadata">,
 ): HistoryItemClass {
@@ -426,6 +443,7 @@ export function classifyHistoryItem(
   if (systemUpdate.success) {
     if (systemUpdate.data.section === "work_context") return { kind: "work_update" };
     if (systemUpdate.data.section === "notices") return { kind: "notice" };
+    if (systemUpdate.data.section === "compaction_notes") return { kind: "compaction_notes" };
     if (systemUpdate.data.section === "skill_body") return { kind: "skill_body" };
     return { kind: "system_update" };
   }

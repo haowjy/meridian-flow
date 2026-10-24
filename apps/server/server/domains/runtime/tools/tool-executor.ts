@@ -188,13 +188,13 @@ function successResult(
   registration: ToolRegistration,
   input: JsonObject,
 ): ToolExecutionResult {
-  const shown = shownCandidates(output);
+  const evidence = hostEvidence(output);
   if (isHandlerErrorResult(output)) {
     return {
       toolCallId,
       ...modelOutput(registration, toJsonValue(withoutHostOnly(output.output)), input),
       isError: true,
-      ...shown,
+      ...evidence,
     };
   }
   let value = output;
@@ -211,27 +211,30 @@ function successResult(
     ...(registration.capability === "return_result" && isReturnResultOutcome(value)
       ? { returnResult: value }
       : {}),
-    ...shown,
+    ...evidence,
   };
 }
 
+const HOST_ONLY = ["evidence", "showing", "frontier"] as const;
+
 /**
- * `value` without the host-only shown-link fields a handler may return beside
- * or inside it (`shown` candidates, an outcome's `showing`): the persisted
+ * `value` without host-only evidence: the handler's `evidence` beside it, or
+ * an agent-edit outcome's `showing` and `frontier` inside it. The persisted
  * result, history and the browser never carry them (contract §7.1).
  */
 function withoutHostOnly(value: unknown): unknown {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
-  if (!("shown" in value) && !("showing" in value)) return value;
-  const { shown: _shown, showing: _showing, ...rest } = value as Record<string, unknown>;
+  if (!HOST_ONLY.some((key) => key in value)) return value;
+  const rest = { ...(value as Record<string, unknown>) };
+  for (const key of HOST_ONLY) delete rest[key];
   return rest;
 }
 
-/** The handler's host-only shown-link candidates, kept out of every serialized field. */
-function shownCandidates(output: unknown): Pick<ToolExecutionResult, "shown"> {
-  if (typeof output !== "object" || output === null || !("shown" in output)) return {};
-  const shown = (output as { shown?: ToolExecutionResult["shown"] }).shown;
-  return shown && shown.length > 0 ? { shown } : {};
+/** The handler's host-only evidence, kept out of every serialized field. */
+function hostEvidence(output: unknown): Pick<ToolExecutionResult, "evidence"> {
+  if (typeof output !== "object" || output === null || !("evidence" in output)) return {};
+  const evidence = (output as Pick<ToolExecutionResult, "evidence">).evidence;
+  return evidence && (evidence.shown.length > 0 || evidence.frontier) ? { evidence } : {};
 }
 
 /**
@@ -435,6 +438,7 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         turnId: ctx.turnId as string,
         responseIdentity: ctx.responseIdentity,
         agentSlug: ctx.agentSlug,
+        ...(ctx.frontiers ? { frontiers: ctx.frontiers } : {}),
         emitOutputDelta: ctx.emitOutputDelta
           ? (chunk) => ctx.emitOutputDelta?.(call.id, chunk)
           : undefined,

@@ -1,7 +1,7 @@
 /** Canonical device-local working-set state and its pure mutation rules. */
 
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import {
-  isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
   parseWorkingSetRouteList,
   type WorkingSetRoute,
@@ -43,7 +43,8 @@ const EMPTY_SNAPSHOT: WorkingSetSnapshot = { recentRoutes: [] };
 /**
  * Canonical WorkingSetRoute builder from tab/route coordinates. Returns null
  * for empty paths. Callers must resolve Work/no-Work authority before building
- * a Work-capable route; a chat's Scratch passes its lineage instead of a Work.
+ * a Work-capable route; a chat's Scratch passes its lineage instead of a Work, and
+ * a chat's upload passes the chat.
  * Empty Scratch belongs only to the device workspace and coordinator, never
  * recency.
  */
@@ -51,16 +52,20 @@ export function buildWorkingSetRoute(
   documentId: DocumentId,
   scheme: ProjectContextTreeScheme,
   path: string,
-  workId: string | null | undefined,
-  rootThreadId?: string | null,
+  owner: { workId?: string | null; rootThreadId?: string | null; chatId?: string | null },
 ): WorkingSetRoute | null {
   if (path.length === 0) return null;
-  if (scheme === "scratch" && rootThreadId) return { documentId, scheme, path, rootThreadId };
-  if (isWorkScopedProjectContextScheme(scheme)) {
-    if (workId === undefined) {
-      throw new TypeError("Work-capable working-set routes require resolved authority");
+  if (scheme === "uploads") {
+    // A chat's upload is held by its chat; an Editor target names none.
+    if (!owner.chatId) return null;
+    return { documentId, scheme, path, chatId: owner.chatId };
+  }
+  if (isWorkScopedScheme(scheme)) {
+    if (owner.rootThreadId) return { documentId, scheme, path, rootThreadId: owner.rootThreadId };
+    if (owner.workId === undefined) {
+      throw new TypeError("Scratch working-set routes require resolved authority");
     }
-    return { documentId, scheme, path, workId: workId as string | null };
+    return { documentId, scheme, path, workId: owner.workId };
   }
   return { documentId, scheme, path };
 }
@@ -82,7 +87,8 @@ export function workingSetRouteEquals(
     left.scheme === right.scheme &&
     left.path === right.path &&
     left.workId === right.workId &&
-    left.rootThreadId === right.rootThreadId
+    left.rootThreadId === right.rootThreadId &&
+    left.chatId === right.chatId
   );
 }
 
@@ -312,6 +318,26 @@ export function replaceSnapshotRoute(
   const recentRoutes = [...snapshot.recentRoutes];
   recentRoutes[index] = route;
   return { ...snapshot, recentRoutes };
+}
+
+/**
+ * A route written under a document's old id follows its new one (a join makes the
+ * device's minted id an alias the server never saw). Returns the same array when
+ * nothing names the old id; the route already under the new id wins a duplicate.
+ */
+export function followRouteIdentity(
+  routes: readonly WorkingSetRoute[],
+  fromDocumentId: string,
+  toDocumentId: string,
+): readonly WorkingSetRoute[] {
+  if (!routes.some((route) => route.documentId === fromDocumentId)) return routes;
+  const followed = routes.map((route) =>
+    route.documentId === fromDocumentId ? { ...route, documentId: toDocumentId } : route,
+  );
+  return followed.filter(
+    (route, index) =>
+      followed.findIndex((other) => other.documentId === route.documentId) === index,
+  );
 }
 
 /** Applies a complete context-route transition at one snapshot boundary. */

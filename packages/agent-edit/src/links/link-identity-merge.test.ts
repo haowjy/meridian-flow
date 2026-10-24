@@ -109,12 +109,11 @@ const editor: Producer = {
 /** The agent writes after the move lands in the catalog, with the path it was last shown. */
 const agent: Producer = {
   name: "agent",
-  async edit({ writer, writerId, agentContent, shown, moved }) {
+  async edit({ writer, agentContent, shown, moved }) {
     const ctx = linkHarness({
       holder: { id: HOLDER_ID, uri: HOLDER },
       documents: catalogNow(),
       doc: writer,
-      runtimeClientID: writerId,
     });
     moved();
     ctx.catalog.documents = [catalogDocument(HOLDER_ID, HOLDER), ...catalogNow()];

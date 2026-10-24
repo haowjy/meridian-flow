@@ -1,21 +1,47 @@
 /** Renders durable document and Work change receipts. */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ReversalOutcome, Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
+import { parseContextUri } from "@meridian/contracts/context-uri";
+import type {
+  TreeReversalLanding,
+  Turn,
+  TurnInverseSkip,
+  TurnReceiptChip,
+  TurnTreeLine,
+} from "@meridian/contracts/protocol";
+import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isReversibleWorkReceipt } from "@meridian/contracts/works";
+import type { WorkReceipt } from "@meridian/thread-client";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { type ReversalDirection, successfulWorkReversals } from "@/client/api/reverse-api";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
+import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
 import { DraftStatsLabel } from "@/features/draft-review/draft-stats";
+import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
+import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { cn } from "@/lib/utils";
 import { ChangeViewRows } from "./ChangeViewRows";
 import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
 import { type ChangeRevealRequest, useChangeReveal } from "./conversation-reveal";
 import { DocumentName } from "./DocumentName";
-import type { WorkReceipt } from "./tool-command";
+import {
+  documentDisplayName,
+  documentLocationName,
+  moveDestinationName,
+  type OwnerNames,
+} from "./document-display-name";
+import { useOwnerNames } from "./owner-names";
+import {
+  dependentChangeCopy,
+  type ReversalRefusal,
+  refusedReversalStatus,
+  reversalRefusalCopy,
+  skipCauseCopy,
+  treeFaultLocation,
+} from "./turn-receipt-copy";
 import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 import { workReceiptLine } from "./work-receipt-copy";
@@ -25,6 +51,8 @@ export type TurnEditDocument = {
   path: string;
   uri: string;
   scope: "live" | "draft";
+  /** The turn moved or deleted it: the row says so instead of only naming it. */
+  tree?: TurnTreeLine;
 };
 
 function hasTurnEditsReceiptDocuments(
@@ -53,7 +81,7 @@ export type TurnEditsReceiptProps = {
   turn: Turn;
   documents: TurnEditDocument[];
   receipt: TurnReceiptChip | null;
-  /** Work receipts carried by this turn's tool results (`turnWorkReceipts`). */
+  /** Work receipts carried by this turn's tool results (`AssistantView.workReceipts`). */
   workReceipts?: readonly WorkReceipt[];
   changeTrail?: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;
@@ -74,16 +102,27 @@ export function TurnEditsReceipt({
   const [expanded, setExpanded] = useState(false);
   const changeReveal = useChangeReveal(threadId, turn.id);
   const [pending, setPending] = useState(false);
-  const [draftOutcome, setDraftOutcome] = useState(false);
-  const [actionSkips, setActionSkips] = useState<
-    import("@meridian/contracts/protocol").TurnInverseSkip[] | null
-  >(null);
+  // The parts the writer's last Undo or Redo left, with the command that left them.
+  const [actionSkips, setActionSkips] = useState<{
+    direction: ReversalDirection;
+    skips: TurnInverseSkip[];
+  } | null>(null);
   const [commandRefusal, setCommandRefusal] = useState<ReversalRefusal | null>(null);
-  const [restoredNotices, setRestoredNotices] = useState<string[] | null>(null);
+  const [outcomeNotices, setOutcomeNotices] = useState<string[] | null>(null);
   const turnMutation = useReverseTurnMutation(threadId);
+  const accountId = useOptionalAccountId();
+  const projectId = useProjectDocumentNavigationProjectId();
 
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
-  const guardCopy = commandRefusal ? reversalRefusalCopy(commandRefusal) : undoGuardCopy(receipt);
+  // A part the refusal line already names (a blocked or missing folder, or a document gone
+  // again) isn't listed a second time.
+  const skips = (actionSkips?.skips ?? receipt?.skips ?? []).filter(
+    (skip) => !(skip.kind === "tree" && commandRefusal?.status === skip.cause),
+  );
+  const names = useOwnerNames();
+  const guardCopy = commandRefusal
+    ? reversalRefusalCopy(commandRefusal, names)
+    : undoGuardCopy(receipt);
   const trailDocuments = changeTrail?.documents ?? [];
   const hasEditedDocuments = hasTurnEditsReceiptDocuments(documents, changeTrail);
   // Reversible Work mutation receipts are content in their own right: their
@@ -146,14 +185,45 @@ export function TurnEditsReceipt({
     setPending(true);
     try {
       const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
-      setActionSkips(outcome.skips ?? []);
-      const undoneInDraft =
-        direction === "undo" &&
-        outcome.documents.some(
-          (document) => document.status === "reversed" && document.destination?.kind === "draft",
+      if (accountId && projectId) {
+        const liveCreates = documents.filter(
+          (document) =>
+            document.scope === "live" &&
+            outcome.documents.some(
+              (result) =>
+                result.documentId === document.documentId &&
+                result.created &&
+                result.status === "reversed" &&
+                result.destination?.kind === "live",
+            ),
         );
-      setDraftOutcome(undoneInDraft);
-      if (undoneInDraft) setExpanded(true);
+        if (direction === "undo") {
+          applyRecentAvailability(accountId, {
+            removed: liveCreates.map(({ documentId }) => ({ documentId, projectId })),
+            updates: [],
+          });
+        } else {
+          for (const document of liveCreates) {
+            const uri =
+              outcome.landings?.find((landing) => landing.documentId === document.documentId)
+                ?.landedAt ?? document.uri;
+            const parsed = parseContextUri(uri);
+            if (!parsed.ok || !isProjectContextTreeScheme(parsed.value.scheme)) continue;
+            applyRecentAvailability(accountId, {
+              removed: [],
+              updates: [
+                {
+                  documentId: document.documentId,
+                  name: documentDisplayName(uri),
+                  scheme: parsed.value.scheme,
+                  path: `/${parsed.value.path}`,
+                },
+              ],
+            });
+          }
+        }
+      }
+      setActionSkips({ direction, skips: outcome.skips ?? [] });
       const restored = successfulWorkReversals(outcome);
       const status =
         outcome.status === "partial" && outcome.acceptedParts
@@ -167,9 +237,17 @@ export function TurnEditsReceipt({
         restored.length > 0 &&
         (status === "nothing_to_undo" || status === "nothing_to_redo");
       const refusal = status && !documentHalfEmpty ? status : null;
-      setCommandRefusal(refusal ? { direction, status: refusal } : null);
-      setRestoredNotices(restored.length > 0 ? [...new Set(restored.map(reversedWorkLine))] : null);
-      if (refusal || restored.length > 0 || outcome.skips?.length) setExpanded(true);
+      setCommandRefusal(
+        refusal
+          ? { direction, status: refusal, at: treeFaultLocation(refusal, outcome.skips) }
+          : null,
+      );
+      const notices = [
+        ...(outcome.landings ?? []).map((landing) => treeLandingLine(landing, names)),
+        ...restored.map(reversedWorkLine),
+      ];
+      setOutcomeNotices(notices.length ? [...new Set(notices)] : null);
+      if (refusal || notices.length > 0 || outcome.skips?.length) setExpanded(true);
     } catch {
       // A rejected request is a refusal the writer never asked for: the command
       // is the only thing that can report it, so it says so here rather than
@@ -216,7 +294,10 @@ export function TurnEditsReceipt({
           <span className="flex min-w-0 flex-1 items-baseline">
             <span className="min-w-0 truncate font-medium text-prose-foreground">
               {headerDocumentCount > 0
-                ? documentCountLabel(headerDocumentCount)
+                ? documentCountLabel(
+                    headerDocumentCount,
+                    documents.some((document) => document.tree),
+                  )
                 : workCountLabel(reversibleWorkReceipts.length)}
             </span>
             {wordStats ? (
@@ -258,44 +339,28 @@ export function TurnEditsReceipt({
       </div>
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t">
-          {draftOutcome ? (
-            <p
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
-              data-turn-draft-outcome
-              role="status"
-            >
-              <Trans>Undone in your draft. Apply it to change your manuscript.</Trans>
-            </p>
-          ) : null}
-          {(actionSkips ?? receipt?.skips ?? []).length > 0 ? (
+          {skips.length > 0 ? (
             <div
               className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
               data-turn-skips
               role="status"
             >
-              <p>
-                {plural((actionSkips ?? receipt?.skips ?? []).length, {
-                  one: "# part stayed",
-                  other: "# parts stayed",
-                })}
-              </p>
+              <p>{skipsHeading(skips.length, actionSkips?.direction ?? null, direction)}</p>
               <ul>
-                {(actionSkips ?? receipt?.skips ?? []).map((skip, index) => (
+                {skips.map((skip, index) => (
                   <li key={`${skip.documentId}:${index}`}>
-                    {skip.before ? `“${skip.before}”` : ""}
-                    {skip.before && skip.after ? " → " : ""}
-                    {skip.after ? `“${skip.after}”` : ""}
-                    <span className="ml-1">{skip.reason}</span>
+                    <SkipSubject skip={skip} />
+                    <span className="ml-1">{skipCauseCopy(skip.cause)}</span>
                   </li>
                 ))}
               </ul>
             </div>
           ) : null}
-          {restoredNotices?.map((notice) => (
+          {outcomeNotices?.map((notice) => (
             <p
               key={notice}
               className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
-              data-work-restored
+              data-reversal-outcome
               role="status"
             >
               {notice}
@@ -349,69 +414,6 @@ export function TurnEditsReceipt({
       ) : null}
     </div>
   );
-}
-
-/** A reversal the writer asked for and did not get, plus the direction they asked in — the direction the receipt carries can flip under a refusal, and the copy has to name the comm.... */
-type ReversalRefusal = {
-  direction: ReversalDirection;
-  status: Exclude<ReversalOutcome["status"], SuccessfulReversalStatus> | "request_failed";
-};
-
-type SuccessfulReversalStatus = "success" | "reversed" | "reconciled";
-
-/** The reversal statuses that mean the manuscript changed as asked. */
-function refusedReversalStatus(
-  status: ReversalOutcome["status"],
-): ReversalRefusal["status"] | null {
-  if (status === "success" || status === "reversed" || status === "reconciled") return null;
-  return status;
-}
-
-/** Writer-facing copy for a refused reversal. */
-function reversalRefusalCopy(refusal: ReversalRefusal): string {
-  switch (refusal.status) {
-    case "nothing_to_redo":
-      return t`Redo is no longer available because the manuscript changed.`;
-    case "nothing_to_undo":
-      return t`Undo is no longer available.`;
-    case "cant_undo_dependent":
-      return dependentChangeCopy();
-    case "expired":
-      return t`This change is no longer reversible.`;
-    case "partial":
-    case "partial_failure":
-      return t`Only part of this change could be reversed.`;
-    case "not_found":
-    case "document_not_found":
-      return t`That chapter is no longer available, so this change can't be reversed.`;
-    case "ambiguous_match":
-    case "invalid_write":
-      return t`This change no longer matches the chapter text, so it can't be reversed.`;
-    case "binary_file":
-      return t`This file is binary, so this change can't be reversed.`;
-    case "permission_denied":
-      return t`This file's Work is archived. Unarchive the Work to reverse this change.`;
-    case "internal_error":
-    case "read_required":
-    case "request_failed":
-      return reversalRetryCopy(refusal.direction);
-    default: {
-      // Model-only refusal codes do not drive writer controls. Unknown
-      // statuses keep the existing retry path.
-      return reversalRetryCopy(refusal.direction);
-    }
-  }
-}
-
-/** The one sentence for "later live edits depend on this", wherever it surfaces. */
-function dependentChangeCopy(): string {
-  return t`Later edits build on this change. View the change instead of undoing it.`;
-}
-
-function reversalRetryCopy(direction: ReversalDirection): string {
-  return direction === "redo"
-    ? t`Redo didn't go through. Try again.`
-    : t`Undo didn't go through. Try again.`;
 }
 
 /** Authorized durable evidence for one settled trail, and the change stage's
@@ -527,7 +529,10 @@ function undoGuardCopy(receipt: TurnReceiptChip | null): string | undefined {
   return undefined;
 }
 
-/** Full-width document row: hover washes the row, click opens the file. */
+/**
+ * Full-width document row: hover washes the row, click opens the file. A document the turn
+ * deleted is not a door: its old address may hold another document now.
+ */
 function DocumentRow({
   document,
   onOpenContextUri,
@@ -537,10 +542,12 @@ function DocumentRow({
   onOpenContextUri: ((uri: string) => void) | null;
   canOpenContextUri: ((uri: string) => boolean) | null;
 }) {
-  if (!onOpenContextUri || !canOpenContextUri?.(document.uri)) {
+  const openable =
+    document.tree?.op !== "delete" && onOpenContextUri && canOpenContextUri?.(document.uri);
+  if (!openable) {
     return (
       <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
-        <DocumentName path={document.uri} insideDoor />
+        <DocumentRowLabel document={document} />
       </span>
     );
   }
@@ -550,14 +557,106 @@ function DocumentRow({
       onClick={() => onOpenContextUri(document.uri)}
       className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-muted"
     >
-      {/* The whole row is the door here, so the name inside it stays inert. */}
-      <DocumentName path={document.uri} insideDoor />
+      <DocumentRowLabel document={document} />
     </button>
   );
 }
 
-function documentCountLabel(count: number) {
+/** A row's words: the document's name, or what the turn did to where it is. */
+function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
+  const names = useOwnerNames();
+  const tree = document.tree;
+  if (tree?.op === "move") {
+    const source = documentDisplayName(tree.from);
+    const destination = moveDestinationName(tree.from, tree.to, names);
+    return (
+      <span className="min-w-0 truncate text-prose-foreground" data-turn-tree-line="move">
+        <Trans>
+          Moved {source} to {destination}
+        </Trans>
+      </span>
+    );
+  }
+  if (tree?.op === "delete") {
+    const name = documentDisplayName(tree.from);
+    return (
+      <span className="min-w-0 truncate text-prose-foreground" data-turn-tree-line="delete">
+        <Trans>Deleted {name}</Trans>
+      </span>
+    );
+  }
+  // The whole row is the door here, so the name inside it stays inert.
+  return <DocumentName path={document.uri} insideDoor />;
+}
+
+/** "Edited" while the turn only changed text; "Changed" once it moved or deleted a document. */
+function documentCountLabel(count: number, tree: boolean) {
+  if (tree)
+    return count === 1 ? (
+      <Trans>Changed 1 document</Trans>
+    ) : (
+      <Trans>Changed {count} documents</Trans>
+    );
   return count === 1 ? <Trans>Edited 1 document</Trans> : <Trans>Edited {count} documents</Trans>;
+}
+
+/**
+ * What the listed parts are: the ones the last Undo or Redo left as they were, or, before one,
+ * the ones it would leave (a stopped turn's rolled-back parts, an applied draft).
+ */
+function skipsHeading(
+  count: number,
+  done: ReversalDirection | null,
+  next: ReversalDirection,
+): string {
+  if (done === "redo")
+    return plural(count, {
+      one: "Redo left # part as it was",
+      other: "Redo left # parts as they were",
+    });
+  if (done === "undo")
+    return plural(count, {
+      one: "Undo left # part as it was",
+      other: "Undo left # parts as they were",
+    });
+  return next === "redo"
+    ? plural(count, {
+        one: "Redo leaves # part as it is",
+        other: "Redo leaves # parts as they are",
+      })
+    : plural(count, {
+        one: "Undo leaves # part as it is",
+        other: "Undo leaves # parts as they are",
+      });
+}
+
+/**
+ * What a part that stayed was: its text excerpts, or the document a move or delete named. A
+ * part stopped by a place (taken, its folder gone, moved again) names the whole place, so the
+ * writer can find it.
+ */
+function SkipSubject({ skip }: { skip: TurnInverseSkip }) {
+  const names = useOwnerNames();
+  if (skip.kind === "tree") {
+    const at = skip.at ?? skip.uri;
+    return (
+      <>
+        {skip.cause === "ancestor_taken" ||
+        skip.cause === "folder_missing" ||
+        skip.cause === "superseded"
+          ? documentLocationName(at, names)
+          : documentDisplayName(at)}
+      </>
+    );
+  }
+  if (!skip.before && !skip.after) return <>{documentDisplayName(skip.uri)}</>;
+  return (
+    <>
+      {skip.before ? `“${skip.before}”` : ""}
+      {skip.before && skip.after ? " → " : ""}
+      {skip.after ? `“${skip.after}”` : ""}
+    </>
+  );
 }
 
 /** The Work-only header: same counting grammar as documents, wearing the
@@ -572,4 +671,11 @@ function reversedWorkLine(work: { name: string; status: string }): string {
   return work.status === "redone"
     ? t`Redid change to Work ${work.name}.`
     : t`Undid change to Work ${work.name}.`;
+}
+
+/** Where a tree inverse actually committed when its recorded name was no longer free. */
+function treeLandingLine(landing: TreeReversalLanding, names: OwnerNames): string {
+  return landing.action === "restored"
+    ? t`Restored as ${documentDisplayName(landing.landedAt)}.`
+    : t`Moved to ${documentLocationName(landing.landedAt, names)}.`;
 }

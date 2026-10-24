@@ -11,7 +11,7 @@ const loc = (workId: string, path: string): ResourceLocation => ({
   path: `/${path}`,
   name: path.split("/").at(-1)!,
   workId,
-  workSlug: workId,
+  workHandle: workId,
 });
 const source = (w: string): CatalogEntry => ({
   kind: "source",
@@ -46,28 +46,28 @@ const move = (id: string, from: string, path: string, to: string, destination: s
       parent:
         parts.length > 1
           ? { kind: "folder", folderId: "sub" }
-          : { kind: "root", scheme: "scratch", owner: { workId: to, workSlug: to } },
+          : { kind: "root", scheme: "scratch", owner: { workId: to, workHandle: to } },
       name: parts.at(-1)!,
     },
   })!.next;
 };
 it("binds a descendant through a same-path cross-Work parent in either record order", () => {
   const entries = [
-    source("alpha"),
-    source("beta"),
-    node("B", "alpha", "B"),
-    node("sub", "alpha", "B/sub", "B"),
-    node("X", "beta", "X"),
+    source("w1"),
+    source("w2"),
+    node("B", "w1", "B"),
+    node("sub", "w1", "B/sub", "B"),
+    node("X", "w2", "X"),
   ];
-  const b = move("B", "alpha", "B", "beta", "B");
-  const x = move("X", "beta", "X", "beta", "B/sub/X");
+  const b = move("B", "w1", "B", "w2", "B");
+  const x = move("X", "w2", "X", "w2", "B/sub/X");
   for (const records of [
     [b, x],
     [x, b],
   ])
     expect(
       projectFolderCatalog("p", entries, records).find((e) => e.entryId === "X"),
-    ).toMatchObject({ uri: "scratch://@beta/B/sub/X", parentId: "sub" });
+    ).toMatchObject({ uri: "scratch://@w2/B/sub/X", parentId: "sub" });
 });
 
 it("marks a document pending when its parent changes owner without changing path", async () => {
@@ -83,7 +83,7 @@ it("marks a document pending when its parent changes owner without changing path
         filetype: "markdown" as const,
         schemaType: "document" as const,
       },
-      canonical: loc("alpha", "B/doc.md"),
+      canonical: loc("w1", "B/doc.md"),
       canonicalParent: { kind: "folder" as const, folderId: "B" },
       lifecycle: { kind: "acknowledged" as const, availabilityGeneration: "1" },
       aliases: {},
@@ -93,9 +93,9 @@ it("marks a document pending when its parent changes owner without changing path
   };
   const placement = createResourcePlacement(
     "p",
-    [source("alpha"), source("beta"), node("B", "alpha", "B")],
-    [move("B", "alpha", "B", "beta", "B")],
+    [source("w1"), source("w2"), node("B", "w1", "B")],
+    [move("B", "w1", "B", "w2", "B")],
   );
-  expect(placement.resourceLocation(record)).toMatchObject({ path: "/B/doc.md", workId: "beta" });
+  expect(placement.resourceLocation(record)).toMatchObject({ path: "/B/doc.md", workId: "w2" });
   expect(placement.resourcePlacementPending(record)).toBe(true);
 });

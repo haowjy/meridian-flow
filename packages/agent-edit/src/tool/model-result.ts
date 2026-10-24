@@ -1,6 +1,5 @@
 // Versioned JSON result contract presented to editing models.
-import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
-import type { ConcurrentEditInfo } from "../apply/types.js";
+import type { DocumentRemovalRecord, PermissionDeniedReason } from "@meridian/contracts/protocol";
 import { splitHashline } from "../model/hashline.js";
 import { type DocumentCommandName, writeCommandName } from "./command-schema.js";
 
@@ -11,6 +10,7 @@ export type AgentEditResultCommand = DocumentCommandName | "unknown";
 export type WriteErrorStatus =
   | "not_found"
   | "ambiguous_match"
+  | "ambiguous_path"
   | "invalid_write"
   | "document_not_found"
   | "partial_failure"
@@ -18,19 +18,14 @@ export type WriteErrorStatus =
   | "cant_undo_applied"
   | "cant_undo_discarded"
   | "cant_undo_changed"
-  | "cant_undo_held"
-  | "cant_undo_elsewhere"
   | "cant_redo_applied"
   | "cant_redo_discarded"
   | "cant_redo_changed"
-  | "cant_redo_held"
-  | "cant_redo_elsewhere"
   | "cant_redo_users_undo"
   | "insufficient_undo"
   | "insufficient_redo"
   | "nothing_to_revert"
   | "work_archived"
-  | "read_required"
   | "binary_file"
   | "permission_denied"
   | "internal_error";
@@ -57,7 +52,7 @@ export interface AgentEditBlockItem {
 export type AgentEditBlockGroup =
   | {
       extent: "full";
-      relation: "document" | "changed" | "swept";
+      relation: "document" | "changed";
       items: AgentEditBlockItem[];
     }
   | {
@@ -67,20 +62,68 @@ export type AgentEditBlockGroup =
       items: AgentEditBlockItem[];
     };
 
-export interface AgentEditConcurrentRun {
-  origin: "human" | "agent" | "mixed" | "concurrent edits";
+/**
+ * Changes since the model's prior frontier, grouped by author. A receipt that already echoes a
+ * block names only its hash; otherwise the listing includes its current text within the byte cap.
+ */
+export interface AgentEditConcurrentGroup {
+  /** `the user` for a person, otherwise the model chat's permanent handle. */
+  author: string;
+  /** Current text not already rendered by the result. */
   blocks: AgentEditBlockItem[];
-  tombstones: Array<{ hash: string; body: string }>;
+  /** Changed blocks whose resulting text the normal receipt already renders. */
+  shown?: string[];
+  removed?: string[];
+  more?: number;
 }
+
+export interface AgentEditConcurrentListing {
+  groups: AgentEditConcurrentGroup[];
+}
+
+/**
+ * A staged write the host refused: the writer discarded what it edited, its document was removed
+ * before the reply saved (`removed`, with the record in `removal` when one exists), or it could
+ * not integrate.
+ */
+export type WriteRejection =
+  | "removed"
+  | "discarded_draft"
+  | "discarded_document"
+  | "discarded_edit"
+  | "inverse"
+  | "integration";
+
+/** Why a `move` or `delete` didn't run, for a host that words it itself. */
+export type NamespaceRefusal =
+  | "source_is_folder"
+  | "document_unresolved"
+  | "location_taken"
+  | "destination_missing"
+  | "stale_location"
+  | "already_at_destination"
+  | "file_type_conversion"
+  | "document_type_conversion"
+  | "unsupported";
 
 export interface AgentEditModelPayload {
   /** The document path the command read or changed, as the caller named it. */
   path?: string;
-  /** Where a write landed: the live document, or the Work draft named by `draftWork`. */
+  /** Where a write landed: the live document, or the document's draft in the Work named by `draftWork`. */
   destination?: "live" | "draft";
-  /** The drafted Work's slug, `/` for No Work; present only when `destination` is `draft`. */
+  /** The drafted Work's handle, `/` for No Work; present only when `destination` is `draft`. */
   draftWork?: string;
   message?: string;
+  /** A line the host puts first when the address named an owner the caller may not have meant. */
+  notice?: string;
+  /** The owner a named address reaches (`Work "Tea Arc"`), which the receipt puts after the path. */
+  owner?: string;
+  /** Why an `invalid_write` write was rejected after it was staged, when the host knows. */
+  rejected?: WriteRejection;
+  /** Who removed the document and how, beside `rejected: "removed"`, for the chat's card. */
+  removal?: DocumentRemovalRecord;
+  /** Why a `move` or `delete` was refused. */
+  refusal?: NamespaceRefusal;
   /** Why a `permission_denied` result was refused (file-access §9). */
   reason?: PermissionDeniedReason;
   write?: {
@@ -95,18 +138,20 @@ export interface AgentEditModelPayload {
     from: string;
     blocks?: number;
   };
+  /**
+   * What a `move` or `delete` did to the whole document: where a move came from, as the model
+   * named it, and the Works whose drafts of a deleted document survive it (D79), by handle.
+   */
+  namespace?: { kind: "moved"; from: string } | { kind: "deleted"; survivingWorks?: string[] };
   read?: {
     format: "full" | "outline" | "edits";
     /** The whole document's block count; the text names it when the read returned fewer. */
     documentBlocks?: number;
-    /** The version actually read; the host fills it in, since only it knows drafts. */
+    /** The version actually read; the host fills it in, since only it knows the selected document draft. */
     version?: "draft" | "live";
   };
   blocks?: AgentEditBlockGroup[];
-  concurrent?: {
-    runs: AgentEditConcurrentRun[];
-    syncOverflow?: boolean;
-  };
+  concurrent?: AgentEditConcurrentListing;
   awarenessDegraded?: boolean;
   /** The write left the document empty; its one blank block is the empty document, not a leftover. */
   documentEmpty?: boolean;
@@ -187,6 +232,7 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "success":
     case "not_found":
     case "ambiguous_match":
+    case "ambiguous_path":
     case "invalid_write":
     case "document_not_found":
     case "partial_failure":
@@ -194,17 +240,12 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "cant_undo_applied":
     case "cant_undo_discarded":
     case "cant_undo_changed":
-    case "cant_undo_held":
-    case "cant_undo_elsewhere":
     case "cant_redo_applied":
     case "cant_redo_discarded":
     case "cant_redo_changed":
-    case "cant_redo_held":
-    case "cant_redo_elsewhere":
     case "cant_redo_users_undo":
     case "nothing_to_revert":
     case "work_archived":
-    case "read_required":
     case "binary_file":
     case "internal_error":
     case "reversed":
@@ -227,21 +268,5 @@ export function modelBlockItem(serialized: string): AgentEditBlockItem {
   return {
     hash: line.hash,
     body: line.body.startsWith("\n") ? line.body.slice(1) : line.body,
-  };
-}
-
-export function modelConcurrentResult(
-  info: ConcurrentEditInfo,
-): NonNullable<AgentEditResultV1["concurrent"]> {
-  return {
-    runs: info.runs.map((run) => ({
-      origin: run.origin,
-      blocks: run.blocks.map(modelBlockItem),
-      tombstones: run.tombstones.map(({ hash, capturedBody }) => ({
-        hash,
-        body: capturedBody,
-      })),
-    })),
-    ...(info.syncOverflow ? { syncOverflow: true } : {}),
   };
 }

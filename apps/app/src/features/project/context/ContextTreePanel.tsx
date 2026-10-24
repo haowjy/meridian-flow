@@ -1,17 +1,16 @@
 /** Project document tree. Chat resources have no ordinary Editor tabs or sidebar sections. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import {
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
-import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
+import { TreeChildren, type TreeEnv, TreeEnvProvider, TreeGroup } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
 import {
   EDITOR_CONTEXT_SCHEMES,
@@ -41,7 +40,11 @@ type ContextTreePanelProps = {
   /** Path of the currently active file inside `activeScheme`'s tree. */
   activePath: string | null;
   /** Called when the user picks a file row in any scheme section. */
-  onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
+  onSelectFile: (
+    scheme: ProjectContextTreeScheme,
+    file: ContextFile,
+    options?: { focus?: true },
+  ) => void;
   creating?: TreeCreationRequest | null;
   onRequestCreate?: (request: TreeCreationRequest) => void;
   onCreateDone?: () => void;
@@ -85,7 +88,7 @@ export function ContextTreePanel({
   });
   const renderScheme = (scheme: (typeof EDITOR_CONTEXT_SCHEMES)[number]) => (
     <SchemeSection
-      key={`${projectId}:${scheme}:${isWorkScopedProjectContextScheme(scheme) ? editorWorkId : "project"}`}
+      key={`${projectId}:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`}
       projectId={projectId}
       editorWorkId={editorWorkId}
       scheme={scheme}
@@ -137,7 +140,11 @@ function SchemeSection({
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
-  onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
+  onSelectFile: (
+    scheme: ProjectContextTreeScheme,
+    file: ContextFile,
+    options?: { focus?: true },
+  ) => void;
   creating: { kind: ContextCreateKind; parentPath: string } | null;
   onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
   onCreateDone: () => void;
@@ -159,7 +166,7 @@ function SchemeSection({
   }, [catalog, isComplete]);
   const { expanded, setExpanded, isExpanded, toggleEntry, setExpandedEntryIds } = useTreeExpansion(
     projectId,
-    `editor:${scheme}:${isWorkScopedProjectContextScheme(scheme) ? editorWorkId : "project"}`,
+    `editor:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`,
     folderIds,
   );
   const activeLocationPath = activeScheme === scheme ? activePath : null;
@@ -217,7 +224,7 @@ function SchemeSection({
     const entry = catalog.findPath(pendingOpenPath);
     if (entry?.kind !== "file") return;
     const file = entry;
-    onSelectFile(scheme, file);
+    onSelectFile(scheme, file, { focus: true });
     setPendingOpenPath(null);
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 
@@ -311,7 +318,9 @@ function SchemeSection({
         {expanded && catalog && env ? (
           <TreeEnvProvider value={env}>
             <div>
-              <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
+              <TreeGroup depth={1}>
+                <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
+              </TreeGroup>
               {/* "No context files yet." is a claim about the tree, so it waits
                 for a RESOLVED tree. While the query is in flight with nothing
                 cached the pane body stays blank (no spinner) — prefetch at
@@ -328,6 +337,7 @@ function SchemeSection({
         ) : null}
       </AreaDropRegion>
       <DeleteConfirmationDialog
+        projectId={projectId}
         target={deleteConfirm.target}
         isPending={deleteConfirm.isPending}
         error={deleteConfirm.error}

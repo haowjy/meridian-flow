@@ -1,9 +1,6 @@
-import type { DocHandle } from "../handles.js";
-import type { LineageRange } from "../lineage/range-set.js";
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
-import type { CompactionResult, JournalSnapshot, UpdateMeta } from "./types.js";
-
-export type JournalCommitKind = "durable" | "staged";
+import type { SavePrecondition } from "./document-coordinator.js";
+import type { CompactionResult, JournalSnapshot, PersistedUpdate, UpdateMeta } from "./types.js";
 
 type JournalMutationBase = {
   /** Ordered parts of one atomic edit. Storage adapters choose their journal row expansion. */
@@ -14,7 +11,7 @@ type JournalMutationBase = {
   editScopeId?: string;
   /** Stable write attempt id; provider tool ids are scoped by response/turn before persistence. */
   writeId?: string;
-  /** Pre-reserved durable ordinal rendered as w<N>. */
+  /** Pre-reserved durable ordinal rendered as e<N>. */
   wId?: number;
   /** The model's own tool call id (unscoped): the transcript row that made this write. */
   toolCallId?: string;
@@ -30,14 +27,8 @@ export type JournalMutation = JournalMutationBase &
     | { mode: "live" }
     | {
         mode: "threadPeer";
-        /** Host branch generation captured with the write baseline. */
-        branchGeneration: number;
         /** Peer that accepted this buffered write, not its shared upstream. */
-        peerBranchId?: string;
-        /** Branch journal head captured while preparing an edit. */
-        branchJournalWatermark?: number;
-        /** Host revision for status-sensitive branch history transitions. */
-        branchJournalRevision?: string;
+        peerDraftId?: string;
       }
   );
 
@@ -55,10 +46,15 @@ export interface JournalBatchAppendEntry {
 
 export interface JournalBatchAppendResult {
   seq: number;
-  /** Whether this append created durable truth, or only queued pending branch state. */
-  journalCommitKind: JournalCommitKind;
   /** Durable monotonic ordinal per (documentId, threadId), present only for mutation entries. */
   wId?: number;
+  /**
+   * The entry's document as this batch's append found it, read inside the append under the
+   * document's lock before any of the batch's rows (the same state for every entry of one
+   * document): the cut a save reports, returned with the rows so nothing fallible runs between
+   * the append committing and its caller learning what it followed.
+   */
+  beforeState: Uint8Array;
 }
 
 export interface JournalReadOptions {
@@ -76,44 +72,35 @@ export interface UpdateJournal {
     meta: UpdateMeta,
     authority?: JournalAuthority,
   ): Promise<number>;
-  /** Journal-first transport admission; hosts may atomically join settlement state. */
-  appendWriterUpdate?(
-    docId: string,
-    update: Uint8Array,
-    meta: UpdateMeta,
-    authority?: JournalAuthority,
-  ): Promise<{ seq: number; joinedSettlement: boolean }>;
-  /** Append logical edit envelopes atomically; the storage adapter expands their ordered parts. */
-  appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
+  /**
+   * Append logical edit envelopes atomically; the storage adapter expands their ordered parts.
+   * `precondition` is judged on each document's `beforeState` under its lock, before anything
+   * is written; a failure rejects with SavePreconditionRefused and appends nothing.
+   */
+  appendBatch(
+    entries: readonly JournalBatchAppendEntry[],
+    precondition?: SavePrecondition,
+  ): Promise<JournalBatchAppendResult[]>;
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
-  /** Durable attributed base used when reporting destructive effects. */
-  readAttribution?(docId: string): Promise<JournalSnapshot>;
+  /** Origin-aware rows in the exclusive/inclusive interval, without reconstruction data. */
+  readUpdates(docId: string, after: number, through: number): Promise<PersistedUpdate[]>;
   compact(docId: string, before: Date): Promise<CompactionResult>;
-  /** Optional host authority for exact destructive-report provenance. */
-  materializeDestructiveProvenance?(input: {
-    docId: string;
-    before: DocHandle;
-    afterCandidate: DocHandle;
-    /** Branch adapters classify roots absent from the live document as agent-authored. */
-    fallbackProvenance?: "writer_protected" | "agent";
-  }): Promise<{
-    before: DestructiveProvenanceRun[];
-    afterCandidate: DestructiveProvenanceRun[];
-  }>;
 }
 
-export interface DestructiveProvenanceRun {
-  target: LineageRange;
-  root: LineageRange;
-  provenance: "writer_protected" | "agent";
+/**
+ * What agent-edit itself reads from a host's journal. Appending belongs to the host's save
+ * (`StagedWriteCommit.persist`).
+ */
+export type AgentEditJournal = Pick<UpdateJournal, "reserveWriteOrdinal">;
+
+/** The one place an edit handle is formatted: the model names an edit as `e<n>`. */
+export function editHandle(wId: number): string {
+  return `e${wId}`;
 }
 
-export function writeHandle(wId: number): string {
-  return `w${wId}`;
-}
-
-export function parseWriteHandle(handle: string): number | undefined {
-  if (!/^w[1-9]\d*$/.test(handle)) return undefined;
+/** The one place an edit handle is parsed. Returns undefined for anything but `e<n>`. */
+export function parseEditHandle(handle: string): number | undefined {
+  if (!/^e[1-9]\d*$/.test(handle)) return undefined;
   const ordinal = Number(handle.slice(1));
   return Number.isSafeInteger(ordinal) ? ordinal : undefined;
 }

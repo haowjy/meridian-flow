@@ -1,77 +1,106 @@
 // @vitest-environment jsdom
-/**
- * A fenced code block has at most one slim header row. With a language the
- * actions ride that row beside the label; with none there is no row, and the
- * actions the block already offers (download, copy) stay in the document for
- * pointer, touch and keyboard.
- *
- * jsdom has no layout, so the geometry (clear space above the first line, the
- * row's height at each width) is checked in the browser. What is pinned here is
- * the part that breaks silently: `code-block.css` keys off Streamdown's rendered
- * attributes, which a Streamdown upgrade can change.
- */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { act, createElement } from "react";
+/** Streaming contracts: visible tails, code boundaries and settlement identity. */
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
+import { StreamingText } from "@/features/chat/StreamingText";
 import { Markdown } from "./Markdown";
-
-// Not `?raw`: Vitest strips CSS files down to an empty string.
-const CODE_BLOCK_CSS = readFileSync(join(import.meta.dirname, "code-block.css"), "utf8");
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 });
-
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
+  vi.useRealTimers();
 });
-
-async function renderFence(fence: string) {
-  const style = document.createElement("style");
-  style.textContent = CODE_BLOCK_CSS;
-  document.head.append(style);
+function mount() {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
   cleanups.push(async () => {
     await act(async () => root.unmount());
     host.remove();
-    style.remove();
   });
-  await act(async () => root.render(createElement(Markdown, null, fence)));
-  const block = host.querySelector<HTMLElement>('[data-streamdown="code-block"]');
-  if (!block) throw new Error("no code block rendered");
   return {
-    header: block.querySelector<HTMLElement>('[data-streamdown="code-block-header"]'),
-    actions: block.querySelector<HTMLElement>('[data-streamdown="code-block-actions"]'),
-    actionsWrapper: block.querySelector<HTMLElement>(
-      ':scope > :has(> [data-streamdown="code-block-actions"])',
-    ),
+    host,
+    render: async (element: ReactNode) => act(async () => root.render(element)),
   };
 }
 
-describe("code block with no language", () => {
-  it("hides the empty label row and keeps download and copy in the document", async () => {
-    const { header, actions, actionsWrapper } = await renderFence("```\nplain text\n```");
-
-    expect(header && getComputedStyle(header).display).toBe("none");
-    expect(actions?.querySelector('[data-streamdown="code-block-copy-button"]')).not.toBeNull();
-    expect(actions?.querySelector('[data-streamdown="code-block-download-button"]')).not.toBeNull();
-    // Out of the flow, so the actions take no row of their own.
-    expect(actionsWrapper && getComputedStyle(actionsWrapper).position).toBe("absolute");
-  });
+it("repairs only the live tail without inventing links or tables", async () => {
+  const { host, render } = mount();
+  await render(
+    <Markdown mode="streaming" streamId="test-stream">
+      {"**finished**\n\n**bol"}
+    </Markdown>,
+  );
+  expect(host.querySelectorAll("strong")[1]?.textContent).toBe("bol");
+  const settled = host.querySelector("strong");
+  await render(
+    <Markdown mode="streaming" streamId="test-stream">
+      {"**finished**\n\n[half](https://exam"}
+    </Markdown>,
+  );
+  expect(host.querySelector("strong")).toBe(settled);
+  expect(host.querySelector("a")).toBeNull();
+  await render(
+    <Markdown mode="streaming" streamId="test-stream">
+      {"**finished**\n\n| A | B |"}
+    </Markdown>,
+  );
+  expect(host.querySelector("table")).toBeNull();
+  await render(
+    <Markdown mode="streaming" streamId="test-stream">
+      {"**finished**\n\n| A | B |\n| --- | --- |\n| one | two |"}
+    </Markdown>,
+  );
+  expect(host.querySelectorAll("td")).toHaveLength(2);
+  expect(host.querySelector("strong")).toBe(settled);
 });
 
-describe("code block with a language", () => {
-  it("keeps the label and puts the actions on its row, not a second one", async () => {
-    const { header, actions, actionsWrapper } = await renderFence("```python\nprint(1)\n```");
+it("never repairs Markdown inside an open fence of either marker", async () => {
+  const { host, render } = mount();
+  for (const source of [
+    "~~~txt\n*literal",
+    "```txt\n*literal",
+    "- item\n\n  ~~~\n  *literal",
+    "> ~~~\n> *literal",
+  ]) {
+    await render(
+      <Markdown mode="streaming" streamId="test-stream">
+        {source}
+      </Markdown>,
+    );
+    expect(host.querySelector("code")?.textContent).toBe("*literal");
+  }
+});
 
-    expect(header && getComputedStyle(header).display).not.toBe("none");
-    expect(header?.textContent).toBe("python");
-    expect(actions?.querySelector('[data-streamdown="code-block-copy-button"]')).not.toBeNull();
-    expect(actionsWrapper && getComputedStyle(actionsWrapper).position).toBe("absolute");
-  });
+it("shows every code append immediately and preserves blocks when the turn settles", async () => {
+  vi.useFakeTimers();
+  const { host, render } = mount();
+  const first = "# Gate\n\n```ts\nconst n = 1;";
+  await render(<StreamingText streamId="test-stream" text={first} />);
+  const heading = host.querySelector("h1");
+  const pre = host.querySelector("pre");
+  expect(pre).not.toBeNull();
+  expect(host.querySelector(".hljs-keyword")?.textContent).toBe("const");
+  await render(<StreamingText streamId="test-stream" text={`${first}\nconst next = 42;`} />);
+  expect(host.querySelector("code")?.textContent).toBe("const n = 1;\nconst next = 42;");
+  await act(async () => vi.advanceTimersByTime(50));
+  expect(host.querySelectorAll(".hljs-number")[1]?.textContent).toBe("42");
+  const complete = `${first}\nconst next = 42;\n\`\`\`\n\n**bold**`;
+  await render(<StreamingText streamId="test-stream" text={complete} />);
+  const html = host.querySelector(".document-prose")?.innerHTML;
+  await render(<StreamingText streamId="test-stream" text={complete} streaming={false} />);
+  expect(host.querySelector("h1")).toBe(heading);
+  expect(host.querySelector("pre")).toBe(pre);
+  expect(host.querySelector(".document-prose")?.innerHTML).toBe(html);
+  expect(host.querySelector('button[aria-label="Copy code"]')).not.toBeNull();
+  await render(<StreamingText streamId="test-stream" text={"```ts\nconst reset = 7;"} />);
+  expect(host.querySelector("code")?.textContent).toBe("const reset = 7;");
+  await render(
+    <StreamingText streamId="test-stream" text={"```\nhello world\n```"} streaming={false} />,
+  );
+  expect(host.querySelector("code")?.textContent).toBe("hello world");
 });

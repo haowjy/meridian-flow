@@ -1,8 +1,12 @@
 /** PostgreSQL publication B and orphan recovery after durable terminal A. */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
+import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
+import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
+import { noFailureRecorder } from "../../threads/ports/event-journal.js";
 
 const runDb = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL;
@@ -24,7 +28,6 @@ const ids = {
 if (!runDb || !databaseUrl) describe.skip("report publication and recovery (postgres)", () => {});
 else
   describe("report publication and recovery (postgres)", async () => {
-    const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { eq, sql } = await import("drizzle-orm");
     const { assertThrowawayDatabaseForRunDbTests } = await import(
@@ -41,22 +44,27 @@ else
     const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
     const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
     const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
-    const { createTestDrizzleDelivery } = await import(
+    const { createTestDrizzleDelivery, createTestOrphanRepair } = await import(
       "../loop/__tests__/test-drizzle-delivery.js"
     );
     const { finalizeExecution } = await import("../loop/execution-finalizer.js");
+    const { createOrphanReportRepair } = await import("./orphan-report-repair.js");
     const { createReportPublisher } = await import("./report-publisher.js");
     const { bindAdmittedInvocationCard } = await import("./spawn-transcript.js");
     const { invocationCardProps } = await import("./spawn-output.js");
-    const { createOrphanReportRepair } = await import("./orphan-report-repair.js");
     const { readThreadReport } = await import("./read-thread-report.js");
 
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
-    const db = createDb(databaseUrl, { max: 6 });
+    const { assertPublicationHooks, openAuditedDatabase } = await import(
+      "../../../test-support/run-state-publication.js"
+    );
+    // Publication pins run in a database this suite owns and drops.
+    const audited = await openAuditedDatabase(databaseUrl, { max: 6 });
+    const db = audited.db;
     const repos = createDrizzleRepositoriesForTest(db);
-    const eventWriter = createDrizzleEventJournalWriter(db);
+    const eventWriter = createQuietDrizzleJournalWriter(db);
     const inbox = createDrizzleInbox(db);
-    const threadLock = createDrizzleThreadLock(db);
+    const threadLock = createDrizzleThreadLock(db, eventWriter);
     const eventSink = createInMemoryEventSink();
     const delivery = createTestDrizzleDelivery(db, { repos, eventWriter });
     const publisher = createReportPublisher({ repos, eventWriter, delivery, eventSink });
@@ -66,9 +74,9 @@ else
       const scenario = await executionScenario(db, ids);
       await scenario.admit();
     });
-    afterAll(async () => {
-      await db.close();
-    });
+    afterAll(() => audited.close());
+    // Publication pins: no input write without a record, and the last record equals the rows.
+    afterEach(() => assertPublicationHooks(db));
 
     async function terminal() {
       await repos.executionReports.captureOnce(ids.child, ids.execution, "return-1", {
@@ -152,7 +160,7 @@ else
       });
       await db.insert(schema.threadRunLeases).values({
         threadId: ids.child,
-        runId: "dead-B",
+        executionId: "dead-B",
         holderId: "worker-B",
         turnId: next.id,
         boundTurnIds: [next.id],
@@ -197,7 +205,7 @@ else
       expect(await repos.turns.findById(next.id)).toMatchObject({ status: "streaming" });
       expect(await db.select().from(schema.threadRunLeases)).toMatchObject([
         {
-          runId: "dead-B",
+          executionId: "dead-B",
           turnId: next.id,
           adoptedMessageIds: [message.id],
         },
@@ -213,7 +221,7 @@ else
       });
       expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
       expect(await runDelivery.selectPending(ids.child)).toEqual([]);
-      const followup = await authority.startExecution(ids.child, "followup");
+      const followup = await authority.startExecution(ids.child, "followup", async () => {});
       expect(followup).not.toBeNull();
       if (followup) await authority.release(followup);
     });
@@ -239,7 +247,7 @@ else
       expect(events.map((row) => row.eventType)).toEqual([
         "block.updated",
         "agent.run_completed",
-        "inbox.changed",
+        "run_state.changed",
       ]);
       expect(events[0]?.payload).toMatchObject({
         block: {
@@ -390,12 +398,11 @@ else
         payload,
       });
       const authority = createDrizzleRunClaim(db, { holderId: "json-roundtrip-repair" });
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
-        settleStaleExecution: delivery.settleStaleExecution,
         publisher,
         eventSink,
       });
@@ -558,7 +565,10 @@ else
       expect(await repos.blocks.findById(ids.card)).toBeNull();
       expect(await inbox.selectPending(ids.caller)).toHaveLength(1);
       const events = await journalEventsByThread(db, ids.caller);
-      expect(events.map((row) => row.eventType)).toEqual(["agent.run_completed", "inbox.changed"]);
+      expect(events.map((row) => row.eventType)).toEqual([
+        "agent.run_completed",
+        "run_state.changed",
+      ]);
     });
 
     it("advances a bounded sweep past one failing publication", async () => {
@@ -594,6 +604,12 @@ else
       const failingFirst = createReportPublisher({
         repos,
         eventWriter: {
+          ...noFailureRecorder,
+          async appendEvents(threadId, events) {
+            let seq = 0n;
+            for (const event of events) seq = await this.appendEvent(threadId, event);
+            return seq;
+          },
           async appendEvent(threadId, event) {
             if (event.type === "agent.run_completed" && event.execution === ids.execution) {
               throw new Error("first publication unavailable");
@@ -634,22 +650,23 @@ else
 
     it("does not infer orphan death from a missing lease while the physical claim is held", async () => {
       const authority = createDrizzleRunClaim(db, { holderId: "repair-test" });
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
-        settleStaleExecution: delivery.settleStaleExecution,
         publisher,
         eventSink,
       });
-      const held = await authority.startExecution(ids.child, crypto.randomUUID());
+      const held = await authority.startExecution(ids.child, crypto.randomUUID(), async () => {});
       if (!held) throw new Error("failed to acquire test claim");
       await db
         .update(schema.threadRunLeases)
         .set({ expiresAt: new Date(0) })
         .where(eq(schema.threadRunLeases.threadId, ids.child));
-      expect(await repair.sweep(1)).toBe(1);
+      // The unsettled turn and the expired lease are both candidates; neither is
+      // settled while the claim is held.
+      expect(await repair.sweep(1)).toBe(2);
       expect(
         (await repos.executionReports.findByExecution(ids.child, ids.execution))?.outcome,
       ).toBeNull();
@@ -679,7 +696,7 @@ else
       });
       await db.insert(schema.threadRunLeases).values({
         threadId: ids.child,
-        runId: "dead-child-run",
+        executionId: "dead-child-run",
         turnId: ids.execution,
         boundTurnIds: [ids.execution],
         adoptedMessageIds: [adopted.id],
@@ -688,12 +705,11 @@ else
         expiresAt: new Date(0),
       });
       const authority = createDrizzleRunClaim(db, { holderId: "child-crash-repair" });
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         inbox,
         repos,
         eventWriter,
         authority,
-        settleStaleExecution: delivery.settleStaleExecution,
         publisher,
         eventSink,
         retireOrphanedReply: delivery.retireOrphanedReply,
@@ -715,6 +731,7 @@ else
         },
       });
       expect(await inbox.selectPending(ids.child)).toEqual([]);
+      // The repair lane settles the expired row too: a lease no turn carries is deleted.
       expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
       expect(
         (await journalEventsByThread(db, ids.caller)).filter(
@@ -766,12 +783,11 @@ else
         });
       }
       const authority = createDrizzleRunClaim(db, { holderId: "placeholder-scan" });
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
-        settleStaleExecution: delivery.settleStaleExecution,
         publisher,
         eventSink,
       });
@@ -816,18 +832,17 @@ else
         status: "pending",
       });
       const authority = createDrizzleRunClaim(db, { holderId: "placeholder-live-run" });
-      const lease = await authority.startExecution(ids.root, crypto.randomUUID());
+      const lease = await authority.startExecution(ids.root, crypto.randomUUID(), async () => {});
       if (!lease) throw new Error("failed to acquire run claim");
       await db
         .update(schema.threadRunLeases)
         .set({ expiresAt: new Date(0) })
         .where(eq(schema.threadRunLeases.threadId, ids.root));
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
-        settleStaleExecution: delivery.settleStaleExecution,
         publisher,
         eventSink,
       });
@@ -882,9 +897,10 @@ else
         sequence: 0,
         content: "Arrived after compaction started.",
       });
-      const lease = await authority.startExecution(ids.root, crypto.randomUUID());
+      const lease = await authority.startExecution(ids.root, crypto.randomUUID(), () =>
+        runDelivery.settleStaleExecution(ids.root),
+      );
       if (!lease) throw new Error("failed to acquire run claim");
-      await runDelivery.repairOrphanedTurns(lease);
       expect((await repos.turns.findById(orphanAssistant.id))?.status).toBe("error");
       const repaired = await repos.turns.findById(c.id);
       expect(repaired?.status).toBe("error");
@@ -918,7 +934,9 @@ else
         { id: message.id, role: "user", status: "complete" },
         { id: assistantId, role: "assistant", status: "streaming" },
       ]);
-      await runDelivery.ackWithResponse(lease, [message.id], async () => true);
+      const assistant = await repos.turns.findById(assistantId);
+      if (!assistant) throw new Error("assistant turn missing");
+      await runDelivery.ackWithResponse(lease, [message.id], assistant, async () => true);
       await runDelivery.close({
         lease,
         turnId: assistantId,
@@ -948,12 +966,11 @@ else
         cardBlockId: null,
       });
       const authority = createDrizzleRunClaim(db, { holderId: "placeholder-report-walk" });
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
-        settleStaleExecution: delivery.settleStaleExecution,
         publisher,
         eventSink,
       });
@@ -1014,12 +1031,11 @@ else
         source: "empty",
         summary: "",
       });
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority: createDrizzleRunClaim(db, { holderId: "exact-report-walk" }),
-        settleStaleExecution: delivery.settleStaleExecution,
         publisher,
         eventSink,
       });
@@ -1071,9 +1087,10 @@ else
         origin: "writer",
         status: "complete",
       });
-      const lease = await authority.startExecution(ids.child, crypto.randomUUID());
+      const lease = await authority.startExecution(ids.child, crypto.randomUUID(), () =>
+        runDelivery.settleStaleExecution(ids.child),
+      );
       if (!lease) throw new Error("failed to acquire child run claim");
-      await runDelivery.repairOrphanedTurns(lease);
       const repaired = await repos.turns.findById(c.id);
       expect(repaired).toMatchObject({
         status: "error",
@@ -1106,7 +1123,7 @@ else
           };
         });
       } finally {
-        await authority.release(lease);
+        await releaseLeaseUnderLock(db, authority, lease);
       }
 
       expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toMatchObject({

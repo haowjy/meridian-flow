@@ -3,30 +3,33 @@
  *
  * The brief is not a queued command: Retry and Stop act on the seed directly.
  * Retry shows the new seed's generating card at the leaf at once and asks the
- * server to write it (`useRetryStandIns` owns the stand-in, the refusal note,
+ * server to write it (`useRetryStandIns` owns the stand-in, the refusal and lost-request facts,
  * and the re-send of a lost request). Stop marks the seed Stopping and cancels
- * it through the turn cancel route; a failed Stop says so on the card.
+ * it through the turn cancel route; a failed Stop is a fact for `chatCards`.
  */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
-import { useCallback } from "react";
+import { readHandoffSeed } from "@meridian/contracts/threads";
+import type { BriefStopFailure, RetryOutcome } from "@meridian/thread-client";
+import { useCallback, useMemo } from "react";
 import { retryHandoffBrief } from "@/client/api/threads-api";
 import { useRetryStandIns } from "../useRetryStandIns";
 import { type TurnStop, useTurnStop } from "../useTurnStop";
-import { isOptimisticSeed, optimisticHandoffSeed, readHandoffSeed } from "./handoff-seed";
+import { isOptimisticSeed, optimisticHandoffSeed } from "./handoff-seed";
 
 export type HandoffBrief = {
   /** Retry seeds the store does not have yet, in the order they were asked for. */
   localSeeds: readonly Turn[];
   /** Whether Stop can reach this seed: the server has it. */
   canStop: (turn: Turn) => boolean;
-  /** Cards whose Retry the server refused: the chat had moved on. */
-  retryRefused: ReadonlySet<string>;
+  /** Retries that did not start a brief (refused or lost), for `chatCards`. */
+  outcomes: readonly RetryOutcome[];
+  /** Stops that did not reach the server, for `chatCards`. */
+  stopFailures: readonly BriefStopFailure[];
   /** A new brief after `from`, or the same request again when `from` is a failed Retry. */
   retry: (from: Turn) => void;
   stop: (turnId: string) => void;
   stopping: TurnStop["stopping"];
-  stopFailed: TurnStop["failed"];
 };
 
 export function useHandoffBrief(input: {
@@ -38,8 +41,8 @@ export function useHandoffBrief(input: {
   const standIns = useRetryStandIns({
     threadId,
     storedTurns,
-    post: (id) => retryHandoffBrief(threadId, { id }),
-    lostCopy: t`Couldn't start a new brief. Try again.`,
+    // A brief holds no execution: its seed's id is its only identity.
+    post: async (id) => ({ turn: await retryHandoffBrief(threadId, { id }), executionId: null }),
   });
 
   const { retry: retryStandIn, requestOf } = standIns;
@@ -68,9 +71,13 @@ export function useHandoffBrief(input: {
     (turnId: string) =>
       stopTurn(turnId, {
         stopping: t`Stopping the handoff brief`,
-        failed: t`Couldn't stop the brief. Try again.`,
       }),
     [stopTurn],
+  );
+
+  const stopFailures = useMemo(
+    () => [...turnStop.failed].map(([turnId, occurrence]) => ({ turnId, ...occurrence })),
+    [turnStop.failed],
   );
 
   // Only what the server has can be stopped: not the opening stand-in, and
@@ -80,13 +87,16 @@ export function useHandoffBrief(input: {
     [requestOf],
   );
 
-  return {
-    localSeeds: standIns.standIns,
-    canStop,
-    retryRefused: standIns.refused,
-    retry,
-    stop,
-    stopping: turnStop.stopping,
-    stopFailed: turnStop.failed,
-  };
+  return useMemo(
+    () => ({
+      localSeeds: standIns.standIns,
+      canStop,
+      outcomes: standIns.outcomes,
+      stopFailures,
+      retry,
+      stop,
+      stopping: turnStop.stopping,
+    }),
+    [canStop, retry, standIns.outcomes, standIns.standIns, stop, stopFailures, turnStop.stopping],
+  );
 }

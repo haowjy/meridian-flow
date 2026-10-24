@@ -22,22 +22,23 @@ import {
 import { announce } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useAccountResourceReplica } from "../account-feature-context";
-import { type MoveResult, undoMove } from "./execute-move";
-import type { MoveEffect } from "./move-plan";
+import type { MoveResult } from "./execute-move";
+import type { ReadyMovePlan } from "./move-plan";
 
 const VISIBLE_MS = 6000;
 
+/** Puts the move back; resolves to what to say when some of it couldn't go back. */
+export type UndoMove = () => Promise<string | null>;
+
 type Notice = {
   message: string;
-  /** What Undo puts back; empty when nothing moved. */
-  effects: readonly MoveEffect[];
+  /** Absent when nothing moved. */
+  undo: UndoMove | null;
 };
 
-type Publish = (message: string, effects: readonly MoveEffect[]) => void;
+type Publish = (message: string, undo: UndoMove | null) => void;
 
 const HostContext = createContext<{
-  projectId: string;
   notice: Notice | null;
   publish: Publish;
   /** Replace or clear `from`, unless a newer notice has taken its place. */
@@ -50,13 +51,7 @@ export function useMoveNoticePublisher(): Publish | null {
 }
 
 /** A surface that takes drops and shows their notice (`MoveNotice`) somewhere inside it. */
-export function MoveNoticeHost({
-  projectId,
-  children,
-}: {
-  projectId: string;
-  children: ReactNode;
-}) {
+export function MoveNoticeHost({ children }: { children: ReactNode }) {
   const [notice, setNotice] = useState<Notice | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
@@ -66,26 +61,22 @@ export function MoveNoticeHost({
     };
   }, []);
   // A drop can finish after its surface has gone; there is nowhere to say so.
-  const publish = useCallback<Publish>((message, effects) => {
+  const publish = useCallback<Publish>((message, undo) => {
     if (!mounted.current) return;
-    setNotice({ message, effects });
+    setNotice({ message, undo });
     announce(message);
   }, []);
   const settle = useCallback((from: Notice, to: Notice | null) => {
     if (mounted.current) setNotice((now) => (now === from ? to : now));
   }, []);
-  const value = useMemo(
-    () => ({ projectId, notice, publish, settle }),
-    [projectId, notice, publish, settle],
-  );
+  const value = useMemo(() => ({ notice, publish, settle }), [notice, publish, settle]);
   return <HostContext.Provider value={value}>{children}</HostContext.Provider>;
 }
 
 export function MoveNotice({ className }: { className?: string }) {
   const host = useContext(HostContext);
   if (!host) throw new Error("MoveNotice requires a MoveNoticeHost");
-  const { projectId, notice: current, settle } = host;
-  const resources = useAccountResourceReplica();
+  const { notice: current, settle } = host;
   const [held, setHeld] = useState(false);
   const [undoing, setUndoing] = useState(false);
   useEffect(() => {
@@ -95,14 +86,14 @@ export function MoveNotice({ className }: { className?: string }) {
   }, [current, held, undoing, settle]);
   if (!current) return null;
 
-  const undo = async () => {
+  const undo = async (put: UndoMove) => {
     setUndoing(true);
     let next: Notice | null = null;
     try {
-      const result = await undoMove(current.effects, { resources, projectId });
-      if (result.failed.length > 0) next = { message: describeUndoFailure(result), effects: [] };
+      const failure = await put();
+      if (failure) next = { message: failure, undo: null };
     } catch {
-      next = { message: t`Couldn't move it back.`, effects: [] };
+      next = { message: t`Couldn't move it back.`, undo: null };
     } finally {
       setUndoing(false);
     }
@@ -123,12 +114,12 @@ export function MoveNotice({ className }: { className?: string }) {
       )}
     >
       <span className="min-w-0 flex-1">{current.message}</span>
-      {current.effects.length > 0 ? (
+      {current.undo ? (
         <Button
           variant="link"
           size="meta"
           disabled={undoing}
-          onClick={() => void undo()}
+          onClick={() => current.undo && void undo(current.undo)}
           className="text-jade-text"
         >
           <Trans>Undo</Trans>
@@ -138,12 +129,19 @@ export function MoveNotice({ className }: { className?: string }) {
   );
 }
 
-/** "Moved 3 items to Act 2." and, when the replica refused some, which. */
-export function describeMove(result: MoveResult, destinationName: string): string {
+/**
+ * "Moved 3 items to Act 2." and, when the replica refused some, which. A lone
+ * row that arrived under the next free name says so.
+ */
+export function describeMove(result: MoveResult, plan: ReadyMovePlan): string {
   const { moved, failed } = result;
+  const { destinationName } = plan;
   const parts: string[] = [];
   const [first] = moved;
-  if (moved.length === 1 && first) parts.push(t`Moved ${first.name} to ${destinationName}.`);
+  const requested = first && plan.moves.find((move) => move.ref.id === first.entry.id)?.name;
+  if (moved.length === 1 && first && requested && requested !== first.name)
+    parts.push(t`Moved ${requested} to ${destinationName} as ${first.name}.`);
+  else if (moved.length === 1 && first) parts.push(t`Moved ${first.name} to ${destinationName}.`);
   else if (moved.length > 1)
     parts.push(
       plural(moved.length, {
@@ -160,7 +158,9 @@ export function describeMove(result: MoveResult, destinationName: string): strin
   return parts.join(" ");
 }
 
-function describeUndoFailure({ failed }: MoveResult): string {
+/** Null when every row went back. */
+export function describeUndoFailure({ failed }: MoveResult): string | null {
+  if (failed.length === 0) return null;
   const [lost] = failed;
   if (failed.length === 1 && lost) return t`Couldn't move ${lost.name} back.`;
   return plural(failed.length, {

@@ -11,7 +11,11 @@
  * (deleted first, or the account closed) is never posted. A document the
  * replica does not hold is the server's already.
  */
-import type { ResourceProjectionSnapshot, ResourceRecord } from "@meridian/resource-replica";
+import {
+  type ResourceProjectionSnapshot,
+  type ResourceRecord,
+  resourceIdentityIndex,
+} from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
@@ -38,21 +42,22 @@ export type ServerPresenceSource = {
 };
 
 /**
- * True once the server holds the document: at once for one the replica does
- * not track or has acknowledged, later when a local create is acknowledged.
- * False when it ends without reaching the server, or the signal aborts.
+ * The id the server knows the document by once it holds it: at once for one
+ * the replica does not track or has acknowledged, later when a local create is
+ * acknowledged. A joined create answers with the joined id, never the device's
+ * minted one. Null when it ends without reaching the server, or the signal aborts.
  */
 async function whenOnServer(
   source: ServerPresenceSource,
   projectId: string,
   documentId: string,
   signal: AbortSignal,
-): Promise<boolean> {
+): Promise<string | null> {
   // A replica that is closing, or a read that fails, proves nothing: no post.
   try {
     return await waitOnServer(source, projectId, documentId, signal);
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -61,7 +66,7 @@ async function waitOnServer(
   projectId: string,
   documentId: string,
   signal: AbortSignal,
-): Promise<boolean> {
+): Promise<string | null> {
   const known = await source.readKnownDocument(projectId, documentId);
   const state = (record: ResourceRecord | undefined) =>
     !record || record.resource.lifecycle.kind === "acknowledged"
@@ -70,32 +75,37 @@ async function waitOnServer(
         ? "gone"
         : "local";
   const initial = state(known?.record);
-  if (initial !== "local") return initial === "server" && !signal.aborted;
-  return new Promise<boolean>((resolve) => {
+  if (initial !== "local")
+    return initial === "server" && !signal.aborted
+      ? (known?.record.resource.identity.documentId ?? documentId)
+      : null;
+  return new Promise<string | null>((resolve) => {
     let stop: () => void = () => {};
-    const finish = (result: boolean) => {
+    const finish = (result: string | null) => {
       stop();
       signal.removeEventListener("abort", onAbort);
       resolve(result);
     };
-    const onAbort = () => finish(false);
+    const onAbort = () => finish(null);
     signal.addEventListener("abort", onAbort, { once: true });
     try {
       stop = source.observeProjection(
         projectId,
         ({ records }) => {
-          const current = state(
-            records.find((record) => record.resource.identity.documentId === documentId),
-          );
-          if (current !== "local") finish(current === "server");
+          const record = resourceIdentityIndex(records).byDocumentId(documentId) ?? undefined;
+          const current = state(record);
+          if (current !== "local")
+            finish(
+              current === "server" ? (record?.resource.identity.documentId ?? documentId) : null,
+            );
         },
-        () => finish(false),
+        () => finish(null),
       );
     } catch {
-      finish(false);
+      finish(null);
       return;
     }
-    if (signal.aborted) finish(false);
+    if (signal.aborted) finish(null);
   });
 }
 
@@ -109,12 +119,11 @@ export function useRecordOpenedDocument(): (opening: RecentOpening) => void {
       const touched = touchAccountRecent(accountId, opening);
       if (!touched) return;
       void (async () => {
-        if (
-          resources &&
-          !(await whenOnServer(resources, opening.projectId, opening.documentId, epoch))
-        )
-          return;
-        const result = await recordRecentDocument(opening.documentId, epoch);
+        const documentId = resources
+          ? await whenOnServer(resources, opening.projectId, opening.documentId, epoch)
+          : opening.documentId;
+        if (!documentId) return;
+        const result = await recordRecentDocument(documentId, epoch);
         if (result.kind !== "recorded") return;
         void queryClient.invalidateQueries({
           queryKey: accountQueryKeys.recentDocumentsRoot(accountId),

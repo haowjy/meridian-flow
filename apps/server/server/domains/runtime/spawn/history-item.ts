@@ -9,7 +9,8 @@ import {
   referenceOccurrenceContent,
 } from "@meridian/contracts/protocol";
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
-import { classifyHistoryItem, isConversationTurn } from "../../threads/index.js";
+import { isConversationTurn, isNotesStepHeldResult } from "@meridian/contracts/threads";
+import { classifyHistoryItem } from "../../threads/index.js";
 import type { BlockRepository } from "../../threads/ports/repositories.js";
 import { componentHistoryText } from "../loop/component-model-text.js";
 import { elideReferenceRead } from "../loop/reference-context.js";
@@ -57,23 +58,15 @@ export function toolPairMap(blocks: readonly Block[]): ReadonlyMap<string, Block
   );
 }
 
-/** The turn's heading and whether the whole turn is a system message. */
-export function describeTurn(turn: Turn): Pick<HistoryTurn, "role" | "label" | "failure"> & {
+/** The turn's heading, whether Stop cancelled it, and whether the whole turn is a system message. */
+export function describeTurn(turn: Turn): Pick<HistoryTurn, "role" | "label" | "cancelled"> & {
   system: boolean;
 } {
   const kind = classifyHistoryItem(turn);
   const metadata = turn.metadata as JsonObject | null;
-  const reason =
-    turn.status === "error" && typeof metadata?.reason === "string" ? metadata.reason : undefined;
-  const failure =
-    turn.error || reason || turn.status === "error" || turn.status === "cancelled"
-      ? {
-          status: turn.status,
-          ...(turn.error ? { error: turn.error } : {}),
-          ...(reason ? { reason } : {}),
-        }
-      : undefined;
-  const base = failure ? { failure } : {};
+  // Stop is the writer's decision and a fact about the conversation. A failure is not: the model can't
+  // act on it, so it never reads one (only the text and tool calls the turn kept).
+  const base = turn.status === "cancelled" ? { cancelled: true as const } : {};
   // One rule decides numbering here and in the repository count: isConversationTurn.
   if (isConversationTurn(turn)) {
     if (turn.role === "assistant")
@@ -167,12 +160,15 @@ export function describeBlock(input: {
     const isError = result?.isError === true;
     // Rows from before typed results carry only `output`.
     const typed = (result?.result ?? result?.output) as JsonValue | undefined;
+    const held = isNotesStepHeldResult(typed);
     const kind = registration?.historyKind;
     const summary = !result
       ? undefined
-      : isError
-        ? failureCode(typed)
-        : registration?.historySummary?.(args, typed ?? null);
+      : held
+        ? "not run before compaction"
+        : isError
+          ? failureCode(typed)
+          : registration?.historySummary?.(args, typed ?? null);
     return {
       kind: "tool",
       tool: name,
@@ -182,7 +178,7 @@ export function describeBlock(input: {
       open: !result,
       isError,
       args,
-      write: policy?.kind === "write",
+      write: !held && policy?.kind === "write",
       documents,
       ...(result
         ? {
@@ -191,7 +187,7 @@ export function describeBlock(input: {
               (!call || !registration) && !isError
                 ? `[tool result omitted: ${!call ? "call" : "tool"} unavailable]`
                 : stringify(
-                    !isError && policy
+                    !held && !isError && policy
                       ? policy.elide(
                           { input: args, output: result.output as JsonValue, result: typed },
                           documents,

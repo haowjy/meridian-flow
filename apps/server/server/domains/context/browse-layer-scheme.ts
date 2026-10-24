@@ -5,23 +5,19 @@
 import {
   type CanonicalContextAuthority,
   canonicalContextUri,
+  isOwnedContextScheme,
+  type OwnedContextUriScheme,
 } from "@meridian/contracts/context-uri";
-import {
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
-  type WorkAuthorityScheme,
-} from "@meridian/contracts/protocol";
-
-export const isWorkScopedBrowseScheme = isWorkScopedProjectContextScheme;
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
 /** Serialize the canonical authority selected by the project browse route. */
 export function projectBrowseContextUri(
-  scheme: WorkAuthorityScheme,
+  scheme: OwnedContextUriScheme,
   path: string,
   authority: CanonicalContextAuthority,
 ): string;
 export function projectBrowseContextUri(
-  scheme: Exclude<ProjectContextTreeScheme, WorkAuthorityScheme>,
+  scheme: Exclude<ProjectContextTreeScheme, OwnedContextUriScheme>,
   path: string,
   authority?: Extract<CanonicalContextAuthority, { kind: "contextual" }>,
 ): string;
@@ -36,13 +32,13 @@ export function projectBrowseContextUri(
   authority: CanonicalContextAuthority = { kind: "contextual" },
 ): string {
   const normalized = path.replace(/^\/+/, "").replace(/\/+$/, "");
-  return isWorkScopedBrowseScheme(scheme)
+  return isOwnedContextScheme(scheme)
     ? canonicalContextUri(scheme, normalized, authority)
     : canonicalContextUri(scheme, normalized);
 }
 
-export function workScopedBrowseUri(
-  scheme: WorkAuthorityScheme,
+export function ownedBrowseUri(
+  scheme: OwnedContextUriScheme,
   authority: Exclude<CanonicalContextAuthority, { kind: "contextual" }>,
   path = "",
 ): string {

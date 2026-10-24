@@ -5,7 +5,7 @@ for feature-level contracts first.
 
 ## Document identity bar
 
-`DocumentIdentityBar.tsx` is the one identity surface: a fixed-height mono
+`DocumentIdentityBar.tsx` is the one identity surface: a mono
 path (`Unfiled › Untitled 4`) and its chips, on every document — tracked,
 provisional, viewer. The Editor draws it as a band at the top of the active
 tab's canvas; a document beside the chat draws it in the dock header
@@ -25,14 +25,15 @@ the filename opens its folder. An area not offered by the root list opens inside
 highlights everything on the document's path and the folder a back row just
 climbed out of. A pick opens through `useOpenDocumentInDock`, the way the
 screen opens documents: the dock on Chat and Work, an Editor tab on the Editor.
-Crumb menus carry no actions. Their Radix roots and triggers stay mounted at
-rest; only the open browsing body acquires catalogs, and its initial trail
-is set once that source resolves. The identity row measures its rendered content
-through one priority ladder shared by Editor and dock: hide parent crumbs,
-collapse labels to icons, hide the stepper count, then collapse Apply to its
-icon. The leaf keeps 64px. Phone/coarse-pointer hit boxes extend only
-vertically to 44px, without increasing the band height; horizontally each
-control owns exactly its visible box (see [CONTEXT.md](CONTEXT.md)). Renaming and
+Crumb menus carry no actions. A local-new or draft-only document is not in a
+catalog yet, so its path is passive until it joins one. Browsable paths keep
+their Radix roots and triggers mounted at rest; only the open browsing body acquires catalogs, and its initial trail
+is set once that source resolves. The identity row is wrapping-first, one rule for Editor and dock: the review
+controls move to a second line before anything shortens, and only a line too
+narrow for them alone collapses labels to icons, hides the stepper count, then
+collapses Apply to its icon; parent crumbs drop only when the leaf would be cut.
+Coarse pointers give each control a 44px box and grow the row to fit, and the
+filename yields its width (see [CONTEXT.md](CONTEXT.md)). Renaming and
 moving a homed document belong to the lists (Files, Scratch section, phone
 browser); see the KB's path-navigates-lists-edit decision.
 

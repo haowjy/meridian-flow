@@ -14,10 +14,12 @@ export type OpenContextOptions = {
   /** Replace only when the route already names this document; otherwise push. */
   replaceIfSameDocument?: boolean;
   tab?: ContextTab;
+  /** The destination is a document the writer just made: its editor takes the caret once live. */
+  focus?: true;
   /** Runs only after successful destination workspace installation. */
-  afterCommit?: () => void;
+  afterCommit?: (installed: ContextTab | undefined) => void;
   /** Persist an inline review in this Editor history entry. Omission opens live. */
-  draftId?: string;
+  itemKey?: string;
   changeId?: string;
   isCurrent?: () => boolean;
   canCommit?: () => boolean;

@@ -5,11 +5,9 @@
  * are read from it, so editing the template updates this gate without
  * touching this script.
  *
- * Structure is enforced here; truth is the reviewer's job. A section passes
- * when it contains at least one line the template didn't ship — pasting the
- * template unedited fails everywhere, and checkbox state is deliberately not
- * checked ("not applicable, because…" is a legitimate answer the template
- * invites).
+ * Structure is enforced here; truth is the reviewer's job. Most sections pass
+ * when they contain at least one line the template didn't ship. Changelog is
+ * also parsed as structured input for the changelog generator.
  *
  * Usage: node tools/ci/check-pr-body.mjs <changed-files.txt> [body.md]
  *   PR_BODY — the body in CI (env, so attacker-controlled markdown never
@@ -17,6 +15,12 @@
  *             draft locally before `gh pr create`.
  */
 import { readFileSync } from "node:fs";
+import {
+  CHANGELOG_CATEGORIES,
+  CHANGELOG_HEADING,
+  extractSection,
+  parsePrChangelog,
+} from "./pr-changelog.mjs";
 
 const TEMPLATE_PATH = ".github/PULL_REQUEST_TEMPLATE.md";
 
@@ -46,16 +50,6 @@ const scaffoldLines = new Set(
     .filter(Boolean),
 );
 
-/** Section content by heading: text between one `## ` heading and the next. */
-function sectionContent(body, heading) {
-  const lines = body.split("\n");
-  const start = lines.findIndex((line) => line.trim() === heading);
-  if (start === -1) return null;
-  const rest = lines.slice(start + 1);
-  const end = rest.findIndex((line) => line.trim().startsWith("## "));
-  return rest.slice(0, end === -1 ? rest.length : end).join("\n");
-}
-
 function hasAuthoredLine(content) {
   return content
     .replace(/<!--[\s\S]*?-->/g, "")
@@ -79,10 +73,21 @@ const changedFiles = readFileSync(process.argv[2], "utf8")
   .filter(Boolean);
 
 const failures = [];
+const changelogGuidance = `write one-line bullets starting ${CHANGELOG_CATEGORIES.map((category) => `- ${category}:`).join(", ")}`;
 
 for (const heading of headings) {
-  const content = sectionContent(body, heading);
-  if (content === null) {
+  const content = extractSection(body, heading);
+  if (heading === CHANGELOG_HEADING) {
+    const parsed = parsePrChangelog(body);
+    if (content === null || !hasAuthoredLine(content) || parsed.kind === "invalid") {
+      const reason = parsed.kind === "invalid" ? ` (${parsed.reason})` : "";
+      failures.push(
+        `invalid ${CHANGELOG_HEADING}${reason}: ${changelogGuidance}; keep each entry on one ` +
+          "line with at most 300 characters of text and no continuation lines, sub-bullets, or " +
+          "other content; or write one line as None. <reason>",
+      );
+    }
+  } else if (content === null) {
     failures.push(`missing section: ${heading}`);
   } else if (!hasAuthoredLine(content)) {
     failures.push(`section says nothing beyond the template scaffold: ${heading}`);

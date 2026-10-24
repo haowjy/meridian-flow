@@ -1,54 +1,49 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process";
 
-const target = process.argv[2];
-if (!target) {
-  console.error("Usage: node tools/ci/run-nx-target.mjs <target>");
-  process.exit(1);
+// Run configured Nx targets, optionally selecting projects from staged Git paths.
+const [target, ...options] = process.argv.slice(2);
+if (!target || options.some((option) => option !== "--staged")) {
+  throw new Error("Usage: node tools/ci/run-nx-target.mjs <target> [--staged]");
 }
 
-function execPnpm(args, stdio = ["ignore", "pipe", "pipe"]) {
-  return execFileSync("pnpm", args, { stdio, encoding: "utf8" });
-}
-
-let projectsOutput;
-try {
-  projectsOutput = execPnpm(["nx", "show", "projects", `--withTarget=${target}`]);
-} catch (error) {
-  console.error(`Failed to query Nx target "${target}".`);
-  console.error("Run `pnpm install` first, then retry.");
-  if (error?.stdout) {
-    console.error(String(error.stdout).trim());
+const query = ["nx", "show", "projects", `--withTarget=${target}`, "--json"];
+let input;
+if (options.includes("--staged")) {
+  // No rename detection: both old and new paths must participate in selection.
+  const files = execFileSync("git", ["diff", "--cached", "--name-only", "--no-renames", "-z"], {
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter((file) => file && !/(\.(md|mdc|markdown|txt|rst)$|(^|\/)\.context\/)/i.test(file));
+  if (files.length === 0) {
+    console.log(`No staged non-documentation paths. Skipping Nx target "${target}".`);
+    process.exit(0);
   }
-  process.exit(1);
+  // Nx's stdin protocol is newline-delimited. Such filenames cannot be sent
+  // losslessly, so check all projects rather than silently selecting the wrong ones.
+  if (files.some((file) => file.includes("\n"))) {
+    console.log("Staged path contains a newline; selecting all projects.");
+  } else {
+    query.push("--affected", "--stdin");
+    input = files.join("\n");
+  }
+  console.log("Selecting from the Git index; project checks read the working tree.");
 }
 
-const raw = projectsOutput.trim();
-let projects;
-try {
-  // Nx 22+ returns JSON array format
-  projects = JSON.parse(raw);
-} catch {
-  // Fallback: one project per line (older Nx)
-  projects = raw
-    .split("\n")
-    .map((v) => v.trim())
-    .filter(Boolean);
-}
-
+const projects = JSON.parse(
+  execFileSync("pnpm", query, { input, encoding: "utf8", stdio: ["pipe", "pipe", "inherit"] }),
+);
 if (projects.length === 0) {
-  console.log(`No Nx projects expose target "${target}" yet. Skipping.`);
+  console.log(`No selected Nx projects expose target "${target}". Skipping.`);
   process.exit(0);
 }
-
-const TEMPORARY_EXCLUDES = [];
 
 const envExcludes = (process.env.NX_EXCLUDE_PROJECTS ?? "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
-const allExcludes = [...new Set([...TEMPORARY_EXCLUDES, ...envExcludes])];
-const filtered = projects.filter((p) => !allExcludes.includes(p));
+const filtered = projects.filter((p) => !envExcludes.includes(p));
 
 if (filtered.length === 0) {
   console.log(`All projects excluded for target "${target}". Skipping.`);

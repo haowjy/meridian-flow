@@ -5,6 +5,7 @@ import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import {
   blockHashesForDoc,
+  blockIdentityForItem,
   DEFAULT_HASH_LENGTH,
   fullHashForItemId,
   getBlockItemId,
@@ -69,7 +70,8 @@ function createDoc(markdown: string): Y.Doc {
 }
 
 function fullHash(block: Y.XmlElement): string {
-  return fullHashForItemId(getBlockItemId(block));
+  if (!block.doc) throw new Error("Hash lookup requires an integrated block");
+  return fullHashForItemId(blockIdentityForItem(block.doc, getBlockItemId(block)));
 }
 
 function numberedBlocks(count: number): string {

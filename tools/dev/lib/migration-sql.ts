@@ -37,3 +37,15 @@ export function sqlParts(content: string, separator: ";" | ","): { sql: string; 
   parts.push({ sql: content.slice(start), offset: start });
   return parts;
 }
+
+/** A code companion runs before its SQL assertions; its digest is part of the SQL identity. */
+export function migrationCompanion(content: string): { file: string; hash: string } | null {
+  const lines = normalizeMigrationSql(content)
+    .split("\n")
+    .filter((line) => line.startsWith("-- migration: code"));
+  if (!lines.length) return null;
+  const match = /^-- migration: code ([a-z0-9_]+\.ts) sha256:([a-f0-9]{64})$/.exec(lines[0] ?? "");
+  if (lines.length !== 1 || !match?.[1] || !match[2] || !isNoTransactionMigration(content))
+    throw new Error("Code migrations require one hashed companion in a no-transaction SQL file");
+  return { file: match[1], hash: match[2] };
+}

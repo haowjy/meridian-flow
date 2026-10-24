@@ -58,9 +58,42 @@ it("reports a refused row and keeps the rest to undo", async () => {
       })),
     },
     folder("act"),
-    { resources, projectId: "p" },
+    { resources, projectId: "p", siblingsAt: () => [] },
   );
   expect(result.moved.map((moved) => moved.entry.id)).toEqual(["a"]);
   expect(result.moved[0]).toMatchObject({ before: folder("book"), after: folder("act") });
   expect(result.failed).toEqual([{ entry: { kind: "folder", id: "b" }, name: "b" }]);
+});
+
+it("gives rows arriving under one name in the same drop distinct free names", async () => {
+  const placed: string[] = [];
+  const resources = {
+    observeProjection: () => () => {},
+    setFolderLocation: async (_project: string, _id: string, location: { name: string }) => {
+      placed.push(location.name);
+      return { operationId: null };
+    },
+  } as unknown as AccountResourceReplica;
+  const catalog = { root: { entryId: "root" } } as CatalogContextView;
+  const result = await executeMove(
+    {
+      kind: "ready",
+      destination: { scheme: "manuscript", owner: {}, catalog, entryId: "act", path: "/Act" },
+      destinationName: "Act",
+      moves: ["a", "b"].map((id) => ({
+        ref: { kind: "folder", id },
+        name: "Notes",
+        parent: folder(id),
+        location: {} as ResourceLocation,
+      })),
+    },
+    folder("act"),
+    {
+      resources,
+      projectId: "p",
+      siblingsAt: () => [{ entryId: "held", name: "Notes", kind: "dir" }],
+    },
+  );
+  expect(placed).toEqual(["Notes (2)", "Notes (3)"]);
+  expect(result.moved.map((moved) => moved.name)).toEqual(["Notes (2)", "Notes (3)"]);
 });

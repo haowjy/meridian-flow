@@ -294,7 +294,7 @@ function sourceResolution(
         readable: true,
         nameable: true,
       },
-      inDraft: false,
+      inBranch: false,
     };
   }
   if (gone) return { kind: "gone" };

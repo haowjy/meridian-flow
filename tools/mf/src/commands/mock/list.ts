@@ -1,0 +1,25 @@
+/** `mock list`: show queued mock scripts. */
+import {
+  API_DEBUG_MOCK_MODEL_SCRIPT_PATH,
+  mockModelScriptStateSchema,
+} from "@meridian/contracts/protocol";
+import type { CommandSpec } from "../../core/command";
+import { jsonResponse } from "../../core/session";
+import { renderState } from "./queue";
+
+export const mockListCommand: CommandSpec = {
+  path: ["mock", "list"],
+  summary: "Show queued mock scripts",
+  route: "GET /api/debug/mock-model/script",
+  examples: ["./mf mock list"],
+  async run(ctx) {
+    const session = await ctx.session();
+    ctx.out.result(
+      await session.request("GET", API_DEBUG_MOCK_MODEL_SCRIPT_PATH, undefined, {
+        decode: jsonResponse(mockModelScriptStateSchema),
+      }),
+      renderState,
+    );
+    return undefined;
+  },
+};

@@ -37,10 +37,18 @@ export function useReverseTurnMutation(threadId: string) {
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
       void queryClient.invalidateQueries({
+        queryKey: threadQueryKeys.recentDocuments(threadId),
+      });
+      void queryClient.invalidateQueries({
         predicate: (query) =>
           query.queryKey[0] === projectQueryKeys.all[0] &&
           query.queryKey[2] === "works" &&
-          (query.queryKey[4] === "drafts" || query.queryKey[6] === "draft"),
+          (query.queryKey[4] === "branches" || query.queryKey[6] === "draft"),
+      });
+      void queryClient.invalidateQueries({
+        predicate: (query) =>
+          query.queryKey[0] === projectQueryKeys.all[0] &&
+          query.queryKey[2] === "document-draft-hints",
       });
       // The lineage receipt owns the Undo/Redo/View change affordance. Await
       // its refresh so an HTTP-200 refusal cannot settle against stale UI.

@@ -28,6 +28,8 @@ export interface BoundaryCompletion {
   modelResponses?: ModelResponseReceivedRow[];
   /** Caller-owned visible history event, such as `context.compacted`. */
   events?: (bakeId: PromptBakeId) => OrchestratorEvent[];
+  /** Runs in the same transaction, after the events are projected. */
+  afterEvents?: () => Promise<void>;
 }
 
 export type BeginPromptEpochInput = {
@@ -46,7 +48,7 @@ export async function beginPromptEpoch(
   deps: BeginPromptEpochDeps,
   input: BeginPromptEpochInput,
 ): Promise<{ bakeId: PromptBakeId }> {
-  const { result } = await persistAndAppendEvents(deps, input.threadId, async () => {
+  const persist = async () => {
     const thread = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
     if (!thread || thread.deletedAt) throw new Error(`Thread not found: ${input.threadId}`);
 
@@ -82,6 +84,9 @@ export async function beginPromptEpoch(
       ...(input.completion.events?.(bake.id) ?? []),
     ];
     return { result: { bakeId: bake.id }, events };
+  };
+  const { result } = await persistAndAppendEvents(deps, input.threadId, persist, {
+    afterEvents: input.completion.afterEvents,
   });
   return result;
 }

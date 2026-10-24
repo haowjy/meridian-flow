@@ -11,7 +11,7 @@
  * capability it needs (`scrollToIndex`) rather than reaching for the viewport's
  * scroll itself.
  */
-import { type RefObject, useEffect, useRef } from "react";
+import { type RefObject, useEffect, useLayoutEffect, useRef } from "react";
 import { useTurnReveal } from "./conversation-reveal";
 import type { SubagentRevealBlock } from "./conversation-reveal-controller";
 import { revealSubagentDisclosure } from "./subagent/DisclosureStore";
@@ -85,8 +85,10 @@ export function useTurnRevealLanding({
   const scroll = useRef(scrollToIndex);
   const resolve = useRef(resolveTurnId);
   const blockReveal = useRef<(() => void) | null>(null);
-  resolve.current = resolveTurnId;
-  scroll.current = scrollToIndex;
+  useLayoutEffect(() => {
+    resolve.current = resolveTurnId;
+    scroll.current = scrollToIndex;
+  }, [resolveTurnId, scrollToIndex]);
 
   useEffect(() => {
     if (!request) return;

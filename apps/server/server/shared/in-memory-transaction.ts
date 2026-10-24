@@ -3,12 +3,32 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 type Participant = { version: number; data: Map<unknown, unknown> };
 type Snapshot = { version: number; data: Map<unknown, unknown>; dirty: boolean; read: boolean };
-type Frame = { active: boolean; snapshots: Map<Participant, Snapshot> };
+type Frame = {
+  active: boolean;
+  snapshots: Map<Participant, Snapshot>;
+  /** Run after this owner's outermost transaction commits; dropped if it throws, like the snapshots. */
+  afterCommit: Array<() => void>;
+};
+
+/** The explicit choice for a fixture whose persistence has no transactions: failure records emit at once. */
+export const noTransactionOwner: unique symbol = Symbol("noTransactionOwner");
 
 export class InMemoryTransactionOwner {
   private readonly context = new AsyncLocalStorage<Frame>();
   private readonly participants = new Set<Participant>();
   private tail = Promise.resolve();
+
+  /**
+   * Runs `callback` after this owner's transaction commits, or drops it if that transaction rolls back.
+   * A nested `run` on the same owner joins the outer transaction, so its callbacks follow the outer
+   * outcome; another owner's transactions neither commit nor discard them. Returns false outside one.
+   */
+  afterCommit(callback: () => void): boolean {
+    const frame = this.context.getStore();
+    if (!frame?.active) return false;
+    frame.afterCommit.push(callback);
+    return true;
+  }
 
   async run<T>(operation: () => Promise<T>): Promise<T> {
     if (this.context.getStore()?.active) return operation();
@@ -18,7 +38,7 @@ export class InMemoryTransactionOwner {
       release = resolve;
     });
     await previous;
-    const frame: Frame = { active: true, snapshots: new Map() };
+    const frame: Frame = { active: true, snapshots: new Map(), afterCommit: [] };
     try {
       for (const participant of this.participants) {
         frame.snapshots.set(participant, {
@@ -40,6 +60,7 @@ export class InMemoryTransactionOwner {
           participant.version++;
         }
       }
+      for (const callback of frame.afterCommit) callback();
       return result;
     } finally {
       frame.active = false;

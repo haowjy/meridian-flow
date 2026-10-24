@@ -1,36 +1,52 @@
 /** Whole-draft failures and inline review completion. End states share the existing review/path row rather than adding a banner. */
 import { Plural, Trans } from "@lingui/react/macro";
-import type { DraftCommandFailure } from "@/client/query/draft-command-record";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { Button } from "@/components/ui/button";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { cn } from "@/lib/utils";
+import { useDraftCommandState } from "./draft-changes";
 import { ReviewNextAction, type ReviewStateProps, ReviewStatusContent } from "./ReviewCompletion";
 import { ReviewMessageText } from "./ReviewMessageText";
+import type { BranchCommandFailure } from "./review-command-types";
 
 /** More refused drafts than this are summarised, so the notice never outgrows the header. */
 const MAX_NAMED_FAILURES = 3;
 
 export function ReviewFailureNotices({
   commandError,
+  itemKey = "",
   failedElsewhere = [],
   onOpenNext,
   touch = false,
   className,
 }: {
-  commandError: DraftCommandFailure | null;
+  commandError: BranchCommandFailure | null;
+  itemKey?: string;
   /** Other drafts of the Work whose last Apply or Discard was refused or lost. */
-  failedElsewhere?: { row: ReviewFileTarget; failure: DraftCommandFailure }[];
+  failedElsewhere?: { row: ReviewFileTarget; failure: BranchCommandFailure }[];
   onOpenNext: (row: ReviewFileTarget) => void;
   touch?: boolean;
   /** The inset of whatever hosts the notices. */
   className?: string;
 }) {
+  const owner = useDraftCommandOwner();
+  const command = useDraftCommandState(itemKey);
   const button = touch ? "h-11 px-4 text-sm" : undefined;
   return (
     <>
       {commandError ? (
-        <p className={cn("pb-1.5 text-destructive", className)} role="alert">
-          <ReviewMessageText failure={commandError} />
+        <p
+          className={cn("flex items-center gap-2 pb-1.5 text-destructive", className)}
+          role="alert"
+        >
+          <span>
+            <ReviewMessageText failure={commandError} />
+          </span>
+          {commandError.code === "unapply-refused" && command.stalled ? (
+            <Button size="xs" variant="outline" onClick={() => owner.retry(itemKey)}>
+              <Trans>Retry</Trans>
+            </Button>
+          ) : null}
         </p>
       ) : null}
       {failedElsewhere.slice(0, MAX_NAMED_FAILURES).map(({ row, failure }) => (
@@ -70,7 +86,7 @@ export function ReviewStateInline({
   touch = false,
   ...state
 }: ReviewStateProps & { touch?: boolean }) {
-  if (!state.finished && !state.completing && !state.unlisted) return null;
+  if (!state.finished && !state.completing) return null;
   return (
     <span
       role="status"
@@ -80,9 +96,7 @@ export function ReviewStateInline({
       <span
         className={cn(
           "text-muted-foreground",
-          state.unlisted
-            ? "min-w-0 truncate"
-            : "flex shrink-0 items-center gap-1.5 whitespace-nowrap",
+          "flex shrink-0 items-center gap-1.5 whitespace-nowrap",
         )}
       >
         <ReviewStatusContent {...state} />

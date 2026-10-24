@@ -54,7 +54,7 @@ type LeftSidebarProps = {
 /** Drops anywhere in the rail report at its foot. */
 export function LeftSidebar(props: LeftSidebarProps) {
   return (
-    <MoveNoticeHost projectId={props.projectId}>
+    <MoveNoticeHost>
       <LeftSidebarRail {...props} />
     </MoveNoticeHost>
   );
@@ -79,11 +79,15 @@ function LeftSidebarRail({
   // and the Editor path everywhere else (see `use-dock-placement`).
   const placement = useDockPlacement();
   const openDocument = useOpenProjectDocument(projectId);
-  const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) => {
+  const handleSelectFile = (
+    scheme: ProjectContextTreeScheme,
+    file: ContextFile,
+    options?: { focus?: true },
+  ) => {
     if (placement.besideChat) {
       const tab = serverTabFromFile(scheme, file, {});
       if (tab) {
-        placement.commit(tab);
+        placement.commit(tab, undefined, options?.focus);
         return;
       }
     }
@@ -91,7 +95,12 @@ function LeftSidebarRail({
       onSelectContextPath(file.path, scheme);
       return;
     }
-    void openDocument({ documentId: file.documentId, workId: editorWorkId ?? undefined });
+    void openDocument({
+      documentId: file.documentId,
+      known: { scheme, file, workId: editorWorkId },
+      workId: editorWorkId ?? undefined,
+      ...options,
+    });
   };
   // On the Chat screen the row to highlight is the document open in the dock.
   const dockDocument = useDockDocument(activeScreen, projectId);

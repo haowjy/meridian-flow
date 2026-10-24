@@ -1,276 +1,320 @@
 # Delivery: admission, inbox adoption, and wakes
 
-How a writer send, a subagent report, a Work change, or a notice becomes
-durable conversation and reaches the model. Everything the model learns
-mid-thread arrives here as a durable turn at a graph point, never as a
-live-request splice; the frozen prefix it lands after is in
-[request assembly](request-assembly.md). Compaction uses this inbox
-but commands run only at the start of a run under the [queue rules](controls.md).
-A pending handoff seed is not an inbox row. The detached brief holds the
-destination run claim, so admission meets the claim rather than checking seed
-state. Its release rereads the queue and starts pending work.
-Rationale: [One Run Preparation Protocol][kb-run-prep].
+This context covers how writer sends, machine messages, Work changes, and
+notices become durable conversation. Model-visible mid-thread input is always a
+turn at a graph point, never a live-request splice; the frozen prefix is in
+[request assembly](request-assembly.md). Commands run only at run start under
+[queue rules](controls.md), and a pending handoff seed is not an inbox row.
+Rationale: the [one-run preparation protocol][kb-run-prep].
 
-## Command selection and release wake
+## Run identity
 
-`loop/next-inbox-work.ts` owns the pure `next(pending, at)` selector. At a
-reply boundary it selects every non-command row, including rows and Work
-refresh notices after a queued command; commands never run beside a tool call
-or at turn close. At run start, every non-command row runs if any message is
-waiting; otherwise the oldest command runs alone. Messages never wait behind a command.
-A notice-only queue does not start a run, but a Work refresh notice already
-waiting in the selected rows at a reply boundary still closes that reply's
-batch. The selector returns at most one command per run. Stop only ends the
-current turn; release then follows the same message-first rule.
+Three facts are server-decided, written once in the transaction that decides
+them, and exposed on the snapshot's turns (`RUN_STARTED` carries only `writeMode`).
+Clients never infer them from transcript ancestry or stream order; `messageFate`
+(`@meridian/thread-client`) reads them from one snapshot:
 
-After a run releases its claim, `wakeIfRunnable` refreshes pending state and
-uses the same run-start selector as setup. It re-reads after runs that found no
-work and after setup cancellation, so work enqueued while a claim was held is
-not lost. A failed assistant acknowledges its adopted messages before release,
-so neither the reread nor the periodic sweep replays that reply. The wake has no
-failed-receipt exclusion: if the plain selector finds a queued command or other
-work, it starts it. An empty reread cannot spin. Real setup errors before
-adoption skip the reread as the hot-loop guard; short exclusive claim holders
-still rely on the sweep.
+- **Membership.** An *execution* is one hold of the run lease
+  (`thread_run_leases.execution_id`). Reservation sites write
+  `turns.execution_id` and `turns.reserved_for_user_turn_ids` through
+  `reservationTurn`. A Retry is reserved for its failed reply's list (its inbox
+  rows are already acknowledged), carried as execution state through a
+  start-time compaction to the first assistant, and records `metadata.retryOf`
+  and `metadata.retryReplyId`. The
+  reserved-for list is a hint, never proof; `Turn.position` orders an execution's turns.
+- **Delivery.** Every acknowledgement goes through the adapter's one `ack`:
+  message rows it transitions record `delivered_by_turn_id` with `delivered_at`.
+  A yield, a cancelled compaction, and compaction orphan repair do not
+  acknowledge, so a later execution takes the messages on. Delivery is the only
+  "my message is done" fact; the snapshot joins it onto user turns
+  (`Turn.delivery`). Controls and notices record none.
+- **End.** One operation ends an execution: `RunClaim.release` deletes the lease
+  row and, in the same transaction, marks the chat so the closed `RunState`
+  (`execution: null`) is published with the turn write that ended it. No
+  separate end event exists. Every live landing of an execution's last terminal
+  turn ends it in that commit, including a compaction successor whose
+  preparation failed (`commitAdoption` returns it `terminal`). The run owner's
+  cleanup (`releaseExecution`) unlocks when the row is gone, ends when every
+  reserved turn is terminal, or abandons (expires now, unlocks, publishes
+  nothing). Ending, abandoning and stale settlement live in
+  `adapters/execution-settlement.ts`; `settleStaleExecution` runs under a newly
+  acquired claim before a new lease row is inserted
+  ([recovery](recovery.md#settling-a-stale-lease)).
 
-## Writer admission
+## Run state
 
-The bound Work must exist, but archiving does not freeze its chats: sends,
-retries, and interrupt answers remain admissible. The admission fence runs
-under the thread lock before writer-turn persistence.
+One `RunState` per chat (`packages/contracts/src/threads/run-state.ts`): the
+waiting inbox (`items`), `sentThrough`, the open `execution`, the applied write
+`mode` and the usage `blocked` reason. It is a pure function of rows
+(`loop/run-state.ts`, read by `adapters/drizzle-run-state.ts`), never of the
+clock: the lease row counts whatever its expiry, and a turn must carry its
+execution id for the execution to show.
 
-`UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata for `prepareAdoptedTurn` to load when the turn is adopted; the delivery commit persists the hidden `system`-role skill-body turn immediately after it. It also appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. When a live assistant binding exists, the writer turn gets `metadata.delivery: "steer"` at enqueue; response grouping uses that stamp, not clock comparisons. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission.
+- **Publication.** Every adapter method that writes an input (inbox rows, the
+  lease row, `threads.inbox_blocked_reason`, a due switch's mode) marks the chat
+  through `DeliveryStore.markRunStateChanged`, under the chat's thread lock; a
+  mark without the lock, or after the flush, throws. A transaction participant
+  appends one `run_state.changed` journal row per marked chat before commit, so
+  a chat's last record follows its last input write. Savepoints fork the
+  participant's state and merge on release. Work-context notices are not in the
+  record and mark nothing.
+- **Versions.** The `meridian.run_state` frame is the whole record at the stream
+  version (`journalSeq * 1000`). The snapshot, the socket's `subscribed` state
+  and command answers read the record at the journal head
+  (`journalSeq * 1000 + 999`).
+- **Answers.** Control and Retry answers carry `runState` from `answerRunState`
+  under the thread lock: an unpublished change publishes first and answers at its
+  stream version, otherwise it reads at the head. Admission carries only
+  `runStateVersion`, stored in `user_turn_admissions.run_state_version` so a
+  replay answers the same value.
 
-A writer send is never an inbox delivery: `writer-enqueue.ts` persists the
-writer's user turn with its own metadata (activated skill slugs or null) and no
-`kind`, so it stays a visible bubble before and after adoption. Only machine
-deliveries (an agent `thread_message`, other non-child messages) materialize
-with `kind: "inbox_message"`, which hides them from the bubble list; the client
-renders them as delivery rows inside the preceding assistant turn. Tagging a
-writer turn `inbox_message` makes the writer's own message vanish once a run
-drains it.
+## Stop and hand-back
 
-- **Writer enqueue preserves immutable graph order.** Before persisting a
-  writer turn, materialize any older queued directed messages under the same
-  inbox lock. Adoption can then reuse those durable IDs without reparenting
-  history.
-- **One running turn per thread.** Writer callers enter through
-  `UserTurnAdmission`, whose replay lookup precedes the producer. An unseen
-  identity is durably reserved, then the writer turn and inbox message commit
-  in one turn-start transaction; a mid-run send merges at the run's next
-  boundary instead of returning a busy conflict. `TurnRunner.startDrain`
-  rejects a wake if a run is already active or being claimed for that thread.
-  The PostgreSQL adapter also rejects same-process reentry because session
-  advisory locks themselves are reentrant.
-- **Expired writer admissions.** Lookup, replay, and retirement reconcile
-  expired pending reservations through `UserTurnAdmission`. Recovery takes the
-  runner's shared cross-process claim before the row-locking transaction and
-  holds it through commit. Unexpired reservations do not contend for that
-  claim. The ledger rechecks expiry and committed-turn evidence; an orphan
-  settles to `recovery_no_committed_turn` without a model call or document
-  effects.
+`POST /api/threads/:id/stop` (`StopRequest`: `requestId`, `seenThrough`,
+`seenExecutionId`, `mine`) is one chat command decided under the thread lock
+from rows (`RuntimeDelivery.stop`, `loop/stop-rule.ts`). It cancels the open
+execution and **hands back** the waiting writer messages no execution has taken
+on; their content returns in the answer for the acting tab's composer. A message
+is handed back or answered, never both: only if, under the lock, it is
+undelivered and in no receipt (or in the receipt of a compaction this press
+cancels, stripped of it in the same transaction). Adoption and `bindTurn`
+validate under the same lock and refuse a flagged lease.
+
+- **The rule** (`decideStop`, pure, judged on the facts before any write). P is
+  the writer rows at or below `seenThrough` plus `mine`; L is the writer rows
+  above it that are not `mine`. An execution *takes on* a message when it is in
+  the lease receipt or one of its turns delivered it. The execution is cancelled
+  when the writer saw it or it took on a message in P, unless it took on one in
+  L. `decideHandBack` classifies each covered message as `gone` (another request
+  handed it back), handed back, or `answered`.
+- **`handBack`** is the same operation for the queue's x and Cancel queue
+  (`POST /api/threads/:id/hand-back`, `HandBackRequest { requestId, ids }`,
+  `handBackRequestSchema`): the named ids only, never cancels. One queue per chat,
+  so any queued message can be named from any tab. The x sends its one id;
+  Cancel queue sends every id the client drew as queued, frozen at the press. Both
+  write one `thread_hand_backs` row per request id in the request's transaction.
+  **A replay returns that stored decision** with a fresh `runState` and flags
+  nothing; the same id with another body is `HandBackConflictError` (409).
+  `handBackFingerprint` keeps its canonical `ids` form, so decisions stored before
+  the `seen` scope left still replay.
+- **Applying a decision.** The hand-back row first (inbox rows reference it),
+  then `inbox.ack` with `{ handedBackBy }`, the cancelled compaction's receipt
+  strip, one `messages.handed_back` journal event, the usage-block clear, and
+  `cancel_requested` on the lease row matched by execution id with no expiry
+  predicate. The run session then aborts its own run when it holds the flagged
+  execution; a replay never aborts a newer one.
+- **Nothing is deleted.** The handed-back message's inbox row, turn and blocks
+  stay for diagnostics.
+
+### The command module and Send now
+
+`adapters/thread-commands.ts` (`createThreadCommands(ports)`) owns the command
+lifecycle: `handBackRequest` (find the stored decision, read facts, decide, apply),
+`handBack`, `stop` and `sendNow`. Its ports are the thread lock, the optional
+`HandBackStore` (absent in the in-memory harness, where the commands throw), the
+inbox `answerRunState`, the settlement's `ack` (the one acknowledgement path: it takes a
+deliverer or `{ handedBackBy }` and clears an idle usage block), the lease store's
+`lockThreadReceipt` and `setAdoptedMessageIds`, and `appendEvent`. The delivery
+adapter spreads it into `RuntimeDelivery`; adoption and settlement stay there.
+The pure rules stay in `loop/stop-rule.ts`. `runner.handBack` passes through;
+`runner.stop` and `runner.sendNow` abort the local run when it holds the flagged
+execution.
+
+`POST /api/threads/:id/send-now` (`SendNowRequest { seenThrough, seenExecutionId,
+waiting }`) cancels the reply the writer saw so the whole queue runs in the next
+reply (inbox delivery adopts all waiting messages as one batch). It hands nothing
+back and stores no decision: `seenExecutionId` makes a repeat of the same body
+safe, and a lost answer is re-sent with the same body, never one rebuilt from a
+newer record.
+
+- **The rule** (`decideSendNow`, beside `decideStop`, sharing `takesOn`). W is the
+  `waiting` ids, L the writer rows above `seenThrough` that are not in W.
+  Cancel iff the open execution is `seenExecutionId` and has taken on no row in W
+  (too late: cancelling would answer the queue with a cancelled reply) and none
+  in L.
+- **The fact read** is Stop's `seen` scope: `readFacts(threadId, { kind: "seen",
+  seenThrough, mine: waiting })`, under the thread lock. It returns every
+  undelivered row, every row the open execution delivered, the W ids and earlier
+  hand-backs, with the receipt: every row for which `takesOn` can hold for the
+  open execution. **Never the ids-only scope**: it reads only W, so if an x took M2
+  back and the reply then adopted a later M3, it would miss M3 and cancel the
+  reply that is answering it. After a reply's acknowledgement clears the receipt,
+  the delivering turn's row (`byExecution`) is the evidence.
+- `cancelledExecutionId: null` means this attempt requested no cancellation; it
+  says nothing about the reply's fate. A 200 confirms the control answer, never
+  that the queue was answered.
+
+### Leaving the chat: the graph and the conversation
+
+The repository ports return the **conversation**: `TurnRepository.findById` and
+`listByThread`, and every `BlockRepository` read, drop a handed-back writer
+message and its blocks. The adapters own the SQL predicate
+(`inConversationSql`, which also applies the forgetting stamp; `notHandedBackSql` stays for identity reads), which also guards transcript page keys, counts and ordinals,
+`listMessageDeliveries`, `listLatestLocalRequesterText` and the chat-activity
+projection. A reader that knows nothing about hand-back gets the safe read.
+
+The **graph** (positions, `prevTurnId`, the leaf, fork cutoffs) still holds the
+handed-back turn, because the leaf does not move and positions are unique per
+chat. It is a separate read, `turnGraph(turns)`, exported only from
+`threads/ports/turn-graph.ts`; Biome's `noRestrictedImports` lets only graph
+modules, adapters, tests and contract suites import it. Add a module to that list
+only when it walks `prevTurnId` or positions and filters its output. The
+compaction projection drops a pin to a handed-back turn and resolves a cut at one
+by position.
+
+### Forgetting a failed attempt
+
+Hand-back removes a message the writer took back. Forgetting removes an attempt
+the writer abandoned or retried. It is one durable fact,
+`turns.forgotten_by_turn_id`, written in the transaction that appends the turn
+that retries the failure or moves the chat past it. Every transcript reader
+filters it (`inConversationSql`), and a reader applies a stamp only if the
+forgetting turn is inside the span it reads: a local read applies every stamp, a
+fork or a paged cutoff only those at or before its last position. So a fork cut
+before the move-on still sees the attempt, and one cut after inherits the
+forgetting.
+
+`decideForgetting` (`loop/forget-failed-attempt.ts`) is pure. It acts only when
+the latest closing row (`loop/latest-row.ts`) is a settled failed reply or a
+compaction, and never on a continuation (same execution id). A tool call in any
+live member keeps the whole attempt. Retry forgets the failed reply and keeps
+the writer's messages. Moving on also forgets the delivered writer messages when
+every live member draws nothing (`replyDrawsNothing`, shared from
+`@meridian/thread-client/view`), except messages a summary already protects. A
+carried reply is never forgotten, and there is no backfill. Run start decides
+first, hands the result to the append primitive as `expectedForgetting`, and the
+primitive throws `ForgettingMismatchError` if the transaction would decide
+differently. The journal gets `turns.forgotten` (`turnIds`, `byTurnId`, reason
+`retried` or `forgotten`), which the client stamps on held turns.
+
+A compaction that starts before it reaches the loop's cancel read still holds the
+adopted message in its captured history, so `executeCompaction` reads the lease's
+`cancelRequested` flag immediately before the summarizer call, through
+`RunClaim.readOwned(lease)`: this execution's own row whatever its expiry,
+because Stop flags an expired lease that is still held. The expiry-filtered
+`read()` would report it asleep and let the handed-back message reach the
+summarizer.
+
+## Selection and admission
+
+`next(pending, at)` is the one selector used at run start and after release. A
+request boundary is the point between two model requests inside one execution. At
+a request boundary it selects every non-command row, except when a message waits
+behind a queued write-mode switch (`yield`: the execution ends with no
+successor). At run start, pending non-command rows win unless a write-mode
+switch precedes work (`switch`, applied at the admitted run start); a lone
+switch stays pending, and otherwise the oldest command runs alone. See
+[controls](controls.md). Stop ends only the current turn. A notice-only queue
+does not start a run. `wakeIfRunnable` rereads after release and setup
+cancellation; the periodic sweep is the durable backstop, and an empty reread
+must not spin.
+
+`UserTurnAdmission` is the writer fence under the thread lock. Its sequence is
+**validate → record → enqueue**: replay/fingerprint identity is settled first,
+then the writer turn, inbox message, activated-skill metadata, provenance,
+admission ledger, upload consumption, and document attachments commit together.
+Archiving the bound Work does not freeze its chats: sends, retries, and
+interrupt answers remain admissible.
+The writer turn remains visible and is never tagged as an inbox delivery. With a
+live assistant binding and no queued write-mode switch it joins that reply
+(`metadata.delivery: "steer"`); otherwise (idle, or behind a queued switch) it is
+stamped `send`. The producer decides under the thread lock on every turn-start
+attempt, reading the runner's live reply and the inbox. Admission answers the user
+turn and `runStateVersion`, never a reply id: which reply answers a message comes
+from [run identity](#run-identity). Expired reservations are reconciled under the shared
+cross-process claim; an orphan with no committed turn gets
+`recovery_no_committed_turn` without a model or document call.
+
+Writer enqueue materializes older directed messages under the same inbox lock,
+preserving immutable graph order. There is one running turn per thread:
+replay precedes reservation, and `TurnRunner.startDrain` rejects an active or
+being-claimed thread. A losing or rejected admission rolls back its whole
+turn-start transaction.
 
 ## Prepare and commit
 
-One `prepareAndCommit` protocol serves drain start and mid-run adoption. Direct
-run input first persists the writer turn and matching inbox message under the
-thread lock, then uses the drain-start path. The protocol selects pending IDs,
-peeks notices, and reads the active leaf without the lock; prepares image
-decisions, references, skills, and turn drafts without writes; then takes the
-thread lock and validates the leaf and pending batch. A changed selection is
-discarded and retried for at most three attempts; attempt three prepares under
-the lock. One ambient transaction consumes exactly the selected notice IDs,
-persists the first prompt bake and preparation effects, adopts the batch, and
-reserves/binds the assistant. Preparation failure leaves notices queued but
-adopts the writer batch and reserves the failed reply; the existing failure
-finalizer acknowledges that batch. Cancellation discards preparation. Notice
-IDs enter durable `system_update` history at the selected graph point, so
-prefix bytes remain stable. Image decisions are append-only by deciding turn;
-when a projection emits a break, its notice turn owns those decisions and
-`turn.created` precedes them. A fork copies the latest decision at or before
-its cutoff. Final close prepares only for pending messages or materializable
-Work refreshes; after claim cleanup the common wake re-reads for waiting
-messages or a queued command. The concrete Drizzle adapter appends the
-classified pending replacement before commit; journal failure rolls back the
-transition and only physical wake is best-effort after commit.
+One `prepareAndCommit` protocol serves drain start and mid-run adoption. It
+selects pending IDs, notices, the active leaf, references, skills, and images
+without writes; then locks the thread and validates the selection. A changed
+selection is discarded and retried at most twice before preparing under the
+lock; a start whose selection holds a due write-mode switch prepares under the
+lock at once, so the switch applies in the transaction that reserves the run. One transaction consumes exactly the selected notices, persists the
+prompt bake and preparation effects, adopts the batch, and binds the assistant
+(or pending compaction). Cancellation discards preparation; notices remain
+queued. Journal append is in the same transaction as read-model projection and
+physical wake is best-effort after commit.
 
-`loop/preparation-failure.ts` maps a preparation error to its diagnostic
-`MeridianError`; the terminal finalizer derives the stored generic copy from
-the turn's role and keeps the specific cause in error details and metadata. A
-failed reply stays `error`; its ending transaction
-acknowledges every adopted inbox message. The read model never rewrites it when
-the writer sends again. Explicit Retry starts a normal no-input run after the
-failed turn; the ordinary request projection includes that turn. Pending
-non-control rows are adopted normally, with no Retry-specific restoration or
-inbox metadata. See the [reply Retry API](../../../../../../docs/api/thread-reply-retry.md).
+A preparation error reserves a failed reply, preserves the specific cause in
+metadata/details, acknowledges its adopted inbox batch, and leaves the read
+model's failed turn intact. Explicit Retry is a normal no-input run using the
+regular history; it does not restore inbox provenance. Inbox receipt membership
+lives in `thread_run_leases.adopted_message_ids`, not turn metadata. Binding,
+response persistence, acknowledgement, receipt clearing, and terminal lease
+release are transactionally paired. Orphan recovery never retires a receipt
+whose selector names a terminal turn.
 
-- **Inbox adoption is lease-owned and transactional.** The current batch's
-  exact IDs live in `thread_run_leases.adopted_message_ids`, never turn
-  metadata. Binding a new assistant and recording its receipt commit with the
-  graph split. Response persistence, inbox acknowledgement, and receipt
-  clearing share one transaction. Successful and failed terminal replies
-  acknowledge their receipt; cancellation acknowledges the receipt, not a
-  later pending claim. A path that writes the run's last terminal turn also
-  releases its lease in that transaction; orphan recovery never retires a
-  receipt whose selector names a terminal turn
-  ([recovery](recovery.md#settling-a-stale-lease)). The joined projection exposes `waiting` for an
-  unadopted row behind a live bound run and `awaiting_run` for adopted rows or
-  no bound live run. Generic `ThreadPendingInbox` projects every provenance;
-  the app's `queuedWriterTurnIds` keeps writer rows in `waiting` so only those
-  bubbles show Queued.
+Setup errors before adoption skip the immediate reread as the hot-loop guard. A
+short exclusive claim (`hold` or `withExclusiveThread`) that turned another start
+away wakes its chat on release (`loop/contended-claim-wake.ts`); that tracking is
+per process, so when another server process holds the claim the periodic sweep
+recovers the work. A fork copies the
+latest image decision at or before its cutoff.
 
-## Materializing a batch
+## Materialized context
 
-Materializes a selected batch as durable turns/blocks. Caller-supplied notices and notice-intent inbox entries fold into one trailing `{ kind: "system_update", section: "notices" }` system turn built by `noticesTurnFor`/`formatNotices`; Work refreshes render to their own durable turn. Existing writer turns are adopted without a second append. `prepareAdoptedTurn` prepares missing text-reference reads and activated skill bodies, returning events and hidden sibling turns for the adoption transition -- never a block on the adopted turn itself, since anything that projects a user turn's text (`UserTurn.tsx`) concatenates every text block on it. `planMessageTurns` and `messageTurnFor` own fresh message history. Child completions persist a system turn with `{ kind: "subagent_update", handle, outcome, execution }` metadata; the execution UUID is for internal card correlation only. The shared context assembler renders from `turns`/`blocks` alone; never splice a second inbox rendering over the assembled request, which bypasses image authorization, model capability, and the whole-request occurrence budget.
+The adoption boundary renders caller-supplied notices into one trailing
+`system_update` turn and Work refreshes into their own durable turn. Existing
+writer turns are adopted without a second append; machine messages use
+`inbox_message` provenance. Activated skill bodies become hidden sibling system
+turns, never blocks on the writer turn. Child completions carry body-free
+`subagent_update` metadata; the parent reads the report through a tool.
 
-Edit-intent notices, Work refreshes, and every other durable notice source
-(`NoticePort`, non-message inbox entries) split the same way at the adoption
-point. No notice source skips this split.
+Work context contains only the bound Work's name, archive state, status, and
+bounded goal. Mutations enqueue immutable refresh notices in the business
+transaction; delivery coalesces selected notices and acknowledges them with the
+rendered system update. Running Work changes close A and start B under one
+lease. In-run Work tools do not append history. Hidden or archived targets park
+notices until restore; hard deletion cascades.
 
-### Empty and canceled notice batches
+Which mutations enqueue a Work refresh: every change to a chat's Work facts
+(model and Work-screen edits, receipt reversal, thread restore, the explicit
+rebind) enqueues one marker per affected thread, hidden and unfrozen threads
+included. The model's own `work` update, archive or unarchive skips the calling
+thread, whose tool result already carries the new value (a notice there split
+the reply into two assistant turns); `switch` still notifies its own thread.
+Creating or deleting a Work targets nothing; restore refreshes. Only a real
+deleted-to-visible restore enqueues, and an inherited fork or handoff enqueues
+one so its first request carries current Work. A writer Work switch also
+records a one-shot switched notice. An idle thread materializes the update
+without a model call, a writer send first materializes older pending notices
+so turns follow inbox order, and the recovery lane materializes the rest. A
+committed mutation stays successful while its update is pending.
 
-Notice selection and acknowledgement do not imply a history turn. The shared
-inbox planner formats the batch first and appends a notices turn only for
-non-whitespace content; canceled or empty notices are still consumed in the
-adoption transaction and do not themselves split a running reply. Writer
-reversal notices must retain redo records: an undo/redo pair before delivery
-cancels for that document URI and write handle. An undo alone reports unwanted
-edits; a redo arriving after an earlier batch reports restored edits. Other
-notice sections survive reversal cancellation.
+## References, images, and synchronization
 
-### Work context
+Current-turn text references load outside admission transactions and persist
+server-side evidence before gateway submission. Duplicate document identities
+read once per turn; replay reuses frozen results. Image inclusion decisions are
+append-only by deciding turn, resolved late, and projected chronologically;
+definite loss or budget eviction creates a named break, while first-sight loss
+does not rewrite an already-sent prefix. Blocks retain identity, never bytes or
+inclusion state. Decision rows are never upserted: an overwrite would lose the
+decision as of an earlier turn and drop an image from a later fork with no
+notice. The removal notice turn owns the decisions it reports, so a decision
+and its explanation fall on the same side of any fork cutoff.
 
-Renders only the bound Work: name, archive state, free-text status, and a goal
-bounded to 2,000 characters with paragraph breaks preserved. Other Works are
-discovered through `work list`, not embedded in context. Updates notify only
-threads primarily bound to the changed Work; creation and deletion enqueue no
-refresh. Mutations enqueue immutable system-provenance refresh notices in the
-business transaction. The delivery boundary coalesces a batch into one durable system update and event and acknowledges its notice IDs atomically. Idle recovery uses a short run claim; notices never wake a model.
+Delivery takes the per-thread advisory/row lock and orders Work rows before
+thread mutation. No provider call runs under those locks. The process-local
+enqueue wake is the latency path; keyset-paged `sweepWakes` is the recovery
+guarantee.
 
-A frozen prompt is never rebuilt for Work changes. Business mutations enqueue
-immutable `work_context_refresh` inbox notices, including for hidden targets.
-Running request boundaries and idle recovery render current authorized state
-into one durable `<system_update>` user-role turn and `work_context.changed`
-event, then ack the selected Work notice IDs in that same transaction. These
-IDs are not response receipts. A running Work update closes A and starts B
-under the same lease so replay remains causal. Writer enqueue and idle
-delivery use one seq-ordered prefix materializer under the per-thread
-transaction lock. Several pending mutations coalesce, while a racing mutation
-retains its own unacked row. Hidden threads/projects and archived threads park
-notices until restore; hard deletion cascades. Idle recovery uses
-`RunClaim.withExclusiveThread` without a lease or model call. In-run Work
-tools do not append history; the next request boundary does.
+## Credit blocking
 
-### Worked examples
-
-What the model receives for five common deliveries, so "durable
-`system_update` turn" and "merged into one message" stay concrete:
-
-1. **Writer steer mid-run, after a tool call.** The writer sends "also tighten
-   the dialogue" while a tool call is in flight. `drainInbox` persists it as an
-   ordinary `user`-role turn chained onto the thread; `context-builder.ts`
-   renders the preceding response's `tool_result` as a canonical `role: "tool"`
-   message and the steer as a canonical `role: "user"` message, back to back.
-   The Anthropic adapter maps `tool` to `user` (Anthropic requires tool results
-   in a user turn) and then merges consecutive same-role messages, so the two
-   arrive as one Anthropic `user` message: the `tool_result` block immediately
-   followed by the text block `"also tighten the dialogue"`.
-2. **Background subagent completion.** `spawn/report-publisher.ts` enqueues a
-   child-provenance `message`; `messageTurnFor` persists it as a `system`-role
-   turn (`{ kind: "subagent_update", handle, outcome, execution,
-   childThreadId, agentName }`) whose block
-   text, once wrapped by the render path, is exactly:
-   ```
-   <system_update>
-   Subagent p1 finished (succeeded). Read its report with thread_report({"ref":"p1"}).
-   </system_update>
-   ```
-   The report body never appears; the parent model fetches it with the
-   authorized `thread_report` tool call named in the text.
-3. **Work switch.** A Work mutation enqueues a `work_context_refresh` notice;
-   `adopt()` renders the current authorized state and `messageTurnFor` persists
-   it as a `user`-role turn (`{ kind: "system_update", section: "work_context"
-   }`) whose block text is:
-   ```
-   <system_update>
-   <work_context>
-   current: drafting: "Drafting"
-     goal: |
-       Land the reveal in ch. 12.
-   </work_context>
-   </system_update>
-   ```
-4. **A request-only notice.** An `awareness_degraded` notice recorded through
-   `NoticePort.record` is selected by a delivery-boundary peek; commit consumes
-   its ID and `noticesTurnFor` persists it as a `system`-role turn (`{ kind:
-   "system_update", section: "notices" }`) whose block text is:
-   ```
-   <system_update>
-   The system could not verify whether concurrent writer content was preserved in chapter-12.md. Re-read the document before making another write.
-   </system_update>
-   ```
-5. **A `/skill` activation.** A writer send stamps its activated slugs as
-   hidden turn metadata at admission. `prepareAdoptedTurn` loads each body, and
-   the delivery commit persists a `system`-role turn (`SKILL_BODY_METADATA`,
-   i.e. `{ kind: "system_update", section: "skill_body" }`) chained
-   immediately after it -- never a block on the writer's own turn, so
-   `UserTurn.tsx`'s `projectUserTurn` (which concatenates every text block of
-   a user turn) never renders it. Its block text, for a packaged skill, carries
-   the same header as `skill()`:
-   ```
-   <system_update>
-   skills://writing-principles/SKILL
-   Paths in this skill are relative to skills://writing-principles/.
-
-   description: Craft rules for revision
-
-   Show, do not tell.
-   </system_update>
-   ```
-   An account-install skill has no files, so its first line is
-   `skill invoked: <slug>` instead (`loop/activated-skills.ts`).
-
-Every one of these five is either a `system`-role turn with no custom block
-(2, 4, 5) or a `user`-role turn carrying one of the specific hidden-metadata
-shapes above (1 is genuinely visible; 3 is not). `visible-conversation-policy.ts`
-and the app's `visible-chat-turns.ts` keep every hidden one out of the chat
-transcript with no UI change: a `system`-role turn is visible only if it is
-not `subagent_update` **and** carries a custom block (never true for 2, 4, or
-5), and a `user`-role turn is hidden only for `inbox_message` or
-`system_update`/`work_context` (true for 3, false for the writer's own turns
-in 1 and 5).
-
-## References and images
-
-Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation; a mid-run adopted writer turn's unread references load at adoption. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads.
-
-Late image bytes are identity-resolved after admission and read-deduplicated. `thread_image_inclusions` is append-only, keyed by `(thread_id, block_id, decision_turn_id)`; the latest row by turn position wins. A definite loss of a previously included asset creates an `asset_unavailable` break turn; a first-sight loss uses `asset_unavailable_first_sight` and does not break the already-sent prefix. Budget eviction of an included image creates its own named break. Transient resolution errors propagate to the failed-reply path without deciding the image. Projection applies the shared budget chronologically over history and adopted turns; compaction is the explicit seam for rebalance. Durable blocks retain only `image_reference` identity, never resolved bytes or inclusion state. The image-inclusion metadata codec lives with the other turn codecs in `threads/domain/turn-metadata.ts`. Compaction's re-admission pass is in
-[compaction](compaction.md#image-re-admission).
-
-## Locks and wakes
-
-Short per-thread transaction serialization, distinct from the session run claim. Delivery acquires the advisory lock, then the shared `NO KEY UPDATE` thread row lock before enqueue or consumption/close. Work rows follow the thread row in sorted id order through `shared/thread-work-lock.ts`; publication parent locking and writer admission use the same order. Work-only notice insertion takes no thread mutation/advisory lock, only compatible FK `KEY SHARE`. No provider call runs under these locks. Thread visibility and turn transitions use `NO KEY
-UPDATE` so a Work mutation holding Work rows can insert its marker with FK
-`KEY SHARE` without a lock inversion.
-
-The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn runner's `startDrain`, handling `TurnStartConflictError` quietly and reporting unexpected failures once through EventSink because a wake is best-effort. `sweepWakes` is the durable recovery: it keyset-pages pending threads in stable thread-ID order, batch-reads live leases, and starts eligible threads with bounded concurrency. Its caller retains the returned cursor across sweeps; an empty suffix wraps to the first page. One candidate’s failure is reported without stranding the rest. `app.ts` registers the sweep with the process recovery scheduler at boot, then rearms it after completion with `WAKE_SWEEP_INTERVAL_MS` (default 30s). The `enqueue` wake is the latency path; the sweep is the guarantee.
+When a drain claim cannot pass `canStartTurn`, delivery records
+`credits_exhausted` under the thread lock with a held, unbound claim and emits
+the change in the run-state record, whose `blocked` carries it. Successful
+initial adoption clears it. The marker is projected
+only while message/control work remains; notices alone do not sustain a block.
+Balance restoration is retried by the ordinary wake sweep, not client polling.
 
 [kb-run-prep]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/run-preparation-protocol.md
-
-## A start waiting for usage
-
-`prepareLoop` asks RuntimeDelivery to save `credits_exhausted` when a drain
-claim cannot pass `canStartTurn`. Delivery alone sets and clears the thread's
-`inbox_blocked_reason`: under the thread lock with a held, unbound claim, and
-in the same transaction as `inbox.changed`. A successful initial adoption
-clears it with binding the first turn. Every inbox retirement goes through the
-shared acknowledgement helper, which clears the marker when no message/control
-remains (notices alone cannot sustain a block). Empty-inbox refused wakes never
-install one. A failed publication rolls back the acknowledgement and clear.
-Repeated refused wakes do not republish an unchanged block.
-
-`readPendingInbox` includes `blocked: { reason: "credits_exhausted" }` only
-while message/control work remains pending. Snapshots, socket subscription
-state and `meridian.inbox.changed` carry the same projection. The ordinary
-server wake sweep retries after balance restoration; clients add no polling.
-The accepted writer turn remains saved, with no failed assistant placeholder.

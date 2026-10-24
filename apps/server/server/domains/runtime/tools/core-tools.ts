@@ -39,18 +39,18 @@ import { renderSearchResult } from "./search-result.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 import { renderWorkResult } from "./work-result.js";
 
-/** A Work slug as the model writes it: trimmed, and `@x` means Work `x`. */
+/** A Work handle as the model writes it: trimmed, and `@w3` means Work `w3`. A name is answered by the handler. */
 const WorkRefSchema = z
   .string()
   .min(1)
   .transform((raw, context) => {
     const trimmed = raw.trim();
-    const slug = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
-    if (!slug) {
-      context.addIssue({ code: "custom", message: 'must name a Work slug, e.g. "arc" or "@arc"' });
+    const handle = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
+    if (!handle) {
+      context.addIssue({ code: "custom", message: 'Expected a Work handle, e.g. "w3".' });
       return z.NEVER;
     }
-    return slug;
+    return handle;
   });
 
 const WorkNameSchema = z
@@ -88,7 +88,7 @@ const WorkVerboseSchema = z
   .optional();
 
 const WorkSelectorSchema = z.object({
-  work: WorkRefSchema.describe('Work slug, e.g. "arc" or "@arc".'),
+  work: WorkRefSchema.describe('Work handle, e.g. "w3".'),
 });
 
 export const WorkCommandSchema = z.discriminatedUnion("command", [
@@ -124,7 +124,7 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
   WorkSelectorSchema.extend({ command: z.literal("archive") })
     .strict()
     .describe(
-      "Archive a Work. Its scratch://, draft and goal become read-only; its chats continue.",
+      "Archive a Work. Its scratch://, drafts and goal become read-only; its chats continue.",
     ),
   WorkSelectorSchema.extend({ command: z.literal("unarchive") })
     .strict()
@@ -137,7 +137,7 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
       command: z.literal("switch"),
       work: WorkRefSchema.nullable()
         .optional()
-        .describe('Work slug, e.g. "arc" or "@arc"; omit or null for No Work.'),
+        .describe('Work handle, e.g. "w3"; omit or null for No Work.'),
     })
     .strict()
     .describe("Move this conversation to another Work. Needs the user's approval."),
@@ -247,7 +247,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         description:
           DOCUMENT_NAMES_DESCRIPTION +
           "\n" +
-          "Change documents. In a draft-mode Work your changes go to the draft, except `scratch://`, which is always edited directly.",
+          "Change documents. In draft mode your changes to a document go to its draft, except `scratch://`, which is always edited directly.",
         inputSchema: modelToolSchema(WriteToolInputSchema),
       },
       input: WriteToolInputSchema,

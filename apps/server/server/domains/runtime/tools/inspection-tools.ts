@@ -3,6 +3,7 @@ import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue, Thread } from "@meridian/contracts/threads";
 import type { z } from "zod";
+import type { OwnerLookup } from "../../context/index.js";
 import type { ThreadRepositories, ThreadStatusReader } from "../../threads/ports/repositories.js";
 import type { TokenizerFamily } from "../gateway/index.js";
 import { renderThreadHistoryOutput } from "../spawn/history-result.js";
@@ -29,6 +30,7 @@ export function createInspectionToolRegistrations(deps: {
   repos: ThreadRepositories;
   statusReader: ThreadStatusReader;
   registry: ToolRegistry;
+  chatFiles?: OwnerLookup;
   tokenizer: (caller: Thread) => Promise<TokenizerFamily | { ok: false; error: MeridianError }>;
 }): ToolRegistration[] {
   return [

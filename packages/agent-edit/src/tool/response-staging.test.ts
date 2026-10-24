@@ -46,7 +46,7 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Must persist."]);
   });
 
-  it("rolls back staged create without leaving an empty live document", async () => {
+  it("rolls back a staged create without writing its host-created document", async () => {
     const ctx = harness();
     const responseContext = {
       ...context,
@@ -65,16 +65,13 @@ describe("response staging", () => {
 
     expectOutcome(result, "success");
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
-    expect(ctx.coordinator.docs.has("new.md")).toBe(false);
 
     const rollback = await ctx.core.rollbackResponse("response-staged-create-rollback");
 
+    // Retracting the created document is the host's (its end-use kernel), not the core's.
     expect(rollback.stagedCreates).toEqual({ committed: [], discarded: ["new.md"] });
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
-    expect(ctx.coordinator.docs.has("new.md")).toBe(false);
-    expect(outcomeText(await ctx.core.read({ file: "new.md" }, context))).toBe(
-      "status: document_not_found; path: new.md\n\nFile not found. Check the path with `ls`.",
-    );
+    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual([]);
   });
 
   it("stages multiple response writes and commits journal plus live doc once", async () => {
@@ -197,8 +194,8 @@ describe("response staging", () => {
     const receipt = committed.documents[0]?.receipts.at(-1)?.result;
     if (!receipt) throw new Error("missing settled receipt");
     const text = renderAgentEditResult(receipt);
-    expect(text).toContain("concurrent user content swept during commit; re-read required");
-    expect(text).toMatch(/swept: [0-9a-f]+\|Alpha para\. SAME\\_BLOCK\\_WRITER/);
+    expect(text).not.toContain("re-read required");
+    expect(text).toContain("Alpha AI edit. SAME\\_BLOCK\\_WRITER");
   });
 
   it("reports no sweep when a reply removes and replaces the writer's text it asked to", async () => {
@@ -221,7 +218,6 @@ describe("response staging", () => {
     const committed = await ctx.core.commitResponse("response-own-removal");
 
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Race", "Gamma AI edit."]);
-    expect(committed.documents[0]?.lateSweep).toBeUndefined();
     for (const receipt of committed.documents[0]?.receipts ?? []) {
       expect(renderAgentEditResult(receipt.result)).not.toContain("swept");
     }
@@ -269,7 +265,7 @@ describe("response staging", () => {
       },
     );
 
-    await ctx.core.invalidateThreadDocument("chapter.md", THREAD_ID);
+    ctx.core.dropStaged("chapter.md", THREAD_ID);
     await expect(ctx.core.commitResponse("response-stale-buffer")).rejects.toThrow(
       "already rolled back",
     );
@@ -298,7 +294,7 @@ describe("response staging", () => {
     ctx.journal.failNextAppendBatchWith(new Error("journal unavailable"));
 
     await expect(ctx.core.commitResponse("response-journal-fail")).rejects.toThrow(
-      /before the journal batch was committed/,
+      /journal unavailable/,
     );
 
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);

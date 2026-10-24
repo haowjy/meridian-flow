@@ -9,10 +9,17 @@
 import { ReviewChangeBar } from "@/features/draft-review/ReviewChangeBar";
 import type { ReviewChangesView } from "@/features/draft-review/useReviewChanges";
 
-export function MobileChangeBar({ view }: { view: ReviewChangesView }) {
-  const item = view.items.find((candidate) => candidate.change.classId === view.focused?.classId);
+export function MobileChangeBar({
+  view,
+  canApply,
+}: {
+  view: ReviewChangesView;
+  /** The review's Apply eligibility (`useReviewHeader`): the selected review has a change. */
+  canApply: boolean;
+}) {
+  const item = view.items.find((candidate) => candidate.change.id === view.focused?.id);
   if (!item) return null;
-  const { change, failure, draftFailure } = item;
+  const { change, draftFailure } = item;
   return (
     <div
       data-phone-change-bar
@@ -27,9 +34,10 @@ export function MobileChangeBar({ view }: { view: ReviewChangesView }) {
       <ReviewChangeBar
         touch
         change={change}
+        itemKey={view.itemKey ?? ""}
         disabled={view.locked}
-        failure={failure}
         draftFailure={draftFailure}
+        canApply={canApply}
         onApply={() => void view.apply(change)}
         onDiscard={() => void view.discard(change)}
         className="rounded-xl"

@@ -1,8 +1,8 @@
 # Development guide (v3)
 
-Setup and day-to-day workflow for the TypeScript monorepo on branch `h/v3`.
+Setup and day-to-day workflow for the TypeScript monorepo.
 
-See also [AGENTS.md](AGENTS.md), [CHANGELOG.md](CHANGELOG.md), and [.cursor/rules/commit-phase-discipline.mdc](.cursor/rules/commit-phase-discipline.mdc).
+See also [AGENTS.md](AGENTS.md), the PR body's `## Changelog` section, and [.cursor/rules/commit-phase-discipline.mdc](.cursor/rules/commit-phase-discipline.mdc).
 
 ## Environment
 
@@ -25,6 +25,19 @@ forward test webhooks to the local portless server route, then use Stripe test
 cards / test subscriptions.
 
 ## First-time setup (main checkout)
+
+Clone with a blob filter, so screenshots, the lockfile and migration snapshots
+download only when something reads them:
+
+```bash
+git clone --filter=blob:limit=200k <repo-url>
+```
+
+That fetches about 100 MB, source history included, instead of the whole history
+(about 370 MB). The current tree's large files download on checkout, and an old
+image downloads on first read.
+
+Then, in the checkout:
 
 ```bash
 pnpm install
@@ -80,15 +93,14 @@ Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docke
 | `pnpm bootstrap` | `direnv allow` (if installed) + ensure DB + migrate + apply-functions |
 | `pnpm dev:gc-dbs -- --yes` | Drop stale worktree and stopped managed-test databases; preserve live worktrees, active tests, reserved manual-test names, and reserved databases |
 
-### Pre-relaunch baseline reset
+### Resetting a dev database
 
-Migration history now starts at `0000_baseline`. **Existing dev databases that
-ran the old chain must be reset with `pnpm db:reset` from their owning checkout.**
-This destroys that checkout's local schema and data, then installs the baseline
-and post-migrate functions. Back up anything you need first. `pnpm db:migrate`
-does not upgrade an old-history database to this baseline. Do not reset someone
-else's database or a shared deployment; deployment rebuilds need separate
-coordination. Legacy users will arrive through a separate ETL, not this migration.
+Until launch, resetting a database is always an option. `pnpm db:reset`, run
+from the checkout that owns the database, destroys its schema and data, then
+installs the migrations from `0000_baseline` and the post-migrate functions.
+Back up anything you need first. `pnpm db:migrate` cannot upgrade a database
+whose migration history predates `0000_baseline`; reset it instead. Never reset
+someone else's database or a shared deployment.
 
 Against local Postgres, `pnpm test:db` creates and migrates a uniquely named
 template owned by that invocation and clones eight isolated worker databases
@@ -113,10 +125,17 @@ pnpm dev:prune-worktrees -- --target <value>           # clean that target after
 Targeted cleanup runs in order: stop dev stack → drop database → remove git
 worktree → optionally mark a linked Meridian work item done → delete the local
 branch. Eligibility is bound to the planned branch commit and revalidated before
-every action; exact merged-PR evidence must match the detected base, head commit,
-and repository owner. The resolver refuses primary/current or locked worktrees,
-the detected base branch, unmerged commits, dirty worktrees, ambiguous evidence,
-and refs that move after planning.
+every action. Targeted cleanup accepts the commit contained in another surviving
+local or remote-tracking ref (own refs resolved against the configured remote
+names, symbolic refs excluded, remote-tracking candidates verified against their
+remote before the check), or an exact merged PR into any base branch; each
+matched PR's head commit and repository owner must match. Batch cleanup still requires an exact merged PR into
+the detected base branch and keeps refusing duplicate exact records. Executing
+cleanups are serialized per repository, so two runs cannot each treat the other's
+branch as the surviving ref; a stale lock refuses rather than being taken over.
+The resolver refuses primary/current or locked worktrees, the detected base
+branch, commits no other ref contains (unless an exact merged PR or manual
+evidence covers them), dirty worktrees, and refs that move after planning.
 
 Batch cleanup is advanced and not yet trusted for routine use. It requires an
 explicit acknowledgement:
@@ -147,8 +166,16 @@ Run once per checkout (main or worktree). Hooks in [lefthook.yml](lefthook.yml):
 
 | Hook | Runs |
 |------|------|
-| **pre-commit** | `pnpm biome check --staged` → `pnpm typecheck` |
-| **pre-push** | `pnpm --filter @meridian/database test` |
+| **pre-commit** | Staged Biome, staged migration lint, then `pnpm typecheck:staged` |
+| **pre-push** | Debug-probe checks, then `pnpm --filter @meridian/database test` |
+
+`typecheck:staged` skips documentation-only changes. Otherwise, Nx selects projects
+and dependent consumers from staged paths, including both ends of a rename and
+deleted paths. Shared configuration and dependency changes select the wider set.
+Selection reads the Git index; each project's configured check reads the working
+tree, including unstaged edits. It does not validate a staged snapshot or stash
+files. `pnpm typecheck`, `pnpm check` and CI retain full-project checks.
+See [selection and cache inputs](tools/ci/README.md#staged-typechecking).
 
 Verify: `pnpm exec lefthook run pre-commit` / `pre-push`. Do **not** use `git commit --no-verify` unless explicitly approved.
 
@@ -159,16 +186,16 @@ Branch history should replay verified work: **one plan phase or logical step →
 1. Finish one phase or logical step.
 2. Stage **only** files for that step.
 3. `git commit` with a message that states what and why.
-4. Add a matching bullet under [CHANGELOG.md](CHANGELOG.md) → `## [Unreleased]`.
+4. Add the matching `Added:`, `Changed:`, `Fixed:` or `Removed:` line to the PR body's `## Changelog` section.
 5. Start the next phase.
 
 Prefer separate commits per package or layer when it helps review (e.g. `packages/database`, then `tools/dev`). Fold small review fixes into that phase's commit or an immediate follow-up.
 
-`git log --oneline` on `h/v3` should read like the plan: phase → verified commit → next phase.
+`git log --oneline` on the branch should read like the plan: phase → verified commit → next phase.
 
 ## Checks (manual)
 
-Same gates as hooks, useful before push:
+Full gates, beyond the staged selection used at commit time:
 
 ```bash
 pnpm lint
@@ -198,28 +225,10 @@ fixed ports. It logs each remaining holder by PID and command, sends SIGTERM,
 waits briefly, and sends SIGKILL to stragglers. An uninspectable bound port still
 aborts startup with diagnostics.
 
-## Workstation: memory-safe ripgrep
+## Workstation: wrapped ripgrep
 
-`rg` on this machine is wrapped at `~/.local/bin/rg` to prevent OOM kills. A bare `rg` over a large codebase can mmap hundreds of GB of virtual address space and exhaust RAM (this happened — it killed a tmux session).
-
-The wrapper enforces:
-- `--no-mmap` — sequential reads instead of memory-mapped I/O, keeps VSZ low
-- `--max-filesize 500M` — skips files larger than 500 MB
-- `-j 4` — caps parallel search threads
-- cgroup limits via `systemd-run`: `MemoryHigh=6G`, `MemoryMax=10G`, `MemorySwapMax=4G`
-
-To bypass (e.g. searching a legitimately large file):
-```bash
-~/.local/bin/rg.real [flags] [pattern] [path]
-```
-
-Also recommended — install `earlyoom` as a system-wide backstop:
-```bash
-sudo apt install earlyoom
-# In /etc/default/earlyoom:
-# EARLYOOM_ARGS="-m 4,3 -s 10,5 --prefer '(^|/)(rg|ripgrep)$' --sort-by-rss -g -r 60"
-sudo systemctl enable --now earlyoom
-```
+On the maintainer's workstation, `rg` is a memory-capped wrapper; run
+`~/.local/bin/rg.real` to bypass it.
 
 ## Vite crashes with ENOSPC (file watchers)
 

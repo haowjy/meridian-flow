@@ -11,8 +11,8 @@ import {
   findInMemoryContextDocumentsById,
   InMemoryContextDocumentStore,
   type InMemoryContextDocumentStoreBacking,
-  InMemoryContextTreeMutationStore,
 } from "../adapters/context-fs/in-memory-store.js";
+import { InMemoryContextTreeMutationStore } from "../adapters/context-fs/in-memory-tree-mutation-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "../ports/context-port.js";
 import type { ContextTreeMutationStore } from "../ports/context-tree-mutation-store.js";
 
@@ -42,7 +42,7 @@ function projectStoreKey(
   return `project:${projectId}:${scheme}`;
 }
 
-function workStoreKey(workId: string, scheme: WorkScopedContextFsScheme): string {
+function workStoreKey(workId: string, scheme: WorkScopedContextFsScheme | "uploads"): string {
   return `work:${workId}:${scheme}`;
 }
 
@@ -64,7 +64,7 @@ export function getInMemoryProjectContextStore(
 export function getInMemoryWorkContextStore(
   registry: InMemoryUnifiedContextStoreRegistry,
   workId: string,
-  scheme: WorkScopedContextFsScheme,
+  scheme: WorkScopedContextFsScheme | "uploads",
 ): InMemoryContextDocumentStore {
   const key = workStoreKey(workId, scheme);
   let store = registry.workStores.get(key);
@@ -87,7 +87,10 @@ function projectionFromStore(
 ): { markdown: string; filetype: Filetype } | null {
   const doc = findInMemoryContextDocumentsById(registry.backing, [documentId])[0];
   if (!doc) return null;
-  return { markdown: doc.markdown, filetype: doc.filetype ?? "markdown" };
+  return {
+    markdown: registry.backing.projections.get(documentId) ?? "",
+    filetype: doc.filetype ?? "markdown",
+  };
 }
 
 /** Resolve markdown projection for a document id across all in-memory context stores. */

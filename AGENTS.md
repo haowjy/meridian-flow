@@ -16,9 +16,13 @@ life faster, with AI that understands narrative craft.
 progression-fantasy web serials at 5,000–10,000+ words/day who need
 Scrivener-scale power without its complexity.
 
-**Trust the LLM.** AI writes merge like any Yjs peer's: marks and receipts
-inform, and undo recovers. Never add approval gates, refusal vetoes, or
-"safety" friction to AI writes; that gates the writer's instruction. See the
+**Trust the LLM, and make changes easy to review.** The user and the model both
+change documents, often at the same time, and changing a document should be
+smooth for both. Their writes land: never put approval gates, refusals, or
+"safety" friction in front of them. The user is protected by seeing what
+changed and being able to take it back. AI writes merge like any Yjs peer's,
+marks and receipts say who did what, and review makes conflicting changes easy
+to resolve. See the
 [trust ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/trust-the-llm-mission.md).
 
 ## Engineering principles
@@ -30,27 +34,19 @@ simplification.
 **Optimistic UI.** The writer sees the result of their action at once. The
 network catches up. Failure belongs on the thing they did. Do not wait for
 the server to change the screen. Do not show a successful screen while the
-action is still pending. Do not invent recovery copy for a lost first send —
-do not lose it.
+action is still pending.
 
 **Navigate first.** Every destination change goes to the new screen
 immediately. Create, persist, and connect in the background. This is the
-default for the whole app, not a chat special case. If the background work
+default for every screen, not only chat. If the background work
 fails, the error is on that destination. Never return to the previous screen
 because the new one has not finished materializing.
 
 **Writer primitives:** a **Project** is a serial, book, or body of work. A
-**Work** is a task-scoped editing context within a project; it groups threads,
-owns shared drafts, carries a goal, and holds qualified `scratch://` context.
-Every project has one locked **No Work** row. Omitting a Work or sending
-explicit null binds the thread to that row. After creation, the writer may
-explicitly rebind the chat through one canonical operation; Work management
-and navigation never invoke it implicitly. The model can't rebind; see the
-[model's `work switch`][model-work-switch]. Named-Work URIs use `@slug`;
-No Work Uploads use `@/`. No Work owns no Scratch: a No Work chat's Scratch
-belongs to its lineage (the first chat, its forks and subagents) at
-`scratch://@/c12/`, named by the first chat's handle. Internal IDs never
-appear in URI authority. The schema is `works` + `thread_works`.
+**Work** is a task-scoped editing context within a project: it groups chats,
+owns shared drafts, carries a goal, and holds `scratch://` context. Addresses,
+handles, No Work and rebinding are in the
+[Work decisions](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/work/index.md).
 
 ## Agency
 
@@ -73,9 +69,28 @@ outside `packages/design-tokens`.
 **Comments.** File headers say what a file is for. Inline comments explain only
 hidden constraints, surprising invariants, and workarounds.
 
+**Writing.** Load and apply `/llm-writing` before writing or revising user-facing
+text or documentation: UI copy, guides, README files, AGENTS.md, .context/, KB
+pages, work artifacts, PR descriptions, and release notes. Apply
+`/information-hierarchy` to multi-section documents and UI surfaces with
+supporting detail: lead with what the reader needs, then disclose depth.
+
 **Writer-facing copy.** Separate facts with layout, typography, sentences, or
 parentheses, never `·`, `•`, `—`, or `|`. See the
 [copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/writer-copy-separation.md).
+
+**Offer only what applies.** Show a control only while its action can succeed.
+Feedback never displaces content already on screen: it uses blank space, or the
+end of a surface that grows downward, like a chat's latest turn. See the
+[offer-only-what-applies decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/offer-only-what-applies.md).
+
+**Trust the user, and save vertical space.** Teach how the product works once,
+in a tutorial, and then trust the user to know it. The UI shows state, never
+standing explanations of rules the user already learned or will learn by trying
+("ch5 still has that name. Apply its change first."). A refusal is said on the
+thing the user did, after they try it. Never reserve empty lines for messages
+that might come: a list row is one line until it has something to say. See the
+[trust-the-user decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/trust-the-user.md).
 
 **Debugging.** Follow [docs/debugging.md](docs/debugging.md).
 
@@ -89,12 +104,12 @@ architecture.
 Update the relevant `AGENTS.md`, `.context/`, or KB material when a change
 shifts the mental model, contracts, or decisions.
 
-## Command output
-
-Use `rtk` for noisy human-readable commands: `rtk git diff`, `rtk git status`,
-`rtk rg "<pattern>"`, and `rtk pnpm test`. Use raw commands for exact or
-machine-readable output. If `rtk` is unavailable, run the raw command and say
-so.
+**Keep principles apart from implementation.** Write something as a decision or
+principle only when it is meant to hold. Describe everything else as the current
+implementation, which can change when a better design turns up. The owner's
+remarks are direction and suggestions unless they say otherwise: quote them, keep
+their uncertainty, and don't record them as rulings. Measurements and incident
+history go beside the code or tool they concern, not into rules.
 
 ## Dev environment
 
@@ -102,45 +117,52 @@ Dev uses Portless HTTPS routes. Never assume raw ports, bind ports manually, or
 probe `ws://127.0.0.1:<port>`. Start with `pnpm dev`; discover URLs with
 `pnpm portless:list`.
 
-The dev server doesn't watch `node_modules`: pnpm hardlinks its shared store into
-every worktree, so another worktree's install would otherwise restart this one's
-server and kill in-flight replies ([#817](https://github.com/haowjy/meridian-flow/issues/817)).
-After installing, upgrading, or patching a package, run `pnpm dev:restart`.
+After installing, upgrading, or patching a package, run `pnpm dev:restart`: the
+dev server doesn't watch `node_modules`.
 
 Postgres is a plain `postgres:16` container; `DATABASE_URL` is the app seam. Use
 noninteractive libpq authentication (`PGPASSWORD` or `-w`).
 
+Dev stacks use more memory than the tests; when the host is short, run
+`pnpm dev:stacks` first. A stack belongs to the session that started it: stop
+only yours, or reap idle ones when asked.
+
 Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
-**Verify app behavior in the browser.** A runtime check, a probe, or a PR's
-walkthrough or Before/After drives a real browser (`agent-browser`) and judges what
-the screen shows, with the durable transcript as truth. `./mf` doesn't test the app:
-it is a separate client over the API. Use it only to set up state (Works, threads,
-seeded documents, mock-model scripts, queued controls) and to read durable state
-(`thread view`, `thread events`, `thread context`, `log`, `doc read`). Never cite
-`./mf thread send` or `thread tail` output as evidence. Until
-[#768](https://github.com/haowjy/meridian-flow/issues/768) lands, they can also report
-another message's reply. See [docs/debugging.md](docs/debugging.md#set-up-and-read-with-the-cli).
+**Debug with `./mf` while working; verify in the browser at the end.** Use
+`./mf` to reproduce, set up state, and read durable state and server logs
+([docs/debugging.md](docs/debugging.md#set-up-and-debug-with-the-cli),
+[`./mf` drives shared client cores][mf-shared-cores]). Verification is a prober's
+browser run, with `agent-browser`, of what the writer sees. Every PR that changes
+anything a writer sees or relies on ends with one, screenshots in the PR, server-only
+changes included. `./mf` output never stands in for that run.
 
 ## Build and test
 
 `pnpm check` is the full gate. `pnpm test:db` forces the DB suite.
-`pnpm test:all` runs unit and managed DB tests together. Keep automated tests
-below 2,000 expanded cases (including `it.each` rows and browser-device
-variants) and target at most 60 seconds for that full run. Write few unit
-tests: a new test must protect a named risk; prune weaker duplicate coverage
-rather than adding another layer. Skips, exclusions, and bundling unrelated
-cases do not satisfy the budget. To verify a change, prefer probes,
+`pnpm test:all` runs unit and managed DB tests together.
+
+The test case count per file may not grow against
+`tools/ci/test-case-baseline.json`, and the suite has a memory ceiling. Refresh
+the baseline deliberately with `TEST_BUDGET_UPDATE=1 pnpm test` when growth is
+intended. Never raise a worker count without measuring memory. Details:
+[tools/ci/README.md](tools/ci/README.md#test-budget-ratchet).
+
+Write few unit tests. A new test must protect a named risk that no KB decision
+and no probe already covers. A test that only restates a recorded decision, or
+a step a browser recipe already drives, covers no code: delete it in the change
+that supersedes that decision, and prune a weaker duplicate rather than add
+another layer. To verify a change, prefer probes,
 end-to-end smoke scripts and written manual-testing steps in the
 [runtime probe catalog](docs/qa/README.md); add or update the recipe that
-covers what you changed. Contracts, markup, and DB suites reuse worker module caches:
-no module/global mocks there. Keep test data and connections instance-owned;
-DB rollback/FK resets, not fresh module loading, isolate persisted state.
+covers what you changed.
 
 ## Git workflow
 
 Commit often, one self-contained change at a time.
+
+The PR body's `## Changelog` section holds the changelog entry; never edit `CHANGELOG.md`.
 
 A human merges product changes into `main` or `staging` unless explicitly
 instructing the agent to merge. Merges between working branches need no gate.
@@ -148,24 +170,27 @@ Documentation-only changes commit directly to `main`; never open a PR only for
 documentation. This includes `AGENTS.md`, `.context/`, KB, and the Meridian Flow
 docs repository.
 
-Prune a worktree as soon as its branch merges, whether into `main`, `staging`,
-or a longer-lived integration branch — `pnpm dev:prune-worktrees -- --target
-<work-id|path|branch|pr> --dry-run` (see [tools/dev/AGENTS.md](tools/dev/AGENTS.md)).
-Don't defer this: if the integration branch is later squash-merged, none of
-its side-lane branches remain provable as merged by PR match or by ancestry,
-and only a human who tracked the actual history can confirm by hand that they
-are safe to remove.
+Write a PR body for a reader who knows nothing about the area. Explain each term
+in a few words the first time it appears, and link the issues, PRs, decisions and
+code it refers to, so a newcomer catches up quickly. The
+[PR template](.github/PULL_REQUEST_TEMPLATE.md) holds the sections.
 
 **Clean up as soon as you're done with something.** Idle dev stacks, databases and
 checkouts waste the machine's memory, CPU and disk. When a worktree, dev stack, probe,
-review checkout or temporary branch has done its job:
+review checkout or temporary branch has done its job (a worktree as soon as its
+branch merges, into `main`, `staging`, or an integration branch):
 
 1. Stop its dev stack with `pnpm dev --stop`.
 2. End anything still running from it (the Nx daemon, `agent-browser` sessions, watchers).
 3. Remove the worktree, its database and its merged branch with
-   `pnpm dev:prune-worktrees -- --target <branch|path>`.
+   `pnpm dev:prune-worktrees -- --target <branch|path>` (`--dry-run` first; see
+   [tools/dev/AGENTS.md](tools/dev/AGENTS.md)).
 4. For a detached checkout the tool refuses, run `pnpm dev --stop` in it, then
    `git worktree remove` it, and drop its database with `pnpm dev:gc-dbs`.
+5. On `main` after the merge completes, remove the merged PR's screenshot
+   directory with `git rm -r .github/pr-assets/<dir>`, then commit. PR bodies
+   link each image at a commit, and that commit keeps it readable after the
+   files leave the tree.
 
 Run `pnpm dev:gc-dbs` after a batch of cleanups to drop databases that no worktree owns.
 Before you hand control back, check that nothing you started is still running.
@@ -185,4 +210,4 @@ git worktree add ../meridian-flow.worktrees/<name> -b <branch> <base>
 - Prefer reference-style links.
 
 [meridian-flow-docs]: https://github.com/haowjy/meridian-flow-docs
-[model-work-switch]: apps/server/server/domains/runtime/.context/tools.md#permissions
+[mf-shared-cores]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-drives-shared-client-cores.md

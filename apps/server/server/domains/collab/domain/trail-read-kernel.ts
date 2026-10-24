@@ -106,12 +106,6 @@ export function validateLiveBlockTarget(input: {
   return Boolean(resolved);
 }
 
-export type ReplacementOperation = {
-  removedBlockHashes: readonly string[];
-  insertedBlocks: readonly { blockId: string; block: Y.XmlElement }[];
-  ambiguous?: boolean;
-};
-
 export function bodyFromHashline(serialized: string | null): HistoricalBody {
   if (serialized === null) return { status: "unavailable", reason: "not_captured" };
   return { status: "available", markdown: splitHashline(serialized)?.body ?? serialized };

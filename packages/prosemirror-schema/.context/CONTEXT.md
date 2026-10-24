@@ -1,95 +1,69 @@
-# @meridian/prosemirror-schema — Structural Schema Contract
+# @meridian/prosemirror-schema — structural contract
 
-This package is the shared ProseMirror document shape. It exists so the
-frontend TipTap/y-prosemirror editor and server Yjs mirror build compatible
-documents from the same node/mark specs.
+This page explains the compatibility seams between the structural schema, the
+separately built TipTap editor, and Yjs. Source specs and history are the
+authority for the exact current surface.
 
 ## Contracts
 
-- **Structural specs only.** `documentNodes` and `documentMarks` export
-  ProseMirror structural data: content expressions, groups, attrs, isolating
-  flags, mark exclusions, and similar schema rules. They deliberately strip
-  `parseDOM` and `toDOM`; DOM behavior is owned by the editor layer.
-- **One runtime builder.** `buildDocumentSchema()` constructs the schema used by
-  server collab code. The app constructs its TipTap schema separately; parity is
-  currently unenforced.
-- **One Yjs fragment name.** `PROSEMIRROR_FRAGMENT_NAME` is the shared
-  `Y.XmlFragment` name (`"prosemirror"`). It lives in `src/protocol.ts`, exported
-  alone at `@meridian/prosemirror-schema/protocol` (and re-exported from the
-  root) so Yjs walks can name the fragment without running schema construction.
-  Server mirror code imports it from this package; app code must stay aligned when it re-exports or displays the
-  fragment name.
-- **One Yjs clientID policy.** `RESERVED_CLIENT_ID_MAX` reserves clientIDs
-  `[0, 999]` for server-authored Yjs writer streams. No undo operation owns a
-  fixed reserved slot. Random-authoring docs that
-  may persist or sync use `createCollabYDoc()` so they re-roll out of the
-  reserved band before writing.
-- **One schema-version algebra.** `CollabSchemaVersion` triples are the only
-  representation that crosses package, port, or domain seams. Strict
-  `major.minor.patch` strings are boundary serialization; packed integers
-  (`major * 1_000_000 + minor * 1_000 + patch`) are SQL-only and must be
-  packed/unpacked inside Drizzle adapters. A server serves any head with the
-  same major. A client may bind only when its `(major, minor)` is at least the
-  head's; patch never gates. Minor is additive even in `0.x`.
-- **One client-state partition tag.** `collabSchemaKeyTag()` returns
-  `v{major}.{minor}`. IndexedDB persistence, reload guards, and fence quarantine
-  reuse state across patch releases but not across schema-surface changes.
-- **One WebSocket carrier grammar.** The client offers
-  `meridian.collab.{major}.{minor}.{patch}` as its sole Yjs subprotocol.
-  Header resolution accepts exactly one matching offered token; absent, zero,
-  or multiple matches resolve to the `0.0.0` sentinel. Echo selection returns
-  that sole match, otherwise the first offered token, or nothing when no token
-  was offered.
-- **TipTap parity is load-bearing.** The TipTap mirrors in
-  `apps/app/src/core/editor/extensions/meridian-extensions.ts` must match this
-  package by node/mark names and attrs. No test compares them, so every schema
-  change edits both in the same commit.
+- `documentNodes` and `documentMarks` export structural data only: content
+  expressions, groups, attrs, isolating flags, and mark exclusions. DOM parsing
+  and rendering belong to the editor and markup layers.
+- `buildDocumentSchema()` builds the server runtime schema. The app builds its
+  TipTap schema separately, so parity must be maintained explicitly.
+- `PROSEMIRROR_FRAGMENT_NAME` is the one Y.XmlFragment name shared by app,
+  server, and Yjs walks. The protocol subpath exports it without schema setup.
+- `RESERVED_CLIENT_ID_MAX` reserves `[0, 999]` for server-authored streams.
+  `createCollabYDoc()` re-rolls random authoring docs outside that band before
+  they persist or sync.
+- `CollabSchemaVersion` triples cross package, port, and domain seams. Strict
+  `major.minor.patch` strings are the boundary form; packed integers are
+  SQL-only and adapters pack or unpack them. A server accepts the same major;
+  a client binds only when its major and minor are at least the head's, and
+  patch never gates.
+- `collabSchemaKeyTag()` partitions persisted client state by major and minor,
+  not patch. The WebSocket carrier is the single
+  `meridian.collab.{major}.{minor}.{patch}` subprotocol grammar: the client
+  offers exactly one token, and header resolution accepts exactly one matching
+  token (absent, zero, or multiple matches resolve to the `0.0.0` sentinel).
+- Review Undo restoration is recorded by `@meridian/agent-edit/diff`, not the
+  schema package. There is no legacy claims root writer.
 
-## Current document surface
+## Why parity matters
 
-Nodes:
+The server never renders TipTap DOM, but it parses, diffs, mirrors, and
+serializes the same Yjs documents. A server schema narrower than the editor's
+lets y-prosemirror updates decode on one side and fail on the other, so this
+package follows the editor's structural surface (figures, MDX blocks, images,
+scene breaks).
 
-| Node | Notes |
-|---|---|
-| `doc`, `blockquote`, `text`, `hard_break` | Basic ProseMirror nodes, structural fields only. |
-| `paragraph`, `heading` | Basic nodes plus the `align` attr. |
-| `table`, `table_row`, `table_header`, `table_cell` | Table structure. `table` carries `align`; cells contain `block+` and carry `alignment`, `colspan`, `rowspan`, and `colwidth` for prosemirror-tables editing. |
-| `code_block` | Adds nullable `language` attr so fenced code survives markdown projection. |
-| `image` | Inline image with `src`, `alt`, `title`, `uploadToken`, and `width` attrs. `image.marks = ""` so marks cannot attach (MDAST has no inline-image marks). `src` defaults to an empty string. `uploadToken` (nullable, 0.3.0) is ephemeral Yjs-only upload identity and is absent from Markdown/MDX; `width` (nullable, 0.4.0) is the writer-chosen display width in CSS pixels and survives the wire. `ref` (nullable, 1.0.0) is the stored source target, see `link`. |
-| `bullet_list`, `ordered_list`, `list_item` | List structure with `tight`/`order` attrs for markdown round-tripping. |
-| `horizontal_rule` | Scene break / thematic break node for markdown `---` round-tripping. |
-| `jsx_leaf`, `jsx_container` | MDX component blocks with `name` and `props` attrs; leaf components contain `text*`, containers contain `block+`. |
-| `figure` | Atomic block with `src`, `alt`, `label`, `caption`, and `uploadToken` attrs for figure workflows. `uploadToken` (nullable, 0.3.0) is the ephemeral upload identity shared with `image`. `ref` (nullable, 1.0.0) is the stored source target, see `link`. |
+## Surface decisions
 
-`align` is `null`, `"center"`, or `"right"` and validates on the way in. There
-is no `"left"`: unaligned is the default, and a second spelling for it would be
-a ghost state the markup codec has to reject. `@meridian/markup` carries these
-attrs over the wire as a `Layout` wrapper, so an alignable node gains no markup
-until a writer aligns it.
+- `align` is `null`, `"center"` or `"right"`. There is no `"left"`: unaligned is
+  the default, and a second spelling would be a ghost state the markup codec
+  must reject. Markup carries it as a `Layout` wrapper, so an alignable node
+  gains no markup until a writer aligns it.
+- `image` takes no marks (MDAST has none). `uploadToken` is ephemeral
+  Yjs-only upload identity, absent from Markdown/MDX. A link/image/figure `ref`
+  is stored state only, never in Markdown, HTML, MDX or the DOM; `href` or
+  `src` is the fallback spelling.
 
-Marks:
+## Change pattern
 
-| Mark | Notes |
-|---|---|
-| `strong`, `em` | Basic ProseMirror marks, structural fields only. |
-| `code` | Excludes all other marks to match TipTap's code mark behavior. |
-| `link` | `href` defaults to an empty string; `title` defaults to `null`; non-inclusive. `ref` (nullable, 1.0.0) is the stable target `doc:<id>` or `ahead:<id>` (null for external and contextual links); it is stored state only, never in Markdown, HTML, MDX or the DOM, and `href` is the fallback spelling. |
-| `strike` | Structural strikethrough mark. |
+When the structural surface changes, update the app TipTap extension and
+markdown adapters with this package. Append the schema-shape history entry;
+never rewrite an existing entry. Additive changes use the next minor version
+when compatible, while removals, renames, fragment changes, encoding changes,
+or meaning-changing attrs require the major-version process and an explicit
+migration or reset decision.
 
-## Rationale
+Keep provider behavior, figure upload policy, signed URLs, and editing UI in
+app or server domains.
 
-The server never renders TipTap DOM, but it does parse, diff, mirror, and
-serialize ProseMirror/Yjs documents. If the server schema is narrower than the
-editor schema, y-prosemirror updates can decode on one side and fail on the
-other. The shared package therefore follows the app editor's structural surface,
-including richer document nodes such as figures, MDX components, images, and
-markdown scene breaks, while leaving product UX and DOM rendering out of scope.
+## Major versions
 
-## Patterns
-
-- Add a node/mark here only when the app TipTap schema and server collab logic
-  both need to accept that structure.
-- Update the app editor extensions with any schema shape change; the parity
-  guard enforces the mirrored structural contract.
-- Keep provider/product behavior out of this package. Figure uploads, signed
-  URLs, MDX component rendering, and rich editing UI belong in app/editor or server domains.
+`1.0.0` added a stored `ref` (`doc:` or `ahead:`) to the `link` mark, `image`
+and `figure` ([#729](https://github.com/haowjy/meridian-flow/issues/729),
+[#730](https://github.com/haowjy/meridian-flow/issues/730)). It was declared
+major because the attribute changes what stored content means. Heads written
+before it are unreadable, and collab state was reset rather than migrated.

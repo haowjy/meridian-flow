@@ -5,6 +5,8 @@
  * screen switch. This controller renders only the destination chrome that keeps
  * sidebar/context rail reopen controls reachable above that surface.
  */
+
+import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
@@ -46,7 +48,12 @@ export function ChatPaneController({
       left={sidebarToggle}
       right={contextToggle}
       actions={
-        threadId ? <SubagentHeader threadId={threadId} nodes={activity.activity.children} /> : null
+        threadId ? (
+          <>
+            <ChatFilesMenu projectId={projectId} threadId={threadId} />
+            <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
+          </>
+        ) : null
       }
     />
   );

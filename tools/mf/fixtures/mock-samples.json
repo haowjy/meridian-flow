@@ -1,0 +1,24 @@
+{
+  "steps": [
+    {
+      "sample": "scene",
+      "chunkSize": 32,
+      "chunkDelayMs": 15
+    },
+    {
+      "sample": "critique",
+      "chunkSize": 32,
+      "chunkDelayMs": 15
+    },
+    {
+      "sample": "outline",
+      "chunkSize": 32,
+      "chunkDelayMs": 15
+    },
+    {
+      "sample": "markdown",
+      "chunkSize": 32,
+      "chunkDelayMs": 15
+    }
+  ]
+}

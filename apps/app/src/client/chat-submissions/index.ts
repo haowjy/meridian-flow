@@ -9,6 +9,7 @@ import {
   type ChatSubmission,
   type ChatSubmissionStorage,
   DeviceChatSubmissionJournal,
+  type NewChatSubmission,
 } from "./store";
 
 export {
@@ -16,6 +17,8 @@ export {
   CHAT_SUBMISSIONS_STORAGE_PREFIX,
   type ChatSubmission,
   chatSubmissionStorageKey,
+  type NewChatSubmission,
+  submissionReplayChanged,
 } from "./store";
 
 let journal: DeviceChatSubmissionJournal | null = null;
@@ -45,13 +48,10 @@ export function bindChatSubmissions(
 ): void {
   const current = browserJournal();
   if (!current || current.accountId === accountId) return;
-  const ready = current.setUser(accountId);
+  current.setUser(accountId);
   const epoch = current.epoch;
-  void ready
-    .then(async () => {
-      const { cleanDeletedChatsOnBind } = await import("./deleted-chat");
-      await cleanDeletedChatsOnBind(accountId, epoch, addressed);
-    })
+  void import("./deleted-chat")
+    .then(({ cleanDeletedChatsOnBind }) => cleanDeletedChatsOnBind(accountId, epoch, addressed))
     .catch((error) => reportError(error));
 }
 
@@ -75,7 +75,7 @@ export function readChatSubmissionSnapshot(accountId: string): ChatSubmission[] 
   return current?.accountId === accountId ? current.snapshot() : null;
 }
 
-export function recordChatSubmission(accountId: string, entry: ChatSubmission): boolean {
+export function recordChatSubmission(accountId: string, entry: NewChatSubmission): boolean {
   return browserJournal()?.record(accountId, entry) ?? false;
 }
 
@@ -85,6 +85,11 @@ export function retireChatSubmission(
   expectedEpoch?: number,
 ): boolean {
   return browserJournal()?.retire(accountId, recordId, expectedEpoch) ?? false;
+}
+
+/** A deleted chat's `seq` counter goes with its records. */
+export function forgetChatSubmissionOrder(accountId: string, threadId: string): void {
+  browserJournal()?.forgetOrder(accountId, threadId);
 }
 
 /** In-tab writes and cross-tab storage changes share the same subscription. */
