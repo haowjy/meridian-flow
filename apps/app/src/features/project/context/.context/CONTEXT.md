@@ -82,6 +82,7 @@ the route, and no separate active-document pointer is stored.
 ContextTreePanel (desktop)          MobileContextBrowser (mobile)
        │                                     │
        ├─ useContextCatalogViews (batched projection) ┤
+       ├─ useDocumentTrash (server snapshot) ┤
        ├─ useCreateEntryForm ────────────────┤
        ├─ useEntryInteraction ───────────────┤
        │     └─ rename forms + move picker   │
@@ -106,6 +107,13 @@ ContextPaneController
               ├─ ContextViewerHost (active read-only viewer)
               └─ RecentDocumentsLanding (empty workspace only)
 ```
+
+Document trash is a server snapshot separate from the live catalog projection.
+The tree reads only whether that snapshot is empty; the routed
+`DocumentTrashDialog` lists its records and restores with the exact serialized
+removal identity returned for each one. Committed catalog wake hints invalidate
+the snapshot after deletes and restores, while the catalog stream remains the
+owner of a restored document's return to the live tree.
 
 `ContextViewerHost` selects one read-only surface through `previewKind`. A
 tracked-classified viewer read renders as text in every host; collaborative
