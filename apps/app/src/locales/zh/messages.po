@@ -136,11 +136,6 @@ msgstr "{0}"
 msgid "{0} additional balance"
 msgstr ""
 
-#. placeholder {0}: relativeTime(entry.removal.time, now)
-#: src/features/project/context/DocumentTrashSection.tsx
-#~ msgid "{0} ago"
-#~ msgstr ""
-
 #. placeholder {0}: dock.files.length
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
@@ -212,10 +207,6 @@ msgstr "{0} 个子代理已完成（{1} 个已停止）"
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} tok/s"
 msgstr "{0} 词元/秒"
-
-#: src/features/project/context/DocumentTrashDialog.tsx
-msgid "{age} ago"
-msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -2045,10 +2036,6 @@ msgid "Deleted a Work"
 msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
-#~ msgid "Deleted by {actor} on {deleted}"
-#~ msgstr ""
-
-#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Deleted documents."
 msgstr ""
 
@@ -3351,7 +3338,6 @@ msgid "Nothing to undo yet."
 msgstr ""
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/lib/date-groups.ts
 msgid "now"
 msgstr "刚刚"
@@ -5132,18 +5118,6 @@ msgstr ""
 #: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "Trash"
 msgstr ""
-
-#: src/features/project/context/DocumentTrashSection.tsx
-#~ msgid "Trash couldn’t load."
-#~ msgstr ""
-
-#: src/features/project/context/DocumentTrashDialog.tsx
-#~ msgid "Trash is empty."
-#~ msgstr ""
-
-#: src/features/project/context/DocumentTrashDialog.tsx
-#~ msgid "Trashed document"
-#~ msgstr ""
 
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/TurnEditsReceipt.tsx

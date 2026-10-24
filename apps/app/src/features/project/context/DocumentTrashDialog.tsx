@@ -343,16 +343,13 @@ function TrashRow({
           <span className="flex min-w-0 items-baseline gap-2">
             <span className="min-w-0 flex-1 truncate">{entry.name}</span>
             <span className="shrink-0 text-xs font-normal tabular-nums text-muted-foreground">
-              {restoring ? (
-                <Trans>Restoring</Trans>
-              ) : age === "now" ? (
-                <Trans>now</Trans>
-              ) : (
-                <Trans>{age} ago</Trans>
-              )}
+              {restoring ? <Trans>Restoring</Trans> : age}
             </span>
           </span>
-          <span className="block break-words text-xs leading-snug font-normal text-ink-subtle">
+          <span
+            className="block truncate text-xs leading-snug font-normal text-ink-subtle"
+            title={location}
+          >
             {location}
           </span>
         </span>
@@ -436,7 +433,11 @@ function TrashedDocumentView({
   }
   return (
     <ReadOnlyViewerFrame
-      header={showHeader ? { name: document.name, path: document.formerPath } : undefined}
+      header={
+        showHeader
+          ? { name: document.name, path: `${schemeLabel(document.scheme)}/${document.formerPath}` }
+          : undefined
+      }
     >
       <div className="flex h-full min-h-0 flex-col">
         <TrashNotice entry={document} locale={i18n.locale} state={state} onRestore={restore} />
