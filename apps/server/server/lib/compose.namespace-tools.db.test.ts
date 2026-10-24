@@ -28,6 +28,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const { deleteDrizzleRows } = await import("../test-support/drizzle-reset.js");
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
+    const { readRemovalRecords } = await import("../domains/context/tree/removal.js");
     const { createTreeReader } = await import("../domains/context/tree/tree-view.js");
     const {
       handleApplyClickRequest,
@@ -234,6 +235,47 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "write",
         "write",
       ]);
+    });
+
+    it("card Undo restores a deleted document at a free name and reports it", async () => {
+      const script = await start();
+      const { call } = await script.begin();
+      const deleted = await call("write", { command: "delete", path: "ch2" });
+      expect(deleted.isError, text(deleted)).toBeFalsy();
+      expect((await placement(CH2))?.deletedAt).not.toBeNull();
+      expect(
+        (await readRemovalRecords(db, [CH2 as DocumentId])).get(CH2 as DocumentId),
+      ).toMatchObject({
+        reason: "deleted",
+        actor: { kind: "agent", chatTitle: "Renumbering" },
+      });
+
+      // The writer takes the path before the card reverses the delete.
+      await db.insert(schema.documents).values({
+        contextSourceId: SOURCE_ID,
+        name: "ch2",
+        extension: "",
+        fileType: "markdown",
+      });
+      const undone = await script.runtime.ports.documentSync.reverseThreadContext({
+        threadId: THREAD.threadId as never,
+        userId: USER_ID as never,
+        direction: "undo",
+        turnId: THREAD.turnId as never,
+      });
+      expect(undone).toMatchObject({
+        status: "reversed",
+        landings: [
+          {
+            documentId: CH2,
+            action: "restored",
+            requestedAt: "manuscript://ch2",
+            landedAt: "manuscript://ch2 (2)",
+          },
+        ],
+      });
+      expect(await placement(CH2)).toMatchObject({ name: "ch2 (2)", deletedAt: null });
+      expect(text(await call("read", { path: "ch2 (2)" }))).toContain("Chapter two.");
     });
 
     it("rolls a reply's move and delete back at a free name and keeps another Work's draft", async () => {
@@ -539,6 +581,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await branchRow(CH2)).toMatchObject({ deleted: true });
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
       expect((await placement(CH2))?.deletedAt).toBeNull();
+    });
+
+    it("records allocated drafted inverse facts so undo and redo stay reversible", async () => {
+      const script = await start();
+      const drafting = runtimes.script(script.runtime, OTHER);
+      const { call } = await drafting.begin();
+      expect(
+        (await call("write", { command: "move", from: { path: "ch1" }, path: "B" })).isError,
+      ).toBeFalsy();
+      expect(
+        (await call("write", { command: "move", from: { path: "ch2" }, path: "ch1" })).isError,
+      ).toBeFalsy();
+
+      expect((await call("write", { command: "undo", path: "B" })).isError).toBeFalsy();
+      expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "ch1 (2)" });
+      expect((await call("write", { command: "redo", path: "ch1 (2)" })).isError).toBeFalsy();
+      expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "B" });
     });
 
     /** The Work's review routes over the composed app, as the writer's clicks reach them. */

@@ -1032,9 +1032,19 @@ else
       ]);
     });
 
-    it("stops a remote cancel across a committed compaction successor window", async () => {
-      const rig = await fixture();
-      const canceller = createOrchestrator({ ...rig.deps, runClaim: createDrizzleRunClaim(db) });
+    it.each([
+      { compaction: true, remote: false, successor: false },
+      { compaction: true, remote: true, successor: true },
+      { compaction: false, remote: true, successor: false },
+    ])("stops across a committed successor window ($compaction, $remote, $successor)", async ({
+      compaction,
+      remote,
+      successor,
+    }) => {
+      const rig = await fixture({ history: compaction ? undefined : "brief history" });
+      const canceller = remote
+        ? createOrchestrator({ ...rig.deps, runClaim: createDrizzleRunClaim(db) })
+        : rig.orchestrator;
       const split = rig.delivery.splitAndContinue;
       let cancelled = false;
       let cancelResult: string | undefined;
@@ -1043,7 +1053,10 @@ else
         if (result.split && !cancelled) {
           cancelled = true;
           expect(await rig.runClaim.readRunningTurnId(rig.threadId)).toBe(result.next.id);
-          cancelResult = await canceller.cancel(rig.threadId, result.next.id);
+          cancelResult = await canceller.cancel(
+            rig.threadId,
+            successor ? result.next.id : input.currentTurn.id,
+          );
         }
         return result;
       };
@@ -1052,6 +1065,7 @@ else
         tools: [],
         userText: "Continue.",
       });
+      if (!compaction) await rig.send(rig.threadId, "Split now.");
       expect((await run.execute()).status).toBe("cancelled");
       expect(cancelled).toBe(true);
       expect(cancelResult).toBe("cancelled");
@@ -1734,7 +1748,10 @@ else
       await expect(processDetachedWork.drain(1_000)).resolves.toBe(true);
     });
 
-    it("leaves C pending without debiting uncommitted paid rows if failure landing and lease read fail", async () => {
+    it.each([
+      false,
+      true,
+    ])("leaves C pending without debiting uncommitted paid rows if failure landing fails (lease read fails=%s)", async (readFails) => {
       const responseId = crypto.randomUUID();
       const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => ({
         kind: "complete",
@@ -1767,7 +1784,7 @@ else
       };
       const read = rig.runClaim.read;
       rig.runClaim.read = async (threadId) => {
-        if (commits === 2) throw new Error("lease read unavailable");
+        if (readFails && commits === 2) throw new Error("lease read unavailable");
         return read(threadId);
       };
       const run = await rig.orchestrator.prepare({
