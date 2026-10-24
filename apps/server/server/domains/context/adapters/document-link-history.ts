@@ -1,5 +1,5 @@
-/** Scoped previous-location lookup, authorized against the reader's projects. */
-import { documentPathCandidateNames, matchDocumentPath } from "@meridian/contracts";
+/** Chat-only previous-location fallback, authorized against the reader's projects. */
+import { matchDocumentPath } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import {
   contextSources,
@@ -12,7 +12,6 @@ import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { createDocumentUriResolver } from "../document-uri-resolver.js";
 import type { DocumentLinkHistory } from "../ports/document-link-resolver.js";
-import { loadDocumentAddresses, presentSourceId } from "../tree/tree-addresses.js";
 
 export function createDrizzleDocumentLinkHistory(db: Database): DocumentLinkHistory {
   const currentUri = createDocumentUriResolver(db);
@@ -35,36 +34,11 @@ export function createDrizzleDocumentLinkHistory(db: Database): DocumentLinkHist
           or(eq(projects.id, input.projectId), eq(projects.isPersonal, true)),
         ),
       );
-    if (!row) return null;
-    const uri = await currentUri(documentId);
-    return uri ? { kind: "living" as const, uri } : { kind: "gone" as const };
+    return row ? currentUri(documentId) : null;
   }
   return {
     async previous(input, address) {
       const scope = address.scope;
-      const sourceId = await presentSourceId(db, {
-        scheme: address.scheme,
-        workId: scope.kind === "work" ? scope.workId : null,
-        project: scope.kind === "user" ? { personalOf: scope.userId } : { id: input.projectId },
-        ...(scope.kind === "lineage" ? { rootThreadId: scope.rootThreadId } : {}),
-        ...(scope.kind === "chat" ? { chatThreadId: scope.chatId } : {}),
-      });
-      if (sourceId) {
-        const removed = matchDocumentPath(
-          (
-            await Promise.all(
-              documentPathCandidateNames(address.path).map((filename) =>
-                loadDocumentAddresses(db, { sourceId, filename }),
-              ),
-            )
-          )
-            .flat()
-            .filter((candidate) => candidate.deleted),
-          address.path,
-          (candidate) => candidate.path,
-        );
-        if (removed) return { kind: "gone" };
-      }
       const rows = await currentDrizzleDb(db)
         .select({
           path: documentPreviousLocations.path,
