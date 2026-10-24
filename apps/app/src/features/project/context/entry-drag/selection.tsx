@@ -39,14 +39,22 @@ export type EntrySelection = {
   /** Selects exactly these keys (after a move), even one; none returns to the open row. */
   replace(keys: readonly string[]): void;
   clear(): void;
-  /** Focuses the list's first selected row, or its first row. */
+  /**
+   * Focuses the list's first selected row, or its first row. A selected row that
+   * remounts soon after (a moved row arriving in its folder) takes focus back
+   * while nothing else holds it.
+   */
   focus(): void;
+  /** Whether a row mounting now should take focus (see `focus`). */
+  reclaimsFocus(key: string): boolean;
   /** Rows announce themselves while mounted; the open row says so. */
   register(entry: DragEntry, active: boolean): () => void;
   root: RefObject<HTMLDivElement | null>;
 };
 
 const KEY_ATTRIBUTE = "data-entry-key";
+// Long enough for the catalogs to catch up with a move and remount its rows.
+const FOCUS_RECLAIM_MS = 2000;
 
 /**
  * One list's selection; the list component owns it and hands it to its rows and
@@ -61,6 +69,7 @@ export function useEntrySelection(
   const anchor = useRef<string | null>(null);
   const registry = useRef(new Map<string, { entry: DragEntry; active: boolean }>());
   const root = useRef<HTMLDivElement>(null);
+  const focusUntil = useRef(0);
   const draggable = usePhoneShell() !== true;
 
   const screenOrder = useCallback((): string[] => {
@@ -132,6 +141,11 @@ export function useEntrySelection(
           current().has(row.getAttribute(KEY_ATTRIBUTE) ?? ""),
         );
         (first ?? rows[0])?.focus();
+        focusUntil.current = Date.now() + FOCUS_RECLAIM_MS;
+      },
+      reclaimsFocus(key) {
+        const lost = document.activeElement === null || document.activeElement === document.body;
+        return lost && Date.now() < focusUntil.current && current().has(key);
       },
       register(entry, active) {
         const key = entryKey(entry.ref);
@@ -173,6 +187,12 @@ export function useEntrySelectionRow(entry: DragEntry, active: boolean) {
   const key = entryKey(entry.ref);
   useLayoutEffect(() => selection?.register(entry, active), [selection, entry, active]);
   const selected = selection?.isSelected(key) ?? false;
+  const reclaim = useCallback(
+    (row: HTMLElement | null) => {
+      if (row && selection?.reclaimsFocus(key)) row.focus();
+    },
+    [selection, key],
+  );
   return {
     selection,
     selected,
@@ -180,6 +200,6 @@ export function useEntrySelectionRow(entry: DragEntry, active: boolean) {
      * Spread on the row so range selection can read screen order. Rows are buttons, so
      * the selection is their pressed state; outside an explicit selection they aren't toggles.
      */
-    rowProps: { [KEY_ATTRIBUTE]: key, "aria-pressed": selected || undefined },
+    rowProps: { [KEY_ATTRIBUTE]: key, "aria-pressed": selected || undefined, ref: reclaim },
   };
 }
