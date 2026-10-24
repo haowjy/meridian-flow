@@ -524,7 +524,7 @@ export function settleNamespaceOutcome(
       if (
         !result.ok ||
         !identityStillMatches ||
-        !result.value.deletedDocumentIds.includes(resource.identity.documentId)
+        !result.value.removed.some(({ documentId }) => documentId === resource.identity.documentId)
       )
         repair = true;
       else {

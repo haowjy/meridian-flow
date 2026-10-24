@@ -60,7 +60,15 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
       ),
       commitRecursiveDelete: vi.fn(async (command) =>
         Ok({
-          deletedDocumentIds: command.root.kind === "file" ? [command.root.nodeId] : [],
+          removed:
+            command.root.kind === "file"
+              ? [
+                  {
+                    documentId: command.root.nodeId,
+                    removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+                  },
+                ]
+              : [],
           availabilityGeneration: "7",
         }),
       ),

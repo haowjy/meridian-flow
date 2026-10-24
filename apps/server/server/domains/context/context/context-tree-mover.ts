@@ -380,7 +380,7 @@ export class ContextTreeMover {
     }
     const deleted: DeleteContextEntryResult = {
       status: "deleted",
-      deletedDocumentIds: result.value.deletedDocumentIds,
+      removed: result.value.removed,
       availabilityGeneration: result.value.availabilityGeneration,
     };
     await options.inTransaction?.(deleted);

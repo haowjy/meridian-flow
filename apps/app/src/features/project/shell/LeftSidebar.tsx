@@ -14,6 +14,7 @@ import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { serverTabFromFile } from "../context/context-tab-from-file";
+import { DocumentDeleteUndoNotice } from "../context/document-delete-undo";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
@@ -119,6 +120,7 @@ export function LeftSidebar({
         activeScreen={activeScreen}
         onSelectScreen={onSelectScreen}
         presentation="desktop"
+        notice={<DocumentDeleteUndoNotice surface="sidebar" className="mx-2 mb-1" />}
         scratch={
           <RailScratchSection
             projectId={projectId}

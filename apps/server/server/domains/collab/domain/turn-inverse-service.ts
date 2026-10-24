@@ -34,6 +34,7 @@ import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 import {
   isTransitionEntry,
+  materializedTreeEditIds,
   type PlannedTreeInverse,
   type StoredTreeEntry,
   type TransitionEntry,
@@ -169,11 +170,15 @@ function prepare(
   const direction = kind === "redo" ? "redo" : "undo";
   const inTurn = (_document: InverseDocument, row: StoredInversePart | StoredTreeEntry) =>
     targetsTurn(row, query);
+  const materialized = new Map(
+    documents.map((document) => [document.documentId, materializedTreeEditIds(document.tree)]),
+  );
   const turnTree = (document: InverseDocument) =>
     document.tree.filter(
       (row): row is TransitionEntry =>
         isTransitionEntry(row) &&
         inTurn(document, row) &&
+        !materialized.get(document.documentId)?.has(row.editId) &&
         // Response rollback already owns create retraction: it preserves a creation another
         // committed contribution made stand, then removes only the reply's use.
         !(kind === "rollback" && row.tree.op === "create"),

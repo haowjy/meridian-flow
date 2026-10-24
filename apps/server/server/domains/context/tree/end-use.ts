@@ -44,13 +44,13 @@ export async function endUse(
 ): Promise<EndedUse> {
   const ids = [...new Set(input.documentIds)].sort();
   if (ids.length === 0) return NOTHING_ENDED;
-  const pruned = await dropDocumentRows(db, {
+  const settled = await dropDocumentRows(db, {
     branchId: input.branchId,
     documentIds: ids,
     settle: { as: "discarded", userId: "userId" in input.actor ? input.actor.userId : null },
   });
   const ended = await tombstoneUnused(db, ids, { actor: input.actor, removal: input.removal });
-  return { ...ended, tombstoned: [...pruned, ...ended.tombstoned] };
+  return { ...ended, tombstoned: [...settled.pruned, ...ended.tombstoned] };
 }
 
 /**
@@ -84,7 +84,10 @@ export async function tombstoneUnused(
     reason: "discarded",
     ...options.actor,
   });
-  const tombstoned: NodeRef[] = removed.map((id) => ({ kind: "document" as const, id }));
+  const tombstoned: NodeRef[] = removed.map(({ documentId: id }) => ({
+    kind: "document" as const,
+    id,
+  }));
   const releasedObjects = ending.flatMap((row) => (row.storageUrl ? [row.storageUrl] : []));
   if (options.keepFolders) return { tombstoned, releasedObjects };
   tombstoned.push(

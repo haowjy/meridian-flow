@@ -40,13 +40,14 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { nextEditSeq } from "../../../shared/edit-history-seq.js";
 import { testHook } from "../../../shared/test-hooks.js";
+import { runTreeEditAdmission } from "../../context/context/tree-edit-admission.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
 import { readBranchTreeFacts } from "../../context/tree/branch-tree-store.js";
 import { resolveAbsorbedFolders } from "../../context/tree/folder-normalization.js";
 import { readLiveTreeStates } from "../../context/tree/live-tree-state.js";
-import { acquireTreeScope, TreeScopeChangedError } from "../../context/tree/mutation-scope.js";
+import { TreeScopeChangedError, type TreeScopeRequest } from "../../context/tree/mutation-scope.js";
 import { readRemovalRecords } from "../../context/tree/removal.js";
 import {
   type FileAccess,
@@ -584,66 +585,82 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         step.kind === "tree" ? [{ document: plan.document, planned: step.planned }] : [],
       );
       const grants = await admitInverse(sequence, query, userId);
-      const commit = () =>
-        withLiveDocuments([...new Set(liveIds)].sort(), () =>
-          scope.commit(() =>
-            // A seam boundary before any other lock (decision D17, file-access §5): the captured
-            // drafts' Works and the bound grants' Works in one id order, the grants confirmed,
-            // then the documents' mutation locks, then the rows. A live-only inverse (a named
-            // Work's Scratch) captures no draft, so its Work is locked only as a grant Work. Two
-            // inverses are ordered by what they captured, not by a lock of their own: a draft's
-            // exact checkpoint revision and a live head checked under the document lock (D22).
-            input.workProjection.mutate(
-              {
-                drafts: attempt.draftIds,
-                // A drafted tree inverse writes its branch's row: that Work first, as a draft's.
-                branches: [
-                  ...new Set(
-                    treeRuns.flatMap(({ planned }) =>
-                      isLiveTransition(planned) ? [] : [planned.destination.branchId],
-                    ),
-                  ),
-                ],
-              },
-              async () => {
-                if (treeRuns.length) await lockTreeScope(treeRuns, attempt.ids);
-                else for (const id of [...attempt.ids].sort()) await lockDocumentMutation(db(), id);
-                // The live state each plan was computed against is still the head.
-                for (const entry of documents) {
-                  if (!entry.live) continue;
-                  const [head] = await db()
-                    .select({ id: sql<number>`coalesce(max(${documentYjsUpdates.id}), 0)::bigint` })
-                    .from(documentYjsUpdates)
-                    .where(eq(documentYjsUpdates.documentId, entry.documentId));
-                  if (Number(head?.id ?? 0) !== attempt.heads.get(entry.documentId))
-                    throw new InverseAttemptMiss();
-                }
-                // The steps in their planned order: text lands in a document a restore before it
-                // brought back, and before a delete after it takes the document away.
-                for (const { plan, step } of sequence) {
-                  const entry = planned.get(plan);
-                  if (!entry) throw new Error("A step's plan is not among the commit's plans");
-                  const outcome =
-                    step.kind === "tree"
-                      ? await commitTreeStep(entry, step, userId, query)
-                      : await commitTextStep(entry, step, userId, query);
-                  if (typeof outcome === "string") {
-                    if (outcome) handles.push(outcome);
-                  } else if ("kind" in outcome) skips.push(outcome);
-                  else {
-                    if (outcome.handle) handles.push(outcome.handle);
-                    if (outcome.landing) landings.push(outcome.landing);
-                  }
-                }
-                for (const entry of documents) await settleDocument(entry, kind, query, deliveries);
-              },
-              { seam: true },
+      const works = {
+        drafts: attempt.draftIds,
+        // A drafted tree inverse writes its branch's row: that Work first, as a draft's.
+        branches: [
+          ...new Set(
+            treeRuns.flatMap(({ planned }) =>
+              isLiveTransition(planned) ? [] : [planned.destination.branchId],
             ),
           ),
-        );
-      const admitted = grants
-        ? await runWithEditGrants(input.fileAccess, grants, commit)
-        : { ok: true as const, value: await commit() };
+        ],
+      };
+      const commitScope = <T>(operation: () => Promise<T>) =>
+        withLiveDocuments([...new Set(liveIds)].sort(), () => scope.commit(operation));
+      const operation = async () => {
+        // The live state each plan was computed against is still the head.
+        for (const entry of documents) {
+          if (!entry.live) continue;
+          const [head] = await db()
+            .select({ id: sql<number>`coalesce(max(${documentYjsUpdates.id}), 0)::bigint` })
+            .from(documentYjsUpdates)
+            .where(eq(documentYjsUpdates.documentId, entry.documentId));
+          if (Number(head?.id ?? 0) !== attempt.heads.get(entry.documentId))
+            throw new InverseAttemptMiss();
+        }
+        // The steps in their planned order: text lands in a document a restore before it
+        // brought back, and before a delete after it takes the document away.
+        for (const { plan, step } of sequence) {
+          const entry = planned.get(plan);
+          if (!entry) throw new Error("A step's plan is not among the commit's plans");
+          const outcome =
+            step.kind === "tree"
+              ? await commitTreeStep(entry, step, userId, query)
+              : await commitTextStep(entry, step, userId, query);
+          if (typeof outcome === "string") {
+            if (outcome) handles.push(outcome);
+          } else if ("kind" in outcome) skips.push(outcome);
+          else {
+            if (outcome.handle) handles.push(outcome.handle);
+            if (outcome.landing) landings.push(outcome.landing);
+          }
+        }
+        for (const entry of documents) await settleDocument(entry, kind, query, deliveries);
+      };
+      const admitted = await (async () => {
+        try {
+          if (treeRuns.length)
+            return await runTreeEditAdmission({
+              db: input.db,
+              fileAccess: input.fileAccess,
+              grants,
+              workProjection: input.workProjection,
+              works,
+              tree: treeScopeRequest(treeRuns, attempt.ids),
+              commitScope,
+              afterTreeLock: () => confirmTreeCapture(treeRuns),
+              operation,
+            });
+          const commit = () =>
+            commitScope(() =>
+              input.workProjection.mutate(
+                works,
+                async () => {
+                  for (const id of [...attempt.ids].sort()) await lockDocumentMutation(db(), id);
+                  return operation();
+                },
+                { seam: true },
+              ),
+            );
+          return grants
+            ? runWithEditGrants(input.fileAccess, grants, commit)
+            : { ok: true as const, value: await commit() };
+        } catch (cause) {
+          if (cause instanceof TreeScopeChangedError) throw new InverseAttemptMiss();
+          throw cause;
+        }
+      })();
       if (!admitted.ok) throw admitted.refusal;
       attempt.deliveries.push(...deliveries);
       return {
@@ -732,13 +749,15 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
    * placements they return to), then every document lock of the attempt, then the captured
    * tree states checked again: a document that moved or was removed since is a miss.
    */
-  async function lockTreeScope(runs: readonly TreeRun[], ids: readonly DocumentId[]) {
+  function treeScopeRequest(
+    runs: readonly TreeRun[],
+    ids: readonly DocumentId[],
+  ): TreeScopeRequest {
     const placements = runs.flatMap(({ planned }): TreePlacement[] =>
       isLiveTransition(planned)
         ? [planned.before, planned.after].flatMap((state) => (state.living ? [state.at] : []))
         : [planned.before.moved, planned.after.moved].flatMap((at) => (at ? [at] : [])),
     );
-    // A drafted inverse also locks where its branch has the document now.
     const drafted = new Map<BranchId, DocumentId[]>();
     for (const { planned, document } of runs)
       if (!isLiveTransition(planned))
@@ -746,16 +765,15 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           ...(drafted.get(planned.destination.branchId) ?? []),
           document.documentId,
         ]);
-    try {
-      await acquireTreeScope(input.db, {
-        documentIds: [...ids],
-        placements,
-        branches: [...drafted].map(([branchId, documentIds]) => ({ branchId, documentIds })),
-      });
-    } catch (cause) {
-      if (cause instanceof TreeScopeChangedError) throw new InverseAttemptMiss();
-      throw cause;
-    }
+    return {
+      documentIds: [...ids],
+      placements,
+      branches: [...drafted].map(([branchId, documentIds]) => ({ branchId, documentIds })),
+    };
+  }
+
+  /** Rechecks the attempt's captured tree states after the shared admission locked its scope. */
+  async function confirmTreeCapture(runs: readonly TreeRun[]) {
     const documents = [...new Set(runs.map((run) => run.document))];
     const now = await treeStates(
       documents.map((document) => document.documentId),

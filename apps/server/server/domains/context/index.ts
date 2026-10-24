@@ -19,6 +19,10 @@ export {
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
 export { exportFilename, joinPath, renderFilename, splitPath } from "./context/paths.js";
+export {
+  createRestoreRemovedDocuments,
+  type RestoreRemovedDocuments,
+} from "./context/restore-removed-documents.js";
 export { createContextPortRouter } from "./context/router.js";
 export {
   parseContextUri,

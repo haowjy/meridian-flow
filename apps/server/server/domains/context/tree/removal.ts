@@ -3,7 +3,13 @@
  * the last use of a hidden creation), the two restores that clear it (a Work Restore's
  * cascade, and one deleted document's `restoreDocument`), and its reader.
  */
-import type { ContextSourceId, DocumentId, FolderId, WorkId } from "@meridian/contracts";
+import {
+  type ContextSourceId,
+  type DocumentId,
+  type FolderId,
+  serializeRemovalIdentity,
+  type WorkId,
+} from "@meridian/contracts";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
@@ -114,7 +120,25 @@ export function createDocumentRemoval(
       await testHook("removal.afterRecord");
       deps.workProjection.recountAfterCommit([...affected, ...drafted]);
       if (input.reason === "discarded") await releaseDocumentStorage(db, removed);
-      return removed;
+      const identities = await tx
+        .select({
+          documentId: documents.id,
+          time: documents.deletedAt,
+          locationVersion: documents.locationVersion,
+        })
+        .from(documents)
+        .where(inArray(documents.id, removed));
+      const byId = new Map(identities.map((identity) => [identity.documentId, identity]));
+      return removed.map((documentId) => {
+        const identity = byId.get(documentId);
+        if (!identity) throw new Error(`Removal of ${documentId} wrote no identity`);
+        const { time, locationVersion } = identity;
+        if (!time) throw new Error(`Removal of ${documentId} wrote no identity`);
+        return {
+          documentId,
+          removal: serializeRemovalIdentity({ time, locationVersion }),
+        };
+      });
     },
   };
 }
