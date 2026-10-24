@@ -49,6 +49,16 @@ propagates failures. `pnpm test:db` always forces the gate.
 executable command may contain secrets and is sent only to tmux; display output
 and `.meridian/dev-session.json` contain the redacted command. The internal SSR
 API origin is the paired worktree server origin, not the public app URL.
+The production-client profiling mode uses the same session plan and Portless
+routes. Its app command builds the client, runs the built Nitro server with
+local dev auth enabled, and fronts it with the app-owned route inventory so
+server-owned HTTP and WebSocket paths remain same-origin. Portless's
+`NODE_EXTRA_CA_CERTS` is mandatory for the Nitro SSR fetch and the gateway's
+HTTPS upstream. The persisted session identity records the client build, so
+reuse refuses a development/production mismatch and `pnpm dev:restart`
+preserves the running build as well as its transport mode. Session metadata
+from before client-build identity existed reads as `development`; every new
+launch writes the field.
 
 `resolveCheckoutPortlessPrefix` owns hostname derivation for startup, `./mf`,
 and browser tests. Only the primary checkout gets bare names. Linked detached

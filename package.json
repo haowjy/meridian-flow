@@ -10,6 +10,7 @@
     "db:apply-functions": "pnpm --filter @meridian/database db:apply-functions",
     "db:studio": "pnpm --filter @meridian/database db:studio",
     "dev": "tsx tools/dev/dev-tmux.ts",
+    "dev:production-client": "tsx tools/dev/dev-tmux.ts --production-client",
     "dev:local": "tsx tools/dev/dev-tmux.ts --no-tailscale",
     "dev:stop": "tsx tools/dev/dev-tmux.ts --stop",
     "dev:restart": "tsx tools/dev/dev-tmux.ts --restart --preserve-mode",

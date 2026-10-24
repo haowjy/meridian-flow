@@ -33,6 +33,24 @@ Start from your symptom in [Strategies](#strategies), or scan the
 - **Something is slow or chatty.** LLM Calls panel first (latency, retries,
   token counts per call). For per-chunk granularity, opt into
   `OBS_VERBOSE=gateway.chunks` (dev/test only) and re-run.
+- **Client work looks slow in a development build.** Compare it with the
+  production client against the same dev server and database:
+
+  ```bash
+  MODEL_PROVIDER=mock pnpm dev:production-client --no-tailscale
+  ```
+
+  This builds the app, serves its hashed production assets at the checkout's
+  usual Portless app URL, and keeps the dev login, same-origin `/api`, and
+  WebSocket routes connected to that checkout's dev server. Portless supplies
+  its CA through `NODE_EXTRA_CA_CERTS`; the launcher refuses to run without it
+  rather than disabling TLS verification. A running stack records which client
+  build it serves and refuses reuse with the other build. Use `pnpm
+  dev:production-client --restart --no-tailscale` to switch from the development
+  client or rebuild after source changes. `pnpm dev:restart` keeps the current
+  client build. Stop it with `pnpm dev --stop`.
+  Record the commit, browser version, fixture, sample count, host load, and
+  whether each number came from `pnpm dev` or `pnpm dev:production-client`.
 - **The server stalls** (acks stop, requests hang, the editor goes offline).
   Find the busy thread before reading a profile. `nitro dev` runs the server in
   a worker thread, so a CPU profile of the process's main thread reads idle

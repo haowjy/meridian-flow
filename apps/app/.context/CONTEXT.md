@@ -28,6 +28,17 @@ The dev API proxy (`apiHttpDevProxyPlugin`) skips WebSocket upgrades, which go
 through Vite `server.proxy`. Its explicit route-owner inventory keeps
 `/api/auth/callback` and `/api/auth/dev-login` in TanStack Start and forwards the
 rest of the server-owned auth family, including `/api/auth/me`, to `apps/server`.
+The production-client profiler uses that same route-owner inventory in
+`scripts/profile-dev-stack.ts`: app-owned routes and built assets go to the
+built Nitro server, while server-owned HTTP and WebSocket paths go to the paired
+dev server. The built client is production code; the local Nitro runtime stays
+in development mode so dev login remains available. The launcher requires the
+dev-stack marker, a dev application environment, and a local Portless API
+origin before it can make that override. It owns the Nitro child, gateway,
+proxied HTTP transactions, and upgraded sockets as one lifetime: any child,
+bind, gateway, or signal exit tears down the rest. Signal handling stays in
+place through teardown so a repeated signal accelerates child termination
+instead of escaping that lifetime.
 
 ## State and transport seams
 
