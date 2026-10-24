@@ -1,4 +1,9 @@
-/** Submission ownership, stable-id recovery and durable refusal contracts. */
+/** Submission ownership, stable-id recovery and durable refusal contracts.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - submission owner handoff and rewrite protocol
+ * - chat-owned write-mode ordering (kb/decisions/work/write-mode/chat-write-mode.md)
+ */
 import type { Thread } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
