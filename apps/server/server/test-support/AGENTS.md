@@ -6,8 +6,10 @@ Each suite creates its own connections and closes them in `afterAll`. Close
 `Database` clients with `closeTestDatabase`, which drains detached work before
 applying a bounded pool shutdown; close bespoke PostgreSQL clients explicitly.
 Shared helpers accept connections explicitly. The server DB setup drains
-detached work again after every file so a suite cannot poison the next file in
-its worker. Do not mock modules or process globals.
+detached work after each case, once file-local teardown finishes and before
+suite pool closers run. A file-level drain remains the backstop before the next
+file uses that worker. A file `afterAll` that starts detached DB work must use
+`closeTestDatabase`. Do not mock modules or process globals.
 
 Use `drizzle-reset.ts` for database isolation. Single-connection suites use
 `useRollbackTestDatabase`: read `current` inside hooks/tests and build adapters
