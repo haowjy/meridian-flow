@@ -72,3 +72,7 @@ node and both documents after every key. No character may reach the document
 being left. The held pane deliberately blocks input, so keys during its hold do
 not land in either document; a cancelled guard keeps typing in the current
 editor.
+
+## Download naming
+
+Download a prose document whose stored name has no extension, one whose name contains a dot, and a non-prose document. The prose downloads end in `.md` without losing an existing dotted name; the non-prose download keeps its stored name.
