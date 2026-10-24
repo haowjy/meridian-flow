@@ -28,7 +28,6 @@ import { RowIcon } from "../RuledList";
 import { relativeTime } from "../relative-time";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { projectAddressHref } from "../routing/project-address";
-import { useOptionalAccountResourceReplica } from "./account-feature-context";
 import { fileKindIcon } from "./context-file-icon";
 import { useOpenProjectDocument } from "./open-project-document";
 import { RemovedDocumentLandingNotice } from "./RemovedDocumentNotice";
@@ -50,7 +49,6 @@ export function RecentDocumentsLanding({
   const project = useProject(projectId);
   const openDocument = useOpenProjectDocument(projectId);
   const openRoute = useOpenContextRoute();
-  const resources = useOptionalAccountResourceReplica();
   const now = useMinuteClock();
 
   const documents = recent.documents ?? [];
@@ -121,7 +119,6 @@ export function RecentDocumentsLanding({
                         editorWorkId,
                         openDocument,
                         openRoute,
-                        resources,
                       });
                     }}
                   />
@@ -236,7 +233,6 @@ async function openRecent(
     editorWorkId: string | null;
     openDocument: ReturnType<typeof useOpenProjectDocument>;
     openRoute: ReturnType<typeof useOpenContextRoute>;
-    resources: ReturnType<typeof useOptionalAccountResourceReplica>;
   },
 ): Promise<void> {
   if (item.address.kind !== "local") {
@@ -247,34 +243,22 @@ async function openRecent(
     return;
   }
   if (!ports.openRoute) return;
-  const opened = ports.resources
-    ? await ports.resources.openKnownDocument(
-        ports.projectId,
-        item.documentId,
-        `recents:${crypto.randomUUID()}`,
-      )
-    : { kind: "missing" as const };
-  if (opened.kind !== "opened") return;
-  try {
-    await ports.openRoute(
-      {
-        scheme: "unfiled",
-        path: "",
-        workId: ports.editorWorkId ?? undefined,
+  await ports.openRoute(
+    {
+      scheme: "unfiled",
+      path: "",
+      workId: ports.editorWorkId ?? undefined,
+      documentId: item.documentId,
+    },
+    {
+      tab: {
+        kind: "new",
         documentId: item.documentId,
+        name: item.name,
+        resourceHandle: item.address.resourceHandle,
       },
-      {
-        tab: {
-          kind: "new",
-          documentId: item.documentId,
-          name: item.name,
-          resourceHandle: item.address.resourceHandle,
-        },
-      },
-    );
-  } finally {
-    opened.handle.release();
-  }
+    },
+  );
 }
 
 function recentDocumentHref(item: AccountRecentItem, projectId: string | undefined): string | null {

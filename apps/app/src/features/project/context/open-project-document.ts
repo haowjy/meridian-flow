@@ -1,3 +1,4 @@
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   AvailabilityGeneration,
   CatalogFileEntry,
@@ -16,11 +17,9 @@ import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session
 /**
  * Opening a project document by id — the app's one answer to "take me there".
  *
- * A document id is all a door carries: a change trail's receipt, a search
- * result, a link the writer just followed. Turning that id into an open
- * tab means finding which scheme's tree holds it, and that lookup plus the
- * openTab-and-route pair is the same work every door was about to write for
- * itself.
+ * Doors that already render a catalog row carry its identity; id-only doors
+ * resolve one. Both commit a tab and route before the destination acquires its
+ * live session, so availability work cannot hold navigation hostage.
  *
  * Two dispositions, because a writer who asked for a new tab did not ask to
  * leave the sentence they are in: `current` moves the pane to the document,
@@ -30,7 +29,6 @@ import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session
  * that was already one tab away.
  */
 
-import { parseContextUri } from "@meridian/contracts/context-uri";
 import {
   type ContextOwner,
   isProjectContextTreeScheme,
@@ -52,9 +50,19 @@ import {
   projectCatalogFile,
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
-import { isEditorScheme, type ServerContextTab, useContextTabsActions } from "@/client/stores";
+import {
+  type ContextTab,
+  isEditorScheme,
+  type ServerContextTab,
+  useContextTabsActions,
+  useContextTabsStore,
+} from "@/client/stores";
+import { useDockDocumentStore } from "../dock/dock-document-store";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
-import { useOptionalAccountResourceReplica } from "./account-feature-context";
+import {
+  useOptionalAccountResourceReplica,
+  useOptionalContextRemovalCoordinator,
+} from "./account-feature-context";
 import { contextTabFromFile, serverTabFromFile } from "./context-tab-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
@@ -98,9 +106,17 @@ export type ProjectDocumentLiveOpenRequest = {
 };
 
 type ExactOpenResolution = ProjectContextIdentityResolution | { kind: "failed" | "malformed" };
+export type AvailableOpenResolution = Extract<ExactOpenResolution, { kind: "available" }>;
+export type TransferToken = { readonly id: string; readonly tabInstanceId: string };
+type TransferPlacement = "editor" | "dock";
 
 /** Exact-resolution application operation, independent from navigation effects. */
 export class ProjectDocumentLiveOpener {
+  private readonly transfers = new Map<
+    string,
+    { token: TransferToken; resolution: AvailableOpenResolution }
+  >();
+  private dockTransfer: TransferToken | null = null;
   constructor(
     private readonly dependencies: {
       availability: {
@@ -112,22 +128,76 @@ export class ProjectDocumentLiveOpener {
       >;
       epochSignal: AbortSignal;
     },
-  ) {}
+  ) {
+    dependencies.epochSignal.addEventListener("abort", () => this.transfers.clear(), {
+      once: true,
+    });
+  }
 
-  async open(input: ProjectDocumentLiveOpenRequest): Promise<ProjectDocumentLiveOpenResult> {
+  async resolveIdentity(
+    projectId: ProjectId,
+    documentId: DocumentId,
+  ): Promise<ExactOpenResolution> {
+    try {
+      return await this.dependencies.availability.resolveForOpen(projectId, documentId);
+    } catch {
+      return { kind: "failed" };
+    }
+  }
+
+  replaceTransfer(
+    tabInstanceId: string,
+    resolution: AvailableOpenResolution | undefined,
+    placement?: TransferPlacement,
+  ): TransferToken | null {
+    if (placement === "dock" && this.dockTransfer) this.disposeTransfer(this.dockTransfer);
+    const prior = this.transfers.get(tabInstanceId);
+    if (prior) this.disposeTransfer(prior.token);
+    if (!resolution) return null;
+    const token = Object.freeze({ id: crypto.randomUUID(), tabInstanceId });
+    this.transfers.set(tabInstanceId, { token, resolution });
+    if (placement === "dock") this.dockTransfer = token;
+    return token;
+  }
+
+  transferToken(tabInstanceId: string, documentId: string): TransferToken | null {
+    const transfer = this.transfers.get(tabInstanceId);
+    return transfer?.resolution.documentId === documentId ? transfer.token : null;
+  }
+
+  takeTransfer(tabInstanceId: string, documentId: string): AvailableOpenResolution | null {
+    const transfer = this.transfers.get(tabInstanceId);
+    if (!transfer || transfer.resolution.documentId !== documentId) return null;
+    this.transfers.delete(tabInstanceId);
+    if (this.dockTransfer === transfer.token) this.dockTransfer = null;
+    return transfer.resolution;
+  }
+
+  disposeTransfer(token: TransferToken): void {
+    if (this.transfers.get(token.tabInstanceId)?.token === token)
+      this.transfers.delete(token.tabInstanceId);
+    if (this.dockTransfer === token) this.dockTransfer = null;
+  }
+
+  pruneTransfers(activeTabInstanceIds: ReadonlySet<string>): void {
+    for (const transfer of this.transfers.values()) {
+      if (!activeTabInstanceIds.has(transfer.token.tabInstanceId))
+        this.disposeTransfer(transfer.token);
+    }
+  }
+
+  async open(
+    input: ProjectDocumentLiveOpenRequest & {
+      attempt?: "first" | "retry";
+      resolution?: AvailableOpenResolution;
+    },
+  ): Promise<ProjectDocumentLiveOpenResult> {
     if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
       return { kind: "cancelled" };
-    let resolution: ExactOpenResolution;
-    try {
-      resolution = await this.dependencies.availability.resolveForOpen(
-        input.projectId,
-        input.documentId,
-      );
-    } catch {
-      if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
-        return { kind: "cancelled" };
-      return { kind: "unavailable", reason: "failed" };
-    }
+    const resolution =
+      input.attempt !== "retry" && input.resolution
+        ? input.resolution
+        : await this.resolveIdentity(input.projectId, input.documentId);
     if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
       return { kind: "cancelled" };
     if (resolution.kind !== "available") {
@@ -208,29 +278,39 @@ export class ProjectDocumentLiveOpener {
   }
 }
 
+export type KnownDocumentIdentity = {
+  scheme: ProjectContextTreeScheme;
+  workId?: string | null;
+  rootThreadId?: string;
+  chatId?: string;
+  file: CatalogFile;
+};
+
 export type OpenProjectDocumentRequest = {
   documentId: string;
+  known?: KnownDocumentIdentity;
   /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
   workId?: string;
   disposition?: "current" | "background";
-  /**
-   * Offered the resolved tab before the route changes: a surface that shows
-   * documents beside the writer's place (the Chat screen's dock) takes it, so
-   * the open finishes without leaving. `cancelled` means a newer intent won.
-   */
-  beside?: (tab: ServerContextTab, focus?: true) => "opened" | "cancelled";
-  /** A document the writer just made: its editor takes the caret once live. */
+  beside?: (
+    tab: ServerContextTab,
+    focus?: true,
+  ) => { kind: "opened"; tab: ContextTab } | { kind: "cancelled" };
   focus?: true;
-  /** Abandons the open when the caller that asked for it is gone. */
   signal?: AbortSignal;
 };
 
+export type OpenDocumentPlacement = "editor" | "dock" | "background";
+export type OpenDocumentOutcome =
+  | { kind: "committed"; documentId: string; placement: OpenDocumentPlacement }
+  | { kind: "cancelled" }
+  | { kind: "refused"; reason: "gone" | "no-viewer" | "lookup-failed" };
 export type OpenProjectDocument = (
   request: OpenProjectDocumentRequest,
-) => Promise<ProjectDocumentLiveOpenResult>;
+) => Promise<OpenDocumentOutcome>;
 
 type NavigationAdapterDependencies = {
-  opener: Pick<ProjectDocumentLiveOpener, "open">;
+  opener: Pick<ProjectDocumentLiveOpener, "resolveIdentity" | "replaceTransfer">;
   openTab(
     projectId: string,
     tab: ReturnType<typeof contextTabFromFile>,
@@ -238,34 +318,18 @@ type NavigationAdapterDependencies = {
   ): import("@/client/stores").OpenEditorTabResult;
   openRoute: OpenContextRoute | null;
   captureNavigation?: () => () => boolean;
-  resources?: {
-    readonly accountId: string;
-    readProjection: import("@/core/resources/account-resource-replica").AccountResourceReplica["readProjection"];
-    openKnownDocument(
-      projectId: string,
-      documentId: string,
-      participantId: string,
-      signal?: AbortSignal,
-    ): ReturnType<
-      import("@/core/resources/account-resource-replica").AccountResourceReplica["openKnownDocument"]
-    >;
-    openDocument: import("@/core/resources/account-resource-replica").AccountResourceReplica["openDocument"];
-  } | null;
+  resources?: Pick<
+    import("@/core/resources/account-resource-replica").AccountResourceReplica,
+    "accountId" | "readProjectionState"
+  > | null;
+  reconcileInstalledTab?: (projectId: string, tab: ContextTab) => void;
 };
 
-function localFileForRecord(
+function identityForRecord(
   projectId: string,
   record: ResourceRecord,
   placement: ResourcePlacement,
-): {
-  scheme: ProjectContextTreeScheme;
-  workId: string | null;
-  rootThreadId?: string;
-  chatId?: string;
-  file: CatalogFile;
-  entry: CatalogFileEntry;
-} | null {
-  if (record.resource.content.kind !== "exact") return null;
+): KnownDocumentIdentity | null {
   const location = placement.resourceLocation(record);
   if (!location) return null;
   const scope = aggregateCatalogScope(projectId, location.scheme, location);
@@ -274,19 +338,28 @@ function localFileForRecord(
   const file = projectCatalogView(projectId, location.scheme, projected, placement, [
     record,
   ]).findDocument(record.resource.identity.documentId);
-  const entry = projected.entries.get(record.resource.identity.documentId);
-  if (!file || entry?.kind !== "file") return null;
+  if (!file || projected.entries.get(record.resource.identity.documentId)?.kind !== "file")
+    return null;
+  if (location.chatId !== undefined) {
+    const spelled = parseContextUri(file.uri);
+    if (!spelled.ok || spelled.value.authority.kind !== "chat") return null;
+  }
   return {
     scheme: location.scheme,
     workId: location.workId,
     rootThreadId: location.rootThreadId,
     chatId: location.chatId,
     file,
-    entry,
   };
 }
 
-/** Latest-attempt navigation: editable files admit sessions; not-editable results open viewers. */
+type CommitResult =
+  | { kind: "applied"; placement: OpenDocumentPlacement }
+  | { kind: "cancelled" }
+  | { kind: "no-viewer" }
+  | { kind: "failed" };
+
+/** Turns a document identity into a committed destination; the destination owns content. */
 export class ProjectDocumentNavigationAdapter {
   private attempt = 0;
   private current: AbortController | null = null;
@@ -305,13 +378,14 @@ export class ProjectDocumentNavigationAdapter {
     projectId: string,
     {
       documentId,
+      known,
       workId,
       disposition = "current",
       beside,
       focus,
       signal,
     }: OpenProjectDocumentRequest,
-  ): Promise<ProjectDocumentLiveOpenResult> {
+  ): Promise<OpenDocumentOutcome> {
     const navigationIsCurrent =
       disposition === "current" ? this.dependencies.captureNavigation?.() : undefined;
     const token = disposition === "current" ? ++this.attempt : this.attempt;
@@ -327,126 +401,78 @@ export class ProjectDocumentNavigationAdapter {
     const canCommit = () =>
       !controller.signal.aborted && (disposition === "background" || token === this.attempt);
     const isCurrent = () => canCommit() && navigationIsCurrent?.() !== false;
-    try {
-      const local = this.dependencies.resources
-        ? await this.dependencies.resources.openKnownDocument(
-            projectId,
-            documentId,
-            `navigation:${crypto.randomUUID()}`,
-            controller.signal,
-          )
-        : ({ kind: "missing" } as const);
-      if (local.kind === "cancelled") return { kind: "cancelled" };
-      localOpen: if (local.kind === "opened") {
-        const prepared = local.handle;
-        try {
-          const placement = resourcePlacementForSnapshot(
-            projectId,
-            await this.dependencies.resources!.readProjection(projectId),
-          );
-          const resolved = localFileForRecord(projectId, local.record, placement);
-          if (!resolved) return { kind: "unavailable", reason: "deleted" };
-          // A chat's upload cached before its chat existed spells no handle, which a tab needs:
-          // the server's entry names it.
-          if (resolved.chatId !== undefined) {
-            const spelled = parseContextUri(resolved.file.uri);
-            if (!spelled.ok || spelled.value.authority.kind !== "chat") break localOpen;
-          }
-          if (!isCurrent()) return { kind: "cancelled" };
-          const committed = await this.commitFile({
-            projectId,
-            scheme: resolved.scheme,
-            file: resolved.file,
-            routeWorkId: resolved.workId ?? workId,
-            rootThreadId: resolved.rootThreadId,
-            chatId: resolved.chatId,
-            disposition,
-            beside,
-            focus,
-            isCurrent,
-            canCommit,
-          });
-          if (committed !== "applied")
-            return committed === "failed"
-              ? { kind: "unavailable", reason: "failed" }
-              : { kind: "cancelled" };
-          const resources = this.dependencies.resources;
-          if (!resources) return { kind: "unavailable", reason: "failed" };
-          const generation = String(local.record.resource.identity.revision);
-          return {
-            kind: "opened",
-            document: resolved.entry,
-            admission: {
-              projectId,
-              documentId: resolved.file.documentId,
-              generation,
-              bind: async (ownerId) => {
-                const rebound = await resources.openDocument(projectId, local.key, ownerId);
-                if (rebound.kind !== "opened")
-                  throw new Error("Local document content is unavailable");
-                return {
-                  projectId,
-                  documentId: rebound.handle.documentId,
-                  generation,
-                  session: rebound.handle.session,
-                  local: true,
-                  release: rebound.handle.release,
-                };
-              },
-            },
-          };
-        } finally {
-          prepared.release();
-        }
-      }
-      if (
-        local.kind === "unavailable" &&
-        (local.record.resource.lifecycle.kind !== "acknowledged" ||
-          !resourcePlacementForSnapshot(
-            projectId,
-            await this.dependencies.resources!.readProjection(projectId),
-          ).resourceLocation(local.record))
-      )
-        return {
-          kind: "unavailable",
-          reason: local.reason === "deleted" || local.reason === "terminal" ? "deleted" : "failed",
-        };
-      const result = await this.dependencies.opener.open({
-        source: "server",
-        projectId,
-        documentId,
-        signal: controller.signal,
-      });
-      if (!isCurrent()) return { kind: "cancelled" };
-      if (result.kind !== "opened" && result.kind !== "not-editable") return result;
 
-      const scheme = schemeForEntry(result.document);
-      if (!scheme) return { kind: "unavailable", reason: "failed" };
-      const routeWorkId =
-        result.document.scope.kind === "work" ? result.document.scope.workId : workId;
-      const rootThreadId =
-        result.document.scope.kind === "lineage" ? result.document.scope.rootThreadId : undefined;
-      const chatId =
-        result.document.scope.kind === "chat" ? result.document.scope.chatId : undefined;
-      const file = projectCatalogFile(result.document);
-      if (disposition === "current" && !this.dependencies.openRoute) {
-        throw new Error("Opening a project document requires the project route owner");
+    try {
+      const projection = this.dependencies.resources?.readProjectionState(projectId);
+      const record =
+        projection?.kind === "ready"
+          ? projection.snapshot.records.find(
+              (candidate) => candidate.resource.identity.documentId === documentId,
+            )
+          : undefined;
+      if (record?.resource.lifecycle.kind === "terminal")
+        return { kind: "refused", reason: "gone" };
+
+      let identity = known;
+      if (!identity && projection?.kind === "ready" && record) {
+        identity =
+          identityForRecord(
+            projectId,
+            record,
+            resourcePlacementForSnapshot(projectId, projection.snapshot),
+          ) ?? undefined;
       }
+
+      let transfer: AvailableOpenResolution | undefined;
+      if (!identity) {
+        const resolution = await this.dependencies.opener.resolveIdentity(projectId, documentId);
+        if (!isCurrent()) return { kind: "cancelled" };
+        if (resolution.kind !== "available") {
+          return {
+            kind: "refused",
+            reason:
+              resolution.kind === "deleted" || resolution.kind === "not-visible"
+                ? "gone"
+                : "lookup-failed",
+          };
+        }
+        transfer = resolution;
+        const scheme = schemeForEntry(resolution.entry);
+        if (!scheme) return { kind: "refused", reason: "lookup-failed" };
+        identity = {
+          scheme,
+          file: projectCatalogFile(resolution.entry),
+          workId: resolution.entry.scope.kind === "work" ? resolution.entry.scope.workId : workId,
+          rootThreadId:
+            resolution.entry.scope.kind === "lineage"
+              ? resolution.entry.scope.rootThreadId
+              : undefined,
+          chatId:
+            resolution.entry.scope.kind === "chat" ? resolution.entry.scope.chatId : undefined,
+        };
+      }
+
+      if (disposition === "current" && !this.dependencies.openRoute)
+        throw new Error("Opening a project document requires the project route owner");
       const committed = await this.commitFile({
         projectId,
-        scheme,
-        file,
-        routeWorkId,
-        rootThreadId,
-        chatId,
+        scheme: identity.scheme,
+        file: identity.file,
+        routeWorkId: identity.workId ?? workId,
+        rootThreadId: identity.rootThreadId,
+        chatId: identity.chatId,
         disposition,
         beside,
         focus,
         isCurrent,
         canCommit,
+        transfer,
       });
-      if (committed === "failed") return { kind: "unavailable", reason: "failed" };
-      return committed === "applied" ? result : { kind: "cancelled" };
+      if (committed.kind === "failed") return { kind: "refused", reason: "lookup-failed" };
+      if (committed.kind === "no-viewer") return { kind: "refused", reason: "no-viewer" };
+      return committed.kind === "applied"
+        ? { kind: "committed", documentId, placement: committed.placement }
+        : { kind: "cancelled" };
     } finally {
       signal?.removeEventListener("abort", abort);
       this.pending.delete(controller);
@@ -459,44 +485,55 @@ export class ProjectDocumentNavigationAdapter {
     scheme: ProjectContextTreeScheme;
     file: CatalogFile;
     routeWorkId: string | undefined;
-    /** A chat's Scratch is held by its lineage; the route keeps the Editor's own Work. */
     rootThreadId?: string;
-    /** An upload is held by the chat it was attached in. */
     chatId?: string;
     disposition: "current" | "background";
-    beside?: (tab: ServerContextTab, focus?: true) => "opened" | "cancelled";
+    beside?: OpenProjectDocumentRequest["beside"];
     focus?: true;
     isCurrent: () => boolean;
     canCommit: () => boolean;
-  }): Promise<"applied" | "cancelled" | "failed"> {
+    transfer?: AvailableOpenResolution;
+  }): Promise<CommitResult> {
     const owner: ContextOwner = input.chatId
       ? { chatThreadId: input.chatId }
       : input.rootThreadId
         ? { rootThreadId: input.rootThreadId }
         : { workId: input.routeWorkId ?? null };
     const tab = isEditorScheme(input.scheme)
-      ? contextTabFromFile(input.scheme, input.file, owner)
+      ? {
+          ...contextTabFromFile(input.scheme, input.file, owner),
+          tabInstanceId: crypto.randomUUID(),
+        }
       : undefined;
-    if (!input.isCurrent()) return "cancelled";
+    if (!input.isCurrent()) return { kind: "cancelled" };
+
     if (input.disposition === "current" && input.beside) {
-      // A document with no owner row to name (never a dock candidate) is left to the route.
       let besideTab: ServerContextTab | null = null;
       try {
         besideTab = serverTabFromFile(input.scheme, input.file, owner);
+        if (besideTab) besideTab = { ...besideTab, tabInstanceId: tab?.tabInstanceId };
       } catch {
         besideTab = null;
       }
       if (besideTab) {
         const placed = input.beside(besideTab, input.focus);
         this.current = null;
-        return placed === "opened" ? "applied" : "cancelled";
+        if (placed.kind === "opened" && placed.tab.tabInstanceId)
+          this.dependencies.opener.replaceTransfer(
+            placed.tab.tabInstanceId,
+            input.transfer,
+            "dock",
+          );
+        return placed.kind === "opened"
+          ? { kind: "applied", placement: "dock" }
+          : { kind: "cancelled" };
       }
     }
+
     if (input.disposition === "current") {
-      // An upload has no Editor route: with no dock to hold it, the open goes nowhere.
       if (input.scheme === "uploads") {
         this.current = null;
-        return "cancelled";
+        return { kind: "no-viewer" };
       }
       if (!this.dependencies.openRoute)
         throw new Error("Opening a project document requires the project route owner");
@@ -514,20 +551,31 @@ export class ProjectDocumentNavigationAdapter {
           ...(input.focus ? { focus: true as const } : {}),
           isCurrent: input.isCurrent,
           canCommit: input.canCommit,
+          afterCommit: (installed) => {
+            if (installed?.tabInstanceId) {
+              this.dependencies.opener.replaceTransfer(
+                installed.tabInstanceId,
+                input.transfer,
+                "editor",
+              );
+              this.dependencies.reconcileInstalledTab?.(input.projectId, installed);
+            }
+          },
         },
       );
       return settlement.kind === "failed"
-        ? "failed"
+        ? { kind: "failed" }
         : settlement.kind === "applied"
-          ? "applied"
-          : "cancelled";
+          ? { kind: "applied", placement: "editor" }
+          : { kind: "cancelled" };
     }
+
     if (tab) {
       const installed = this.dependencies.openTab(input.projectId, tab, input.isCurrent);
       if (installed.kind !== "opened")
-        return installed.kind === "superseded" ? "cancelled" : "failed";
+        return installed.kind === "superseded" ? { kind: "cancelled" } : { kind: "failed" };
     }
-    return input.canCommit() ? "applied" : "cancelled";
+    return input.canCommit() ? { kind: "applied", placement: "background" } : { kind: "cancelled" };
   }
 }
 
@@ -556,8 +604,37 @@ export function ProjectDocumentNavigationProvider({
 }) {
   const opener = useProjectDocumentLiveOpener();
   const resources = useOptionalAccountResourceReplica();
+  const removal = useOptionalContextRemovalCoordinator();
   const openContextRoute = useOpenContextRoute();
   const { openTab } = useContextTabsActions();
+  useEffect(() => {
+    if (!resources) return;
+    return resources.observeProjection(
+      projectId,
+      () => undefined,
+      () => undefined,
+    );
+  }, [projectId, resources]);
+  useEffect(() => {
+    const prune = () => {
+      const active = new Set<string>();
+      for (const project of Object.values(useContextTabsStore.getState().byProject)) {
+        for (const tab of project.tabs) if (tab.tabInstanceId) active.add(tab.tabInstanceId);
+      }
+      const dock = useDockDocumentStore.getState();
+      for (const document of [dock.occupant, dock.restoring]) {
+        if (document?.tab.tabInstanceId) active.add(document.tab.tabInstanceId);
+      }
+      opener.pruneTransfers(active);
+    };
+    const stopTabs = useContextTabsStore.subscribe(prune);
+    const stopDock = useDockDocumentStore.subscribe(prune);
+    prune();
+    return () => {
+      stopTabs();
+      stopDock();
+    };
+  }, [opener]);
   const owner = useMemo<ProjectDocumentNavigationOwner>(
     () => ({
       projectId,
@@ -567,9 +644,11 @@ export function ProjectDocumentNavigationProvider({
         openRoute: openContextRoute,
         captureNavigation,
         resources,
+        reconcileInstalledTab: (installedProjectId, tab) =>
+          removal?.reconcileInstalledTab(installedProjectId, tab),
       }),
     }),
-    [openContextRoute, openTab, opener, projectId, captureNavigation, resources],
+    [openContextRoute, openTab, opener, projectId, captureNavigation, removal, resources],
   );
   useEffect(() => () => owner.adapter.dispose(), [owner]);
 
@@ -582,7 +661,7 @@ export function useOpenProjectDocument(projectId: string | undefined): OpenProje
   return useCallback(
     async (request) => {
       if (!projectId || owner?.projectId !== projectId)
-        return { kind: "unavailable", reason: "failed" };
+        return { kind: "refused", reason: "lookup-failed" };
       return owner.adapter.open(projectId, request);
     },
     [owner, projectId],

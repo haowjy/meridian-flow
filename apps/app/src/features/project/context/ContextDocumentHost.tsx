@@ -39,6 +39,7 @@ import {
 import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./context-tab-session";
 import { DESKTOP_DOCUMENT_PRESENTATION, type DocumentPresentation } from "./document-presentation";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
+import type { LiveDocumentBindingState } from "./use-live-document-binding";
 
 export type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
 
@@ -101,6 +102,7 @@ export function ContextDocumentHost({
     failed = false,
     localContentReady = false,
     retry?: () => void,
+    failureReason: Extract<LiveDocumentBindingState, { kind: "failed" }>["reason"] | null = null,
   ): ReactNode => {
     if (!mountEditor) return null;
     const hosted = session !== null || draftOnly || Boolean(selectedReviewItemKey);
@@ -132,9 +134,13 @@ export function ContextDocumentHost({
             <div className="grid h-full place-items-center">
               <div className="space-y-3 text-center">
                 <p className="text-destructive text-sm">
-                  <Trans>Couldn't open this document.</Trans>
+                  {failureReason === "not-visible" ? (
+                    <Trans>Access lost (not saving to the server)</Trans>
+                  ) : (
+                    <Trans>Couldn't open this document.</Trans>
+                  )}
                 </p>
-                {retry ? (
+                {retry && failureReason !== "not-visible" && failureReason !== "deleted" ? (
                   <Button type="button" size="sm" variant="secondary" onClick={retry}>
                     <Trans>Retry</Trans>
                   </Button>
@@ -201,6 +207,7 @@ export function ContextDocumentHost({
                 // The intent, not the resolved room: the live editor goes
                 // read-only from the click, while the room is still resolving.
                 reviewItemKey={selectedReviewItemKey}
+                container={container}
               />
             </>
           )}
@@ -213,6 +220,7 @@ export function ContextDocumentHost({
       projectId={projectId}
       documentId={tab.documentId}
       resourceHandle={tab.resourceHandle}
+      tabInstanceId={tab.tabInstanceId}
       availabilityRevision={availabilityRevision}
       liveRoom={!draftOnly}
       bindingOwner={presentation.bindingOwner}

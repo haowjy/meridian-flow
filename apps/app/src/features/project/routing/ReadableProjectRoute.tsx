@@ -69,6 +69,7 @@ import {
 import { editorDefaultWorkPending } from "./editor-default-work";
 import { createEditorDocumentCommand, prepareEditorDestination } from "./editor-document-command";
 import {
+  canonicalDocumentPath,
   gateLiveView,
   projectAddressMatchesContextTarget,
   reconcileDocumentAddress,
@@ -427,6 +428,28 @@ function ReadableProjectDestination({
     if (closingRef && documentLookup.data?.kind === "unavailable") void closeMetadata?.refetch();
   }, [closingRef?.itemKey, documentLookup.dataUpdatedAt]);
   const { selection } = useContextRemovalProject(projectId);
+  useLayoutEffect(() => {
+    if (
+      documentLookup.data?.kind !== "unavailable" ||
+      destination.kind !== "document" ||
+      !workId ||
+      selection.status !== "candidate" ||
+      selection.locator.scheme !== destination.scheme ||
+      canonicalDocumentPath(selection.locator.path) !== canonicalDocumentPath(destination.path) ||
+      selection.locator.workId !== workId ||
+      selection.locator.rootThreadId !== address.lineage
+    )
+      return;
+    contextRemoval.rejectRouteCandidate(projectId, selection.revision);
+  }, [
+    address.lineage,
+    contextRemoval,
+    destination,
+    documentLookup.data,
+    projectId,
+    selection,
+    workId,
+  ]);
   const boundDocumentId = routeContinuityDocumentId({
     selection,
     admittedDocumentId: admission?.documentId ?? null,

@@ -57,49 +57,6 @@ function exactPersistenceName(accountId: string, persistenceId: string): string 
 
 type OrderedLocationOperation = { generation: number; tail: Promise<void> };
 
-type KnownDocument = { key: ResourceKey; record: ResourceRecord };
-export type KnownDocumentOpenResult =
-  | { kind: "missing" }
-  | { kind: "cancelled" }
-  | {
-      kind: "unavailable";
-      reason: Exclude<ResourceContentOpenResult, { kind: "opened" | "cancelled" }>["reason"];
-      key: ResourceKey;
-      record: ResourceRecord;
-    }
-  | {
-      kind: "opened";
-      key: ResourceKey;
-      record: ResourceRecord;
-      handle: Extract<ResourceContentOpenResult, { kind: "opened" }>["handle"];
-    };
-
-/** Recheck mutable Document ID ownership after opening exact content. */
-export async function openIdentityLinearized(input: {
-  read(): Promise<KnownDocument | null>;
-  open(key: ResourceKey): Promise<ResourceContentOpenResult>;
-}): Promise<KnownDocumentOpenResult> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const known = await input.read();
-    if (!known) return { kind: "missing" };
-    const opened = await input.open(known.key);
-    if (opened.kind === "cancelled") return opened;
-    const current = await input.read();
-    if (opened.kind === "opened") {
-      if (
-        current?.key.handle === known.key.handle &&
-        current.record.resource.identity.documentId === opened.handle.documentId
-      )
-        return { kind: "opened", ...current, handle: opened.handle };
-      opened.handle.release();
-    } else if (opened.reason !== "changed" && current?.key.handle === known.key.handle) {
-      return { ...opened, key: known.key, record: current.record };
-    }
-  }
-  const current = await input.read();
-  return current ? { kind: "unavailable", reason: "changed", ...current } : { kind: "missing" };
-}
-
 /** Preserve writer command order while reporting whether a completion still owns presentation. */
 export class ResourceLocationOperationQueue {
   private readonly operations = new Map<string, OrderedLocationOperation>();
@@ -139,6 +96,7 @@ export class AccountResourceReplica {
       listeners: Map<(snapshot: ResourceProjectionSnapshot) => void, (error: unknown) => void>;
       stop: () => void;
       snapshot: ResourceProjectionSnapshot | null;
+      error: unknown | null;
     }
   >();
   private readonly serverSessionCaptures = new Map<string, Promise<void>>();
@@ -387,19 +345,6 @@ export class AccountResourceReplica {
     return record ? { key: { handle: record.resource.handle }, record } : null;
   }
 
-  /** Resolve identity and prove exact local content against one current metadata snapshot. */
-  async openKnownDocument(
-    projectId: string,
-    documentId: string,
-    participantId: string,
-    signal?: AbortSignal,
-  ): Promise<KnownDocumentOpenResult> {
-    return openIdentityLinearized({
-      read: () => this.readKnownDocument(projectId, documentId),
-      open: (key) => this.openDocument(projectId, key, participantId, signal),
-    });
-  }
-
   async canAcquireRemoteDocument(projectId: string, documentId: string): Promise<boolean> {
     const known = await this.readKnownDocument(projectId, documentId);
     return Boolean(
@@ -520,6 +465,46 @@ export class AccountResourceReplica {
     return this.metadata.readProjection(projectId);
   }
 
+  readProjectionState(
+    projectId: string,
+  ):
+    | { kind: "pending" }
+    | { kind: "ready"; snapshot: ResourceProjectionSnapshot }
+    | { kind: "failed"; error: unknown } {
+    const stream = this.projectionStreams.get(projectId);
+    if (stream?.error !== null && stream?.error !== undefined)
+      return { kind: "failed", error: stream.error };
+    if (stream?.snapshot) return { kind: "ready", snapshot: stream.snapshot };
+    return { kind: "pending" };
+  }
+
+  whenProjectionReady(
+    projectId: string,
+    signal?: AbortSignal,
+  ): Promise<ResourceProjectionSnapshot> {
+    const state = this.readProjectionState(projectId);
+    if (state.kind === "ready") return Promise.resolve(state.snapshot);
+    if (state.kind === "failed") return Promise.reject(state.error);
+    if (signal?.aborted) return Promise.reject(signal.reason);
+    return new Promise((resolve, reject) => {
+      const stop = this.observeProjection(projectId, settle, fail);
+      const abort = () => fail(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+      function cleanup() {
+        signal?.removeEventListener("abort", abort);
+        stop();
+      }
+      function settle(snapshot: ResourceProjectionSnapshot) {
+        cleanup();
+        resolve(snapshot);
+      }
+      function fail(error: unknown) {
+        cleanup();
+        reject(error);
+      }
+      signal?.addEventListener("abort", abort, { once: true });
+    });
+  }
+
   observeProjection(
     projectId: string,
     listener: (snapshot: ResourceProjectionSnapshot) => void,
@@ -535,15 +520,18 @@ export class AccountResourceReplica {
       const created = {
         listeners,
         snapshot: null as ResourceProjectionSnapshot | null,
+        error: null as unknown | null,
         stop: (() => undefined) as () => void,
       };
       created.stop = this.metadata.observeProjection(
         projectId,
         (snapshot) => {
           created.snapshot = snapshot;
+          created.error = null;
           for (const subscriber of created.listeners.keys()) subscriber(snapshot);
         },
         (error) => {
+          created.error = error;
           for (const report of created.listeners.values()) report(error);
         },
       );
