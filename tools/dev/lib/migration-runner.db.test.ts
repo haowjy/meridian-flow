@@ -9,7 +9,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { MIGRATION_ADVISORY_LOCK_ID, runMigrations } from "./migration-runner";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -85,6 +85,12 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
     temporaryRoot = await mkdtemp(path.join(tmpdir(), "meridian-migration-runner-"));
     await admin.unsafe(`CREATE DATABASE ${scratchName}`);
     sql = postgres(scratchUrl, { max: 1 });
+  });
+
+  beforeEach(async () => {
+    await sql`DROP SCHEMA public CASCADE`;
+    await sql`DROP SCHEMA IF EXISTS drizzle CASCADE`;
+    await sql`CREATE SCHEMA public`;
   });
 
   afterAll(async () => {
@@ -198,9 +204,6 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
   });
 
   it("executes and records the snapshot read before waiting on the lock", async () => {
-    await sql`DROP SCHEMA public CASCADE`;
-    await sql`DROP SCHEMA IF EXISTS drizzle CASCADE`;
-    await sql`CREATE SCHEMA public`;
     const directory = path.join(temporaryRoot, "snapshot");
     const original = {
       tag: "0000_snapshot",
@@ -234,9 +237,6 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
   });
 
   it("applies and records a concurrent index migration outside a transaction", async () => {
-    await sql`DROP SCHEMA public CASCADE`;
-    await sql`DROP SCHEMA IF EXISTS drizzle CASCADE`;
-    await sql`CREATE SCHEMA public`;
     const directory = path.join(temporaryRoot, "online-index");
     await writeMigrations(directory, [
       { tag: "0000_table", when: 100, sql: "CREATE TABLE public.online_events (id int);" },

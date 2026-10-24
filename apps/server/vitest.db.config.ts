@@ -173,7 +173,10 @@ export default defineProject({
     isolate: false,
     include: ["**/*.db.test.ts"],
     exclude: ["**/node_modules/**", "**/.{git,nx}/**"],
-    setupFiles: [fileURLToPath(new URL("../../tools/ci/db-test-worker-setup.ts", import.meta.url))],
+    setupFiles: [
+      fileURLToPath(new URL("../../tools/ci/db-test-worker-setup.ts", import.meta.url)),
+      fileURLToPath(new URL("server/test-support/db-test-file-setup.ts", import.meta.url)),
+    ],
     fileParallelism: workerDatabaseUrls.length > 0,
     maxWorkers: workerDatabaseUrls.length || 1,
     // Vitest's 5s default is too tight for the heavier real-Postgres suites, and a
@@ -183,6 +186,7 @@ export default defineProject({
     // Postgres load a hook can still outlast this; the harness fix is #616.
     testTimeout: 30_000,
     hookTimeout: 30_000,
+    sequence: { shuffle: true },
     reporters: [
       "default",
       fileURLToPath(new URL("../../tools/ci/test-budget-reporter.ts", import.meta.url)),

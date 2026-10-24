@@ -150,6 +150,9 @@ every unit and DB run and compares the **expanded case count per test file**
 - Contracts, markup and DB suites reuse worker module caches: no module or
   global mocks there. Keep test data and connections instance-owned; DB
   rollback/FK resets, not fresh module loading, isolate persisted state.
+- Unit and DB runs shuffle files and cases by default. Vitest reports the seed
+  on failure. Replay it with `pnpm test --sequence.seed=<n>` or
+  `pnpm test:db --sequence.seed=<n>`.
 
 ## Runtime verification
 
