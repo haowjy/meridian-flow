@@ -280,6 +280,7 @@ msgstr ""
 msgid "{days, plural, one {# day ago} other {# days ago}}"
 msgstr ""
 
+#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr ""
@@ -605,6 +606,10 @@ msgstr "一个工作中有此文档的草稿"
 msgid "A Work has drafts for this ({0})"
 msgstr "一个工作中有此文档的草稿（{0}）"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "a writer"
+msgstr ""
+
 #: src/features/editor/SyncStatus.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
 msgid "Access lost (not saving to the server)"
@@ -716,6 +721,15 @@ msgstr ""
 msgid "AI assistant"
 msgstr ""
 
+#. placeholder {0}: entry.actor.chatTitle
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "AI in {0}"
+msgstr ""
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "AI in a chat"
+msgstr ""
+
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "AI write mode"
 msgstr ""
@@ -783,6 +797,10 @@ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "An entry named {name} already exists in this location."
+msgstr ""
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "an unknown writer"
 msgstr ""
 
 #: src/client/query/work-update-failure.ts
@@ -1646,6 +1664,10 @@ msgstr ""
 msgid "Couldn't load this file."
 msgstr ""
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Couldn't load Trash."
+msgstr ""
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
 msgstr ""
@@ -1735,18 +1757,24 @@ msgstr ""
 msgid "Couldn't rename. Use Rename in the file list to try again."
 msgstr ""
 
+#. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
+#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Couldn't restore {0}."
 msgstr ""
 
+#. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
+#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Couldn't restore {0}. A file is in the way."
 msgstr ""
 
+#. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
+#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Couldn't restore {0}. Try again."
 msgstr ""
 
@@ -2012,6 +2040,14 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Deleted a Work"
+msgstr ""
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Deleted by {actor} on {deleted}"
+msgstr ""
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Deleted documents."
 msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
@@ -2720,6 +2756,7 @@ msgstr ""
 msgid "Left"
 msgstr ""
 
+#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Less than a day left"
 msgstr ""
@@ -2831,6 +2868,10 @@ msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
 msgid "Loading signed image URL…"
+msgstr ""
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Loading Trash…"
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
@@ -3778,6 +3819,7 @@ msgstr ""
 msgid "Response complete"
 msgstr "回复完成"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore"
 msgstr ""
@@ -3793,10 +3835,13 @@ msgid "Restored as {0}."
 msgstr ""
 
 #. placeholder {0}: alternateLocations.join(", ")
+#. placeholder {0}: result.landedAt
 #: src/features/project/context/document-delete-undo.tsx
+#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Restored at {0}."
 msgstr ""
 
+#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Restoring"
 msgstr ""
@@ -4633,6 +4678,10 @@ msgstr ""
 msgid "the source chat"
 msgstr ""
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "the system"
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
 msgstr ""
@@ -5068,6 +5117,15 @@ msgstr ""
 
 #: src/features/billing/BillingPage.tsx
 msgid "Top up any time. Extra usage carries over month to month."
+msgstr ""
+
+#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Trash"
+msgstr ""
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Trash is empty."
 msgstr ""
 
 #: src/features/chat/ChatCards.tsx
