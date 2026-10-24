@@ -2,7 +2,7 @@
  * A save's journal reads stay on the save's own connection (contract §2.3).
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current draft journal reads persistence protocol (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - ambient save-transaction ownership of concurrent journal reads (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
  */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { afterAll, describe, expect, it } from "vitest";

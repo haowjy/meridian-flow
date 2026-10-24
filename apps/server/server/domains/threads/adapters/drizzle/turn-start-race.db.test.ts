@@ -2,7 +2,7 @@
  * Postgres regression coverage for cross-instance turn-start serialization.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current turn start race persistence protocol (kb/decisions/chat/turns/linear-turns.md)
+ * - domain-conflict translation and row-locked expected-leaf turn admission (kb/decisions/chat/turns/linear-turns.md)
  */
 
 import type { TurnId } from "@meridian/contracts/runtime";

@@ -2,7 +2,7 @@
  * Control queue ordering, start consumption, and withdrawal against PostgreSQL.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current control protocol persistence protocol (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
+ * - one-per-run ordered controls, request-boundary adoption, and claim-owned crash repair (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
  */
 
 import type { Turn } from "@meridian/contracts/threads";

@@ -2,7 +2,7 @@
  * Drafted `user://` (D20 under 12b): a draft-mode Work in any project of the account branches into the account's personal source, hidden live until Apply, and one hidden document is shared by every branch of the account that uses it.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current branch tree user source persistence protocol (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - account-personal user source routing for project Work drafts (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
  */
 
 import type { DocumentId } from "@meridian/contracts";

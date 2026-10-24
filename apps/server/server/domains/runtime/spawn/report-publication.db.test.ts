@@ -2,7 +2,7 @@
  * PostgreSQL publication B and orphan recovery after durable terminal A.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current report publication persistence protocol (kb/decisions/agents/conversations/child-execution-reports.md)
+ * - parent-first locking, bounded report sweeps, placeholder repair, and deleted-caller parking (kb/decisions/agents/conversations/child-execution-reports.md)
  */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";

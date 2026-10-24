@@ -2,7 +2,7 @@
  * Drizzle half of the shared chat-feed repository conformance suite.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current chat feed persistence protocol (kb/decisions/chat/turns/linear-turns.md)
+ * - literal folded search and filtered keyset pagination over historical Work membership (kb/decisions/chat/turns/linear-turns.md)
  */
 import { beforeEach, describe, it } from "vitest";
 

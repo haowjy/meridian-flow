@@ -2,7 +2,7 @@
  * Discard and purge leave nothing live and release storage (contract §12, §2.6, ledger D-1 to D-3): a hidden document branches share stays while any of them uses it, and the last one's Discard tombstones it and its hidden folders, releasing its live Yjs, every draft on it and a picture's bytes, while links written ahead of it read "Doesn't exist yet" and bind to the next live document; two branches discarding it at once leave one tombstone; a purged Work's branches go through the locked kernel, never the active-Work command.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current branch tree discard persistence protocol (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - kernel-owned Work purge and synchronous repair of detached hidden documents (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
  */
 
 import type { DocumentId } from "@meridian/contracts";

@@ -2,7 +2,7 @@
  * PostgreSQL coverage for No Work and concurrent thread Work rebinds.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current rebind thread work persistence protocol (kb/decisions/agents/conversations/fork-and-handoff-derivation.md)
+ * - asymmetric archived-Work rebind, historical membership, and atomic notice projection (kb/decisions/agents/conversations/fork-and-handoff-derivation.md)
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";

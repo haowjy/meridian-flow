@@ -2,7 +2,7 @@
  * Drizzle ContextTreeMutationStore: recursive-delete ownership and rollback proofs, and the move barrier.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current drizzle tree mutation store persistence protocol (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ * - compatible document row locks between moves and derivation admission (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 
 import { randomUUID } from "node:crypto";

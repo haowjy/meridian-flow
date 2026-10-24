@@ -2,7 +2,7 @@
  * Postgres-backed coverage for promoting work-scoped scratch documents.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current context move persistence protocol
+ * - receipt lifetime, root representation, lineage-move policy, and provisional-name graduation
  */
 
 import { folderDocumentName } from "@meridian/contracts/protocol";

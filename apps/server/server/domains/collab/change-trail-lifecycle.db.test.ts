@@ -2,7 +2,7 @@
  * Database coverage for change trail lifecycle.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current change trail lifecycle persistence protocol
+ * - cold terminal-owner reconciliation and transaction-bound receipt invalidation
  */
 
 import { eq } from "drizzle-orm";

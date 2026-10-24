@@ -2,7 +2,7 @@
  * The hidden-node reader chokepoints (contract §16.3, F15): a branch's hidden document is absent from every live surface (C-1a) and present in its branch's view (C-1b).
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current live surfaces persistence protocol (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ * - reader-specific filtering of hidden nodes across live and branch surfaces (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 
 import { randomUUID } from "node:crypto";

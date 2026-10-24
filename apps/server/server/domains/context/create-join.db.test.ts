@@ -2,7 +2,7 @@
  * A writer's instant create at a path where a branch's new document waits is that document (#757).
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current create join persistence protocol
+ * - joining a writer create to the matching hidden branch identity
  */
 
 import type { DocumentId } from "@meridian/contracts";

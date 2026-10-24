@@ -2,7 +2,7 @@
  * Real-Postgres contracts for migration refusal, catch-up, and serialization.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current migration runner persistence protocol (kb/decisions/platform/stack/drizzle-migration-integrity.md)
+ * - single-snapshot migration bytes recorded before lock acquisition (kb/decisions/platform/stack/drizzle-migration-integrity.md)
  */
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";

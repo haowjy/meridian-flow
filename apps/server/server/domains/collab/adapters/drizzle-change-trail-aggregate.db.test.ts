@@ -2,7 +2,7 @@
  * PostgreSQL contracts for committed change-event replace-set projections.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current drizzle change trail aggregate persistence protocol
+ * - bounded two-pass trail reconciliation across cursor pages
  */
 
 import type { TrailChangeV1 } from "@meridian/contracts";

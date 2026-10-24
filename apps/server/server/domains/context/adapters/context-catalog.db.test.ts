@@ -2,7 +2,7 @@
  * PostgreSQL proof for catalog transaction, replay, exclusion, and wake semantics.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current context catalog persistence protocol (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ * - lossy post-commit wakes, durable catalog replay, namespace-only revisions, and persisted classification (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 
 import { folderDocumentName } from "@meridian/contracts/protocol";

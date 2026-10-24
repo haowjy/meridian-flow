@@ -2,7 +2,7 @@
  * Query-plan gate for thread_ls's bounded latest-requester batch.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current thread ls requester plan persistence protocol (kb/decisions/chat/turns/linear-turns.md)
+ * - one bounded backward unique-index lookup per listed thread (kb/decisions/chat/turns/linear-turns.md)
  */
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

@@ -2,7 +2,7 @@
  * Public collab-domain reverseTurn coverage over Drizzle draft infrastructure.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current collab domain reverse turn persistence protocol
+ * - the certified projection as the sole publisher of stored Markdown
  */
 
 import { eq } from "drizzle-orm";

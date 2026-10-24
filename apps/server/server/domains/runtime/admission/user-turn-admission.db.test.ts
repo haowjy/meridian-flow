@@ -2,7 +2,7 @@
  * PostgreSQL proof that admission and explicit retirement choose one serialized winner.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current user turn admission persistence protocol (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
+ * - claim-authoritative orphan recovery and archived-Work send admission (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
  */
 
 import { eq } from "drizzle-orm";

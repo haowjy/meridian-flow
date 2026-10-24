@@ -2,7 +2,7 @@
  * PostgreSQL terminal A: turn, report, journal, and publication share one commit.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current execution finalizer persistence protocol (kb/decisions/agents/conversations/child-execution-reports.md)
+ * - mixed message and control batch splitting under one execution lease and report (kb/decisions/agents/conversations/child-execution-reports.md)
  */
 
 import type { FailureRecord } from "@meridian/contracts/failures";

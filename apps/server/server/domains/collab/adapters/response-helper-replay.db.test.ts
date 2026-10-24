@@ -2,7 +2,7 @@
  * Revocable response helpers and accepted replay across concurrent draft writes.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current response helper replay persistence protocol (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - folding a concurrent committed prefix into a single response save (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
  */
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";

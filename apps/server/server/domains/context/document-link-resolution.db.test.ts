@@ -2,7 +2,7 @@
  * Real catalog/Work-authority integration for canonical document-link navigation.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current document link resolution persistence protocol (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ * - catalog-backed canonical navigation under Work-specific readability (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {

@@ -2,7 +2,7 @@
  * Postgres coverage for bootstrap readiness fast and repair paths.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current project bootstrap readiness persistence protocol
+ * - durable bootstrap readiness that bypasses locking and reseeding on the fast path
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";

@@ -2,7 +2,7 @@
  * Thread-bound creates and writer overwrites use the selected SQL tree view.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current context thread existing document persistence protocol
+ * - immediate existing-document settlement without self-deadlock and URI failure mapping
  */
 
 import { randomUUID } from "node:crypto";

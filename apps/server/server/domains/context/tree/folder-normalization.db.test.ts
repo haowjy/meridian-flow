@@ -2,7 +2,7 @@
  * What live folder operations do to hidden nodes, through the real commands (contract §8): a delete or a move out of where branches hold folders splits hidden contents into twins at their paths (F-1, F-3), a move between project sources carries them (F-2), a visible folder arriving at a hidden folder's path absorbs it (F-4), and neither race leaves a branch's create behind (I-4, I-5).
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current folder normalization persistence protocol (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ * - hidden-folder twin, absorption, and cross-source normalization topology (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 
 import { randomUUID } from "node:crypto";

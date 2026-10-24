@@ -2,7 +2,7 @@
  * Persisted live-document coverage for client-owned untitled creation.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current context fs create untitled persistence protocol (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ * - zero-struct server authority for client-owned untitled content (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 
 import { Hocuspocus } from "@hocuspocus/server";

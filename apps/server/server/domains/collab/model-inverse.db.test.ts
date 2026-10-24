@@ -2,7 +2,7 @@
  * Strict model stacks, immutable history and bounded receipts.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current model inverse persistence protocol (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - card-target eligibility for model inverses and bounded receipt context (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
  */
 import { randomUUID } from "node:crypto";
 import {

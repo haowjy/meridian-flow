@@ -2,7 +2,7 @@
  * PostgreSQL turn-repository contracts for positions and legacy delivery markers.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current turn position persistence protocol (kb/decisions/chat/turns/linear-turns.md)
+ * - delivered messages with nullable delivering-turn attribution (kb/decisions/chat/turns/linear-turns.md)
  */
 
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";

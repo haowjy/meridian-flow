@@ -2,7 +2,7 @@
  * Postgres regression for #290: a non-UUID id (e.g.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current slug routing persistence protocol
+ * - manifest-before-catalog provisioning and case-insensitive active Work uniqueness
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";

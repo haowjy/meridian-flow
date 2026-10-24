@@ -2,7 +2,7 @@
  * One reply, several destinations (D9, D19, D29, D40): a reply that writes live scratch and a drafted document reads its own writes, undoes as one turn, leaves out archived Works at save, and merges live writes into kept drafts.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current response save destinations persistence protocol (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - archive-frozen destinations, ordered multi-Work locking, and cross-destination inverse selection (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
  */
 
 import { folderDocumentName } from "@meridian/contracts/protocol";

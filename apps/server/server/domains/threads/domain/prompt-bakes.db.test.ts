@@ -2,7 +2,7 @@
  * PostgreSQL guards and epoch-transition behavior for immutable prompt bakes.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current prompt bakes persistence protocol (kb/decisions/chat/turns/linear-turns.md)
+ * - reusing identical prompt bytes while still journaling an epoch boundary (kb/decisions/chat/turns/linear-turns.md)
  */
 
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";

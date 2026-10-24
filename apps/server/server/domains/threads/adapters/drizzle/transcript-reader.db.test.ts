@@ -2,7 +2,7 @@
  * Query-plan contract at scale: one 5,000-turn fixture with a per-case mutable tail.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - current transcript reader persistence protocol (kb/decisions/chat/turns/linear-turns.md)
+ * - bounded keyset and partial-index reads plus ambient-transaction orphan repair (kb/decisions/chat/turns/linear-turns.md)
  */
 
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
