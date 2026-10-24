@@ -1,4 +1,9 @@
-/** PostgreSQL coverage for the writer Work-rebind HTTP boundary. */
+/**
+ * PostgreSQL coverage for the writer Work-rebind HTTP boundary.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current thread work rebind route persistence protocol
+ */
 
 import { setTimeout as delay } from "node:timers/promises";
 import { createApp, toWebHandler } from "nitro/h3";
@@ -69,9 +74,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "writer",
       "rebind",
     ] as const)("commits concurrent writer enqueue and Work rebind with %s first", async (first) => {
-      const { createDrizzleEventJournalWriter, createDrizzleEventJournalReader } = await import(
-        "../domains/threads/index.js"
-      );
+      const { createDrizzleEventJournalReader } = await import("../domains/threads/index.js");
       const { persistWriterEnqueue } = await import("../domains/runtime/loop/writer-enqueue.js");
       const { createDrizzleTopPrimaryChatResolver } = await import(
         "../domains/threads/adapters/drizzle/top-primary-chat.js"

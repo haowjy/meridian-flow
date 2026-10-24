@@ -1,10 +1,8 @@
 /**
- * The hidden-node reader chokepoints (contract §16.3, F15): a branch's hidden document is
- * absent from every live surface (C-1a) and present in its branch's view (C-1b). One
- * subject, built through the product path, is read by every row of each table with
- * `expect.soft`, so a failure names every leaking surface. Rows only read; the probes
- * that must write (recording a recent, reserving an upload name, a bootstrap) are their
- * own cases. Collaborators come from the composed runtime.
+ * The hidden-node reader chokepoints (contract §16.3, F15): a branch's hidden document is absent from every live surface (C-1a) and present in its branch's view (C-1b).
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current live surfaces persistence protocol (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 
 import { randomUUID } from "node:crypto";
@@ -739,13 +737,18 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
     }
 
     it("prunes a hidden document's stale recent when a live one is recorded (C-1a)", async () => {
-      const s = await subject();
-      await s.runtime.ports.recentDocuments.record(s.userId, s.chapter);
+      const s = await bareSubject();
+      const hidden = await s.scenario.model(s.ascension).create("hidden", "Hidden.");
+      const chapter = (await s.scenario.writer.create("chapter", { content: "Chapter one." }))
+        .documentId as DocumentId;
+      await db.insert(userRecentDocuments).values({ userId: s.userId, documentId: hidden });
+
+      await s.runtime.ports.recentDocuments.record(s.userId, chapter);
       expect(
         await db
           .select()
           .from(userRecentDocuments)
-          .where(eq(userRecentDocuments.documentId, s.harbor)),
+          .where(eq(userRecentDocuments.documentId, hidden)),
       ).toEqual([]);
     });
 

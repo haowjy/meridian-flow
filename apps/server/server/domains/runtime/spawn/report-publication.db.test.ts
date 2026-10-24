@@ -1,4 +1,9 @@
-/** PostgreSQL publication B and orphan recovery after durable terminal A. */
+/**
+ * PostgreSQL publication B and orphan recovery after durable terminal A.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current report publication persistence protocol (kb/decisions/agents/conversations/child-execution-reports.md)
+ */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";

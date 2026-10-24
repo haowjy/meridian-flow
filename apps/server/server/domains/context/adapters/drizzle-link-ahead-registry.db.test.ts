@@ -1,7 +1,8 @@
 /**
- * PostgreSQL proof for ahead registration, the namespace race with arrival, settlement CAS,
- * and refs written in a draft: registered globally and left unbound until a live document
- * arrives (12a), the writer's own links registered from the review room (L-3).
+ * PostgreSQL proof for ahead registration, the namespace race with arrival, settlement CAS, and refs written in a draft: registered globally and left unbound until a live document arrives (12a), the writer's own links registered from the review room (L-3).
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current drizzle link ahead registry persistence protocol (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 
 import { createDb, type Database } from "@meridian/database";

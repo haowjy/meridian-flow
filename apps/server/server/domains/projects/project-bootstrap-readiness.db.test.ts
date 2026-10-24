@@ -1,4 +1,9 @@
-/** Postgres coverage for bootstrap readiness fast and repair paths. */
+/**
+ * Postgres coverage for bootstrap readiness fast and repair paths.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current project bootstrap readiness persistence protocol
+ */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";

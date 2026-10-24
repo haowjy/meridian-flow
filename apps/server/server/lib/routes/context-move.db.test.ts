@@ -1,4 +1,9 @@
-/** Postgres-backed coverage for promoting work-scoped scratch documents. */
+/**
+ * Postgres-backed coverage for promoting work-scoped scratch documents.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current context move persistence protocol
+ */
 
 import { folderDocumentName } from "@meridian/contracts/protocol";
 import { and, eq } from "drizzle-orm";

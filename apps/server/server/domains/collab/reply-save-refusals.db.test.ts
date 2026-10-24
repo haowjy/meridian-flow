@@ -1,6 +1,8 @@
 /**
- * Contract §2.6 DB cases: what a reply's staged writes become when the writer's Discard, Apply
- * or an archive lands before the save. A refusal is a receipt, never a thrown save.
+ * Contract §2.6 DB cases: what a reply's staged writes become when the writer's Discard, Apply or an archive lands before the save.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current reply save refusals persistence protocol
  */
 
 import { removedWriteRefusal } from "@meridian/agent-edit/integration";

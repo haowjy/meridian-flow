@@ -1,4 +1,9 @@
-/** PostgreSQL conformance for durable upload identity, allocation, and cascade. */
+/**
+ * PostgreSQL conformance for durable upload identity, allocation, and cascade.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current upload intake persistence protocol
+ */
 
 import { createHash } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";

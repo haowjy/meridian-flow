@@ -1,8 +1,8 @@
 /**
- * Production-composed model tools in a Work: scratch stays live while drafted
- * writes name the draft (D9, D19), read, search and ls follow the version the
- * writes change (D41), copies of text and binary files (D24), and a chat's
- * write-mode switch against real repositories (D62).
+ * Production-composed model tools in a Work: scratch stays live while drafted writes name the draft (D9, D19), read, search and ls follow the version the writes change (D41), copies of text and binary files (D24), and a chat's write-mode switch against real repositories (D62).
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current compose draft mode tools persistence protocol
  */
 
 import { splitHashline } from "@meridian/agent-edit";
