@@ -475,7 +475,9 @@ one scope: the live mutexes of its live destinations, then a seam boundary
 (`mutate` with `seam`): the captured drafts' Works and the bound
 grants' Works in id order, the grants confirmed, before any other lock (a
 live-only inverse such as a named Work's Scratch reaches its Work only as a
-grant Work). Then its documents' mutation locks in id order,
+grant Work). Tree inverses use the context domain's shared tree-edit admission;
+the inverse still owns retry so a moved tree scope causes a complete recapture.
+Then its documents' mutation locks in id order,
 the live head check, and each draft destination's exact checkpoint rewrite at
 its captured revision. Those captured fences, not a lock of the inverse's own,
 order two inverses of the same edit: the second misses, recaptures and finds

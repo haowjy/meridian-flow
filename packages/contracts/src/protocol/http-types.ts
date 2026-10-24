@@ -196,6 +196,34 @@ export type DeleteContextEntryRequest = {
   expected: { kind: "file"; documentId: string } | { kind: "folder"; nodeId: string };
 };
 
+export const restoreContextDocumentsRequestSchema = z.object({
+  documents: z
+    .array(
+      z.object({
+        documentId: z.string().uuid(),
+        removal: removalIdentitySchema,
+      }),
+    )
+    .min(1)
+    .refine(
+      (documents) =>
+        new Set(documents.map(({ documentId }) => documentId)).size === documents.length,
+      "Each document may be restored once per request",
+    ),
+});
+export type RestoreContextDocumentsRequest = z.infer<typeof restoreContextDocumentsRequestSchema>;
+
+export type RestoreContextDocumentResult =
+  | { documentId: string; outcome: "restored"; landedAt?: string }
+  | {
+      documentId: string;
+      outcome: "superseded" | "already_living" | "ancestor_taken" | "refused";
+    };
+
+export type RestoreContextDocumentsResponse = {
+  documents: RestoreContextDocumentResult[];
+};
+
 /** Stable writer-selected parent. URI callers may continue to omit this. */
 export type ContextDestinationParent = {
   /** Missing address segments created beneath the identity anchor, only for linked creation. */
