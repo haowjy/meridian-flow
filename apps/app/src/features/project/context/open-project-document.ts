@@ -12,10 +12,7 @@ import {
   type ResourceRecord,
   resourcePlacementForSnapshot,
 } from "@meridian/resource-replica";
-import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
 import { getTrashedDocument } from "@/client/api/projects-api";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { DocumentSessionAuthorityError } from "@/core/editor/document-session-coordination-contract";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
@@ -620,29 +617,18 @@ export function ProjectDocumentNavigationProvider({
   projectId,
   children,
   captureNavigation,
+  openTrash,
 }: {
   projectId: string;
   children: ReactNode;
   captureNavigation?: () => () => boolean;
+  openTrash(documentId: string, document: GetDocumentTrashResponse): Promise<unknown>;
 }) {
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const opener = useProjectDocumentLiveOpener();
   const resources = useOptionalAccountResourceReplica();
   const removal = useOptionalContextRemovalCoordinator();
   const openContextRoute = useOpenContextRoute();
   const { openTab } = useContextTabsActions();
-  const openTrash = useCallback(
-    (documentId: string, document: GetDocumentTrashResponse) => {
-      queryClient.setQueryData(projectQueryKeys.trashedDocument(projectId, documentId), document);
-      return navigate({
-        to: ".",
-        search: (previous: Record<string, unknown>) => ({ ...previous, trash: documentId }),
-        state: (previous) => previous,
-      });
-    },
-    [navigate, projectId, queryClient],
-  );
   useEffect(() => {
     if (!resources) return;
     return resources.observeProjection(

@@ -48,7 +48,7 @@ async function follow(gesture: "current" | "new-tab") {
       <ProjectDocumentLiveOpenerContext.Provider
         value={{ open: liveOpen, pruneTransfers: vi.fn() } as never}
       >
-        <ProjectDocumentNavigationProvider projectId="project-a">
+        <ProjectDocumentNavigationProvider projectId="project-a" openTrash={vi.fn()}>
           <EditorReviewHandoffProvider projectId="project-a" openContextRoute={route}>
             <Probe />
           </EditorReviewHandoffProvider>
