@@ -5,6 +5,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { restoreContextDocuments } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { announce } from "@/client/stores";
+import { documentLocationName } from "../../chat/document-display-name";
 
 export type TrashRestoreOutcome =
   | { kind: "living"; landedAt?: string }
@@ -37,7 +38,7 @@ export async function restoreTrashedDocument(
       exact: true,
     });
     if (result.outcome === "restored" && result.landedAt)
-      announce(t`Restored at ${result.landedAt}.`);
+      announce(t`Restored at ${documentLocationName(result.landedAt)}.`);
     return {
       kind: "living",
       ...(result.outcome === "restored" && result.landedAt ? { landedAt: result.landedAt } : {}),
