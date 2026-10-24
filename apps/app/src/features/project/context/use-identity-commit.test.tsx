@@ -1,4 +1,8 @@
-/** Desired-identity planning is independent of whichever surface submitted it. */
+/** Desired-identity planning is independent of whichever surface submitted it.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - typed-name identity commit projection
+ */
 
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";

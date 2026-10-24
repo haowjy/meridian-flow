@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** What aborts a follow, and what survives a registration change. */
+/** What aborts a follow, and what survives a registration change.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - open-only link follow policy
+ */
 
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 import { act } from "react";

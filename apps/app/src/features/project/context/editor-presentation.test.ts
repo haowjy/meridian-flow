@@ -1,3 +1,9 @@
+/**
+ * Editor presentation behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - keep-mounted Editor rail presentation
+ */
 import { expect, it } from "vitest";
 import { resolveEditorFrame, resolveEditorPresentation } from "./editor-presentation";
 
