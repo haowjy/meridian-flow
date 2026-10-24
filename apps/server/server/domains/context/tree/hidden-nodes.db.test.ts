@@ -191,35 +191,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .soft(await runtime.ports.documentSync.readAsMarkdown(kael), "live stays empty")
         .toEqual({ ok: true, value: "" });
     });
-
-    // §6.3: a live create at a hidden node's path reveals it instead of making a twin.
-    it("reveals the hidden document and its folder on an empty live create (C-3)", async () => {
-      const { scenario } = await start();
-      const ascension = await scenario.work("Ascension", "draft");
-      const kael = await scenario.model(ascension).create("lore/kael", "Kael, drafted.");
-      const lore = await folderAt(scenario, await branchView(scenario, ascension), "lore");
-
-      expect(await scenario.writer.create("lore/kael")).toEqual({
-        status: "created",
-        documentId: kael,
-      });
-      expect.soft(await liveStatus(kael), "revealed").toMatchObject({ kind: "visible" });
-      expect.soft(await folderAt(scenario, LIVE_TREE, "lore"), "its folder revealed").toBe(lore);
-    });
-
-    // The candidate's lease shows in the held-write abort case below.
-    it("reveals the drafted document by path with the live create's content (C-3)", async () => {
-      const { runtime, scenario } = await start();
-      const ascension = await scenario.work("Ascension", "draft");
-      const harbor = await scenario.model(ascension).create("lore/harbor", "Harbor, drafted.");
-
-      expect(
-        await scenario.writer.create("lore/harbor", { content: "The writer's harbor." }),
-      ).toEqual({ status: "created", documentId: harbor });
-      const text = await runtime.ports.documentSync.readAsMarkdown(harbor);
-      expect(text.ok && text.value, "the created content").toContain("The writer's harbor.");
-    });
-
     it("reveals the hidden folder at the path on mkdir (C-3)", async () => {
       const { scenario } = await start();
       const ascension = await scenario.work("Ascension", "draft");

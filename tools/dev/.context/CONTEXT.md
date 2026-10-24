@@ -28,8 +28,10 @@ lock session. Domain-specific conversion stays beside its migration, not in tool
 
 Managed DB tests provision owned databases and route each worker to its own
 clone. Cleanup hands only this invocation's databases to the detached cleanup
-child, verifies owner liveness, and leaves failures for GC. Shared or deployed
-Postgres remains serial. Fixtures isolate state with rollback or the catalog-
+child, verifies owner liveness, and leaves failures for GC. CI clones 3 worker
+databases from the one its workflow migrated, on the runner's own loopback
+Postgres (`isCiRunnerPostgres`), and leaves them to die with the runner. Any
+other shared or deployed Postgres stays serial. Fixtures isolate state with rollback or the catalog-
 derived FK delete policy, not per-case truncation. Only managed worker URLs get
 `synchronous_commit=off` (a session startup setting); never change shared server
 settings or dev database durability. Do not scale workers with CPU count against
@@ -38,10 +40,20 @@ once in one worktree. `pnpm test:all` runs unit and DB projects together; its DB
 reporter rejects a run with no passed or failed DB test, so a unit-only result
 is not combined-run evidence.
 
-`pnpm check` ends with `check-db-gate.ts`: it skips loudly only when the
-configured Postgres server is absent or unreachable (the static CI job has no
-database service), and otherwise runs the full managed `pnpm test:db` suite and
-propagates failures. `pnpm test:db` always forces the gate.
+The DB Vitest config refuses to run unless `RUN_DB_TESTS=1` and a throwaway
+`DATABASE_URL` are set. A managed run migrates a template database from empty
+and clones one database per worker from it. Managed names carry the owner's PID
+for GC, and `test-run-`, `test-manual-` and `migrations_` are reserved
+worktree-slug prefixes, so a worktree database can't pass for a managed one.
+
+`pnpm check` ends with `check-db-gate.ts`: Vitest's module graph selects DB test
+files related to changes since `origin/main`, including staged, unstaged and
+untracked files. No related DB files, or an absent or unreachable configured
+Postgres server, skips loudly. DB config, migrations, shared DB test support and
+DB-test lifecycle or dependency-resolution inputs bypass selection and run the
+full suite, as does `DB_GATE_FULL=1`. The gate provisions the same owned test
+databases as `pnpm test:db`; `pnpm test:db` and CI's `db-tests` job always run
+every DB file.
 
 ## Session and readiness
 

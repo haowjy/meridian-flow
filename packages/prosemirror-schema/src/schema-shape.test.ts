@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
+  clientSchemaVersionFromSubprotocolHeader,
   documentMarks,
   documentNodes,
   PROSEMIRROR_FRAGMENT_NAME,
@@ -140,11 +141,11 @@ function validateBump(
   const nextMajor =
     current.major === previous.major + 1 && current.minor === 0 && current.patch === 0;
   if (bump === "addition") {
-    // A defaulted attr is additive to the surface, but a ruling may still make
+    // A defaulted attr is additive to the surface, but a human decision may still make
     // it a major when it changes what stored content means.
     if (!nextMinor && !nextMajor) {
       throw new Error(
-        "Additive schema surface changes require an x.(y+1).0 or ruled (x+1).0.0 version bump.",
+        "Additive schema surface changes require an x.(y+1).0 or a human-decided (x+1).0.0 version bump.",
       );
     }
     return;
@@ -157,7 +158,7 @@ function validateBump(
   }
   if (!nextMajor) {
     throw new Error(
-      `Removing or renaming schema surface, changing the fragment name, or changing Yjs encoding requires a major bump, human ruling, and migration plan. See ${POLICY}.`,
+      `Removing or renaming schema surface, changing the fragment name, or changing Yjs encoding requires a major bump, a human decision, and a migration plan. See ${POLICY}.`,
     );
   }
 }
@@ -250,7 +251,7 @@ describe("collaboration schema shape", () => {
       if (current.version.major !== previous.version.major) {
         expect(
           current.compatibilityNote,
-          "A major bump records its human ruling and migration plan in the compatibility note.",
+          "A major bump records its human decision and migration plan in the compatibility note.",
         ).toBeTruthy();
       }
       if (isMinorMutation) {
@@ -265,5 +266,15 @@ describe("collaboration schema shape", () => {
   it("matches the latest recorded surface and version", () => {
     expect(currentSurface()).toEqual(baseline.surface);
     expect(COLLAB_SCHEMA_VERSION).toEqual(baseline.version);
+  });
+});
+
+describe("collab schema subprotocol offers", () => {
+  const sentinel = { major: 0, minor: 0, patch: 0 };
+
+  it.each([
+    ["meridian.collab.0.1.0, meridian.collab.0.2.0", "multiple matches"],
+  ])("maps an %s header (%s) to the sentinel", (header, _case) => {
+    expect(clientSchemaVersionFromSubprotocolHeader(header)).toEqual(sentinel);
   });
 });

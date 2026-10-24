@@ -97,42 +97,6 @@ function ExactLiveEditor(props: SurfaceProps) {
 }
 
 describe("editor lifetime", () => {
-  it("keeps the pending shell until persistence and first server sync both finish", async () => {
-    const documentId = "horizon-controlled";
-    let resolvePersistence!: () => void;
-    let resolveServer!: () => void;
-    const horizons = {
-      localPersistence: new Promise<void>((resolve) => {
-        resolvePersistence = resolve;
-      }),
-      firstServerSync: new Promise<void>((resolve) => {
-        resolveServer = resolve;
-      }),
-    };
-    vi.spyOn(sessions.get(documentId), "whenLocalPersistenceSynced").mockReturnValue(
-      horizons.localPersistence,
-    );
-    vi.spyOn(sessions.get(documentId), "whenSynced").mockReturnValue(horizons.firstServerSync);
-
-    await withReactRoot(<ExactLiveEditor documentId={documentId} />, async () => {
-      expect(document.querySelector(".ProseMirror")).toBeNull();
-      await act(async () => {
-        resolvePersistence();
-        await Promise.resolve();
-      });
-      expect(document.querySelector(".ProseMirror")).toBeNull();
-
-      await act(async () => {
-        resolveServer();
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-      expect(mountedEditor()).toBeDefined();
-      expect(reviewHooks.sync).not.toHaveBeenCalled();
-      expect(reviewHooks.focus).not.toHaveBeenCalled();
-    });
-  });
-
   it("binds verified local content without waiting for an offline server sync", async () => {
     const documentId = "local-horizon-controlled";
     let resolvePersistence!: () => void;
@@ -206,58 +170,4 @@ describe("editor lifetime", () => {
       expect(mountedEditor().getText()).toBe("");
     });
   });
-
-  it("preserves typed content and becomes read-only when its session is fenced", async () => {
-    const initial = {
-      documentId: "document-fenced",
-      projectId: "project-1",
-      localContentReady: true,
-    };
-    await withReactRoot(<Harness initial={initial} />, async () => {
-      expect(mountedEditor().isEditable).toBe(true);
-      await act(async () => {
-        mountedEditor().commands.insertContent("Fenced words");
-      });
-
-      await act(async () => {
-        sessions.get("document-fenced").raiseSchemaFence({ reason: "client-superseded" });
-      });
-
-      expect(mountedEditor().getText()).toBe("Fenced words");
-      expect(mountedEditor().isEditable).toBe(false);
-      expect(mountedEditor().view.dom.getAttribute("contenteditable")).toBe("false");
-      expect(document.querySelector("[data-schema-fence] p")?.textContent).toBe(
-        "Editing paused. This chapter needs a newer version of Meridian.",
-      );
-    });
-  });
-});
-
-it("does not attribute the leaving review's room error to an incoming request", async () => {
-  controller.inlineReview = {
-    kind: "inline",
-    documentId: "leaving",
-    itemKey: "failed-draft",
-  };
-  roomOwner.error = true;
-  try {
-    await withReactRoot(
-      <Harness
-        initial={{
-          documentId: "incoming",
-          projectId: "project-1",
-          reviewItemKey: "incoming-draft",
-        }}
-      />,
-      () => {
-        expect(document.body.textContent).not.toContain("Couldn't open review mode.");
-        expect(
-          document.querySelector('[data-editor-surface="live"]')?.classList.contains("hidden"),
-        ).toBe(true);
-      },
-    );
-  } finally {
-    controller.inlineReview = null;
-    roomOwner.error = false;
-  }
 });

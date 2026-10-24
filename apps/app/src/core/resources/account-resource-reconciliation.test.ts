@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /** Account reconciliation continues without a mounted project/catalog consumer. */
 import "fake-indexeddb/auto";
+import type { ResourceRecord, ResourceWrite } from "@meridian/resource-replica";
 import {
   createResourcePlacement,
   markResourceCreateEligible,
@@ -14,7 +15,8 @@ import {
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
-import { AccountResourceReplica } from "./account-resource-replica";
+import { commitIdentityChange } from "./account-resource-reconciler";
+import { AccountResourceReplica, ResourceLocationOperationQueue } from "./account-resource-replica";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 
 const api = vi.hoisted(() => ({ moveContextEntry: vi.fn(), deleteContextEntry: vi.fn() }));
@@ -188,4 +190,55 @@ it("keeps prose typed after filing when first placement is refused, listed in Un
     await Dexie.delete(`meridian:document-session-authority:${encodeURIComponent(accountId)}`);
     vi.unstubAllGlobals();
   }
+});
+
+it("releases the session preparation when the metadata commit rejects, then commits on retry", async () => {
+  const write = { expectedRevision: 1, next: { resource: { identity: { revision: 2 } } } };
+  const prepared = { commit: vi.fn(), abort: vi.fn() };
+  const commitResource = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("storage unavailable"))
+    .mockResolvedValue("committed");
+  const ports = {
+    metadata: { commitResource, readResource: vi.fn<() => Promise<ResourceRecord | null>>() },
+    content: { prepareReidentity: vi.fn(() => prepared), reconcileMetadata: vi.fn() },
+  };
+  const plan = { write: write as unknown as ResourceWrite, nextDocumentId: "joined" };
+  const key = { handle: "reservation" };
+
+  await expect(commitIdentityChange(ports, key, "minted", plan)).rejects.toThrow("storage");
+  expect(prepared.abort).toHaveBeenCalledTimes(1);
+  expect(prepared.commit).not.toHaveBeenCalled();
+
+  await commitIdentityChange(ports, key, "minted", plan);
+  expect(prepared.commit).toHaveBeenCalledTimes(1);
+});
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+it("serializes one resource and rejects stale presentation ownership", async () => {
+  const queue = new ResourceLocationOperationQueue();
+  const firstGate = deferred();
+  const order: string[] = [];
+  const first = queue.run({ handle: "resource" }, async () => {
+    order.push("first-start");
+    await firstGate.promise;
+    order.push("first-end");
+  });
+  const second = queue.run({ handle: "resource" }, async () => {
+    order.push("second");
+  });
+
+  await Promise.resolve();
+  expect(order).toEqual(["first-start"]);
+  firstGate.resolve();
+  await expect(first).resolves.toEqual({ isLatest: false });
+  await expect(second).resolves.toEqual({ isLatest: true });
+  expect(order).toEqual(["first-start", "first-end", "second"]);
 });

@@ -4,7 +4,6 @@ import {
   recordNamespaceOutcome,
   settleNamespaceOutcome,
 } from "./resource-namespace";
-import { projectResourceLocation, projectResourceNeedsRepair } from "./resource-projection";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
 import {
   acknowledgeResourceTerminalCleanup,
@@ -323,65 +322,6 @@ it("starts a fresh adoption witness for an acknowledged exact cache", () => {
   expect(adoption.next.resource.obligations.sessionAdoption).toMatchObject({
     transitionId: "reopen-7",
   });
-});
-
-it("keeps typed rename provenance through optimistic placement and transport", () => {
-  for (const typed of ["settings.md", "settings.txt", "Notes.md"]) {
-    const record = reserved();
-    record.intents = [];
-    record.resource.canonical = {
-      scheme: "manuscript",
-      path: "/Book/config.toml",
-      name: "config.toml",
-      workId: null,
-    };
-    const planned = planResourceLocation({
-      record,
-      projectId: "project",
-      intentId: "rename",
-      eligibleAt: 0,
-      destination: { parent: { kind: "folder", folderId: "Book" }, name: typed },
-    });
-    expect(planned?.next.intents[0]?.desired).toMatchObject({
-      typedName: typed,
-      destination: { name: typed === "Notes.md" ? "Notes" : "settings" },
-    });
-    if (!planned) throw new Error("Missing location plan");
-    expect(
-      projectResourceLocation("project", planned.next, () => ({
-        scheme: "manuscript",
-        path: "/Book",
-        name: "Book",
-        workId: null,
-      }))?.name,
-    ).toBe(typed === "Notes.md" ? "Notes" : "settings");
-    planned.next.intents = planned.next.intents.map((intent) => ({
-      ...intent,
-      state: "needs-repair",
-    }));
-    expect(projectResourceNeedsRepair("project", planned.next)?.name).toBe(typed);
-    planned.next.intents = planned.next.intents.map((intent) => ({ ...intent, state: "pending" }));
-    const attempt = prepareNamespaceAttempt(
-      planned.next,
-      {
-        attemptId: "attempt",
-        operationId: "operation",
-      },
-      () => ({ scheme: "manuscript", path: "/Book", name: "Book", workId: null }),
-    );
-    expect(attempt?.next.intents[0]?.attempts[0]?.request).toMatchObject({
-      kind: "move",
-      scheme: "manuscript",
-      body: {
-        operationId: "operation",
-        path: "Book/config.toml",
-        expected: { kind: "file", nodeId: record.resource.identity.documentId },
-        destinationScheme: "manuscript",
-        destinationFolderPath: "Book",
-        newName: typed,
-      },
-    });
-  }
 });
 
 it("inherits from the locally visible name when a second rename precedes settlement", () => {

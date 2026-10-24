@@ -11,14 +11,18 @@ export default defineEventHandler(async (event): Promise<ThreadReportResult> => 
   const threadId = getRouterParam(event, "threadId") ?? "";
   const childThreadId = getRouterParam(event, "childThreadId") ?? "";
   const execution = getRouterParam(event, "execution") ?? "";
-  const parent = await requireThreadOwner({ threads: app.repos.threads }, threadId, user.userId);
-  const child = await app.repos.threads.findById(childThreadId);
+  const parent = await requireThreadOwner(
+    { threads: app.threadRepos.threads },
+    threadId,
+    user.userId,
+  );
+  const child = await app.threadRepos.threads.findById(childThreadId);
   if (!child?.ref) throw createError({ statusCode: 404, message: "Thread not found" });
   const readable = await resolveReadableThread({
     caller: parent,
     ref: child.ref,
-    threads: app.repos.threads,
-    turns: app.repos.turns,
+    threads: app.threadRepos.threads,
+    turns: app.threadRepos.turns,
   });
   if (!readable.ok)
     throw createError({
@@ -29,14 +33,14 @@ export default defineEventHandler(async (event): Promise<ThreadReportResult> => 
   if (readable.target.id !== child.id)
     throw createError({ statusCode: 404, message: "Thread not found" });
   // The card names its exact execution; the shared reader addresses finished runs by position.
-  const reports = await app.repos.executionReports.listFinishedByChild(child.id);
+  const reports = await app.threadRepos.executionReports.listFinishedByChild(child.id);
   const run = reports.findIndex((report) => report.executionTurnId === execution) + 1;
   if (run === 0) return { childThreadId: child.id, ref: child.ref, status: "not_ready" };
   const result = await readThreadReport({
     callerThreadId: parent.id,
     ref: child.ref,
     run,
-    repos: app.repos,
+    repos: app.threadRepos,
   });
   if ("error" in result)
     throw createError({

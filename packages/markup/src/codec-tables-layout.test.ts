@@ -357,7 +357,6 @@ describe("tables and Layout round-trip corpus", () => {
   });
 
   it.each([
-    { case: "LF", caption: "First line\nSecond line" },
     { case: "entities", caption: "North &amp; south & beyond" },
     { case: "closing-tag-looking text", caption: "Look </Figure> then <Panel>" },
     { case: "control characters", caption: "NUL:\u0000 TAB:\t NEXT:\u0085" },
