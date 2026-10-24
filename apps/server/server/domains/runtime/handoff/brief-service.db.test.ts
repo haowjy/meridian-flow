@@ -1,4 +1,9 @@
-/** PostgreSQL contract for an independent brief settling outside the source run. */
+/**
+ * PostgreSQL contract for an independent brief settling outside the source run.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current brief service persistence protocol (kb/decisions/agents/conversations/handoff-seed.md)
+ */
 
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";

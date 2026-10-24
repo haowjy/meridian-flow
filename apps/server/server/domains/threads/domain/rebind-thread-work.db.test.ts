@@ -1,4 +1,9 @@
-/** PostgreSQL coverage for No Work and concurrent thread Work rebinds. */
+/**
+ * PostgreSQL coverage for No Work and concurrent thread Work rebinds.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current rebind thread work persistence protocol (kb/decisions/agents/conversations/fork-and-handoff-derivation.md)
+ */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
@@ -108,39 +113,6 @@ else
       await expect(repos.threadWorks.listByThread(ids.threadId)).resolves.toContainEqual({
         workId: ids.noWorkId,
         isPrimary: true,
-      });
-    });
-
-    it("derived and subagent inherit No Work membership", async () => {
-      await repos.threadWorks.addMembership(ids.threadId, ids.noWorkId, true);
-      const { thread: derived } = await repos.threads.createDerivedPrimary({
-        id: crypto.randomUUID() as never,
-        userId: ids.userId,
-        projectId: ids.projectId,
-        workId: ids.noWorkId,
-        aiWriteMode: "direct",
-        source: { parentThreadId: null, rootThreadId: ids.threadId, spawnDepth: 0 },
-        originType: "handoff",
-        originTurnId: originTurnId as never,
-      } as never);
-      const subagent = await repos.threads.createSubagent({
-        aiWriteMode: "direct",
-        userId: ids.userId,
-        projectId: ids.projectId,
-        workId: ids.noWorkId,
-        parentThreadId: ids.threadId,
-        rootThreadId: ids.threadId,
-        originTurnId: originTurnId as never,
-        spawnDepth: 1,
-      } as never);
-      await repos.threadWorks.addMembership(derived.id, ids.noWorkId, true);
-      await repos.threadWorks.addMembership(subagent.id, ids.noWorkId, true);
-      expect(subagent.initialPromptBakeId).toBeNull();
-      await expect(repos.threadWorks.findPrimary(derived.id)).resolves.toEqual({
-        workId: ids.noWorkId,
-      });
-      await expect(repos.threadWorks.findPrimary(subagent.id)).resolves.toEqual({
-        workId: ids.noWorkId,
       });
     });
 

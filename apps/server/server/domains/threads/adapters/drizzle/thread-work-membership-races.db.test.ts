@@ -1,4 +1,9 @@
-/** PostgreSQL coverage for thread Work membership and lifecycle serialization. */
+/**
+ * PostgreSQL coverage for thread Work membership and lifecycle serialization.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current thread work membership races persistence protocol (kb/decisions/work/model/thread-work-rebind-parity.md)
+ */
 
 import { setTimeout as delay } from "node:timers/promises";
 import postgres from "postgres";

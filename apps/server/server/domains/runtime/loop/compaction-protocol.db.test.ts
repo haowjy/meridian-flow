@@ -1,4 +1,9 @@
-/** Compaction's two commits exercise real inbox, lease, epoch, and journal transactions. */
+/**
+ * Compaction's two commits exercise real inbox, lease, epoch, and journal transactions.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current compaction protocol persistence protocol (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
+ */
 
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonObject } from "@meridian/contracts/threads";
