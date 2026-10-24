@@ -1,4 +1,9 @@
-/** Route seam coverage for create-with-content followed by the public read projection. */
+/**
+ * Route seam coverage for create-with-content followed by the public read projection.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current context create read persistence protocol
+ */
 
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

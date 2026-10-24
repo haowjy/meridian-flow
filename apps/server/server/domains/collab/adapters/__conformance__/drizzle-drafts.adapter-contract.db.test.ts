@@ -1,4 +1,9 @@
-/** Adapter-contract tests for Drizzle draft peers against local Postgres. */
+/**
+ * Adapter-contract tests for Drizzle draft peers against local Postgres.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current drizzle drafts persistence protocol (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ */
 
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";

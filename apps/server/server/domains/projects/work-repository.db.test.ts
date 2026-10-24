@@ -1,4 +1,9 @@
-/** Postgres coverage for Work handles, cascaded soft deletion, and restore conflicts. */
+/**
+ * Postgres coverage for Work handles, cascaded soft deletion, and restore conflicts.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current work repository persistence protocol (kb/decisions/work/management/work-archive-and-delete.md)
+ */
 
 import { setTimeout as delay } from "node:timers/promises";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";

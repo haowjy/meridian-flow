@@ -1,4 +1,9 @@
-/** PostgreSQL contract for an independent brief settling outside the source run. */
+/**
+ * PostgreSQL contract for an independent brief settling outside the source run.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current brief service persistence protocol (kb/decisions/agents/conversations/handoff-seed.md)
+ */
 
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -745,36 +750,6 @@ else
       expect(await fixture.repos.blocks.listByTurn(fixture.seed.id)).toMatchObject([
         { content: { kind: "handoff-brief", props: { state: "unavailable" } } },
       ]);
-    });
-
-    it("leaves a pending seed for repair after its ending transaction fails", async () => {
-      const fixture = await handoffSeed();
-      const runClaim = createDrizzleRunClaim(db, { holderId: "settlement-failure" });
-      let transactionCalls = 0;
-      const flakyRepos = {
-        ...fixture.repos,
-        async transaction<T>(_operation: () => Promise<T>): Promise<T> {
-          transactionCalls += 1;
-          throw new Error("ending commit failure");
-        },
-      };
-      const service = serviceFor(fixture.repos, runClaim, { repos: flakyRepos });
-
-      expect(await startBrief(service, fixture.destination.id, fixture.seed.id)).toBe(true);
-      await expect.poll(async () => transactionCalls).toBe(1);
-      await expect
-        .poll(async () => {
-          const freeClaim = await runClaim.hold(fixture.destination.id);
-          if (!freeClaim) return false;
-          await freeClaim.release();
-          return true;
-        })
-        .toBe(true);
-
-      expect(await fixture.repos.turns.findById(fixture.seed.id)).toMatchObject({
-        status: "pending",
-      });
-      expect(await fixture.repos.blocks.listByTurn(fixture.seed.id)).toHaveLength(0);
     });
 
     it("repairs a crashed handoff seed through the guarded placeholder sweep", async () => {

@@ -1,4 +1,9 @@
-/** PostgreSQL coverage: every thread-create path persists an authoritative rootThreadId. */
+/**
+ * PostgreSQL coverage: every thread-create path persists an authoritative rootThreadId.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current thread repository root persistence protocol (kb/decisions/agents/conversations/fork-and-handoff-derivation.md)
+ */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   resetThreadWorkRaceFixture,

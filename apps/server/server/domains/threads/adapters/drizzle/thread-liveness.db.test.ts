@@ -1,14 +1,16 @@
-import { releaseLeaseUnderLock } from "../../../../test-support/release-lease.js";
-import { EMPTY_RUN_STATE } from "../../../../test-support/run-state.js";
-import { createDrizzleLineageScratchLifecycle } from "../../../context/adapters/lineage-scratch-lifecycle.js";
-import { createTestDrizzleDelivery } from "../../../runtime/loop/__tests__/test-drizzle-delivery.js";
 /**
- * PostgreSQL coverage for R2: the project list and the live state read the
- * running turn from the live run lease, and agree on liveness.
+ * Database coverage for thread liveness.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current thread liveness persistence protocol (kb/decisions/chat/turns/linear-turns.md)
  */
 
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { releaseLeaseUnderLock } from "../../../../test-support/release-lease.js";
+import { EMPTY_RUN_STATE } from "../../../../test-support/run-state.js";
+import { createDrizzleLineageScratchLifecycle } from "../../../context/adapters/lineage-scratch-lifecycle.js";
+import { createTestDrizzleDelivery } from "../../../runtime/loop/__tests__/test-drizzle-delivery.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;

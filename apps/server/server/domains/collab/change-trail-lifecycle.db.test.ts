@@ -1,3 +1,10 @@
+/**
+ * Database coverage for change trail lifecycle.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current change trail lifecycle persistence protocol
+ */
+
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { drizzleFileAccess } from "../../test-support/file-grants.js";

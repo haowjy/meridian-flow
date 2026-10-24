@@ -1,4 +1,9 @@
-/** Public collab-domain reverseTurn coverage over Drizzle draft infrastructure. */
+/**
+ * Public collab-domain reverseTurn coverage over Drizzle draft infrastructure.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current collab domain reverse turn persistence protocol
+ */
 
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";

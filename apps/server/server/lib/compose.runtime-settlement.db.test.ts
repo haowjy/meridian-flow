@@ -1,4 +1,9 @@
-/** Production-composition regression for response credit and staged-push settlement. */
+/**
+ * Production-composition regression for response credit and staged-push settlement.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current compose runtime settlement persistence protocol
+ */
 
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";

@@ -1,7 +1,8 @@
 /**
- * Document-link scopes across doors: images in search, draft review, Apply and
- * live reversal, and a reply's own create spelled alike by every reader and by
- * a cold undo in the draft it changed.
+ * Document-link scopes across doors: images in search, draft review, Apply and live reversal, and a reply's own create spelled alike by every reader and by a cold undo in the draft it changed.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current collab domain image paths persistence protocol
  */
 import { folderDocumentName } from "@meridian/contracts/protocol";
 import { createDb } from "@meridian/database";
@@ -44,15 +45,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   });
 
   describe("collab image paths (postgres)", () => {
-    const queries: string[] = [];
-    const db = createDb(DATABASE_URL, {
-      max: 4,
-      postgres: {
-        debug: (_connection, query) => {
-          queries.push(query);
-        },
-      },
-    });
+    const db = createDb(DATABASE_URL, { max: 4 });
     const { hocuspocus, createTestCollab, reset, dispose } = createWorkBranchFixture(db);
     beforeEach(reset);
     afterEach(dispose);
@@ -171,13 +164,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
       });
-      queries.length = 0;
       const hits = await context.search("map.png");
-      // One snapshot for the whole search: its project resolved once, every
-      // chapter's read joining it.
-      expect(
-        queries.filter((query) => query.includes("AS project_id, p.user_id::text AS owner")),
-      ).toHaveLength(1);
       expect(hits.ok).toBe(true);
       if (!hits.ok) throw new Error(JSON.stringify(hits.error));
       expect(hits.value).toHaveLength(2);

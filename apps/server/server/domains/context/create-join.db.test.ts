@@ -1,10 +1,10 @@
 /**
- * A writer's instant create at a path where a branch's new document waits is that
- * document (#757). That document is real, hidden only because it exists only in a branch;
- * the create unhides it and the device's minted id forwards to it. Nothing of its draft
- * text moves: the writer's text goes to live, and the document's draft stays pending.
- * Driven through the create-untitled route core, as the sidebar's New file calls it.
+ * A writer's instant create at a path where a branch's new document waits is that document (#757).
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current create join persistence protocol
  */
+
 import type { DocumentId } from "@meridian/contracts";
 import { documents } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";

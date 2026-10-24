@@ -1,4 +1,9 @@
-/** Postgres-backed coverage for work-scoped untitled creation, rollback and identity recovery. */
+/**
+ * Postgres-backed coverage for work-scoped untitled creation, rollback and identity recovery.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current context create untitled persistence protocol
+ */
 
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
