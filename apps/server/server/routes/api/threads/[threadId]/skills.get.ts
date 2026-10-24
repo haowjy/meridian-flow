@@ -7,7 +7,7 @@ export default defineEventHandler(async (event): Promise<ThreadAvailableSkillsRe
   const { app, user } = await requireAppUser(event);
   return handleGetThreadAvailableSkills(
     {
-      repos: app.repos,
+      repos: app.threadRepos,
       agentRevisions: app.agentRevisions,
       accountSkillInstalls: app.accountSkillInstalls,
     },

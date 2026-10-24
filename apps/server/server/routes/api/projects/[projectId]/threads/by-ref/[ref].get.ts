@@ -7,7 +7,7 @@ import { handleGetThreadByRef } from "../../../../../../lib/thread-ref-route.js"
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const thread = await handleGetThreadByRef(
-    { projectRepo: app.projectRepo, threads: app.repos.threads },
+    { projectRepo: app.projectRepo, threads: app.threadRepos.threads },
     {
       projectId: getRouterParam(event, "projectId") ?? "",
       userId: user.userId,

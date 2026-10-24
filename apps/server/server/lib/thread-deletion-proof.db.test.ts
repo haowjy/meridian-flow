@@ -96,7 +96,7 @@ describe.each(["snapshot", "runtime"] as const)("%s HTTP owner gate", (gate) => 
     const { app } = await runtimes.compose();
     return (id: string, userId: string) =>
       gate === "snapshot"
-        ? requireThreadOwner({ threads: app.repos.threads }, id, userId)
+        ? requireThreadOwner({ threads: app.threadRepos.threads }, id, userId)
         : app.threadRuntime.requireOwnedThread(id, userId);
   }
 
@@ -169,9 +169,9 @@ describe("root creation policy shared by POST /api/threads and POST /api/project
     const deps = {
       projects: app.projectRepo,
       workRepo: app.workRepo,
-      threads: app.repos.threads,
-      threadWorks: app.repos.threadWorks,
-      transaction: app.repos.transaction,
+      threads: app.threadRepos.threads,
+      threadWorks: app.threadRepos.threadWorks,
+      transaction: app.threadRepos.transaction,
       agentRevisions: app.agentRevisions,
       agentCatalog: createBoundAgentCatalog({
         defaultModel: () => "mock-model",
@@ -237,7 +237,7 @@ describe("root creation policy shared by POST /api/threads and POST /api/project
   it("answers foreign live and deleted ids identically", async () => {
     const { create, app } = await fixture();
     const foreignProject = await app.projectRepo.create({ userId: OTHER, title: "Foreign" });
-    const foreign = await app.repos.threads.create({
+    const foreign = await app.threadRepos.threads.create({
       userId: OTHER,
       projectId: foreignProject.id,
       aiWriteMode: "direct",
