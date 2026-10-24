@@ -77,9 +77,10 @@ export function useEntrySelection(
   const painting = useRef(false);
 
   /**
-   * Marks where each run of adjacent selected rows starts and ends, so a run
-   * draws as one block. Rows sit at different depths under separate wrappers,
-   * so neighbours are found in screen order, once per commit, not per row.
+   * Marks where each run of selected rows that touch on screen starts and ends,
+   * so a run draws as one block. Rows sit at different depths under separate
+   * wrappers, and a section header can sit between two rows, so touching is
+   * read from geometry, once per commit, not per row.
    */
   const paintRuns = useCallback(() => {
     if (painting.current) return;
@@ -90,13 +91,19 @@ export function useEntrySelection(
         root.current?.querySelectorAll<HTMLElement>(`[${KEY_ATTRIBUTE}]`) ?? [],
       );
       const on = rows.map((row) => shown.current?.has(row.getAttribute(KEY_ATTRIBUTE) ?? ""));
+      const boxes = rows.map((row, index) => (on[index] ? row.getBoundingClientRect() : null));
+      const touches = (a: number, b: number) => {
+        const upper = boxes[a];
+        const lower = boxes[b];
+        return Boolean(upper && lower && Math.abs(lower.top - upper.bottom) < 1);
+      };
       rows.forEach((row, index) => {
         if (!on[index]) {
           row.removeAttribute(RUN_ATTRIBUTE);
           return;
         }
-        const above = on[index - 1] === true;
-        const below = on[index + 1] === true;
+        const above = touches(index - 1, index);
+        const below = touches(index, index + 1);
         row.setAttribute(
           RUN_ATTRIBUTE,
           above && below ? "middle" : above ? "end" : below ? "start" : "single",
