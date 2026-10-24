@@ -186,7 +186,9 @@ export default defineProject({
     // Postgres load a hook can still outlast this; the harness fix is #616.
     testTimeout: 30_000,
     hookTimeout: 30_000,
-    sequence: { shuffle: true },
+    // Reverse teardown order lets file-local afterEach hooks finish before the
+    // shared drain, which then settles before nested pool-closing afterAll hooks.
+    sequence: { shuffle: true, hooks: "stack" },
     reporters: [
       "default",
       fileURLToPath(new URL("../../tools/ci/test-budget-reporter.ts", import.meta.url)),
