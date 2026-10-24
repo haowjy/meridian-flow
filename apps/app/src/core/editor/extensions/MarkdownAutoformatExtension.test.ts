@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** Meridian-owned fence parsing, ordered-list start and input-rule undo contracts. */
+/** Meridian-owned fence parsing, ordered-list start and input-rule undo contracts.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Markdown autoformat transformation semantics
+ */
 import type { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createStandaloneEditor, type StandaloneEditor } from "@/test-support/standalone-editor";
