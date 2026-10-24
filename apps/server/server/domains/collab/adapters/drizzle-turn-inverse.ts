@@ -40,21 +40,24 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { nextEditSeq } from "../../../shared/edit-history-seq.js";
 import { testHook } from "../../../shared/test-hooks.js";
-import { runTreeEditAdmission } from "../../context/context/tree-edit-admission.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
 import { readBranchTreeFacts } from "../../context/tree/branch-tree-store.js";
 import { resolveAbsorbedFolders } from "../../context/tree/folder-normalization.js";
 import { readLiveTreeStates } from "../../context/tree/live-tree-state.js";
-import { TreeScopeChangedError, type TreeScopeRequest } from "../../context/tree/mutation-scope.js";
+import {
+  acquireTreeScope,
+  TreeScopeChangedError,
+  type TreeScopeRequest,
+} from "../../context/tree/mutation-scope.js";
 import { readRemovalRecords } from "../../context/tree/removal.js";
 import {
   type FileAccess,
   FileEditRefusedError,
   type FileGrant,
   isFileAccessDenied,
-  runWithEditGrants,
+  runEditAdmission,
 } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { type Attempt, runBoundedAttempts } from "../domain/draft-attempts.js";
@@ -630,32 +633,22 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       };
       const admitted = await (async () => {
         try {
-          if (treeRuns.length)
-            return await runTreeEditAdmission({
-              db: input.db,
-              fileAccess: input.fileAccess,
-              grants,
-              workProjection: input.workProjection,
-              works,
-              tree: treeScopeRequest(treeRuns, attempt.ids),
-              commitScope,
-              afterTreeLock: () => confirmTreeCapture(treeRuns),
-              operation,
-            });
-          const commit = () =>
-            commitScope(() =>
-              input.workProjection.mutate(
-                works,
-                async () => {
+          return await runEditAdmission({
+            fileAccess: input.fileAccess,
+            grants,
+            workProjection: input.workProjection,
+            works,
+            commitScope,
+            acquireMutationScope: treeRuns.length
+              ? async () => {
+                  await acquireTreeScope(input.db, treeScopeRequest(treeRuns, attempt.ids));
+                  await confirmTreeCapture(treeRuns);
+                }
+              : async () => {
                   for (const id of [...attempt.ids].sort()) await lockDocumentMutation(db(), id);
-                  return operation();
                 },
-                { seam: true },
-              ),
-            );
-          return grants
-            ? runWithEditGrants(input.fileAccess, grants, commit)
-            : { ok: true as const, value: await commit() };
+            operation,
+          });
         } catch (cause) {
           if (cause instanceof TreeScopeChangedError) throw new InverseAttemptMiss();
           throw cause;
