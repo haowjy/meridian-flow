@@ -8,6 +8,7 @@
     "build": "vite build && tsc --noEmit -p tsconfig.json",
     "start": "NODE_ENV=production node scripts/validate-start-env.mjs && NODE_ENV=production node .output/server/index.mjs",
     "preview": "vite preview",
+    "profile:dev-stack": "tsx scripts/profile-dev-stack.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "auth:setup": "tsx e2e/auth.setup.ts",

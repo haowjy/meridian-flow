@@ -1,5 +1,5 @@
 /**
- * api-route-ownership — the dev composition root's route-owner inventory.
+ * api-route-ownership — the dev composition root's backend route-owner inventory.
  * Exact app routes run in TanStack Start; server route families are proxied to
  * `apps/server`. Rules are ordered so an exact app route may live inside a
  * server-owned family without broadening app ownership to sibling routes.
@@ -28,6 +28,7 @@ const API_ROUTE_OWNERSHIP = [
   { owner: "server", path: "/api/documents", match: "family" },
   { owner: "server", path: "/api/debug", match: "family" },
   { owner: "server", path: "/api/object-store", match: "family" },
+  { owner: "server", path: "/ws/yjs", match: "exact" },
 ] as const satisfies readonly ApiRouteOwnershipRule[];
 
 export function getApiRouteOwner(pathname: string): ApiRouteOwner | null {

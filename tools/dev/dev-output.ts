@@ -1,9 +1,11 @@
 import type { DevMode } from "./dev-mode";
+import type { ClientBuild } from "./dev-session-state";
 
 export interface DevOutputContext {
   headline: string;
   sessionName: string;
   mode: DevMode;
+  clientBuild: ClientBuild;
   routeLines: string[];
 }
 
@@ -12,7 +14,9 @@ function tmuxAttachCommand(sessionName: string): string {
 }
 
 export function printSessionInfo(context: DevOutputContext): void {
-  console.log(`${context.headline} · ${context.mode} · ${context.sessionName}`);
+  console.log(
+    `${context.headline} · ${context.mode} · ${context.clientBuild} client · ${context.sessionName}`,
+  );
   console.log(tmuxAttachCommand(context.sessionName));
 
   if (context.routeLines.length === 0) {

@@ -160,6 +160,7 @@ function sharedPortsByService(
 
 function portlessCommandBody({
   mode,
+  clientBuild,
   sharedPorts,
   env,
   redacted,
@@ -167,6 +168,7 @@ function portlessCommandBody({
   force,
 }: {
   mode: DevMode;
+  clientBuild: DevSessionMetadata["clientBuild"];
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
   env: NodeJS.ProcessEnv;
   redacted: boolean;
@@ -181,7 +183,10 @@ function portlessCommandBody({
       serviceName === "app" || serviceName === "www" ? portsByService.get(serviceName) : undefined;
     const appPortFlag = servicePorts ? ` --app-port ${servicePorts.appBackendPort}` : "";
     const name = expectedPortlessName(serviceName, worktreePrefix);
-    return `${portlessEnvPrefix(env, redacted)}pnpm exec portless --name ${shellQuote(name)}${force ? " --force" : ""}${appPortFlag} pnpm --filter ${pkg} dev`;
+    const productionApp = serviceName === "app" && clientBuild === "production";
+    const script = productionApp ? "profile:dev-stack" : "dev";
+    const localStackEnv = productionApp ? "env APP_ENV=dev MERIDIAN_LOCAL_DEV_STACK=1 " : "";
+    return `${portlessEnvPrefix(env, redacted)}pnpm exec portless --name ${shellQuote(name)}${force ? " --force" : ""}${appPortFlag} ${localStackEnv}pnpm --filter ${pkg} ${script}`;
   });
 
   return `(${commands.map((command) => `${command} & sleep 2`).join("; ")}; wait)`;
@@ -189,6 +194,7 @@ function portlessCommandBody({
 
 function renderPortlessCommand({
   mode,
+  clientBuild,
   sharedPorts,
   env,
   internalApiOrigin,
@@ -197,6 +203,7 @@ function renderPortlessCommand({
   force,
 }: {
   mode: DevMode;
+  clientBuild: DevSessionMetadata["clientBuild"];
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
   env: NodeJS.ProcessEnv;
   internalApiOrigin: string;
@@ -210,6 +217,7 @@ function renderPortlessCommand({
     redacted,
   )} && unset PORTLESS_TAILSCALE PORTLESS_FUNNEL && ${portlessCommandBody({
     mode,
+    clientBuild,
     sharedPorts,
     env,
     redacted,
@@ -224,12 +232,14 @@ export function resolveInternalApiOrigin(worktreePrefix?: string): string {
 
 export function createDevSessionCommand({
   mode,
+  clientBuild = "development",
   sharedPorts,
   env = process.env,
   worktreePrefix,
   force = false,
 }: {
   mode: DevMode;
+  clientBuild?: DevSessionMetadata["clientBuild"];
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
   env?: NodeJS.ProcessEnv;
   worktreePrefix?: string;
@@ -239,6 +249,7 @@ export function createDevSessionCommand({
   return {
     executable: renderPortlessCommand({
       mode,
+      clientBuild,
       sharedPorts,
       env,
       internalApiOrigin,
@@ -248,6 +259,7 @@ export function createDevSessionCommand({
     }),
     display: renderPortlessCommand({
       mode,
+      clientBuild,
       sharedPorts,
       env,
       internalApiOrigin,
@@ -290,6 +302,7 @@ export function createDevSessionPlan({
     ),
     command: createDevSessionCommand({
       mode: session.mode,
+      clientBuild: session.clientBuild,
       sharedPorts,
       worktreePrefix: session.worktreePrefix,
       force,

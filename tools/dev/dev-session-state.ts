@@ -12,9 +12,12 @@ import {
 } from "./portless-routes";
 import { TmuxSessionStore } from "./tmux-session-store";
 
+export type ClientBuild = "development" | "production";
+
 export interface DevSessionMetadata {
   sessionName: string;
   mode: DevMode;
+  clientBuild: ClientBuild;
   branch: string;
   worktreePrefix?: string;
   /** Only the redacted launch command may be persisted. */
@@ -40,12 +43,19 @@ function isExternalRoute(value: unknown): value is ExternalDevRoute {
   );
 }
 
-function isMetadata(value: unknown): value is DevSessionMetadata {
+type StoredDevSessionMetadata = Omit<DevSessionMetadata, "clientBuild"> & {
+  clientBuild?: ClientBuild;
+};
+
+function isMetadata(value: unknown): value is StoredDevSessionMetadata {
   return (
     isRecord(value) &&
     typeof value.sessionName === "string" &&
     /^meridian-[a-z0-9-]+-[a-f0-9]{8}$/.test(value.sessionName) &&
     (value.mode === "local" || value.mode === "tailscale" || value.mode === "funnel") &&
+    (value.clientBuild === undefined ||
+      value.clientBuild === "development" ||
+      value.clientBuild === "production") &&
     typeof value.branch === "string" &&
     typeof value.command === "string" &&
     typeof value.createdAt === "string" &&
@@ -76,7 +86,7 @@ export function readDevSessionMetadata(repoRoot: string): DevSessionMetadata | n
   ) {
     throw new Error(`Invalid checkout session metadata: ${filename}`);
   }
-  return value;
+  return { ...value, clientBuild: value.clientBuild ?? "development" };
 }
 
 export function writeDevSessionMetadata(repoRoot: string, metadata: DevSessionMetadata): void {

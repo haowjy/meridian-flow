@@ -31,6 +31,10 @@ directory never imports application packages. The `./mf` CLI lives in
   per-case truncation or share a managed database between workers.
 - The dev server doesn't watch `node_modules`; run `pnpm dev:restart` after an
   install.
+- `pnpm dev:production-client` replaces only the Vite app process with a fresh
+  production build and a same-origin gateway. The server and database remain
+  the normal checkout-scoped dev stack. Keep its API and WebSocket ownership in
+  the app launcher; do not add a second route inventory here.
 - Dev stacks use more memory than the tests. `pnpm dev:stacks` reports each
   stack's memory and idle time.
 
