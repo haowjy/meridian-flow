@@ -5,7 +5,7 @@ import {
   validateContextEntryName as validateSharedContextEntryName,
 } from "@meridian/contracts/context-entry-validation";
 import {
-  allocateFilename,
+  filenameCandidates,
   parseDocumentFilename,
   renderFilename,
   sameNamespaceName,
@@ -131,31 +131,29 @@ export function moveEntryName(currentName: string, repair?: { name: string }): s
 }
 
 /** Predict the first free name for a rename or move; the server remains authoritative. */
-export async function allocateContextEntryArrivalName(
+export function allocateContextEntryArrivalName(
   typed: string,
   siblings: readonly ContextEntrySibling[],
   kind: ContextCreateKind,
   current?: string,
-): Promise<string> {
-  if (kind === "folder")
-    return allocateFilename({ kind: "folder", name: typed.trim() }, (candidate) =>
-      siblings.some((sibling) =>
-        sameNamespaceName(candidate, {
-          kind: sibling.kind === "dir" ? "folder" : "document",
-          filename: sibling.name,
-        }),
-      ),
+): string {
+  const stored = kind === "folder" ? null : storedFilename(typed, current);
+  if (stored && !stored.ok) return typed.trim();
+  const desired = stored
+    ? ({
+        kind: "document",
+        name: stored.filename.name,
+        extension: stored.filename.extension,
+      } as const)
+    : ({ kind: "folder", name: typed.trim() } as const);
+  for (const candidate of filenameCandidates(desired)) {
+    const taken = siblings.some((sibling) =>
+      sameNamespaceName(candidate, {
+        kind: sibling.kind === "dir" ? "folder" : "document",
+        filename: sibling.name,
+      }),
     );
-  const stored = storedFilename(typed, current);
-  if (!stored.ok) return typed.trim();
-  return allocateFilename(
-    { kind: "document", name: stored.filename.name, extension: stored.filename.extension },
-    (candidate) =>
-      siblings.some((sibling) =>
-        sameNamespaceName(candidate, {
-          kind: sibling.kind === "dir" ? "folder" : "document",
-          filename: sibling.name,
-        }),
-      ),
-  );
+    if (!taken) return candidate.filename;
+  }
+  throw new Error("unreachable");
 }

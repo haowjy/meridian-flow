@@ -82,7 +82,7 @@ export function useRenameEntryForm({
       if (!authority) throw unavailable();
       const destination = {
         parent: await resources.parentForEntry(projectId, entryId),
-        name: await allocateContextEntryArrivalName(name, filteredSiblings, kind, currentName),
+        name: allocateContextEntryArrivalName(name, filteredSiblings, kind, currentName),
       };
       if (kind === "folder") {
         return resources

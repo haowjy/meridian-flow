@@ -173,7 +173,9 @@ current parent with the refusal message. It disables files and the moved folder'
 commit at the area list. The current parent reads "Already in <folder>".
 A taken name never refuses: the row arrives at the next free name (predicted
 from the destination's rows, decided by the server) through `setLocation` for
-files and `setFolderLocation` for folders.
+files and `setFolderLocation` for folders. Before the click, the destination's
+Move action carries a warning line under it ("chapter-1 will be renamed
+chapter-1 (2)", the `note` of a `DrillAction`).
 Catalog snapshots span areas, so menu lookups check source identity as well as
 entry identity; equal paths in different areas remain distinct destinations.
 
@@ -231,9 +233,12 @@ planning in `move-plan.ts`) answers every hovered target: accept ("Move to Act 2
 itself", a folder over its own subtree), or nothing (the row is already there, the target is a
 navigation-only folder, or the drag comes from another system, which Move or
 Copy will handle). A taken name never refuses: each row arrives at the next free
-name (`chapter-2 (2)`), predicted against the destination's rows plus the rows
-placed before it in the same drop, so `execute-move.ts` places rows one at a
-time; the server decides the final name. A drop moves every carried row through
+name (`chapter-2 (2)`), predicted by `arrivalNames` against the destination's
+rows plus the rows placed before it in the same drop; the server decides the
+final name. The hover shows that prediction before the drop: an accept whose
+rows would arrive renamed carries a warning, drawn as a second line under the
+hint ("chapter-1 will be renamed chapter-1 (2)", or "3 items will be renamed").
+Letting go accepts it; Escape or another target declines it. A drop moves every carried row through
 `move-entry.ts` (`execute-move.ts`), reselects them, reveals the destination (the target's
 own `reveal`, the same one the spring calls) and shows "Moved chapter-3 to Act
 2." (or "Moved chapter-3 to Act 2 as chapter-3 (2).") with Undo on the surface

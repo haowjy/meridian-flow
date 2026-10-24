@@ -51,7 +51,10 @@ browser reports no fine pointer, so rows render at touch height.
    inside itself", and releasing changes nothing.
 6. Drag a row over its own folder: no light, no hint, no change.
 7. Drag `chapter-1` into a folder that already holds a `chapter-1`: the hint
-   reads "Move to <folder>", and the row arrives as `chapter-1 (2)`; the notice
+   reads "Move to <folder>" with a warning line under it, "chapter-1 will be
+   renamed chapter-1 (2)" (two clashing rows: "2 items will be renamed"). Move…
+   shows the same line under that folder's Move action. Drop: the row arrives
+   as `chapter-1 (2)`; the notice
    reads "Moved chapter-1 to <folder> as chapter-1 (2)." Undo puts it back as
    `chapter-1` (or the next free name if one took its place meanwhile).
 8. Drag a row into the chat composer and into the open document: nothing is

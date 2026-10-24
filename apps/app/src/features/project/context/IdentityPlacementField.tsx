@@ -216,7 +216,7 @@ export function IdentityPlacementField({
     }
     await runCommit({
       destination: identityDestination(location, editorWorkId, destination ?? undefined),
-      name: await allocateContextEntryArrivalName(
+      name: allocateContextEntryArrivalName(
         name,
         folderChildren(
           allEntries,

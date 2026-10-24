@@ -1,8 +1,9 @@
 /**
  * The one way a row changes folders: Move…, dragging and a drag's Undo resolve
  * a destination here and place through the replica by folder ID. A taken name
- * never refuses: the row arrives at the next free name, predicted here and
- * decided by the server. Refusals are judged by identity in `entry-drag/move-plan.ts`.
+ * never refuses: the row arrives at the next free name, predicted by
+ * `arrivalNames` (shown before the drop) and decided by the server. Refusals
+ * are judged by identity in `entry-drag/move-plan.ts`.
  */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -10,7 +11,6 @@ import type { ParentRef, ResourceDestination } from "@meridian/resource-replica"
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import type { TabOwner } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
-import { allocateContextEntryArrivalName, type ContextEntrySibling } from "./context-entry-name";
 import { destinationOwner } from "./identity-location";
 
 /** An area's top level (its catalog root) or a folder in it. */
@@ -44,26 +44,23 @@ export function destinationParent(
 }
 
 /**
- * Places one entry among `siblings` at the next free name for `typed` (its own
- * name unless the writer typed another). Resolves to the operation ID its
- * link-update note follows and the name it is predicted to land under.
+ * Places one entry under `name`, the free name its caller predicted (see
+ * `arrivalNames`); `typed` is the name the writer asked for. Resolves to the
+ * operation ID its link-update note follows.
  */
 export async function placeEntry(
   resources: AccountResourceReplica,
   projectId: string,
-  subject: { kind: "file" | "folder"; id: string; name: string },
-  parent: ParentRef,
-  siblings: readonly ContextEntrySibling[],
-  typed: string = subject.name,
-): Promise<{ operationId: string | null; name: string }> {
-  const name = await allocateContextEntryArrivalName(typed, siblings, subject.kind, subject.name);
-  const location: ResourceDestination = { parent, name };
+  subject: { kind: "file" | "folder"; id: string },
+  location: ResourceDestination,
+  typed: string,
+): Promise<string | null> {
   if (subject.kind === "folder") {
     const result = await resources.setFolderLocation(projectId, subject.id, location, typed);
-    return { operationId: result.operationId ?? null, name };
+    return result.operationId ?? null;
   }
   const key = await resources.keyForDocument(projectId, subject.id);
   if (!key) throw new Error("Document is not in the replica");
   const result = await resources.setLocation(projectId, key, location, typed);
-  return { operationId: result.operationId ?? null, name };
+  return result.operationId ?? null;
 }
