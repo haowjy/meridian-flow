@@ -31,6 +31,7 @@ import {
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { serverTabFromFile } from "../context/context-tab-from-file";
+import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { AreaDropRegion } from "../context/tree-drop/AreaDropRegion";
@@ -55,8 +56,6 @@ function useOpenDocumentId(projectId: string, editorWorkId: string | null): stri
   return undefined;
 }
 
-/** Each pane keeps this much when the writer resizes between the tree and Scratch. */
-
 export function RailScratchSection({
   projectId,
   threadId,
@@ -77,33 +76,7 @@ export function RailScratchSection({
   resizeAgainst?: RefObject<HTMLElement | null>;
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
-  const { primary, earlier, editable } = useChatScratchCatalogs(projectId, scratch);
-  const areas = useMemo(
-    () => [
-      ...(primary.catalog && scratch
-        ? [
-            {
-              scheme: "scratch" as const,
-              owner: scratch.owner,
-              catalog: primary.catalog,
-              movable: editable,
-            },
-          ]
-        : []),
-      ...(earlier.catalog && scratch?.earlierRootThreadId
-        ? [
-            {
-              scheme: "scratch" as const,
-              owner: { rootThreadId: scratch.earlierRootThreadId },
-              catalog: earlier.catalog,
-              movable: true,
-            },
-          ]
-        : []),
-    ],
-    [primary.catalog, earlier.catalog, scratch, editable],
-  );
-  const list = useEntryList({ projectId, areas });
+  const { list, primary } = useChatScratchList(projectId, scratch);
   if (!scratch) return null;
   return (
     <DockedRailSection id="scratch" resizeAgainst={resizeAgainst}>
@@ -143,6 +116,76 @@ export function RailScratchSection({
   );
 }
 
+/** One list over a chat's Scratch: its current catalog and its Earlier notes. */
+function useChatScratchList(projectId: string, scratch: ReturnType<typeof useChatScratchSource>) {
+  const { primary, earlier, editable } = useChatScratchCatalogs(projectId, scratch);
+  const areas = useMemo(
+    () => [
+      ...(primary.catalog && scratch
+        ? [
+            {
+              scheme: "scratch" as const,
+              owner: scratch.owner,
+              catalog: primary.catalog,
+              movable: editable,
+            },
+          ]
+        : []),
+      ...(earlier.catalog && scratch?.earlierRootThreadId
+        ? [
+            {
+              scheme: "scratch" as const,
+              owner: { rootThreadId: scratch.earlierRootThreadId },
+              catalog: earlier.catalog,
+              movable: true,
+            },
+          ]
+        : []),
+    ],
+    [primary.catalog, earlier.catalog, scratch, editable],
+  );
+  return { list: useEntryList({ projectId, areas }), primary };
+}
+
+/**
+ * A chat's Scratch in its Files menu: the same rows as the rail, its own list,
+ * and the move note at its end, so Move… there ends like everywhere else.
+ */
+export function MenuScratchSection(props: {
+  projectId: string;
+  threadId: string | null;
+  onPicked?: () => void;
+}) {
+  return (
+    <MoveNoticeHost>
+      <MenuScratchList {...props} />
+    </MoveNoticeHost>
+  );
+}
+
+function MenuScratchList({
+  projectId,
+  threadId,
+  onPicked,
+}: {
+  projectId: string;
+  threadId: string | null;
+  onPicked?: () => void;
+}) {
+  const scratch = useChatScratchSource(projectId, threadId);
+  const { list } = useChatScratchList(projectId, scratch);
+  if (!scratch) return null;
+  return (
+    <section aria-label={scratch.heading}>
+      <h3 className="px-3 py-2 text-xs font-medium text-muted-foreground">{scratch.heading}</h3>
+      <EntryList list={list}>
+        <ChatScratchTree projectId={projectId} threadId={threadId} onPicked={onPicked} />
+      </EntryList>
+      <MoveNotice className="mx-2 my-1.5" />
+    </section>
+  );
+}
+
 /** The chat's Scratch catalogs, and whether its owner still accepts edits. */
 function useChatScratchCatalogs(
   projectId: string,
@@ -159,8 +202,8 @@ function useChatScratchCatalogs(
 }
 
 /**
- * Shared Scratch browser for the rail, phone drawer and chat Files menu. Rows
- * select and drag only inside the rail section's list.
+ * Shared Scratch rows for the rail, phone drawer and chat Files menu; each
+ * surface wraps them in its own list.
  */
 export function ChatScratchTree({
   projectId,

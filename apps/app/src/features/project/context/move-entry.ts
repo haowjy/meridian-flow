@@ -2,7 +2,7 @@
  * The one way a row changes folders: Move…, dragging and a drag's Undo resolve
  * a destination here and place through the replica by folder ID. A taken name
  * never refuses: the row arrives at the next free name, predicted by
- * `arrivalNames` (shown before the drop) and decided by the server. Refusals
+ * `execute-move.ts` (shown before the drop) and decided by the server. Refusals
  * are judged by identity in `entry-drag/move-plan.ts`.
  */
 import { parseContextUri } from "@meridian/contracts/context-uri";
@@ -45,7 +45,7 @@ export function destinationParent(
 
 /**
  * Places one entry under `name`, the free name its caller predicted (see
- * `arrivalNames`); `typed` is the name the writer asked for. Resolves to the
+ * `execute-move.ts`); `typed` is the name the writer asked for. Resolves to the
  * operation ID its link-update note follows.
  */
 export async function placeEntry(

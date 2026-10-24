@@ -1,7 +1,8 @@
 /**
  * One list of rows is one selection, one route for rows dropped on it and one
- * drop scope. The Files tree is one list over its four areas, a chat's Scratch
- * one over the current and Earlier notes, a Work's Files one over its Scratch.
+ * drop scope. The Files tree is one list over the project's areas, User is
+ * one, a chat's Scratch one over the current and Earlier notes, and a Work's
+ * Files one over its Scratch.
  * Shells declare the catalogs they show; this owns the rest: what a hovered
  * target would do, what a drop does, and what any move from the list (a drop
  * or Move…) leaves behind: the moved rows selected and a notice with Undo.
@@ -26,7 +27,7 @@ import {
 import type { ContextEntrySibling } from "../context-entry-name";
 import { menuEntryFor } from "../menu-tree";
 import { destinationParent } from "../move-entry";
-import { type EntriesRoute, TreeDropScope } from "../tree-drop/tree-drop";
+import { type EntriesRoute, type EntriesVerdict, TreeDropScope } from "../tree-drop/tree-drop";
 import { activeEntryDrag } from "./drag-session";
 import { type DragEntry, entryKey } from "./entry";
 import {
@@ -144,26 +145,40 @@ export function useEntryList({
       const { areas, projection } = latest.current;
       return entries ? planMove({ ...projection, areas }, entries, target) : null;
     };
+    const judge = (target: Parameters<EntriesRoute["verdict"]>[0]): EntriesVerdict | null => {
+      const planned = plan(target);
+      if (planned?.kind === "inside-itself")
+        return { kind: "refuse", label: t`Can't go inside itself` };
+      if (planned?.kind !== "ready") return null;
+      const { destinationName } = planned;
+      const { works, noWork, areas } = latest.current;
+      const after = destinationParent(planned.destination, works, noWork);
+      const renamed = after
+        ? renamesOnArrival(
+            planned.moves.map(({ ref, name }) => ({ entry: ref, name, after })),
+            (parent) => siblingsAt(areas, parent),
+          )
+        : [];
+      return {
+        kind: "accept",
+        label: t`Move to ${destinationName}`,
+        warning: describeRenames(renamed),
+      };
+    };
+    // `dragover` repeats many times a second over one target; its answer changes
+    // only with the drag, the target or what the list shows.
+    let last: { key: string; inputs: readonly unknown[]; verdict: EntriesVerdict | null } | null =
+      null;
     return {
       verdict(target) {
-        const planned = plan(target);
-        if (planned?.kind === "inside-itself")
-          return { kind: "refuse", label: t`Can't go inside itself` };
-        if (planned?.kind !== "ready") return null;
-        const { destinationName } = planned;
-        const { works, noWork, areas } = latest.current;
-        const after = destinationParent(planned.destination, works, noWork);
-        const renamed = after
-          ? renamesOnArrival(
-              planned.moves.map(({ ref, name }) => ({ entry: ref, name, after })),
-              (parent) => siblingsAt(areas, parent),
-            )
-          : [];
-        return {
-          kind: "accept",
-          label: t`Move to ${destinationName}`,
-          warning: describeRenames(renamed),
-        };
+        const { areas, projection, works, noWork } = latest.current;
+        const key = `${target.catalogRootId}:${target.folder?.entryId ?? ""}`;
+        const inputs = [activeEntryDrag(), areas, projection, works, noWork];
+        if (last?.key === key && last.inputs.every((input, index) => input === inputs[index]))
+          return last.verdict;
+        const verdict = judge(target);
+        last = { key, inputs, verdict };
+        return verdict;
       },
       drop(target) {
         const planned = plan(target);

@@ -23,6 +23,7 @@ import {
   allocateContextEntryArrivalName,
   entryNameStemEnd,
   invalidContextEntryNameReason,
+  nameOccupancy,
 } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import {
@@ -218,13 +219,15 @@ export function IdentityPlacementField({
       destination: identityDestination(location, editorWorkId, destination ?? undefined),
       name: allocateContextEntryArrivalName(
         name,
-        folderChildren(
-          allEntries,
-          destination?.scheme ?? location.scheme,
-          destination?.folderPath ?? location.parentPath,
-        )
-          .filter((entry) => entry.entryId !== tab.documentId)
-          .map((entry) => ({ entryId: entry.entryId, name: entry.name, kind: entry.kind })),
+        nameOccupancy(
+          folderChildren(
+            allEntries,
+            destination?.scheme ?? location.scheme,
+            destination?.folderPath ?? location.parentPath,
+          )
+            .filter((entry) => entry.entryId !== tab.documentId)
+            .map((entry) => ({ entryId: entry.entryId, name: entry.name, kind: entry.kind })),
+        ),
         "file",
         location.leaf,
       ),

@@ -16,7 +16,7 @@ import { familyIcon } from "@/components/app/link-chip/family-icons";
 /** Complete vocabulary for references and tools, including chat resources. */
 export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = CONTEXT_URI_SCHEMES;
 
-/** Ordinary Editor surfaces contain only project documents. */
+/** Ordinary Editor surfaces hold project-scoped documents: the project's areas and the writer's User. */
 export const EDITOR_CONTEXT_SCHEMES = PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
 
 /**

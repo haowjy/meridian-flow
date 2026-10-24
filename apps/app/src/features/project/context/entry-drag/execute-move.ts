@@ -6,13 +6,20 @@
  * note follows its receipt. Results are data; wording, selection and the
  * notice belong to the caller.
  */
+
+import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import { type ParentRef, resourcePlacementForSnapshot } from "@meridian/resource-replica";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
-import { allocateContextEntryArrivalName, type ContextEntrySibling } from "../context-entry-name";
+import {
+  allocateContextEntryArrivalName,
+  type ContextEntrySibling,
+  type NameOccupancy,
+  nameOccupancy,
+} from "../context-entry-name";
 import { placeEntry } from "../move-entry";
 import { renameOperationLifecycle } from "../rename-operation-lifecycle";
 import type { EntryRef } from "./entry";
-import { type MoveEffect, planUndo, type ReadyMovePlan, sameParent } from "./move-plan";
+import { type MoveEffect, planUndo, type ReadyMovePlan } from "./move-plan";
 
 export type MoveContext = {
   resources: AccountResourceReplica;
@@ -38,49 +45,58 @@ type Arrival = {
 type MoveRow = Arrival & { before: ParentRef };
 
 /**
- * The free name each row would arrive under. Each row also sees the rows
- * before it in the same move, which the catalogs do not show yet, so two
- * `Notes` folders become `Notes (2)` and `Notes (3)`. The hover warning and the
- * placement read the same prediction.
+ * Free names for the rows of one move. Each destination's names are indexed
+ * once; a row's name is reserved once it arrives, so the next row sees it
+ * though the catalogs have not caught up (two `Notes` folders become
+ * `Notes (2)` and `Notes (3)`), and a row that fails reserves nothing.
  */
-export function arrivalNames(
-  rows: readonly Arrival[],
-  siblingsAt: MoveContext["siblingsAt"],
-): string[] {
-  const names: string[] = [];
-  rows.forEach((row, index) => {
-    const arrived = rows.slice(0, index).flatMap((earlier, at): ContextEntrySibling[] =>
-      sameParent(earlier.after, row.after)
-        ? [
-            {
-              entryId: earlier.entry.id,
-              name: names[at] ?? earlier.name,
-              kind: earlier.entry.kind === "file" ? "file" : "dir",
-            },
-          ]
-        : [],
-    );
-    names.push(
+function arrivals(siblingsAt: MoveContext["siblingsAt"]) {
+  const byParent = new Map<string, NameOccupancy>();
+  const occupancy = (parent: ParentRef) => {
+    const key = parentKey(parent);
+    let occupied = byParent.get(key);
+    if (!occupied) {
+      occupied = nameOccupancy(siblingsAt(parent));
+      byParent.set(key, occupied);
+    }
+    return occupied;
+  };
+  return {
+    name: (row: Arrival) =>
       allocateContextEntryArrivalName(
         row.typed ?? row.name,
-        [...siblingsAt(row.after), ...arrived],
+        occupancy(row.after),
         row.entry.kind,
         row.name,
       ),
-    );
-  });
-  return names;
+    reserve: (row: Arrival, name: string) =>
+      occupancy(row.after).claim({
+        kind: row.entry.kind === "folder" ? "folder" : "document",
+        filename: name,
+      }),
+  };
 }
 
-/** The rows a move would rename on arrival, for the warning shown before it happens. */
+/** One key per parent `sameParent` treats as equal. */
+function parentKey(parent: ParentRef): string {
+  if (parent.kind === "folder") return `folder:${parent.folderId}`;
+  if (isProjectScopedScheme(parent.scheme)) return `root:${parent.scheme}`;
+  return `root:${parent.scheme}:${parent.owner.workId ?? ""}:${parent.owner.rootThreadId ?? ""}`;
+}
+
+/**
+ * The rows a move would rename on arrival, for the warning shown before it
+ * happens. It predicts exactly as `moveRows` places, as if every row arrives.
+ */
 export function renamesOnArrival(
   rows: readonly Arrival[],
   siblingsAt: MoveContext["siblingsAt"],
 ): { name: string; as: string }[] {
-  const names = arrivalNames(rows, siblingsAt);
-  return rows.flatMap((row, index) => {
-    const as = names[index];
-    return as && as !== (row.typed ?? row.name) ? [{ name: row.name, as }] : [];
+  const names = arrivals(siblingsAt);
+  return rows.flatMap((row) => {
+    const as = names.name(row);
+    names.reserve(row, as);
+    return as !== (row.typed ?? row.name) ? [{ name: row.name, as }] : [];
   });
 }
 
@@ -90,11 +106,11 @@ export async function moveRows(
   context: MoveContext,
 ): Promise<MoveResult> {
   const { resources, projectId } = context;
-  const names = arrivalNames(rows, context.siblingsAt);
+  const names = arrivals(context.siblingsAt);
   const moved: MoveEffect[] = [];
   const failed: { entry: EntryRef; name: string }[] = [];
-  for (const [index, row] of rows.entries()) {
-    const name = names[index] ?? row.name;
+  for (const row of rows) {
+    const name = names.name(row);
     try {
       const operationId = await placeEntry(
         resources,
@@ -103,6 +119,7 @@ export async function moveRows(
         { parent: row.after, name },
         row.typed ?? row.name,
       );
+      names.reserve(row, name);
       if (operationId)
         void renameOperationLifecycle(resources).remember(projectId, row.entry, operationId);
       moved.push({

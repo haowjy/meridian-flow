@@ -83,6 +83,7 @@ import type { AvailabilityWatchRecord } from "./context/project-context-availabi
 import { useRemovedNoticeLifetime } from "./context/RemovedDocumentNotice";
 import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
+import { DragHint } from "./context/tree-drop/drag-hint";
 import {
   DesktopProjectPresentationProvider,
   useDesktopProjectController,
@@ -455,6 +456,8 @@ function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentity
         openContextRoute={props.onOpenContextTarget}
       >
         <HydratedReviewScopes {...props} />
+        {/* Every row drop in the view (rail, Work Files) labels the pointer here. */}
+        <DragHint />
       </EditorReviewHandoffProvider>
     </ChatThreadNavigationProvider>
   );
