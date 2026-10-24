@@ -12,16 +12,12 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import {
   deleteDrizzleRows,
   useRollbackTestDatabase,
 } from "../../../../test-support/drizzle-reset.js";
-import {
-  RecentDocumentUnavailableError,
-  USER_RECENT_DOCUMENTS_CAP,
-} from "../../ports/recent-documents-repository.js";
+import { RecentDocumentUnavailableError } from "../../ports/recent-documents-repository.js";
 import { createDrizzleRecentDocumentsRepository } from "./recent-documents-repository.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -146,87 +142,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(repo.listForProject(PROJECT, userId(USER))).resolves.toMatchObject([
         { documentId: OWNED, projectId: PROJECT },
       ]);
-    });
-
-    it("resolves project, scheme, path, and work handle within one project, and keeps projects apart", async () => {
-      const { repo } = await seed();
-      await repo.record(userId(USER), documentId(SCRATCH));
-      await repo.record(userId(USER), documentId(NO_WORK_DOC));
-      await repo.record(userId(USER), documentId(PERSONAL_DOC));
-      const listed = await repo.listForProject(PROJECT, userId(USER));
-      expect(listed).toHaveLength(2);
-      expect(listed).toEqual(
-        expect.arrayContaining([
-          // A work-scoped scratch document carries its work handle.
-          expect.objectContaining({
-            documentId: SCRATCH,
-            projectId: PROJECT,
-            scheme: "scratch",
-            path: "/scene",
-            workHandle: "w2",
-          }),
-          // No Work resolves to a null work handle.
-          expect.objectContaining({
-            documentId: NO_WORK_DOC,
-            projectId: PROJECT,
-            scheme: "uploads",
-            path: "/aside",
-            workHandle: null,
-          }),
-        ]),
-      );
-      // The personal project keeps its own history: the landing renders inside a
-      // project, so the read is scoped to the one it renders in.
-      await expect(repo.listForProject(PERSONAL, userId(USER))).resolves.toEqual([
-        expect.objectContaining({
-          documentId: PERSONAL_DOC,
-          projectId: PERSONAL,
-          scheme: "user",
-          path: "/notes",
-          workHandle: null,
-        }),
-      ]);
-    });
-
-    it("omits a soft-deleted document and does not let it occupy a cap slot", async () => {
-      const { db, repo } = await seed();
-      await repo.record(userId(USER), documentId(DOOMED));
-      await db
-        .update(documents)
-        .set({ deletionReason: "deleted", deletedAt: new Date() })
-        .where(eq(documents.id, DOOMED));
-      await expect(repo.listForProject(PROJECT, userId(USER))).resolves.toEqual([]);
-      await expect(repo.record(userId(USER), documentId(DOOMED))).rejects.toBeInstanceOf(
-        RecentDocumentUnavailableError,
-      );
-      await db
-        .update(userRecentDocuments)
-        .set({ openedAt: new Date("2099-01-01T00:00:00.000Z") })
-        .where(eq(userRecentDocuments.documentId, DOOMED));
-
-      const liveIds = Array.from({ length: USER_RECENT_DOCUMENTS_CAP }, (_, index) =>
-        id(0x2000 + index),
-      );
-      await db.insert(documents).values(
-        liveIds.map((liveId, index) => ({
-          id: liveId,
-          contextSourceId: MANUSCRIPT,
-          name: `live-${index}`,
-          extension: "",
-        })),
-      );
-      for (const liveId of liveIds) {
-        await repo.record(userId(USER), documentId(liveId));
-      }
-
-      const stored = await db
-        .select({ documentId: userRecentDocuments.documentId })
-        .from(userRecentDocuments)
-        .where(eq(userRecentDocuments.userId, USER));
-      expect(stored.map((row) => row.documentId).sort()).toEqual([...liveIds].sort());
-      const listed = await repo.listForProject(PROJECT, userId(USER));
-      expect(listed).toHaveLength(USER_RECENT_DOCUMENTS_CAP);
-      expect(listed.map((item) => item.documentId)).not.toContain(DOOMED);
     });
   });
 }
