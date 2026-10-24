@@ -39,8 +39,8 @@ const ProjectNavigationContext = createContext<{
   isCurrentNavigation?: (ticket: import("./project-navigation").ProjectNavigationTicket) => boolean;
   capture?: () => () => boolean;
   trash: {
-    destination: true | string | undefined;
-    navigate: (destination: boolean | string) => Promise<unknown>;
+    destination: string | undefined;
+    navigate: (destination: false | string) => Promise<unknown>;
   };
   isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
 } | null>(null);
@@ -65,8 +65,8 @@ export function ProjectNavigationProvider({
   isCurrentNavigation?: (ticket: import("./project-navigation").ProjectNavigationTicket) => boolean;
   captureNavigation?: () => () => boolean;
   trash: {
-    destination: true | string | undefined;
-    navigate: (destination: boolean | string) => Promise<unknown>;
+    destination: string | undefined;
+    navigate: (destination: false | string) => Promise<unknown>;
   };
   isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;

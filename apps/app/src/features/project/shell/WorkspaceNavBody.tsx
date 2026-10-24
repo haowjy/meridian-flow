@@ -12,7 +12,7 @@
  */
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { AccountMenu } from "@/features/account/AccountMenu";
@@ -30,10 +30,10 @@ export type WorkspaceNavBodyProps = {
   children?: ReactNode;
   /** The chat's Scratch section, pinned above the account row. */
   scratch?: ReactNode;
+  /** The project's Trash section, pinned below Scratch. */
+  trash?: ReactNode;
   /** One replaceable notice between the file tree and Scratch. */
   notice?: ReactNode;
-  /** Opens the project's Trash; its row sits below Scratch. */
-  onOpenTrash?: () => void;
 };
 
 export function WorkspaceNavBody({
@@ -42,8 +42,8 @@ export function WorkspaceNavBody({
   presentation,
   children,
   scratch,
+  trash,
   notice,
-  onOpenTrash,
 }: WorkspaceNavBodyProps) {
   const phone = presentation === "phone";
   const failed = useRailSwitchFailed();
@@ -82,27 +82,7 @@ export function WorkspaceNavBody({
 
       {/* The Scratch section draws its own divider, so none shows with no chat on screen. */}
       {scratch}
-
-      {onOpenTrash ? (
-        <div
-          className={cn(
-            "shrink-0 border-t border-border-subtle",
-            phone ? "px-3 py-1" : "px-2 py-1",
-          )}
-        >
-          <button
-            type="button"
-            onClick={onOpenTrash}
-            className={cn(
-              "focus-ring flex w-full items-center gap-2 rounded-md px-2 text-left text-sm text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",
-              phone ? "min-h-11" : "min-h-9",
-            )}
-          >
-            <Trash2 className="size-4 shrink-0" aria-hidden />
-            <Trans>Trash</Trans>
-          </button>
-        </div>
-      ) : null}
+      {trash}
 
       <div
         className={cn("shrink-0 border-t border-border-subtle px-2", phone ? "pt-2" : "py-1.5")}
