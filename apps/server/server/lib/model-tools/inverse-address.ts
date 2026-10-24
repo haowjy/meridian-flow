@@ -6,6 +6,7 @@
  * have moved since the path was shown), as the card's Undo is. A path a different document
  * now holds gets the first chance to reverse its own entry.
  */
+import type { DocumentCommandName } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts";
 import { type FileGrant, isFileAccessDenied } from "../../domains/file-policy/index.js";
 import { removedFileResult } from "../file-access-denial-copy.js";
@@ -26,15 +27,14 @@ type InverseCommand = "undo" | "redo" | "revert";
 export async function removedPathError(
   deps: ToolWiringDeps,
   call: ToolCall,
-  command: import("@meridian/agent-edit/integration").DocumentCommandName,
+  command: DocumentCommandName,
   path: string,
   threadId: string,
 ): Promise<WriteToolErrorOutput | null> {
   const canonical = await canonicalPath(call, path);
-  const away = await deps.documentSync
-    .treeHistory()
-    .movedAwayFrom(threadId as ThreadId, canonical);
-  if (!away || (await deps.fileAccess.historyAccess(call.principal, away)) !== "deleted") return null;
+  const away = await deps.documentSync.treeHistory().movedAwayFrom(threadId as ThreadId, canonical);
+  if (!away || (await deps.fileAccess.historyAccess(call.principal, away)) !== "deleted")
+    return null;
   const removal = (await deps.documentRemovals.lookup([away])).get(away);
   return removal ? removedFileResult(command, removal, canonical) : null;
 }
