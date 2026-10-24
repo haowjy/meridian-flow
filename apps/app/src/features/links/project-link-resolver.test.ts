@@ -7,6 +7,7 @@ import { type DocumentLinkAnswer, parseLinkRef } from "@meridian/contracts";
 import { expect, it, vi } from "vitest";
 
 import { resolveDocumentLinks } from "@/client/api/document-links-api";
+import { getDocumentTrash } from "@/client/api/projects-api";
 import {
   classifyLinkTarget,
   createLinkAnswerCache,
@@ -22,7 +23,9 @@ import { createProjectLinkResolver, type LinkResolutionScope } from "./project-l
 import type { LinkableDocument } from "./useLinkableDocuments";
 
 vi.mock("@/client/api/document-links-api", () => ({ resolveDocumentLinks: vi.fn() }));
+vi.mock("@/client/api/projects-api", () => ({ getDocumentTrash: vi.fn() }));
 const server = vi.mocked(resolveDocumentLinks);
+vi.mocked(getDocumentTrash).mockResolvedValue({ documents: [] });
 
 const KAEL = "00000000-0000-4000-8000-00000000000a";
 const NINE = "00000000-0000-4000-8000-000000000009";

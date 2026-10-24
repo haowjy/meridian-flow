@@ -107,8 +107,8 @@ export type LinkResolutionEntry =
   /** `branch` is present iff the document is hidden ("in a draft"); only its review opens it. */
   | { state: "document"; document: ResolvedDocumentLink; branch?: LinkBranchDestination }
   | { state: "missing"; document: null }
-  /** A ref whose document the reader can no longer reach. Never followable. */
-  | { state: "gone"; document: null };
+  /** A document the reader cannot read live. A retained Trash identity remains followable. */
+  | { state: "gone"; document: null; trashedDocumentId?: string };
 
 /** A settled answer: every entry but pending. */
 export type LinkAnswer = Exclude<LinkResolutionEntry, { state: "pending" }>;
@@ -119,6 +119,7 @@ export function goneLinkDocumentId(
   link: Pick<LinkKey, "ref">,
 ): string | null {
   if (entry?.state !== "gone") return null;
+  if (entry.trashedDocumentId) return entry.trashedDocumentId;
   const ref = parseLinkRef(link.ref);
   return ref?.kind === "doc" ? ref.documentId : null;
 }
