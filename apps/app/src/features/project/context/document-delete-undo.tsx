@@ -42,7 +42,7 @@ type PresentedDeleteWindow = DeleteWindow & {
   surface: DeleteNoticeSurface;
 };
 
-type DeleteOperationState = "pending" | "landed" | "refused" | "settled-locally";
+type DeleteOperationState = "pending" | "landed" | "refused" | "settled-locally" | "aborted";
 
 type DeleteUndoContextValue = {
   notices: readonly PresentedDeleteWindow[];
@@ -127,6 +127,7 @@ export function DocumentDeleteUndoProvider({
   const [emptyFolderCheckRevision, retryEmptyFolderChecks] = useState(0);
   const restores = useRef(new Set<string>());
   const lifetime = useRef(new AbortController());
+  const mounted = useRef(true);
   const noticesRef = useRef(noticesBySurface);
   noticesRef.current = noticesBySurface;
 
@@ -150,7 +151,9 @@ export function DocumentDeleteUndoProvider({
     // controller used by the live provider instance.
     const controller = new AbortController();
     lifetime.current = controller;
+    mounted.current = true;
     return () => {
+      mounted.current = false;
       controller.abort();
       for (const timer of emptyFolderRetryTimers.current.values()) clearTimeout(timer);
     };
@@ -251,24 +254,28 @@ export function DocumentDeleteUndoProvider({
   const waitForSettlement = useCallback(
     (operationId: string) =>
       new Promise<DeleteOperationState>((resolve, reject) => {
+        const signal = lifetime.current.signal;
         let stop: (() => void) | null = null;
         let done = false;
+        const cleanup = () => {
+          signal.removeEventListener("abort", abort);
+          stop?.();
+          stop = null;
+        };
         function finish(state: DeleteOperationState) {
           if (done) return;
           done = true;
-          lifetime.current.signal.removeEventListener("abort", abort);
-          stop?.();
+          cleanup();
           resolve(state);
         }
         function fail(error: unknown) {
           if (done) return;
           done = true;
-          lifetime.current.signal.removeEventListener("abort", abort);
-          stop?.();
+          cleanup();
           reject(error);
         }
         function abort() {
-          finish("refused");
+          finish("aborted");
         }
         try {
           stop = resources.observeProjection(
@@ -283,11 +290,11 @@ export function DocumentDeleteUndoProvider({
           fail(error);
         }
         if (done) {
-          stop?.();
+          cleanup();
           return;
         }
-        lifetime.current.signal.addEventListener("abort", abort, { once: true });
-        if (lifetime.current.signal.aborted) abort();
+        signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) abort();
       }),
     [projectId, resources],
   );
@@ -302,11 +309,13 @@ export function DocumentDeleteUndoProvider({
       updateFeedback(operationId, { kind: "restoring" });
       void (async () => {
         try {
-          const state = await waitForSettlement(operationId);
+          const projected = deleteOperationState(deleteIntents, operationId);
+          const state = projected === "pending" ? await waitForSettlement(operationId) : projected;
           if (state === "refused" || state === "settled-locally") {
             dismiss(operationId);
             return;
           }
+          if (state === "aborted") throw new Error("Delete settlement was interrupted");
           if (state !== "landed") throw new Error("Delete settlement is unavailable");
           const documents = await readDeleteRemovals(
             projectId,
@@ -356,7 +365,7 @@ export function DocumentDeleteUndoProvider({
             announce(t`Restored at ${alternateLocations.join(", ")}.`);
           dismiss(operationId);
         } catch {
-          if (lifetime.current.signal.aborted) return;
+          if (!mounted.current) return;
           updateFeedback(operationId, {
             kind: "failed",
             retryable: true,
@@ -367,7 +376,7 @@ export function DocumentDeleteUndoProvider({
         }
       })();
     },
-    [dismiss, noticesBySurface, projectId, updateFeedback, waitForSettlement],
+    [deleteIntents, dismiss, noticesBySurface, projectId, updateFeedback, waitForSettlement],
   );
 
   const value = useMemo<DeleteUndoContextValue>(
