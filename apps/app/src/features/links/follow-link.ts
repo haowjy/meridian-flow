@@ -33,6 +33,8 @@ export const CHECKING_DELAY_MS = 250;
  */
 export type LinkDocumentRef = {
   documentId: string;
+  /** The resolver already knows this identity is in the trash; skip the live-document race. */
+  trashed?: true;
   /** A document the writer just created: its editor takes the caret. */
   focus?: true;
   review?: {
@@ -128,7 +130,7 @@ export async function followProjectLink({
     settle();
     reporter.clear();
     const documentId = directDocumentId(ref);
-    if (documentId) await open({ documentId }, gesture);
+    if (documentId) await open({ documentId, trashed: true }, gesture);
     return;
   }
   if (known?.state === "document") {
@@ -145,7 +147,7 @@ export async function followProjectLink({
   if (entry?.state === "gone") {
     reporter.clear();
     const documentId = directDocumentId(ref);
-    if (documentId) await open({ documentId }, gesture);
+    if (documentId) await open({ documentId, trashed: true }, gesture);
     return;
   }
   if (entry?.state === "document") {
