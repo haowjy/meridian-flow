@@ -232,8 +232,9 @@ relative spelling uses only a holder the reader may name and read.
 
 Browser addresses normally resolve in the live tree. A review address may
 supply `reviewWorkId` and an item key `${branchId}:${documentId}`; the server
-checks that item against active review items, then reads the branch tree. The
-item's own draft admits its document the way it admits writes
+checks that item against active review items, then reads the branch tree, except
+for a drafted delete whose identity is intentionally absent there, which reads
+the live tree by the validated document identity. The item's own draft admits its document the way it admits writes
 (`survivingDraftDocuments`, availability's `admitDrafts`): a no-effect draft of a
 document deleted live is not listed, so its path finds it gone, but its review
 address still opens the open tab's draft (D79). Stale,

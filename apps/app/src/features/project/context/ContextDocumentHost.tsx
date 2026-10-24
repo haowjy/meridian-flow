@@ -76,7 +76,7 @@ export function ContextDocumentHost({
   onCloseDraftOnly,
 }: ContextDocumentHostProps) {
   const removal = useContextRemovalCoordinator();
-  const { controller, reviewRoomNameForDraft } = useDraftReview();
+  const { controller, fileForDocument, reviewRoomNameForDraft } = useDraftReview();
   const { snapshot: resourceProjection } = useAccountResourceProjection(projectId);
   const bindingKeys = useRef(new WeakMap<object, string>());
   const availabilityRevision = resourceAvailabilityRevision(resourceProjection, tab.documentId);
@@ -90,7 +90,14 @@ export function ContextDocumentHost({
   const reviewRoomName = selectedReviewItemKey
     ? reviewRoomNameForDraft(tab.documentId, selectedReviewItemKey)
     : null;
-  const reviewItemKey = reviewRoomName ? selectedReviewItemKey : null;
+  const selectedReviewFile =
+    selectedReviewItemKey && typeof fileForDocument === "function"
+      ? fileForDocument(tab.documentId)
+      : null;
+  const treeOnlyReview =
+    selectedReviewFile?.draft.itemKey === selectedReviewItemKey &&
+    selectedReviewFile.draft.tree?.deleted === true;
+  const reviewItemKey = reviewRoomName || treeOnlyReview ? selectedReviewItemKey : null;
   // A draft-only document has no live room until Apply promotes it, and
   // the server refuses one. Review hosts the draft room alone.
   const draftOnly = isDraftOnly(tab);

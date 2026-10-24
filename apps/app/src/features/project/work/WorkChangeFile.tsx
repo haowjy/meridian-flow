@@ -55,7 +55,7 @@ export function WorkChangeFile({
 
   const review = (focus?: ReviewFocus) => {
     controller.dismissNotice();
-    return file.draft.hasDraft
+    return file.draft.hasDraft || draftedDelete
       ? openReviewFile(file, workId, focus)
       : imageOpenable && setPreviewing(true);
   };
@@ -100,7 +100,10 @@ export function WorkChangeFile({
               "w-auto flex-1 pl-1",
               touch && "min-h-11",
             )}
-            disabled={!file.contextLocation || (file.draft.hasDraft === false && !imageOpenable)}
+            disabled={
+              !file.contextLocation ||
+              (file.draft.hasDraft === false && !imageOpenable && !draftedDelete)
+            }
             onClick={() => review()}
           >
             <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
