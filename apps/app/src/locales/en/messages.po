@@ -1970,7 +1970,7 @@ msgstr "Delete Work"
 msgid "Deleted"
 msgstr "Deleted"
 
-#. placeholder {0}: window.label
+#. placeholder {0}: notice.label
 #: src/features/project/context/document-delete-undo.tsx
 msgid "Deleted {0}"
 msgstr "Deleted {0}"
@@ -2093,8 +2093,8 @@ msgstr "Discarding"
 #: src/features/draft-review/ReviewToast.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/SchemaNotices.tsx
-#: src/features/project/context/document-delete-undo.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
+#: src/features/project/shell/SurfaceNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
 #: src/features/project/work/WorkFileRows.tsx
@@ -3767,7 +3767,7 @@ msgstr "Restored at {0}."
 msgid "Restoring"
 msgstr "Restoring"
 
-#. placeholder {0}: window.label
+#. placeholder {0}: notice.label
 #: src/features/project/context/document-delete-undo.tsx
 msgid "Restoring {0}"
 msgstr "Restoring {0}"
@@ -5102,7 +5102,7 @@ msgstr "Undid change to Work {0}."
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/CommandNotice.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
-#: src/features/project/context/document-delete-undo.tsx
+#: src/features/project/shell/SurfaceNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
 msgstr "Undo"
