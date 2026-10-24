@@ -12,6 +12,7 @@ import type {
   FolderId,
   ThreadId,
   TreePlacement,
+  TreeTransitionChange,
   TurnId,
   UserId,
 } from "@meridian/contracts";
@@ -127,9 +128,9 @@ export type BranchSettlement = { as: "applied" | "discarded"; userId?: UserId | 
 export async function dropDocumentRows(
   db: Database,
   input: { branchId: BranchId; documentIds: readonly DocumentId[]; settle: BranchSettlement },
-): Promise<readonly NodeRef[]> {
-  if (input.documentIds.length === 0) return [];
-  const pruned = await settleBranchEntries(db, input);
+): Promise<BranchSettlementResult> {
+  if (input.documentIds.length === 0) return { pruned: [], applied: [] };
+  const settled = await settleBranchEntries(db, input);
   await currentDrizzleDb(db)
     .delete(branchTreeChanges)
     .where(
@@ -139,8 +140,19 @@ export async function dropDocumentRows(
         inArray(branchTreeChanges.nodeId, [...input.documentIds]),
       ),
     );
-  return pruned;
+  return settled;
 }
+
+export type SettledBranchEntry = {
+  documentId: DocumentId;
+  editId: string;
+  tree: TreeTransitionChange;
+};
+
+export type BranchSettlementResult = {
+  pruned: NodeRef[];
+  applied: SettledBranchEntry[];
+};
 
 /**
  * The one settlement of a branch's drafted entries (design-v2 §4): per document, the stack
@@ -156,8 +168,8 @@ export async function dropDocumentRows(
 export async function settleBranchEntries(
   db: Database,
   input: { branchId: BranchId; documentIds: readonly DocumentId[]; settle: BranchSettlement },
-): Promise<NodeRef[]> {
-  if (input.documentIds.length === 0) return [];
+): Promise<BranchSettlementResult> {
+  if (input.documentIds.length === 0) return { pruned: [], applied: [] };
   const tx = currentDrizzleDb(db);
   const rows = await tx
     .select({
@@ -186,6 +198,7 @@ export async function settleBranchEntries(
           tree: row.treeChange,
         },
       ]);
+  const applied: SettledBranchEntry[] = [];
   for (const [documentId, history] of byDocument) {
     history.sort((a, b) => a.id - b.id);
     const { effective, undone } = unsettledEntries(history);
@@ -196,6 +209,11 @@ export async function settleBranchEntries(
             ["discarded", undone],
           ]
         : [["discarded", [...effective, ...undone]]];
+    if (input.settle.as === "applied")
+      for (const editId of effective) {
+        const row = history.find((candidate) => candidate.editId === editId);
+        if (row && isTransitionEntry(row)) applied.push({ documentId, editId, tree: row.tree });
+      }
     for (const [as, editIds] of settlements)
       if (editIds.length)
         await tx.insert(documentEdits).values({
@@ -227,7 +245,10 @@ export async function settleBranchEntries(
       ),
     )
     .returning({ folderId: branchTreeFolders.folderId });
-  return pruneHiddenFolders(db, [...new Set(released.map((row) => row.folderId))]);
+  return {
+    pruned: await pruneHiddenFolders(db, [...new Set(released.map((row) => row.folderId))]),
+    applied,
+  };
 }
 
 type TreeRow = Pick<StoredTreeEntry, "id" | "editId" | "kind" | "targets" | "tree">;

@@ -178,28 +178,38 @@ export type AgentTreeHistory = {
    * Records a model's create, move or delete as a tree entry, in the tree mutation's own transaction,
    * and returns its handle on the document's counter for this chat.
    */
-  recordAgentTreeChange(input: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-    turnId?: TurnId;
-    responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
-    toolCallId?: string;
-    op: "create" | "move" | "delete";
-    change: /** Live: the placement read before the mutation; the entry reads its `after` itself. */
+  recordAgentTreeChange(
+    input: {
+      documentId: DocumentId;
+      op: "create" | "move" | "delete";
+      change: /** Live: the placement read before the mutation; the entry reads its `after` itself. */
+        | {
+            destination: "live";
+            before: import("@meridian/contracts").LiveTreeState | null;
+          }
+        /** Drafted: the branch row's facts on either side, as the branch write returned them. */
+        | ({ destination: "draft" } & Omit<
+            import("@meridian/contracts").BranchTreeTransition,
+            "destination"
+          > & { branchId: import("@meridian/contracts").BranchId });
+      /** A move's destination as a canonical URI. */
+      landedAt?: string;
+    } & (
       | {
-          destination: "live";
-          before: import("@meridian/contracts").LiveTreeState | null;
+          threadId: ThreadId;
+          turnId?: TurnId;
+          responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+          toolCallId?: string;
+          /** Where the model saw the document: the path it moved or deleted it from. */
+          shownAt: string;
+          materializes?: never;
         }
-      /** Drafted: the branch row's facts on either side, as the branch write returned them. */
-      | ({ destination: "draft" } & Omit<
-          import("@meridian/contracts").BranchTreeTransition,
-          "destination"
-        > & { branchId: import("@meridian/contracts").BranchId });
-    /** Where the model saw the document: the path it moved or deleted it from. */
-    shownAt: string;
-    /** A move's destination as a canonical URI. */
-    landedAt?: string;
-  }): Promise<{ handle: string }>;
+      | {
+          /** Exact drafted tree entry that Apply materialized into live. */
+          materializes: string;
+        }
+    ),
+  ): Promise<{ handle: string }>;
   /** The document's live state now, as a tree entry records it; null while it is hidden. */
   liveState(documentId: DocumentId): Promise<import("@meridian/contracts").LiveTreeState | null>;
   /** The Works (`Work "‹name›"`) whose active drafts of a document still change it (D79). */

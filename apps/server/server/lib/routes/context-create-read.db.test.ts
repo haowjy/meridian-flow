@@ -343,7 +343,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: true,
         value: {
           status: "deleted",
-          deletedDocumentIds: [userDocumentId],
+          removed: [
+            {
+              documentId: userDocumentId,
+              removal: {
+                time: expect.any(String),
+                locationVersion: expect.stringMatching(/^[1-9]\d*$/),
+              },
+            },
+          ],
           availabilityGeneration: expect.not.stringMatching(/^0$/),
         },
       });
