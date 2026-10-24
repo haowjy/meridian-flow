@@ -167,13 +167,17 @@ export function DocumentDeleteUndoProvider({
     });
   }, []);
 
-  useEffect(
-    () => () => {
-      lifetime.current.abort();
+  useEffect(() => {
+    // React Strict Mode replays effects during development. Allocate the
+    // controller in the effect so that replay cleanup cannot poison the
+    // controller used by the live provider instance.
+    const controller = new AbortController();
+    lifetime.current = controller;
+    return () => {
+      controller.abort();
       for (const timer of emptyFolderRetryTimers.current.values()) clearTimeout(timer);
-    },
-    [],
-  );
+    };
+  }, []);
 
   useEffect(() => {
     for (const [operationId, window] of windowsById) {
