@@ -110,10 +110,14 @@ ContextPaneController
 
 Document trash is a server snapshot separate from the live catalog projection.
 The tree reads only whether that snapshot is empty; the routed
-`DocumentTrashDialog` lists its records and restores with the exact serialized
-removal identity returned for each one. Committed catalog wake hints invalidate
-the snapshot after deletes and restores, while the catalog stream remains the
-owner of a restored document's return to the live tree.
+`DocumentTrashDialog` lists its records and opens a selected record by Document
+ID. The detail route reads the server's last Markdown projection and composes
+`ReadOnlyViewerFrame` with `TextViewer`; it never uses the live path-based read.
+Stable-ID navigation confirms a deleted document through that endpoint before
+opening the detail. List and detail restore through one command using the exact
+serialized removal identity. Committed catalog wake hints invalidate the
+snapshot after deletes and restores, while the catalog stream remains the owner
+of a restored document's return to the live tree.
 
 `ContextViewerHost` selects one read-only surface through `previewKind`. A
 tracked-classified viewer read renders as text in every host; collaborative

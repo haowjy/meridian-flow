@@ -169,14 +169,26 @@ the tab/tree update without an error. Capture a screenshot outside this repo.
 2. Open Trash. Both documents appear newest first with their former area and
    folder, deletion actor and date, days left, and Restore. Reload while the
    list is open; the same list remains.
-3. Restore one document. Its row says Restoring until the response, leaves the
-   list after success, and the catalog stream returns it to the context tree.
-4. Create a document at the other deleted document's former path, then restore
+3. Select a document row. A read-only view shows its last settled text and the
+   banner "In the trash. Deleted by <name> on <date>. Gone for good in <n>
+   days." Close and reopen the view by following a stable link to that document;
+   the link chip may still say "No longer available".
+4. Restore that document from its banner. Restore remains disabled with
+   "Restoring" until the response. The Trash view closes into the live document,
+   and the catalog stream returns it to the context tree.
+5. Restore one document from the list. Its row says Restoring until the
+   response, leaves the list after success, and the catalog stream returns it
+   to the context tree.
+6. Create a document at the other deleted document's former path, then restore
    the deleted document. Confirm the row leaves Trash and the success message
    names the alternate location where it landed.
-5. Empty Trash by restoring the remaining rows. Close the list and confirm the
+7. Empty Trash by restoring the remaining rows. Close the list and confirm the
    sidebar row is gone. Repeat through the phone navigation drawer; Trash opens
    the same auxiliary list and closes the drawer.
+
+An already-open live tab still follows terminal resource cleanup when another
+actor deletes its document: the tab closes and the removal notice appears. The
+read-only Trash view is an auxiliary route, not a retained Editor tab.
 
 ## Removal notices in the browser
 
