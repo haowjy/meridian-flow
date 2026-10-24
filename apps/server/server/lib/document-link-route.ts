@@ -74,7 +74,6 @@ export async function handleDocumentLinkResolveRequest(
     resolution: LinkResolution;
     candidateId?: DocumentId;
   }> = [];
-  const historicalGoneByHref = new Map<string, ReturnType<DocumentLinkResolver["resolve"]>>();
   // Relative hrefs resolve against the holder where it is now.
   let baseUri = request.baseUri;
 
@@ -119,27 +118,8 @@ export async function handleDocumentLinkResolveRequest(
         ? deps.linkScopes.holder({ documentId: holder.documentId, view })
         : deps.linkScopes.reader({ uri: request.baseUri, view });
       for (const { link, index } of refLinks) {
-        let resolution = reader.resolve(link);
+        const resolution = reader.resolve(link);
         const parsed = parseLinkRef(link.ref);
-        if (resolution.kind === "ahead") {
-          const target = addressTarget(link.href, baseUri);
-          let historical = historicalGoneByHref.get(link.href);
-          if (!historical && target) {
-            historical = deps.documentLinks.resolve({
-              projectId,
-              userId,
-              workId,
-              rootThreadId: request.rootThreadId,
-              chatId: request.chatId,
-              target: target.target,
-              previousLocations: "gone",
-            });
-            historicalGoneByHref.set(link.href, historical);
-          }
-          const historicalResolution = await historical;
-          if (historicalResolution && "kind" in historicalResolution)
-            resolution = { kind: "gone", settled: true };
-        }
         const candidateId =
           resolution.kind === "gone"
             ? (resolution.documentId ?? (parsed?.kind === "doc" ? parsed.documentId : undefined))
@@ -165,7 +145,7 @@ export async function handleDocumentLinkResolveRequest(
 
   const found: Array<{ index: number; document: DocumentAnswer }> = [];
   // Address-only links the live tree left unanswered: a Work's branch may have created them.
-  const unanswered: Array<{ index: number; uri: string; gone: boolean }> = [];
+  const unanswered: Array<{ index: number; uri: string }> = [];
   const byHref = new Map<string, ReturnType<DocumentLinkResolver["resolve"]>>();
   for (const [index, link] of request.links.entries()) {
     if (link.ref !== null) continue;
@@ -183,18 +163,14 @@ export async function handleDocumentLinkResolveRequest(
         rootThreadId: request.rootThreadId,
         chatId: request.chatId,
         target: target.target,
-        // Chat alone follows a moved document. A document-held path keeps path semantics,
-        // but a scoped deletion is still distinguishable from a never-created address.
-        previousLocations:
-          baseUri === null && request.holderDocumentId === undefined ? "follow" : "gone",
+        // Chat alone may follow a vacated path to the document that left it.
+        previousLocations: baseUri === null && request.holderDocumentId === undefined,
       });
       byHref.set(link.href, resolving);
     }
     const resolved = await resolving;
-    if (!resolved || "kind" in resolved) {
-      unanswered.push({ index, uri: target.uri, gone: resolved?.kind === "gone" });
-    }
-    if (resolved && !("kind" in resolved)) {
+    if (!resolved) unanswered.push({ index, uri: target.uri });
+    if (resolved) {
       found.push({
         index,
         document: {
@@ -225,9 +201,6 @@ export async function handleDocumentLinkResolveRequest(
   }
   if (unanswered.length > 0) {
     await answerFromBranchView(deps, { projectId, userId, view, unanswered, answers });
-    for (const { index, gone } of unanswered) {
-      if (gone && answers[index]?.state === "missing") answers[index] = { state: "gone" };
-    }
   }
   return holderUri === undefined ? { answers } : { answers, holderUri };
 }
@@ -244,7 +217,7 @@ async function answerFromBranchView(
     projectId: string;
     userId: UserId;
     view: LinkView;
-    unanswered: ReadonlyArray<{ index: number; uri: string; gone: boolean }>;
+    unanswered: ReadonlyArray<{ index: number; uri: string }>;
     answers: DocumentLinkAnswer[];
   },
 ): Promise<void> {
