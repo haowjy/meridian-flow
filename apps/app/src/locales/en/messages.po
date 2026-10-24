@@ -510,20 +510,10 @@ msgstr "{work} is renaming this to {place}."
 msgid "<0.1 s"
 msgstr "<0.1 s"
 
-#. placeholder {0}: target.name
-#: src/features/project/context/ContextEntryActions.tsx
-#~ msgid "<0>{0}</0> and all its contents will be deleted."
-#~ msgstr "<0>{0}</0> and all its contents will be deleted."
-
 #. placeholder {0}: target?.title
 #: src/features/project/chat-list/DeleteChatDialog.tsx
 msgid "<0>{0}</0> and its messages will be deleted."
 msgstr "<0>{0}</0> and its messages will be deleted."
-
-#. placeholder {0}: target?.name
-#: src/features/project/context/ContextEntryActions.tsx
-#~ msgid "<0>{0}</0> will be deleted."
-#~ msgstr "<0>{0}</0> will be deleted."
 
 #: src/features/chat/DeletedChatCard.tsx
 msgid "<0>{title}</0> was deleted."
@@ -1570,10 +1560,6 @@ msgstr "Couldn't delete this chat"
 msgid "Couldn't delete this document. Try again."
 msgstr "Couldn't delete this document. Try again."
 
-#: src/features/project/context/ContextEntryActions.tsx
-#~ msgid "Couldn't delete this entry. Try again."
-#~ msgstr "Couldn't delete this entry. Try again."
-
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Couldn’t delete this file. Try again."
 msgstr "Couldn’t delete this file. Try again."
@@ -1678,10 +1664,6 @@ msgstr "Couldn't open review mode."
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
-
-#: src/features/project/shell/ContextSidebar.tsx
-#~ msgid "Couldn’t open this document."
-#~ msgstr "Couldn’t open this document."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't open this draft. Try again."
@@ -1971,14 +1953,6 @@ msgstr "Delete chat?"
 msgid "Delete column"
 msgstr "Delete column"
 
-#: src/features/project/context/ContextEntryActions.tsx
-#~ msgid "Delete file?"
-#~ msgstr "Delete file?"
-
-#: src/features/project/context/ContextEntryActions.tsx
-#~ msgid "Delete folder?"
-#~ msgstr "Delete folder?"
-
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Delete row"
 msgstr "Delete row"
@@ -2039,10 +2013,6 @@ msgstr "Deleting"
 #: src/features/chat/command-descriptor.ts
 msgid "Deleting a Work…"
 msgstr "Deleting a Work…"
-
-#: src/features/project/context/ContextEntryActions.tsx
-#~ msgid "Deleting…"
-#~ msgstr "Deleting…"
 
 #: src/rich-content/ImageBlock.tsx
 msgid "Demo image"
@@ -2447,10 +2417,6 @@ msgstr "Goal saved"
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Goal: {0}. "
 msgstr "Goal: {0}. "
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Got the latest text of"
-#~ msgstr "Got the latest text of"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "grid"
@@ -4413,10 +4379,6 @@ msgid "That change can't be redone here because it was already applied to your m
 msgstr "That change can't be redone here because it was already applied to your manuscript."
 
 #: src/features/chat/tool-renderers.tsx
-#~ msgid "That change can't be redone here because the chat now writes somewhere else."
-#~ msgstr "That change can't be redone here because the chat now writes somewhere else."
-
-#: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone because it was discarded."
 msgstr "That change can't be undone because it was discarded."
 
@@ -4431,10 +4393,6 @@ msgstr "That change can't be undone because the text changed afterwards."
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone here because it was already applied to your manuscript."
 msgstr "That change can't be undone here because it was already applied to your manuscript."
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "That change can't be undone here because the chat now writes somewhere else."
-#~ msgstr "That change can't be undone here because the chat now writes somewhere else."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change couldn't be made in {name}."
@@ -4592,10 +4550,6 @@ msgstr "The document could not be created. Try again."
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
 msgstr "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
 
-#: src/features/project/context/ContextEntryActions.tsx
-#~ msgid "The entry changed. Refresh the tree and try again."
-#~ msgstr "The entry changed. Refresh the tree and try again."
-
 #: src/features/chat/chat-card-copy.ts
 msgid "The handoff brief failed."
 msgstr "The handoff brief failed."
@@ -4641,18 +4595,10 @@ msgstr "The text it edited was discarded, so the change wasn't kept. The AI will
 msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 msgstr "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 
-#: src/features/project/context/ContextEntryActions.tsx
-#~ msgid "The Work {names} has changes to it. Applying them brings it back."
-#~ msgstr "The Work {names} has changes to it. Applying them brings it back."
-
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "The Work did not change. Try again."
 msgstr "The Work did not change. Try again."
-
-#: src/features/project/context/ContextEntryActions.tsx
-#~ msgid "The Works {names} have changes to it. Applying them brings it back."
-#~ msgstr "The Works {names} have changes to it. Applying them brings it back."
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Theme"
@@ -5181,10 +5127,6 @@ msgstr "Undoing Apply"
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undoing…"
 msgstr "Undoing…"
-
-#: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "Undone in your drafts. Apply them to change your manuscript."
-#~ msgstr "Undone in your drafts. Apply them to change your manuscript."
 
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"
