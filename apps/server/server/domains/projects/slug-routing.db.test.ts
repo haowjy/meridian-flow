@@ -1,7 +1,8 @@
 /**
- * Postgres regression for #290: a non-UUID id (e.g. a project slug landing in a
- * `:projectId` route) must resolve to not-found at the repository boundary,
- * never a Postgres uuid-parse 500 leaking out of `findById`.
+ * Postgres regression for #290: a non-UUID id (e.g.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current slug routing persistence protocol
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";

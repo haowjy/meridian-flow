@@ -1,4 +1,9 @@
-/** Postgres coverage for model-context notice recording and transactional consumption. */
+/**
+ * Postgres coverage for model-context notice recording and transactional consumption.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current drizzle notice port persistence protocol
+ */
 
 import { beforeEach, describe, expect, it } from "vitest";
 

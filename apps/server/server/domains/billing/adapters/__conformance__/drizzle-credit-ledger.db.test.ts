@@ -1,7 +1,8 @@
 /**
- * Purpose: DB conformance tests for the production credit ledger's money
- * invariants: FIFO lot consumption, user-scoped balances, and replay-safe
- * model-call debit idempotency.
+ * Purpose: DB conformance tests for the production credit ledger's money invariants: FIFO lot consumption, user-scoped balances, and replay-safe model-call debit idempotency.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current drizzle credit ledger persistence protocol
  */
 import { beforeEach, describe, expect, it } from "vitest";
 

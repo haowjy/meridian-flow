@@ -1,6 +1,8 @@
 /**
- * Postgres regression for auth provisioning: one WorkOS principal maps to one
- * local account, while email collisions across principals fail closed.
+ * Postgres regression for auth provisioning: one WorkOS principal maps to one local account, while email collisions across principals fail closed.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current provisioning race persistence protocol
  */
 
 import { setTimeout as delay } from "node:timers/promises";

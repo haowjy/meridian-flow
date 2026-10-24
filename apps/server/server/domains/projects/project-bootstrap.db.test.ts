@@ -1,4 +1,9 @@
-/** PostgreSQL contract for project bootstrap with locked No Work. */
+/**
+ * PostgreSQL contract for project bootstrap with locked No Work.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current project bootstrap persistence protocol
+ */
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
