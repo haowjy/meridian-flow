@@ -8,7 +8,6 @@ import { useQuery } from "@tanstack/react-query";
 import { workBranchDraftsQueryOptions } from "@/client/query/useWorkBranchDrafts";
 import type { DraftChangesData } from "./draft-changes";
 import { useChangeItems, useDraftCommandState } from "./draft-changes";
-import { treeChange, treeLineOf } from "./tree-line";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { useRoomReview } from "./useRoomReview";
 export function useOpenReviewChanges(
@@ -31,13 +30,10 @@ export function useOpenReviewChanges(
   });
   const item = draft ? listed.data?.find((row) => row.itemKey === draft.itemKey) : undefined;
   const withoutText = item?.hasDraft === false || item?.tree?.deleted === true;
-  const read = useRoomReview(draft);
-  const line = item && !item.isNew ? treeLineOf(item) : null;
-  const changes = line?.kind === "delete" ? [] : read.changes;
-  const { items } = useChangeItems(
-    draft,
-    item && line ? [treeChange(item, line), ...changes] : changes,
-  );
+  const read = useRoomReview(withoutText ? null : draft);
+  const changes = read.changes;
+  const { items } = useChangeItems(draft, changes);
+  const status = withoutText ? "ready" : (read.status as DraftChangesData["status"]);
   return {
     inline,
     documentId: inline?.documentId ?? null,
@@ -45,13 +41,13 @@ export function useOpenReviewChanges(
     changes,
     retry: read.retry,
     items,
-    status: withoutText ? "ready" : (read.status as DraftChangesData["status"]),
+    status,
 
     completing: command.discarding
       ? ("discard" as const)
       : command.applying
         ? ("apply" as const)
         : null,
-    finished: read.status === "ready" && !items.length && !command.pending && !command.discarding,
+    finished: status === "ready" && !items.length && !command.pending && !command.discarding,
   };
 }

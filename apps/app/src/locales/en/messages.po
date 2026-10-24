@@ -397,10 +397,6 @@ msgstr "{name} was removed when the reply that created it didn't finish, so this
 msgid "{name}: Deleted"
 msgstr "{name}: Deleted"
 
-#: src/features/draft-review/tree-line.ts
-#~ msgid "{name}: deleting"
-#~ msgstr "{name}: deleting"
-
 #. placeholder {0}: line.place
 #: src/features/draft-review/tree-line.ts
 msgid "{name}: moving to {0}"
@@ -719,7 +715,7 @@ msgstr "Agent: {agentName}"
 msgid "AI assistant"
 msgstr "AI assistant"
 
-#. placeholder {0}: entry.actor.chatTitle
+#. placeholder {0}: voice.chat
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "AI in {0}"
 msgstr "AI in {0}"
@@ -796,10 +792,6 @@ msgstr "Alt text"
 #: src/features/project/context/context-entry-name.ts
 msgid "An entry named {name} already exists in this location."
 msgstr "An entry named {name} already exists in this location."
-
-#: src/features/project/context/DocumentTrashDialog.tsx
-msgid "an unknown writer"
-msgstr "an unknown writer"
 
 #: src/client/query/work-update-failure.ts
 msgid "Another Work already has this name. Choose a different name."
@@ -1752,29 +1744,32 @@ msgstr "Couldn’t rename this Work. Try again."
 msgid "Couldn't rename. Use Rename in the file list to try again."
 msgstr "Couldn't rename. Use Rename in the file list to try again."
 
-#. placeholder {0}: document.name
-#. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Couldn't restore {0}."
 msgstr "Couldn't restore {0}."
 
-#. placeholder {0}: document.name
-#. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Couldn't restore {0}. A file is in the way."
 msgstr "Couldn't restore {0}. A file is in the way."
 
-#. placeholder {0}: document.name
-#. placeholder {0}: entry.name
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Couldn't restore {0}. Try again."
 msgstr "Couldn't restore {0}. Try again."
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Couldn't restore {name}."
+msgstr "Couldn't restore {name}."
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Couldn't restore {name}. A file is in the way."
+msgstr "Couldn't restore {name}. A file is in the way."
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Couldn't restore {name}. Try again."
+msgstr "Couldn't restore {name}. Try again."
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
@@ -2714,6 +2709,14 @@ msgstr "Keep"
 msgid "Keep editing"
 msgstr "Keep editing"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Kept while {works} has changes to it."
+msgstr "Kept while {works} has changes to it."
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Kept while {works} have changes to it."
+msgstr "Kept while {works} have changes to it."
+
 #: src/features/project/context/context-schemes.ts
 msgid "Knowledge Base"
 msgstr "Knowledge Base"
@@ -3225,6 +3228,7 @@ msgstr "No image has been uploaded to {path} yet."
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
+#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/rich-content/TranscriptReference.tsx
 msgid "No longer available"
 msgstr "No longer available"
@@ -3839,8 +3843,10 @@ msgid "Restored as {0}."
 msgstr "Restored as {0}."
 
 #. placeholder {0}: alternateLocations.join(", ")
+#. placeholder {0}: notice.location
 #. placeholder {0}: result.landedAt
 #: src/features/project/context/document-delete-undo.tsx
+#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/context/restore-trashed-document.ts
 msgid "Restored at {0}."
 msgstr "Restored at {0}."
