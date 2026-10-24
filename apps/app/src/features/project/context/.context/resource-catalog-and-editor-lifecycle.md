@@ -37,9 +37,10 @@ for a cold Work triggers the same exact-ID availability path without warming a
 second tree. Cache omission is presentation state and never removal evidence.
 Generation-bearing final commands own the atomic tab, route, selection,
 admission, working-set, and Yjs session effects; same-ID moves and local-new
-tabs survive. Known exact initialized content opens through the resource owner before remote
-admission. Unacquired content requires exact final availability and the live
-opener. Verified-local readiness bypasses the first-sync wait, not upload
+tabs survive. A door commits from catalog identity without inspecting content.
+The installed host opens known exact content through the resource owner before
+remote admission. Unacquired content requires exact final availability and the
+live opener. Verified-local readiness bypasses the first-sync wait, not upload
 authorization.
 
 `useFileSuggestions` projects directly from the normalized scope views. It
@@ -107,9 +108,10 @@ A tab that loses its resource handle but keeps its document (a review launch
 re-opens it without one) keeps painting its cached session while the exact
 lookup re-probes; the boundary never drops to a skeleton for that identity flip.
 
-The desktop `ContextTabSessionBoundary` opens the ordinary live binding once its
-local session has been probed (`useLiveDocumentBinding`: open, bind, explicit
-retry). It presents the live session in place of the cached one when that
+`ContextTabSessionBoundary` opens the ordinary live binding once its local
+session has been probed (`useLiveDocumentBinding`: open, bind, explicit retry).
+It takes a navigation lookup answer only when the answer was armed for its tab
+instance; local content winning discards that answer. It presents the live session in place of the cached one when that
 binding opens, and shows the session's own connection state. An availability
 recheck that returns terminal, deleted, or schema-mismatch releases the cached
 handle and its resource ownership lease rather than leaving the stale session
@@ -117,8 +119,7 @@ mounted. A local cache-open failure falls through to exact server availability
 instead of terminalizing the tab from stale metadata. A failed binding offers
 Retry and also retries once each time the resource availability revision
 advances. The phone document host (`MobileDocumentHost`) uses the same binding
-but neither offers Retry nor retries on a revision change, so a failed phone
-open has no in-place recovery yet.
+and recovery behavior.
 
 A draft-only tab (a new document proposed in a branch, or one live deleted
 while a Work's draft still has it, D79) opens no live binding at

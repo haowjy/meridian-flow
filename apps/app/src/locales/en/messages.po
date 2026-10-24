@@ -606,6 +606,7 @@ msgid "A Work has drafts for this ({0})"
 msgstr "A Work has drafts for this ({0})"
 
 #: src/features/editor/SyncStatus.tsx
+#: src/features/project/context/ContextDocumentHost.tsx
 msgid "Access lost (not saving to the server)"
 msgstr "Access lost (not saving to the server)"
 
@@ -1675,8 +1676,8 @@ msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
 
 #: src/features/project/shell/ContextSidebar.tsx
-msgid "Couldn’t open this document."
-msgstr "Couldn’t open this document."
+#~ msgid "Couldn’t open this document."
+#~ msgstr "Couldn’t open this document."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't open this draft. Try again."

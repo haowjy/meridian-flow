@@ -280,6 +280,10 @@ export function useContextRemovalCoordinator(): ContextRemovalCoordinator {
   return coordinator;
 }
 
+export function useOptionalContextRemovalCoordinator(): ContextRemovalCoordinator | null {
+  return useContext(ContextRemovalAccountContext);
+}
+
 export function useLiveDocumentSessionRegistry(): AccountFeatureLifetime["registry"] {
   const registry = useContext(LiveDocumentRegistryAccountContext);
   if (!registry) throw new Error("AccountFeatureComposition is required");

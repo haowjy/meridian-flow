@@ -85,7 +85,19 @@ export function resolveMobileDocumentRoute(input: {
     : { kind: "absent" as const };
   const resolved =
     owner.kind === "live" && input.workId
-      ? contextTabFromFile(input.scheme, owner.file, contextOwner(input.workId, rootThreadId))
+      ? (() => {
+          const projected = contextTabFromFile(
+            input.scheme,
+            owner.file,
+            contextOwner(input.workId, rootThreadId),
+          );
+          const installed = input.workspaceTabs?.find(
+            (tab) => tab.documentId === owner.file.documentId,
+          );
+          return installed?.tabInstanceId
+            ? { ...projected, tabInstanceId: installed.tabInstanceId }
+            : projected;
+        })()
       : owner.kind === "draft-only"
         ? owner.tab
         : null;

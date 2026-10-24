@@ -45,7 +45,9 @@ async function follow(gesture: "current" | "new-tab") {
   }
   try {
     await withReactRoot(
-      <ProjectDocumentLiveOpenerContext.Provider value={{ open: liveOpen } as never}>
+      <ProjectDocumentLiveOpenerContext.Provider
+        value={{ open: liveOpen, pruneTransfers: vi.fn() } as never}
+      >
         <ProjectDocumentNavigationProvider projectId="project-a">
           <EditorReviewHandoffProvider projectId="project-a" openContextRoute={route}>
             <Probe />
