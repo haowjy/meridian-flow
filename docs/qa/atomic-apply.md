@@ -78,3 +78,7 @@ then repeat after moving the paragraph and after a local Discard/Undo. Check
 that only the frozen words reach live and that the review never resurrects an
 already recorded click. Capture screenshots and independently read live and
 both draft fragments. API-core probe success is not evidence for that UI flow.
+
+For drafted name swaps and chains, also run the model move recipe's Apply case. The branch must
+first settle each waiting arrival to its requested name; this runner only proves the existing
+vacate-then-claim Apply path once those placements reach it.

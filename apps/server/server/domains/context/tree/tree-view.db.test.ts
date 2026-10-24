@@ -250,7 +250,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         value: { after: { moved: { name: "ch2 (2)" } } },
       });
       expect((await move(ch2, "book/ch2b")).ok).toBe(true);
-      expect((await move(ch1, "book/ch2")).ok).toBe(true);
+      expect(await shownAt("book/ch2")).toBe(ch1);
       expect(await shownAt("book/ch1")).toBe("not_found");
       // A live rename of the destination folder shows in the branch (D80).
       await db

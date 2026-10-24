@@ -70,6 +70,14 @@ the text it found or a block hash from that read.
    and ch5 → ch6 both land in dependency order from either row. Repeat with a swap: both land
    in one Apply transaction. Apply a drafted move after a new live document takes its target:
    the move lands at the next free name and the footer says "Added as <name>."
+   Repeat with a model-authored swap in one reply: move `swap-a` → `swap-b`, then
+   `swap-b` → `swap-a`. The first tool result initially reports `swap-b (2)` because that is
+   where the valid branch tree can place it at that moment. The second move vacates `swap-b`;
+   the expanded receipt, dock and a following `read manuscript://swap-b` then show the first
+   document at `swap-b`. Card Undo removes both moves, Redo restores the swap, and Apply lands
+   the two requested names through the existing atomic cycle path. Repeat with a three-name
+   chain. When two arrivals request one vacated name, the earlier request takes it and the later
+   one keeps its suffix.
 8. **Scratch crossing.** Script `create` `scratch://@w1/sect-notes`, then `move` it to
    `manuscript://sect-notes`. The result starts "not applied yet", the dock lists sect-notes at
    its manuscript destination, and live still has it in Scratch. Script `undo` by either path:

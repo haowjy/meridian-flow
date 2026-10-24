@@ -673,6 +673,20 @@
       "when": 1792780489664,
       "tag": "0101_editor_unapply",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1792868400000,
+      "tag": "0102_branch_move_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1792868400001,
+      "tag": "0103_branch_move_requests_online",
+      "breakpoints": true
     }
   ]
 }

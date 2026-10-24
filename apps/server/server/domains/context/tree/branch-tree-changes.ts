@@ -26,7 +26,9 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import {
   readBranchTreeFacts,
+  requestedArrivalAt,
   settleBranchEntries,
+  settleRequestedArrival,
   writeBranchTreeFacts,
 } from "./branch-tree-store.js";
 import { resolveAbsorbedFolders } from "./folder-normalization.js";
@@ -94,7 +96,17 @@ export async function moveInBranch(
 ): Promise<Result<BranchTreeChange, BranchTreeFault>> {
   const view: TreeView = { kind: "branch", branchId: input.branchId };
   const tree = createTreeReader(db);
-  await lockDocuments(db, [input.documentId]);
+  const before = await factsOf(db, input.branchId, input.documentId);
+  const [identity] = await loadDocumentIdentityRows(currentDrizzleDb(db), [input.documentId]);
+  if (!identity) return Err({ code: "not_found" });
+  const vacated: TreePlacement = before.moved ?? {
+    folderId: identity.folderId,
+    rootSourceId: identity.folderId ? null : identity.contextSourceId,
+    name: identity.name,
+    extension: identity.extension,
+  };
+  const arrival = await requestedArrivalAt(currentDrizzleDb(db), input.branchId, vacated);
+  await lockDocuments(db, [input.documentId, ...(arrival ? [arrival] : [])]);
   if ((await tree.findById(view, input.documentId)).kind !== "found")
     return Err({ code: "not_found" });
   const { contextSourceId } = input.to;
@@ -132,7 +144,6 @@ export async function moveInBranch(
   if (walk.kind === "occupied")
     return Err(walk.occupant.kind === "ambiguous" ? { code: "ambiguous" } : conflictWithFile);
   if (walk.kind !== "walked") throw new Error("A branch's folder walk fills every gap");
-  const before = await factsOf(db, input.branchId, input.documentId);
   const after: BranchTreeFacts = {
     row: true,
     created: before.created,
@@ -150,7 +161,14 @@ export async function moveInBranch(
     facts: after,
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: input.changedBy,
+    requested: { name: input.to.name, extension: input.to.extension },
   });
+  if (arrival)
+    await settleRequestedArrival(db, {
+      branchId: input.branchId,
+      documentId: arrival,
+      placement: vacated,
+    });
   return Ok({ before, after });
 }
 
@@ -165,11 +183,20 @@ export async function deleteInBranch(
   db: Database,
   input: { branchId: BranchId; documentId: DocumentId; changedBy: ChangedBy },
 ): Promise<Result<BranchTreeChange, Extract<BranchTreeFault, { code: "not_found" }>>> {
-  await lockDocuments(db, [input.documentId]);
+  const before = await factsOf(db, input.branchId, input.documentId);
+  const [identity] = await loadDocumentIdentityRows(currentDrizzleDb(db), [input.documentId]);
+  if (!identity) return Err({ code: "not_found" });
+  const vacated: TreePlacement = before.moved ?? {
+    folderId: identity.folderId,
+    rootSourceId: identity.folderId ? null : identity.contextSourceId,
+    name: identity.name,
+    extension: identity.extension,
+  };
+  const arrival = await requestedArrivalAt(currentDrizzleDb(db), input.branchId, vacated);
+  await lockDocuments(db, [input.documentId, ...(arrival ? [arrival] : [])]);
   const view: TreeView = { kind: "branch", branchId: input.branchId };
   if ((await createTreeReader(db).findById(view, input.documentId)).kind !== "found")
     return Err({ code: "not_found" });
-  const before = await factsOf(db, input.branchId, input.documentId);
   const after: BranchTreeFacts = { ...before, row: true, deleted: true };
   await writeBranchTreeFacts(db, {
     branchId: input.branchId,
@@ -177,7 +204,14 @@ export async function deleteInBranch(
     facts: after,
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: input.changedBy,
+    requested: "preserve",
   });
+  if (arrival)
+    await settleRequestedArrival(db, {
+      branchId: input.branchId,
+      documentId: arrival,
+      placement: vacated,
+    });
   return Ok({ before, after });
 }
 
@@ -225,12 +259,59 @@ export async function writeBackBranchFacts(
     expected: BranchTreeFacts;
     facts: BranchTreeFacts;
     changedBy: ChangedBy;
+    /** Other documents this same atomic inverse will move before commit. */
+    deferredDocumentIds?: ReadonlySet<DocumentId>;
   },
 ): Promise<Result<BranchTreeFacts, BranchFactsFault>> {
-  await lockDocuments(db, [input.documentId]);
   const current = await factsOf(db, input.branchId, input.documentId);
+  const [identity] = await loadDocumentIdentityRows(currentDrizzleDb(db), [input.documentId]);
+  if (!identity) return Err("superseded");
+  const physical: TreePlacement = {
+    folderId: identity.folderId,
+    rootSourceId: identity.folderId ? null : identity.contextSourceId,
+    name: identity.name,
+    extension: identity.extension,
+  };
+  const currentPlacement = current.moved ?? physical;
+  const view = { kind: "branch", branchId: input.branchId } as const;
+  const unvacatesPhysical = !input.facts.moved && !input.facts.deleted;
+  const occupant = unvacatesPhysical
+    ? await createTreeReader(db).resolvePath(view, {
+        contextSourceId: identity.contextSourceId,
+        path: filePath(
+          identity.folderId
+            ? chainPrefix(
+                (await loadFolderChains(currentDrizzleDb(db), [identity.folderId])).get(
+                  identity.folderId,
+                ) ?? [],
+              )
+                .split("/")
+                .filter(Boolean)
+            : [],
+          identity.name,
+          identity.extension,
+        ),
+        as: "document",
+      })
+    : null;
+  const displaced =
+    occupant?.kind === "found" &&
+    occupant.node.kind === "document" &&
+    occupant.node.document.id !== input.documentId
+      ? occupant.node.document.id
+      : null;
+  const deferredConflict = !!displaced && !!input.deferredDocumentIds?.has(displaced);
+  const arrival = await requestedArrivalAt(currentDrizzleDb(db), input.branchId, currentPlacement);
+  await lockDocuments(db, [
+    input.documentId,
+    ...(displaced ? [displaced] : []),
+    ...(arrival ? [arrival] : []),
+  ]);
   if (!sameBranchFacts(current, input.expected)) return Err("superseded");
   let facts = input.facts;
+  const requested = facts.moved
+    ? { name: facts.moved.name, extension: facts.moved.extension }
+    : undefined;
   let moved = facts.moved;
   if (moved?.folderId) {
     const requested = moved.folderId as FolderId;
@@ -244,15 +325,22 @@ export async function writeBackBranchFacts(
     const [folder] = await loadFolderIdentityRows(currentDrizzleDb(db), [folderId]);
     if (!folder || (folder.hidden && folder.deleted)) return Err("folder_missing");
   }
-  if (!facts.deleted) facts = await freeFactsInBranch(db, { ...input, facts });
+  if (!facts.deleted && !deferredConflict) facts = await freeFactsInBranch(db, { ...input, facts });
   await writeBranchTreeFacts(db, {
     branchId: input.branchId,
     documentId: input.documentId,
     facts,
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: input.changedBy,
+    requested,
     ...(!current.row && facts.created ? { createdBy: input.changedBy } : {}),
   });
+  if (arrival && arrival !== displaced && !input.deferredDocumentIds?.has(arrival))
+    await settleRequestedArrival(db, {
+      branchId: input.branchId,
+      documentId: arrival,
+      placement: currentPlacement,
+    });
   return Ok(facts);
 }
 

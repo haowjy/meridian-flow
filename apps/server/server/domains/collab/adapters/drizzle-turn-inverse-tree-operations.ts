@@ -76,10 +76,11 @@ export function createTurnInverseTreeOperations(input: {
     planned: PlannedTreeInverse,
     userId: UserId | undefined,
     query: TurnInverseQuery,
+    deferredDocumentIds?: ReadonlySet<DocumentId>,
   ): Promise<CommittedTreeOperation> {
     return isLiveTransition(planned)
       ? { transition: await commitLive(entry, planned, userId, query) }
-      : commitBranch(entry, planned, query);
+      : commitBranch(entry, planned, query, deferredDocumentIds);
   }
 
   async function commitLive(
@@ -112,6 +113,7 @@ export function createTurnInverseTreeOperations(input: {
     entry: TreeOperationEntry,
     planned: BranchTreeTransition & PlannedTreeInverse,
     query: TurnInverseQuery,
+    deferredDocumentIds?: ReadonlySet<DocumentId>,
   ): Promise<CommittedTreeOperation> {
     const { branchId } = planned.destination;
     const [branch] = await db()
@@ -129,6 +131,7 @@ export function createTurnInverseTreeOperations(input: {
       expected: planned.before,
       facts: planned.after,
       changedBy: { threadId: query.threadId, ...(query.turnId ? { turnId: query.turnId } : {}) },
+      deferredDocumentIds,
     });
     if (!committed.ok) throw new TreeFault(committed.error);
     return {

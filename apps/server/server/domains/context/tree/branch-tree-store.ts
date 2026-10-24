@@ -4,17 +4,21 @@
  * delete holds the branch's facts, which `writeBranchTreeFacts` alone writes. Folders are
  * implied by what a branch places under them (O-2).
  */
+
 import type {
   BranchId,
   BranchTreeFacts,
+  BranchTreeTransition,
   ContextSourceId,
   DocumentId,
   FolderId,
   ThreadId,
   TreePlacement,
+  TreeTransitionChange,
   TurnId,
   UserId,
 } from "@meridian/contracts";
+import { sameBranchFacts } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import {
   branchTreeChanges,
@@ -23,7 +27,7 @@ import {
   documentEdits,
   folders,
 } from "@meridian/database/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { nextEditSeq } from "../../../shared/edit-history-seq.js";
 import {
@@ -379,6 +383,140 @@ export async function readBranchTreeFacts(
   return out;
 }
 
+/** The earliest visible drafted move still waiting for `placement`'s requested leaf. */
+export async function requestedArrivalAt(
+  db: Pick<DrizzleDb, "select">,
+  branchId: BranchId,
+  placement: TreePlacement,
+): Promise<DocumentId | null> {
+  const [row] = await db
+    .select({ documentId: branchTreeChanges.nodeId })
+    .from(branchTreeChanges)
+    .where(
+      and(
+        eq(branchTreeChanges.branchId, branchId),
+        eq(branchTreeChanges.nodeKind, "document"),
+        eq(branchTreeChanges.moved, true),
+        eq(branchTreeChanges.deleted, false),
+        placement.folderId
+          ? eq(branchTreeChanges.movedFolderId, placement.folderId)
+          : placement.rootSourceId
+            ? eq(branchTreeChanges.movedRootSourceId, placement.rootSourceId)
+            : isNull(branchTreeChanges.movedRootSourceId),
+        eq(branchTreeChanges.requestedName, placement.name),
+        eq(branchTreeChanges.requestedExtension, placement.extension),
+        sql`(${branchTreeChanges.movedName}, ${branchTreeChanges.movedExtension}) IS DISTINCT FROM (${placement.name}, ${placement.extension})`,
+      ),
+    )
+    .orderBy(asc(branchTreeChanges.requestedOrder), asc(branchTreeChanges.nodeId))
+    .limit(1);
+  return (row?.documentId as DocumentId | undefined) ?? null;
+}
+
+/** Move one pending arrival into the requested leaf that this transaction just vacated. */
+export async function settleRequestedArrival(
+  db: Database,
+  input: { branchId: BranchId; documentId: DocumentId; placement: TreePlacement },
+): Promise<void> {
+  const before = (
+    await readBranchTreeFacts(currentDrizzleDb(db), [input.branchId], [input.documentId])
+  )
+    .get(input.branchId)
+    ?.get(input.documentId);
+  if (!before?.moved || before.deleted) return;
+  const after: BranchTreeFacts = {
+    ...before,
+    moved: { ...before.moved, name: input.placement.name, extension: input.placement.extension },
+  };
+  await currentDrizzleDb(db)
+    .update(branchTreeChanges)
+    .set({
+      movedName: input.placement.name,
+      movedExtension: input.placement.extension,
+      revision: sql`nextval('branch_tree_change_revision')`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(branchTreeChanges.branchId, input.branchId),
+        eq(branchTreeChanges.nodeKind, "document"),
+        eq(branchTreeChanges.nodeId, input.documentId),
+      ),
+    );
+  await rewriteStandingMove(db, input.branchId, input.documentId, before, after);
+}
+
+/** A pending move's free-name landing is mutable until Apply; keep its inverse and receipt exact. */
+async function rewriteStandingMove(
+  db: Database,
+  branchId: BranchId,
+  documentId: DocumentId,
+  before: BranchTreeFacts,
+  after: BranchTreeFacts,
+): Promise<void> {
+  const tx = currentDrizzleDb(db);
+  const rows = await tx
+    .select({
+      id: documentEdits.id,
+      editId: documentEdits.id,
+      kind: documentEdits.kind,
+      treeChange: documentEdits.treeChange,
+    })
+    .from(documentEdits)
+    .where(
+      and(
+        eq(documentEdits.documentId, documentId),
+        sql`${documentEdits.treeChange}->'destination'->>'branchId' = ${branchId}`,
+      ),
+    );
+  const history: TreeRow[] = rows.flatMap((row) =>
+    row.treeChange
+      ? [
+          {
+            id: row.treeChange.seq,
+            editId: row.editId,
+            kind: row.kind,
+            targets: row.treeChange.targets,
+            tree: row.treeChange,
+          },
+        ]
+      : [],
+  );
+  history.sort((a, b) => a.id - b.id);
+  let standing: (TreeTransitionChange & BranchTreeTransition) | null = null;
+  let standingEditId: string | null = null;
+  for (const row of [...history].reverse()) {
+    if (!isTransitionEntry(row) || row.tree.destination.kind !== "draft") continue;
+    const tree = row.tree as TreeTransitionChange & BranchTreeTransition;
+    if (!sameBranchFacts(tree.after, before)) continue;
+    if (!latestTransition(row, history, new Set()).stands) continue;
+    standing = tree;
+    standingEditId = row.editId;
+    break;
+  }
+  // Tree-domain callers can draft moves without a model edit history entry. There is then no
+  // user-facing transition to rewrite; the branch placement still settles normally.
+  if (!standing || !standingEditId) return;
+  const moved = after.moved;
+  if (!moved) throw new Error(`A settled drafted move lost its placement for ${documentId}`);
+  const landedAt = standing.landedAt;
+  const slash = landedAt?.lastIndexOf("/") ?? -1;
+  await tx
+    .update(documentEdits)
+    .set({
+      treeChange: {
+        ...standing,
+        after,
+        ...(landedAt
+          ? {
+              landedAt: `${landedAt.slice(0, slash + 1)}${moved.name}${moved.extension ? `.${moved.extension}` : ""}`,
+            }
+          : {}),
+      },
+    })
+    .where(eq(documentEdits.id, standingEditId));
+}
+
 /**
  * Writes `facts` as the branch's row on a document: the one writer of drafted moves and
  * deletes, and of their inverses, which write back the facts an entry recorded. Every write
@@ -397,6 +535,8 @@ export async function writeBranchTreeFacts(
     /** `documents.location_version` now: the base a first move or delete records. */
     locationVersion: bigint;
     changedBy: { threadId: ThreadId; turnId?: TurnId } | null;
+    /** A direct move's requested leaf; deletes preserve the masked move's request. */
+    requested?: { name: string; extension: string } | "preserve";
     /** Reinstates attribution when a creation inverse recreates its deleted facts row. */
     createdBy?: { threadId: ThreadId; turnId?: TurnId } | null;
   },
@@ -419,6 +559,12 @@ export async function writeBranchTreeFacts(
   }
   const changed = facts.moved !== null || facts.deleted;
   const moved: TreePlacement | null = facts.moved;
+  const requested =
+    moved === null
+      ? null
+      : input.requested === "preserve"
+        ? "preserve"
+        : (input.requested ?? { name: moved.name, extension: moved.extension });
   const values = {
     created: facts.created,
     ...(input.createdBy
@@ -432,6 +578,10 @@ export async function writeBranchTreeFacts(
     movedRootSourceId: moved?.folderId ? null : (moved?.rootSourceId ?? null),
     movedName: moved?.name ?? null,
     movedExtension: moved?.extension ?? null,
+    requestedName: requested === "preserve" ? moved?.name : (requested?.name ?? null),
+    requestedExtension:
+      requested === "preserve" ? moved?.extension : (requested?.extension ?? null),
+    requestedOrder: requested ? sql`nextval('branch_tree_change_revision')` : null,
     deleted: facts.deleted,
     changedThreadId: changed ? (input.changedBy?.threadId ?? null) : null,
     changedTurnId: changed ? (input.changedBy?.turnId ?? null) : null,
@@ -449,6 +599,13 @@ export async function writeBranchTreeFacts(
       target: [branchTreeChanges.branchId, branchTreeChanges.nodeKind, branchTreeChanges.nodeId],
       set: {
         ...values,
+        ...(requested === "preserve"
+          ? {
+              requestedName: branchTreeChanges.requestedName,
+              requestedExtension: branchTreeChanges.requestedExtension,
+              requestedOrder: branchTreeChanges.requestedOrder,
+            }
+          : {}),
         revision: sql`nextval('branch_tree_change_revision')`,
         baseVersion: changed
           ? sql`coalesce(${branchTreeChanges.baseVersion}, ${input.locationVersion}::bigint)`

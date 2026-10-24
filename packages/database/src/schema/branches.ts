@@ -116,6 +116,11 @@ export const branchTreeChanges = pgTable(
     movedRootSourceId: uuid("moved_root_source_id").$type<ContextSourceId>(),
     movedName: text("moved_name"),
     movedExtension: text("moved_extension"),
+    /** The leaf name the drafted move asked for, before free-name allocation. */
+    requestedName: text("requested_name"),
+    requestedExtension: text("requested_extension"),
+    /** Stable ordering when more than one pending arrival asks for the same vacated name. */
+    requestedOrder: bigint("requested_order", { mode: "bigint" }),
     /** `documents.location_version` when the branch first moved or deleted it. */
     baseVersion: bigint("base_version", { mode: "bigint" }),
     /**
@@ -159,6 +164,12 @@ export const branchTreeChanges = pgTable(
         AND (${table.movedFolderId} IS NULL) <> (${table.movedRootSourceId} IS NULL)
         ELSE ${table.movedFolderId} IS NULL AND ${table.movedRootSourceId} IS NULL
           AND ${table.movedName} IS NULL AND ${table.movedExtension} IS NULL END`,
+    ),
+    check(
+      "branch_tree_changes_requested_shape",
+      sql`CASE WHEN ${table.moved} THEN (${table.requestedName} IS NULL AND ${table.requestedExtension} IS NULL AND ${table.requestedOrder} IS NULL)
+          OR (${table.requestedName} IS NOT NULL AND ${table.requestedExtension} IS NOT NULL AND ${table.requestedOrder} IS NOT NULL)
+        ELSE ${table.requestedName} IS NULL AND ${table.requestedExtension} IS NULL AND ${table.requestedOrder} IS NULL END`,
     ),
     check(
       "branch_tree_changes_revision_present",

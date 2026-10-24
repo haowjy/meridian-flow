@@ -30,7 +30,13 @@ the per-document branch hints all read it; write admission does not.
 `branch-tree-changes.ts` writes drafted moves and deletes (`moveInBranch`,
 `deleteInBranch`) and their inverses (`writeBackBranchFacts`) through the one
 facts writer (`writeBranchTreeFacts`: a new `revision` from its sequence per
-write, the first `base_version` kept). The row's `changed_thread_id` is the chat
+write, the first `base_version` kept). A moved row keeps both its valid current
+placement and the leaf name it requested. When another branch write vacates
+that requested name, the earliest waiting arrival takes it; its standing tree
+entry is rewritten to the new landing so receipts and inverses keep describing
+the branch's actual state. A multi-document inverse may leave a transient clash
+inside its transaction when a later step removes the other arrival. The row's
+`changed_thread_id` is the chat
 whose turn the entry or its inverse belongs to, also when the writer's card or a
 rollback runs the inverse: the chat's dock lists the pending item by it. Every folder a moved fact names is
 held in `branch_tree_folders` per (branch, document) until settlement, even

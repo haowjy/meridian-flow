@@ -583,6 +583,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const treeRuns = sequence.flatMap(({ plan, step }) =>
         step.kind === "tree" ? [{ document: plan.document, planned: step.planned }] : [],
       );
+      const batchTreeDocumentIds = new Set(treeRuns.map(({ document }) => document.documentId));
       const grants = await admitInverse(sequence, query, userId);
       const commit = () =>
         withLiveDocuments([...new Set(liveIds)].sort(), () =>
@@ -625,7 +626,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                   if (!entry) throw new Error("A step's plan is not among the commit's plans");
                   const outcome =
                     step.kind === "tree"
-                      ? await commitTreeStep(entry, step, userId, query)
+                      ? await commitTreeStep(
+                          entry,
+                          step,
+                          userId,
+                          query,
+                          query.model ? undefined : batchTreeDocumentIds,
+                        )
                       : await commitTextStep(entry, step, userId, query);
                   if (typeof outcome === "string") {
                     if (outcome) handles.push(outcome);
@@ -787,6 +794,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     step: Extract<InverseStep, { kind: "tree" }>,
     userId: UserId | undefined,
     query: TurnInverseQuery,
+    deferredDocumentIds?: ReadonlySet<DocumentId>,
   ): Promise<
     | {
         handle: string;
@@ -798,7 +806,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     const document = entry.plan.document;
     try {
       return await runInDrizzleSavepoint(input.db, async () => {
-        const operation = await treeOperations.commit(entry, planned, userId, query);
+        const operation = await treeOperations.commit(
+          entry,
+          planned,
+          userId,
+          query,
+          deferredDocumentIds,
+        );
         const landedAt = await treeOperations.address(entry.documentId, operation.transition);
         const requestedAt = planned.requestedAt;
         const handle = await recordStep(
