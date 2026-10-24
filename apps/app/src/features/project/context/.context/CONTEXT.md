@@ -92,6 +92,11 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
                      │
           validateContextEntryName (pure)
 
+Delete Undo notices are owned by `DocumentDeleteUndoProvider` and rendered as
+one replaceable `SurfaceNotice` per host surface. The sidebar host sits between
+the tree and Scratch; Work Files and the mobile browser host theirs at their
+own foot.
+
 ContextPaneController
        ├─ route ↔ server-tab reconciliation
        ├─ in-memory ContextTab[] (tracked, viewer, and new)
