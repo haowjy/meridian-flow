@@ -162,6 +162,22 @@ documents or drafts.
 Sign in, create/open a document, delete it using its Files menu, and confirm
 the tab/tree update without an error. Capture a screenshot outside this repo.
 
+## Document trash
+
+1. Create one document at a scheme root and one inside a folder. Delete the
+   document, then delete the folder. The sidebar adds Trash above Scratch.
+2. Open Trash. Both documents appear newest first with their former area and
+   folder, deletion actor and date, days left, and Restore. Reload while the
+   list is open; the same list remains.
+3. Restore one document. Its row says Restoring until the response, leaves the
+   list after success, and the catalog stream returns it to the context tree.
+4. Create a document at the other deleted document's former path, then restore
+   the deleted document. Confirm the row leaves Trash and the success message
+   names the alternate location where it landed.
+5. Empty Trash by restoring the remaining rows. Close the list and confirm the
+   sidebar row is gone. Repeat through the phone navigation drawer; Trash opens
+   the same auxiliary list and closes the drawer.
+
 ## Removal notices in the browser
 
 Two tabs of one signed-in browser (A and B), plus `./mf doc rm` as another
