@@ -1,7 +1,8 @@
 /**
- * The file and action policies at the production-composed model tools
- * (file-access §4, §6, §9; D34, D35): `ls` reports each file's real access, and
- * a `read` agent has `write` but edits only its own scratch and changes no Work.
+ * The file and action policies at the production-composed model tools (file-access §4, §6, §9; D34, D35): `ls` reports each file's real access, and a `read` agent has `write` but edits only its own scratch and changes no Work.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current compose file access tools persistence protocol (kb/decisions/documents/access/file-access-policy.md)
  */
 
 import { folderDocumentName } from "@meridian/contracts/protocol";

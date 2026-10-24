@@ -1,3 +1,10 @@
+/**
+ * Database coverage for consume credit lots fifo.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current consume credit lots fifo persistence protocol
+ */
+
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";

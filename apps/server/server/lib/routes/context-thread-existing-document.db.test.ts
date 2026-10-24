@@ -1,7 +1,8 @@
 /**
  * Thread-bound creates and writer overwrites use the selected SQL tree view.
- * Namespace-locked commands must not wait on locks their own transaction holds;
- * writer operations on an existing document publish live even from a draft-mode thread.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current context thread existing document persistence protocol
  */
 
 import { randomUUID } from "node:crypto";

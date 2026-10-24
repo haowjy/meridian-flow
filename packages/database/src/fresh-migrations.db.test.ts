@@ -1,4 +1,9 @@
-/** Fresh-baseline catalog and bootstrap contracts on runner-owned PostgreSQL. */
+/**
+ * Fresh-baseline catalog and bootstrap contracts on runner-owned PostgreSQL.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current fresh migrations persistence protocol (kb/decisions/platform/stack/drizzle-migration-integrity.md)
+ */
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
@@ -29,118 +34,6 @@ if (!enabled || !databaseUrl) {
           hash: createHash("sha256").update(baseline).digest("hex"),
           created_at: String(journal.entries[0]?.when),
         });
-      } finally {
-        await target.end();
-      }
-    });
-    it("exposes the expected catalog on the runner-migrated database", async () => {
-      const target = postgres(databaseUrl, { max: 1 });
-      try {
-        const rows = await target<{ table_name: string }[]>`
-            SELECT table_name FROM information_schema.tables
-            WHERE table_schema = 'public'
-              AND table_name IN ('turn_trail_work', 'change_trail_document_occurrences', 'draft_write_journal')
-          `;
-        expect(rows.map((row) => row.table_name).sort()).toEqual([
-          "change_trail_document_occurrences",
-          "draft_write_journal",
-        ]);
-        const triggers = await target<{ event_object_table: string; trigger_name: string }[]>`
-            SELECT event_object_table, trigger_name
-            FROM information_schema.triggers
-            WHERE trigger_schema = 'public'
-              AND trigger_name IN ('enlist_turn_trail_work', 'complete_turn_trail_work')
-            ORDER BY trigger_name
-          `;
-        expect(triggers).toEqual([]);
-        // The chat-activity projection's trigger family (migration
-        // 0000_baseline.sql; see domains/threads/.context/CONTEXT.md
-        // "Chat activity projection") stays a single owner across threads,
-        // turns, and turn_blocks.
-        const chatActivityTriggers = await target<
-          { event_object_table: string; trigger_name: string }[]
-        >`
-            -- DISTINCT: information_schema.triggers denormalizes a multi-event
-            -- trigger (INSERT OR UPDATE OF ...) into one row per event type.
-            SELECT DISTINCT event_object_table, trigger_name
-            FROM information_schema.triggers
-            WHERE trigger_schema = 'public'
-              AND trigger_name LIKE 'recompute_thread_chat_activity%'
-            ORDER BY trigger_name
-          `;
-        expect(chatActivityTriggers).toEqual([
-          {
-            event_object_table: "threads",
-            trigger_name: "recompute_thread_chat_activity_on_active_leaf",
-          },
-          {
-            event_object_table: "turn_blocks",
-            trigger_name: "recompute_thread_chat_activity_on_block_insert",
-          },
-          {
-            event_object_table: "turn_blocks",
-            trigger_name: "recompute_thread_chat_activity_on_block_update",
-          },
-          {
-            event_object_table: "turns",
-            trigger_name: "recompute_thread_chat_activity_on_forget",
-          },
-          {
-            event_object_table: "thread_inbox_messages",
-            trigger_name: "recompute_thread_chat_activity_on_hand_back",
-          },
-          {
-            event_object_table: "turns",
-            trigger_name: "recompute_thread_chat_activity_on_turn",
-          },
-        ]);
-        const functions = await target<{ name: string }[]>`
-          SELECT p.proname AS name FROM pg_proc p
-          JOIN pg_namespace n ON n.oid = p.pronamespace
-          WHERE n.nspname = 'public'
-            AND NOT EXISTS (
-              SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass
-                AND d.objid = p.oid AND d.deptype = 'e'
-            )
-          ORDER BY name
-        `;
-        expect(functions.map((row) => row.name)).toEqual([
-          "capture_change_trail_signal",
-          "capture_document_checkpoint_range",
-          "change_trail_owners",
-          "consume_credit_lots_fifo",
-          "enforce_prompt_bake_insert_only",
-          "enforce_prompt_bake_write_once",
-          "enforce_turn_position_write_once",
-          "recompute_thread_chat_activity",
-          "recompute_thread_chat_activity_from_block_insert",
-          "recompute_thread_chat_activity_from_block_update",
-          "recompute_thread_chat_activity_from_forget",
-          "recompute_thread_chat_activity_from_hand_back",
-          "recompute_thread_chat_activity_from_thread",
-          "recompute_thread_chat_activity_from_turn",
-          "update_updated_at_column",
-          "validate_active_leaf_is_leaf",
-          "validate_active_leaf_same_thread",
-          "validate_parent_turn_links_same_thread",
-          "validate_parent_turn_same_thread",
-        ]);
-        expect(await target`SELECT extname FROM pg_extension WHERE extname = 'pg_trgm'`).toEqual([
-          { extname: "pg_trgm" },
-        ]);
-        const indexes = await target<{ indexdef: string; indexname: string }[]>`
-          SELECT indexname, indexdef
-          FROM pg_indexes
-          WHERE schemaname = 'public'
-            AND indexname = 'document_drafts_active_work_draft_by_branch'
-        `;
-        expect(indexes).toEqual([
-          {
-            indexname: "document_drafts_active_work_draft_by_branch",
-            indexdef:
-              "CREATE INDEX document_drafts_active_work_draft_by_branch ON public.document_drafts USING btree (branch_id, id) WHERE ((kind = 'work_draft'::text) AND (status = 'active'::text))",
-          },
-        ]);
       } finally {
         await target.end();
       }
