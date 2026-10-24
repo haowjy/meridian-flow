@@ -78,7 +78,20 @@ export function MoveNotice({ className }: { className?: string }) {
   if (!host) throw new Error("MoveNotice requires a MoveNoticeHost");
   const { notice: current, settle } = host;
   const [undoing, setUndoing] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   if (!current) return null;
+
+  // The notice leaves under the focused button; focus goes to the rows it was about.
+  const close = (next: Notice | null) => {
+    const scope = ref.current?.parentElement;
+    const refocus = !next && ref.current?.contains(document.activeElement);
+    settle(current, next);
+    if (!refocus || !scope) return;
+    const row =
+      scope.querySelector<HTMLElement>('[data-entry-key][aria-pressed="true"]') ??
+      scope.querySelector<HTMLElement>("[data-entry-key]");
+    row?.focus();
+  };
 
   const undo = async (put: UndoMove) => {
     setUndoing(true);
@@ -91,12 +104,13 @@ export function MoveNotice({ className }: { className?: string }) {
     } finally {
       setUndoing(false);
     }
-    settle(current, next);
+    close(next);
     if (next) announce(next.message);
   };
 
   return (
     <div
+      ref={ref}
       className={cn(
         "flex items-center gap-2 rounded-md border border-border bg-popover py-1 pr-1 pl-2.5 text-sm text-popover-foreground",
         className,
@@ -117,7 +131,7 @@ export function MoveNotice({ className }: { className?: string }) {
       <IconButton
         className="shrink-0 [@media(pointer:coarse)]:size-11"
         aria-label={t`Dismiss`}
-        onClick={() => settle(current, null)}
+        onClick={() => close(null)}
       >
         <X aria-hidden className="size-3.5" />
       </IconButton>
