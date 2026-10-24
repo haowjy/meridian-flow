@@ -121,7 +121,7 @@ purge, so restore clears exactly the rows marked by that deletion; independently
 trashed children remain trashed. A deleted Work cannot restore a child by a
 separate path. Document and folder cascades advance location versions.
 
-Restore is available until `workPurgeAt(deletedAt)`; after that deadline it
+Restore is available until `deletionPurgeAt(deletedAt)`; after that deadline it
 returns HTTP 410 `work_restore_expired` even if the purge worker has not run;
 references that retain a source Work extend storage retention, never the
 restore deadline. Purge
