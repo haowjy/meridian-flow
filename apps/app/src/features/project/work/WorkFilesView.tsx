@@ -8,9 +8,9 @@ import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
-import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import { serverTabFromFile } from "../context/context-tab-from-file";
+import { DocumentDeleteUndoRows, useDeleteContextEntry } from "../context/document-delete-undo";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useDockDocument } from "../dock/dock-document-store";
@@ -76,7 +76,7 @@ export function WorkFilesView({
   files: WorkFiles;
 }) {
   const { scratch, intake } = files;
-  const scratchDelete = useDeleteConfirmation({ projectId });
+  const scratchDelete = useDeleteContextEntry();
   const catalog = scratch.catalog;
   const openFile = useOpenDocumentInDock();
   const docked = useDockDocument(useProjectScreen(), projectId)?.tab.documentId;
@@ -186,15 +186,8 @@ export function WorkFilesView({
         {scratch.isError && catalog ? (
           <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
         ) : null}
+        <DocumentDeleteUndoRows scheme="scratch" owner={{ workId: work.id }} className="px-2" />
       </WorkFileGroup>
-      <DeleteConfirmationDialog
-        projectId={projectId}
-        target={scratchDelete.target}
-        isPending={scratchDelete.isPending}
-        error={scratchDelete.error}
-        onCancel={scratchDelete.cancel}
-        onConfirm={() => void scratchDelete.confirm()}
-      />
     </div>
   );
 }

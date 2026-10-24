@@ -6,10 +6,10 @@ import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
+import { DocumentDeleteUndoRows, useDeleteContextEntry } from "../context/document-delete-undo";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useTreeExpansion } from "../context/use-tree-expansion";
@@ -75,7 +75,7 @@ function MobileFolderTree({
   const { catalog, isComplete, isError, refetch } = useContextCatalogView(projectId, scheme, {
     workId: editorWorkId,
   });
-  const deletion = useDeleteConfirmation({ projectId });
+  const deletion = useDeleteContextEntry();
   const openDocument = useOpenProjectDocument(projectId);
   const [localCreate, setLocalCreate] = useState<{
     kind: ContextCreateKind;
@@ -177,19 +177,12 @@ function MobileFolderTree({
               <Trans>This folder is empty.</Trans>
             </p>
           ) : null}
+          <DocumentDeleteUndoRows scheme={scheme} owner={{}} className="min-h-11 px-4" />
         </TreeEnvProvider>
       )}
       {catalog && isError ? (
         <InlineErrorRow message={t`Could not load files.`} onRetry={refetch} />
       ) : null}
-      <DeleteConfirmationDialog
-        projectId={projectId}
-        target={deletion.target}
-        isPending={deletion.isPending}
-        error={deletion.error}
-        onCancel={deletion.cancel}
-        onConfirm={deletion.confirm}
-      />
     </div>
   );
 }

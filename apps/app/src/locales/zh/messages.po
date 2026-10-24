@@ -512,8 +512,8 @@ msgstr "<0.1 秒"
 
 #. placeholder {0}: target.name
 #: src/features/project/context/ContextEntryActions.tsx
-msgid "<0>{0}</0> and all its contents will be deleted."
-msgstr ""
+#~ msgid "<0>{0}</0> and all its contents will be deleted."
+#~ msgstr ""
 
 #. placeholder {0}: target?.title
 #: src/features/project/chat-list/DeleteChatDialog.tsx
@@ -522,8 +522,8 @@ msgstr ""
 
 #. placeholder {0}: target?.name
 #: src/features/project/context/ContextEntryActions.tsx
-msgid "<0>{0}</0> will be deleted."
-msgstr ""
+#~ msgid "<0>{0}</0> will be deleted."
+#~ msgstr ""
 
 #: src/features/chat/DeletedChatCard.tsx
 msgid "<0>{title}</0> was deleted."
@@ -1062,7 +1062,6 @@ msgstr ""
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat-list/DeleteChatDialog.tsx
-#: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/work/WorkChanges.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Cancel"
@@ -1567,8 +1566,8 @@ msgid "Couldn't delete this document. Try again."
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
-msgid "Couldn't delete this entry. Try again."
-msgstr ""
+#~ msgid "Couldn't delete this entry. Try again."
+#~ msgstr ""
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Couldn’t delete this file. Try again."
@@ -1729,6 +1728,21 @@ msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Couldn't rename. Use Rename in the file list to try again."
+msgstr ""
+
+#. placeholder {0}: window.label
+#: src/features/project/context/document-delete-undo.tsx
+msgid "Couldn't restore {0}."
+msgstr ""
+
+#. placeholder {0}: window.label
+#: src/features/project/context/document-delete-undo.tsx
+msgid "Couldn't restore {0}. A file is in the way."
+msgstr ""
+
+#. placeholder {0}: window.label
+#: src/features/project/context/document-delete-undo.tsx
+msgid "Couldn't restore {0}. Try again."
 msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
@@ -1953,12 +1967,12 @@ msgid "Delete column"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
-msgid "Delete file?"
-msgstr ""
+#~ msgid "Delete file?"
+#~ msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
-msgid "Delete folder?"
-msgstr ""
+#~ msgid "Delete folder?"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Delete row"
@@ -1975,6 +1989,11 @@ msgstr ""
 #: src/features/chat/command-descriptor.ts
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted"
+msgstr ""
+
+#. placeholder {0}: window.label
+#: src/features/project/context/document-delete-undo.tsx
+msgid "Deleted {0}"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -2017,8 +2036,8 @@ msgid "Deleting a Work…"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
-msgid "Deleting…"
-msgstr ""
+#~ msgid "Deleting…"
+#~ msgstr ""
 
 #: src/rich-content/ImageBlock.tsx
 msgid "Demo image"
@@ -2099,6 +2118,7 @@ msgstr ""
 #: src/features/draft-review/ReviewToast.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/SchemaNotices.tsx
+#: src/features/project/context/document-delete-undo.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
@@ -3763,12 +3783,19 @@ msgid "Restore {0}"
 msgstr ""
 
 #. placeholder {0}: documentDisplayName(landing.landedAt)
+#. placeholder {0}: restoredName(renamed.landedAt)
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/project/context/document-delete-undo.tsx
 msgid "Restored as {0}."
 msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "Restoring"
+msgstr ""
+
+#. placeholder {0}: window.label
+#: src/features/project/context/document-delete-undo.tsx
+msgid "Restoring {0}"
 msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
@@ -4558,8 +4585,8 @@ msgid "The endpoint reports its own env-presence checklist in the body above (pr
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
-msgid "The entry changed. Refresh the tree and try again."
-msgstr ""
+#~ msgid "The entry changed. Refresh the tree and try again."
+#~ msgstr ""
 
 #: src/features/chat/chat-card-copy.ts
 msgid "The handoff brief failed."
@@ -4607,8 +4634,8 @@ msgid "The text it edited was undone, so the change wasn't kept. The AI will rea
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
-msgid "The Work {names} has changes to it. Applying them brings it back."
-msgstr ""
+#~ msgid "The Work {names} has changes to it. Applying them brings it back."
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
@@ -4616,8 +4643,8 @@ msgid "The Work did not change. Try again."
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
-msgid "The Works {names} have changes to it. Applying them brings it back."
-msgstr ""
+#~ msgid "The Works {names} have changes to it. Applying them brings it back."
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Theme"
@@ -5121,6 +5148,7 @@ msgstr ""
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/CommandNotice.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+#: src/features/project/context/document-delete-undo.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
 msgstr "撤销"
@@ -5163,7 +5191,6 @@ msgid "Unknown component: {kindLabel}"
 msgstr ""
 
 #: src/features/editor/DocumentDraftHint.tsx
-#: src/features/project/context/ContextEntryActions.tsx
 msgid "Unnamed Work"
 msgstr "未命名工作"
 
