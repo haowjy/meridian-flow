@@ -11,16 +11,21 @@ import { randomUUID } from "node:crypto";
 import {
   appendApplyRecord,
   applyBase,
+  baseViewDelta,
   REVIEW_BASE_FRAGMENT,
   readBlocks,
   rebase,
+  removeApplyRecords,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
 import type {
   AgentEditCodecFactory,
   AgentEditModel,
+  InversePart,
   UpdateJournal,
 } from "@meridian/agent-edit/integration";
+import { computeInverse } from "@meridian/agent-edit/integration";
+import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { type BranchId, type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
 import type {
   AppliedReviewItem,
@@ -30,14 +35,20 @@ import type {
 } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import {
+  applyCommandEffects,
   branchCommands,
   branches,
   changeTrailDirtyLog,
   documentDrafts,
   pushLineage,
 } from "@meridian/database/schema";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { and, eq, sql } from "drizzle-orm";
+import {
+  allocateDocumentClient,
+  buildDocumentSchema,
+  PROSEMIRROR_FRAGMENT_NAME,
+} from "@meridian/prosemirror-schema";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -48,15 +59,9 @@ import { testHook } from "../../../shared/test-hooks.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
-import {
-  dropDocumentRows,
-  endCreatedFact,
-  settleUndoneCreatesAfterReveal,
-} from "../../context/tree/branch-tree-store.js";
-import { tombstoneUnused } from "../../context/tree/end-use.js";
-import { movePlacementCycle, moveToPlacement } from "../../context/tree/live-tree-state.js";
+import { endCreatedFact } from "../../context/tree/branch-tree-store.js";
+import { movePlacementCycle } from "../../context/tree/live-tree-state.js";
 import { acquireTreeScope, TreeScopeChangedError } from "../../context/tree/mutation-scope.js";
-import { place } from "../../context/tree/placement.js";
 import { restoreDocument } from "../../context/tree/removal.js";
 import { createTreeReader, LIVE_TREE, type TreeStateNode } from "../../context/tree/tree-view.js";
 import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
@@ -67,7 +72,7 @@ import {
 import {
   type ApplyClickCommand,
   ApplyClickRefused,
-  type ApplyClickStore,
+  type ApplyCommandStore,
 } from "../domain/apply-click.js";
 import { BranchCommandExistsError } from "../domain/branch-commands.js";
 import type { Branches } from "../domain/branches.js";
@@ -81,14 +86,19 @@ import {
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
+import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { storedDocument } from "./document-loader.js";
+import { createApplyTreeOperations, liveLocation } from "./drizzle-apply-tree.js";
 import { claimCommandWithinTx, lookupCommand } from "./drizzle-branch-commands.js";
+import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
+import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
 
 const applyTiming = new AsyncLocalStorage<{
   commandId: string;
   measured: (input: { commandId: string; holdMs: number }) => void;
 }>();
+const schema = buildDocumentSchema();
 
 /** Uses the append door's actual lock-to-root-commit time, not the server author's CPU time. */
 export function measureApplyAppend(detail: { holdMs: number }): void {
@@ -122,43 +132,12 @@ export function createDrizzleApplyClick(
       holdMs?: number;
     }): void;
   },
-): ApplyClickStore {
+): ApplyCommandStore {
   const tree = createTreeReader(db);
   const closed = (command: ApplyClickCommand): ApplyClickResult => ({
     status: "closed",
     commandId: command.envelope.commandId,
   });
-  /** Places a hidden creation at `at`; an occupied ancestor cannot name a destination. */
-  async function reveal(
-    node: TreeStateNode,
-    at: Pick<TreeStateNode["target"], "contextSourceId" | "parentFolderId" | "name" | "extension">,
-  ): Promise<void> {
-    const placed = await place(db, {
-      targets: [
-        {
-          node: { kind: "document", id: node.nodeId },
-          at: {
-            contextSourceId: at.contextSourceId,
-            parentFolderId: at.parentFolderId,
-            name: at.name,
-            extension: at.extension,
-          },
-        },
-      ],
-    });
-    if (!placed.ok) {
-      throw new ApplyClickRefused(
-        placed.error.code === "ancestor_taken" ? "ancestor_taken" : "not_found",
-      );
-    }
-    await settleUndoneCreatesAfterReveal(db, node.nodeId);
-    await deps.arrivals?.settle([node.nodeId]);
-    await deps.catalog.refreshSources(
-      placed.value.sourceIds,
-      placed.value.placed.map((ref) => ref.id),
-    );
-    if (!placed.value.landed[0]) throw new ApplyClickRefused("not_found");
-  }
   /** The addressed document's node in the branch, never another created document's. */
   async function itemNode(branchId: BranchId, documentId: DocumentId) {
     const nodes = await tree.treeState(branchId, [documentId], [documentId]);
@@ -219,6 +198,7 @@ export function createDrizzleApplyClick(
       path: displayedPath(node, found.document.path),
     };
   }
+
   return {
     async loadBase(command) {
       const draftId = command.request.draftId;
@@ -250,8 +230,220 @@ export function createDrizzleApplyClick(
         throw cause;
       }
     },
+    loadUnapply: (command) => loadPreparedUnapply(db, deps.coordinator, command),
+    async unapply(command, prepared) {
+      const commandId = command.envelope.commandId;
+      const closed = (): import("@meridian/contracts/branches").UnapplyClickResult => ({
+        status: "closed",
+        commandId,
+      });
+      try {
+        return await deps.workProjection.mutate(
+          { works: [command.workId] },
+          async (): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer> => {
+            const tx = currentDrizzleDb(db);
+            const found = await lookupCommand(tx, command.envelope);
+            if (found.kind === "done")
+              return found.commandKind === "unapply_click"
+                ? (found.result as import("@meridian/contracts/branches").UnapplyClickResult)
+                : { status: "conflict", commandId };
+            if (found.kind !== "none") return { status: found.kind, commandId };
+            if (
+              !(await claimCommandWithinTx(tx, {
+                ...command.envelope,
+                branchId: prepared.branchId,
+              }))
+            )
+              throw new BranchCommandExistsError(commandId);
+            const finish = async (
+              result: import("@meridian/contracts/branches").UnapplyClickResult,
+            ) => {
+              await tx
+                .update(branchCommands)
+                .set({ state: "done", result, completedAt: sql`clock_timestamp()` })
+                .where(eq(branchCommands.id, commandId));
+              return result;
+            };
+            if (!(await deps.branches.lockActive(prepared.branchId))) return finish(closed());
+            await lockDocumentMutation(tx, command.documentId);
+            const currentBase = await deps.coordinator.loadBase(prepared.base.snapshot.draftId);
+            if (
+              currentBase.snapshot.status === "closed" ||
+              currentBase.snapshot.documentId !== command.documentId ||
+              currentBase.snapshot.branchId !== prepared.branchId
+            )
+              return finish(closed());
+            const stillActive = await tx
+              .select({ ordinal: applyCommandEffects.ordinal })
+              .from(applyCommandEffects)
+              .where(
+                and(
+                  eq(applyCommandEffects.commandId, command.request.applyCommandId),
+                  isNull(applyCommandEffects.unappliedBy),
+                ),
+              );
+            const activeOrdinals = new Set(stillActive.map((row) => row.ordinal));
+            const effects = prepared.effects.filter((effect) => activeOrdinals.has(effect.ordinal));
+            if (!effects.length) return finish({ status: "refused", commandId });
+
+            const snapshot = await deps.live.read(command.documentId);
+            const live = storedDocument(snapshot);
+            try {
+              const history = await loadUnapplyHistory(
+                db,
+                command.documentId,
+                effects.flatMap((effect) =>
+                  effect.liveUpdateSeq === null ? [] : [effect.liveUpdateSeq],
+                ),
+              );
+              const bySeq = new Map<number, InversePart>();
+              for (const part of history) {
+                const value = part.origin;
+                if (value?.kind === "live") bySeq.set(value.seq, part);
+              }
+              const targeted = effects.flatMap((effect) => {
+                if (effect.liveUpdateSeq === null) return [];
+                const part = bySeq.get(effect.liveUpdateSeq);
+                return part ? [{ effect, part }] : [];
+              });
+              const inverse = computeInverse(
+                live,
+                history,
+                targeted.map(({ part }) => ({ part, direction: "invert" as const })),
+                { actionId: commandId, allocateClient: allocateDocumentClient },
+              );
+              const reversedEditIds = new Set(inverse.edits.map((edit) => edit.targetEditId));
+              const reversed = effects.filter(
+                (effect) =>
+                  effect.liveUpdateSeq === null ||
+                  targeted.some(
+                    ({ effect: candidate, part }) =>
+                      candidate.ordinal === effect.ordinal && reversedEditIds.has(part.editId),
+                  ),
+              );
+              const reversedWithLive = reversed.filter((effect) => effect.liveUpdateSeq !== null);
+              const skipped = effects.filter(
+                (effect) => !reversed.some((candidate) => candidate.ordinal === effect.ordinal),
+              );
+              if (!reversed.length)
+                return finish({
+                  status: "unapplied",
+                  commandId,
+                  reversedGroupIds: [],
+                  skippedGroupIds: skipped.map((effect) => effect.groupId),
+                });
+              const receipts: Parameters<typeof recordDocumentEdit>[1]["receipts"] = [];
+              for (const edit of inverse.edits) {
+                for (const part of edit.parts) {
+                  const provenance = captureMutationUpdates(live, () => {
+                    live.transact(() => {
+                      Y.applyUpdate(live, part.update);
+                      appendInverseRestorationFacts(live, part.aliases);
+                    });
+                  });
+                  const update = provenance.length
+                    ? Y.mergeUpdates([part.update, ...provenance])
+                    : part.update;
+                  const seq = await deps.live.append(
+                    command.documentId,
+                    update,
+                    { seq: 0, origin: "system" },
+                    snapshot.authority,
+                  );
+                  receipts.push({ ...part, update, origin: { kind: "live", seq } });
+                }
+              }
+              if (receipts.length)
+                await recordDocumentEdit(tx, {
+                  documentId: command.documentId,
+                  actor: "human",
+                  actorUserId: command.envelope.accountId,
+                  kind: "undo",
+                  actionId: commandId,
+                  receipts,
+                });
+
+              const groupIds = new Set(reversed.map((effect) => effect.groupId));
+              const write = deps.coordinator.prepareAppend(currentBase, [], {
+                authorServerRows(prefix) {
+                  let row: Uint8Array | undefined;
+                  const capture = (bytes: Uint8Array) => {
+                    row = bytes;
+                  };
+                  prefix.on("update", capture);
+                  try {
+                    prefix.transact(() => {
+                      const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
+                      let current = readBlocks(fragment, schema);
+                      for (const effect of [...reversedWithLive].reverse())
+                        current = rebase(
+                          schema,
+                          effect.baseAfter.map((node) => schema.nodeFromJSON(node)),
+                          current,
+                          effect.baseBefore.map((node) => schema.nodeFromJSON(node)),
+                        ).blocks;
+                      writeBlocks(fragment, schema, current);
+                      removeApplyRecords(prefix, command.request.applyCommandId, groupIds);
+                    }, "unapply");
+                    if (!row) throw new Error("Un-Apply must remove its Apply records");
+                    return [row];
+                  } finally {
+                    prefix.off("update", capture);
+                  }
+                },
+              });
+              try {
+                await write.persist();
+                write.transfer();
+              } finally {
+                write.dispose();
+              }
+              await tx
+                .update(applyCommandEffects)
+                .set({ unappliedBy: commandId })
+                .where(
+                  and(
+                    eq(applyCommandEffects.commandId, command.request.applyCommandId),
+                    inArray(
+                      applyCommandEffects.ordinal,
+                      reversed.map((effect) => effect.ordinal),
+                    ),
+                    isNull(applyCommandEffects.unappliedBy),
+                  ),
+                );
+              const answer: import("@meridian/contracts/branches").UnapplyClickResult = {
+                status: "unapplied",
+                commandId,
+                reversedGroupIds: reversed.map((effect) => effect.groupId),
+                skippedGroupIds: skipped.map((effect) => effect.groupId),
+              };
+              await finish(answer);
+              deferUntilDrizzleCommit(async () => {
+                await deps.liveCoordinator.deliver(command.documentId);
+                await deps.onCommitted(command.documentId);
+              });
+              return answer;
+            } finally {
+              live.destroy();
+            }
+          },
+          { requireActive: true, seam: true },
+        );
+      } catch (cause) {
+        if (cause instanceof DraftStaleUpdateError) return closed();
+        if (cause instanceof WorkLifecycleUnavailableError)
+          throw new ApplyClickRefused(
+            cause.state === "archived"
+              ? "work_archived"
+              : cause.state === "deleted"
+                ? "work_deleted"
+                : "not_found",
+          );
+        throw cause;
+      }
+    },
     measured: deps.measured,
-    async execute(command, prepared) {
+    async apply(command, prepared) {
       const base = prepared.kind === "text" ? prepared.base : null;
       const click = prepared.kind === "text" ? prepared.click : null;
       const cut = prepared.tree ?? null;
@@ -355,144 +547,32 @@ export function createDrizzleApplyClick(
                       });
                     let restored = false;
                     const applied: AppliedReviewItem[] = [];
-                    const committedTreeItem = async (
-                      appliedNode: TreeStateNode,
-                      from: string | null,
-                    ): Promise<AppliedReviewItem> => {
-                      const renamed = await renamedNote(appliedNode);
-                      const to =
-                        appliedNode.branch?.state === "deleting"
-                          ? null
-                          : (renamed?.path ?? displayedPath(appliedNode, appliedNode.target.path));
-                      return {
-                        itemKey: draftItemKey(branchId, appliedNode.nodeId),
-                        transition: { from, to },
-                        ...(renamed ? { renamed } : {}),
-                      };
-                    };
-                    const settleTreeNode = async (
-                      appliedNode: TreeStateNode,
-                      from: string | null,
-                    ): Promise<AppliedReviewItem> => {
-                      await dropDocumentRows(db, {
-                        branchId,
-                        documentIds: [appliedNode.nodeId],
-                        settle: { as: "applied", userId },
-                      });
-                      const item = await committedTreeItem(appliedNode, from);
-                      deferUntilDrizzleCommit(() => deps.onCommitted(appliedNode.nodeId));
-                      return item;
-                    };
-                    const applyTreeNode = async (
-                      appliedNode: TreeStateNode,
-                    ): Promise<AppliedReviewItem> => {
-                      const before = await tree.findById(LIVE_TREE, appliedNode.nodeId);
-                      const from =
-                        before.kind === "found"
-                          ? displayedPath(appliedNode, before.document.path)
-                          : null;
-                      const [identity] = await loadDocumentIdentityRows(tx, [appliedNode.nodeId]);
-                      if (!identity) throw new ApplyClickRefused("not_found");
-                      if (appliedNode.branch?.state === "deleting") {
-                        if (!identity.deleted && !identity.hidden) {
-                          await deps.removal.remove({
-                            documentIds: [appliedNode.nodeId],
-                            reason: "deleted",
-                            userId,
-                          });
-                          await deps.catalog.refreshSources(
-                            [identity.contextSourceId],
-                            [appliedNode.nodeId],
-                          );
-                        }
-                        await deps.close.closeDrafts(
-                          tx,
-                          { documentIds: [appliedNode.nodeId], branchId },
-                          "document_discarded",
-                        );
-                        await dropDocumentRows(db, {
-                          branchId,
-                          documentIds: [appliedNode.nodeId],
-                          settle: { as: "applied", userId },
+                    const treeOperations = createApplyTreeOperations({
+                      db,
+                      branchId,
+                      commandDocumentId: command.documentId,
+                      userId,
+                      removal: deps.removal,
+                      close: deps.close,
+                      arrivals: deps.arrivals,
+                      catalog: deps.catalog,
+                      releaseObjects: deps.releaseObjects,
+                      onCommitted: deps.onCommitted,
+                      findLive: (documentId) => tree.findById(LIVE_TREE, documentId),
+                      resolveLivePath: async (path) => {
+                        const occupant = await tree.resolvePath(LIVE_TREE, {
+                          contextSourceId: node?.target.contextSourceId ?? locked.contextSourceId,
+                          path,
+                          as: "folder",
                         });
-                        if (identity.hidden && !identity.deleted) {
-                          const ended = await tombstoneUnused(db, [appliedNode.nodeId], {
-                            actor: { userId },
-                            removal: deps.removal,
-                          });
-                          if (ended.tombstoned.length)
-                            await deps.catalog.refreshSources(
-                              [identity.contextSourceId],
-                              ended.tombstoned.map((ref) => ref.id),
-                            );
-                          if (ended.releasedObjects.length)
-                            deferUntilDrizzleCommit(() =>
-                              deps.releaseObjects(ended.releasedObjects),
-                            );
-                        }
-                        const item = await committedTreeItem(appliedNode, from);
-                        deferUntilDrizzleCommit(() => deps.onCommitted(appliedNode.nodeId));
-                        return item;
-                      }
-                      if (identity.deleted) {
-                        const outcome = await restoreDocument(
-                          db,
-                          {
-                            documentId: appliedNode.nodeId,
-                            ...(appliedNode.branch?.state === "moving"
-                              ? { at: liveLocation(appliedNode) }
-                              : {}),
-                          },
-                          { arrivals: deps.arrivals, catalog: deps.catalog },
-                        );
-                        if (outcome.kind === "ancestor_taken")
-                          throw new ApplyClickRefused("ancestor_taken");
-                        if (outcome.kind === "refused") throw new ApplyClickRefused("not_found");
-                        if (appliedNode.nodeId === command.documentId)
-                          restored = outcome.kind === "restored";
-                      } else if (appliedNode.branch?.state === "moving" && !identity.hidden) {
-                        const moved = await moveToPlacement(
-                          db,
-                          {
-                            documentId: appliedNode.nodeId,
-                            from: {
-                              folderId: identity.folderId,
-                              rootSourceId: identity.folderId ? null : identity.contextSourceId,
-                              name: identity.name,
-                              extension: identity.extension,
-                            },
-                            to: {
-                              folderId: appliedNode.target.parentFolderId,
-                              rootSourceId: appliedNode.target.parentFolderId
-                                ? null
-                                : appliedNode.target.contextSourceId,
-                              name: appliedNode.target.name,
-                              extension: appliedNode.target.extension,
-                            },
-                          },
-                          { arrivals: deps.arrivals, catalog: deps.catalog },
-                        );
-                        if (moved.kind === "ancestor_taken")
-                          throw new ApplyClickRefused("ancestor_taken");
-                        if (moved.kind === "folder_missing") {
-                          for (let length = 1; length <= appliedNode.target.dir.length; length++) {
-                            const occupant = await tree.resolvePath(LIVE_TREE, {
-                              contextSourceId: appliedNode.target.contextSourceId,
-                              path: appliedNode.target.dir.slice(0, length).join("/"),
-                              as: "folder",
-                            });
-                            if (occupant.kind === "not_found") break;
-                            if (occupant.kind === "ambiguous" || occupant.node.kind === "document")
-                              throw new ApplyClickRefused("ancestor_taken");
-                          }
-                        }
-                        if (moved.kind !== "moved") throw new ApplyClickRefused("not_found");
-                      }
-                      if (appliedNode.hidden && appliedNode.origin === "created") {
-                        await reveal(appliedNode, appliedNode.target);
-                      }
-                      return settleTreeNode(appliedNode, from);
-                    };
+                        if (occupant.kind === "not_found") return "free";
+                        return occupant.kind === "ambiguous" || occupant.node.kind === "document"
+                          ? "blocked"
+                          : "folder";
+                      },
+                      renamedNote,
+                      displayedPath,
+                    });
 
                     if (cut && node) {
                       const plan = await dependencyPlan(branchId, command.documentId);
@@ -539,7 +619,10 @@ export function createDrizzleApplyClick(
                           const items: AppliedReviewItem[] = [];
                           for (const cycleNode of cycleNodes)
                             items.push(
-                              await settleTreeNode(cycleNode, before.get(cycleNode.nodeId) ?? null),
+                              await treeOperations.settle(
+                                cycleNode,
+                                before.get(cycleNode.nodeId) ?? null,
+                              ),
                             );
                           return items;
                         };
@@ -553,11 +636,14 @@ export function createDrizzleApplyClick(
                       for (let index = beforeCycle - 1; index >= 0; index--) {
                         const planned = plan.nodes.get(plan.chain[index] as DocumentId);
                         if (!planned) continue;
-                        if (index === 0) applied.push(await applyTreeNode(planned));
-                        else
+                        if (index === 0) {
+                          const outcome = await treeOperations.apply(planned);
+                          applied.push(outcome.item);
+                          restored ||= outcome.restored;
+                        } else
                           applied.push(
                             ...(await tolerateDependency(async () => [
-                              await applyTreeNode(planned),
+                              (await treeOperations.apply(planned)).item,
                             ])),
                           );
                       }
@@ -580,7 +666,7 @@ export function createDrizzleApplyClick(
                         restored = outcome.kind === "restored";
                       }
                       if (node?.hidden && node.origin === "created" && base) {
-                        await reveal(node, {
+                        await treeOperations.reveal(node, {
                           contextSourceId: locked.contextSourceId,
                           parentFolderId: locked.folderId,
                           name: locked.name,
@@ -640,54 +726,84 @@ export function createDrizzleApplyClick(
                             }),
                           );
                           const before = describeTrailBlocks(live, deps.model, codec, schema);
-                          live.transact(
-                            () =>
-                              writeBlocks(
-                                live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-                                schema,
-                                merged.blocks,
-                              ),
-                            "apply",
-                          );
+                          const liveEffects: { groupId: string; seq: number | null }[] = [];
+                          for (const group of click.groups) {
+                            const groupMerge = rebase(
+                              schema,
+                              click.optimistic,
+                              readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
+                              group.patched,
+                            );
+                            update = undefined;
+                            live.transact(
+                              () =>
+                                writeBlocks(
+                                  live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
+                                  schema,
+                                  groupMerge.blocks,
+                                ),
+                              "apply",
+                            );
+                            const seq = update
+                              ? await deps.live.append(
+                                  command.documentId,
+                                  update,
+                                  { seq: 0, origin: `human:${command.envelope.accountId}` },
+                                  snapshot.authority,
+                                )
+                              : null;
+                            liveEffects.push({ groupId: group.groupId, seq });
+                          }
                           return {
                             before,
                             after: describeTrailBlocks(live, deps.model, codec, schema),
+                            liveEffects,
                           };
                         },
                       );
-                      const seq = update
-                        ? await deps.live.append(
-                            command.documentId,
-                            update,
-                            { seq: 0, origin: `human:${command.envelope.accountId}` },
-                            snapshot.authority,
-                          )
-                        : null;
                       await testHook("apply.afterLive");
+                      const baseEffects: {
+                        groupId: string;
+                        start?: unknown[];
+                        delta: unknown[];
+                      }[] = [];
                       const write = deps.coordinator.prepareAppend(base, [], {
                         authorServerRows(prefix) {
+                          const rows: Uint8Array[] = [];
                           let row: Uint8Array | undefined;
                           const capture = (bytes: Uint8Array) => {
                             row = bytes;
                           };
                           prefix.on("update", capture);
                           try {
-                            prefix.transact(() => {
+                            for (const group of click.groups) {
+                              row = undefined;
                               const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
-                              writeBlocks(
-                                fragment,
+                              const before = readBlocks(fragment, schema);
+                              const after = applyBase(
                                 schema,
-                                applyBase(
-                                  schema,
-                                  readBlocks(fragment, schema),
-                                  click.optimistic,
-                                  click.patched,
-                                ),
+                                before,
+                                click.optimistic,
+                                group.patched,
                               );
-                              appendApplyRecord(prefix, click.record);
-                            }, "apply");
-                            if (!row) throw new Error("Apply must append its command record");
-                            return [row];
+                              prefix.transact(() => {
+                                writeBlocks(fragment, schema, after);
+                                appendApplyRecord(prefix, group.record);
+                              }, "apply");
+                              if (!row) throw new Error("Apply must append its command record");
+                              rows.push(row);
+                              baseEffects.push({
+                                groupId: group.groupId,
+                                ...(baseEffects.length === 0
+                                  ? { start: before.map((block) => block.toJSON()) }
+                                  : {}),
+                                delta: baseViewDelta(schema, before, after).map((patch) => ({
+                                  ...patch,
+                                  blocks: patch.blocks.map((block) => block.toJSON()),
+                                })),
+                              });
+                            }
+                            return rows;
                           } finally {
                             prefix.off("update", capture);
                           }
@@ -699,6 +815,30 @@ export function createDrizzleApplyClick(
                       } finally {
                         write.dispose();
                       }
+                      await tx.insert(applyCommandEffects).values(
+                        click.groups.map((group, ordinal) => {
+                          const liveEffect = before.liveEffects.find(
+                            (effect) => effect.groupId === group.groupId,
+                          );
+                          const baseEffect = baseEffects.find(
+                            (effect) => effect.groupId === group.groupId,
+                          );
+                          if (!liveEffect || !baseEffect)
+                            throw new Error("Apply effect was not captured");
+                          return {
+                            commandId: command.envelope.commandId,
+                            ordinal,
+                            groupId: group.groupId,
+                            documentId: command.documentId,
+                            draftId: base.snapshot.draftId,
+                            liveUpdateSeq: liveEffect.seq,
+                            baseStart: baseEffect.start,
+                            baseDelta: baseEffect.delta,
+                          };
+                        }),
+                      );
+                      const seq =
+                        before.liveEffects.find((effect) => effect.seq !== null)?.seq ?? null;
                       const receiptId = randomUUID();
                       const [push] = await tx
                         .insert(pushLineage)
@@ -794,6 +934,7 @@ export function createDrizzleApplyClick(
                         status: "applied",
                         commandId: command.envelope.commandId,
                         applied,
+                        textEffect: true,
                         ...(overrode ? { overrode } : {}),
                         ...(restored ? { restored } : {}),
                       };
@@ -836,15 +977,5 @@ export function createDrizzleApplyClick(
         });
       }
     },
-  };
-}
-
-/** Where the branch has a document, as a live location to restore it at. */
-function liveLocation(node: TreeStateNode) {
-  return {
-    contextSourceId: node.target.contextSourceId,
-    parentFolderId: node.target.parentFolderId,
-    name: node.target.name,
-    extension: node.target.extension,
   };
 }

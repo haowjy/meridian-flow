@@ -1837,6 +1837,10 @@ msgstr ""
 msgid "Couldn't undo"
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "Couldn't undo this Apply. Try again."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't update that Work"
 msgstr ""
@@ -3779,6 +3783,8 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/DraftCommandStatus.tsx
+#: src/features/draft-review/ReviewChangeBar.tsx
+#: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
@@ -5125,6 +5131,14 @@ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Undo is no longer available."
+msgstr ""
+
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "Undo is waiting for confirmation."
+msgstr ""
+
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "Undoing Apply"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts

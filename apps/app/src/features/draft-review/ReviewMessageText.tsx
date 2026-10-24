@@ -63,6 +63,8 @@ export function ReviewMessageText({
   failure: BranchCommandFailure;
 }) {
   switch (code) {
+    case "unapply-refused":
+      return <Trans>Couldn't undo this Apply. Try again.</Trans>;
     case "apply-refused":
       return (
         <>

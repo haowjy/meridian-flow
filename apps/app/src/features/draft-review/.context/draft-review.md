@@ -143,6 +143,19 @@ then the owner releases sends in server order; an earlier answer may omit a tree
 settled, but never recaptures later text or a later tree revision. The queue retains a
 `readDraftRoom` lease independently of React until terminal.
 
+An editor text Apply also gives that mounted editor's history the synchronous Undo
+and Redo callbacks of the schedule-owned command handle. The handle owns the current
+command identity, reversal outcome and text-only replay selection; mounted history
+owns none of that delivery state. Apply is a boundary between native Yjs segments. Undo moves the history
+cursor synchronously, cancels an unsent Apply, or immediately queues a projected
+Un-Apply intent in the item's command schedule. The schedule retries the targeted
+Apply before the inverse when its delivery is unknown and withholds later commands
+behind any stalled intent. Redo immediately queues a new Apply intent for only the
+text groups the server actually reversed, never the original tree cut. The account
+owner retains delivery, retry and the draft-room subscription after editor unmount;
+the mounted history only retains navigation. Work and dock callers pass no editor
+history handle.
+
 A deleted document (the list item's `deletedLive`, D79) is draft-only on every
 surface. Existence is its own fact, never read from a name conflict. If another document took
 its path, Apply restores it at the next free name, then merges. `apply(ref, target, restore)` sends
@@ -185,8 +198,12 @@ owner observes only hidden/closed lifecycle transitions. Listed-room snapshots
 combine stable text and per-item command records, including deferred Discard.
 Apply callbacks refresh discovery when the item's FIFO drains, not after every head.
 
-The base provider folds `applyBase` over unrecorded clicks in order; only the
-runtime caches that fold per schema and observes `review_base`. Base,
+The base provider folds `applyBase` over the schedule's unresolved Apply, Un-Apply
+and Redo intents in delivery order. Pending Un-Apply folds its effect backward until removal of the targeted group
+records is observed; an HTTP answer alone cannot flash the applied state back.
+Failure removes that fold, restores the history action at its chronological
+position, and retains the same-id retry on the item. Typing remains enabled.
+Only the runtime caches that fold per schema and observes `review_base`. Base,
 record and queue changes invalidate it; typing only reprojects. Group targets
 must still describe equal base and prose at capture; a changed pre-click
 projection is refreshed and reported locally, never reinterpreted by its

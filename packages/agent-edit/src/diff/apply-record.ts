@@ -1,7 +1,7 @@
 /**
  * The Apply record: which draft items an Apply moved into the review base.
  *
- * The server appends one entry per Apply to a server-owned root of the draft doc, as the reserved server
+ * The server appends one entry per applied group to a server-owned root of the draft doc, as the reserved server
  * client, in the same write that moves `review_base`. `base` holds the applied changes' non-base items
  * (their text is now the base's); `settled` holds the tombstones at their deletion points (those deletions
  * are now in the base). Entries are plain id ranges, so splits of an item never invalidate them.
@@ -14,6 +14,8 @@ export const APPLY_RECORD_ROOT = "__meridian_review_applied_v1";
 
 export interface ApplyEntry {
   commandId?: string;
+  /** One frozen review group. Present on commands recorded after per-group Apply receipts. */
+  groupId?: string;
   base: ItemRange[];
   settled: ItemRange[];
 }
@@ -31,6 +33,7 @@ export function readApplyRecord(doc: Y.Doc): ApplyEntry[] {
           base: entry.base,
           settled: entry.settled,
           ...(typeof entry.commandId === "string" ? { commandId: entry.commandId } : {}),
+          ...(typeof entry.groupId === "string" ? { groupId: entry.groupId } : {}),
         });
   }
   return out;
@@ -39,4 +42,19 @@ export function readApplyRecord(doc: Y.Doc): ApplyEntry[] {
 /** Append one entry. The caller owns the transaction and has set the doc's client to the server's. */
 export function appendApplyRecord(doc: Y.Doc, entry: ApplyEntry): void {
   doc.getArray<ApplyEntry>(APPLY_RECORD_ROOT).push([entry]);
+}
+
+/** Remove only the groups an Un-Apply actually reversed. The caller owns the transaction. */
+export function removeApplyRecords(
+  doc: Y.Doc,
+  commandId: string,
+  groupIds: ReadonlySet<string>,
+): void {
+  const root = doc.getArray<ApplyEntry>(APPLY_RECORD_ROOT);
+  for (let index = root.length - 1; index >= 0; index--) {
+    const entry = root.get(index);
+    if (entry?.commandId === commandId && entry.groupId && groupIds.has(entry.groupId)) {
+      root.delete(index, 1);
+    }
+  }
 }

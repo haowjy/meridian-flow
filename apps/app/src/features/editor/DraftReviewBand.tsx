@@ -269,6 +269,7 @@ export function DraftReviewFailureNotices({
   return (
     <div className="shrink-0 text-caption" data-draft-review-notices>
       <ReviewFailureNotices
+        itemKey={itemKey}
         commandError={commandError}
         failedElsewhere={failedElsewhere}
         onOpenNext={onOpenDraft}

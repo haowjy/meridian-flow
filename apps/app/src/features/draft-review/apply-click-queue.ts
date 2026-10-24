@@ -1,19 +1,12 @@
-/**
- * One review item's FIFO of frozen Apply clicks: text, tree, or text+tree. A text click names
- * its draft (`body.draftId`); that draft's room records it, and closing that draft closes only
- * its clicks, so a later draft under the same item key never inherits one. A tree-only click
- * has no room: its applied answer settles it. Two independent duties per click:
- * - release: the click leaves the FIFO (its optimistic contribution ends) exactly once, on the
- *   room's record or on a terminal answer. Unknown delivery never releases the head.
- * - completion: the caller's promise resolves from the full answer or, when the record released
- *   a click whose answer is missing or lost, from the stored result under the same command id.
- *   Arrival order of answer, record and failure never decides which.
- */
+/** One review item's ordered Apply, Un-Apply, and Redo command schedule. */
 import type {
   ApplyClick,
   ApplyClickAnswer,
   ApplyClickObservation,
   ApplyClickResult,
+  UnapplyClick,
+  UnapplyClickAnswer,
+  UnapplyClickResult,
 } from "@meridian/contracts/branches";
 import type { Node as PMNode } from "@tiptap/pm/model";
 
@@ -23,47 +16,70 @@ export type FrozenApply = {
   patched: readonly PMNode[];
   acknowledged: Promise<void>;
 };
-/** An answer that ends a click unapplied: nothing changed, and resending can't change that. */
-function isFinalRefusal(
+
+function isFinalApplyRefusal(
   answer: ApplyClickObservation,
 ): answer is Exclude<ApplyClickResult, { status: "applied" }> {
-  return (
-    answer.status === "closed" ||
-    answer.status === "refused" ||
-    answer.status === "needs_restore" ||
-    answer.status === "changed"
-  );
+  return ["closed", "refused", "needs_restore", "changed"].includes(answer.status);
 }
 
-/**
- * The room recorded the click, but neither its answer nor its stored result could be read after
- * every retry. It landed; what only the result carries (`restored`) is unknown.
- */
 export type ApplyClickLanded = { status: "landed"; commandId: string };
 export type ApplyClickOutcome = ApplyClickResult | ApplyClickLanded | { status: "cancelled" };
-type Click = FrozenApply & {
+export type UnapplyClickOutcome = UnapplyClickResult | { status: "cancelled" };
+
+type ApplyCommand = FrozenApply & {
+  kind: "apply";
   release: Promise<{ cancel?: boolean; omitTree?: boolean }>;
   sent: boolean;
   attempts: number;
   stalled: boolean;
-  /** Its draft closed (or the queue did): no record can arrive, only a durable answer settles it. */
   closed: boolean;
   answer?: ApplyClickResult;
   inFlight?: boolean;
   reading?: boolean;
+  outcome: Promise<ApplyClickOutcome>;
   finish(result: ApplyClickOutcome): void;
 };
+export type UnapplyCommand = {
+  kind: "unapply";
+  body: UnapplyClick;
+  draftId: string;
+  optimistic: readonly PMNode[];
+  patched: readonly PMNode[];
+  patchFor(groupIds: readonly string[]): readonly PMNode[];
+  selectionChanged(groupIds: readonly string[]): void;
+  ready: Promise<boolean>;
+  groupIds: Set<string>;
+  sent: boolean;
+  attempts: number;
+  stalled: boolean;
+  answer?: UnapplyClickResult;
+  outcome: Promise<UnapplyClickOutcome>;
+  finish(result: UnapplyClickOutcome): void;
+};
+type Command = ApplyCommand | UnapplyCommand;
+
+export type ApplyCommandHandle = {
+  undo(): void;
+  redo(): void;
+};
+type ScheduledApplyHandle = ApplyCommandHandle & {
+  current: ApplyCommand;
+  reversal: Promise<UnapplyClickOutcome>;
+  replaySelection: string[];
+  pendingReplay: ApplyCommand | null;
+};
+
 export const APPLY_FEEDBACK_MS = 500;
 const RETRY_DELAYS = [1000, 2000, 4000];
 
 export class ApplyClickQueue {
-  readonly clicks: Click[] = [];
-  /** Each draft room's recorded command ids. */
+  private readonly commands: Command[] = [];
   private readonly recorded = new Map<string, Set<string>>();
+  private readonly recordedRows = new Map<string, { commandId: string; groupId?: string }[]>();
+  private readonly resolving = new Set<ApplyCommand>();
   private closed = false;
-  private request: Click | null = null;
-  /** Released by the record, not yet completed: awaiting the in-flight answer or reading the stored result. */
-  private readonly resolving = new Set<Click>();
+  private request: Command | null = null;
   private retryTimer?: ReturnType<typeof setTimeout>;
   private feedbackTimer?: ReturnType<typeof setTimeout>;
   applying = false;
@@ -72,57 +88,222 @@ export class ApplyClickQueue {
     private readonly port: {
       send(body: ApplyClick): Promise<ApplyClickAnswer>;
       lookup(body: ApplyClick): Promise<ApplyClickObservation>;
+      unapply?(body: UnapplyClick): Promise<UnapplyClickAnswer>;
       changed(): void;
     },
   ) {}
+
+  get clicks(): ApplyCommand[] {
+    return this.commands.filter((command): command is ApplyCommand => command.kind === "apply");
+  }
+
+  get unapplies(): UnapplyCommand[] {
+    return this.commands.filter((command): command is UnapplyCommand => command.kind === "unapply");
+  }
+
+  get stalled(): boolean {
+    return this.commands[0]?.stalled ?? false;
+  }
+
+  get pending(): boolean {
+    return this.commands.length > 0;
+  }
 
   enqueue(
     frozen: FrozenApply,
     release: Promise<{ cancel?: boolean; omitTree?: boolean }> = Promise.resolve({}),
   ): Promise<ApplyClickOutcome> {
     if (this.closed) return Promise.resolve({ status: "cancelled" });
-    const result = new Promise<ApplyClickOutcome>((finish) => {
-      const click: Click = {
-        ...frozen,
-        release,
-        sent: false,
-        attempts: 0,
-        stalled: false,
-        closed: false,
-        finish,
-      };
-      this.clicks.push(click);
-      void frozen.acknowledged.then(
-        () => {
-          if (this.clicks.includes(click)) {
-            click.acknowledged = Promise.resolve();
-            if (this.clicks[0] === click) void this.dispatch(click);
-          }
-        },
-        () => this.refuse(click),
-      );
-    });
-    if (!this.feedbackTimer)
-      this.feedbackTimer = setTimeout(() => {
-        this.applying = this.clicks.length > 0;
-        this.port.changed();
-      }, APPLY_FEEDBACK_MS);
+    const result = this.queueApply(frozen, release).outcome;
+    this.startFeedback();
     this.port.changed();
     return result;
   }
 
-  /** The record alone proves landing. It and the base arrive in the same Yjs transaction. */
-  observe(draftId: string, commandIds: Iterable<string>): void {
-    this.recorded.set(draftId, new Set(commandIds));
-    const head = this.clicks[0];
-    if (head && this.isRecorded(head)) {
+  /** Own one Apply's command identity, reversal result, and text-only replay selection. */
+  enqueueHistory(input: {
+    frozen: FrozenApply;
+    release: Promise<{ cancel?: boolean; omitTree?: boolean }>;
+    patchFor(groupIds: readonly string[]): readonly PMNode[];
+    intent(): void;
+    applyRefused(answer: ApplyClickOutcome): void;
+    unapplyRefused(answer: UnapplyClickOutcome): void;
+  }): { outcome: Promise<ApplyClickOutcome>; handle: ApplyCommandHandle } {
+    const initial = this.queueApply(input.frozen, input.release);
+    this.startFeedback();
+    this.port.changed();
+    const landedText = (answer: ApplyClickOutcome) =>
+      answer.status === "landed" || (answer.status === "applied" && answer.textEffect === true);
+    let handle!: ScheduledApplyHandle;
+    handle = {
+      current: initial,
+      reversal: Promise.resolve({ status: "cancelled" }),
+      replaySelection: [...initial.body.groupIds],
+      pendingReplay: null,
+      undo: () => {
+        input.intent();
+        handle.pendingReplay = null;
+        if (this.cancel(handle.current.body.commandId)) {
+          handle.reversal = Promise.resolve({ status: "cancelled" });
+          return;
+        }
+        handle.replaySelection = [...handle.current.body.groupIds];
+        const inverse = this.queueUnapply({
+          body: {
+            commandId: crypto.randomUUID(),
+            applyCommandId: handle.current.body.commandId,
+          },
+          draftId: handle.current.body.draftId ?? "",
+          optimistic: handle.current.optimistic,
+          patched: handle.current.patched,
+          groupIds: handle.current.body.groupIds,
+          patchFor: input.patchFor,
+          ready: handle.current.outcome.then(landedText),
+          selectionChanged: (groupIds) => {
+            handle.replaySelection = [...groupIds];
+            const replay = handle.pendingReplay;
+            if (replay && !replay.sent) {
+              replay.body = { ...replay.body, groupIds: [...groupIds] };
+              replay.patched = input.patchFor(groupIds);
+            }
+          },
+        });
+        handle.reversal = inverse.outcome;
+        void inverse.outcome.then((answer) => {
+          if (answer.status !== "unapplied" && answer.status !== "cancelled")
+            input.unapplyRefused(answer);
+        });
+      },
+      redo: () => {
+        input.intent();
+        const ready = handle.reversal.then((answer) => {
+          if (answer.status !== "cancelled" && answer.status !== "unapplied")
+            throw new Error("Un-Apply did not land");
+        });
+        handle.current = this.queueApply({
+          body: {
+            ...handle.current.body,
+            commandId: crypto.randomUUID(),
+            groupIds: [...handle.replaySelection],
+            tree: undefined,
+          },
+          optimistic: handle.current.optimistic,
+          patched: input.patchFor(handle.replaySelection),
+          acknowledged: ready,
+        });
+        handle.pendingReplay = handle.current;
+        this.startFeedback();
+        this.port.changed();
+        void handle.current.outcome.then((answer) => {
+          if (!landedText(answer) && answer.status !== "cancelled") input.applyRefused(answer);
+        });
+      },
+    };
+
+    return {
+      outcome: initial.outcome,
+      handle,
+    };
+  }
+
+  /** Fold unresolved writer intents in the same order in which they are delivered. */
+  project(
+    draftId: string,
+    base: readonly PMNode[],
+    fold: (
+      base: readonly PMNode[],
+      before: readonly PMNode[],
+      after: readonly PMNode[],
+    ) => readonly PMNode[],
+  ): readonly PMNode[] {
+    let projected = base;
+    for (const command of this.commands) {
+      if (command.kind === "apply") {
+        if (command.body.draftId === draftId && !this.isRecorded(command))
+          projected = fold(projected, command.optimistic, command.patched);
+      } else if (command.draftId === draftId) {
+        projected = fold(projected, command.patched, command.optimistic);
+      }
+    }
+    return projected;
+  }
+
+  private queueApply(
+    frozen: FrozenApply,
+    release: Promise<{ cancel?: boolean; omitTree?: boolean }> = Promise.resolve({}),
+  ): ApplyCommand {
+    let finish!: (result: ApplyClickOutcome) => void;
+    const outcome = new Promise<ApplyClickOutcome>((resolve) => {
+      finish = resolve;
+    });
+    const command: ApplyCommand = {
+      kind: "apply",
+      ...frozen,
+      release,
+      sent: false,
+      attempts: 0,
+      stalled: false,
+      closed: false,
+      outcome,
+      finish,
+    };
+    this.commands.push(command);
+    void frozen.acknowledged.then(
+      () => {
+        if (!this.commands.includes(command)) return;
+        command.acknowledged = Promise.resolve();
+        if (this.commands[0] === command) void this.dispatch(command);
+      },
+      () => this.refuse(command),
+    );
+    return command;
+  }
+
+  private queueUnapply(input: {
+    body: UnapplyClick;
+    draftId: string;
+    optimistic: readonly PMNode[];
+    patched: readonly PMNode[];
+    groupIds: readonly string[];
+    patchFor(groupIds: readonly string[]): readonly PMNode[];
+    selectionChanged(groupIds: readonly string[]): void;
+    ready: Promise<boolean>;
+  }): UnapplyCommand {
+    let finish!: (result: UnapplyClickOutcome) => void;
+    const outcome = new Promise<UnapplyClickOutcome>((resolve) => {
+      finish = resolve;
+    });
+    const command: UnapplyCommand = {
+      kind: "unapply",
+      ...input,
+      groupIds: new Set(input.groupIds),
+      sent: false,
+      attempts: 0,
+      stalled: false,
+      outcome,
+      finish,
+    };
+    this.commands.push(command);
+    this.port.changed();
+    this.moveOn();
+    return command;
+  }
+
+  observe(draftId: string, rows: Iterable<string | { commandId: string; groupId?: string }>): void {
+    const records = [...rows].map((row) => (typeof row === "string" ? { commandId: row } : row));
+    this.recordedRows.set(draftId, records);
+    this.recorded.set(draftId, new Set(records.map((row) => row.commandId)));
+    const head = this.commands[0];
+    if (head?.kind === "apply" && this.isRecorded(head)) {
       this.release(head);
-      this.complete(head);
+      this.completeApply(head);
+    } else if (head?.kind === "unapply") {
+      this.reconcileUnapply(head, records);
     } else this.port.changed();
   }
 
   retry(): void {
-    const head = this.clicks[0];
+    const head = this.commands[0];
     if (!head?.stalled) return;
     head.stalled = false;
     head.attempts = 0;
@@ -130,30 +311,23 @@ export class ApplyClickQueue {
     void this.dispatch(head);
   }
 
-  private isRecorded(click: Click): boolean {
-    const { draftId, commandId } = click.body;
-    return draftId !== undefined && (this.recorded.get(draftId)?.has(commandId) ?? false);
-  }
-
-  /** A retired session cannot acknowledge its draft's unsent cuts; sent ids keep their settlement. */
-  refuseUnsent(draftId: string): void {
-    for (const click of this.clicks.filter((click) => click.body.draftId === draftId))
-      this.refuse(click);
-  }
-
-  private refuse(click: Click): void {
-    const index = this.clicks.indexOf(click);
-    if (click.sent || index < 0) return;
-    this.clicks.splice(index, 1);
-    click.finish({ status: "refused", commandId: click.body.commandId, reason: "unsynced" });
+  cancel(commandId: string): boolean {
+    const command = this.commands.find(
+      (candidate): candidate is ApplyCommand =>
+        candidate.kind === "apply" && candidate.body.commandId === commandId,
+    );
+    if (!command || command.sent) return false;
+    this.commands.splice(this.commands.indexOf(command), 1);
+    command.finish({ status: "cancelled" });
     this.moveOn();
+    return true;
   }
 
-  /**
-   * A closed room cannot deliver records: its draft's unsent clicks are cancelled, and only a
-   * durable answer/lookup can settle its sent head. Other drafts' and tree clicks go on.
-   * Without a draft, the whole queue closes (the account is ending).
-   */
+  refuseUnsent(draftId: string): void {
+    for (const command of this.clicks.filter((click) => click.body.draftId === draftId))
+      this.refuse(command);
+  }
+
   close(draftId?: string): void {
     if (this.closed) return;
     if (draftId === undefined) {
@@ -161,180 +335,253 @@ export class ApplyClickQueue {
       clearTimeout(this.retryTimer);
     }
     const closing = this.clicks.filter(
-      (click) => !click.closed && (draftId === undefined || click.body.draftId === draftId),
+      (command) => !command.closed && (draftId === undefined || command.body.draftId === draftId),
     );
-    const head = this.clicks[0];
-    for (const click of closing) {
-      click.closed = true;
-      if (click === head && click.sent) continue;
-      this.clicks.splice(this.clicks.indexOf(click), 1);
-      click.finish({ status: "cancelled" });
+    const head = this.commands[0];
+    for (const command of closing) {
+      command.closed = true;
+      if (command === head && command.sent) continue;
+      this.commands.splice(this.commands.indexOf(command), 1);
+      command.finish({ status: "cancelled" });
     }
-    if (head?.sent && closing.includes(head)) {
+    if (head?.kind === "apply" && head.sent && closing.includes(head)) {
       if (head.answer?.status === "applied") this.settle(head, head.answer);
       else if (!this.request) void this.lookupClosed(head);
     }
     this.moveOn();
   }
 
-  /** After clicks left out of turn: the next head is sent unless one is already in flight. */
-  private moveOn(): void {
-    this.clearFeedbackIfIdle();
-    this.port.changed();
-    const next = this.clicks[0];
-    if (next && !this.request && !next.sent && !this.closed) void this.dispatch(next);
-  }
-
   destroy(): void {
     clearTimeout(this.retryTimer);
     clearTimeout(this.feedbackTimer);
-    for (const click of this.clicks.splice(0)) click.finish({ status: "cancelled" });
-    // Recorded clicks landed; stop reading their results and say only that.
+    for (const command of this.commands.splice(0))
+      command.finish(command.kind === "apply" ? { status: "cancelled" } : { status: "cancelled" });
     for (const click of this.resolving)
       click.finish({ status: "landed", commandId: click.body.commandId });
     this.resolving.clear();
   }
 
-  private async dispatch(click: Click): Promise<void> {
-    if (this.request || this.clicks[0] !== click || click.stalled) return;
+  private startFeedback(): void {
+    if (this.feedbackTimer) return;
+    this.feedbackTimer = setTimeout(() => {
+      this.applying = this.clicks.length > 0;
+      this.port.changed();
+    }, APPLY_FEEDBACK_MS);
+  }
+
+  private isRecorded(command: ApplyCommand): boolean {
+    const { draftId, commandId } = command.body;
+    return draftId !== undefined && (this.recorded.get(draftId)?.has(commandId) ?? false);
+  }
+
+  private refuse(command: ApplyCommand): void {
+    const index = this.commands.indexOf(command);
+    if (command.sent || index < 0) return;
+    this.commands.splice(index, 1);
+    command.finish({ status: "refused", commandId: command.body.commandId, reason: "unsynced" });
+    this.moveOn();
+  }
+
+  private moveOn(): void {
+    this.clearFeedbackIfIdle();
+    this.port.changed();
+    const next = this.commands[0];
+    if (next && !this.request && !next.sent && !this.closed) void this.dispatch(next);
+  }
+
+  private async dispatch(command: Command): Promise<void> {
+    if (this.request || this.commands[0] !== command || command.stalled) return;
+    if (command.kind === "apply") await this.dispatchApply(command);
+    else await this.dispatchUnapply(command);
+  }
+
+  private async dispatchApply(command: ApplyCommand): Promise<void> {
     try {
-      const [, released] = await Promise.all([click.acknowledged, click.release]);
+      const [, released] = await Promise.all([command.acknowledged, command.release]);
       if (released.cancel) {
-        const index = this.clicks.indexOf(click);
-        if (index >= 0) this.clicks.splice(index, 1);
-        click.finish({ status: "cancelled" });
+        this.commands.splice(this.commands.indexOf(command), 1);
+        command.finish({ status: "cancelled" });
         this.moveOn();
         return;
       }
-      if (released.omitTree && click.body.tree) click.body = { ...click.body, tree: undefined };
+      if (released.omitTree && command.body.tree)
+        command.body = { ...command.body, tree: undefined };
     } catch {
-      this.refuse(click);
+      this.refuse(command);
       return;
     }
-    if (this.request || this.clicks[0] !== click) return;
-    this.request = click;
-    click.sent = true;
-    click.inFlight = true;
+    if (this.request || this.commands[0] !== command) return;
+    this.request = command;
+    command.sent = true;
+    command.inFlight = true;
     let answer: ApplyClickObservation | undefined;
     try {
-      answer = await (click.closed ? this.port.lookup(click.body) : this.port.send(click.body));
+      answer = await (command.closed
+        ? this.port.lookup(command.body)
+        : this.port.send(command.body));
     } catch {
-      // No answer is not a refusal. The immutable command remains the only head.
+      // Unknown delivery retains this immutable head.
     }
-    click.inFlight = false;
-    if (this.request === click) this.request = null;
-    if (answer?.commandId !== click.body.commandId) answer = undefined;
-    if (answer?.status === "applied") click.answer = answer;
-    if (this.clicks[0] !== click) {
-      // The record released it while the request was in flight (or the queue was destroyed).
-      if (this.resolving.has(click)) this.complete(click);
-      const next = this.clicks[0];
-      if (next) void this.dispatch(next);
+    command.inFlight = false;
+    if (this.request === command) this.request = null;
+    if (answer?.commandId !== command.body.commandId) answer = undefined;
+    if (answer?.status === "applied") command.answer = answer;
+    if (this.commands[0] !== command) {
+      if (this.resolving.has(command)) this.completeApply(command);
+      this.moveOn();
       return;
     }
     if (answer?.status === "applied") {
-      if (!click.body.draftId || click.closed || this.isRecorded(click)) this.settle(click, answer);
-      // Otherwise keep the optimistic contribution until the room's record arrives.
+      if (!command.body.draftId || command.closed || this.isRecorded(command))
+        this.settle(command, answer);
       return;
     }
-    if (answer && isFinalRefusal(answer)) {
-      this.settle(click, answer);
+    if (answer && isFinalApplyRefusal(answer)) {
+      this.settle(command, answer);
       return;
     }
-    if (click.closed && answer?.status === "none") {
-      this.settle(click, { status: "cancelled" });
+    if (command.closed && answer?.status === "none") {
+      this.settle(command, { status: "cancelled" });
       return;
     }
-    if (click.closed && !answer) {
-      // An in-flight send may have been answered by the close. Observe it before counting a retry.
-      void this.lookupClosed(click);
+    if (command.closed && !answer) {
+      void this.lookupClosed(command);
       return;
     }
-    this.scheduleRetry(click);
+    this.scheduleRetry(command);
   }
 
-  private async lookupClosed(click: Click): Promise<void> {
+  private async dispatchUnapply(command: UnapplyCommand): Promise<void> {
+    if (!(await command.ready)) {
+      if (this.commands[0] === command) this.settle(command, { status: "cancelled" });
+      return;
+    }
+    if (this.request || this.commands[0] !== command || command.stalled) return;
+    this.request = command;
+    command.sent = true;
+    let answer: UnapplyClickAnswer | undefined;
     try {
-      const result = await this.port.lookup(click.body);
-      if (this.clicks[0] !== click || result.commandId !== click.body.commandId) return;
-      if (result.status === "applied" || isFinalRefusal(result)) {
-        this.settle(click, result);
+      answer = await this.port.unapply?.(command.body);
+    } catch {
+      // Unknown delivery retains the projection, command identity, and later commands.
+    }
+    if (this.request === command) this.request = null;
+    if (answer?.commandId !== command.body.commandId) answer = undefined;
+    if (this.commands[0] !== command) return;
+    if (answer?.status === "unapplied") {
+      command.answer = answer;
+      command.groupIds = new Set(answer.reversedGroupIds);
+      command.patched = command.patchFor(answer.reversedGroupIds);
+      command.selectionChanged(answer.reversedGroupIds);
+      this.port.changed();
+      this.reconcileUnapply(command);
+      return;
+    }
+    if (answer?.status === "closed" || answer?.status === "refused") {
+      this.settle(command, answer);
+      return;
+    }
+    this.scheduleRetry(command);
+  }
+
+  private reconcileUnapply(
+    command: UnapplyCommand,
+    observed = this.currentRecords(command.draftId),
+  ): void {
+    const answer = command.answer;
+    if (!answer) {
+      this.port.changed();
+      return;
+    }
+    const remaining = observed.some(
+      (row) =>
+        row.commandId === command.body.applyCommandId && command.groupIds.has(row.groupId ?? ""),
+    );
+    if (!remaining) this.settle(command, answer);
+    else this.port.changed();
+  }
+
+  private currentRecords(draftId: string): { commandId: string; groupId?: string }[] {
+    return this.recordedRows.get(draftId) ?? [];
+  }
+
+  private async lookupClosed(command: ApplyCommand): Promise<void> {
+    try {
+      const result = await this.port.lookup(command.body);
+      if (this.commands[0] !== command || result.commandId !== command.body.commandId) return;
+      if (result.status === "applied" || isFinalApplyRefusal(result)) {
+        this.settle(command, result);
         return;
       }
       if (result.status === "none") {
-        this.settle(click, { status: "cancelled" });
+        this.settle(command, { status: "cancelled" });
         return;
       }
     } catch {
-      /* Remains unknown. */
+      // Remains unknown.
     }
-    this.scheduleRetry(click);
+    this.scheduleRetry(command);
   }
 
-  /**
-   * The sole completion path for a click the record released. Its full answer completes it;
-   * while the request is in flight, `dispatch` calls back here when it ends; otherwise the
-   * stored result is read under the same command id, never resent. Exhausted reads complete
-   * as `landed`.
-   */
-  private complete(click: Click): void {
-    if (click.answer) {
-      this.resolving.delete(click);
-      click.finish(click.answer);
+  private completeApply(command: ApplyCommand): void {
+    if (command.answer) {
+      this.resolving.delete(command);
+      command.finish(command.answer);
       return;
     }
-    this.resolving.add(click);
-    if (!click.inFlight && !click.reading) void this.readResult(click);
+    this.resolving.add(command);
+    if (!command.inFlight && !command.reading) void this.readResult(command);
   }
 
-  private async readResult(click: Click): Promise<void> {
-    click.reading = true;
+  private async readResult(command: ApplyCommand): Promise<void> {
+    command.reading = true;
     for (const delay of [0, ...RETRY_DELAYS]) {
       if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-      if (!this.resolving.has(click)) return;
+      if (!this.resolving.has(command)) return;
       try {
-        const result = await this.port.lookup(click.body);
-        if (result.status === "applied" && result.commandId === click.body.commandId) {
-          if (this.resolving.delete(click)) click.finish(result);
+        const result = await this.port.lookup(command.body);
+        if (result.status === "applied" && result.commandId === command.body.commandId) {
+          if (this.resolving.delete(command)) command.finish(result);
           return;
         }
       } catch {
-        /* Still unknown; the record already proved landing. */
+        // The record already proves landing.
       }
     }
-    if (this.resolving.delete(click))
-      click.finish({ status: "landed", commandId: click.body.commandId });
+    if (this.resolving.delete(command))
+      command.finish({ status: "landed", commandId: command.body.commandId });
   }
 
-  private scheduleRetry(click: Click): void {
-    const delay = RETRY_DELAYS[click.attempts++];
-    if (delay === undefined) click.stalled = true;
-    else this.retryTimer = setTimeout(() => void this.dispatch(click), delay);
+  private scheduleRetry(command: Command): void {
+    const delay = RETRY_DELAYS[command.attempts++];
+    if (delay === undefined) command.stalled = true;
+    else this.retryTimer = setTimeout(() => void this.dispatch(command), delay);
     this.port.changed();
   }
 
-  private clearFeedbackIfIdle() {
+  private clearFeedbackIfIdle(): void {
     if (this.clicks.length) return;
     clearTimeout(this.feedbackTimer);
     this.feedbackTimer = undefined;
     this.applying = false;
   }
 
-  /** Ends the click's optimistic contribution and moves the FIFO on. Exactly once per click. */
-  private release(click: Click): boolean {
-    if (this.clicks[0] !== click) return false;
+  private release(command: Command): boolean {
+    if (this.commands[0] !== command) return false;
     clearTimeout(this.retryTimer);
-    this.clicks.shift();
-    // An in-flight request no longer blocks the next click; its answer still completes this one.
-    if (this.request === click) this.request = null;
+    this.commands.shift();
+    if (this.request === command) this.request = null;
     this.clearFeedbackIfIdle();
     this.port.changed();
-    const next = this.clicks[0];
-    if (next && !this.request) void this.dispatch(next);
+    this.moveOn();
     return true;
   }
 
-  private settle(click: Click, result: ApplyClickOutcome): void {
-    if (this.release(click)) click.finish(result);
+  private settle(command: ApplyCommand, result: ApplyClickOutcome): void;
+  private settle(command: UnapplyCommand, result: UnapplyClickOutcome): void;
+  private settle(command: Command, result: ApplyClickOutcome | UnapplyClickOutcome): void {
+    if (!this.release(command)) return;
+    if (command.kind === "apply") command.finish(result as ApplyClickOutcome);
+    else command.finish(result as UnapplyClickOutcome);
   }
 }

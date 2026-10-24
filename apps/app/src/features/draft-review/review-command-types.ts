@@ -5,5 +5,10 @@ export type ServerRefusal = {
   serverReason?: string;
 };
 export type BranchCommandFailure = {
-  code: "apply-refused" | "discard-refused" | "discard-unknown" | "review-failed";
+  code:
+    | "apply-refused"
+    | "unapply-refused"
+    | "discard-refused"
+    | "discard-unknown"
+    | "review-failed";
 } & ServerRefusal;

@@ -2,7 +2,9 @@
 import { Plural, Trans } from "@lingui/react/macro";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { Button } from "@/components/ui/button";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { cn } from "@/lib/utils";
+import { useDraftCommandState } from "./draft-changes";
 import { ReviewNextAction, type ReviewStateProps, ReviewStatusContent } from "./ReviewCompletion";
 import { ReviewMessageText } from "./ReviewMessageText";
 import type { BranchCommandFailure } from "./review-command-types";
@@ -12,12 +14,14 @@ const MAX_NAMED_FAILURES = 3;
 
 export function ReviewFailureNotices({
   commandError,
+  itemKey = "",
   failedElsewhere = [],
   onOpenNext,
   touch = false,
   className,
 }: {
   commandError: BranchCommandFailure | null;
+  itemKey?: string;
   /** Other drafts of the Work whose last Apply or Discard was refused or lost. */
   failedElsewhere?: { row: ReviewFileTarget; failure: BranchCommandFailure }[];
   onOpenNext: (row: ReviewFileTarget) => void;
@@ -25,12 +29,24 @@ export function ReviewFailureNotices({
   /** The inset of whatever hosts the notices. */
   className?: string;
 }) {
+  const owner = useDraftCommandOwner();
+  const command = useDraftCommandState(itemKey);
   const button = touch ? "h-11 px-4 text-sm" : undefined;
   return (
     <>
       {commandError ? (
-        <p className={cn("pb-1.5 text-destructive", className)} role="alert">
-          <ReviewMessageText failure={commandError} />
+        <p
+          className={cn("flex items-center gap-2 pb-1.5 text-destructive", className)}
+          role="alert"
+        >
+          <span>
+            <ReviewMessageText failure={commandError} />
+          </span>
+          {commandError.code === "unapply-refused" && command.stalled ? (
+            <Button size="xs" variant="outline" onClick={() => owner.retry(itemKey)}>
+              <Trans>Retry</Trans>
+            </Button>
+          ) : null}
         </p>
       ) : null}
       {failedElsewhere.slice(0, MAX_NAMED_FAILURES).map(({ row, failure }) => (
