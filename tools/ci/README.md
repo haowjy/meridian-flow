@@ -20,7 +20,8 @@ those same named scripts. The test group forwards trailing arguments to that
 script; static and typecheck reject them. New steps automatically join `quality-static`.
 Unsupported chain syntax or a missing isolated/DB step fails explicitly.
 `check:db` stays local; CI's separate `db-tests` job provisions Postgres and
-forces the DB suite. Migration checks and the two app boot jobs are unchanged.
+forces the DB suite. It starts the Postgres server preinstalled on its pinned
+runner image, so it pulls nothing from a registry. Migration checks and the two app boot jobs are unchanged.
 
 Do not cache `.nx` outputs across Actions runs. The pnpm dependency cache is
 independent. Local target caches include the shared configuration inputs below.
