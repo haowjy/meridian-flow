@@ -253,6 +253,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           workAuthorityResolver: runtime.app.workAuthorityResolver,
           fileAccess: runtime.app.fileAccess,
           branches: runtime.app.documentSync.branches,
+          documentTrash: runtime.app.documentTrash,
         },
         {
           projectId: s.project.id,

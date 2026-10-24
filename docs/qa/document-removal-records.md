@@ -162,6 +162,43 @@ documents or drafts.
 Sign in, create/open a document, delete it using its Files menu, and confirm
 the tab/tree update without an error. Capture a screenshot outside this repo.
 
+## Document trash
+
+1. Create one document at a scheme root and one inside a folder. In a third
+   document, use the Editor's link picker to link to the first one; choosing
+   the result stores the target document's stable ID. Delete the linked
+   document, then delete the folder. The Trash row remains below Scratch in
+   the sidebar whether or not anything is deleted.
+2. Open Trash from the sidebar. One popup shows the newest-first list on the
+   left and the newest document's read-only view on the right. Each row shows
+   its full former location, relative deletion time, and a row menu with
+   Restore. Select the other row and confirm the right pane changes without
+   adding another browser-history step.
+3. Confirm the selected document shows its last settled text and the banner
+   "In the trash. Deleted by <name> on <date>. Gone for good in <n> days."
+   Close the popup and follow the stable link to the deleted document. The
+   same popup opens with that document selected; the link chip may still say
+   "No longer available".
+4. Restore the linked document from its banner. Restore remains disabled with
+   "Restoring" until the response. The popup closes into the live document,
+   and the catalog stream returns it to the context tree.
+5. Restore one document from its row menu. Its row says Restoring until the
+   response, then leaves the list. The popup stays open and selects the next
+   entry.
+6. Create a document at another deleted document's former path, then restore
+   the deleted document from its row menu. Confirm the row leaves, the popup
+   stays open, and the success message names the alternate location where it
+   landed.
+7. Restore every remaining row. The popup says "Nothing in the trash." Close
+   it and confirm the sidebar row remains.
+8. Repeat with a 390 by 844 coarse-pointer viewport. The row opens a full-screen
+   list. Selecting a row shows the read-only document, and Back returns to the
+   list.
+
+An already-open live tab still follows terminal resource cleanup when another
+actor deletes its document: the tab closes and the removal notice appears. The
+read-only Trash view is an auxiliary route, not a retained Editor tab.
+
 ## Removal notices in the browser
 
 Two tabs of one signed-in browser (A and B), plus `./mf doc rm` as another

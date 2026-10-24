@@ -284,6 +284,10 @@ msgstr "{days, plural, one {# day ago} other {# days ago}}"
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr "{days, plural, one {# day left} other {# days left}}"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "{days, plural, one {Gone for good in # day.} other {Gone for good in # days.}}"
+msgstr "{days, plural, one {Gone for good in # day.} other {Gone for good in # days.}}"
+
 #: src/lib/date-groups.ts
 msgid "{days}d"
 msgstr "{days}d"
@@ -389,8 +393,8 @@ msgid "{name} was removed when the reply that created it didn't finish, so this 
 msgstr "{name} was removed when the reply that created it didn't finish, so this change wasn't made."
 
 #: src/features/draft-review/tree-line.ts
-msgid "{name}: deleting"
-msgstr "{name}: deleting"
+msgid "{name}: Deleted"
+msgstr "{name}: Deleted"
 
 #. placeholder {0}: line.place
 #: src/features/draft-review/tree-line.ts
@@ -595,6 +599,10 @@ msgstr "A Work has drafts for this"
 msgid "A Work has drafts for this ({0})"
 msgstr "A Work has drafts for this ({0})"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "a writer"
+msgstr "a writer"
+
 #: src/features/editor/SyncStatus.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
 msgid "Access lost (not saving to the server)"
@@ -614,6 +622,7 @@ msgid "Account settings."
 msgstr "Account settings."
 
 #: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Actions"
 msgstr "Actions"
 
@@ -706,6 +715,15 @@ msgstr "Agent: {agentName}"
 msgid "AI assistant"
 msgstr "AI assistant"
 
+#. placeholder {0}: voice.chat
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "AI in {0}"
+msgstr "AI in {0}"
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "AI in a chat"
+msgstr "AI in a chat"
+
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "AI write mode"
 msgstr "AI write mode"
@@ -796,6 +814,7 @@ msgid "Applied to the manuscript"
 msgstr "Applied to the manuscript"
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/draft-review/DraftedDeleteNotice.tsx
 #: src/features/draft-review/ReviewChangeBar.tsx
 #: src/features/draft-review/ReviewChangeRow.tsx
 #: src/features/editor/DraftReviewBand.tsx
@@ -897,6 +916,10 @@ msgstr "Back to {title}"
 #: src/features/editor/EditorView.tsx
 msgid "Back to live"
 msgstr "Back to live"
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Back to Trash"
+msgstr "Back to Trash"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Back to workspace"
@@ -1281,6 +1304,10 @@ msgstr "Close settings"
 msgid "Close the list"
 msgstr "Close the list"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Close Trash"
+msgstr "Close Trash"
+
 #: src/features/editor/SyncStatus.tsx
 msgid "Closed"
 msgstr "Closed"
@@ -1627,10 +1654,18 @@ msgstr "Couldn't load references."
 msgid "Couldn't load the conversation this fork continues."
 msgstr "Couldn't load the conversation this fork continues."
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Couldn't load this document."
+msgstr "Couldn't load this document."
+
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
 msgstr "Couldn't load this file."
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Couldn't load Trash."
+msgstr "Couldn't load Trash."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
@@ -1731,6 +1766,18 @@ msgstr "Couldn't restore {0}. A file is in the way."
 #: src/features/project/context/document-delete-undo.tsx
 msgid "Couldn't restore {0}. Try again."
 msgstr "Couldn't restore {0}. Try again."
+
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
+msgid "Couldn't restore {name}."
+msgstr "Couldn't restore {name}."
+
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
+msgid "Couldn't restore {name}. A file is in the way."
+msgstr "Couldn't restore {name}. A file is in the way."
+
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
+msgid "Couldn't restore {name}. Try again."
+msgstr "Couldn't restore {name}. Try again."
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
@@ -1988,10 +2035,18 @@ msgstr "Deleted a document"
 msgid "Deleted a Work"
 msgstr "Deleted a Work"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Deleted documents."
+msgstr "Deleted documents."
+
 #: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 msgid "Deleted from the manuscript"
 msgstr "Deleted from the manuscript"
+
+#: src/features/draft-review/DraftedDeleteNotice.tsx
+msgid "Deleted in this draft"
+msgstr "Deleted in this draft"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Deleted since"
@@ -2048,6 +2103,7 @@ msgid "Diagram"
 msgstr "Diagram"
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/draft-review/DraftedDeleteNotice.tsx
 #: src/features/draft-review/ReviewChangeBar.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx
 #: src/features/editor/DraftReviewBand.tsx
@@ -2546,6 +2602,10 @@ msgstr "Images need a project before they can be uploaded."
 msgid "In a draft"
 msgstr "In a draft"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "In the trash. Deleted by {actor} on {deleted}."
+msgstr "In the trash. Deleted by {actor} on {deleted}."
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Inline code"
 msgstr "Inline code"
@@ -2653,6 +2713,14 @@ msgstr "Keep"
 msgid "Keep editing"
 msgstr "Keep editing"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Kept while {works} has changes to it."
+msgstr "Kept while {works} has changes to it."
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Kept while {works} have changes to it."
+msgstr "Kept while {works} have changes to it."
+
 #: src/features/project/context/context-schemes.ts
 msgid "Knowledge Base"
 msgstr "Knowledge Base"
@@ -2758,6 +2826,10 @@ msgstr "Loading agents…"
 msgid "Loading chats"
 msgstr "Loading chats"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Loading document…"
+msgstr "Loading document…"
+
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/rich-content/ImageBlock.tsx
 msgid "Loading image"
@@ -2798,6 +2870,10 @@ msgstr "Loading report…"
 #: src/core/editor/FigureNodeView.tsx
 msgid "Loading signed image URL…"
 msgstr "Loading signed image URL…"
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Loading Trash…"
+msgstr "Loading Trash…"
 
 #: src/features/chat/CreationComposer.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -3155,6 +3231,7 @@ msgstr "No image has been uploaded to {path} yet."
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
+#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/rich-content/TranscriptReference.tsx
 msgid "No longer available"
 msgstr "No longer available"
@@ -3243,6 +3320,10 @@ msgstr "Nothing here yet"
 #: src/components/app/DrillInMenu.tsx
 msgid "Nothing here yet."
 msgstr "Nothing here yet."
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Nothing in the trash."
+msgstr "Nothing in the trash."
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Nothing opened yet"
@@ -3540,6 +3621,10 @@ msgstr "Read file"
 msgid "Read report from {line}"
 msgstr "Read report from {line}"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Read-only document in Trash."
+msgstr "Read-only document in Trash."
+
 #: src/features/project/context/document-presentation.ts
 msgid "Read-only live document"
 msgstr "Read-only live document"
@@ -3744,6 +3829,7 @@ msgstr "Resize sidebar"
 msgid "Response complete"
 msgstr "Response complete"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore"
 msgstr "Restore"
@@ -3753,16 +3839,24 @@ msgstr "Restore"
 msgid "Restore {0}"
 msgstr "Restore {0}"
 
+#. placeholder {0}: document.name
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "Restored {0}, but couldn't open it. Try again from the file list."
+msgstr "Restored {0}, but couldn't open it. Try again from the file list."
+
 #. placeholder {0}: documentDisplayName(landing.landedAt)
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Restored as {0}."
 msgstr "Restored as {0}."
 
 #. placeholder {0}: alternateLocations.join(", ")
+#. placeholder {0}: notice.location
 #: src/features/project/context/document-delete-undo.tsx
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Restored at {0}."
 msgstr "Restored at {0}."
 
+#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Restoring"
 msgstr "Restoring"
@@ -4587,6 +4681,10 @@ msgstr "The server couldn't do that. Try again."
 msgid "the source chat"
 msgstr "the source chat"
 
+#: src/features/project/context/DocumentTrashDialog.tsx
+msgid "the system"
+msgstr "the system"
+
 #: src/features/chat/tool-renderers.tsx
 msgid "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
 msgstr "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
@@ -5015,6 +5113,11 @@ msgstr "Tokens before"
 #: src/features/billing/BillingPage.tsx
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr "Top up any time. Extra usage carries over month to month."
+
+#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/shell/WorkspaceNavBody.tsx
+msgid "Trash"
+msgstr "Trash"
 
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/TurnEditsReceipt.tsx

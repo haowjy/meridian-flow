@@ -124,4 +124,3 @@ export { decodeWorkHandle, formatWorkHandle, type WorkHandle } from "../handles.
 export * from "./metadata.js";
 export * from "./receipts.js";
 export * from "./work-authority.js";
-export * from "./work-retention.js";

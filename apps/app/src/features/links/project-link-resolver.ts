@@ -64,7 +64,10 @@ export type LinkResolutionScope = {
   holderDocumentId?: string | null;
 };
 
-const GONE: LinkAnswer = Object.freeze({ state: "gone", document: null });
+const GONE: Extract<LinkAnswer, { state: "gone" }> = Object.freeze({
+  state: "gone",
+  document: null,
+});
 const MISSING: LinkAnswer = Object.freeze({ state: "missing", document: null });
 const UNASKED: LocalLinkAnswer = Object.freeze({ kind: "unasked" });
 
@@ -120,7 +123,8 @@ export function createProjectLinkResolver(
         throw new Error("link resolution answered out of shape");
       return response.answers.map((answer, at) => {
         if (!answer) return null;
-        const ahead = parseLinkRef(questions[at]?.ref);
+        const question = questions[at];
+        const ahead = parseLinkRef(question?.ref);
         const settledOn = settlementOf(answer);
         if (ahead?.kind === "ahead" && settledOn !== undefined)
           memo.learn(ahead.aheadId, settledOn);
@@ -152,7 +156,9 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
         : found;
     }
     case "gone":
-      return GONE;
+      return answer.trashedDocumentId
+        ? { ...GONE, trashedDocumentId: answer.trashedDocumentId }
+        : GONE;
     case "missing":
       return MISSING;
     case "unresolvable":

@@ -23,13 +23,14 @@ import type { FileGrant, Principal } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { documentGrant } from "./file-access.js";
 import { type ReadSelection, readDocument } from "./read-document.js";
+import { removedPathError } from "./removed-path.js";
 import {
   contextErrorMessage,
   isToolError,
   type ResolvedDocumentAddress,
   type ResolvedModelContextPort,
   recordTouchInBackground,
-  resolveContextPort,
+  resolveToolCall,
   type ToolWiringDeps,
   type WriteToolErrorOutput,
   writeToolError,
@@ -74,18 +75,22 @@ export async function resolveCopySource(
   ctx: Pick<ToolHandlerContext, "threadId" | "responseIdentity">,
 ): Promise<{ ref: FileRef; address: ResolvedDocumentAddress } | WriteToolErrorOutput> {
   // A live source resolves its path against live membership, as a live read does.
-  const context = await resolveContextPort(
-    deps,
-    ctx.threadId,
-    ctx.responseIdentity?.editScopeId,
-    source.version,
-  );
-  if (isToolError(context))
-    return writeToolError(command, fromMessage(source, context.output.message));
+  const call = await resolveToolCall(deps, ctx, source.version);
+  if (isToolError(call)) return writeToolError(command, fromMessage(source, call.output.message));
+  const { context } = call;
   const { filePath: basePath, fragment } = splitDocumentFile(source.path);
   const ref = await context.port.stat(basePath);
   if (!ref.ok) {
     if (ref.error.code === "not_found") {
+      const removed = await removedPathError(deps, call, command, source.path, ctx.threadId);
+      if (removed)
+        return {
+          ...removed,
+          output: {
+            ...removed.output,
+            message: fromMessage(source, removed.output.message ?? "File not found."),
+          },
+        };
       return writeToolError(
         command,
         fromMessage(source, documentNotFoundMessage(command)),

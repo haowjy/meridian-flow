@@ -117,13 +117,15 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
         // Cached active metadata still addresses the retained room after a refetch fails.
         const metadataFailed = meta?.isError && !name;
         const status =
-          meta?.data?.status === "gone"
-            ? "gone"
-            : metadataFailed || roomFailed
-              ? "error"
-              : current?.session
-                ? "ready"
-                : "loading";
+          meta?.data?.status === "tree-only"
+            ? ("ready" as const)
+            : meta?.data?.status === "gone"
+              ? "gone"
+              : metadataFailed || roomFailed
+                ? "error"
+                : current?.session
+                  ? "ready"
+                  : "loading";
         return {
           status,
           runtime: current?.runtime ?? null,

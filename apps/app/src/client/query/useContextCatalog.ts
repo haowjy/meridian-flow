@@ -331,7 +331,6 @@ export function projectCatalogFile(
 }
 
 function projectCatalogDirectory(
-  projectId: string,
   entry: Extract<ReturnType<typeof catalogChildren>[number], { kind: "folder" }>,
   folder: FolderNamespaceRecord | undefined,
   placement: ResourcePlacement,
@@ -447,7 +446,7 @@ export function projectCatalogView(
     if (!entry) return null;
     if (entry.kind === "file") return fileFromEntry(entry);
     if (entry.kind === "folder" && entry.sourceId === sourceId)
-      return projectCatalogDirectory(projectId, entry, foldersById.get(entry.entryId), placement);
+      return projectCatalogDirectory(entry, foldersById.get(entry.entryId), placement);
     return null;
   };
   const files = () =>
@@ -474,7 +473,7 @@ export function projectCatalogView(
         entry.kind === "folder" &&
         entry.sourceId === sourceId &&
         `/${entry.path.join("/")}` === path
-          ? [projectCatalogDirectory(projectId, entry, foldersById.get(entry.entryId), placement)]
+          ? [projectCatalogDirectory(entry, foldersById.get(entry.entryId), placement)]
           : [],
       )[0] ??
       null,
@@ -710,6 +709,9 @@ export function useContextCatalogWake(
     () =>
       projectId
         ? transport?.subscribeCatalog(projectId, (hint) => {
+            void queryClient.invalidateQueries({
+              queryKey: projectQueryKeys.documentTrash(projectId),
+            });
             const requestedScope: CatalogScope =
               hint.scope.kind === "user" ? { kind: "user", userId: "self" } : hint.scope;
             const mounted =

@@ -51,7 +51,13 @@ and document; query carries Work, view, settings, and draft overlays:
 /p/<id>/editor/<scheme>/<path>[?work=…&item=…]
 /p/<id>/editor/browse[/<scheme>/<path>]
 ?settings=<section>
+?trash=true|<document-id>
 ```
+
+Settings and Trash are routed auxiliary overlays. They leave the primary screen
+mounted while the query selects the overlay. `?trash=true` opens Trash with its
+newest entry selected; `?trash=<document-id>` selects the exact record for
+stable links. The always-visible sidebar row below Scratch opens the same popup.
 
 Legacy slug, screen/thread query, and old context path shapes are invalid rather
 than compatibility aliases. Invalid required identity stays in place and shows

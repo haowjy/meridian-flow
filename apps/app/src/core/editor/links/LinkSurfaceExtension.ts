@@ -46,7 +46,12 @@ import {
   MIDDLE_BUTTON,
 } from "./link-navigation";
 import { createLinkRequester } from "./link-requester";
-import { createLinkAnswerCache, type LinkKey, linkKeyOfMark } from "./link-resolution";
+import {
+  createLinkAnswerCache,
+  goneLinkDocumentId,
+  type LinkKey,
+  linkKeyOfMark,
+} from "./link-resolution";
 import {
   getLinkAnswerCache,
   getLinkSurface,
@@ -84,7 +89,9 @@ function followUnlessGone(
   disposition: LinkFollowDisposition,
 ): LinkFollowResult {
   const surface = getLinkSurface(editor);
-  if (!surface || getLinkAnswerCache(editor)?.read(key)?.state === "gone") return "unavailable";
+  const answer = getLinkAnswerCache(editor)?.read(key) ?? null;
+  if (!surface || (answer?.state === "gone" && !goneLinkDocumentId(answer, key)))
+    return "unavailable";
   return followLink(
     { target: classifyLinkTarget(key.href), ref: key.ref, disposition },
     surface.navigator,

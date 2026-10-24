@@ -12,6 +12,7 @@ import { ContextTreePanel } from "../context/ContextTreePanel";
 import { DocumentDeleteUndoNotice } from "../context/document-delete-undo";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
+import { useProjectTrashNavigation } from "../routing/ProjectNavigationContext";
 import { InlineProjectTitle, type ProjectTitleEdit } from "../shell/InlineProjectTitle";
 import type { ScreenKey } from "../shell/screens";
 import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
@@ -48,6 +49,7 @@ export function NavigationDrawer({
   onSelectContextPath,
   chatThreadId,
 }: NavigationDrawerProps) {
+  const trashNavigation = useProjectTrashNavigation();
   const openDocument = useOpenProjectDocument(projectId);
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
@@ -142,6 +144,10 @@ export function NavigationDrawer({
               }}
               presentation="phone"
               notice={<DocumentDeleteUndoNotice surface="sidebar" className="mx-3 mb-1" />}
+              onOpenTrash={() => {
+                void trashNavigation.navigate(true);
+                onOpenChange(false);
+              }}
               scratch={
                 <RailScratchSection
                   projectId={projectId}

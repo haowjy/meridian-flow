@@ -296,6 +296,8 @@ export const documents = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
+    /** Content was permanently released after the trash retention window; the row remains a tombstone. */
+    contentPurgedAt: timestamp("content_purged_at", { withTimezone: true, mode: "date" }),
     deletionReason: text("deletion_reason").$type<"deleted" | "discarded">(),
     deletedByUserId: uuid("deleted_by_user_id")
       .$type<UserId>()
@@ -324,6 +326,11 @@ export const documents = pgTable(
       "documents_deletion_cause_valid",
       sql`${table.deletionCause} IN ('reply_rolled_back', 'create_failed', 'repair')`,
     ),
+    index("documents_purge_candidates")
+      .on(table.deletedAt, table.id)
+      .where(
+        sql`${table.contentPurgedAt} IS NULL AND ${table.deletedAt} IS NOT NULL AND ${table.deletionReason} = 'deleted' AND NOT ${table.hidden} AND ${table.deletedByWorkId} IS NULL`,
+      ),
     index("documents_deleted_by_work_idx")
       .on(table.deletedByWorkId)
       .where(sql`${table.deletedByWorkId} IS NOT NULL`),
