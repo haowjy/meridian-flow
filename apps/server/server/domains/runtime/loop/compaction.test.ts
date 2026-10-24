@@ -1,4 +1,8 @@
-/** Pure fixtures for compaction classification, triggering, planning, and projection. */
+/** Pure fixtures for compaction classification, triggering, planning, and projection.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Token estimation, retention planning, and summary projection (kb/decisions/engineering/runtime/compaction-summarizer-and-overflow.md)
+ */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";

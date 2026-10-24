@@ -3,6 +3,9 @@
  * section 3): which waiting writer messages leave the chat and whether the open execution is
  * cancelled. Rows that need a commit order, repair or a conversation read live in
  * `stop-protocol.db.test.ts`.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Stop watermark, hand-back, and cancellation policy
  */
 import { describe, expect, it } from "vitest";
 import {

@@ -3,6 +3,9 @@
  * attempt survives the stall guard, a silent one does not, the ceiling bounds a
  * stream that never ends, and the retry gate permits reasoning-only retries
  * while refusing retries after committed output.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Retry timing, buffering, and cancellation-drain policy
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { streamWithRetry } from "./attempt-stream.js";

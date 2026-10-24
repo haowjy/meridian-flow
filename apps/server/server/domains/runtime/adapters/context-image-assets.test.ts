@@ -1,3 +1,9 @@
+/**
+ * Tests context image assets behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Late image omission and retry policy
+ */
 import { describe, expect, it } from "vitest";
 import type { ProjectContextAvailabilityPort, UploadIdentityPort } from "../../context/index.js";
 import { createAllowAllFileAccess } from "../../file-policy/index.js";

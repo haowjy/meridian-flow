@@ -1,4 +1,8 @@
-/** Direct child results preserve the saved terminal outcome and partial content. */
+/** Direct child results preserve the saved terminal outcome and partial content.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Saved child-report projection
+ */
 
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import { describe, expect, it } from "vitest";
