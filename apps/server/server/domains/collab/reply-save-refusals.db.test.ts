@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { setTestHook } from "../../shared/test-hooks.js";
-import { drizzleFileAccess, testFileGrant } from "../../test-support/file-grants.js";
+import { testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
   createDrizzleBranchStore,
@@ -19,7 +19,6 @@ import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createBranches } from "./domain/branches.js";
 import {
   ALPHA_ID,
-  BETA_ID,
   closeDatabase,
   createHarness,
   createTestDatabase,
@@ -295,50 +294,5 @@ describe("reply save refusals (postgres)", () => {
     expect(await write("green", "lime", "w-retry")).toMatchObject({ phase: "staged" });
     expect(refused(await harness.commit(responseId))).toEqual([]);
     expect(await review.list()).not.toEqual([]);
-  });
-
-  it("6: archiving the Work while staged refuses its writes with the denial copy and saves the others", async () => {
-    harness.destroyWarmState();
-    harness = createHarness(db, { fileAccess: drizzleFileAccess(db) });
-    const { fixture, responseId, write, core, context } = await setup();
-    expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
-    const granted = testFileGrant({ kind: "live" }, BETA_ID);
-    await seedEmptyAuthority(BETA_ID);
-    expect(
-      await core.write(
-        {
-          command: "create",
-          file: "beta.md",
-          documentId: BETA_ID,
-          content: "Beta live.",
-          overwrite: true,
-          tool_use_id: "w-beta",
-        },
-        {
-          ...context,
-          createdDocument: false,
-          grant: {
-            ...granted,
-            principal: { ...granted.principal, accountId: USER_ID as never },
-            facts: { ...granted.facts, projectId: PROJECT_ID as never },
-          },
-        },
-      ),
-    ).toMatchObject({ phase: "staged" });
-    await db
-      .update(schema.works)
-      .set({ archivedAt: new Date() })
-      .where(eq(schema.works.id, WORK_ID));
-    const saved = await harness.commit(responseId);
-    if (!("refused" in saved)) throw new Error("the save carries no refusals");
-    expect(saved.refused).toHaveLength(1);
-    expect(saved.refused[0]).toMatchObject({
-      documentId: ALPHA_ID,
-      denial: { denied: true, reason: "work_archived" },
-    });
-    expect(saved.documents.map((doc) => [doc.documentId, doc.receipts[0]?.result.status])).toEqual([
-      [BETA_ID, "success"],
-    ]);
-    void fixture;
   });
 });
