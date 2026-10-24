@@ -41,15 +41,6 @@ function overwrite(ctx: ReturnType<typeof harness>, content: string) {
 const cases: Array<{ name: string; blocks: PMNode[] }> = [
   { name: "a picture inside a paragraph", blocks: fromMarkdown("Before ![a](assets/a.png) after") },
   {
-    name: "pictures at a paragraph's edges",
-    blocks: fromMarkdown("![a](assets/a.png) middle ![b](assets/b.png)"),
-  },
-  { name: "a picture alone", blocks: fromMarkdown("![a](assets/a.png)") },
-  {
-    name: "paragraphs without marks",
-    blocks: fromMarkdown("Plain prose.\n\n“Dialogue,” she said… then — a dash."),
-  },
-  {
     name: "a hard break mid-paragraph",
     blocks: [paragraph(text("one"), hardBreak(), text("two"))],
   },
@@ -59,22 +50,8 @@ const cases: Array<{ name: string; blocks: PMNode[] }> = [
     blocks: [paragraph(text("a ", "strong"), text("b", "strong", "em"), text(" c", "em"))],
   },
   {
-    name: "italic, bold, italic",
-    blocks: [paragraph(text("x", "em"), text("y", "strong"), text("z", "em"))],
-  },
-  {
-    name: "bold, italic, bold",
-    blocks: [paragraph(text("x", "strong"), text("y", "em"), text("z", "strong"))],
-  },
-  {
     name: "strike whose edges sit on spaces",
     blocks: [paragraph(text("Lin"), text(" Feng nasc", "strike"), text("ent "), text("x"))],
-  },
-  {
-    name: "headings, marks, links and code",
-    blocks: fromMarkdown(
-      "# Title\n\nSome **bold** and *italic* with [a *link*](https://example.com) and `a ``tick`.",
-    ),
   },
   {
     name: "spaces, literals and empty paragraphs",

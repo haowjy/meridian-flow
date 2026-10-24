@@ -25,13 +25,6 @@ composeAppServices(ports)
   registry/executor, late-bound turn runner, child-run coordination,
   orchestrator, and returned `AppServices` aggregate.
 
-`AppServices` exposes thread repositories and the event hub under two names
-each: `threadRepos` and `threadEventHub`, and the aliases `repos` and `hub`
-that route and lib code copied from the upstream server still reads (about 60
-references, mostly in tests). The aliases are a compatibility seam the root
-rule against shims doesn't allow; collapsing them onto the canonical names is
-open work.
-
 `getApp()` caches the resulting `Promise<AppServices>` on a process-global symbol
 so hot reloads do not compose duplicate singletons.
 
@@ -103,6 +96,12 @@ Keep provider-specific auth details in `server/lib/auth.ts` and app-side AuthKit
 helpers. Domain repositories should depend on user IDs and explicit access
 checks, not on WorkOS client objects.
 
+Development uses a WorkOS staging environment, currently shared with the
+sibling voluma project. Startup guards (`server/lib/startup-guards.ts`) accept a
+`sk_test_` API key only when `APP_ENV=staging`, and production rejects
+placeholder credentials. `pnpm bootstrap` applies schema only; the dev user is
+provisioned on first dev login.
+
 ## ThreadEventHub
 
 In-process fan-out over a durable event journal. The orchestrator writes events
@@ -124,8 +123,6 @@ through it; WebSocket subscribers read from it.
 
 Hot cache is process-local. Journal rows persist through Drizzle/in-memory
 journal adapters selected by composition.
-
-`hub` is an upstream-compatible alias for `threadEventHub` on `AppServices`.
 
 ## Event projection pipeline
 

@@ -90,7 +90,6 @@ async function harness(
   const app = {
     eventSink: sink,
     threadEventHub,
-    hub,
     threadRuntime: {
       requireOwnedThread: options.authorize ?? (async () => {}),
       liveState: options.liveState ?? (async () => LIVE_STATE),

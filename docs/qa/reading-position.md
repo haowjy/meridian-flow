@@ -33,7 +33,7 @@ Run `pnpm dev` in the owned worktree and discover its HTTPS app route with
 At the core seam, run:
 
 ```bash
-pnpm exec vitest run apps/app/src/core/editor/reading-position.test.ts apps/app/src/core/editor/use-reading-position.test.tsx apps/app/src/features/editor/EditorView.lifetime.test.tsx
+pnpm exec vitest run apps/app/src/core/editor/reading-position.test.ts apps/app/src/features/editor/EditorView.lifetime.test.tsx
 ```
 
 The tests protect shared-view restore, collaborative insertions/deletions,

@@ -69,4 +69,4 @@ the fixtures and cadence unchanged for comparisons; alternate baseline and
 candidate runs on a shared host, and do not run checks concurrently.
 
 Focused contract checks:
-`pnpm --filter @meridian/app exec vitest run src/rich-content/document-markdown.test.tsx src/rich-content/code-block.test.tsx`.
+`pnpm --filter @meridian/app exec vitest run src/rich-content/reference-occurrences.test.tsx`.

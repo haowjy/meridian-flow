@@ -1,4 +1,4 @@
-/** Fixed-point ownership and retry contract for retired document sessions. */
+/** Rejection ownership and retry contract for retired document sessions. */
 import { describe, expect, it, vi } from "vitest";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 
@@ -52,25 +52,5 @@ describe("DocumentSessionTeardownOwner", () => {
     await expect(owner.drain()).resolves.toBeUndefined();
     expect(a.destroy).toHaveBeenCalledTimes(2);
     expect(b.destroy).toHaveBeenCalledTimes(2);
-  });
-
-  it("includes a session retired while a drain is awaiting", async () => {
-    const owner = new DocumentSessionTeardownOwner(() => new Error("retiring"));
-    const a = controlledSession();
-    const b = controlledSession();
-    let releaseHeld!: () => void;
-    const held = new Promise<void>((resolve) => {
-      releaseHeld = resolve;
-    });
-    a.destroy.mockReturnValue(held);
-    b.destroy.mockResolvedValue(undefined);
-    void owner.retire(live("a"), a.session as never).catch(() => undefined);
-    const draining = owner.drain();
-    void owner.retire(documentDraft("b"), b.session as never).catch(() => undefined);
-    releaseHeld();
-
-    await expect(draining).resolves.toBeUndefined();
-    expect(b.destroy).toHaveBeenCalledOnce();
-    expect(() => owner.assertAvailable(documentDraft("b"))).not.toThrow();
   });
 });

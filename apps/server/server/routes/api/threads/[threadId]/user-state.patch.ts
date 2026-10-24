@@ -18,9 +18,13 @@ export default defineEventHandler(async (event) => {
   if (!parsed.success) {
     throw createError({ statusCode: 400, statusMessage: "Invalid thread user state" });
   }
-  const thread = await requireThreadOwner({ threads: app.repos.threads }, threadId, user.userId);
+  const thread = await requireThreadOwner(
+    { threads: app.threadRepos.threads },
+    threadId,
+    user.userId,
+  );
   return serializeTransport(
-    await app.repos.threadUserState.update({
+    await app.threadRepos.threadUserState.update({
       threadId: thread.id,
       userId: user.userId,
       ...parsed.data,

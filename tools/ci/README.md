@@ -20,7 +20,8 @@ those same named scripts. The test group forwards trailing arguments to that
 script; static and typecheck reject them. New steps automatically join `quality-static`.
 Unsupported chain syntax or a missing isolated/DB step fails explicitly.
 `check:db` stays local; CI's separate `db-tests` job provisions Postgres and
-forces the DB suite. Migration checks and the two app boot jobs are unchanged.
+forces the DB suite. It starts the Postgres server preinstalled on its pinned
+runner image, so it pulls nothing from a registry. Migration checks and the two app boot jobs are unchanged.
 
 Do not cache `.nx` outputs across Actions runs. The pnpm dependency cache is
 independent. Local target caches include the shared configuration inputs below.
@@ -119,8 +120,8 @@ every unit and DB run and compares the **expanded case count per test file**
   collection (`allTests()`), so skipped cases and `it.each` rows count.
 - The same reporter prints the run wall time and warns when it exceeds
   `TEST_DURATION_REFERENCE_SECONDS`: 150 for the unit suite, 600 for the DB
-  suite, which runs serially in CI and so pays the sum of every test rather than
-  a fraction of it. The warning never fails the run. Wall time tracks the machine
+  suite (a serial DB run pays the sum of every test; CI runs it on 3 workers).
+  The warning never fails the run. Wall time tracks the machine
   and the worker count, not only the suite, so identical work has measured 45 s to
   104 s on the unit side and 89 s to 322 s on the DB side. Read it as a signal to
   check what changed, not as a gate.

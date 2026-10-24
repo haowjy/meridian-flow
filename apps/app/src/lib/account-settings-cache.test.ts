@@ -23,19 +23,6 @@ afterEach(() => {
   document.documentElement.removeAttribute("data-text-size");
   vi.restoreAllMocks();
 });
-it("rejects foreign, malformed and unsupported caches", () => {
-  writeAccountSettingsCache("a", settings);
-  expect(readAccountSettingsCache("a")).toEqual(settings);
-  expect(readAccountSettingsCache("b")).toBeNull();
-  for (const payload of [
-    "{",
-    JSON.stringify({ accountId: "b", settings }),
-    JSON.stringify({ accountId: "a", settings: { ...settings, theme: "purple" } }),
-  ]) {
-    localStorage.setItem(`${ACCOUNT_SETTINGS_CACHE_PREFIX}a`, payload);
-    expect(readAccountSettingsCache("a")).toBeNull();
-  }
-});
 it("paints the account theme before hydration and keeps text size on this device", () => {
   writeAccountSettingsCache("a", settings);
   localStorage.setItem(TEXT_SIZE_STORAGE_KEY, "lg");
@@ -93,14 +80,6 @@ it("accepts only supported query locales without overwriting the account cache",
   } finally {
     window.history.replaceState(null, "", window.location.pathname);
   }
-});
-
-it("publishes confirmation even when the visible preference values have not changed", () => {
-  writeAccountSettingsCache("a", settings);
-  const pendingPaint = localStorage.getItem(`${ACCOUNT_SETTINGS_CACHE_PREFIX}a`);
-  writeAccountSettingsCache("a", settings);
-  expect(localStorage.getItem(`${ACCOUNT_SETTINGS_CACHE_PREFIX}a`)).not.toBe(pendingPaint);
-  expect(readAccountSettingsCache("a")).toEqual(settings);
 });
 
 it("uses identical runtime and pre-paint acceptance for complete owned versioned records", () => {

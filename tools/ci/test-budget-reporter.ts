@@ -14,7 +14,7 @@
  * Wall time is reported on every run and NEVER blocks. It is a property of the
  * machine and of the worker count as much as of the suite: the identical 2,414
  * cases measured 53s to 85s on one shared host, and the DB suite runs 89s at
- * four local workers against 266-322s serially in CI. A hard gate on that number
+ * four local workers against 266-322s when CI still ran it serially. A hard gate on that number
  * fails on configuration and runner load rather than on a regression, so it
  * warns. The comparison value comes from TEST_DURATION_REFERENCE_SECONDS.
  *
