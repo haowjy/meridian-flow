@@ -9,7 +9,7 @@ export { createDrizzleDocumentAddressStore } from "./adapters/document-address.j
 export { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
 export { createDrizzleDocumentLinkScopes } from "./adapters/document-link-scope.js";
-export { createDrizzleDocumentTrashList } from "./adapters/drizzle-document-trash-list.js";
+export { createDrizzleDocumentTrashList } from "./tree/drizzle-document-trash-list.js";
 export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export {
