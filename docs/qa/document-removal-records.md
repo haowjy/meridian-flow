@@ -167,7 +167,8 @@ the tab/tree update without an error. Capture a screenshot outside this repo.
 1. Create one document at a scheme root and one inside a folder. In a third
    document, use the Editor's link picker to link to the first one; choosing
    the result stores the target document's stable ID. Delete the linked
-   document, then delete the folder. The sidebar adds Trash above Scratch.
+   document, then delete the folder. Trash sits below Scratch in the sidebar
+   whether or not anything is deleted.
 2. Open Trash. Both documents appear newest first with their former area and
    folder, deletion actor and date, days left, and Restore. Reload while the
    list is open; the same list remains.
@@ -184,8 +185,8 @@ the tab/tree update without an error. Capture a screenshot outside this repo.
 6. Create a document at the other deleted document's former path, then restore
    the deleted document. Confirm the row leaves Trash and the success message
    names the alternate location where it landed.
-7. Empty Trash by restoring the remaining rows. Close the list and confirm the
-   sidebar row is gone. Repeat through the phone navigation drawer; Trash opens
+7. Empty Trash by restoring the remaining rows. The list says "Trash is empty."
+   and the sidebar row stays. Repeat through the phone navigation drawer; Trash opens
    the same auxiliary list and closes the drawer.
 
 An already-open live tab still follows terminal resource cleanup when another
