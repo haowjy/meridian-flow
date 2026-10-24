@@ -64,7 +64,7 @@ type EntryListController = {
 
 const MovedContext = createContext<ReportMove | null>(null);
 
-/** The list a row sits in, for Move… to report like a drop; null outside a list (the phone). */
+/** The list a row sits in, for Move… to report like a drop; null outside a list. */
 export function useReportMove(): ReportMove | null {
   return useContext(MovedContext);
 }

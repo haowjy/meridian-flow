@@ -593,7 +593,10 @@ export class AccountResourceReplica {
   async parentForEntry(projectId: string, entryId: string): Promise<ParentRef> {
     const snapshot = await this.readProjection(projectId);
     const placement = resourcePlacementForSnapshot(projectId, snapshot);
-    const record = snapshot.records.find((r) => r.resource.identity.documentId === entryId);
+    // A row can still carry a create's client ID after the server's ID replaced it.
+    const record = snapshot.records.find(
+      (r) => r.resource.identity.documentId === entryId || entryId in r.resource.aliases,
+    );
     const parent = record
       ? placement.parentForResource(record)
       : placement.parentForFolder(entryId);

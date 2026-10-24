@@ -205,7 +205,7 @@ function useChatScratchCatalogs(
  * Shared Scratch rows for the rail, phone drawer and chat Files menu; each
  * surface wraps them in its own list.
  */
-export function ChatScratchTree({
+function ChatScratchTree({
   projectId,
   threadId,
   editorWorkId = null,

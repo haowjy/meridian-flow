@@ -329,13 +329,12 @@ export function createResourcePlacement(
     parentForResource: (record: ResourceRecord) => {
       const destination = placementDestination(projectId, record);
       if (destination) return destination.parent;
-      if (record.resource.canonical)
-        return (
-          record.resource.canonicalParent ??
-          parents.get(record.resource.identity.documentId) ??
-          null
-        );
-      // An unconfirmed create has no edge yet; it sits in the folder that holds its shown location.
+      const edge =
+        record.resource.canonical &&
+        (record.resource.canonicalParent ?? parents.get(record.resource.identity.documentId));
+      if (edge) return edge;
+      // An unconfirmed create has no edge yet, nor a just-confirmed one before its catalog
+      // lists it: it sits in the folder that holds its shown location.
       const shown = resourceLocation(record);
       return shown ? parentAtLocation(shown) : null;
     },
