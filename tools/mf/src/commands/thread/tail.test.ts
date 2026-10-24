@@ -42,7 +42,7 @@ describe("tail --until-idle", () => {
             seq: 5,
             turns: [replyTurn("A", 1, { status: "error", error: "boom" }), cancelledB],
           });
-    const result = await tail("--until-idle", "--timeout", "1s", "--json");
+    const result = await tail("--until-idle", "--timeout", "100ms", "--json");
     expect(result.code).toBe(EXIT.failed);
     expect(lastRecord(result.stdout)).toMatchObject({
       outcome: "failed",
@@ -141,7 +141,7 @@ describe("tail --until-idle", () => {
             record: { execution: { executionId: "exec-A", currentTurnId: "A" } },
           })
         : snapshotOf({ seq: wire.head, turns: [replyTurn("A", 1), B] });
-    const result = await tail("--until-idle", "--timeout", "1s", "--json");
+    const result = await tail("--until-idle", "--timeout", "300ms", "--json");
     expect(result.code).toBe(code);
     const records = ndjson(result.stdout);
     expect(records.some((record) => record.type === "gap")).toBe(gap);
