@@ -1,4 +1,8 @@
-/** Stored-link resolution and spelling rules, and written-link classification. */
+/** Stored-link resolution and spelling rules, and written-link classification.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Lineage link spelling policy (kb/decisions/documents/identity/link-identity.md)
+ */
 import { expect, it } from "vitest";
 import {
   type CatalogDocument,

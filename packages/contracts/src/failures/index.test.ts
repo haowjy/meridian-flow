@@ -1,3 +1,10 @@
+/**
+ * Tests index behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Shared reply-failure taxonomy (kb/decisions/writer-ux/one-failure-model.md)
+ */
+
 import { describe, expect, it } from "vitest";
 import { classifyReplyFailure, type FailureSource, type ReplyFailureInput } from "./index.js";
 
