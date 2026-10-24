@@ -116,6 +116,7 @@ export type {
   DocumentRemovals,
 } from "./ports/document-removal.js";
 export type { DocumentRevisions } from "./ports/document-revisions.js";
+export type { DocumentPurgeDraftDisposal, DocumentTrash } from "./ports/document-trash.js";
 export {
   type AheadRegistration,
   type LinkAheadRegistry,
@@ -153,6 +154,7 @@ export {
   type ScratchOwner,
   scratchOwnerFor,
 } from "./scratch-owner.js";
+export { createDrizzleDocumentTrash } from "./tree/drizzle-document-trash.js";
 export { createHiddenNodeRepair, type HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 export {
   createDocumentRemoval,

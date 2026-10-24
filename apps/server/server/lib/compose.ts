@@ -48,6 +48,7 @@ import {
   createDrizzleDocumentArrivals,
   createDrizzleDocumentLinkHistory,
   createDrizzleDocumentLinkScopes,
+  createDrizzleDocumentTrash,
   createDrizzleFigureDocumentRepository,
   createDrizzleLineageScratchLifecycle,
   createDrizzleLinkAheadRegistry,
@@ -329,6 +330,7 @@ export type AppServices = {
     repairOrphans(): Promise<number>;
     publishReports(): Promise<number>;
     purgeWorks(): Promise<number>;
+    purgeDocuments(): Promise<number>;
   };
   userTurnAdmission: UserTurnAdmission;
   runClaim: Pick<RunClaim, "withExclusiveThread">;
@@ -916,6 +918,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     branches: ports.documentSync.workBranchDisposal,
   });
+  const documentTrash = createDrizzleDocumentTrash({
+    db: ports.db,
+    objectStore: ports.objectStore,
+    eventSink: ports.eventSink,
+    drafts: ports.documentSync.documentPurgeDraftDisposal,
+  });
   const orphanRepair = createOrphanReportRepair({
     toolRegistry,
     inbox: delivery,
@@ -945,6 +953,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repairOrphans: () => orphanRepair.sweep(WAKE_SWEEP_LIMIT),
     publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
     purgeWorks: () => workPurger.sweep(),
+    purgeDocuments: () => documentTrash.purge(),
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
@@ -1299,6 +1308,9 @@ export function createInMemoryAppServices(): AppServices {
       return 0;
     },
     async purgeWorks() {
+      return 0;
+    },
+    async purgeDocuments() {
       return 0;
     },
   };

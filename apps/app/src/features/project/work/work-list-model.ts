@@ -3,13 +3,8 @@
  * state, and which refused command it carries. `WorkCollection` only maps
  * these entries to rows.
  */
-import {
-  DAY_MS,
-  isWorkArchived,
-  WORK_DELETE_RETENTION_DAYS,
-  type Work,
-  workPurgeAt,
-} from "@meridian/contracts/works";
+import { DAY_MS, DELETION_RETENTION_DAYS, deletionPurgeAt } from "@meridian/contracts/retention";
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import type { AddressableWork } from "@/client/query/useWorks";
 import type { UncreatedWork, WorkCreation } from "@/client/query/work-command-projection";
 import type { WorkDeleteWindow } from "@/client/query/work-command-selectors";
@@ -100,7 +95,7 @@ export function restorableWorks<W extends Work>(
     (work) =>
       work.deletedAt !== null &&
       !undoable.has(work.id) &&
-      workPurgeAt(work.deletedAt).getTime() > now,
+      deletionPurgeAt(work.deletedAt).getTime() > now,
   );
 }
 
@@ -110,6 +105,6 @@ export function restorableWorks<W extends Work>(
  * ahead of this one never shows more days than a Work is kept.
  */
 export function daysUntilPurge(deletedAt: string, now: number): number {
-  const days = Math.ceil((workPurgeAt(deletedAt).getTime() - now) / DAY_MS);
-  return Math.min(WORK_DELETE_RETENTION_DAYS, Math.max(0, days));
+  const days = Math.ceil((deletionPurgeAt(deletedAt).getTime() - now) / DAY_MS);
+  return Math.min(DELETION_RETENTION_DAYS, Math.max(0, days));
 }
