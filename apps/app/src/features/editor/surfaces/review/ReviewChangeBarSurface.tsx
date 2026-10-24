@@ -6,7 +6,8 @@
  * right margin it is portalled into the manuscript's scroll pane beside the
  * change's first line, so a scroll carries it with the text. Without room it
  * moves into a block the editor opens after the paragraph the change ends in
- * (`setInlineReviewBarSlot`), which pushes the text below it down.
+ * (`setReviewBarSlot`), which pushes the text below it down when it opens;
+ * a failure arriving later takes the bar's own row there rather than growing it.
  *
  * The change is a decoration, and the plugin rebuilds every decoration on each
  * refetch and remote write, so its element (and the slot) is looked up again
@@ -19,6 +20,7 @@ import { BAR_SLOT_ATTR, getInlineReviewPluginState } from "@/core/editor/extensi
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewChangeBar } from "@/features/draft-review/ReviewChangeBar";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
+import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { escapeCssIdent } from "@/lib/css-selector";
 import type { EditorChromeSurfaceProps } from "../../chrome";
@@ -31,16 +33,14 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
   const { controller } = useDraftReview();
   const reviewing = !editor.isDestroyed && getInlineReviewPluginState(editor.state) !== null;
   const view = useReviewChanges(controller, { enabled: reviewing });
-  const focusedItem = view.items.find((item) => item.change.classId === view.focused?.classId);
-  const anchor = useChangeElement(
-    editor,
-    reviewing ? (focusedItem?.change.anchorOperationId ?? null) : null,
-  );
+  const focusedItem = view.items.find((item) => item.change.id === view.focused?.id);
+  const anchor = useChangeElement(editor, reviewing ? (focusedItem?.change.id ?? null) : null);
   const rect = useAnchorRect(editor, anchor);
   const column = useManuscriptColumn(editor, reviewing);
   const overlay = manuscriptOverlay(editor);
   // A phone's bar is pinned to the bottom of the screen (`MobileChangeBar`).
   const phone = usePhoneShell();
+  const touch = useCoarsePointer();
 
   const showing =
     !phone && reviewing && controller.marksVisible && Boolean(focusedItem) && Boolean(rect);
@@ -49,7 +49,6 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
       ? placeReviewBar({
           anchor: rect,
           ...column,
-          includesWriterEdits: focusedItem.change.includesWriterEdits,
         })
       : null;
   const wantsSlot = placement?.kind === "below";
@@ -60,9 +59,12 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
   const bar = (
     <ReviewChangeBar
       change={focusedItem.change}
+      itemKey={view.itemKey ?? ""}
       disabled={view.locked}
-      failure={focusedItem.failure}
+      touch={touch}
+      inFlow={placement.kind === "below"}
       draftFailure={focusedItem.draftFailure}
+      canApply
       onApply={() => void view.apply(focusedItem.change)}
       onDiscard={() => void view.discard(focusedItem.change)}
     />
@@ -97,13 +99,13 @@ function useBarSlot(editor: Editor, wanted: boolean): HTMLElement | null {
       const found = editor.isDestroyed ? null : editor.view.dom.querySelector(`[${BAR_SLOT_ATTR}]`);
       setSlot(found instanceof HTMLElement ? found : null);
     };
-    editor.commands.setInlineReviewBarSlot(true);
+    editor.commands.setReviewBarSlot(true);
     find();
     // The transaction event fires once the view has the new DOM.
     editor.on("transaction", find);
     return () => {
       editor.off("transaction", find);
-      if (!editor.isDestroyed) editor.commands.setInlineReviewBarSlot(false);
+      if (!editor.isDestroyed) editor.commands.setReviewBarSlot(false);
     };
   }, [editor, wanted]);
 
@@ -118,7 +120,7 @@ function useBarSlot(editor: Editor, wanted: boolean): HTMLElement | null {
 function useChangeElement(editor: Editor, operationId: string | null): HTMLElement | null {
   const [element, setElement] = useState<HTMLElement | null>(null);
   const selector = useMemo(
-    () => (operationId ? `[data-review-operations~="${escapeCssIdent(operationId)}"]` : null),
+    () => (operationId ? `[data-review-change="${escapeCssIdent(operationId)}"]` : null),
     [operationId],
   );
 

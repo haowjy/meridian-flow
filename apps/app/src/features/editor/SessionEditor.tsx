@@ -18,11 +18,14 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useWorks } from "@/client/query/useWorks";
-import { usePaintPending } from "@/components/app/PaintHold";
+import { useAfterPaintRelease, usePaintPending } from "@/components/app/PaintHold";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
-import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
+import {
+  type LiveEditorContainer,
+  registerLiveRangeEditor,
+} from "@/core/editor/live-range-navigation-runtime";
 import { type EditorMountIdentity, useMountedEditor } from "@/core/editor/mounted-editor";
 import { useReadingPosition } from "@/core/editor/use-reading-position";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
@@ -32,15 +35,16 @@ import {
   useAccountId,
   useAccountResourceProjection,
 } from "@/features/project/context/account-feature-context";
+import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
+import { claimEditorFocus, focusIsFree } from "./focus-on-open";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
-import { SchemaFenceNotice } from "./SchemaFenceNotice";
-import { SchemaRepairNotice } from "./SchemaRepairNotice";
+import { SchemaNotices } from "./SchemaNotices";
 import { SyncStatus } from "./SyncStatus";
 import { ImageIngressRuntime } from "./surfaces/images";
 import { ProjectLinkRuntime } from "./surfaces/link";
@@ -64,8 +68,15 @@ type SessionEditorProps = {
   identity: EditorMountIdentity;
   session: DocumentSession;
   surfaceOptions: EditorSurfaceOptions;
+  /** Review's addressed document record; live surfaces derive this from their catalog. */
+  holderUri?: string | null;
   /** An addressed construction receipt; null withdraws this editor's receipt. */
   onConstructed?: (editor: Editor | null) => void;
+  /** The tab instance this editor serves; it claims that instance's focus-on-open intent. */
+  focusKey?: string;
+  /** Reopens the room after the server refused its updates (draft review only). */
+  onReopen?: () => void;
+  container: LiveEditorContainer;
 };
 
 export function SessionEditor(props: SessionEditorProps) {
@@ -123,8 +134,12 @@ function ActiveSessionEditorView({
   surfaceOptions,
   session,
   onConstructed,
+  focusKey,
+  onReopen,
+  holderUri: reviewHolderUri,
   snapshot,
   evidenceDegraded,
+  container,
 }: ActiveSessionEditorViewProps) {
   const {
     className,
@@ -139,6 +154,13 @@ function ActiveSessionEditorView({
   const accountEpoch = useAccountEpochSignal();
   const { documentId, projectId } = identity;
   const inReview = identity.surface === "review";
+  // A room the server closed as removed (4208) says why while its tab stays open.
+  const removal = useRemovalRecord(
+    projectId ?? "",
+    snapshot.connectionState?.kind === "reset" && snapshot.connectionState.disposition === "removed"
+      ? documentId
+      : null,
+  );
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);
@@ -206,12 +228,15 @@ function ActiveSessionEditorView({
   // This document's own address: what its relative links resolve against and
   // what a link inserted into it is spelled relative to. Null until the tree
   // carrying it arrives, or while it has no address yet, which spells full URIs.
-  const holderUri = useMemo(
+  const indexedHolderUri = useMemo(
     () =>
       linkableDocuments.documents.find((document) => document.documentId === documentId)?.uri ??
       null,
     [linkableDocuments, documentId],
   );
+  // A draft-only holder takes its address from the review row. An ordinary review can outlive
+  // that row, so its live catalog address remains the fallback and continues to follow renames.
+  const holderUri = reviewHolderUri ?? indexedHolderUri;
   const sharedReferenceCatalog = useReferenceBrowserCatalog(
     active ? projectId : null,
     active ? scope.workId : null,
@@ -242,7 +267,7 @@ function ActiveSessionEditorView({
   // What a pasted `[[Name]]` may name: the Editor's link index (the same one
   // its links resolve against and link-ahead checks), in Manuscript, KB, User,
   // and this Work's Scratch, the areas a link names a document in (Uploads
-  // hold files, Unfiled holds untitled drafts).
+  // hold files, Unfiled holds untitled documents).
   const pasteTargets = useMemo(
     () =>
       linkableDocuments.documents.flatMap((document) => {
@@ -294,10 +319,49 @@ function ActiveSessionEditorView({
     editorRef.current = editor;
   }, [editor]);
 
+  const afterPaintRelease = useAfterPaintRelease();
+  // The paint cover that stands in while this document's surface changes parks focus on its
+  // status line. The caret was the writer's, so it goes back to the editor when the cover lifts.
   useEffect(() => {
-    if (!editor || inReview || held) return;
-    return registerLiveRangeEditor(documentId, editor);
-  }, [documentId, editor, inReview, held]);
+    if (!editor || inReview) return;
+    const dom = editor.view.dom;
+    const onFocusOut = (event: FocusEvent) => {
+      if (
+        !(
+          event.relatedTarget instanceof Element &&
+          event.relatedTarget.hasAttribute("data-paint-status")
+        )
+      )
+        return;
+      afterPaintRelease(() => {
+        if (!editor.isDestroyed && document.activeElement?.hasAttribute("data-paint-status"))
+          editor.view.focus();
+      });
+    };
+    dom.addEventListener("focusout", onFocusOut);
+    return () => dom.removeEventListener("focusout", onFocusOut);
+  }, [afterPaintRelease, editor, inReview]);
+
+  // A document the writer just made takes the caret at its start, unless something else
+  // (a dialog that stays open, a field) already holds focus.
+  useEffect(() => {
+    if (!editor || editor.isDestroyed || inReview || !active || !effectiveEditable) return;
+    if (!claimEditorFocus(focusKey)) return;
+    afterPaintRelease(() => {
+      if (!editor.isDestroyed && focusIsFree())
+        editor.commands.focus("start", { scrollIntoView: false });
+    });
+  }, [afterPaintRelease, active, editor, effectiveEditable, focusKey, inReview]);
+
+  useEffect(() => {
+    if (!editor || inReview || !active) return;
+    return registerLiveRangeEditor(documentId, {
+      editor,
+      session,
+      localContentReady: surfaceOptions.localContentReady === true,
+      container,
+    });
+  }, [active, container, documentId, editor, inReview, session, surfaceOptions.localContentReady]);
 
   const constructionCallback = useRef(onConstructed);
   constructionCallback.current = onConstructed;
@@ -339,14 +403,17 @@ function ActiveSessionEditorView({
         {/* Sync is assumed-healthy, so it floats quietly and only appears when
           there is something to act on (offline / closed) — see SyncStatus. */}
         <div className="pointer-events-none absolute right-3 bottom-3 z-10">
-          <SyncStatus session={session} />
+          <SyncStatus session={session} onReopen={onReopen} removal={removal} />
         </div>
-        {snapshot.schemaFence ? <SchemaFenceNotice fence={snapshot.schemaFence} /> : null}
-        {snapshot.schemaRepairs.length > 0 ? (
-          <SchemaRepairNotice repairs={snapshot.schemaRepairs} />
-        ) : null}
         <TrackedEditorCanvas
           editor={editor}
+          notices={
+            <SchemaNotices
+              fence={snapshot.schemaFence}
+              repairs={snapshot.schemaRepairs}
+              editor={editor}
+            />
+          }
           toolbar={
             showToolbar ? (
               <DocumentToolbar
@@ -400,17 +467,20 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
 
 function TrackedEditorCanvas({
   editor,
+  notices,
   toolbar,
   scrollRef,
   onScroll,
 }: {
   editor: Editor | null;
+  notices?: ReactNode;
   toolbar?: ReactNode;
   scrollRef?: Ref<HTMLDivElement>;
   onScroll?: UIEventHandler<HTMLDivElement>;
 }) {
   return (
     <EditorSurfaceFrame
+      notices={notices}
       toolbar={toolbar}
       editor={editor}
       scrollRef={scrollRef}

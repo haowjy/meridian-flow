@@ -3,10 +3,12 @@
 export type { DrizzleDatabase } from "../../shared/drizzle-transaction.js";
 export { createDrizzleEventJournalReader } from "./adapters/drizzle/event-reader.js";
 export { createDrizzleEventJournalWriter } from "./adapters/drizzle/event-writer.js";
+export { createDrizzleTopPrimaryChatResolver } from "./adapters/drizzle/top-primary-chat.js";
 export {
   createInMemoryEventJournalReader,
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
+  type InMemoryRepositories,
 } from "./adapters/in-memory/index.js";
 export {
   type ActiveDocumentResolver,
@@ -15,6 +17,7 @@ export {
 export { createBoundConversation } from "./domain/bound-conversation.js";
 export { ForkCutoffOwnerNotFoundError, findCutoffOwnerThreadId } from "./domain/cutoff-owner.js";
 export {
+  continuesFromLine,
   DerivedSourceNotFoundError,
   DerivedThreadConflictError,
   ForkCutoffError,
@@ -59,6 +62,7 @@ export {
 } from "./domain/thread-activity.js";
 export { threadAvailabilityCode } from "./domain/thread-availability.js";
 export {
+  hasCompletedReplyInLineage,
   loadThreadConversationContext,
   type ThreadConversationContext,
   type ThreadConversationContextDeps,
@@ -115,6 +119,7 @@ export {
   childSeedMetadata,
   classifyHistoryItem,
   compactionFailureMetadata,
+  compactionNotesMetadata,
   compactionSummaryMetadata,
   compactionTurnMetadata,
   DerivationSeedMetadataCodec,
@@ -130,9 +135,10 @@ export {
   ImageInclusionMetadataCodec,
   InboxMessageMetadataCodec,
   inboxMessageMetadata,
-  isConversationTurn,
+  isCompactionNotesTurn,
   isPromptEpochMetadata,
   isSystemUpdateMetadata,
+  isWriteModeSwitchTurn,
   noticesMetadata,
   PromptEpochMetadataCodec,
   promptEpochMetadata,
@@ -143,7 +149,9 @@ export {
   savedSubagentReportMetadata,
   skillBodyMetadata,
   steerMetadata,
+  WriteModeSwitchMetadataCodec,
   workUpdateMetadata,
+  writeModeSwitchMetadata,
   writerSendMetadata,
 } from "./domain/turn-metadata.js";
 export {
@@ -163,7 +171,9 @@ export {
 } from "./thread-access.js";
 export {
   createThreadEventHub,
+  cursorSeqForJournalHead,
+  eventSeqForJournalEvent,
   type SequencedEventInternal,
   type ThreadEventHub,
 } from "./thread-event-hub.js";
-export { buildThreadSnapshot } from "./thread-snapshot.js";
+export { buildThreadSnapshot, toClientSafeBlock } from "./thread-snapshot.js";

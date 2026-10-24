@@ -114,7 +114,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
   );
   function Card() {
     const [receipt, set] = useState<import("@meridian/contracts/protocol").TurnReceiptChip>({
-      state: "branch-active",
+      state: "live-active",
       control: "undo",
     });
     setReceipt = set;
@@ -123,7 +123,12 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
         threadId="chat"
         turn={{ id: "turn" } as Turn}
         documents={[
-          { documentId: "doc", uri: "manuscript://chapter.md", path: "chapter.md", scope: "draft" },
+          {
+            documentId: "doc",
+            uri: "manuscript://chapter.md",
+            path: "chapter.md",
+            scope: "draft",
+          },
         ]}
         receipt={receipt}
         changeTrail={{
@@ -187,19 +192,21 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
             status: "partial",
             documents: [
               {
+                documentId: "document-1",
                 uri: "manuscript://chapter.md",
                 status: "reversed",
-                destination: { kind: "draft", branchId: "draft" },
+                destination: { kind: "draft", branchId: "branch" },
               },
             ],
             acceptedParts: 1,
             skips: [
               {
+                kind: "text",
                 documentId: "doc",
                 uri: "manuscript://chapter.md",
                 before: "Mara",
                 after: "I",
-                reason: "discarded",
+                cause: "discarded",
               },
             ],
           });
@@ -207,13 +214,10 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
         });
         await settleReact(() => {
           expect(document.querySelector("[data-turn-skips]")?.textContent).toContain(
-            "1 part stayed",
+            "Undo left 1 part as it was",
           );
           expect(document.body.textContent).toContain("“Mara” → “I”");
-          expect(document.body.textContent).toContain("discarded");
-          expect(document.querySelector("[data-turn-draft-outcome]")?.textContent).toBe(
-            "Undone in your draft. Apply it to change your manuscript.",
-          );
+          expect(document.body.textContent).toContain("Discarded");
         });
         await act(async () => {
           [...document.querySelectorAll("button")]

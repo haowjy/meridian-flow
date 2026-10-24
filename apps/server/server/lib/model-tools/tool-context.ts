@@ -8,7 +8,7 @@ import type {
   DocumentVersion,
   WriteErrorStatus,
 } from "@meridian/agent-edit/integration";
-import { modelResult } from "@meridian/agent-edit/integration";
+import { modelResult, splitDocumentFile } from "@meridian/agent-edit/integration";
 import type { AgentPermission } from "@meridian/contracts/agents";
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import {
@@ -22,7 +22,7 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import { type ThreadExecutionContext, workLifecycleState } from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
-  CollabDrafts,
+  CollabBranches,
   DocumentProjectionRefresher,
   ResponseWriteFinalizer,
 } from "../../domains/collab/index.js";
@@ -32,6 +32,7 @@ import {
   type ThreadContextResolution,
 } from "../../domains/context/context-port-resolution.js";
 import type { ContextError, ContextPort } from "../../domains/context/ports/context-port.js";
+import type { DocumentRemovals } from "../../domains/context/ports/document-removal.js";
 import type { UnifiedContextPortFactory } from "../../domains/context/unified-context-port-factory.js";
 import type { AgentChain, FileAccess, Principal } from "../../domains/file-policy/index.js";
 import {
@@ -70,13 +71,15 @@ export interface ToolWiringDeps {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContextNotices: Pick<WorkContextNotices, "workChanged" | "threadChanged">;
   stopThreadRun(threadId: ThreadId): Promise<void>;
-  drafts: Pick<CollabDrafts, "draftReview">;
+  branches: Pick<CollabBranches, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
   /** Binary copies duplicate the stored object (D24). */
   objectStore: ObjectStorePort;
   /** Every model read and write asks the file policy first (file-access §1). */
-  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit" | "listAccess">;
+  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit" | "listAccess" | "historyAccess">;
+  /** The removal record behind a missing file the model already addresses by id. */
+  documentRemovals: DocumentRemovals;
   /** The calling thread's bound skills, read as files under `skills://` (D52). */
   agentRevisions: SkillFilesDeps["agentRevisions"];
   /** The calling thread's delegation chain, read fresh per call (file-access §8). */
@@ -101,8 +104,6 @@ export type ResolvedDocumentAddress = DocumentAddress & { uri: string; created?:
 export type ResolvedModelContextPort = {
   resolution: ThreadContextResolution;
   port: ContextPort;
-  /** The same thread's port with every write live, whatever the Work's mode. */
-  livePort: () => ContextPort;
 };
 
 /** One tool call's resolved ground: the thread's Work, its context port, and who acts. */
@@ -144,8 +145,8 @@ export function isToolError(value: unknown): value is ToolErrorOutput | WriteToo
 
 /**
  * The thread's context, its port at `version` (a live read resolves paths
- * against live membership too), its Work's execution context and the
- * principal. The thread's Work membership loads once.
+ * against live membership too), its execution context (the chat's write mode
+ * over its Work) and the principal. The thread's Work membership loads once.
  */
 export async function resolveToolCall(
   deps: ToolWiringDeps,
@@ -165,7 +166,7 @@ export async function resolveToolCall(
   if (!primaryWork || workLifecycleState(primaryWork) === "deleted") {
     return toolError({ code: "work_unavailable", message: "The current Work is unavailable" });
   }
-  const execution = threadExecutionContext(primaryWork);
+  const execution = threadExecutionContext(primaryWork, context.resolution.thread.aiWriteMode);
   return { execution, context, principal: await agentPrincipal(deps, context, execution) };
 }
 
@@ -176,7 +177,12 @@ export async function resolveContextPort(
   version?: DocumentVersion,
 ): Promise<ResolvedModelContextPort | ToolErrorOutput> {
   const resolution = await resolveThreadContext(
-    { ...deps, scratchLineages: deps.contextPorts.lineages },
+    {
+      ...deps,
+      scratchLineages: deps.contextPorts.lineages,
+      topPrimaryChats: deps.contextPorts.topPrimaryChats,
+      uploadChats: deps.contextPorts.chats,
+    },
     threadId,
   );
   if (!resolution) return toolError({ message: `Thread not found: ${threadId}` });
@@ -186,8 +192,6 @@ export async function resolveContextPort(
       responseId,
       ...(version ? { version } : {}),
     }),
-    livePort: () =>
-      contextPortForThread(deps.contextPorts, resolution, { responseId, liveWrites: true }),
   };
 }
 
@@ -203,9 +207,11 @@ export function contextErrorMessage(error: ContextError): string {
   if (error.code === "context_unavailable") {
     // The file policy refuses an archived Work's files first, with copy fit for
     // the agent; this storage-side refusal only follows an archive mid-call.
-    const work = error.workSlug ? `Work @${error.workSlug}` : "The requested Work";
+    const work = error.workHandle ? `Work ${error.workHandle}` : "The requested Work";
     return error.reason === "work_archived"
-      ? `${work} is archived, so this change wasn't made.`
+      ? error.workHandle
+        ? `${work} is archived; change not made.`
+        : `${work} is archived, so this change wasn't made.`
       : `${work} is unavailable.`;
   }
   if (error.code === "invalid_uri" && error.unknownScheme !== undefined) {
@@ -255,4 +261,14 @@ export function documentRevisionMetadata(
       } satisfies DocumentRevisionEvidence,
     ],
   };
+}
+
+/** The path as a canonical URI: its folder's own URI (with any owner), then its name. */
+export async function canonicalPath(call: ToolCall, path: string): Promise<string> {
+  const { filePath } = splitDocumentFile(path);
+  const uri = filePath.includes("://") ? filePath : `manuscript://${filePath}`;
+  const slash = uri.lastIndexOf("/");
+  const listing = await call.context.port.list(uri.slice(0, slash + 1));
+  const folder = listing.ok ? listing.value.uri : null;
+  return folder ? `${folder.replace(/\/?$/, "/")}${uri.slice(slash + 1)}` : uri;
 }

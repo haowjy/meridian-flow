@@ -1,10 +1,12 @@
 /** Convert supported corpus files into prose, keeping the writer's titles and hierarchy. */
+
 import {
+  type NamespaceNameClaim,
   type ParsedDocumentFilename,
   parseDocumentFilename,
   renderFilename,
 } from "@meridian/contracts/protocol";
-import { allocateFilename, joinPath } from "../context/paths.js";
+import { joinPath } from "../context/paths.js";
 import type { ContextError } from "../ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import type { ConvertedDocument, DocumentConverterPort } from "./ports/document-converter.js";
@@ -140,11 +142,7 @@ export function createCorpusImportService({
     source: CorpusImportSource;
   }): Promise<CorpusImportBatchResult> => {
     const port = contextPorts.forProject(input.projectId, input.userId, new Map());
-    const taken = new Set<string>();
-    const exists = async (path: string) => {
-      const stat = await port.stat(`kb://${path}`);
-      return stat.ok;
-    };
+    const taken = new Map<string, NamespaceNameClaim["kind"]>();
     const items: CorpusImportItemResult[] = [];
 
     const prepared: {
@@ -215,11 +213,12 @@ export function createCorpusImportService({
       for (let depth = 0; depth < segments.length; depth += 1) {
         const folder = parseDocumentFilename(segments[depth] ?? "");
         if (folder.ok)
-          taken.add(
+          taken.set(
             joinPath(
               segments.slice(0, depth).join("/"),
               renderFilename(folder.value.name, folder.value.extension),
             ),
+            "folder",
           );
       }
     }
@@ -240,39 +239,31 @@ export function createCorpusImportService({
 
     for (const { file, index, kind, title, parts, directory, converted } of prepared) {
       const ownDesired = joinPath(directory, renderFilename(parts.name, parts.extension));
-      const create = async () => {
-        const filename = await allocateFilename(parts, async (candidate) => {
-          const path = joinPath(directory, candidate);
-          return (
-            taken.has(path) || (path !== ownDesired && desired.has(path)) || (await exists(path))
-          );
-        });
-        const path = joinPath(directory, filename);
-        taken.add(path);
-        return port.createTrackedDocument(
-          `kb://${path}`,
-          markdownForImport(kind, title, converted.markdown),
-          {
-            origin: {
-              type: "import",
-              userId: input.userId,
-              source: input.source.kind,
-              filename: file.filename,
-              sourceId: file.sourceId,
-            },
-          },
-        );
+      const origin = {
+        type: "import" as const,
+        userId: input.userId,
+        source: input.source.kind,
+        filename: file.filename,
+        sourceId: file.sourceId,
       };
-      // Another intake can claim after stat. Create never overwrites its content;
-      // retry with that candidate held in this batch's taken set.
-      let write = await create();
-      for (
-        let attempt = 1;
-        !write.ok && write.error.code === "conflict" && attempt < 8;
-        attempt += 1
-      ) {
-        write = await create();
-      }
+      const parentOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")));
+      const leafOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+      const reserved: NamespaceNameClaim[] = [
+        ...[...taken].flatMap(([path, claimKind]) =>
+          parentOf(path) === directory ? [{ kind: claimKind, filename: leafOf(path) }] : [],
+        ),
+        ...[...desired].flatMap((path) =>
+          path !== ownDesired && parentOf(path) === directory
+            ? [{ kind: "document" as const, filename: leafOf(path) }]
+            : [],
+        ),
+      ];
+      const write = await port.createTrackedDocumentAtFreeName(
+        `kb://${ownDesired}`,
+        markdownForImport(kind, title, converted.markdown),
+        reserved,
+        { origin },
+      );
       if (!write.ok) {
         items[index] = {
           status: "failed",
@@ -283,6 +274,9 @@ export function createCorpusImportService({
         };
         continue;
       }
+
+      const actualPath = write.value.uri.slice("kb://".length);
+      taken.set(actualPath, "document");
 
       items[index] = {
         status: "imported",

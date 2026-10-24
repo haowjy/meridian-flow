@@ -7,8 +7,25 @@ import type {
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type {
   LocalAdoptionPendingReceipt,
+  LocalAdoptionState,
   TerminalLineageReceipt,
 } from "./document-session-authority-store";
+
+export type AdmittedDocumentLease = LiveDocumentSessionLease & {
+  persistenceGeneration: AvailabilityGeneration;
+  exactDatabaseName: string;
+};
+
+/**
+ * Adopting a local copy runs inside `admit`'s one operation-lock section. Both hooks are
+ * synchronous: Web Locks are not reentrant, so nothing in the section may await another lock.
+ */
+export type LocalAdoptionAdmission = LocalAdoptionPendingReceipt & {
+  transfer: {
+    prepareCommit(admitted: AdmittedDocumentLease): undefined;
+    completeCommit(admitted: AdmittedDocumentLease): undefined;
+  };
+};
 
 export interface LocalSessionAuthority {
   beginCloseAccountRuntime(): void;
@@ -84,51 +101,18 @@ export interface DocumentSessionCrossContextCoordination {
     projectId: ProjectId,
     documentId: DocumentId,
     generation: AvailabilityGeneration,
-    originLineageHandle?: string,
-  ): Promise<
-    LiveDocumentSessionLease & {
-      persistenceGeneration: AvailabilityGeneration;
-      exactDatabaseName: string;
-    }
-  >;
+    options?: { originLineageHandle?: string; adoption?: LocalAdoptionAdmission },
+  ): Promise<AdmittedDocumentLease>;
   connectLocalLineageTerminal(port: LocalLineageTerminalPort): void;
-  beginLocalAdoption(receipt: LocalAdoptionPendingReceipt): Promise<LocalAdoptionPendingReceipt>;
+  beginLocalAdoption(receipt: LocalAdoptionPendingReceipt): Promise<LocalAdoptionState>;
   abortLocalAdoption(receipt: LocalAdoptionPendingReceipt): Promise<"aborted" | "stale">;
-  inspectLocalLineage(input: {
-    documentId: DocumentId;
-    lineageHandle: string;
-    exactDatabaseName: string;
-    generation: AvailabilityGeneration;
-  }): Promise<"clear" | "adopting" | "bindable" | "terminal" | "mismatch">;
-  commitLocalAdoption(
-    projectId: ProjectId,
-    generation: AvailabilityGeneration,
-    pending: LocalAdoptionPendingReceipt,
-    transfer: Readonly<{
-      prepareCommit(
-        admitted: LiveDocumentSessionLease & {
-          persistenceGeneration: AvailabilityGeneration;
-          exactDatabaseName: string;
-        },
-      ): void;
-      completeCommit(
-        admitted: LiveDocumentSessionLease & {
-          persistenceGeneration: AvailabilityGeneration;
-          exactDatabaseName: string;
-        },
-      ): Promise<void>;
-    }>,
-  ): Promise<
-    LiveDocumentSessionLease & {
-      persistenceGeneration: AvailabilityGeneration;
-      exactDatabaseName: string;
-    }
-  >;
+  /** `deletionVersion` is the exact-ID deletion's namespace version, held by the terminal. */
   revokeDocument(
     projectId: ProjectId,
     documentId: DocumentId,
     generation: AvailabilityGeneration,
     commandId: AvailabilityCommandId,
+    deletionVersion: string | null,
   ): Promise<{ revokedThrough: AvailabilityGeneration; persistence: "cleared" }>;
   revokeAccess(
     projectId: ProjectId,

@@ -12,7 +12,7 @@ export function useActiveReviewBinding({
   documentId: string | null;
   liveSession: DocumentSession | null;
   active: boolean;
-  /** Host policy: requested review on phone, resolved branch room on desktop. */
+  /** Host policy: requested review on phone, resolved draft room on desktop. */
   inReview: boolean;
 }) {
   const { setActiveEditorDocumentId } = useDraftReview();

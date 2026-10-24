@@ -2,9 +2,11 @@
 export type {
   EventJournalReader,
   EventJournalWriter,
+  FailureRecorder,
   JournalEntry,
   JournalEventEnvelope,
   ListJournalEventsOptions,
+  LiveEventWriter,
 } from "./event-journal.js";
 export type {
   AdmitExecutionReportInput,
@@ -28,9 +30,9 @@ export type {
   ThreadChild,
   ThreadDocument,
   ThreadDocumentRepository,
-  ThreadPendingInboxReader,
   ThreadRepositories,
   ThreadRepository,
+  ThreadRunStateReader,
   ThreadStatusReader,
   ThreadUserStateRepository,
   ThreadWorksRepository,
@@ -44,3 +46,4 @@ export type {
   WorkThreadSummary,
 } from "./repositories.js";
 export { ThreadWorkProjectMismatchError } from "./repositories.js";
+export type { TopPrimaryChat, TopPrimaryChatResolver } from "./top-primary-chat.js";

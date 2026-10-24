@@ -10,15 +10,24 @@ Chat Work. Unresolved Editor Work cannot bootstrap Context or register a
 removal host. The selected-tab map is keyed by Work row id; project-scoped
 files retain the Editor's Work context.
 
-`ProjectDocumentNavigationAdapter` opens both tracked editors and existing
-read-only Context viewers through the one stable-ID opener. Its lower-level
-`not-editable` result means no live Yjs admission, not a failed navigation:
-Editor-eligible project binary/custom metadata still opens a viewer tab and route.
+`ProjectDocumentNavigationAdapter` turns a known file identity into an Editor,
+dock, or background destination before content opens. An ID absent from the
+in-memory resource projection waits for one availability lookup; its available
+answer is consumed once by the installed tab instance. The destination alone
+opens local content, admits the live room, and presents Retry. Read-only Context
+files still open viewer tabs without live Yjs admission. Background tabs do not
+carry lookup answers because they acquire content only when shown. Closing or
+replacing a destination discards its unconsumed answer.
 Scratch documents open Editor tabs owned by their resolved Work, or by their lineage
 (`rootThreadId` and the handle its URI spells) when they are a No Work chat's notes.
 Uploads route to the deferred-viewing notice without opening a tab. The resolved file's
-Work/no-Work authority overrides the invoking surface's Work; only project-scoped
+Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
+
+The resource projection has explicit pending, ready, and failed states. A host
+without a resource handle waits for the first ready snapshot; pending is never
+treated as missing local content. A failed projection falls back to the
+transactional identity lookup.
 
 Availability command admission rejects while removal is suspended or disposed;
 an empty successful receipt would let the availability owner falsely acknowledge
@@ -142,14 +151,17 @@ Resting crumbs are passive: project-menu acquisition mounts only when a crumb
 opens. The source owns `own.crumbTrail(path, depth)`, including the exception for
 an area not offered at the root; `own.openAt(path)` remains the full folder trail
 used by placement. The first menu mounts with its final trail and highlight IDs.
-`DocumentIdentityBar` measures one shared collapse priority list against its actual
-row width: parent crumbs, icon labels, stepper count, then Apply label. The
-filename keeps 64px and every command remains in the row. A link-update note is a direct sibling of the
-path, so an absent note occupies neither a flex item nor a gap.
-Identity-row touch targets extend vertically to 44px without changing row height.
-Their horizontal hit area is exactly their visible box; gaps, including the full
-gap beside Discard draft, stay unclaimed. The fit ladder measures the real 24px
-minimum control widths on phone/coarse pointers.
+`DocumentIdentityBar` wraps first: the path and chip stay on line one, and the
+review controls drop to a second line when they don't fit beside them (flex-wrap,
+no breakpoint). The dock's trailing Collapse is pinned to line one and precedes
+the controls in DOM order, so Tab goes line one, then line two. Only a line too
+narrow for the controls even alone gives up labels, in order (stepper count, then
+Apply label), and the path drops its parent crumbs only when the leaf would be
+cut. A link-update note is a direct sibling of the path, so an absent note
+occupies neither a flex item nor a gap. Under a coarse pointer every control
+owns a 44px box (the row grows to 44px; the paired collapse/expand toggles share
+one size), except the filename, whose width yields so line one fits the 280px
+dock. Horizontal hit areas are exactly the visible box; gaps stay unclaimed.
 
 
 Link-update feedback derives its destination from the matched move receipt, not

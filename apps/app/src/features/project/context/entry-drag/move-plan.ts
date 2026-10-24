@@ -13,10 +13,9 @@ import type {
   ResourceRecord,
 } from "@meridian/resource-replica";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import type { ContextEntrySibling } from "../context-entry-name";
 import { schemeLabel } from "../context-schemes";
 import { menuEntryFor } from "../menu-tree";
-import { type MoveDestination, type MoveRefusal, nameRefusal } from "../move-entry";
+import type { MoveDestination } from "../move-entry";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";
 import { type DragEntry, type EntryRef, entrySystem } from "./entry";
 
@@ -48,7 +47,7 @@ export type PlacedEntry = {
   parent: ParentRef;
 };
 
-/** One row the replica admitted: where it was, where it went, and the name it moved under. */
+/** One row the replica admitted: where it was, where it went, and the name it arrived under. */
 export type MoveEffect = {
   entry: EntryRef;
   name: string;
@@ -58,7 +57,8 @@ export type MoveEffect = {
 
 export type MovePlan =
   | { kind: "none" }
-  | { kind: "refused"; refusal: MoveRefusal; name: string; destinationName: string }
+  /** A folder over its own subtree; the only drop that refuses rather than doing nothing. */
+  | { kind: "inside-itself" }
   | {
       kind: "ready";
       destination: MoveDestination;
@@ -158,47 +158,27 @@ export function planMove(
   if (sources.some((source) => entrySystem(source.location.scheme, source.location) !== system))
     return NONE;
 
-  const moves: PlacedEntry[] = [];
-  const incoming: ContextEntrySibling[] = [];
-  let refused: Extract<MovePlan, { kind: "refused" }> | null = null;
-  for (const source of sources) {
-    const refusal = refuse(view, source, area, destination, target, incoming);
-    if (!refusal) {
-      moves.push(source);
-      incoming.push({
-        entryId: source.ref.id,
-        name: source.name,
-        kind: source.ref.kind === "file" ? "file" : "dir",
-      });
-    } else if (refusal.kind !== "already-there")
-      refused ??= { kind: "refused", refusal, name: source.name, destinationName };
-  }
-  if (refused) return refused;
-  return moves.length === 0 ? NONE : { kind: "ready", destination, destinationName, moves };
-}
-
-function refuse(
-  view: PlacementView,
-  source: PlacedEntry,
-  area: MoveArea,
-  destination: MoveDestination,
-  target: TreeDropTarget,
-  incoming: readonly ContextEntrySibling[],
-): MoveRefusal | null {
   const into: Parent = target.folder
     ? { kind: "folder", folderId: target.folder.entryId }
     : { kind: "root", scheme: area.scheme, owner: area.owner };
-  if (source.ref.kind === "folder" && into.kind === "folder" && within(view, into, source.ref.id))
+  if (
+    sources.some(
+      (source) =>
+        source.ref.kind === "folder" && into.kind === "folder" && within(view, into, source.ref.id),
+    )
+  )
     return { kind: "inside-itself" };
-  if (sameParent(source.parent, into)) return { kind: "already-there" };
-  return nameRefusal(destination, source.name, source.ref.kind, source.name, incoming);
+  // Rows already there stay put; a taken name never refuses (the row arrives at the next free name).
+  const moves = sources.filter((source) => !sameParent(source.parent, into));
+  return moves.length === 0 ? NONE : { kind: "ready", destination, destinationName, moves };
 }
 
 /**
  * What Undo puts back. A row still where the drop put it returns to its
- * previous parent under its current name; one that moved again since, or is
- * gone, carries the writer's newer choice and stays. (Parent equality can't
- * tell a row that left and came back from one that never left; both return.)
+ * previous parent under its current name (the next free one if that name was
+ * taken since); one that moved again since, or is gone, carries the writer's
+ * newer choice and stays. (Parent equality can't tell a row that left and came
+ * back from one that never left; both return.)
  */
 export function planUndo(view: PlacementView, effects: readonly MoveEffect[]) {
   return effects.flatMap((effect) => {

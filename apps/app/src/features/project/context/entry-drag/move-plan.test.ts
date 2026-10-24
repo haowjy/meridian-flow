@@ -128,5 +128,5 @@ it("carries a folder's contents with it and refuses it inside itself", () => {
   expect(carried.kind).toBe("none");
   expect(
     planMove(manuscript, drag(folder("part")), into("m-root", "manuscript", "act", "Act")),
-  ).toMatchObject({ kind: "refused", refusal: { kind: "inside-itself" } });
+  ).toEqual({ kind: "inside-itself" });
 });

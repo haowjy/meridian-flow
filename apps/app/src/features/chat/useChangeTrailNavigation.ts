@@ -23,7 +23,7 @@ export function useChangeTrailNavigation(threadId: string) {
           change,
           signal,
           openDocument: async () => {
-            if (!projectId) return { kind: "unavailable", reason: "failed" };
+            if (!projectId) return { kind: "refused", reason: "lookup-failed" };
             // The thread's work is what makes its scratch documents reachable;
             // a trail may point at one.
             const thread = (await listProjectThreads(projectId)).find(

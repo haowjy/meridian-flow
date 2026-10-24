@@ -122,7 +122,9 @@ export interface AssembledNextTurnContext {
     "messages" | "tools" | "model" | "reasoning" | "promptCacheKey"
   >;
   activeHistory: ProjectedActiveHistory;
-  imageContextUpdates: { turns: Turn[]; blocks: Block[] };
+  /** The block ids whose observation frontiers may credit the model on this request (C10). */
+  creditedBlockIds: ReadonlySet<string>;
+  preparationUpdates: { turns: Turn[]; blocks: Block[] };
 }
 
 function functionToolsFromAdvertised(tools: Tool[] | undefined): FunctionTool[] {
@@ -170,10 +172,24 @@ export async function composeLivePromptBake(
   return { bakeContent, bakedPrompt, availableSkills, namedSubagents, workContext, agentContext };
 }
 
+/** Resolved inputs can be rendered again without reads or image decisions. */
+interface PreparedNextTurnContext
+  extends Omit<AssembledNextTurnContext, "tools" | "generateRequest"> {
+  advertisedTools: Tool[];
+  promptCacheKey: ThreadId;
+  eventSink?: EventSink;
+}
+
 /** Assemble the next model request context — shared by orchestrator and debug preview. */
 export async function assembleNextTurnContext(
   input: AssembleNextTurnContextInput,
 ): Promise<AssembledNextTurnContext> {
+  return renderPreparedTurnContext(await prepareNextTurnContext(input));
+}
+
+export async function prepareNextTurnContext(
+  input: AssembleNextTurnContextInput,
+): Promise<PreparedNextTurnContext> {
   let thread = input.thread;
   const agentContext = await resolveAgentThreadTurnContext({
     thread,
@@ -223,7 +239,6 @@ export async function assembleNextTurnContext(
   const modelId = gatewayParams.model ?? input.gateway?.getDefaultModel?.();
   const resolvedModel = input.gateway?.listModels?.().find((model) => model.id === modelId);
   const supportsImageInput = resolvedModel?.capabilities.has("image_input") ?? false;
-  const usesExplicitPromptCache = resolvedModel?.promptCache.kind === "explicit";
   const activeHistory = await projectActiveHistoryWithBakes(
     input.turns,
     input.blocks,
@@ -244,7 +259,7 @@ export async function assembleNextTurnContext(
     mode: input.imageProjectionMode,
     signal: input.signal,
   });
-  const imageContextUpdates =
+  const preparationUpdates =
     input.persistImageProjection &&
     (imageProjection.decisions.length > 0 || imageProjection.breaks.length > 0)
       ? await input.persistImageProjection({
@@ -255,23 +270,14 @@ export async function assembleNextTurnContext(
           breaks: imageProjection.breaks,
         })
       : { turns: [], blocks: [] };
-  const imageTurnIds = new Set(imageContextUpdates.turns.map((turn) => turn.id));
+  const imageTurnIds = new Set(preparationUpdates.turns.map((turn) => turn.id));
   const modelHistory = {
-    turns: [...activeHistory.turns, ...imageContextUpdates.turns],
+    turns: [...activeHistory.turns, ...preparationUpdates.turns],
     blocks: [
       ...imageProjection.blocks,
-      ...imageContextUpdates.blocks.filter((block) => imageTurnIds.has(block.turnId)),
+      ...preparationUpdates.blocks.filter((block) => imageTurnIds.has(block.turnId)),
     ],
   };
-  const built = buildContext({
-    thread,
-    ...modelHistory,
-    systemPrompt,
-    tools,
-    eventSink: input.eventSink,
-  });
-  const contextTools = built.tools;
-  const messages = usesExplicitPromptCache ? applyPromptCacheMarks(built.messages) : built.messages;
   const cacheKeyOwner = await findCutoffOwnerThreadId(
     thread,
     async (turnId) => input.turns.find((turn) => turn.id === turnId) ?? null,
@@ -289,7 +295,9 @@ export async function assembleNextTurnContext(
     thread,
     agentSlug: agentContext.agentSlug,
     systemPrompt,
-    tools: functionToolsFromAdvertised(contextTools),
+    advertisedTools: tools,
+    promptCacheKey: cacheKeyOwner,
+    eventSink: input.eventSink,
     policy: agentContext.policy,
     gatewayParams,
     resolvedModel: resolvedModel ?? null,
@@ -297,19 +305,37 @@ export async function assembleNextTurnContext(
     compactionTriggerTokens: compactionTrigger?.thresholdTokens ?? null,
     compactionUsableWindowTokens: compactionTrigger?.usableWindowTokens ?? null,
     ...(pendingBake ? { pendingBake } : {}),
-    generateRequest: {
-      messages,
-      tools: contextTools,
-      // Unconditional: a stable
-      // per-thread routing hint is harmless for adapters that ignore it
-      // (Anthropic has no such concept) and each adapter decides for itself
-      // whether to forward it (e.g. OpenAI Responses `prompt_cache_key`). A
-      // fork shares the cache route of the thread that owns its cutoff turn.
-      promptCacheKey: cacheKeyOwner,
-      ...gatewayParams,
-    },
     activeHistory: modelHistory,
-    imageContextUpdates,
+    creditedBlockIds: activeHistory.creditedBlockIds,
+    preparationUpdates,
+  };
+}
+
+/** Canonical rendering of frozen prepared inputs; no I/O or staged events. */
+export function renderPreparedTurnContext(
+  prepared: PreparedNextTurnContext,
+): AssembledNextTurnContext {
+  const { advertisedTools, promptCacheKey, eventSink, ...context } = prepared;
+  const built = buildContext({
+    thread: context.thread,
+    ...context.activeHistory,
+    systemPrompt: context.systemPrompt,
+    tools: advertisedTools,
+    eventSink,
+  });
+  return {
+    ...context,
+    tools: functionToolsFromAdvertised(built.tools),
+    generateRequest: {
+      messages:
+        context.resolvedModel?.promptCache.kind === "explicit"
+          ? applyPromptCacheMarks(built.messages)
+          : built.messages,
+      tools: built.tools,
+      // Forks route to the owner of their cutoff; each adapter decides whether to forward it.
+      promptCacheKey,
+      ...context.gatewayParams,
+    },
   };
 }
 

@@ -3,6 +3,27 @@
 Reference detail for Context-tree interactions. Read [CONTEXT.md](CONTEXT.md)
 for feature-level contracts first.
 
+## Shared nested rows
+
+Work Files, the context sidebar, and the phone browser render ordinary nested
+folders through `TreeChildren`. Search supplies visible ids
+with ancestor closure, not a filtered catalog: rename and move free-name predictions
+always see all siblings. Search disclosure is temporary; it never overwrites
+the normal expansion state. A newly created Work note stays visible for naming
+even when its name does not match the search.
+
+Indentation counts visible expandable parents, not catalog depth: standalone
+Work Files and phone lists start at zero; rail sections start at one. The shared
+`TreeGroup` spans all visible children, including Earlier notes and the current
+Work’s separate catalog. It paints its parent guide above row highlights without taking pointer
+input. Section headers and folder rows use the same disclosure-center geometry.
+
+The chat Files menu combines this same shared Scratch browser with chat-owned
+uploads. Scratch queries wait for resolved Work/lineage authority; an unresolved
+owner never falls back to a project-wide query. There are no thread folders or
+folder-to-chat actions. The sidebar and Files menu use `ChatScratchTree`,
+including its read-only Earlier notes navigation and per-owner capabilities.
+
 ## Inline name form semantics
 
 Create and rename adapt `useInlineEdit` (`components/ui/use-inline-edit.ts`),
@@ -24,16 +45,15 @@ swallowing a same-tick `focus()`.
 |---|---|---|
 | initial | `""` | `entry.name` (or the failed repair name) |
 | unchanged | — | current name |
-| validate siblings | all sibling identities and kinds | siblings excluding current identity |
+| validate siblings | all sibling identities and kinds | syntax only; sibling claims choose the optimistic free name |
 | select | — | the part before a visible extension; all of a prose name |
 
 Names are compared and submitted as the contracts codec stores them
 (`storedFilename`, `entryNameKey` in `context-entry-name.ts`): a prose name
 has no extension, so `Chapter 13.md` typed on `Chapter 13` is no change and
-beside `Chapter 13` collides; a bare name keeps the renamed file's visible
+beside `Chapter 13` predicts `Chapter 13 (2)`; a bare name keeps the renamed file's visible
 extension (`settings` on `config.toml`). Folder-to-folder comparison is literal;
-the codec comparison applies when either entry is a document. Conflict copy names
-the occupant's kind, not the requested kind. The codec's `invalid_name` message
+the codec comparison applies when either entry is a document. Create conflict copy names the occupant's kind, not the requested kind. Rename and move never block on a sibling claim: the shared allocator predicts the landed name immediately, and the server receipt replaces it after settlement. The codec's `invalid_name` message
 shows on the field. Rename and identity commits transport the writer's typed name.
 `planResourceLocation` stores it as `typedName` beside the canonical optimistic
 destination; the request sends `typedName`, and the server mover computes the stored
@@ -156,11 +176,13 @@ files keep their name through `setLocation`, folders through `setFolderLocation`
 Catalog snapshots span areas, so menu lookups check source identity as well as
 entry identity; equal paths in different areas remain distinct destinations.
 
-Destination resolution, refusals and the replica call live in `move-entry.ts`,
-shared with dragging.
+Destination resolution, refusals, arrival naming and the replica call live in
+`move-entry.ts`, shared with dragging.
 
-The chat's Scratch renders actual entries through `ContextTreeEntry` and its
-`TreeEnvProvider`, retaining lineage or Work authority. Rename, Move… and Delete share the Files implementations through
+The chat's Scratch renders one owner-bound `TreeEnvProvider` and `TreeChildren`
+per real catalog. Earlier notes is a navigation disclosure outside the second
+lineage tree, not a menu-node projection or a mutable catalog folder. Selected
+files open directly with their known owner. Rename, Move… and Delete share the Files implementations through
 `useEntryInteraction`, the row boundary for management state, dispatch and
 operation selection. Creation is absent. One surface-owned deletion coordinator
 and dialog serve all Scratch rows, retaining each target's owner. The actual owning Work determines editability (`isWorkArchived`); archived or unavailable Work owners remain navigable with no mutation controls. Shared rows receive explicit action capabilities from their surface. The synthetic
@@ -193,13 +215,15 @@ pasting names that look like a half-made link.
 
 Each list has a `TreeDropScope` whose entries route (`use-entry-list.tsx`,
 planning in `move-plan.ts`) answers every hovered target: accept ("Move to Act 2"), refuse ("Can't go inside
-itself", "Act 2 already has chapter-2", including two selected rows with the
-same name), or nothing (the row is already there, the target is a
+itself", a folder over its own subtree), or nothing (the row is already there, the target is a
 navigation-only folder, or the drag comes from another system, which Move or
-Copy will handle). A drop moves every carried row through `move-entry.ts` at
-once (`execute-move.ts`), reselects them, reveals the destination (the target's
+Copy will handle). A taken name never refuses: each row arrives at the next free
+name (`chapter-2 (2)`), predicted against the destination's rows plus the rows
+placed before it in the same drop, so `execute-move.ts` places rows one at a
+time; the server decides the final name. A drop moves every carried row through
+`move-entry.ts` (`execute-move.ts`), reselects them, reveals the destination (the target's
 own `reveal`, the same one the spring calls) and shows "Moved chapter-3 to Act
-2." with Undo on the surface that took the drop (`MoveNotice` in that surface's
+2." (or "Moved chapter-3 to Act 2 as chapter-3 (2).") with Undo on the surface that took the drop (`MoveNotice` in that surface's
 `MoveNoticeHost`: the sidebar foot, or under Work Files, which stays visible
 with the sidebar collapsed). A project keeps only its latest result, as data.
 
@@ -207,7 +231,8 @@ Placement is optimistic, exactly as for Move…: each placement's operation is
 remembered, so the row's link-update note follows its receipt and a later server
 refusal lands on the row as its failure mark. A row the replica won't admit is
 named in the notice, and Undo still covers the rows that moved. Undo returns
-each row to its previous parent under its current name, skips a row that moved
+each row to its previous parent under its current name (the next free one if
+that name was taken since; the list that took the drop supplies the siblings), skips a row that moved
 again since or is gone (the writer's newer choice), and reads the replica as it
 is when pressed, not as it was at the drop. Verdicts likewise resolve each
 dragged row by identity from the replica's placement graph (rows another list
@@ -222,5 +247,5 @@ catalog's top level. Every target names its catalog root, so a list showing
 several catalogs (Scratch and its earlier notes) resolves the right one. The
 scope counts hovered elements per target and the innermost target claims each
 event; `DropRegion` lights the folder row and everything open under it as one
-block (Work Files, a flat list, lights each row of the folder). Hovering a
+block. Hovering a
 closed folder or area for 600 ms reveals it, and so does an accepted drop on it. The phone shell has no drag.

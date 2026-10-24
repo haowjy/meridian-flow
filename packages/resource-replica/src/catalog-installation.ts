@@ -1,15 +1,15 @@
 /** Atomic installation policy from a server catalog view into durable local resources. */
 
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import { isOwnedContextScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   CatalogFileClassification,
   CatalogFileEntry,
   CatalogFolderEntry,
 } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { newerCanonicalObservation } from "./canonical-observation";
 import { type CatalogCacheView, catalogFiles, indexCatalogView } from "./catalog";
 import { catalogScopeBelongsToProject, sameCatalogScope } from "./catalog-scope";
+import { joinReservation } from "./resource-join";
 import { installCanonicalRefresh } from "./resource-namespace";
 import {
   ownerOf,
@@ -21,7 +21,7 @@ import {
   type ResourceWrite,
   sameOwner,
 } from "./resource-records";
-import { resourceLineageOwner } from "./resource-work-authority";
+import { resourceChatOwner, resourceLineageOwner } from "./resource-work-authority";
 
 export type CatalogObservationFence = Readonly<{
   /** Folder canonical state captured before HTTP; a refresh barrier is proven only by its operation id. */
@@ -75,7 +75,7 @@ export function catalogEntryLocation(
 
   const { authority, scheme, path } = parsed.value;
   if (view.scope.kind === "project") {
-    if (authority.kind !== "contextual" || isWorkScopedProjectContextScheme(scheme))
+    if (authority.kind !== "contextual" || isOwnedContextScheme(scheme))
       throw new Error("Catalog file URI has invalid project authority");
     return { scheme, path: displayedPath(path), name: entry.name, workId: null };
   }
@@ -84,8 +84,6 @@ export function catalogEntryLocation(
       throw new Error("Catalog file URI has invalid User authority");
     return { scheme, path: displayedPath(path), name: entry.name, workId: null };
   }
-  if (!isWorkScopedProjectContextScheme(scheme))
-    throw new Error("Catalog file URI is not Work scoped");
   if (view.scope.kind === "lineage") {
     if (scheme !== "scratch" || authority.kind !== "lineage")
       throw new Error("Catalog file URI has invalid chat authority");
@@ -96,22 +94,24 @@ export function catalogEntryLocation(
       ...resourceLineageOwner(view.scope, authority.rootThreadRef),
     };
   }
-  if (authority.kind === "none") {
+  if (view.scope.kind === "chat") {
+    if (scheme !== "uploads" || (authority.kind !== "chat" && authority.kind !== "contextual"))
+      throw new Error("Catalog file URI has invalid chat uploads authority");
     return {
       scheme,
       path: displayedPath(path),
       name: entry.name,
-      workId: view.scope.workId,
-      workSlug: null,
+      ...resourceChatOwner(view.scope, authority.kind === "chat" ? authority.chatRef : null),
     };
   }
-  if (authority.kind !== "work") throw new Error("Catalog file URI has invalid Work authority");
+  if (scheme !== "scratch" || authority.kind !== "work")
+    throw new Error("Catalog file URI has invalid Work authority");
   return {
     scheme,
     path: displayedPath(path),
     name: entry.name,
     workId: view.scope.workId,
-    workSlug: authority.workSlug,
+    workHandle: authority.workHandle,
   };
 }
 
@@ -191,6 +191,7 @@ function observedResourceWrite(input: {
 }): ResourceWrite | null {
   const { record, location, classification, parent, fence } = input;
   const current = record.resource;
+  if (current.lifecycle.kind === "terminal") return revivedResourceWrite(input);
   if (current.lifecycle.kind !== "acknowledged") return null;
   const newer = newerCanonicalObservation(input.observationVersion, current.observationVersion);
   const observed = fence.resources?.get(current.handle);
@@ -228,6 +229,41 @@ function observedResourceWrite(input: {
   return { expectedRevision: current.revision, next: { resource: next, intents: record.intents } };
 }
 
+/**
+ * A terminal document holds the server version that proved its deletion. A strictly newer catalog
+ * observation of it as present is a later restore: it returns as acknowledged at the server's location,
+ * with content reacquired from the server. The request must have started after the terminal
+ * transition, and any purge of the deleted lineage's local content must have finished.
+ */
+function revivedResourceWrite(
+  input: Parameters<typeof observedResourceWrite>[0],
+): ResourceWrite | null {
+  const { record, location, classification, parent, fence } = input;
+  const current = record.resource;
+  if (current.lifecycle.kind !== "terminal" || current.obligations.cleanup) return null;
+  if (fence.resources?.get(current.handle)?.revision !== current.revision) return null;
+  // A versionless terminal cannot tell a restore from replayed pre-deletion history.
+  const deletionVersion = current.lifecycle.deletionVersion;
+  if (deletionVersion === undefined) return null;
+  if (!newerCanonicalObservation(input.observationVersion, deletionVersion)) return null;
+  const next: ResourceDescriptor = {
+    ...current,
+    revision: current.revision + 1,
+    content: { kind: "unacquired" },
+    classification,
+    canonical: location,
+    canonicalParent: parent,
+    observationVersion: input.observationVersion,
+    lifecycle: { kind: "acknowledged", availabilityGeneration: null },
+    revivedFrom: {
+      generation: current.lifecycle.generation,
+      transitionId: current.lifecycle.transitionId,
+    },
+    obligations: {},
+  };
+  return { expectedRevision: current.revision, next: { resource: next, intents: record.intents } };
+}
+
 function discoveredResource(entry: CatalogFileEntry, location: ResourceLocation) {
   const handle = resourceHandle(entry.entryId);
   const resource: ResourceDescriptor = {
@@ -244,6 +280,33 @@ function discoveredResource(entry: CatalogFileEntry, location: ResourceLocation)
     obligations: {},
   };
   return { expectedRevision: null, next: { resource, intents: [] } } satisfies ResourceWrite;
+}
+
+function joinedReservation(
+  records: readonly ResourceRecord[],
+  current: ReadonlyMap<string, ResourceRecord>,
+  entry: CatalogFileEntry,
+  observed: {
+    location: ResourceLocation;
+    parent: ParentRef;
+    classification: CatalogFileClassification;
+  },
+): ResourceWrite | null {
+  for (const id of entry.joinedFrom ?? []) {
+    const reservation = current.get(id);
+    if (!reservation || !records.includes(reservation)) continue;
+    const write = joinReservation({
+      record: reservation,
+      target: {
+        documentId: entry.entryId,
+        observationVersion: entry.observationVersion,
+        ...observed,
+      },
+      settledAt: Date.now(),
+    });
+    if (write) return write;
+  }
+  return null;
 }
 
 /** Plan one atomic checkpoint/resource installation. Scope disappearance never deletes a resource. */
@@ -278,6 +341,18 @@ export function planCatalogInstallation(input: {
         observationVersion: entry.observationVersion,
       });
       if (write) resources.push(write);
+      continue;
+    }
+    // A device's create that joined this document: the reservation follows it instead of a
+    // second record being discovered beside it.
+    const joined = joinedReservation(input.records, index.current, entry, {
+      location,
+      parent: catalogEntryParent(entry, location),
+      classification: classificationFor(entry),
+    });
+    if (joined) {
+      resources.push(joined);
+      index.current.set(entry.entryId, joined.next);
       continue;
     }
     // Resource aliases are obsolete local identities. The server document still

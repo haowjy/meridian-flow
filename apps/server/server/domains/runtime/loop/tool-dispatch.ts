@@ -11,6 +11,7 @@
  * while the tool handler is awaited.
  */
 
+import type { ReplyMutations } from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture, TreeBudget } from "@meridian/contracts/spawn";
 import type {
@@ -22,6 +23,7 @@ import type {
 } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { readThreadActivity } from "../../threads/index.js";
+import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
 import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
@@ -35,9 +37,11 @@ import type {
   ToolExecutor,
 } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
+import { createDeltaJournal } from "./delta-journal.js";
+import { type CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
-import { appendEvent, type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
+import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 import { toJsonValue } from "./streaming.js";
 
 export interface ToolDispatchDeps {
@@ -49,6 +53,7 @@ export interface ToolDispatchDeps {
   readSnapshot: import("../../threads/ports/repositories.js").ThreadRepositories["readSnapshot"];
   runClaim: Pick<import("./ports.js").RunClaim, "readMany" | "setCurrentTool">;
   shownLinks: Pick<ShownLinkStore, "record">;
+  observationFrontiers: ObservationFrontiers;
 }
 
 export interface ToolDispatchContext {
@@ -64,6 +69,12 @@ export interface ToolDispatchContext {
   treeBudget: TreeBudget;
   blockSeqRef: { value: number };
   allTurns: Turn[];
+  /** The ids that credited the request that produced this call (C4's planning cut). */
+  planningBlockIds: readonly string[];
+  /** The provider reply's own accepted mutations, replayed after the planning cut. */
+  replyMutations: ReplyMutations;
+  /** The run's credited ids, live: a sibling call's result counts as seen. */
+  credited: CreditedBlocks;
 }
 
 export type ToolDispatchResult =
@@ -81,11 +92,13 @@ export async function dispatchToolCall(
   call: ToolCallInput,
   ctx: ToolDispatchContext,
 ): Promise<ToolDispatchResult> {
-  await appendEvent(deps.persistenceDeps.eventWriter, ctx.state.threadId, {
-    type: "tool.executing",
-    toolCallId: call.id,
-    name: call.name,
-  });
+  await deps.persistenceDeps.eventWriter.appendEvents(ctx.state.threadId, [
+    {
+      type: "tool.executing",
+      toolCallId: call.id,
+      name: call.name,
+    },
+  ]);
   if (ctx.state.signal?.aborted) {
     return { cancelled: true };
   }
@@ -115,8 +128,43 @@ export async function dispatchToolCall(
     });
   }
 
-  let outputDeltaAppendChain: Promise<void> = Promise.resolve();
-  let outputDeltaAppendFailed = false;
+  const outputJournal = createDeltaJournal({
+    threadId: ctx.state.threadId,
+    appendEvents: (threadId, events) =>
+      deps.persistenceDeps.eventWriter.appendEvents(threadId, events),
+    eventSink: deps.eventSink,
+    scope: "tool_call",
+  });
+  let outputDropped = false;
+  const dropOutput = (reason: "budget_full" | "write_failed", failure?: { cause: unknown }) => {
+    if (outputDropped) return;
+    outputDropped = true;
+    outputJournal.seal();
+    emitEvent(deps.eventSink, {
+      level: "warn",
+      source: "runtime.orchestrator",
+      name: "tool_output_delta.dropped",
+      correlation: {
+        threadId: ctx.state.threadId,
+        turnId: ctx.state.currentTurn.id,
+        runId: ctx.state.currentTurn.id,
+        toolName: call.name,
+      },
+      payload: {
+        threadId: ctx.state.threadId,
+        turnId: ctx.state.currentTurn.id,
+        reason,
+        ...(failure ? unknownToEventPayload(failure.cause) : {}),
+      },
+    });
+  };
+  const drainOutput = async () => {
+    try {
+      await outputJournal.flush();
+    } catch (cause) {
+      dropOutput("write_failed", { cause });
+    }
+  };
   const emitOutputDelta = (
     toolCallId: string,
     chunk: { stream: "stdout" | "stderr"; text: string },
@@ -127,31 +175,12 @@ export async function dispatchToolCall(
       stream: chunk.stream,
       text: chunk.text,
     };
-    // Serialize live output appends while the tool runs so catch-up preserves chunk order.
-    outputDeltaAppendChain = outputDeltaAppendChain
-      .then(async () => {
-        if (outputDeltaAppendFailed) return;
-        await appendEvent(deps.persistenceDeps.eventWriter, ctx.state.threadId, event);
-      })
-      .catch((error: unknown) => {
-        outputDeltaAppendFailed = true;
-        emitEvent(deps.eventSink, {
-          level: "warn",
-          source: "runtime.orchestrator",
-          name: "tool_output_delta.append_failed",
-          correlation: {
-            threadId: ctx.state.threadId,
-            turnId: ctx.state.currentTurn.id,
-            runId: ctx.state.currentTurn.id,
-            toolName: call.name,
-          },
-          payload: {
-            threadId: ctx.state.threadId,
-            turnId: ctx.state.currentTurn.id,
-            ...unknownToEventPayload(error),
-          },
-        });
-      });
+    const admission = outputJournal.tryPush(event);
+    if (admission.status === "full") {
+      dropOutput("budget_full");
+    } else if (admission.status === "failed") {
+      dropOutput("write_failed", admission);
+    }
   };
 
   const transcript: SpawnTranscript = {
@@ -165,6 +194,7 @@ export async function dispatchToolCall(
   const spawn =
     call.name === "spawn"
       ? async (spawnInput: SpawnToolArgs) => {
+          await drainOutput();
           const request: ChildRunRequest = {
             kind: "spawn",
             parentThread: ctx.thread,
@@ -198,6 +228,7 @@ export async function dispatchToolCall(
   const threadMessage =
     call.name === "thread_message"
       ? async (messageInput: ThreadMessageArgs) => {
+          if (messageInput.mode === "foreground") await drainOutput();
           const request: ChildRunRequest = {
             kind: "message",
             parentThread: ctx.thread,
@@ -251,6 +282,7 @@ export async function dispatchToolCall(
     return { ok: true as const };
   };
 
+  const correlation = { threadId: ctx.state.threadId, turnId: ctx.state.currentTurn.id };
   const execResult = await deps.toolExecutor.executeTool(
     {
       id: call.id,
@@ -269,15 +301,27 @@ export async function dispatchToolCall(
       signal: ctx.state.signal,
       interruptTimeoutMs: ctx.interruptAutoResume.timeoutMs,
       emitOutputDelta,
-      interrupt: ctx.interruptSession.interrupt,
-      updateComponentBlock: ctx.interruptSession.updateComponentBlock,
+      interrupt: async (...args) => {
+        await drainOutput();
+        return ctx.interruptSession.interrupt(...args);
+      },
+      updateComponentBlock: async (...args) => {
+        await drainOutput();
+        return ctx.interruptSession.updateComponentBlock(...args);
+      },
       spawn,
       threadMessage,
       threadReport,
       returnResult,
+      frontiers: {
+        recording: frontierLookup(deps, () => ctx.credited.ids(), correlation),
+        planning: frontierLookup(deps, () => ctx.planningBlockIds, correlation),
+        reply: ctx.replyMutations,
+      },
     },
   );
-  await outputDeltaAppendChain;
+  outputJournal.seal();
+  await drainOutput();
   if (ctx.state.signal?.aborted) {
     return { cancelled: true };
   }
@@ -304,15 +348,6 @@ export async function dispatchToolCall(
     deps.persistenceDeps,
     ctx.state.threadId,
     async () => {
-      // The model is shown exactly the result persisted here, so its evidence
-      // commits with it; a cancelled or timed-out call never reaches this point.
-      for (const showing of execResult.shown ?? []) {
-        await deps.shownLinks.record({
-          ...showing,
-          threadId: ctx.state.threadId,
-          turnId: ctx.state.currentTurn.id,
-        });
-      }
       const block = contentForBlockInput({
         turnId: ctx.state.currentTurn.id,
         ...(stagedWrite ? { responseId: ctx.responseId } : {}),
@@ -342,8 +377,22 @@ export async function dispatchToolCall(
         ],
       };
     },
+    {
+      // The model is shown exactly the result persisted here, so its evidence commits with
+      // it, after the block row exists (the frontier references it); a cancelled or timed-out
+      // call never reaches this point.
+      afterEvents: async (block) => {
+        const evidence = execResult.evidence;
+        if (!evidence) return;
+        const owner = { threadId: ctx.state.threadId, turnId: block.turnId };
+        for (const showing of evidence.shown)
+          await deps.shownLinks.record({ ...showing, ...owner });
+        if (evidence.frontier) await recordFrontier(deps, block.id, evidence.frontier, owner);
+      },
+    },
   );
   ctx.state.allBlocks.push(persistedToolResult.result);
+  ctx.credited.add(persistedToolResult.result.id);
 
   const resultBlock = persistedToolResult.result;
   const resultMetadata = execResult.metadata;

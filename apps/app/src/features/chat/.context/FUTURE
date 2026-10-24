@@ -21,10 +21,8 @@
   Distinguish pending creation from failed creation so the latter can report
   failure without guessing a Work.
 
-- Spawn/agent UI follow-ups stay tracked in the docs work item
-  ([`complete-implementation-todo.md`](https://github.com/haowjy/meridian-flow-docs/blob/main/work/implement-agents/design/complete-implementation-todo.md#milestone-3)),
-  not duplicated here: `GET /api/threads` primary-only and the switcher Agent
-  lane.
+- Spawn and agent UI follow-ups: `GET /api/threads` returning primary chats
+  only, and an Agent section in the chat switcher.
 
 - Chat-focused document viewing is outside the readable project-route cutover.
   When it is designed, give it its own project/Work authority and route contract;
@@ -34,10 +32,8 @@
   work-item regrouping) on every render even while the popover is closed.
   Harmless at today's thread counts; if long-task violations appear during
   streaming with many threads, gate the derivation on `open` or memoize it.
-  (Noted during slice-7 round-4 review, 2026-07-15.)
 
-- Expanded-fold rail polish, three items observed in the chat-surface rail
-  probe (2026-07-24), all cosmetic and deliberately left as-is:
+- Expanded-fold rail polish, three cosmetic items deliberately left as-is:
   - A 6px orphan rail tick below a fold whose last row is a tool row.
     Inherent to the self-contained rail (every tool row paints the stub that
     keeps the rail continuous); suppressing it on the last row needs the
@@ -52,40 +48,26 @@
   keyed by identity (`itemRenderKey`), so an incremental walk could reuse
   unchanged items per frame instead of re-walking the turn. Not needed at
   current sizes; revisit if streaming with many long turns shows partition
-  cost. (Noted during the #558 render-model work, 2026-09-18.)
+  cost.
 
-- Performance, further (from the `chat-render-perf` investigation, 2026-09-18).
-  #558 removed the structural costs — per-token full-document reparse,
-  per-token store update/render, per-revision forced layout. These remain, all
-  unquantified; measure with `react renders` plus a `trace` during a long
-  stream before implementing:
-  - **Tail-bound the streaming markdown repair.** While streaming, Streamdown
-    runs incomplete-markdown repair (`remend`) and the block split over the
-    entire document on every content change. The per-block `memo` keeps settled
-    blocks from re-rendering, but that parent pass is still O(n) per token —
-    the same shape as the reparse #558 removed, just cheaper. Repair and split
-    only the unstable tail, copying settled blocks raw (assistant-ui's
-    `tailBoundedRemend` is the reference).
+- Performance, further. The structural costs (per-token full-document
+  reparse, per-token store update and render, per-revision forced layout) are
+  gone. These remain, all unquantified; measure with `react renders` plus a
+  `trace` during a long stream before implementing:
+
   - **Dirty-track transcript row identity.** The store replaces the turns array
     per stream update, so `TurnList`/the virtualizer (and non-memoized
     neighbors like `ChatSurface`/`Composer`) do work per frame. Coalescing
     already cut this to one update per frame; a stable row id-array identity
     across content-only updates would let the virtualizer and memoized rows
     skip.
-  - **Render-count attribution is still unmeasured.** No clean frame-level A/B
-    was captured for #558; profile per-component render counts per frame to
+  - **Render-count attribution is unmeasured.** No clean frame-level A/B
+    exists; profile per-component render counts per frame to
     decide whether either item above is worth doing.
 
-- Streamdown wraps a markdown image in a `<div>`, which lands inside the
-  paragraph `<p>` and logs a React hydration warning (`<div>` cannot be a
-  descendant of `<p>`). Upstream streamdown rendering, pre-existing; revisit
-  on a streamdown upgrade rather than patching the wrapper here.
-  (Noted during the #558 image probe, 2026-09-18.)
-
 - A user-attached image does not render in the user turn: `UserTurn` skips
-  non-text blocks, so the transcript shows a link, not the picture. Pre-existing
-  composer/UserTurn gap, outside the #558 render model.
-  (Noted during the #558 image probe, 2026-09-18.)
+  non-text blocks, so the transcript shows a link, not the picture. A
+  composer/UserTurn gap, outside the render model.
 
 - Reload audit: `useChatFollowScroll.ts` resets transcript reading position and
   follow mode; `subagent/DisclosureStore.tsx` resets process/subagent expansion;
@@ -93,3 +75,44 @@
   writer choices per browser tab, without persisting open menus or confirmations.
   Unsent existing-chat draft loss is tracked separately in
   https://github.com/haowjy/meridian-flow/issues/746.
+
+- A sticky 402 failure shows the full non-retryable explanation live, but only
+  "The AI provider turned this request down." after reload: live-versus-stored
+  drift in failure copy. It moves into the shared chat session's row-failure
+  output; remove this entry then.
+
+- A merged delivery group (two child completions landing on one reply) could not
+  be produced live on the mock, because the server wakes the parent on each
+  completion; only the reviewer's probe script covers it. Add a mock script that
+  lands two completions on one reply, and a step in `docs/qa/chat-session.md`
+  that checks the `./mf thread view` delivery grouping against the screen.
+
+- Polite status announcements and connection-failure alerts still keep their
+  last text until replaced. In particular, the raw WebSocket close text from
+  `client/query/useThreadSnapshotSync.ts` calls unkeyed `announceError`.
+  Give that transport state its own clearable owner and writer-facing wording.
+  Reply, Retry and Stop failure cards aren't part of this gap:
+  `useChatCardAnnouncer` clears their keyed alerts when the cards end.
+
+- A row below a reply that finishes hops by the reply's height change (27 px
+  measured: 84.8 px while streaming, 57.8 px settled) for one frame. `TurnList.tsx`
+  positions each virtual row absolutely from TanStack Virtual's `measureElement`
+  (`virtualizer.measureElement` on the row wrapper), which reports the shrunken
+  reply a frame late, so the row below keeps its old start until ResizeObserver
+  catches up. `shouldAdjustScrollPositionOnItemSizeChange` only compensates rows
+  wholly above the viewport. It hits any tail row, not only queued commands. No unit
+  seam measures it: take it with a browser recipe that samples row tops per frame.
+
+## Stop the reply and send this message now, from the queue
+
+The owner, on removing Stop from beside Send: "why would u want to prepare something but stop it...?
+unless u want to stop and send it... which there should be a way to do that in the queue". Add a per-message
+"stop the reply and send this now" to the queue's controls. The composer doesn't offer it.
+
+## Cancelled failure-announcement batches
+
+If an unrelated unkeyed announceError supersedes a card batch before its
+publication microtask, its keys correctly remain unannounced, but retry waits
+for the next card projection change. Consider reporting cancellation from the
+announcement store so useChatCardAnnouncer can requeue without interrupting the
+newer alert. Low priority: visible cards are not lost.

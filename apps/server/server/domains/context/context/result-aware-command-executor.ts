@@ -1,15 +1,34 @@
 /** Transactional execution for commands whose domain failures are returned as Results. */
 import { Err, type Result } from "../../../shared/result.js";
 import type {
+  ContextCommandActiveBranch,
+  ContextCommandBranch,
+  ContextCommandContext,
+  ContextCommandOptions,
   ContextCommandScopes,
   ContextCommandTransaction,
 } from "../ports/context-command-transaction.js";
 
 export interface ResultAwareCommandExecutor<TError> {
   run<T>(
-    operation: () => Promise<Result<T, TError>>,
+    operation: (command: ContextCommandContext) => Promise<Result<T, TError>>,
     scopes?: ContextCommandScopes,
+    options?: ContextCommandOptions,
   ): Promise<Result<T, TError>>;
+  /**
+   * A command in a Work's branch, which the transaction makes (`ensure`) and locks, with the
+   * namespaces of `sourceIds` taken in key order with its own.
+   */
+  runInBranch<T>(
+    branch: ContextCommandBranch & { mode: "ensure" },
+    operation: (branch: ContextCommandActiveBranch) => Promise<Result<T, TError>>,
+    sourceIds?: readonly string[],
+  ): Promise<Result<T, TError>>;
+  /**
+   * A read that must hold nothing (a live create's discovery, contract §6.3 step 1), in
+   * the same order as this owner's commands but outside any transaction.
+   */
+  exclusive<T>(operation: () => Promise<T>): Promise<T>;
 }
 
 class ResultRollback<TError> extends Error {
@@ -26,15 +45,20 @@ export function createResultAwareCommandExecutor<TError>(input: {
   let tail = Promise.resolve();
 
   const execute = async <T>(
-    operation: () => Promise<Result<T, TError>>,
+    operation: (command: ContextCommandContext) => Promise<Result<T, TError>>,
     scopes?: ContextCommandScopes,
+    options?: ContextCommandOptions,
   ): Promise<Result<T, TError>> => {
     try {
-      return await input.transaction.run(async () => {
-        const result = await operation();
-        if (!result.ok) throw new ResultRollback(result.error);
-        return result;
-      }, scopes);
+      return await input.transaction.run(
+        async (command) => {
+          const result = await operation(command);
+          if (!result.ok) throw new ResultRollback(result.error);
+          return result;
+        },
+        scopes,
+        options,
+      );
     } catch (error) {
       if (error instanceof ResultRollback) return Err(error.error as TError);
       const mapped = input.mapThrownError?.(error);
@@ -43,14 +67,37 @@ export function createResultAwareCommandExecutor<TError>(input: {
     }
   };
 
-  return {
-    run<T>(
-      operation: () => Promise<Result<T, TError>>,
-      scopes?: ContextCommandScopes,
-    ): Promise<Result<T, TError>> {
-      if (!input.serializeThroughCallbacks) return execute(operation, scopes);
+  function run<T>(
+    operation: (command: ContextCommandContext) => Promise<Result<T, TError>>,
+    scopes?: ContextCommandScopes,
+    options?: ContextCommandOptions,
+  ): Promise<Result<T, TError>> {
+    if (!input.serializeThroughCallbacks) return execute(operation, scopes, options);
 
-      const result = tail.then(() => execute(operation, scopes));
+    const result = tail.then(() => execute(operation, scopes, options));
+    tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  return {
+    run,
+    runInBranch(branch, operation, sourceIds) {
+      return run(
+        ({ branch: active }) => {
+          // The transaction contract: an `ensure` command always resolves a branch.
+          if (!active) throw new Error("An ensuring command transaction resolved no branch");
+          return operation(active);
+        },
+        undefined,
+        { branch, ...(sourceIds?.length ? { sourceIds } : {}) },
+      );
+    },
+    exclusive<T>(operation: () => Promise<T>): Promise<T> {
+      if (!input.serializeThroughCallbacks) return operation();
+      const result = tail.then(operation);
       tail = result.then(
         () => undefined,
         () => undefined,

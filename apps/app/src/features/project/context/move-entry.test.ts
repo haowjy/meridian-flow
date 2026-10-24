@@ -57,15 +57,9 @@ const into = (node: CatalogNode | null): MoveDestination => ({
 it("refuses a folder into itself or its own subtree", () => {
   expect(moveRefusal(folder(book, "root"), into(book))?.kind).toBe("inside-itself");
   expect(moveRefusal(folder(book, "root"), into(act))?.kind).toBe("inside-itself");
-  expect(moveRefusal(folder(act, "book"), into(notes))?.kind).toBe("name-taken");
+  // A taken name never refuses; the folder arrives at the next free name.
+  expect(moveRefusal(folder(act, "book"), into(notes))).toBeNull();
   expect(moveRefusal(folder(notes, "root"), into(act))).toBeNull();
-});
-
-it("refuses two arriving rows that would take one name", () => {
-  const arriving = { entryId: "other", name: "Act 2", kind: "dir" as const };
-  expect(moveRefusal(folder(act, "book"), into(null), "Act 2", [arriving])?.kind).toBe(
-    "name-taken",
-  );
 });
 
 it("treats the current folder as already there, not as a refusal to explain", () => {

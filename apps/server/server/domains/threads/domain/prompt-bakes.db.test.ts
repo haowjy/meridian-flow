@@ -2,6 +2,7 @@
 
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
 import { compactionTurnMetadata } from "../index.js";
 import {
   THREAD_WORK_RACE as ids,
@@ -27,7 +28,7 @@ else {
     const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
     const db = createDb(DATABASE_URL, { max: 4 });
     const repos = createDrizzleRepositoriesForTest(db);
-    const writer = createDrizzleEventJournalWriter(db);
+    const writer = createQuietDrizzleJournalWriter(db);
     const reader = createDrizzleEventJournalReader(db);
 
     beforeEach(async () => resetThreadWorkRaceFixture(db));
@@ -182,6 +183,7 @@ else {
     it("cascades account deletion through bake owners and cross-thread references", async () => {
       const source = await repos.threads.bakeInitialPrompt(ids.threadId, content("source"));
       const fork = await repos.threads.create({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         title: "Reference holder",
@@ -190,7 +192,7 @@ else {
         .update(schema.threads)
         .set({ initialPromptBakeId: source.bake.id })
         .where(eq(schema.threads.id, fork.id));
-      await db.delete(schema.documentBranches).where(eq(schema.documentBranches.id, ids.branchId));
+      await db.delete(schema.documentDrafts).where(eq(schema.documentDrafts.id, ids.draftId));
 
       await db.delete(schema.users).where(eq(schema.users.id, ids.userId));
 

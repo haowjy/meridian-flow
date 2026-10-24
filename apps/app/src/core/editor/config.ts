@@ -71,6 +71,8 @@ export type EditorUser = {
 /** Project whose asset namespace resolves `asset:<documentId>` image sources. */
 export type AssetRenderContext = {
   projectId?: string;
+  /** The Work the viewer is in: a picture still pending in its branch is signed through it. */
+  workId?: string;
 };
 
 export type CreateEditorExtensionsOptions = {
@@ -95,7 +97,7 @@ export type CreateEditorExtensionsOptions = {
    * room. Live editors omit this flag so they never pay the extra plugin cost.
    */
   enableDraftInlineReview?: boolean;
-  /** Live-session sidecar; omitted for branch/draft rooms. */
+  /** Live-session sidecar; omitted for draft rooms. */
   markerStore?: SessionMarkerStore;
   /** Writer-facing thread names for agent-authored session marks. */
   agentNames?: AgentNameStore;
@@ -302,8 +304,8 @@ export function createEditorExtensions({
       wikilinkPaste,
     }),
     ...collaboration,
-    // Undo exists only alongside collaboration's UndoManager, so its owned key
-    // bindings mount with it rather than in the standalone set.
+    // Mounted history depends on collaboration's UndoManager, so its key bindings
+    // mount with collaboration rather than in the standalone set.
     UndoRedoKeymapExtension,
     // A document with no shared room has no "uploading elsewhere", so the
     // ephemeral half of image ingress mounts here rather than beside the door.
@@ -362,11 +364,15 @@ export function createStandaloneEditorExtensions({
     MeridianTableHeader,
     MeridianTableCell,
     MeridianCodeBlockLowlight.configure({ lowlight }),
-    MeridianImage.configure({ projectId: assetRenderContext?.projectId }),
+    MeridianImage.configure({
+      projectId: assetRenderContext?.projectId,
+      workId: assetRenderContext?.workId,
+    }),
     MeridianJsxLeaf,
     MeridianJsxContainer,
     MeridianFigure.configure({
       projectId: assetRenderContext?.projectId,
+      workId: assetRenderContext?.workId,
     }),
     ...(slashCommands
       ? [

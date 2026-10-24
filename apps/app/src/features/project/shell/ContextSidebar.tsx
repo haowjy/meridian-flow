@@ -10,7 +10,6 @@ import { Clock } from "lucide-react";
 import { useMemo } from "react";
 import { recentDocumentIdentityIndex } from "@/client/query/recent-document-identity";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
-import { announceError } from "@/client/stores";
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { fileKindIcon } from "../context/context-file-icon";
 import { useOpenChatDocument } from "../context/open-chat-document";
@@ -38,9 +37,7 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
   const recent = useThreadRecentDocuments(threadId);
   const openDocument = useOpenChatDocument(projectId ?? undefined);
   const openRecent = async (documentId: string) => {
-    // On the Chat screen this opens beside the chat; an unreachable document says so.
-    const result = await openDocument({ documentId });
-    if (result.kind === "unavailable") announceError(t`Couldn’t open this document.`);
+    await openDocument({ documentId });
   };
 
   return (

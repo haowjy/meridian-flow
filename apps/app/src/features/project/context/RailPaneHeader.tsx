@@ -48,7 +48,7 @@ export function RailPaneHeader({
           if (event.key === "ArrowLeft") onExpandedChange(false);
           if (event.key === "ArrowRight") onExpandedChange(true);
         }}
-        className="focus-ring flex h-full min-w-0 flex-1 items-center rounded-md pr-1 pl-1 text-left"
+        className="focus-ring flex h-full min-w-0 flex-1 items-center rounded-md pr-1 text-left"
       >
         <span className="flex w-4 shrink-0 items-center justify-center text-muted-foreground">
           <ChevronRight

@@ -5,11 +5,11 @@
 
 import { Trans } from "@lingui/react/macro";
 import { parseThreadReportResult, toReportContentValue } from "@meridian/contracts/spawn";
+import type { DirectInvocationResult } from "@meridian/thread-client";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { getThreadExecutionReport } from "@/client/api/execution-reports-api";
 import { SourceChatLink, useSourceThread } from "./derivation/SourceChatLink";
-import type { DirectInvocationResult } from "./invocation-direct-result";
 import { ReportContent } from "./ReportContent";
 import { useSubagentDisclosure } from "./subagent/DisclosureStore";
 import type { SubagentRun } from "./subagent/run-model";

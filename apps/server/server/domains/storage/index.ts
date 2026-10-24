@@ -12,6 +12,7 @@ export {
   S3ObjectStoreAdapter,
   type S3ObjectStoreOptions,
 } from "./adapters/s3/s3-object-store.js";
+export { createObjectRelease, type ObjectRelease } from "./object-release.js";
 export { createObjectStorageUrl, objectStoreKeyFromStorageUrl } from "./object-storage-url.js";
 export type {
   ObjectStoreError,

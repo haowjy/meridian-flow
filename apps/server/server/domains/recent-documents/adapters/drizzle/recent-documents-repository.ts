@@ -6,9 +6,6 @@ import type { Database } from "@meridian/database";
 import {
   contextAvailabilityHeads,
   contextSources,
-  DOCUMENT_KINDS,
-  documents,
-  folders,
   projects,
   userRecentDocuments,
   works,
@@ -21,11 +18,20 @@ import {
 import { mapAuthoritativeFile } from "../../../context/adapters/catalog-file-mapper.js";
 import { classifyAuthoritativeIdentity } from "../../../context/adapters/project-context-availability.js";
 import {
+  LIVE_TREE,
+  visibleDocumentFields,
+  visibleDocuments,
+  visibleFolders,
+} from "../../../context/tree/tree-view.js";
+import {
   type RecentDocumentsRepository,
   RecentDocumentUnavailableError,
   USER_RECENT_DOCUMENTS_CAP,
   USER_RECENT_DOCUMENTS_TOUCH_INTERVAL_MS,
 } from "../../ports/recent-documents-repository.js";
+
+const documents = visibleDocuments(LIVE_TREE);
+const folders = visibleFolders(LIVE_TREE);
 
 const CONTENT_SCHEMES: string[] = [...CONTEXT_URI_SCHEMES];
 
@@ -44,9 +50,7 @@ const CONTENT_SCHEMES: string[] = [...CONTEXT_URI_SCHEMES];
 function visibleIdentity(userId: UserId): SQL {
   const predicate = and(
     eq(projects.userId, userId),
-    eq(documents.kind, DOCUMENT_KINDS.content),
     inArray(contextSources.slug, CONTENT_SCHEMES),
-    isNull(documents.deletedAt),
     isNull(contextSources.deletedAt),
     isNull(projects.deletedAt),
     or(isNull(works.id), and(isNull(works.deletedAt), isNull(works.archivedAt))),
@@ -66,11 +70,16 @@ async function prune(tx: Db, userId: UserId) {
   const stale = await tx
     .select({ documentId: userRecentDocuments.documentId })
     .from(userRecentDocuments)
-    .innerJoin(documents, eq(userRecentDocuments.documentId, documents.id))
-    .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+    .leftJoin(documents, eq(userRecentDocuments.documentId, documents.id))
+    .leftJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
     .leftJoin(works, eq(contextSources.workId, works.id))
-    .innerJoin(projects, projectIdentity())
-    .where(and(eq(userRecentDocuments.userId, userId), not(visibleIdentity(userId))));
+    .leftJoin(projects, projectIdentity())
+    .where(
+      and(
+        eq(userRecentDocuments.userId, userId),
+        or(isNull(documents.id), not(visibleIdentity(userId))),
+      ),
+    );
   if (stale.length > 0) {
     await tx.delete(userRecentDocuments).where(
       and(
@@ -143,7 +152,7 @@ export function createDrizzleRecentDocumentsRepository(deps: {
       const tx = db();
       const rows = await tx
         .select({
-          document: documents,
+          document: visibleDocumentFields(documents),
           source: contextSources,
           sourceProject: projects,
           work: works,
@@ -204,7 +213,7 @@ export function createDrizzleRecentDocumentsRepository(deps: {
         if (classification.kind !== "valid") {
           throw new Error(`Recent document ${document.id} has inconsistent identity`);
         }
-        const workSlug = work && !work.isNoWork ? work.slug : null;
+        const workHandle = work && !work.isNoWork ? work.handle : null;
         const identityScope = classification.identity.scope;
         const entry = mapAuthoritativeFile({
           observationVersion: String(
@@ -218,14 +227,16 @@ export function createDrizzleRecentDocumentsRepository(deps: {
           scope: classification.identity.scope,
           scheme: classification.identity.scheme,
           workId: work?.id ?? null,
-          workSlug,
+          workHandle,
           parentPath: classification.identity.parentPath,
+          // Only the entry's path and name are read; a chat upload's address needs no handle here.
+          chatOwned: source.scope === "chat",
         });
         documentsOut.push({
           documentId: document.id,
           projectId: sourceProject.id,
           projectName: sourceProject.name,
-          workSlug,
+          workHandle,
           scheme: classification.identity.scheme,
           path: `/${entry.path.join("/")}`,
           name: entry.name,

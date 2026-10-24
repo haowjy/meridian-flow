@@ -1,0 +1,386 @@
+/** Guards the view model's seams: row identity versus render key, stand-in placement, queued writer rows, and which turns draw as items. */
+import type { Block, Turn } from "@meridian/contracts/protocol";
+import { expect, it } from "vitest";
+import { viewAssistantTurn } from "./assistant-view";
+import { OPTIMISTIC_TURN_ID_PREFIX } from "./optimistic-turn-id";
+import { viewTranscript } from "./view-transcript";
+
+function turn(
+  id: string,
+  role: Turn["role"],
+  prev: string | null,
+  extra: Partial<Turn> = {},
+): Turn {
+  const text: Block = {
+    id: `${id}-text`,
+    turnId: id,
+    responseId: null,
+    blockType: "text",
+    sequence: 0,
+    content: {},
+    status: "complete",
+    textContent: `${id} words`,
+    createdAt: "2026-10-13T00:00:00.000Z",
+  };
+  return {
+    id,
+    threadId: "t",
+    role,
+    origin: role === "user" ? "writer" : role === "assistant" ? "assistant" : "system",
+    status: "complete",
+    prevTurnId: prev,
+    blocks: [text],
+    responses: [],
+    metadata: null,
+    ...extra,
+  } as unknown as Turn;
+}
+
+it("keys every row but names a server identity only for turns the server stated, and gives every reply-shaped row a response", () => {
+  const local = `${OPTIMISTIC_TURN_ID_PREFIX}1`;
+  const card = turn("c1", "system", "a1", {
+    blocks: [{ ...turn("c1", "system", null).blocks[0], blockType: "custom" } as Block],
+  });
+  const view = viewTranscript({
+    opening: turn("optimistic-seed:t", "system", null, {
+      blocks: [],
+      metadata: {
+        kind: "derivation_seed",
+        derivation: "handoff",
+        sourceThreadId: "s",
+        cutoffTurnId: "x",
+      },
+    }),
+    turns: [
+      turn("u1", "user", null),
+      turn("a1", "assistant", "u1"),
+      card,
+      turn(local, "user", "c1"),
+    ],
+    activity: { awaitingSubagents: false },
+    standIns: [turn("a2", "assistant", "c1", { status: "pending", blocks: [] })],
+    queued: new Set([local]),
+  });
+  expect(view.rows.map((row) => row.renderKey)).toEqual([
+    "optimistic-seed:t",
+    "u1",
+    "a1",
+    "c1",
+    "a2",
+    local,
+  ]);
+  // The opening seed, a Retry stand-in and a local writer turn have no server identity.
+  expect(view.rows.map((row) => row.identity.turnId)).toEqual([null, "u1", "a1", "c1", null, null]);
+  expect(view.rows.map((row) => row.queued)).toEqual([false, false, false, false, false, true]);
+  expect([...view.writer.keys()]).toEqual(["u1", local]);
+  expect(view.items.get("a1")?.items.map((item) => item.kind)).toEqual(["text"]);
+  // A system card is its own single response part, so it keeps the settled action row.
+  expect(view.rows[3]?.response?.parts.map((part) => part.id)).toEqual(["c1"]);
+});
+
+const ids = (view: ReturnType<typeof viewTranscript>) => view.rows.map((row) => row.turn.id);
+
+it("draws a pending Retry in the failed reply's place, even with a message sent after it", () => {
+  // Risk: the stand-in drifting below a later message, or the failed reply drawn beside its Retry.
+  const failed = turn("f", "assistant", "u1", { status: "error" });
+  const base = [turn("u1", "user", null), failed, turn("u2", "user", "f")];
+  const standIn = turn("r1", "assistant", "f", {
+    status: "pending",
+    blocks: [],
+    metadata: { retryOf: "f" },
+  });
+  const pending = viewTranscript({
+    turns: base,
+    standIns: [standIn],
+    activity: { awaitingSubagents: false },
+  });
+  expect(ids(pending)).toEqual(["u1", "r1", "u2"]);
+  // Risk: a pending switch's notice at the tail while its turn lands before the Retry's reply,
+  // so it jumps when the frame arrives. `awaiting_run` sits before the stand-in from the press
+  // until the stored turn replaces it; `waiting` (a reply holds the chat) stays at the tail.
+  const slot = (switchAwaitsRun: boolean) =>
+    viewTranscript({
+      turns: base,
+      standIns: [standIn],
+      switchAwaitsRun,
+      activity: { awaitingSubagents: false },
+    }).controlSlot;
+  expect([slot(true), slot(false)]).toEqual([1, 3]);
+  // Risk (review S1): a lost Retry R1 of an earlier failure survives while newer replies pile
+  // up; the switch's notice must follow the Retry R2 of the current leaf, not jump above R1.
+  const lost = turn("r0", "assistant", "f", {
+    status: "pending",
+    blocks: [],
+    metadata: { retryOf: "f" },
+  });
+  const later = [...base, turn("f2", "assistant", "u2", { status: "error" })];
+  const slotAmong = (standIns: Turn[]) =>
+    viewTranscript({
+      turns: later,
+      standIns,
+      switchAwaitsRun: true,
+      activity: { awaitingSubagents: false },
+    }).controlSlot;
+  const next = turn("r2", "assistant", "f2", {
+    status: "pending",
+    blocks: [],
+    metadata: { retryOf: "f2" },
+  });
+  // Only the old one survives: no stand-in qualifies, the notice is at the tail (after u1, r0, u2, f2).
+  expect(slotAmong([lost])).toBe(4);
+  // With the current leaf's Retry (rows u1, r0, u2, r2) the notice sits at it, below the old one.
+  expect(slotAmong([lost, next])).toBe(3);
+  // Refused: the stand-in goes, and nothing supersedes the failed reply.
+  expect(ids(viewTranscript({ turns: base, activity: { awaitingSubagents: false } }))).toEqual([
+    "u1",
+    "f",
+    "u2",
+  ]);
+  // Accepted, and the store has no turn that names it yet: the explicit target holds F out.
+  expect(
+    ids(
+      viewTranscript({
+        turns: [...base, turn("r1", "assistant", "u2", { status: "streaming" })],
+        retried: new Set(["f"]),
+        activity: { awaitingSubagents: false },
+      }),
+    ),
+  ).toEqual(["u1", "u2", "r1"]);
+});
+
+it("draws one failure for a chain of failed retries, the newest, and none for a past failure", () => {
+  // Risk: every failed attempt stacking up as "This response failed." lines.
+  const view = viewTranscript({
+    turns: [
+      turn("u1", "user", null),
+      turn("f", "assistant", "u1", { status: "error" }),
+      // The Retry's first reserved turn can be a compaction, not the reply: it carries retryOf.
+      turn("c1", "compaction", "f", { metadata: { retryOf: "f" } }),
+      turn("r1", "assistant", "c1", { status: "error" }),
+      turn("r2", "assistant", "r1", { status: "error", metadata: { retryOf: "r1" } }),
+    ],
+    activity: { awaitingSubagents: false },
+  });
+  expect(view.rows.filter((row) => row.turn.status === "error").map((row) => row.turn.id)).toEqual([
+    "r2",
+  ]);
+  expect(ids(view)).toEqual(["u1", "c1", "r2"]);
+  // Also: a failed reply the chat moved past leaves no row (`./mf thread view` prints what the app draws),
+  // unless its refused Retry shows a card there, or it has text.
+  const emptyFailed = turn("f", "assistant", "u1", { status: "error", blocks: [] });
+  const partial = turn("p", "assistant", "u2", { status: "error" });
+  const turns = [
+    turn("u1", "user", null),
+    emptyFailed,
+    turn("u2", "user", "f"),
+    partial,
+    turn("u3", "user", "p"),
+    turn("a3", "assistant", "u3"),
+  ];
+  const rowsOf = (refused?: ReadonlySet<string>) =>
+    ids(
+      viewTranscript({ turns, anchoredTurnIds: refused, activity: { awaitingSubagents: false } }),
+    );
+  expect(rowsOf()).toEqual(["u1", "u2", "p", "u3", "a3"]);
+  expect(rowsOf(new Set(["f"]))).toEqual(["u1", "f", "u2", "p", "u3", "a3"]);
+  // Still the latest reply: it stays, empty or not, for its Retry.
+  expect(
+    ids(viewTranscript({ turns: turns.slice(0, 2), activity: { awaitingSubagents: false } })),
+  ).toEqual(["u1", "f"]);
+
+  // Risk (F1): a forgotten turn drawn again, or a refused Retry's card losing the reply it sits on. The
+  // stamp hides a local row; an anchored (refused) one keeps it; a fork's inherited rows are never filtered.
+  const forgotten = turns.map((held) =>
+    held.id === "u1" || held.id === "f" ? { ...held, forgottenBy: "u2" } : held,
+  );
+  const rowsAmong = (refused?: ReadonlySet<string>) =>
+    ids(
+      viewTranscript({
+        turns: forgotten,
+        anchoredTurnIds: refused,
+        activity: { awaitingSubagents: false },
+      }),
+    );
+  expect(rowsAmong()).toEqual(["u2", "p", "u3", "a3"]);
+  expect(rowsAmong(new Set(["f"]))).toEqual(["f", "u2", "p", "u3", "a3"]);
+  // The anchor also outranks Retry suppression: the Retry that won stamps and supersedes the reply the
+  // refused Retry was aimed at, and the refusal's card still needs that reply's row.
+  const competing = turn("r2", "assistant", "f", { status: "error", metadata: { retryOf: "f" } });
+  const raced = viewTranscript({
+    turns: [turn("u1", "user", null), { ...emptyFailed, forgottenBy: "r2" }, competing],
+    anchoredTurnIds: new Set(["f"]),
+    activity: { awaitingSubagents: false },
+  });
+  expect(ids(raced)).toEqual(["u1", "f", "r2"]);
+  const inheritedRows = viewTranscript({
+    turns: [turn("l1", "user", "a3")],
+    inherited: {
+      turns: [forgotten[0] as Turn, { ...partial, forgottenBy: "beyond-the-cutoff" }],
+      ownerByTurnId: new Map([
+        ["u1", "src"],
+        ["p", "src"],
+      ]),
+    },
+    activity: { awaitingSubagents: false },
+  });
+  expect(ids(inheritedRows)).toEqual(["u1", "p", "l1"]);
+
+  // Risk (F1): the three ways a failure stops being the latest reply must all hide it. An optimistic send
+  // closes it at once, a carried failure had a message admitted while it ran, and a continuation is a
+  // failed compaction the same execution carried on past. Each draws nothing, so each has no row.
+  const failedCompaction = turn("c", "compaction", "u1", { status: "error", blocks: [] });
+  const continued = viewTranscript({
+    turns: [turn("u1", "user", null), failedCompaction, turn("r", "assistant", "c")],
+    activity: { awaitingSubagents: false },
+  });
+  expect(ids(continued)).toEqual(["u1", "r"]);
+  const optimistic = viewTranscript({
+    turns: [
+      turn("u1", "user", null),
+      emptyFailed,
+      turn(`${OPTIMISTIC_TURN_ID_PREFIX}9`, "user", "f"),
+    ],
+    activity: { awaitingSubagents: false },
+  });
+  expect(ids(optimistic)).toEqual(["u1", `${OPTIMISTIC_TURN_ID_PREFIX}9`]);
+
+  // Risk (F1): a failed handoff brief keeps its failure and Retry only while no closing row follows it.
+  const seed = turn("s", "system", null, {
+    status: "error",
+    blocks: [],
+    metadata: {
+      kind: "derivation_seed",
+      derivation: "handoff",
+      sourceThreadId: "x",
+      cutoffTurnId: "y",
+    },
+  });
+  const seedLatest = (more: Turn[]) =>
+    viewTranscript({ turns: [seed, ...more], activity: { awaitingSubagents: false } }).rows.find(
+      (row) => row.kind === "handoff-seed",
+    );
+  expect(seedLatest([])).toMatchObject({ latest: true });
+  expect(seedLatest([turn("w", "user", "s")])).toMatchObject({ latest: false });
+  // An agent's message closes on the server but draws no row, so the rows alone would keep the Retry alive.
+  const agentMessage = turn("m", "user", "s", {
+    origin: "system",
+    metadata: { kind: "inbox_message" },
+  });
+  expect(seedLatest([agentMessage])).toMatchObject({ latest: false });
+
+  // Risk (F1): a failed reply that kept its content still offers Retry after an agent's message, which
+  // closes the chat on the server but draws no row. The reply stays, its failure ends, and an empty one goes.
+  const afterAgent = (reply: Turn) =>
+    viewTranscript({
+      turns: [turn("u", "user", null), reply, { ...agentMessage, prevTurnId: reply.id }],
+      activity: { awaitingSubagents: false },
+    });
+  expect(afterAgent(turn("k", "assistant", "u", { status: "error" })).rows[1]).toMatchObject({
+    turn: { id: "k" },
+    movedPast: true,
+  });
+  expect(ids(afterAgent(turn("e", "assistant", "u", { status: "error", blocks: [] })))).toEqual([
+    "u",
+  ]);
+});
+
+it("leaves a handed-back message out and keeps history and later sends", () => {
+  // Risk: a hand-back hiding delivered history or a message sent after the press.
+  const view = viewTranscript({
+    turns: [
+      turn("m1", "user", null),
+      turn("a1", "assistant", "m1"),
+      turn("m2", "user", "a1"),
+      turn("m3", "user", "m2"),
+    ],
+    hidden: new Set(["m2"]),
+    activity: { awaitingSubagents: false },
+  });
+  expect(ids(view)).toEqual(["m1", "a1", "m3"]);
+});
+
+it("interns settled rows and items when an unrelated live tail changes", () => {
+  const writer = turn("u1", "user", null);
+  const settled = turn("a1", "assistant", "u1");
+  const nextWriter = turn("u2", "user", "a1");
+  const live = turn("a2", "assistant", "u2", { status: "streaming" });
+  const settledView = viewAssistantTurn(settled);
+  const first = viewTranscript({
+    turns: [writer, settled, nextWriter, live],
+    activity: { awaitingSubagents: false },
+  });
+  const changedLive = {
+    ...live,
+    blocks: [{ ...live.blocks[0], textContent: "a longer live tail" } as Block],
+  };
+  const second = viewTranscript({
+    turns: [writer, settled, nextWriter, changedLive],
+    activity: { awaitingSubagents: false },
+  });
+
+  expect(first.rows[1]).toBe(second.rows[1]);
+  expect(first.items.get("a1")).toBe(settledView);
+  expect(second.items.get("a1")).toBe(settledView);
+  expect(first.items.get("a1")?.items[0]).toBe(second.items.get("a1")?.items[0]);
+  expect(first.rows.at(-1)).not.toBe(second.rows.at(-1));
+});
+
+it("keeps delivery-group identity across tail growth but refreshes invocation-derived titles", () => {
+  const invocation = (title: string): Block => ({
+    ...turn("a1", "assistant", null).blocks[0],
+    id: "card",
+    blockType: "custom",
+    content: {
+      kind: "helper-result",
+      props: {
+        agentSlug: "critic",
+        agentName: "Critic",
+        parentTurnId: "a1",
+        toolCallId: "call-1",
+        childThreadId: "child-1",
+        deliveryMode: "background_notification",
+        execution: "execution-1",
+        startedAt: "2026-10-13T00:00:00.000Z",
+        terminalAt: null,
+        title,
+      },
+    },
+  });
+  const reply = turn("a1", "assistant", null, { blocks: [invocation("First title")] });
+  const completion = turn("d1", "system", "a1", {
+    blocks: [],
+    metadata: {
+      kind: "subagent_update",
+      handle: "p1",
+      execution: "execution-1",
+      outcome: "succeeded",
+      childThreadId: "child-1",
+      agentName: "Critic",
+    },
+  });
+  const writer = turn("u2", "user", "d1");
+  const tail = turn("a2", "assistant", "u2", { status: "streaming" });
+  const first = viewTranscript({
+    turns: [reply, completion, writer, tail],
+    activity: { awaitingSubagents: false },
+  });
+  const grown = viewTranscript({
+    turns: [
+      reply,
+      completion,
+      writer,
+      { ...tail, blocks: [{ ...tail.blocks[0], textContent: "grown" } as Block] },
+    ],
+    activity: { awaitingSubagents: false },
+  });
+  expect(first.rows[0]).toBe(grown.rows[0]);
+  expect(first.rows[0]?.deliveries).toBe(grown.rows[0]?.deliveries);
+  expect(first.rows[0]?.deliveries[0]?.id).toBe("d1");
+
+  const renamed = viewTranscript({
+    turns: [{ ...reply, blocks: [invocation("Changed title")] }, completion, writer, tail],
+    activity: { awaitingSubagents: false },
+  });
+  expect(renamed.rows[0]).not.toBe(first.rows[0]);
+  expect(renamed.rows[0]?.deliveries[0]?.events[0]?.title).toBe("Changed title");
+});

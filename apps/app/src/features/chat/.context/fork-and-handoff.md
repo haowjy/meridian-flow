@@ -66,12 +66,11 @@ destination the way a reply does, with no lease or phase. Each seed S is a
 |---|---|
 | `pending` | "Writing the handoff brief" with Stop; the composer's Stop targets S too (`composerRun`) |
 | `complete` | The brief from the `handoff-brief` block, clipped with "Show the whole brief" |
-| `error` | "Handoff brief unavailable", `turn.error` as copy, Retry on the newest seed (a brief cut off by a crash or restart reads the same; its `reason` stays in metadata for diagnostics) |
+| `error` | Neutral "Handoff brief" shell. `chatCards` supplies the eligible failure and header Retry; `reason` stays diagnostic. |
 | `cancelled` | "Handoff brief stopped", "This chat continues without a brief.", Retry on the newest seed |
 
 An older seed (a newer one replaced it, or it is inherited) is superseded: a
-failed one says "This brief failed." instead of the server's "Try again."
-copy, and a stopped one drops "This chat continues without a brief."
+failed one carries no failure copy or recovery action, and a stopped one drops "This chat continues without a brief."
 
 `derivation/useHandoffBrief.ts` owns Retry and Stop:
 
@@ -86,15 +85,14 @@ copy, and a stopped one drops "This chat continues without a brief."
 - **A refused Retry** (409 `handoff_retry_unavailable`: something holds the
   chat, or the pressed brief is no longer the latest failed one) wrote
   nothing. The stand-in goes, the snapshot refreshes to show the true state,
-  and the pressed card says "Couldn't retry." (the cause goes to
-  diagnostics, never the writer). A lost request instead keeps the stand-in, failed; its Retry
-  re-sends under the same id, so a request that did land replays.
+  and the pressed card says "Couldn't retry." or, for a 409, "Couldn't retry.
+  Another reply started first." (the cause goes to diagnostics). A lost request retains a failure fact on the original seed, not a stand-in. Its Try again re-sends under the same id, so a request that did land replays. A newer seed retires this failure.
 - **Retry waits while the chat is busy** (a live status, which covers a
   reply or a compaction, or a streaming reply). It stays focusable
   (`aria-disabled`) and says "You can retry when this chat is free."; the
   server's 409 covers the race.
 - **Stop** marks the seed Stopping at once and calls the turn cancel route
-  with S's id (`useTurnStop`, shared with the compaction divider). A failed
+  with S's id (`useTurnStop`; the compaction divider instead uses `useChatStop`). A failed
   cancel clears Stopping and says "Couldn't stop the brief." on the card. A
   seed the server does not have yet (the opening stand-in, a Retry still
   sending) offers no Stop.
@@ -108,8 +106,7 @@ the trash)"; the optimistic seed carries the intent's title. A writer message
 sent during the brief chains after S, shows Queued, and is answered once the
 brief releases the chat. The brief's start and end reach the chat as a
 `meridian.thread.status` frame, which revalidates the snapshot. The brief
-card's state changes are announced from the turns
-(`useControlTurnAnnouncements`), including a Retry's stand-in.
+card's non-failure state changes are announced from the turns (`useControlTurnAnnouncements`). Failures belong exclusively to `useChatCardAnnouncer`.
 
 ## The inherited view
 
@@ -126,7 +123,7 @@ the prefix ahead of the fork's own turns and marks those rows `inherited`:
 - a failed read with nothing standing in shows an alert with Retry where the
   inherited rows would start, never a fork whose history silently vanished;
 - inherited rows never end the transcript or count as the latest reply, so a
-  cutoff at a failed reply stays the quiet historical marker;
+  cutoff at a failed reply shows no failure line;
 - inherited dividers are read-only (no Stop or withdrawal); inherited replies render as their owner's (lineage and receipts)
   with no interrupt answers; they keep Copy, Fork, and Hand off.
 

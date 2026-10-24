@@ -1,7 +1,8 @@
 /**
- * The one way a row changes folders: Move… and dragging both resolve a
- * destination here, refuse for the same reasons, and place through the replica
- * by folder ID.
+ * The one way a row changes folders: Move…, dragging and a drag's Undo resolve
+ * a destination here, refuse for the same reasons, and place through the
+ * replica by folder ID. A taken name never refuses: the row arrives at the next
+ * free name, predicted here and decided by the server.
  */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -9,7 +10,7 @@ import type { ParentRef, ResourceDestination } from "@meridian/resource-replica"
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import type { TabOwner } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
-import { type ContextEntrySibling, validateContextEntryName } from "./context-entry-name";
+import { allocateContextEntryArrivalName, type ContextEntrySibling } from "./context-entry-name";
 import { destinationOwner } from "./identity-location";
 import { isFolderWithin } from "./menu-tree";
 
@@ -38,44 +39,20 @@ export type MoveDestination = {
   path: string;
 };
 
-export type MoveRefusal =
-  | { kind: "inside-itself" }
-  | { kind: "already-there" }
-  | { kind: "name-taken"; message: string };
+export type MoveRefusal = { kind: "inside-itself" } | { kind: "already-there" };
 
 type WorkDirectory = Parameters<typeof destinationOwner>[1];
 type NoWork = Parameters<typeof destinationOwner>[2];
 
-/** Whether `name` may arrive among `destination`'s children and the rows arriving with it. */
-export function nameRefusal(
-  destination: MoveDestination,
-  name: string,
-  kind: MoveSubject["kind"],
-  /** The stored name the entry has now. */
-  current: string,
-  /** Rows arriving in the same drop; they can't take one name either. */
-  incoming: readonly ContextEntrySibling[] = [],
-): MoveRefusal | null {
-  const collision = validateContextEntryName(
-    name,
-    [...destination.catalog.children(destination.entryId), ...incoming],
-    kind,
-    current,
-  );
-  return collision?.level === "error" ? { kind: "name-taken", message: collision.message } : null;
-}
-
 export function moveRefusal(
   subject: MoveSubject,
   destination: MoveDestination,
-  name: string = subject.name,
-  incoming: readonly ContextEntrySibling[] = [],
 ): MoveRefusal | null {
   const sameCatalog = subject.catalogRootId === destination.catalog.root.entryId;
   if (subject.kind === "folder" && sameCatalog && isFolderWithin(destination.path, subject.path))
     return { kind: "inside-itself" };
   if (sameCatalog && subject.parentId === destination.entryId) return { kind: "already-there" };
-  return nameRefusal(destination, name, subject.kind, subject.name, incoming);
+  return null;
 }
 
 /** The replica's parent for a destination: a folder by ID, or an area's root with its owning authority. */
@@ -95,17 +72,27 @@ export function destinationParent(
   return authority ? { kind: "root", scheme, owner: authority } : null;
 }
 
-/** Places one entry; resolves to the operation ID that its link-update note follows. */
+/**
+ * Places one entry among `siblings` at the next free name for `typed` (its own
+ * name unless the writer typed another). Resolves to the operation ID its
+ * link-update note follows and the name it is predicted to land under.
+ */
 export async function placeEntry(
   resources: AccountResourceReplica,
   projectId: string,
-  subject: Pick<MoveSubject, "kind" | "id">,
-  location: ResourceDestination,
-): Promise<string | null> {
+  subject: Pick<MoveSubject, "kind" | "id" | "name">,
+  parent: ParentRef,
+  siblings: readonly ContextEntrySibling[],
+  typed: string = subject.name,
+): Promise<{ operationId: string | null; name: string }> {
+  const name = await allocateContextEntryArrivalName(typed, siblings, subject.kind, subject.name);
+  const location: ResourceDestination = { parent, name };
   if (subject.kind === "folder") {
-    return (await resources.setFolderLocation(projectId, subject.id, location)).operationId ?? null;
+    const result = await resources.setFolderLocation(projectId, subject.id, location, typed);
+    return { operationId: result.operationId ?? null, name };
   }
   const key = await resources.keyForDocument(projectId, subject.id);
   if (!key) throw new Error("Document is not in the replica");
-  return (await resources.setLocation(projectId, key, location)).operationId ?? null;
+  const result = await resources.setLocation(projectId, key, location, typed);
+  return { operationId: result.operationId ?? null, name };
 }

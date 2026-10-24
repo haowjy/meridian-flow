@@ -1,27 +1,20 @@
-/** Projection stub for isolated PostgreSQL adapters whose contract excludes cross-domain effects. */
-import type { WorkId } from "@meridian/contracts/runtime";
+/**
+ * The real Work mutation boundary for isolated PostgreSQL adapters whose contract excludes
+ * cross-domain effects: the same Work-first order and touches, with no catalog or availability
+ * notice.
+ */
 import type { Database } from "@meridian/database";
-import { works } from "@meridian/database/schema";
-import { inArray, sql } from "drizzle-orm";
-import type { WorkProjectionMutation } from "../domains/projects/adapters/work-projection-mutation.js";
-import { currentDrizzleDb } from "../shared/drizzle-transaction.js";
+import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
+import {
+  createWorkProjectionMutation,
+  type WorkProjectionMutation,
+} from "../domains/projects/adapters/work-projection-mutation.js";
 
 export function createTestWorkProjectionMutation(db: Database): WorkProjectionMutation {
-  return {
-    async publishWorks() {},
-    async touchWorks(workIds, activityAt) {
-      const unique = [...new Set(workIds)] as WorkId[];
-      if (unique.length === 0) return;
-      await currentDrizzleDb(db)
-        .update(works)
-        .set({
-          entityRevision: sql`${works.entityRevision} + 1`,
-          ...(activityAt ? { updatedAt: activityAt } : {}),
-        })
-        .where(inArray(works.id, unique));
-    },
-    async mutatePendingBranches(_branchIds, operation) {
-      return operation();
-    },
-  };
+  return createWorkProjectionMutation({
+    db,
+    availability: { advance: async () => "0" },
+    catalog: { refreshProject: async () => {}, upsertWorkAuthorities: async () => {} },
+    pendingCounts: createDrizzleWorkBranchPendingStore(db),
+  });
 }

@@ -1,0 +1,129 @@
+/**
+ * Collab composition (thread peers): assembles the production thread-peer pool from the
+ * draft store, coordinator, pulls and agent-edit runtime: each thread's core reads and saves
+ * its Work drafts; its peers are identity only. Part of the composition root
+ * (`composition.ts`); the pool itself (`domain/thread-peer-core-pool.ts`) holds no adapters.
+ */
+import {
+  type AgentEditCodecFactory,
+  createAgentEditCore,
+  type DocumentEdits,
+  type SemanticProvenanceWriter,
+  type UpdateJournal,
+  type YProsemirrorDocumentModel,
+} from "@meridian/agent-edit/integration";
+import type { DocumentId } from "@meridian/contracts/runtime";
+import type { DocumentRemovals } from "../context/ports/document-removal.js";
+import type { FileAccess } from "../file-policy/index.js";
+import type { LiveAgentEditCore, ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
+import type { Branches } from "./domain/branches.js";
+import { createScopedDocumentLinks } from "./domain/document-links-port.js";
+import {
+  createDraftAgentEditCoordinator,
+  createDraftAgentEditJournal,
+  type DraftAgentEditDiagnostics,
+} from "./domain/draft-agent-edit.js";
+import type { DraftCoordinator } from "./domain/draft-coordinator.js";
+import type { DraftReplayJournalReads } from "./domain/draft-journal.js";
+import type { DraftPullService } from "./domain/draft-pulls.js";
+import type { ApplicationDraftStore } from "./domain/ports/application-draft-store.js";
+import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
+import { createReplySaveFences } from "./domain/reply-save-fences.js";
+import type { ResponseTransactionSettlement } from "./domain/response-transaction.js";
+import {
+  createThreadPeerCorePool,
+  type ResponseTransactionHooks,
+} from "./domain/thread-peer-core-pool.js";
+
+type AgentEditObservability = Pick<
+  Parameters<typeof createAgentEditCore>[0],
+  | "onResponseLifecycleError"
+  | "onResponseClaimDiscarded"
+  | "onResponseCommitterTransition"
+  | "onIdempotencyHit"
+  | "onUnexpectedWriteError"
+  | "onLinkSpliceFallback"
+  | "onObservationFailed"
+>;
+
+/**
+ * The production thread-peer pool: each thread's agent-edit core over its peer drafts
+ * (draft journal, draft coordinator, scoped links), the reply save fences, and the pool.
+ */
+export function createDraftThreadPeerAgentEditCore(input: {
+  liveUtilityCore: LiveAgentEditCore;
+  journal: UpdateJournal;
+  documentEdits?: DocumentEdits;
+  drafts: ApplicationDraftStore;
+  draftCoordinator: DraftCoordinator;
+  draftPulls: DraftPullService;
+  draftJournal: DraftReplayJournalReads;
+  diagnostics: DraftAgentEditDiagnostics;
+  model: YProsemirrorDocumentModel;
+  codec: AgentEditCodecFactory;
+  links: DocumentLinkScopes;
+  aheadRefs: AheadRefRegistrar;
+  semanticProvenance: SemanticProvenanceWriter;
+  observability: AgentEditObservability;
+  commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
+  /** A reply save attempt's savepoint inside the response transaction. */
+  attemptScope<T>(operation: () => Promise<T>): Promise<T>;
+  responseTransactionSettlement: ResponseTransactionSettlement;
+  responseTransactions: ResponseTransactionHooks;
+  fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
+  removals: DocumentRemovals;
+  lockWorks(workIds: readonly string[]): Promise<void>;
+  lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
+  branches: Pick<Branches, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
+}): ThreadPeerAgentEditCore {
+  return createThreadPeerCorePool({
+    branches: input.branches,
+    drafts: input.drafts,
+    removals: input.removals,
+    fences: createReplySaveFences({
+      liveUtilityCore: input.liveUtilityCore,
+      drafts: input.drafts,
+      branches: input.branches,
+      diagnostics: input.diagnostics,
+      fileAccess: input.fileAccess,
+      removals: input.removals,
+      lockWorks: input.lockWorks,
+      lockLiveDocuments: input.lockLiveDocuments,
+    }),
+    liveUtilityCore: input.liveUtilityCore,
+    afterLiveCommit: (documentId) => input.draftPulls.scheduleLivePull(documentId),
+    fileAccess: input.fileAccess,
+    lockWorks: input.lockWorks,
+    lockLiveDocuments: input.lockLiveDocuments,
+    commitThreadResponseAtomically: input.commitThreadResponseAtomically,
+    attemptScope: input.attemptScope,
+    responseTransactionSettlement: input.responseTransactionSettlement,
+    responseTransactions: input.responseTransactions,
+    createThreadCore: (threadId, viewFor) =>
+      createAgentEditCore({
+        links: createScopedDocumentLinks({
+          scopes: input.links,
+          registrar: input.aheadRefs,
+          viewFor,
+        }),
+        journal: createDraftAgentEditJournal({ liveJournal: input.journal }),
+        coordinator: createDraftAgentEditCoordinator({
+          threadId,
+          removals: input.removals,
+          draftCoordinator: input.draftCoordinator,
+          drafts: input.drafts,
+          journalRows: input.draftJournal,
+          liveJournal: input.journal,
+          flushLivePull: (documentId) => input.draftPulls.flushLivePull(documentId),
+          branches: input.branches,
+        }),
+        documentEdits: input.documentEdits,
+        codec: input.codec,
+        model: input.model,
+        semanticProvenance: input.semanticProvenance,
+        defaultThreadId: threadId,
+        ...input.observability,
+      }),
+    ensureThreadPeer: (command) => input.draftPulls.ensureThreadPeer(command),
+  });
+}

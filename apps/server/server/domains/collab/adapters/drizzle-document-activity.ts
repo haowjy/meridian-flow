@@ -1,14 +1,14 @@
 /** Drizzle document projection and activity read-model effects. */
 import type { Database } from "@meridian/database";
 import { contextSources, documents, projects, threadDocuments, works } from "@meridian/database";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { DocumentProjectionEffects } from "../domain/ports/document-projection-effects.js";
 
 export function createDrizzleDocumentProjectionEffects(
   db: Database,
-  workProjection?: WorkProjectionMutation,
+  workProjection: WorkProjectionMutation,
 ): DocumentProjectionEffects {
   return {
     async touchDocumentActivity(input) {
@@ -37,7 +37,7 @@ export function createDrizzleDocumentProjectionEffects(
           );
       }
       if (scope?.workId) {
-        await workProjection?.touchWorks([scope.workId], input.at);
+        await workProjection.touchWorks([scope.workId], input.at);
       }
       const projectId = scope?.sourceProjectId ?? scope?.workProjectId;
       if (projectId) {
@@ -45,29 +45,6 @@ export function createDrizzleDocumentProjectionEffects(
           .update(projects)
           .set({ updatedAt: input.at, lastActivityAt: input.at })
           .where(eq(projects.id, projectId));
-      }
-    },
-
-    async applyPushCompletion(input) {
-      const activeDb = currentDrizzleDb(db);
-      await activeDb
-        .update(threadDocuments)
-        .set({ lastTouchedAt: input.at })
-        .where(eq(threadDocuments.documentId, input.documentId));
-      if (input.workId) {
-        await workProjection?.touchWorks([input.workId], input.at);
-      }
-      const [scope] = await activeDb
-        .select({ projectId: contextSources.projectId })
-        .from(documents)
-        .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-        .where(and(eq(documents.id, input.documentId), isNull(documents.deletedAt)))
-        .limit(1);
-      if (scope?.projectId) {
-        await activeDb
-          .update(projects)
-          .set({ updatedAt: input.at, lastActivityAt: input.at })
-          .where(eq(projects.id, scope.projectId));
       }
     },
   };

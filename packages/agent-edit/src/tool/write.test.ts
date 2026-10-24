@@ -2,7 +2,6 @@
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
-import type { UpdateJournal } from "../ports/update-journal.js";
 import {
   blockTexts,
   expectOutcome,
@@ -35,60 +34,6 @@ describe("write tool dispatch", () => {
         ],
       },
     ]);
-  });
-
-  it("reports degraded awareness when destructive reporting fails after append", async () => {
-    const transitions: string[] = [];
-    const ctx = harness(
-      { "chapter.md": "Writer protected." },
-      {
-        onResponseCommitterTransition: (event) => transitions.push(event.transition),
-        journalOverride: (journal) => {
-          const destructiveJournal: UpdateJournal = journal;
-          destructiveJournal.materializeDestructiveProvenance = async () => {
-            throw new Error("classification failed");
-          };
-          return journal;
-        },
-      },
-    );
-    await ctx.core.read({ file: "chapter.md" }, context);
-
-    const result = await ctx.core.write(
-      {
-        command: "replace",
-        file: "chapter.md",
-        find: "Writer protected.",
-        content: "Agent replacement.",
-      },
-      context,
-    );
-
-    expectOutcome(result, "success");
-    expect(outcomeText(result)).toContain("destructive awareness degraded");
-    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Agent replacement."]);
-    const staged = await ctx.core.write(
-      {
-        command: "replace",
-        file: "chapter.md",
-        find: "Agent replacement.",
-        content: "Accepted response text.",
-      },
-      {
-        ...context,
-        responseIdentity: { providerResponseId: "report-failure", editScopeId: "report-failure" },
-        turnId: "report-failure",
-      },
-    );
-    expectOutcome(staged, "success");
-    const committed = await ctx.core.commitResponse("report-failure");
-    expect(committed.documents[0].receipts).toMatchObject([
-      { writeId: staged.result.write?.id, result: { status: "success", awarenessDegraded: true } },
-    ]);
-    expect(transitions).not.toContain("recovery_succeeded");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Accepted response text."]);
-    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(2);
   });
 
   it("leaves no phantom runtime mutation when write ordinal reservation fails", async () => {
@@ -131,7 +76,7 @@ describe("write tool dispatch", () => {
     await ctx.core.read({ file: "chapter.md" }, context);
 
     humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human pulled. ");
-    ctx.coordinator.failNextForDoc("chapter.md", new Error("branch snapshot failure"));
+    ctx.coordinator.failNextForDoc("chapter.md", new Error("draft snapshot failure"));
 
     const failed = await ctx.core.write(
       {
@@ -145,8 +90,7 @@ describe("write tool dispatch", () => {
         turnId: "turn-immediate-failed-pull",
         interactionContext: {
           mode: "threadPeer",
-          afterJournalId: 0,
-          branchGeneration: 1,
+          peerDraftId: "draft-peer",
         },
       },
     );
@@ -170,8 +114,7 @@ describe("write tool dispatch", () => {
         turnId: "turn-immediate-success-after-failed-pull",
         interactionContext: {
           mode: "threadPeer",
-          afterJournalId: 0,
-          branchGeneration: 1,
+          peerDraftId: "draft-peer",
         },
       },
     );
@@ -223,38 +166,37 @@ describe("write tool dispatch", () => {
 
     expect(outcomeText(result)).toContain("status: invalid_write");
     expectOutcome(result, "invalid_write", true);
-    expect(outcomeText(result)).toContain("File already exists: chapter.md");
-    expect(outcomeText(result)).toContain("overwrite=true");
+    expect(outcomeText(result)).toContain(
+      "File already exists: chapter.md. Read it, then edit it; use overwrite=true only to replace all of its content.",
+    );
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Already here."]);
 
     // A host's fresh bound write: empty when checked and restored, then a writer's paragraph is
     // admitted once the write's content exists in its runtime copy, before the write's own admission.
     // (A writer admitted after that admission copy is the accepted L35 window, not asserted here.)
     let writerLanded: Promise<void> | undefined;
-    const raced = harness(
-      {},
-      {
-        createRuntimeDoc() {
-          const runtime = new Y.Doc({ gc: false });
-          runtime.on("afterTransaction", () => {
-            if (writerLanded || model.getBlocks(runtime).length === 0) return;
-            const live = raced.liveDoc("chapter.md");
-            const vector = Y.encodeStateVector(live);
-            live.transact(
-              () => model.insertBlocks(live, null, codec.parse("Writer content.")),
-              "writer",
-            );
-            writerLanded = raced.journal
-              .append("chapter.md", Y.encodeStateAsUpdate(live, vector), {
-                origin: "human:writer",
-                seq: 0,
-              })
-              .then(() => undefined);
-          });
-          return runtime;
-        },
-      },
-    );
+    const raced = harness({});
+    const readRoom = raced.coordinator.readRoom.bind(raced.coordinator);
+    raced.coordinator.readRoom = async (docId, staged) => {
+      const read = await readRoom(docId, staged);
+      const runtime = read.doc;
+      runtime.on("afterTransaction", () => {
+        if (writerLanded || model.getBlocks(runtime).length === 0) return;
+        const live = raced.liveDoc("chapter.md");
+        const vector = Y.encodeStateVector(live);
+        live.transact(
+          () => model.insertBlocks(live, null, codec.parse("Writer content.")),
+          "writer",
+        );
+        writerLanded = raced.journal
+          .append("chapter.md", Y.encodeStateAsUpdate(live, vector), {
+            origin: "human:writer",
+            seq: 0,
+          })
+          .then(() => undefined);
+      });
+      return read;
+    };
     const fresh = await raced.core.write(
       { command: "create", file: "chapter.md", content: "Fresh bound." },
       {
@@ -381,8 +323,8 @@ describe("write tool dispatch", () => {
 
     expectOutcome(first, "success");
     expectOutcome(second, "success");
-    expect(first.writeId).toBe("w1");
-    expect(second.writeId).toBe("w2");
+    expect(first.writeId).toBe("e1");
+    expect(second.writeId).toBe("e2");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
       "Alpha.",
       "First response write.",

@@ -1,15 +1,9 @@
-/** Authorizes the writer’s whole-turn card action before immutable inverse planning. */
+/** Admits the user's whole turn-card inverse at its resolved destinations. */
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
-import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
-import {
-  type FileAccess,
-  type FileAccessDenied,
-  type FileGrant,
-  isFileAccessDenied,
-  runWithEditGrants,
-  targetDocumentId,
-} from "../../file-policy/index.js";
+import type { ProjectId } from "@meridian/contracts/runtime";
+import { FileEditRefusedError, targetDocumentId } from "../../file-policy/index.js";
 import type { TurnReversalAccess } from "../contracts.js";
+import type { TurnEditedDocumentId } from "./turn-live-lineage.js";
 
 export type ThreadContextReversalResolver = {
   requireThreadOwner(input: {
@@ -21,88 +15,48 @@ export type ThreadContextReversalResolver = {
 export type TurnReversalServiceDeps = {
   turnInverse: Pick<import("./turn-inverse-service.js").TurnInverseService, "reverseTurn">;
   resolveDocumentUri(documentId: string): Promise<string | null>;
-  listEditedDocumentsForTurn(
-    threadId: string,
-    turnId: string,
-  ): Promise<Array<{ documentId: string }>>;
-  /** The writer's edit grant on each document, confirmed by the seams the reversal reaches. */
-  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
+  listTurnTargets(threadId: string, turnId: string): Promise<TurnEditedDocumentId[]>;
   threadContext: ThreadContextReversalResolver;
 };
 
 export function createTurnReversalService(input: TurnReversalServiceDeps): TurnReversalAccess {
-  const reverseTurnAcrossScopes = input.turnInverse.reverseTurn;
-
+  const reverseTurn = input.turnInverse.reverseTurn;
   return {
-    reverseTurn: reverseTurnAcrossScopes,
-
+    reverseTurn,
     async reverseThreadContext(command) {
       await input.threadContext.requireThreadOwner(command);
-      const lineage = await input.listEditedDocumentsForTurn(command.threadId, command.turnId);
-      const { grants, refused } = await writerGrants(input.fileAccess, command.userId, [
-        ...new Set(lineage.map((entry) => entry.documentId)),
-      ]);
-      const denied = refused.map((denial) => targetDocumentId(denial.target));
-      let reversed: ReversalOutcome = {
-        status: command.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
-        documents: [],
-      };
-      if (grants.length > 0) {
-        const run = await runWithEditGrants(input.fileAccess, grants, () =>
-          reverseTurnAcrossScopes({
-            threadId: command.threadId,
-            turnId: command.turnId,
-            direction: command.direction,
-            actor: { type: "user", userId: command.userId },
-            documentIds: grants.map((grant) => targetDocumentId(grant.facts.target)),
-          }),
-        );
-        // A seam refused under its locks (archived meanwhile): nothing was reversed.
-        if (run.ok) reversed = run.value;
-        else {
-          denied.push(...run.refusal.refused.map((denial) => targetDocumentId(denial.target)));
-          reversed = { status: "permission_denied", documents: [] };
-        }
+      const targets = await input.listTurnTargets(command.threadId, command.turnId);
+      if (targets.length === 0) {
+        return {
+          status: command.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
+          documents: [],
+        };
       }
-      if (denied.length === 0) return reversed;
-      const documents = [
-        ...reversed.documents,
-        ...(await Promise.all(
-          denied.map(async (documentId) => ({
+      try {
+        return await reverseTurn({
+          threadId: command.threadId,
+          turnId: command.turnId,
+          direction: command.direction,
+          actor: { type: "user", userId: command.userId },
+          documentIds: [...new Set(targets.map((target) => target.documentId))],
+        });
+      } catch (cause) {
+        if (!(cause instanceof FileEditRefusedError)) throw cause;
+        const denied = cause.refused.flatMap((denial) =>
+          denial.target.kind === "container" ? [] : [targetDocumentId(denial.target)],
+        );
+        const documentIds = denied.length
+          ? [...new Set(denied)]
+          : [...new Set(targets.map((target) => target.documentId))];
+        const documents = await Promise.all(
+          documentIds.map(async (documentId) => ({
+            documentId,
             uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
             status: "permission_denied" as const,
           })),
-        )),
-      ];
-      return {
-        ...reversed,
-        status: reversed.documents.length ? "partial" : "permission_denied",
-        documents,
-      };
+        );
+        return { status: "permission_denied", documents } satisfies ReversalOutcome;
+      }
     },
   };
-}
-
-/**
- * The writer's edit grant on each document a reversal would change. A file
- * the writer can't see is left out, as before; one they can't edit (its Work
- * is archived) is reported as refused.
- */
-async function writerGrants(
-  fileAccess: Pick<FileAccess, "authorize">,
-  userId: string,
-  documentIds: readonly string[],
-): Promise<{ grants: FileGrant<"edit">[]; refused: FileAccessDenied[] }> {
-  const grants: FileGrant<"edit">[] = [];
-  const refused: FileAccessDenied[] = [];
-  for (const documentId of documentIds) {
-    const grant = await fileAccess.authorize(
-      { accountId: userId as UserId },
-      { kind: "document", documentId: documentId as DocumentId },
-      "edit",
-    );
-    if (!isFileAccessDenied(grant)) grants.push(grant);
-    else if (grant.reason !== "not_found") refused.push(grant);
-  }
-  return { grants, refused };
 }

@@ -1,7 +1,6 @@
 /** Phone review chrome: version, stepper and list control in one row. Completion replaces stepping in that same row; whole commands live in the version menu. */
 import { t } from "@lingui/core/macro";
 import { List } from "lucide-react";
-
 import { changeListLabel } from "@/features/draft-review/DocumentChanges";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import {
@@ -10,16 +9,21 @@ import {
 } from "@/features/draft-review/ReviewHeaderNotices";
 import { ReviewStepper } from "@/features/draft-review/ReviewStepper";
 import type { ReviewHeaderModel } from "@/features/draft-review/useReviewHeader";
+import { type ManuscriptState, ManuscriptStateSlot } from "@/features/editor/ManuscriptStateNotice";
 
 export function MobileReviewHeader({
   header,
+  manuscriptState,
   onOpenList,
 }: {
   header: ReviewHeaderModel;
+  /** What live did to this document; it takes the row's free end. */
+  manuscriptState: ManuscriptState | null;
   onOpenList: () => void;
 }) {
   const { controller, view, finished } = header;
-  const count = view.items.length;
+  // The stepper walks the text changes; a pending move or delete is listed, not stepped to.
+  const count = view.items.filter(({ change }) => !change.tree).length;
   const stepping = view.status === "ready" && count > 0;
   return (
     <section
@@ -34,7 +38,7 @@ export function MobileReviewHeader({
           paddingRight: "calc(0.25rem + env(safe-area-inset-right))",
         }}
       >
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0">
           <DraftSwitcher
             draftOnly={header.draftOnly}
             disabled={header.locked}
@@ -44,8 +48,8 @@ export function MobileReviewHeader({
               finished
                 ? undefined
                 : {
-                    canApply: controller.canApplyReviewedDraft,
-                    applying: controller.isApplying,
+                    canApply: header.canApply,
+                    applying: header.completing === "apply",
                     onApply: header.applyDraft,
                     onDiscard: header.discardDraft,
                   }
@@ -53,10 +57,10 @@ export function MobileReviewHeader({
             marks={{ visible: controller.marksVisible, onChange: controller.setMarksVisible }}
           />
         </div>
+        <ManuscriptStateSlot state={manuscriptState} touch />
         <ReviewStateInline
           touch
           finished={finished}
-          unlisted={header.unlisted}
           completing={header.completing}
           next={header.next}
           draftOnly={header.draftOnly}
@@ -76,7 +80,7 @@ export function MobileReviewHeader({
           type="button"
           disabled={finished || !!header.completing}
           aria-haspopup="dialog"
-          aria-label={changeListLabel(count)}
+          aria-label={changeListLabel(view.items.length)}
           onClick={onOpenList}
           className="focus-ring flex h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-md px-2 text-sm text-muted-foreground tabular-nums active:scale-[0.98]"
         >
@@ -85,6 +89,7 @@ export function MobileReviewHeader({
       </div>
       <ReviewFailureNotices
         touch
+        itemKey={view.itemKey ?? ""}
         commandError={header.commandError}
         failedElsewhere={header.failedElsewhere}
         onOpenNext={header.openDraft}

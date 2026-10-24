@@ -1,124 +1,67 @@
-# domains/collab — server-side branch collaboration
+# domains/collab — server-side draft collaboration
 
-This domain composes `@meridian/agent-edit` with Meridian persistence and
-Hocuspocus transport. It owns durable live and branch Yjs infrastructure, not
-editor UI or transport-shell policy.
+Durable Yjs coordination and persistence for live documents and Work drafts,
+change-trail persistence, and Hocuspocus admission. It composes
+`@meridian/agent-edit`; it owns neither editor UI nor transport-shell policy.
 
 ## Mental model
 
-- Live documents, per-thread peers, and per-Work review drafts are real Y.Docs.
-  Sync propagates between them; journals are durable and runtime state is
-  reconstructible.
-- A Work draft is shared by every thread editing the same document in that Work.
-  Document Apply publishes its whole current branch. Per-change Apply and Discard
-  share server-vended dependency-closed classes, never client-reconstructed turns.
-  Per-change Apply fences both preview revisions. Discard fences the live revision
-  and server-vended evidence of complete closed rows and rich class effect, not
-  unrelated draft typing. Both
-  use current-cut snapshot CAS at durable commit; document Apply and whole
-  Discard remain unfenced.
-- Writer source rows retain their identities through attribution. Only dependency
-  closure owns change membership; block proximity never joins writer edits.
-- Independent deleting edits from separate chats stay separate: forward writes
-  and Work publication journal transaction deltas, not cumulative state-vector
-  tombstones. Keep genuine dependency closure, including retained cumulative rows
-  and same-client clock prefixes. Draft agent writes use one fresh client and one
-  journal row per paragraph per logical write, atomically published per reply.
-  Recognized adjacent splits/merges and contiguous inserted/removed runs stay one
-  segment. Independent writes never join merely for sharing a paragraph.
-- Each live document has a durable authority head whose identity, generation,
-  and admission sequence fence every connection and mutation.
-- `@meridian/agent-edit` owns schema-safe mutation and forward inverse computation. This
-  domain owns authorization, persistence, coordination, settlement, and trail
-  projection around that core.
+- A branch is one Work's pending file tree (`branches`); its document versions
+  are drafts (`document_drafts`). Apply leaves the branch open; Discard all
+  closes it.
+- A Work draft is shared by every thread editing that document in that Work.
+  It is seeded content-only: client 1 writes live's blocks into `prosemirror`
+  and `review_base`. Never merge live's Yjs identity into a draft. Thread peers
+  keep binding identity only; model reads and saves use the Work draft.
+- Live documents, drafts and thread peers are real Y.Docs, rebuilt from
+  journals and durable authority heads.
+- Review is computed in the browser from the draft room. Apply commits its
+  frozen clicked content into live and the review base in one transaction
+  ([Apply](.context/apply.md)).
+- A draft keeps the room `draft:<draftId>` from seed to close; it has no
+  generation.
+- Authority identity and generation fence every live connection and mutation.
 
-## Decision-changing rules
+## Rules
 
-- Keep dependencies one-way: collab adapters import `@meridian/agent-edit`; the
-  package must not import server code.
-- Admit novel writer content durably before Yjs apply, broadcast, or ack. Route
-  live and branch writes through their coordinator-owned admission seams.
-- Reject writer updates with reserved client IDs or mutations in the reserved
-  provenance namespace before durable append or Yjs apply.
-- Yjs merge is trusted. Destructive effects inform marks and receipts but never
-  veto an otherwise valid merge; receipt Undo/Redo remains reversal authority.
-- Branch Y.Docs use `gc: false`; inverse classification requires their full
-  struct history.
-- Any content apply after an `await` must obey the documented WebSocket
-  concurrency fence. Do not assume a coordinator lock excludes socket writes.
-- Model reads and writes go through the thread-peer pool with a caller-computed
-  destination; nothing in collab decides live versus draft from a thread's
-  mode. Scratch and uploads are never drafted, and `ensureWorkDraftBranch`
-  throws if asked to.
-- A reply saves once: every document it wrote, live or drafted, in one
-  transaction. Live text reaches open editors only after commit.
-- Derive live read models from a journal-locked durable cut, never a warm room
-  paired with a database watermark. The recovery sweep owns freshness; triggers
-  only reduce latency. Push derivation joins its completion transaction.
-- Route schema-aware content reads, seeds, and writes through
-  `domain/markdown-document.ts`.
-- Build the markup codec once, in `domain/agent-edit-runtime.ts`, where the
-  composition root injects `DocumentLinkScopes`. Links and image sources spell
-  from the document tree per operation (`domain/document-link-scope-doors.ts`
-  opens the scope, the operation prepares it before its synchronous
-  serialize), never cached; a new door that hands Markdown to a reader joins
-  that scope and prepares. Spelling outside every scope, or from a scope no
-  door prepared, throws under test and logs `serialize.link_unscoped` /
-  `serialize.link_snapshot_miss` in production. Parse is pure syntax: writes
-  assign written image paths' `asset:` srcs in agent-edit's ref assignment
-  (`assignLinkRefs`) after it.
+- Dependency runs one way: collab imports agent-edit, never the reverse.
+  `composition.ts` wires ports and providers; behavior belongs in domain
+  services.
+- Admit novel user content durably before Yjs apply, broadcast or ack. Yjs
+  merge is trusted: concurrent attribution informs receipts, never vetoes a
+  write. Undo and redo are the reversal authority.
+- Every server authority doc and every materialization of one is `gc: false`.
+  A client doc (gc on) is never the origin of a Yjs snapshot: a once-collected
+  store restores the wrong text silently. Model writes plan from their recorded
+  frontier snapshot; [this probe](../../../../../docs/qa/frontier-survives-compaction.md)
+  pins the Yjs behavior that depends on.
+- Any apply after an `await` uses the durable authority and concurrency fence;
+  a coordinator lock alone is not enough.
+- A draft append (a writer keystroke, a reply's rows) is ordered by its draft
+  row lock, never fenced by a revision: add no revision check, retry or Work
+  lock to it. Review membership and the Works badge catch up afterward in the
+  projection job. Rewrites keep their revision fence. Anything that runs on a
+  journal or receipt insert, triggers included, adds to every keystroke's row
+  hold.
+- Server-authored rows go through `prepareAppend`'s `authorServerRows` callback
+  under the row hold; never author client-1 rows before the hold.
+- A reply saves every document it wrote in one transaction; open editors see it
+  only after commit.
+- Derive read models from a journal-locked durable cut, never a warm room paired
+  with a database watermark. Schema-aware reads, seeds and writes go through
+  `domain/markdown-document.ts` and the scoped link codec.
+- Scratch and upload content is never drafted, but its placement can belong to
+  a Work branch. Destination selection is explicit;
+  never infer live versus draft from a thread mode.
 
-Deep contracts and verification guidance live in [`.context/CONTEXT.md`](.context/CONTEXT.md).
-For an end-to-end visual tour of the domain, read [`.context/collab-domain.html`](.context/collab-domain.html).
-Related boundaries: [`domains/notices`](../notices/AGENTS.md) and
+## Depth
+
+[`.context/CONTEXT.md`](.context/CONTEXT.md) holds the contracts, including
+close codes and the draft runtime. Focused pages:
+[draft records](.context/draft-model-and-records.md),
+[document authority](.context/document-authority-and-schema.md),
+[reversal](.context/reversal.md), [committed trail](.context/change-trail.md),
+[WebSocket concurrency](.context/websocket-concurrency.md). Deferred work:
+[TODO](.context/TODO.md), [FUTURE](.context/FUTURE.md). Related:
+[`domains/notices`](../notices/AGENTS.md),
 [`@meridian/agent-edit`](../../../../../packages/agent-edit/AGENTS.md).
-
-## Immutable edit capture and forward inverses
-
-`adapters/drizzle-document-edits.ts` captures model and journaled writer writes
-inside their existing mutation transactions and locks. Each logical model edit
-reserves one ordinal before staging; capture receives that same ordinal for its
-immutable row, so results, receipts and journal parts name the same edit. Response
-and turn grouping do not allocate or merge handles. Parts retain delta bytes
-independently of journal compaction. Apply moves placement at completed admission
-to the authored live row, not the reconcile row; Discard and empty-draft reset
-make discarded and retired placements terminal. Per-change Discard re-forks from
-live and surviving journal rows with their immutable edit/part identity; it
-creates no inverse edit or restoration copy. Card Undo/Redo and failed-response rollback use these immutable parts and the
-forward inverse primitive. Card authorization and change-viewer discovery share immutable edit/placement
-targets with inverse admission; mutation and branch transport journals are not
-authorization lineage. The card's control is a dry run of that same policy,
-Redo first; one action lands in one view per document. Pending inverses in a
-draft hold root identities against inverses elsewhere. Their writes use ordinary
-journal rows, never status reversal or row replacement. Only inverse policies
-acquire the outer transition lock. Model `write undo/redo/revert` and `read(format: "edits")` use the same immutable
-store through `model-document-edits.ts`. `model-inverse-policy.ts` owns one
-all-or-nothing stack per thread/document, with action-history pops, consumed
-undo actions and current-destination admission. User-actuated entries refuse
-model stack commands; revert is a new edit in the current destination.
-
-`hasEffect` compares prose plus managed manifest membership to the draft's durable
-`liveCut` (the last pulled live state), using `documentEffectsEqual`. Prose review
-and publication use `documentProseEqual`; manifest review operations are separate.
-Pending lists and Work notifications read this flag or `blocking`; journal row
-count alone is not visible effect. A skip marks a holding draft blocking so its
-Apply/Discard remains reachable even when its prose equals live.
-
-Save and rollback take `ModelResponseIdentity`, never a string that could mean
-either provider response or helper scope. `document_edits.response_id` retains
-provider authorship; `edit_scope_id` selects the rotated scope. Failed-scope
-rollback includes its durable undo, redo and revert edits and restores stack
-availability from non-rolled-back actions. Provider FKs are unchanged.
-
-Model edit inspection shares one invocation-local context per immutable view:
-prepared lineage and classifications, with a shared rollback-membership and
-effective-action index for that history. Display placement and current-destination
-admission remain separate views. Redo preview reuses the locked inspection;
-every scratch advance invalidates its context before the next planned step.
-Never retain these contexts across invocations or document mutation.
-
-Model inverse `count` measures edits in both directions. Multi-edit Undo plans
-on a scratch copy, admits atomically, and stores one action per target edit.
-Redo restores the last undone edit first; insufficient counts refuse with the
-available count and no mutation. All actions retain the shared edit scope for
-failed-scope rollback. Card grouping and writer-only redo are unchanged.

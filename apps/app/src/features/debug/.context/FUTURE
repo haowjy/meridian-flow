@@ -2,3 +2,7 @@
 
 - `trace/TraceTable.tsx`: group consecutive `sync.update` rows without breaking
   the one-row-per-durable-receipt relationship.
+- Going offline during the first lazy load of `DebugOverlay.tsx` (mounted in
+  `routes/_authenticated.tsx`) leaves a dynamic-import error until a reload: a
+  failed `import()` is cached as failed. Retry the import when the browser
+  comes back online, or catch it and render nothing.

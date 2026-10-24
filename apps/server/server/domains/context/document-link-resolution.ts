@@ -9,6 +9,7 @@ import {
 } from "@meridian/contracts";
 import type { CatalogFileEntry, CatalogScope } from "@meridian/contracts/protocol";
 import type { ProjectWorkAuthorityResolver } from "../projects/domain/work-authority.js";
+import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
 import type { ContextCatalog } from "./ports/context-catalog.js";
 import type {
   DocumentLinkHistory,
@@ -24,9 +25,11 @@ export function createDocumentLinkResolver({
   workAuthorityResolver,
   history,
   lineages,
+  chats,
 }: {
   catalog: ContextCatalog;
   lineages?: import("./scratch-owner.js").ScratchLineages;
+  chats?: ChatUploadsOwners;
   history?: DocumentLinkHistory;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }): DocumentLinkResolver {
@@ -56,9 +59,19 @@ export function createDocumentLinkResolver({
       scope = lineage
         ? { kind: "lineage", projectId: input.projectId, rootThreadId: lineage.rootThreadId }
         : null;
-    } else if (authority.kind === "none") scope = await noWorkScope(input.projectId);
-    else if (authority.kind === "work") {
-      const work = await workAuthorityResolver.bySlug(input.projectId, authority.workSlug);
+    } else if (scheme === "uploads") {
+      // Uploads belong to a chat; a Work owns none, so `uploads://@w3/` names nothing.
+      const chatId =
+        authority.kind === "chat"
+          ? (await chats?.byRef(input.projectId, authority.chatRef))?.chatId
+          : authority.kind === "contextual"
+            ? // A bare name means the holder chat's file. A document holder has no chat: the
+              // write path qualifies model-written embeds, so a stored bare one stays unresolved.
+              input.chatId
+            : null;
+      scope = chatId ? { kind: "chat", projectId: input.projectId, chatId } : null;
+    } else if (authority.kind === "work") {
+      const work = await workAuthorityResolver.byHandle(input.projectId, authority.workHandle);
       scope = work ? { kind: "work", projectId: input.projectId, workId: work.workId } : null;
     } else scope = await currentScope(input);
     return scope ? { scope, scheme, path } : null;
@@ -105,6 +118,7 @@ function resolvedLink(file: CatalogFileEntry): ResolvedDocumentLink | null {
     path: parsed.value.path,
     uri: file.uri,
     ...(file.scope.kind === "lineage" ? { rootThreadId: file.scope.rootThreadId } : {}),
+    ...(file.scope.kind === "chat" ? { chatThreadId: file.scope.chatId } : {}),
     workId: file.scope.kind === "work" ? file.scope.workId : null,
   };
 }

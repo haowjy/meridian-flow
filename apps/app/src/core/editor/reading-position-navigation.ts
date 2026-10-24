@@ -31,7 +31,7 @@ export function mayRestoreReadingPosition(
     !review &&
     !pending.has(documentId) &&
     !targeted.has(editor) &&
-    !url.searchParams.has("draft") &&
+    !url.searchParams.has("item") &&
     !url.hash
   );
 }

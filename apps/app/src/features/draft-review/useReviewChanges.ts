@@ -13,7 +13,7 @@
 import { useCallback, useMemo } from "react";
 
 import type { DraftChangesView } from "./draft-changes";
-import { type ReviewChange, resolveFocusedChange } from "./review-changes";
+import { type ReviewChange, resolveFocusedChange, targetOfChanges } from "./review-model";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";
 
@@ -27,10 +27,7 @@ export type ReviewChangesView = DraftChangesView & {
    * answers. Surfaces say so honestly and offer no way on.
    */
   completing: "apply" | "discard" | null;
-  /**
-   * The server closed the draft: nothing is left to review. This is its answer
-   * (`draftClosed`) and nothing else, never how many changes the list shows.
-   */
+  /** The synced projection has no differences. This never closes the draft room. */
   finished: boolean;
   focus: (change: ReviewChange, options?: { scroll?: boolean }) => void;
   step: (direction: 1 | -1) => void;
@@ -40,15 +37,15 @@ export function useReviewChanges(
   controller: DraftReviewController,
   options?: { enabled?: boolean },
 ): ReviewChangesView {
-  const { documentId, draftId, changes, items, completing, finished, unlisted, status } =
+  const { documentId, itemKey, changes, items, completing, finished, status, retry } =
     useOpenReviewChanges(controller, options);
-  // The review owns the focus (class and operations); this only reads it.
-  const focused = resolveFocusedChange(changes, controller.focus);
+  // Focus belongs to the review; this only resolves its group id.
+  const focused = resolveFocusedChange(changes, controller.focus) ?? changes[0] ?? null;
   const focusedIndex = focused ? changes.indexOf(focused) : -1;
 
   const review = useMemo(
-    () => (documentId && draftId ? { documentId, draftId } : null),
-    [documentId, draftId],
+    () => (documentId && itemKey ? { documentId, itemKey } : null),
+    [documentId, itemKey],
   );
   const focus = useCallback(
     (change: ReviewChange, options?: { scroll?: boolean; instant?: boolean }) => {
@@ -72,14 +69,10 @@ export function useReviewChanges(
     [changes, focus, focusedIndex],
   );
 
-  /**
-   * After a command the writer lands on the next change in the manuscript, or the
-   * one before it. A Discard jumps there: its draft's next generation replaces the
-   * editor, and a smooth scroll would be cut off half way by that swap.
-   */
+  /** Keep the next group in view when a local action removes this one. */
   const settleFocus = useCallback(
     (change: ReviewChange, instant: boolean) => {
-      if (focused && focused.classId !== change.classId) return;
+      if (focused && focused.id !== change.id) return;
       const at = changes.indexOf(change);
       const next = changes[at + 1] ?? changes[at - 1];
       if (next) focus(next, { scroll: true, instant });
@@ -90,9 +83,9 @@ export function useReviewChanges(
   const run = useCallback(
     async (change: ReviewChange, mode: "apply" | "discard", instant: boolean) => {
       // Apply draft and Discard draft handle what has no per-change commands.
-      if (change.target.kind === "display" || !review) return;
+      if (!review) return;
       settleFocus(change, instant);
-      const outcome = await controller.commandChange(mode, review, change.target);
+      const outcome = await controller.commandChange(mode, review, targetOfChanges([change]));
       // The change is back (or was updated): the writer returns to it, where its
       // reason is shown. Only in the review the command was sent from: the
       // writer may have opened another while it was in flight.
@@ -107,17 +100,16 @@ export function useReviewChanges(
 
   return {
     documentId,
-    draftId,
+    itemKey,
     status,
-    // A draft the server closed has nothing to list, whatever a stale read still holds.
+    retry,
     items,
     focused,
     focusedIndex,
 
-    locked: controller.changesLocked,
+    locked: controller.changesLocked || completing === "discard" || status !== "ready",
     completing,
     finished,
-    unlisted,
     focus,
     step,
     apply,

@@ -1,4 +1,6 @@
 /** Restoring chat and Work visibility claims returning lineage addresses once. */
+
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
@@ -8,19 +10,22 @@ import {
   projects,
   threads,
   threadWorks,
+  uploadIntakes,
   users,
   works,
 } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-work-branch-pending.js";
+import { createTestLinkAheadRegistry } from "../../collab/test-support/document-link-scopes.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
 import { createDrizzleProjectWorkRepository } from "../../projects/index.js";
 import { createDrizzleThreadRepository } from "../../threads/adapters/drizzle/thread-repository.js";
 import { createDrizzleContextCatalog } from "./context-catalog.js";
 import { createDrizzleDocumentArrivals } from "./document-arrivals.js";
-import { createDrizzleLinkAheadRegistry } from "./drizzle-link-ahead-registry.js";
 import { createDrizzleLineageScratchLifecycle } from "./lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
@@ -33,14 +38,16 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
     p = crypto.randomUUID(),
     root = crypto.randomUUID(),
     work = crypto.randomUUID(),
-    source = crypto.randomUUID();
+    source = crypto.randomUUID(),
+    uploadsSource = crypto.randomUUID(),
+    upload = crypto.randomUUID();
   beforeEach(async () => {
     const db = database.current;
     await db.insert(users).values(conformanceUserValues(u, "lineage-arrivals"));
     await db.insert(projects).values({ id: p, userId: u, name: "Project", slug: "project" });
     await db
       .insert(works)
-      .values({ id: work, projectId: p, createdByUserId: u, name: "A", slug: "a" });
+      .values({ id: work, projectId: p, createdByUserId: u, name: "A", handle: "w1" });
     await db
       .insert(threads)
       .values({ id: root, projectId: p, rootThreadId: root, createdByUserId: u, ref: "c1" });
@@ -55,11 +62,42 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       name: "Scratch",
       slug: "scratch",
     });
+    await db.insert(contextSources).values({
+      id: uploadsSource,
+      projectId: p,
+      chatThreadId: root,
+      scope: "chat",
+      name: "Uploads",
+      slug: "uploads",
+    });
+    await db
+      .insert(documents)
+      .values({ id: upload, contextSourceId: uploadsSource, name: "pic", extension: "png" });
+    await db.insert(uploadIntakes).values({
+      projectId: p,
+      intakeId: "intake",
+      actorUserId: u,
+      ownerThreadId: root,
+      contextSourceId: uploadsSource,
+      documentId: upload,
+      fingerprint: "f",
+      byteDigest: "0".repeat(64),
+      filename: "pic.png",
+      mimeType: "image/png",
+      finalPath: "pic.png",
+      objectKey: "k",
+      fileType: "image",
+      canonicalUri: "uploads://pic.png",
+      locationRevision: crypto.randomUUID(),
+      state: "finalized",
+      consumedAt: new Date("2026-01-02T00:00:00Z"),
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+    } as never);
   });
   for (const door of ["chat", "Work"] as const)
     it(`settles only live content through ${door} restore`, async () => {
       const db = database.current;
-      const registry = createDrizzleLinkAheadRegistry(db, async () => ({ members: [] }));
+      const registry = createTestLinkAheadRegistry(db);
       const arrivals = createDrizzleDocumentArrivals(db, registry);
       const lifecycle = createDrizzleLineageScratchLifecycle(db, undefined, arrivals);
       const threadRepo = createDrizzleThreadRepository(db, { lineageScratch: lifecycle });
@@ -68,19 +106,29 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         availabilityMutations: availability,
       });
       const workRepo = createDrizzleProjectWorkRepository({
+        removal: createTestDocumentRemoval(db),
         db,
         lineageScratch: lifecycle,
         arrivals,
-        projectionMutation: createWorkProjectionMutation({ db, availability, catalog }),
+        projectionMutation: createWorkProjectionMutation({
+          db,
+          pendingCounts: createDrizzleWorkBranchPendingStore(db),
+          availability,
+          catalog,
+        }),
         fileAccessChanges: createLocalFileAccessChanges(),
       });
       const note = crypto.randomUUID(),
         deleted = crypto.randomUUID(),
         hidden = crypto.randomUUID(),
         folder = crypto.randomUUID();
-      await db
-        .insert(folders)
-        .values({ id: folder, contextSourceId: source, name: "hidden", deletedAt: new Date() });
+      await db.insert(folders).values({
+        id: folder,
+        contextSourceId: source,
+        name: "hidden",
+        documentAlias: folderDocumentName("hidden"),
+        deletedAt: new Date(),
+      });
       await db.insert(documents).values([
         { id: note, contextSourceId: source, name: "note", extension: "toml" },
         {
@@ -88,6 +136,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
           contextSourceId: source,
           name: "deleted",
           extension: "toml",
+          deletionReason: "deleted",
           deletedAt: new Date(),
         },
         { id: hidden, contextSourceId: source, folderId: folder, name: "note", extension: "toml" },
@@ -95,15 +144,19 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       if (door === "chat") {
         await db
           .update(works)
-          .set({ isNoWork: true, name: "No Work", slug: null })
+          .set({ isNoWork: true, name: "No Work", handle: null })
           .where(eq(works.id, work));
         await threadRepo.setTrashState(root as never, "deleted");
       } else await workRepo.softDelete(work as never);
-      const lookup = () =>
-        availability.lookup({ projectId: p as never, documentIds: [note] as never }, { userId: u });
+      const lookup = (id = note) =>
+        availability.lookup({ projectId: p as never, documentIds: [id] as never }, { userId: u });
       // A hidden lineage is restorable authority, never a terminal document fact.
       await expect(lookup()).resolves.toMatchObject({
         resolutions: [{ kind: "authority-unavailable", reason: "lineage_hidden" }],
+      });
+      // A trashed chat hides its own uploads the same way, through either door.
+      await expect(lookup(upload)).resolves.toMatchObject({
+        resolutions: [{ kind: "authority-unavailable", reason: "chat_hidden" }],
       });
       await expect(
         availability.lookup(
@@ -115,14 +168,27 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         deletedAhead = crypto.randomUUID(),
         hiddenAhead = crypto.randomUUID();
       await registry.register([
-        { aheadId: ahead, holderProjectId: p, address: "scratch://@/c1/note.toml" },
-        { aheadId: deletedAhead, holderProjectId: p, address: "scratch://@/c1/deleted.toml" },
-        { aheadId: hiddenAhead, holderProjectId: p, address: "scratch://@/c1/hidden/note.toml" },
+        { aheadId: ahead, holderProjectId: p, address: "scratch://@c1/note.toml" },
+        { aheadId: deletedAhead, holderProjectId: p, address: "scratch://@c1/deleted.toml" },
+        { aheadId: hiddenAhead, holderProjectId: p, address: "scratch://@c1/hidden/note.toml" },
       ]);
       if (door === "chat") await threadRepo.setTrashState(root as never, "visible");
       else await workRepo.restore(work as never);
       await expect(lookup()).resolves.toMatchObject({
         resolutions: [{ kind: "available", entry: { entryId: note } }],
+      });
+      await expect(lookup(upload)).resolves.toMatchObject({
+        resolutions: [{ kind: "available", entry: { uri: "uploads://@c1/pic.png" } }],
+      });
+      await expect(
+        catalog.snapshot({ kind: "chat", projectId: p, chatId: root } as never),
+      ).resolves.toMatchObject({
+        entries: expect.arrayContaining([
+          expect.objectContaining({
+            entryId: upload,
+            upload: expect.objectContaining({ attachedAt: "2026-01-01T00:00:00.000Z", used: true }),
+          }),
+        ]),
       });
       await expect(
         catalog.snapshot({ kind: "lineage", projectId: p, rootThreadId: root } as never),

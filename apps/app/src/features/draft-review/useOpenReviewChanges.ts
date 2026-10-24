@@ -1,127 +1,55 @@
-/** Retained, projected open-review presentation data, without focus or command bindings. */
-import { useMemo, useRef } from "react";
-import { intentKeys, useChangeCommandRecords } from "@/client/query/draft-command-record";
-import { type ActivePreview, previewWithoutKeys } from "@/client/query/draft-projection";
-import { useDraftPreview } from "@/client/query/useDraftPreview";
-import {
-  type DraftChangesData,
-  listablePreview,
-  type ReviewChangeItem,
-  useChangeItems,
-} from "./draft-changes";
-import { adoptsGeneration } from "./draft-review-session";
-import { type ReviewChange, reviewChangesOfPreview } from "./review-changes";
+/**
+ * Open review rows are the room runtime's group projection, without command or focus ownership,
+ * after the item's pending move or delete (its tree line) when it has one: a review isn't done
+ * while its document is still being renamed, moved or deleted. Focus and stepping walk the text
+ * changes (`changes`) alone; the tree line has no place in the text.
+ */
+import { useQuery } from "@tanstack/react-query";
+import { workBranchDraftsQueryOptions } from "@/client/query/useWorkBranchDrafts";
+import type { DraftChangesData } from "./draft-changes";
+import { useChangeItems, useDraftCommandState } from "./draft-changes";
+import { treeChange, treeLineOf } from "./tree-line";
 import type { DraftReviewController } from "./useDraftReviewController";
-
-const NO_ITEMS: readonly ReviewChangeItem[] = [];
-const NO_CHANGES: readonly ReviewChange[] = [];
-
-/** The open review's draft and its changes, derived once per preview. */
+import { useRoomReview } from "./useRoomReview";
 export function useOpenReviewChanges(
   controller: Pick<DraftReviewController, "projectId" | "workId" | "inlineReview">,
   options?: { enabled?: boolean },
 ) {
-  // A surface outside the open review reads nothing.
   const inline = options?.enabled === false ? null : controller.inlineReview;
-  const documentId = inline?.documentId ?? null;
-  const draftId = inline?.draftId ?? null;
-  const { preview, observed } = useDraftPreview(
-    controller.projectId,
-    controller.workId,
-    documentId,
-    draftId,
-    {
-      enabled: inline !== null,
-    },
-  );
-  const active = listablePreview(preview);
-  // The review lists the changes of the generation it shows. A preview of
-  // another one is the next proposal on its way in (the review re-enters it) or
-  // the close's own reset: it is not this review's to list.
-  const shown = inline?.draftGeneration;
-  const own =
-    active && (shown === undefined || active.draftGeneration === shown)
-      ? reviewChangesOfPreview(active)
-      : null;
-  // While the review and its preview disagree about the generation (the next
-  // one is arriving, or the cache lags behind it), the draft's last observation
-  // of the generation the writer was acting on stays, projected under the
-  // intents as they are now: its rows keep taking clicks, and a click already
-  // made is not in it. Each click is resolved against the draft as it is when it
-  // is sent. Only the draft's own earlier observation is kept, never another's.
-  const held = useRef<{ draftId: string | null; observed: ActivePreview | null }>({
-    draftId: null,
-    observed: null,
+  const draft = inline
+    ? {
+        projectId: controller.projectId,
+        workId: controller.workId,
+        documentId: inline.documentId,
+        itemKey: inline.itemKey,
+      }
+    : null;
+  const read = useRoomReview(draft);
+  const command = useDraftCommandState(draft?.itemKey ?? "");
+  const listed = useQuery({
+    ...workBranchDraftsQueryOptions(controller.projectId, controller.workId),
+    enabled: Boolean(draft),
   });
-  if (own && observed?.status === "active") held.current = { draftId, observed };
-  const records = useChangeCommandRecords();
-  const heldObserved = held.current.draftId === draftId ? held.current.observed : null;
-  const hiddenKey = draftId
-    ? [
-        ...intentKeys(records, {
-          projectId: controller.projectId,
-          workId: controller.workId,
-          documentId: documentId ?? "",
-          draftId,
-        }).hidden,
-      ]
-        .sort()
-        .join(",")
-    : "";
-  const heldChanges = useMemo(() => {
-    if (!heldObserved) return NO_CHANGES;
-    const hidden = new Set(hiddenKey ? hiddenKey.split(",") : []);
-    const projected = previewWithoutKeys(heldObserved, hidden);
-    return projected.status === "active" ? reviewChangesOfPreview(projected) : NO_CHANGES;
-  }, [heldObserved, hiddenKey]);
-  // A newer preview with nothing to review is the close's own reset: that is not held.
-  const keeping =
-    own === null &&
-    active !== null &&
-    heldObserved !== null &&
-    shown !== undefined &&
-    (active.draftGeneration < shown || reviewChangesOfPreview(active).length > 0);
-  const changes = own ?? (keeping ? heldChanges : NO_CHANGES);
-  const settling = keeping && changes.length > 0;
-  const draftRef = useMemo(
-    () =>
-      documentId && draftId
-        ? { projectId: controller.projectId, workId: controller.workId, documentId, draftId }
-        : null,
-    [controller.projectId, controller.workId, documentId, draftId],
+  const item = draft ? listed.data?.find((row) => row.itemKey === draft.itemKey) : undefined;
+  const line = item && !item.isNew ? treeLineOf(item) : null;
+  const { items } = useChangeItems(
+    draft,
+    item && line ? [treeChange(item, line), ...read.changes] : read.changes,
   );
-  const { items, hiding } = useChangeItems(draftRef, changes);
-  const completion = inline?.completion;
-  const completing = completion?.phase === "pending" ? completion.mode : null;
-  const status: DraftChangesData["status"] = !inline
-    ? "idle"
-    : active
-      ? adoptsGeneration(inline, {
-          draftGeneration: active.draftGeneration,
-          proposal: reviewChangesOfPreview(active).length > 0,
-        }) && !settling
-        ? "loading"
-        : "ready"
-      : preview?.status === "corrupt"
-        ? "error"
-        : preview?.status === "gone"
-          ? "gone"
-          : "loading";
-  const finished = completion?.phase === "closed";
-  const unlisted =
-    !finished && status === "ready" && completing === null && items.length === 0 && !hiding;
   return {
     inline,
-    documentId,
-    draftId,
-    preview,
-    active,
-    changes,
-    settling,
-    status,
-    items: finished ? NO_ITEMS : items,
-    unlisted,
-    completing,
-    finished,
+    documentId: inline?.documentId ?? null,
+    itemKey: inline?.itemKey ?? null,
+    changes: read.changes,
+    retry: read.retry,
+    items,
+    status: read.status as DraftChangesData["status"],
+
+    completing: command.discarding
+      ? ("discard" as const)
+      : command.applying
+        ? ("apply" as const)
+        : null,
+    finished: read.status === "ready" && !items.length && !command.pending && !command.discarding,
   };
 }

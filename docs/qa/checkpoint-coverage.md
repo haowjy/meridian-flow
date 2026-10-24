@@ -26,7 +26,7 @@ the [checkpoint capture decision][checkpoint-decision].
   fixed; cold load must still replay the later row.
 - Capture before compaction, both when compaction folds rows and when a routine
   or explicit checkpoint already covers them. Verify deletion and
-  `retired_through_seq` publish atomically, including rollback. The old cut must
+  `retired_through_seq` commit atomically, including rollback. The old cut must
   fail materialization and both persistence doors, even if already materialized
   or waiting for the mutation lock. Recapture must preserve all text.
 - Replace the authority generation. Verify retirement resets, old cuts cannot

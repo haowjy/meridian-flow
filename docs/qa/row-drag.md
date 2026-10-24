@@ -43,8 +43,10 @@ browser reports no fine pointer, so rows render at touch height.
 5. Drag `Part Two` onto `Act 2`: nothing lights, the hint reads "Can't go
    inside itself", and releasing changes nothing.
 6. Drag a row over its own folder: no light, no hint, no change.
-7. Drag a row into a folder that already holds that name: the hint reads
-   "<folder> already has <name>", and releasing changes nothing.
+7. Drag `chapter-1` into a folder that already holds a `chapter-1`: the hint
+   reads "Move to <folder>", and the row arrives as `chapter-1 (2)`; the notice
+   reads "Moved chapter-1 to <folder> as chapter-1 (2)." Undo puts it back as
+   `chapter-1` (or the next free name if one took its place meanwhile).
 8. Drag a row into the chat composer and into the open document: nothing is
    inserted (mention drops aren't built yet; no stray names as text).
 9. After every drag, check that no region stays lit

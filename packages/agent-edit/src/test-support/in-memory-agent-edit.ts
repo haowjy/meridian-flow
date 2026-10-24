@@ -1,5 +1,6 @@
 // Canonical in-memory agent-edit journal for tests and demos.
 import * as Y from "yjs";
+import { type SavePrecondition, SavePreconditionRefused } from "../ports/document-coordinator.js";
 import type {
   CompactionResult,
   JournalSnapshot,
@@ -32,7 +33,6 @@ export interface JournalEntry {
   nextSeq: number;
   nextWIdByThread: Map<string, number>;
   updates: StoredUpdate[];
-  attributionUpdates: StoredUpdate[];
   turnsByThread: Map<string, Set<string>>;
 }
 
@@ -57,6 +57,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
 
   async appendBatch(
     entries: readonly JournalBatchAppendEntry[],
+    precondition?: SavePrecondition,
   ): Promise<JournalBatchAppendResult[]> {
     if (entries.length === 0) return [];
 
@@ -68,9 +69,22 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
       nextSeqByDoc.set(batchEntry.docId, nextSeq + 1);
     }
 
+    const beforeStates = new Map<string, Uint8Array>();
+    for (const { docId } of entries) {
+      if (beforeStates.has(docId)) continue;
+      const { checkpoint, updates } = this.readSync(docId);
+      beforeStates.set(
+        docId,
+        Y.mergeUpdates([...(checkpoint ? [checkpoint] : []), ...updates.map((row) => row.update)]),
+      );
+    }
+    for (const [docId, beforeState] of beforeStates)
+      if (precondition && !precondition(beforeState)) throw new SavePreconditionRefused(docId);
+
     return entries.map((batchEntry) => {
       const seq = this.appendSync(batchEntry.docId, batchEntry.update, batchEntry.meta, storedAt);
-      if (!batchEntry.mutation) return { seq, journalCommitKind: "durable" };
+      const beforeState = beforeStates.get(batchEntry.docId) as Uint8Array;
+      if (!batchEntry.mutation) return { seq, beforeState };
       const wId =
         batchEntry.mutation.wId ??
         this.reserveWriteOrdinalSync(batchEntry.docId, batchEntry.mutation.threadId);
@@ -80,7 +94,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
         threadTurns.add(batchEntry.mutation.turnId);
         turns.set(batchEntry.mutation.threadId, threadTurns);
       }
-      return { seq, wId, journalCommitKind: "durable" };
+      return { seq, wId, beforeState };
     });
   }
 
@@ -92,11 +106,11 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     return this.readSync(docId, opts);
   }
 
-  async readAttribution(docId: string): Promise<JournalSnapshot> {
-    return {
-      checkpoint: null,
-      updates: this.entry(docId).attributionUpdates.map(copyPersistedUpdate),
-    };
+  async readUpdates(docId: string, after: number, through: number): Promise<PersistedUpdate[]> {
+    return this.entry(docId)
+      .updates.filter((update) => update.seq > after && update.seq <= through)
+      .sort((left, right) => left.seq - right.seq)
+      .map(copyPersistedUpdate);
   }
 
   async checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void> {
@@ -150,12 +164,6 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
       storedAt: copyDate(storedAt),
     };
     entry.updates.push(stored);
-    entry.attributionUpdates.push({
-      ...stored,
-      update: copyBytes(stored.update),
-      meta: { ...stored.meta },
-      storedAt: copyDate(stored.storedAt),
-    });
     return seq;
   }
 
@@ -221,12 +229,6 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
           meta: { ...update.meta },
           storedAt: copyDate(update.storedAt),
         })),
-        attributionUpdates: entry.attributionUpdates.map((update) => ({
-          seq: update.seq,
-          update: copyBytes(update.update),
-          meta: { ...update.meta },
-          storedAt: copyDate(update.storedAt),
-        })),
         turnsByThread: new Map(
           [...entry.turnsByThread].map(([threadId, turns]) => [threadId, new Set(turns)]),
         ),
@@ -268,7 +270,6 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
         nextSeq: 1,
         nextWIdByThread: new Map(),
         updates: [],
-        attributionUpdates: [],
         turnsByThread: new Map(),
       };
       this.data.set(docId, entry);

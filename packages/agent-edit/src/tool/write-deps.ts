@@ -1,15 +1,13 @@
 // Shared dependencies bag for the write-tool command pipeline modules.
-import type * as Y from "yjs";
 
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import type { SpliceFallback } from "../links/find-splice.js";
 import type { ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
-import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticProvenanceWriter } from "../ports/semantic-provenance.js";
-import type { UpdateJournal } from "../ports/update-journal.js";
+import type { AgentEditJournal } from "../ports/update-journal.js";
 import type {
   ResponseCommitterTransitionDetail,
   ResponseLifecycleClaimDiscardedDetail,
@@ -23,11 +21,16 @@ export interface LinkSpliceFallbackDetail {
   reason: SpliceFallback;
 }
 
+/** An observation frontier could not be computed; the result goes out without it. */
+export interface ObservationFailedDetail {
+  documentId: string;
+  cause: unknown;
+}
+
 export interface CreateWriteToolOptions {
-  journal: UpdateJournal;
+  journal: AgentEditJournal;
   documentEdits?: import("../ports/document-edits.js").DocumentEdits;
   coordinator: DocumentCoordinator;
-  lifecycle?: DocumentLifecycle;
   /** Parses purely; each command takes its codec for its prepared holder scope. */
   codec: AgentEditCodecFactory;
   /** The host's link scope: prepare, holder scope, ahead registration and view revision. */
@@ -41,19 +44,17 @@ export interface CreateWriteToolOptions {
   };
   defaultSessionId?: string;
   defaultThreadId?: string;
-  createRuntimeDoc?: () => Y.Doc;
   /**
    * A formatted find could not tell the links outside its splice apart and
    * assigned the whole block group instead: identity still follows
    * correspondence, but unchanged links there may churn their formatting.
    */
   onLinkSpliceFallback?: (event: LinkSpliceFallbackDetail) => void;
+  onObservationFailed?: (event: ObservationFailedDetail) => void;
   onResponseLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
   onResponseClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
   onResponseCommitterTransition?: (event: ResponseCommitterTransitionDetail) => void;
   onIdempotencyHit?: (event: WriteIdempotencyHitDetail) => void;
   onUnexpectedWriteError?: (event: UnexpectedWriteErrorDetail) => void;
   closedResponseTombstoneCap?: number;
-  /** Commit-phase seam for deterministic race injection and host observability. */
-  afterResponsePreflight?: (responseId: string) => Promise<void> | void;
 }

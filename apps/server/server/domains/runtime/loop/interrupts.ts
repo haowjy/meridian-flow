@@ -21,10 +21,12 @@ import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import {
   type EventJournalReader,
   type EventJournalWriter,
+  type LiveEventWriter,
   projectReadModelEvent,
   replyFailedCopy,
   type ThreadRepositories,
 } from "../../threads/index.js";
+import { detectFailures } from "./failure-detection.js";
 
 export const EXPIRED_INTERRUPT_VALUE = "__expired__";
 
@@ -234,6 +236,11 @@ export function createInterruptRegistry(): InterruptRegistry {
         for (const event of events) {
           await deps.journalWriter.appendEvent(deps.threadId, event);
           await projectReadModelEvent(deps.repos, event);
+          await detectFailures(
+            { repos: deps.repos, eventWriter: deps.journalWriter },
+            deps.threadId,
+            event,
+          );
         }
         recoveryEvents.push(...events);
       });
@@ -301,7 +308,7 @@ export function extractInterruptHints(
 export type InterruptRecoveryDeps = {
   repos: ThreadRepositories;
   journalReader: EventJournalReader;
-  journalWriter: EventJournalWriter;
+  journalWriter: LiveEventWriter;
   threadId: ThreadId;
   /**
    * Recovery is destructive: it turns an unresolved interrupt into a terminal

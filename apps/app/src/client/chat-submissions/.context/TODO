@@ -1,3 +1,8 @@
-# TODO
+# Submission recovery follow-up
 
-- Remove `rewriteV1ChatSubmissions` after the first production deploy shipping v2 has been live for a release.
+- Give refused local retirement of a write-mode switch its own withdrawal
+  failure fact. Today `driver.withdrawControl` retains the switch and publishes
+  a new unsaved occurrence, but the row says "Couldn't switch" with Retry (Stop
+  remains available). If storage refuses deletion, recovery should retry the
+  withdrawal rather than post the switch. Map that fact in `owner.ts` to
+  `switch-withdraw-failed`.

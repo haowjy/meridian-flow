@@ -6,9 +6,8 @@
  * shells. Work-scoped tabs retain their owner row id, including No Work; a
  * chat's Scratch retains its lineage and the handle its URI spells.
  */
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import { isWorkScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import {
   type ResourceOwner,
   type ResourcePlacement,
@@ -17,15 +16,25 @@ import {
 } from "@meridian/resource-replica";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 
-import type { ContextTab, ServerContextTab, TabOwner } from "@/client/stores";
+import {
+  type ContextTab,
+  isDraftOnly,
+  type ServerContextTab,
+  type TabOwner,
+} from "@/client/stores";
 
 /** Work-scoped tabs retain their row identity, including No Work. */
 export function editorTabWorkId(location: ResourceOwner): string | undefined {
   return location.workId ?? undefined;
 }
 
-/** What a tab holds of its owner: a Work row id, or a lineage with the handle its URI spells. */
-export function tabOwnerOf(location: ResourceOwner): TabOwner {
+/**
+ * What a tab holds of its owner: a Work row id, a lineage or a chat with the handle its URI
+ * spells. Null for a chat's upload whose chat has no handle yet: no tab can name it.
+ */
+export function tabOwnerOf(location: ResourceOwner): TabOwner | null {
+  if (location.chatId !== undefined)
+    return location.chatRef ? { chatId: location.chatId, chatRef: location.chatRef } : null;
   return location.rootThreadId !== undefined
     ? { rootThreadId: location.rootThreadId, rootThreadRef: location.rootThreadRef }
     : location.workId
@@ -33,11 +42,12 @@ export function tabOwnerOf(location: ResourceOwner): TabOwner {
       : {};
 }
 
-/** The owner a location names, for catalog and request lookups. */
-export function contextOwnerOf(location: ResourceOwner): ContextOwner {
-  return location.rootThreadId !== undefined
-    ? { rootThreadId: location.rootThreadId, rootThreadRef: location.rootThreadRef }
-    : { workId: location.workId };
+/** The handle (`c15`) a chat's upload's URI spells. */
+function chatRefOf(file: CatalogFile): string {
+  const parsed = parseContextUri(file.uri);
+  if (!parsed.ok || parsed.value.authority.kind !== "chat")
+    throw new Error("A chat's upload must have a chat authority");
+  return parsed.value.authority.chatRef;
 }
 
 /** The handle (`c12`) a chat's Scratch file's URI spells. */
@@ -61,14 +71,18 @@ export function contextTabFromFile(
       resourceHandle: file.resourceHandle,
     };
   }
-  if (isWorkScopedProjectContextScheme(scheme) && !owner.workId && !owner.rootThreadId)
-    throw new Error("Work-scoped tabs require a Work row id or a lineage");
+  if (scheme === "uploads" && !owner.chatThreadId)
+    throw new Error("A chat's upload tab requires its chat");
+  if (isWorkScopedScheme(scheme) && !owner.workId && !owner.rootThreadId)
+    throw new Error("Scratch tabs require a Work row id or a lineage");
   const tabOwner: TabOwner =
-    scheme === "scratch" && owner.rootThreadId
-      ? { rootThreadId: owner.rootThreadId, rootThreadRef: lineageRefOf(file) }
-      : isWorkScopedProjectContextScheme(scheme) && owner.workId
-        ? { workId: owner.workId }
-        : {};
+    scheme === "uploads" && owner.chatThreadId
+      ? { chatId: owner.chatThreadId, chatRef: chatRefOf(file) }
+      : scheme === "scratch" && owner.rootThreadId
+        ? { rootThreadId: owner.rootThreadId, rootThreadRef: lineageRefOf(file) }
+        : isWorkScopedScheme(scheme) && owner.workId
+          ? { workId: owner.workId }
+          : {};
   const base = {
     documentId: file.documentId,
     scheme,
@@ -118,7 +132,8 @@ export function contextTabFromResource(
   placement: ResourcePlacement,
 ): Extract<ContextTab, { kind: "new" | "tracked" }> | null {
   const location = placement.resourceLocation(record);
-  if (!location) return null;
+  const tabOwner = location ? tabOwnerOf(location) : null;
+  if (!location || !tabOwner) return null;
   const { resource } = record;
   if (!resource.classification.editable) return null;
   const locallyCreated = record.intents.some((intent) => intent.desired.kind === "create");
@@ -136,7 +151,7 @@ export function contextTabFromResource(
     scheme: location.scheme,
     path: location.path,
     name: location.name,
-    ...tabOwnerOf(location),
+    ...tabOwner,
     editable: true,
     filetype: resource.classification.filetype,
     schemaType: resource.classification.schemaType,
@@ -157,6 +172,7 @@ export type ResourceTabProjection =
       kind: "terminal";
       documentIds: readonly string[];
       generation: string;
+      deletionVersion: string | null;
     }
   | {
       kind: "projected";
@@ -164,13 +180,19 @@ export type ResourceTabProjection =
       tab: ContextTab;
     };
 
-/** Reconcile any open tab by stable handle when known, otherwise by server document identity. */
+/**
+ * Reconcile any open tab by stable handle when known, otherwise by server document identity.
+ * A draft-only tab is one live doesn't hold, so the live replica says nothing about it: the
+ * record of a document live deleted while a Work's draft survives is terminal (D79), and
+ * hiding or closing the tab on it would strand the draft. Its draft lifecycle owns it.
+ */
 export function projectResourceTab(
   projectId: string,
   tab: ContextTab,
   records: readonly ResourceRecord[],
   placement: ResourcePlacement,
 ): ResourceTabProjection {
+  if (isDraftOnly(tab)) return { kind: "none" };
   const record =
     (tab.resourceHandle
       ? records.find(({ resource }) => resource.handle === tab.resourceHandle)
@@ -181,15 +203,20 @@ export function projectResourceTab(
       kind: "terminal",
       documentIds: [...new Set([tab.documentId, record.resource.identity.documentId])],
       generation: record.resource.lifecycle.generation,
+      deletionVersion: record.resource.lifecycle.deletionVersion ?? null,
     };
   if (record.resource.content.kind === "unacquired") {
     const location = placement.resourceLocation(record);
     if (!location || tab.kind === "new") return { kind: "removed" };
+    const tabOwner = tabOwnerOf(location);
+    if (!tabOwner) return { kind: "none" };
     const {
       resourceHandle: _resourceHandle,
       workId: _workId,
       rootThreadId: _rootThreadId,
       rootThreadRef: _rootThreadRef,
+      chatId: _chatId,
+      chatRef: _chatRef,
       ...existing
     } = tab;
     const projected = {
@@ -198,13 +225,21 @@ export function projectResourceTab(
       scheme: location.scheme,
       path: location.path,
       name: location.name,
-      ...tabOwnerOf(location),
+      ...tabOwner,
       ...(existing.kind === "tracked" ? { provisionalName: location.provisional } : {}),
     } as Extract<ContextTab, { kind: "tracked" | "viewer" }>;
     return { kind: "projected", resourceHandle: record.resource.handle, tab: projected };
   }
+  // A chat's upload cached before its chat had a handle names no tab owner: the tab keeps its own.
+  const located = placement.resourceLocation(record);
+  if (located && !tabOwnerOf(located)) return { kind: "none" };
   const projected = contextTabFromResource(projectId, record, placement);
+  // The projection re-describes the resource, not the open: the instance id is the open's own.
   return projected
-    ? { kind: "projected", resourceHandle: record.resource.handle, tab: projected }
+    ? {
+        kind: "projected",
+        resourceHandle: record.resource.handle,
+        tab: tab.tabInstanceId ? { ...projected, tabInstanceId: tab.tabInstanceId } : projected,
+      }
     : { kind: "removed" };
 }

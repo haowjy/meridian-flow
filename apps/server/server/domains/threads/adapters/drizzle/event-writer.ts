@@ -10,10 +10,15 @@ import {
 import { deriveJournalTurnId } from "../../domain/journal-turn-id.js";
 import type { EventJournalWriter, JournalEventEnvelope } from "../../ports/event-journal.js";
 
-async function appendJournalEvent(db: DrizzleDb, threadId: ThreadId, event: JournalEventEnvelope) {
+async function appendJournalEvents(
+  db: DrizzleDb,
+  threadId: ThreadId,
+  events: readonly JournalEventEnvelope[],
+) {
+  if (events.length === 0) throw new Error("Cannot append an empty journal batch");
   const [updated] = await db
     .update(schema.threads)
-    .set({ nextSeq: sql`${schema.threads.nextSeq} + 1` })
+    .set({ nextSeq: sql`${schema.threads.nextSeq} + ${events.length}` })
     .where(eq(schema.threads.id, threadId))
     .returning({ nextSeq: schema.threads.nextSeq });
 
@@ -21,31 +26,35 @@ async function appendJournalEvent(db: DrizzleDb, threadId: ThreadId, event: Jour
     throw new Error(`Thread not found: ${threadId}`);
   }
 
-  const nextSeq = updated.nextSeq;
+  const lastSeq = updated.nextSeq;
+  const firstSeq = lastSeq - BigInt(events.length) + 1n;
 
-  await db.insert(schema.eventJournal).values({
-    threadId,
-    turnId: deriveJournalTurnId(event),
-    seq: nextSeq,
-    eventType: event.type,
-    payload: event,
-  });
+  await db.insert(schema.eventJournal).values(
+    events.map((event, index) => ({
+      threadId,
+      turnId: deriveJournalTurnId(event),
+      seq: firstSeq + BigInt(index),
+      eventType: event.type,
+      payload: event,
+    })),
+  );
 
-  await db.execute(sql`SELECT pg_notify('thread_events', ${`${threadId}:${nextSeq.toString()}`})`);
+  await db.execute(sql`SELECT pg_notify('thread_events', ${`${threadId}:${lastSeq.toString()}`})`);
 
-  return nextSeq;
+  return lastSeq;
 }
 
 export function createDrizzleEventJournalWriter(db: DrizzleDatabase): EventJournalWriter {
   return {
-    async appendEvent(threadId: ThreadId, event: JournalEventEnvelope) {
+    async appendEvents(threadId: ThreadId, events: readonly JournalEventEnvelope[]) {
       const activeDb = currentDrizzleDb(db);
       if (activeDb !== db) {
-        return appendJournalEvent(activeDb, threadId, event);
+        return appendJournalEvents(activeDb, threadId, events);
       }
-      return db.transaction(async (tx) => {
-        return appendJournalEvent(tx, threadId, event);
-      });
+      return db.transaction(async (tx) => appendJournalEvents(tx, threadId, events));
+    },
+    async appendEvent(threadId: ThreadId, event: JournalEventEnvelope) {
+      return this.appendEvents(threadId, [event]);
     },
   };
 }

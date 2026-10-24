@@ -10,11 +10,12 @@
  * lists. The identity row owns collapse priority; parent crumbs yield before controls.
  */
 import { t } from "@lingui/core/macro";
+import { ChevronRight } from "lucide-react";
 import { type ReactNode, useCallback, useMemo } from "react";
 import { useLineageTitle } from "@/client/query/useLineageTitle";
 import { useProject } from "@/client/query/useProjectList";
 import { useWorks } from "@/client/query/useWorks";
-import { type ContextTab, tabContextOwner } from "@/client/stores";
+import { type ContextTab, isDraftOnly, tabContextOwner } from "@/client/stores";
 import { DrillInMenuBody, DrillInMenuRoot, type DrillNode } from "@/components/app/DrillInMenu";
 import { DropdownMenuContent } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -22,7 +23,7 @@ import { useDockBrowseScratch } from "../dock/use-dock-browse-scratch";
 import { useOpenDocumentInDock } from "../dock/use-open-document-in-dock";
 import { schemeIcon, schemeLabel } from "./context-schemes";
 import type { TabLocation } from "./identity-location";
-import { useProjectMenuSource } from "./use-catalog-menu-source";
+import { useProjectMenuSource } from "./use-project-menu-source";
 
 export function DocumentPath({
   projectId,
@@ -37,7 +38,10 @@ export function DocumentPath({
   trailing?: ReactNode;
 }) {
   return (
-    <span data-identity-path className="flex min-w-16 flex-1 items-center gap-1">
+    <span
+      data-identity-path
+      className="flex min-w-16 items-center gap-1 [@media(pointer:coarse)]:min-w-0"
+    >
       <CrumbRow location={location} browse={{ projectId, tab }} />
       {trailing}
     </span>
@@ -83,20 +87,18 @@ function CrumbRow({ location, browse }: { location: TabLocation; browse: Browse 
       </span>
       {crumb(
         "leaf",
-        <span className={cn("truncate", location.provisional && "italic")}>{location.leaf}</span>,
+        <span data-path-leaf className={cn("truncate", location.provisional && "italic")}>
+          {location.leaf}
+        </span>,
         folders.length + 1,
-        "min-w-16 flex-1 text-ink-muted",
+        "min-w-16 flex-1 text-ink-muted [@media(pointer:coarse)]:min-w-0",
       )}
     </span>
   );
 }
 
 function Separator() {
-  return (
-    <span aria-hidden className="shrink-0 opacity-60">
-      ›
-    </span>
-  );
+  return <ChevronRight aria-hidden className="size-3 shrink-0 opacity-60" />;
 }
 
 type PathMenu = {
@@ -118,7 +120,9 @@ function Crumb({
   children: ReactNode;
 }) {
   const classes = cn("flex items-center gap-1 rounded-sm px-0.5", className);
-  if (browse.tab.kind === "new") return <span className={classes}>{children}</span>;
+  // Neither local-new nor draft-only documents belong to a browsable catalog yet.
+  if (browse.tab.kind === "new" || isDraftOnly(browse.tab))
+    return <span className={classes}>{children}</span>;
   const button = (
     <button
       type="button"

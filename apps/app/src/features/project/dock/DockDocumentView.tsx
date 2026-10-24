@@ -24,6 +24,7 @@ import { useAccountResourceReplica } from "../context/account-feature-context";
 import { ContextDocumentHost } from "../context/ContextDocumentHost";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { DocumentPaneChrome } from "../context/DocumentPaneChrome";
+import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { useDockArchivedWork } from "./DockDocumentIdentity";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
 import { ReviewLaunchContext, useDockReviewLauncher } from "./useAiDraftLauncher";
@@ -44,7 +45,21 @@ export function DockDocumentView(props: {
             className="relative flex min-h-0 flex-1 flex-col"
           >
             <PaintCapture surface={props.document.tab.documentId} />
-            <DockDocumentBody {...props} />
+            {props.document.reviewAdmission && props.document.reviewAdmission !== "admitted" ? (
+              <ProjectRouteBoundary
+                issue={
+                  props.document.reviewAdmission === "failed"
+                    ? "error"
+                    : props.document.reviewAdmission === "pending"
+                      ? "loading"
+                      : "unavailable"
+                }
+              >
+                {null}
+              </ProjectRouteBoundary>
+            ) : (
+              <DockDocumentBody {...props} />
+            )}
           </PaintHold>
         </PaintScope>
       </DraftReviewBoundary>

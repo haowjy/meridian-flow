@@ -53,6 +53,8 @@ export type TreeEnv = {
   isExpanded: (entryId: string) => boolean;
   toggleEntry: (entryId: string) => void;
   catalog: CatalogContextView;
+  visibleIds?: ReadonlySet<string>;
+  rename?: { path: string; done: () => void };
 };
 
 const TreeEnvContext = createContext<TreeEnv | null>(null);
@@ -67,7 +69,21 @@ function useTreeEnv(): TreeEnv {
   return env;
 }
 
-/** The sole child renderer; root and nested folders mount creation identically. */
+/** A visible child group, which may span more than one catalog. */
+export function TreeGroup({ depth, children }: { depth: number; children: ReactNode }) {
+  return (
+    <div className="relative isolate">
+      {children}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 z-10 border-l border-border-subtle"
+        style={{ left: rowPaddingLeft(depth) }}
+      />
+    </div>
+  );
+}
+
+/** The sole catalog child renderer; standalone lists start at depth zero. */
 export function TreeChildren({
   parentId,
   parentPath,
@@ -93,19 +109,21 @@ export function TreeChildren({
           siblings={siblings}
         />
       ) : null}
-      {children.map((child) =>
-        child.kind === "dir" ? (
-          <DirRow key={child.entryId} dir={child} depth={depth} siblings={siblings} />
-        ) : (
-          <FileRow
-            key={child.entryId}
-            file={child}
-            depth={depth}
-            siblings={siblings}
-            parent={parent}
-          />
-        ),
-      )}
+      {children
+        .filter((child) => !env.visibleIds || env.visibleIds.has(child.entryId))
+        .map((child) =>
+          child.kind === "dir" ? (
+            <DirRow key={child.entryId} dir={child} depth={depth} siblings={siblings} />
+          ) : (
+            <FileRow
+              key={child.entryId}
+              file={child}
+              depth={depth}
+              siblings={siblings}
+              parent={parent}
+            />
+          ),
+        )}
     </>
   );
 }
@@ -141,22 +159,6 @@ export function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
     <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
       <Icon aria-hidden className="size-3.5" />
     </span>
-  );
-}
-
-export function ContextTreeEntry({
-  node,
-  depth,
-  siblings,
-}: {
-  node: ContextNode;
-  depth: number;
-  siblings: readonly ContextEntrySibling[];
-}) {
-  return node.kind === "dir" ? (
-    <DirRow dir={node} depth={depth} siblings={siblings} />
-  ) : (
-    <FileRow file={node} depth={depth} siblings={siblings} parent={null} />
   );
 }
 
@@ -241,12 +243,14 @@ function DirRow({
         </div>
       </EntryInteractionShell>
       {isOpen ? (
-        <TreeChildren
-          parentId={dir.entryId}
-          parentPath={dir.path}
-          depth={depth + 1}
-          parent={folder}
-        />
+        <TreeGroup depth={depth + 1}>
+          <TreeChildren
+            parentId={dir.entryId}
+            parentPath={dir.path}
+            depth={depth + 1}
+            parent={folder}
+          />
+        </TreeGroup>
       ) : null}
     </DropRegion>
   );
@@ -273,6 +277,8 @@ function FileRow({
   const interaction = useEntryInteraction({
     projectId: env.projectId,
     node: file,
+    requestRename: env.rename?.path === file.path,
+    onRenameDone: env.rename?.done,
     owner: env.owner,
     scheme: env.scheme,
     capabilities: env.capabilities,

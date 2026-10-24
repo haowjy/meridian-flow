@@ -1,6 +1,6 @@
 /** Sanitizer boundary tests for sensitive fields and numeric gateway metrics. */
 import { describe, expect, it } from "vitest";
-import { unknownToEventPayload } from "./emit-event.js";
+import { errorMessageOf, unknownToEventPayload } from "./emit-event.js";
 import type { EventRecord } from "./ports/event-sink.js";
 import { MAX_EVENT_RECORD_BYTES, sanitizeEventRecord, serializedEventBytes } from "./safe-event.js";
 
@@ -93,7 +93,7 @@ describe("sanitizeEventRecord byte boundary", () => {
         toolCallId: huge,
         errorCode: huge,
         documentId: huge,
-        branchId: huge,
+        draftId: huge,
         yjsSpans: huge,
       },
       stream: {
@@ -131,6 +131,19 @@ describe("sanitizeEventRecord byte boundary", () => {
   });
 });
 
+describe("errorMessageOf", () => {
+  it("keeps an internal error's message bounded, drops quoted text and secrets, and survives the sanitizer", () => {
+    const error = new Error(
+      `Draft draft_1 failed on "the dragon is her father" with Bearer abc.def-ghi ${"x ".repeat(300)}`,
+    );
+    const payload = errorMessageOf(error);
+    expect(payload?.errorMessage).toMatch(/^Draft draft_1 failed on … with \[redacted-secret\]/);
+    expect(payload?.errorMessage.length).toBeLessThanOrEqual(200);
+    expect(sanitize({ ...payload })).toEqual(payload);
+    expect(errorMessageOf("not an error")).toBeUndefined();
+  });
+});
+
 describe("sanitizeEventRecord privacy boundary", () => {
   it("default-denies raw error text and common exception/query fields", () => {
     const secret = "the dragon is her father postgresql://alice:hunter2@db/private";
@@ -165,12 +178,25 @@ describe("sanitizeEventRecord privacy boundary", () => {
         outcome: "ok",
         reason: "dragon_dies_in_chapter_81",
         phase: "secret_reveal",
+        stage: "execute",
+        effect: "warm_rooms",
+        trigger: "read",
+        refusal: "integration",
       }),
     ).toEqual({
       finishReason: "tool_use",
       outcome: "ok",
       reason: "[redacted]",
       phase: "[redacted]",
+      stage: "execute",
+      effect: "warm_rooms",
+      trigger: "read",
+      refusal: "integration",
+    });
+    // Only the listed values: the diagnostic keys are not free text.
+    expect(sanitize({ stage: "chapter_81", trigger: "the dragon dies" })).toEqual({
+      stage: "[redacted]",
+      trigger: "[redacted]",
     });
   });
 

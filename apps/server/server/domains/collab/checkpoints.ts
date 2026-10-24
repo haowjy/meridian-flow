@@ -1,5 +1,5 @@
 /** Checkpoint, restore, and listing service for collab documents. */
-import type { DocumentCoordinator } from "@meridian/agent-edit/integration";
+
 import { isDocumentNotFoundError } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -10,6 +10,7 @@ import type { CapturedCheckpointCut } from "./domain/checkpoint-cut.js";
 import { documentAuthority, RetiredDocumentHandleError } from "./domain/document-handle.js";
 import type { AuthorityGenerationReplacement } from "./domain/document-mutation-policy.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
+import type { LiveDocumentCoordinator } from "./domain/ports/live-document-coordinator.js";
 
 const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
 
@@ -37,7 +38,7 @@ type CheckpointMarkdownDocuments = {
 };
 
 type CheckpointServiceDeps = {
-  coordinator: DocumentCoordinator;
+  coordinator: Pick<LiveDocumentCoordinator, "withDocument">;
   store: CheckpointStore;
   journal: Pick<CheckpointJournal, "captureCheckpoint">;
   markdownDocuments: CheckpointMarkdownDocuments;
@@ -87,6 +88,7 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
         }
         return Ok(undefined);
       } catch (cause) {
+        if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
         return Err({
           code: "corrupt_state",
           documentId,

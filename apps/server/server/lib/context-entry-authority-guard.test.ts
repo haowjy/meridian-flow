@@ -16,8 +16,8 @@ function expectAuthorityReservation(parse: () => unknown) {
 
 describe("context entry authority-prefix guard", () => {
   it.each([
-    ["file nested", { type: "file", path: "Drafts/@notes.md" }],
-    ["folder nested", { type: "folder", path: "Act 1/@Drafts" }],
+    ["file nested", { type: "file", path: "Branches/@notes.md" }],
+    ["folder nested", { type: "folder", path: "Act 1/@Branches" }],
   ])("rejects create for a %s", (_label, body) => {
     expectAuthorityReservation(() => parseCreateContextEntryBody(body));
   });
@@ -39,7 +39,7 @@ describe("context entry authority-prefix guard", () => {
         expected: { kind: "file", nodeId: "selected-document" },
         path: "notes.md",
         destinationScheme: "manuscript",
-        destinationFolderPath: "Drafts/@Revision",
+        destinationFolderPath: "Branches/@Revision",
       },
     ],
   ])("rejects move for a %s", (_label, body) => {

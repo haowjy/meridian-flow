@@ -1,32 +1,27 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
+
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
-import type { SavedExecutionReport } from "@meridian/contracts/spawn";
-import { isPendingPlaceholder, type Turn } from "@meridian/contracts/threads";
+import { type Block, isPendingPlaceholder } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
-import { SystemUpdateMetadataCodec } from "../../threads/index.js";
+import { hasCompletedReplyInLineage, SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
+import { latestRowAt } from "../loop/latest-row.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
-import { next } from "../loop/next-inbox-work.js";
-import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
-import { readPendingInbox } from "../loop/pending-inbox.js";
 import {
-  type PersistenceDeps,
-  persistAndAppendEvents,
-  persistAndAppendTurnStartEvents,
-} from "../loop/persistence.js";
-import type {
-  InboxMessage,
-  InboxReader,
-  Lease,
-  MessageDraft,
-  RunClaim,
-  RunStarter,
-} from "../loop/ports.js";
+  type InboxWorkSelection,
+  next,
+  prefixRows,
+  type WriteModeSwitchMessage,
+} from "../loop/next-inbox-work.js";
+import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "../loop/persistence.js";
+import type { InboxMessage, MessageDraft, RunClaim, RunStarter } from "../loop/ports.js";
 import { preparationFailureError } from "../loop/preparation-failure.js";
-import { NoPendingWakeError } from "../loop/run-turn-port.js";
+import { hasReferenceEvidence } from "../loop/reference-context.js";
+import { NoPendingWakeError, ReplyRetryUnavailableError } from "../loop/run-turn-port.js";
 import type {
   AdoptedBatch,
   DeliveryBoundary,
@@ -36,125 +31,63 @@ import type {
   RuntimeDelivery,
 } from "../loop/runtime-delivery.js";
 import { createThreadControls } from "../loop/thread-controls.js";
-import type { ThreadLock } from "../loop/thread-lock.js";
-
-/** Adapter-private storage primitives; never injected into the model loop or producers. */
-export interface DeliveryStore extends InboxReader {
-  setBlockedReason(threadId: ThreadId, reason: "credits_exhausted" | null): Promise<void>;
-  findMessage(id: string): Promise<InboxMessage | null>;
-  workNoticeTargets(workId: WorkId): Promise<ThreadId[]>;
-  canMaterializeWork(threadId: ThreadId): Promise<boolean>;
-  pendingWorkThreads(limit: number, afterThreadId?: ThreadId): Promise<ThreadId[]>;
-  enqueue(draft: MessageDraft): Promise<InboxMessage>;
-  ack(threadId: ThreadId, ids: string[]): Promise<void>;
-}
-
-export interface DeliveryLeaseStore {
-  cancelThreadReceipt(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
-  lockThreadReceipt(
-    threadId: ThreadId,
-  ): Promise<{ ids: string[]; turnId: TurnId | null; lease: Lease } | null>;
-  bindTurn(
-    lease: Lease,
-    turnId: TurnId,
-    ids: readonly string[],
-    kind: "assistant" | "compaction",
-  ): Promise<void>;
-  setAdoptedMessageIds(lease: Lease, ids: readonly string[]): Promise<boolean>;
-  clearReceipt(lease: Lease, expectedIds: readonly string[]): Promise<boolean>;
-  clearOrphanedReceipt(
-    threadId: ThreadId,
-    turnId: TurnId,
-    expectedIds: readonly string[],
-  ): Promise<boolean>;
-  lockReceipt(lease: Lease): Promise<{ ids: string[]; cancelRequested: boolean } | null>;
-}
+import { type WriteModeSwitchPort, writeModeSwitchTurn } from "../loop/write-mode-switch.js";
+import type { HandBackStore } from "./delivery-ports.js";
+import { createExecutionSettlement, type ExecutionSettlementDeps } from "./execution-settlement.js";
+import { createThreadCommands } from "./thread-commands.js";
 
 const PREPARATION_ATTEMPTS = 3;
 
 export function createDeliveryAdapter(
-  deps: PersistenceDeps & {
+  deps: ExecutionSettlementDeps & {
     backgroundTasks: DetachedWorkTracker;
-    repos: import("../../threads/index.js").ThreadRepositories;
-    toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
-    inbox: DeliveryStore;
-    leaseStore: DeliveryLeaseStore;
-    runClaim: Pick<RunClaim, "release" | "withExclusiveThread" | "cancelExecution">;
-    publishFinalizedReports(reports: readonly SavedExecutionReport[]): Promise<void>;
+    /** Absent where hand-back is not supported (the in-memory harness). */
+    handBacks?: HandBackStore;
+    runClaim: Pick<
+      RunClaim,
+      "release" | "abandon" | "withExclusiveThread" | "cancelExecution" | "holder"
+    >;
     workContext: import("../loop/work-context.js").WorkContextReader;
-    threadLock: ThreadLock;
     notices: NoticePort;
     runStarter: RunStarter;
-    schedulePostCommit(task: () => Promise<void>): void;
-    publishStatus?(threadId: ThreadId): Promise<void>;
+    writeModeSwitch: WriteModeSwitchPort;
   },
 ): RuntimeDelivery {
   const { inbox, leaseStore, threadLock } = deps;
-  const backgroundTasks = deps.backgroundTasks;
   const schedulePostCommit = (task: () => Promise<void>) =>
     deps.schedulePostCommit(() =>
-      backgroundTasks.track(Promise.resolve().then(task), "runtime delivery callback"),
+      deps.backgroundTasks.track(Promise.resolve().then(task), "runtime delivery callback"),
     );
-  // All retirement paths share this invariant, under the caller's thread lock/transaction.
-  const acknowledge = async (threadId: ThreadId, ids: string[]) => {
-    await inbox.ack(threadId, ids);
-    const projection = await inbox.readPendingProjection(threadId);
-    if (
-      !projection.messages.some(
-        (message) => message.intent === "message" || message.intent === "control",
-      )
-    ) {
-      await inbox.setBlockedReason(threadId, null);
-    }
-  };
-  const appendPending = async (threadId: ThreadId) => {
-    await deps.eventWriter.appendEvent(threadId, {
-      type: "inbox.changed",
-      threadId,
-      pending: await readPendingInbox(inbox, threadId),
-    });
-  };
-  const clearOrphanedTurn = async (threadId: ThreadId, turnId: TurnId) => {
-    const receipt = await leaseStore.lockThreadReceipt(threadId);
-    if (!receipt || receipt.turnId !== turnId) return null;
-    if (!(await leaseStore.clearOrphanedReceipt(threadId, turnId, receipt.ids))) {
-      throw new Error("Cannot clear orphaned run receipt after it changed");
-    }
-    return receipt.ids;
-  };
-  const retireOrphanedReply = async (threadId: ThreadId, turnId: TurnId) => {
-    const ids = await clearOrphanedTurn(threadId, turnId);
-    if (!ids) return;
-    await acknowledge(threadId, ids);
-    await appendPending(threadId);
-  };
-  const clearOrphanedTurnForRepair = async (threadId: ThreadId, turnId: TurnId) => {
-    await clearOrphanedTurn(threadId, turnId);
-  };
+  const settlement = createExecutionSettlement({ ...deps, schedulePostCommit });
+  const { ack, deliveredBy, endExecution, settleStaleExecution } = settlement;
   type SelectedDelivery<TSelection> = {
     selection: TSelection;
     pendingBatch: InboxMessage[];
     work: Awaited<ReturnType<typeof workBatch>>;
+    /** A due switch applies only with the reservation, so preparation must hold the thread lock. */
+    requiresLock?: boolean;
   };
   async function selectForPreparation(
     threadId: ThreadId,
     at: "run_start",
+    retry?: boolean,
   ): Promise<SelectedDelivery<DeliverySelection>>;
   async function selectForPreparation(
     threadId: ThreadId,
-    at: "boundary",
+    at: "boundary" | "prefix",
   ): Promise<SelectedDelivery<DeliveryBoundarySelection>>;
   async function selectForPreparation(
     threadId: ThreadId,
-    at: "run_start" | "boundary",
+    at: "run_start" | "boundary" | "prefix",
+    retry = false,
   ): Promise<SelectedDelivery<DeliverySelection | DeliveryBoundarySelection>> {
-    const pendingBatch = await inbox.selectPending(threadId);
-    const projection = await inbox.readPendingProjection(threadId);
-    const boundIds = new Set(projection.run?.messageIds ?? []);
-    const eligible = pendingBatch.filter((row) => !boundIds.has(row.id));
-    const nextWork = next(eligible, at);
+    const { pendingBatch, boundIds, eligible } = await eligiblePending(threadId);
+    // Materialization puts every waiting non-command row into the graph in seq
+    // order; it is not a request boundary, so a queued switch never yields it.
+    const nextWork: InboxWorkSelection =
+      at === "prefix" ? prefixRows(eligible) : next(eligible, at, retry);
     const control = at === "run_start" && nextWork.kind === "control" ? nextWork.control : null;
-    const rows = nextWork.kind === "none" ? [] : nextWork.rows;
+    const rows = nextWork.kind === "batch" || nextWork.kind === "control" ? nextWork.rows : [];
     const selectedIds = new Set([...rows.map((row) => row.id), ...(control ? [control.id] : [])]);
     const work = await workBatch(threadId, rows);
     const [notices, thread] = await Promise.all([
@@ -172,8 +105,20 @@ export function createDeliveryAdapter(
       activeLeafTurnId: thread.activeLeafTurnId,
     };
     const selection: DeliverySelection | DeliveryBoundarySelection =
-      at === "run_start" ? { ...selectionFields, next: nextWork } : selectionFields;
+      at === "run_start"
+        ? { ...selectionFields, next: nextWork }
+        : { ...selectionFields, yieldReply: nextWork.kind === "yield" };
     return { selection, pendingBatch, work };
+  }
+  async function eligiblePending(threadId: ThreadId) {
+    const pendingBatch = await inbox.selectPending(threadId);
+    const projection = await inbox.readPendingProjection(threadId);
+    const boundIds = new Set(projection.run?.messageIds ?? []);
+    return {
+      pendingBatch,
+      boundIds,
+      eligible: pendingBatch.filter((row) => !boundIds.has(row.id)),
+    };
   }
   async function selectionStillCurrent(
     threadId: ThreadId,
@@ -196,7 +141,8 @@ export function createDeliveryAdapter(
     TResult,
   >(input: {
     threadId: ThreadId;
-    select: () => Promise<SelectedDelivery<TSelection>>;
+    /** `lockHeld`: the thread lock is already taken (the last, locked attempt). */
+    select: (lockHeld: boolean) => Promise<SelectedDelivery<TSelection>>;
     signal?: AbortSignal;
     validate?: () => Promise<void>;
     prepare: (
@@ -213,20 +159,9 @@ export function createDeliveryAdapter(
     return attemptPreparation();
 
     async function attemptPreparation(): Promise<TResult> {
-      for (let attempt = 0; attempt < PREPARATION_ATTEMPTS; attempt += 1) {
-        const lockedPreparation = attempt === PREPARATION_ATTEMPTS - 1;
-        if (lockedPreparation) {
-          return threadLock.withThreadLock(input.threadId, async () => {
-            const selected = await input.select();
-            input.signal?.throwIfAborted();
-            const prepared = await input.prepare(selected.selection, selected.work);
-            input.signal?.throwIfAborted();
-            await input.validate?.();
-            return commitSelected(selected, prepared);
-          });
-        }
-
-        const selected = await input.select();
+      for (let attempt = 0; attempt < PREPARATION_ATTEMPTS - 1; attempt += 1) {
+        const selected = await input.select(false);
+        if (selected.requiresLock) break;
         input.signal?.throwIfAborted();
         const prepared = await input.prepare(selected.selection, selected.work);
         input.signal?.throwIfAborted();
@@ -239,7 +174,15 @@ export function createDeliveryAdapter(
         });
         if (!result.retry) return result.value;
       }
-      throw new Error("Unreachable delivery preparation loop exit");
+      // The last attempt prepares under the lock, so nothing can change between selection and commit.
+      return threadLock.withThreadLock(input.threadId, async () => {
+        const selected = await input.select(true);
+        input.signal?.throwIfAborted();
+        const prepared = await input.prepare(selected.selection, selected.work);
+        input.signal?.throwIfAborted();
+        await input.validate?.();
+        return commitSelected(selected, prepared);
+      });
     }
 
     async function commitSelected(
@@ -255,7 +198,6 @@ export function createDeliveryAdapter(
   }
   const enqueue = async (draft: MessageDraft) => {
     const message = await inbox.enqueue(draft);
-    await appendPending(draft.threadId);
     if (draft.intent === "message" || draft.intent === "control")
       schedulePostCommit(() => deps.runStarter.start(draft.threadId));
     return message;
@@ -279,12 +221,12 @@ export function createDeliveryAdapter(
     };
   }
   async function materializePrefix(threadId: ThreadId) {
-    const { selection, work } = await selectForPreparation(threadId, "boundary");
+    const { selection, work } = await selectForPreparation(threadId, "prefix");
     const turns = await Promise.all(
-      work.batch.map((message) => deps.repos.turns.findById(message.id)),
+      work.batch.map((message) => turnGraph(deps.repos.turns).findById(message.id)),
     );
     const leaf = selection.activeLeafTurnId;
-    const leafTurn = leaf ? await deps.repos.turns.findById(leaf) : null;
+    const leafTurn = leaf ? await turnGraph(deps.repos.turns).findById(leaf) : null;
     if (leaf && !leafTurn) throw new Error(`Missing causal turn: ${leaf}`);
     const plan = planMessageTurns({
       threadId,
@@ -299,22 +241,89 @@ export function createDeliveryAdapter(
       result: undefined,
       events: plan.events,
     }));
-    await acknowledge(threadId, work.ids);
-    await appendPending(threadId);
+    await ack(threadId, work.ids);
   }
   async function materializeIdle(threadId: ThreadId) {
-    await deps.runClaim.withExclusiveThread(threadId, () =>
-      threadLock.withThreadLock(threadId, async () => {
-        const reports = await finalizeOrphanedTurns({ ...deps, retireOrphanedReply }, { threadId });
-        schedulePostCommit(() => deps.publishFinalizedReports(reports));
+    await deps.runClaim.withExclusiveThread(threadId, async () => {
+      await settleStaleExecution(threadId);
+      await threadLock.withThreadLock(threadId, async () => {
         if (await inbox.canMaterializeWork(threadId)) await materializePrefix(threadId);
-      }),
-    );
+      });
+    });
     return (await inbox.selectPending(threadId)).some(
       (message) => message.body.kind === "work_context_refresh",
     )
       ? ("pending" as const)
       : ("delivered" as const);
+  }
+  /**
+   * The admitted run-start boundary's switch rule. A due write-mode switch (`next`
+   * says a run follows it, or a Retry runs) applies in the same thread-lock
+   * transaction that reserves the run: the chat's mode, the switch turn at the
+   * active leaf and the control's ack commit with the reservation, or none do.
+   * Preparation reads storage, so it can't run under the lock for every start;
+   * an optimistic attempt that finds a due switch asks for the locked attempt
+   * instead and applies nothing. A Retry whose leaf moved is refused before the
+   * switch applies, leaving it pending.
+   */
+  async function selectRunStart(
+    threadId: ThreadId,
+    retryOf: TurnId | undefined,
+    lockHeld: boolean,
+  ) {
+    for (;;) {
+      const selected = await selectForPreparation(threadId, "run_start", !!retryOf);
+      const due = selected.selection.next;
+      if (due.kind !== "switch") {
+        await assertRetryLeaf(threadId, selected.selection.activeLeafTurnId, retryOf);
+        return selected;
+      }
+      if (!lockHeld) return { ...selected, requiresLock: true };
+      await applyDueSwitch(threadId, due.control, retryOf);
+    }
+  }
+  /**
+   * Retry's compare-and-swap: only turns that don't close the failed reply (a switch, a Work refresh, a
+   * notice) may trail it. A newer message or another Retry moved the leaf, so the Retry is refused.
+   */
+  async function assertRetryLeaf(threadId: ThreadId, leaf: TurnId | null, retryOf?: TurnId) {
+    if (!retryOf) return;
+    const { latest } = await latestRowAt(deps.repos.turns, leaf);
+    if (latest?.id !== retryOf) throw new ReplyRetryUnavailableError(threadId);
+  }
+  /** Runs under the thread lock the run's reservation also commits in. */
+  async function applyDueSwitch(
+    threadId: ThreadId,
+    control: WriteModeSwitchMessage,
+    retryOf?: TurnId,
+  ) {
+    const thread = await deps.repos.threads.findById(threadId);
+    if (!thread) throw new Error(`Thread not found: ${threadId}`);
+    const mode = control.body.mode;
+    const leaf = thread.activeLeafTurnId as TurnId | null;
+    await assertRetryLeaf(threadId, leaf, retryOf);
+    const leafTurn = leaf ? await turnGraph(deps.repos.turns).findById(leaf) : null;
+    if (leaf && !leafTurn) throw new Error(`Missing causal turn: ${leaf}`);
+    const { turn, block } = writeModeSwitchTurn({
+      threadId,
+      prevTurnId: leaf,
+      position: nextTurnPosition(leafTurn),
+      mode,
+      controlMessageId: control.id,
+      notice: await deps.writeModeSwitch.renderNotice(threadId, mode),
+    });
+    await persistAndAppendTurnStartEvents(deps, threadId, leaf, async () => {
+      await deps.repos.threads.setAiWriteMode(threadId, mode);
+      inbox.markRunStateChanged(threadId);
+      return {
+        result: undefined,
+        events: [
+          { type: "turn.created" as const, turn },
+          { type: "block.upserted" as const, block },
+        ],
+      };
+    });
+    await ack(threadId, [control.id]);
   }
   async function threadChanged(threadId: ThreadId, mutationId = crypto.randomUUID()) {
     // Work mutations already hold Work rows. Taking the thread lock here would
@@ -329,6 +338,7 @@ export function createDeliveryAdapter(
     });
   }
   type PreparedAdoption<TCurrent> = {
+    kind: "adopt";
     batch: InboxMessage[];
     work: Awaited<ReturnType<typeof workBatch>>;
     committedWorkIds: string[];
@@ -355,11 +365,13 @@ export function createDeliveryAdapter(
     const committed: InboxMessage[] = [];
     const committedWorkIds: string[] = [];
     const expectedLeaf = selection.activeLeafTurnId as TurnId | null;
-    const expectedLeafTurn = expectedLeaf ? await deps.repos.turns.findById(expectedLeaf) : null;
+    const expectedLeafTurn = expectedLeaf
+      ? await turnGraph(deps.repos.turns).findById(expectedLeaf)
+      : null;
     if (expectedLeaf && !expectedLeafTurn) throw new Error(`Missing causal turn: ${expectedLeaf}`);
     let leaf: TurnId | null = expectedLeaf;
     while (leaf && !input.knownTurnIds.has(leaf)) {
-      const turn = await deps.repos.turns.findById(leaf);
+      const turn = await turnGraph(deps.repos.turns).findById(leaf);
       if (!turn) throw new Error(`Missing causal turn: ${leaf}`);
       if (isPendingPlaceholder(turn))
         throw new Error("Unexpected pending placeholder in adoption tail");
@@ -433,6 +445,7 @@ export function createDeliveryAdapter(
       prepared = { events: [], turns: [], blocks: [], requiresSplit: false };
     }
     return {
+      kind: "adopt",
       batch: orderedBatch,
       selection,
       preparedCurrent,
@@ -478,11 +491,11 @@ export function createDeliveryAdapter(
     const compaction = prepared.compaction?.kind === "compact" ? prepared.compaction : undefined;
     // Adopted reference reads count as shown only with the commit that
     // persists their blocks; a discarded or retried preparation records nothing.
-    const recordShown = async (turnId: TurnId) => {
-      if (!drain.shown?.length) return;
-      if (!input.recordShown)
-        throw new Error("Adopted reference reads have no shown-link recorder");
-      await input.recordShown(turnId, drain.shown);
+    const recordEvidence = async (turnId: TurnId) => {
+      if (!drain.evidence || !hasReferenceEvidence(drain.evidence)) return;
+      if (!input.recordEvidence)
+        throw new Error("Adopted reference reads have no evidence recorder");
+      await input.recordEvidence(turnId, drain.evidence);
     };
 
     const receipt = await leaseStore.lockReceipt(lease);
@@ -490,19 +503,23 @@ export function createDeliveryAdapter(
       (id) => !work.ids.includes(id) && !committedWorkIds.includes(id),
     );
     let terminal = false;
+    let completedBlocks: Block[] = [];
     if (split) {
-      completed =
-        input.current.kind === "placeholder"
-          ? await input.current.complete(
-              adoption.preparedCurrent,
-              prepared.successorFailure === undefined ? preparationFailure : undefined,
-            )
-          : {
-              ...currentTurn,
-              status: "complete" as const,
-              finishReason: "end_turn" as const,
-              completedAt: new Date().toISOString(),
-            };
+      if (input.current.kind === "placeholder") {
+        const placeholder = await input.current.complete(
+          adoption.preparedCurrent,
+          prepared.successorFailure === undefined ? preparationFailure : undefined,
+        );
+        completed = placeholder.turn;
+        completedBlocks = placeholder.blocks;
+      } else {
+        completed = {
+          ...currentTurn,
+          status: "complete" as const,
+          finishReason: "end_turn" as const,
+          completedAt: new Date().toISOString(),
+        };
+      }
       terminal =
         input.current.kind === "placeholder" &&
         !input.continueTask &&
@@ -522,11 +539,11 @@ export function createDeliveryAdapter(
               ...events,
             ],
           }),
-          { afterEvents: () => recordShown(currentTurn.id) },
+          { afterEvents: () => recordEvidence(currentTurn.id) },
         );
-        await acknowledge(threadId, drain.ackIds);
+        await ack(threadId, drain.ackIds, deliveredBy(currentTurn));
         drain.ackIds = [];
-        await deps.runClaim.release(lease);
+        await endExecution(lease);
         next = completed;
       } else {
         const leaf = turns.at(-1)?.id ?? expectedLeaf ?? currentTurn.id;
@@ -542,6 +559,15 @@ export function createDeliveryAdapter(
             ),
             prevTurnId: leaf,
             writeMode: currentTurn.writeMode,
+            identity: {
+              executionId: lease.executionId,
+              reservedForUserTurnIds: [
+                ...new Set([
+                  ...(input.carriedReservedForUserTurnIds ?? []),
+                  ...adoption.selection.outstanding.map(({ id }) => id),
+                ]),
+              ],
+            },
           },
           compaction,
         );
@@ -563,7 +589,7 @@ export function createDeliveryAdapter(
           }),
           {
             afterEvents: async () => {
-              await recordShown(next.id);
+              await recordEvidence(next.id);
               await leaseStore.bindTurn(lease, next.id, drain.ackIds, currentTurnKind(next));
               if (adoption.selection.outstanding.length > 0)
                 await input.admit?.(next, adoption.selection.outstanding);
@@ -574,11 +600,11 @@ export function createDeliveryAdapter(
       if (input.current.kind === "assistant") await deps.repos.threads.updateCost(threadId, "0", 1);
     } else if (events.length > 0) {
       await persistAndAppendEvents(deps, threadId, async () => ({ result: undefined, events }), {
-        afterEvents: () => recordShown(currentTurn.id),
+        afterEvents: () => recordEvidence(currentTurn.id),
       });
     }
 
-    await acknowledge(threadId, work.ids);
+    await ack(threadId, work.ids);
     if (
       !split &&
       batch.length > 0 &&
@@ -602,25 +628,75 @@ export function createDeliveryAdapter(
         },
       });
       next = completion.turn;
-      await acknowledge(threadId, drain.ackIds);
-      // This failed successor is terminal; a crash before failure-close must
-      // not leave a selector whose receipt recovery can no longer retire.
-      await deps.runClaim.release(lease);
+      await ack(threadId, drain.ackIds, deliveredBy(next));
+      // The failed successor is the execution's last turn: it ends in this
+      // commit, and the run exits on the terminal disposition, not a throw.
+      await endExecution(lease);
+      terminal = true;
     }
-    if (batch.length > 0 || input.current.kind === "placeholder" || compaction)
-      await appendPending(threadId);
     drain.turns = turns;
     drain.blocks = blocks;
     return {
       drain,
       preparedCurrent: adoption.preparedCurrent,
-      context: prepared.context,
+      ...(!terminal && preparationFailure === undefined ? { context: prepared.context } : {}),
       next,
       split,
       terminal,
       completed,
+      completedBlocks,
       compaction,
       ...(preparationFailure === undefined ? {} : { preparationFailure }),
+    };
+  }
+
+  type PreparedYield<TCurrent> = {
+    kind: "yield";
+    preparedCurrent?: TCurrent;
+    currentFailure?: unknown;
+  };
+
+  /** A placeholder finishes through its own callbacks; an assistant needs nothing prepared. */
+  async function prepareYield<TCurrent>(
+    input: DeliveryBoundary<TCurrent>,
+  ): Promise<PreparedYield<TCurrent>> {
+    if (input.current.kind === "assistant") return { kind: "yield" };
+    try {
+      return { kind: "yield", preparedCurrent: await input.prepareCurrent?.() };
+    } catch (error) {
+      if (input.signal?.aborted) throw error;
+      return { kind: "yield", currentFailure: error };
+    }
+  }
+
+  /**
+   * Ends the reply at this request boundary because a message waits behind a
+   * queued switch. Nothing is adopted and no successor is reserved: the
+   * assistant exits through the run's ordinary success close, and a
+   * placeholder completes with its own outcome before the claim is released.
+   * Its receipt stays unacknowledged, so those messages wait for the next run.
+   */
+  async function commitYield<TCurrent>(
+    input: DeliveryBoundary<TCurrent>,
+    prepared: PreparedYield<TCurrent>,
+  ): Promise<AdoptedBatch<TCurrent>> {
+    const drain = { turns: [], blocks: [], events: [], ackIds: [] };
+    if (input.current.kind === "assistant")
+      return { drain, next: input.currentTurn, split: false, yielded: true };
+    const { turn: completed, blocks: completedBlocks } = await input.current.complete(
+      prepared.preparedCurrent,
+      prepared.currentFailure,
+    );
+    await endExecution(input.lease);
+    return {
+      drain,
+      next: completed,
+      completed,
+      completedBlocks,
+      split: true,
+      terminal: true,
+      yielded: true,
+      preparedCurrent: prepared.preparedCurrent,
     };
   }
 
@@ -631,62 +707,56 @@ export function createDeliveryAdapter(
       threadId: input.lease.threadId,
       select: () => selectForPreparation(input.lease.threadId, "boundary"),
       signal: input.signal,
+      // Cancellation wins over a yield: it is checked under the lock first.
       validate: async () => {
         if ((await leaseStore.lockReceipt(input.lease))?.cancelRequested)
           throw new DOMException("The operation was aborted", "AbortError");
       },
-      prepare: (selection, work) => prepareAdoption(input, selection, work),
-      hasPreparationFailure: (prepared) => prepared.preparationFailure !== undefined,
-      commit: async (_selection, _work, prepared) => commitAdoption(input, prepared),
+      prepare: (selection, work): Promise<PreparedAdoption<TCurrent> | PreparedYield<TCurrent>> =>
+        selection.yieldReply ? prepareYield(input) : prepareAdoption(input, selection, work),
+      // A yield consumes no peeked notices; they wait for the next reply.
+      hasPreparationFailure: (prepared) =>
+        prepared.kind === "yield" || prepared.preparationFailure !== undefined,
+      commit: async (_selection, _work, prepared) =>
+        prepared.kind === "yield" ? commitYield(input, prepared) : commitAdoption(input, prepared),
     });
   }
 
-  async function hasCompletedReplyInLineage(threadId: ThreadId): Promise<boolean> {
-    let thread = await deps.repos.threads.findByIdIncludingDeleted(threadId);
-    let throughPosition = Number.POSITIVE_INFINITY;
-    const visited = new Set<string>();
-    while (thread && !visited.has(thread.id)) {
-      visited.add(thread.id);
-      const localTurns = await deps.repos.turns.listByThread(thread.id as ThreadId);
-      if (
-        localTurns.some(
-          (turn) =>
-            turn.position <= throughPosition &&
-            turn.role === "assistant" &&
-            turn.status === "complete",
-        )
-      )
-        return true;
-      if (thread.originType !== "fork" || !thread.originTurnId) return false;
-      const cutoff = await deps.repos.turns.findById(thread.originTurnId as TurnId);
-      if (!cutoff) return false;
-      thread = await deps.repos.threads.findByIdIncludingDeleted(cutoff.threadId as ThreadId);
-      throughPosition = cutoff.position;
-    }
-    return false;
-  }
-
-  async function acknowledgeFailedReply(
-    threadId: ThreadId,
-    turn: Turn,
-    messageIds: readonly string[],
-  ) {
-    if (turn.role === "assistant" && (turn.status === "cancelled" || turn.status === "error"))
-      await acknowledge(threadId, [...messageIds]);
-  }
+  const commands = createThreadCommands({
+    threadLock,
+    handBacks: deps.handBacks,
+    inbox,
+    ack,
+    leaseStore,
+    appendEvent: (threadId, event) => deps.eventWriter.appendEvent(threadId, event),
+  });
 
   return {
     ...createThreadControls({
       withThreadLock: threadLock.withThreadLock,
       findMessage: inbox.findMessage,
       enqueue,
-      findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
-      pending: (id) => readPendingInbox(inbox, id),
-      acknowledge: async (id, controlId) => {
-        await acknowledge(id, [controlId]);
-        await appendPending(id);
+      // A switch never wakes the chat: it waits for the run something else starts.
+      enqueueWithoutWake: inbox.enqueue,
+      async enqueueSettled(draft, cancelledIds) {
+        const message = await inbox.enqueue(draft);
+        await ack(draft.threadId, [...cancelledIds, message.id]);
       },
-      hasCompletedReply: hasCompletedReplyInLineage,
+      selectPending: inbox.selectPending,
+      async threadWriteMode(threadId) {
+        const thread = await deps.repos.threads.findById(threadId);
+        if (!thread) throw new Error(`Thread not found: ${threadId}`);
+        return thread.aiWriteMode;
+      },
+      async setWorkDefault(threadId, mode) {
+        const thread = await deps.repos.threads.findById(threadId);
+        if (thread?.workId)
+          await deps.writeModeSwitch.setWorkDefault(thread.workId as WorkId, mode);
+      },
+      findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
+      answerRunState: inbox.answerRunState,
+      acknowledge: (id, controlIds) => ack(id, controlIds),
+      hasCompletedReply: (id) => hasCompletedReplyInLineage(deps.repos, id),
     }),
     threadChanged,
     async workChanged(workId, origin) {
@@ -697,6 +767,9 @@ export function createDeliveryAdapter(
       }
     },
     materializeIdle,
+    async yieldsAtBoundary(threadId) {
+      return next((await eligiblePending(threadId)).eligible, "boundary").kind === "yield";
+    },
     async sweepWorkNotices() {
       let threads = await inbox.pendingWorkThreads(100, workCursor);
       if (threads.length === 0 && workCursor) threads = await inbox.pendingWorkThreads(100);
@@ -707,76 +780,26 @@ export function createDeliveryAdapter(
       if (failed?.status === "rejected") throw failed.reason;
       return threads.length;
     },
-    refreshPending: (threadId) =>
-      threadLock.withThreadLock(threadId, () => appendPending(threadId)),
-    retireOrphanedReply: (threadId, turnId) =>
-      threadLock.withThreadLock(threadId, () => retireOrphanedReply(threadId, turnId)),
-    clearOrphanedTurn: (threadId, turnId) =>
-      threadLock.withThreadLock(threadId, () => clearOrphanedTurnForRepair(threadId, turnId)),
-    settleStaleExecution: (threadId, repair) =>
-      threadLock.withThreadLock(threadId, async () => {
-        const receipt = await leaseStore.lockThreadReceipt(threadId);
-        const result = await repair();
-        const repaired = await leaseStore.lockThreadReceipt(threadId);
-        // A stale sweep candidate may not repair this receipt's execution. Only
-        // receipt retirement (or an already-empty receipt) permits lease release.
-        if (
-          receipt &&
-          repaired?.lease.runId === receipt.lease.runId &&
-          repaired.lease.holderId === receipt.lease.holderId &&
-          repaired.turnId === null &&
-          repaired.ids.length === 0
-        )
-          await deps.runClaim.release(receipt.lease);
-        await appendPending(threadId);
-        schedulePostCommit(async () => {
-          await deps.publishStatus?.(threadId);
-        });
-        return result;
-      }),
-    repairOrphanedTurns: async (lease) => {
-      const reports = await threadLock.withThreadLock(lease.threadId, () =>
-        finalizeOrphanedTurns(
-          {
-            ...deps,
-            publishStatus: deps.publishStatus,
-            retireOrphanedReply,
-            clearOrphanedTurn: clearOrphanedTurnForRepair,
-          },
-          { threadId: lease.threadId },
-        ),
-      );
-      await deps.publishFinalizedReports(reports);
-    },
-    blockForUsage: (lease) =>
-      threadLock.withThreadLock(lease.threadId, async () => {
-        const receipt = await leaseStore.lockReceipt(lease);
-        const projection = await inbox.readPendingProjection(lease.threadId);
-        if (
-          !receipt ||
-          !projection.messages.some(
-            (message) => message.intent === "message" || message.intent === "control",
-          ) ||
-          projection.run?.turnId ||
-          projection.blocked?.reason === "credits_exhausted"
-        )
-          return;
-        await inbox.setBlockedReason(lease.threadId, "credits_exhausted");
-        await appendPending(lease.threadId);
-      }),
+    retireOrphanedReply: settlement.retireOrphanedReply,
+    clearOrphanedTurn: settlement.clearOrphanedTurn,
+    settleStaleExecution: settlement.settleStaleExecution,
+    releaseExecution: settlement.releaseExecution,
+    blockForUsage: settlement.blockForUsage,
     selectPending: inbox.selectPending,
     readPendingProjection: inbox.readPendingProjection,
-    pendingMessageThreads: async (limit, afterThreadId) => {
-      return inbox.pendingMessageThreads(limit, afterThreadId);
-    },
+    pendingMessageThreads: inbox.pendingMessageThreads,
     enqueue: (draft) => threadLock.withThreadLock(draft.threadId, () => enqueue(draft)),
+    answerRunState: (threadId) =>
+      threadLock.withThreadLock(threadId, () => inbox.answerRunState(threadId)),
+    ...commands,
     withThreadLock: (threadId, operation) =>
       threadLock.withThreadLock(threadId, () =>
         operation({
           materializePrefix: () => materializePrefix(threadId),
+          publishRunState: () => inbox.publishRunState(threadId),
+          // No reserved turn delivers these (a child run aborted before its reservation).
           async acknowledge(ids) {
-            await acknowledge(threadId, [...ids]);
-            await appendPending(threadId);
+            await ack(threadId, ids);
           },
           enqueue(draft) {
             if (draft.threadId !== threadId)
@@ -788,7 +811,7 @@ export function createDeliveryAdapter(
     adoptBatch: async (lease, prepare, options) => {
       const result = await prepareAndCommit({
         threadId: lease.threadId,
-        select: () => selectForPreparation(lease.threadId, "run_start"),
+        select: (lockHeld) => selectRunStart(lease.threadId, options?.retryOf, lockHeld),
         signal: options?.signal,
         validate: async () => {
           if ((await leaseStore.lockReceipt(lease))?.cancelRequested)
@@ -799,8 +822,8 @@ export function createDeliveryAdapter(
         commit: async (_selection, work, prepared) => {
           if (!prepared) return null;
           await prepared.persist?.();
-          await acknowledge(lease.threadId, work.ids);
-          await acknowledge(lease.threadId, prepared.completedControlIds ?? []);
+          await ack(lease.threadId, work.ids);
+          await ack(lease.threadId, prepared.completedControlIds ?? []);
           await leaseStore.bindTurn(
             lease,
             prepared.turnId,
@@ -810,76 +833,38 @@ export function createDeliveryAdapter(
             prepared.turnKind,
           );
           await inbox.setBlockedReason(lease.threadId, null);
-          await appendPending(lease.threadId);
           return { value: prepared.value };
         },
       });
       if (!result) throw new NoPendingWakeError(lease.threadId);
       return result.value;
     },
-    ackWithResponse: (lease, ids, persist) =>
-      threadLock.withThreadLock(lease.threadId, async () => {
-        const result = await persist();
-        if (ids.length > 0) {
-          if (!(await leaseStore.clearReceipt(lease, ids)))
-            throw new Error("Cannot ack after losing live run lease");
-          await acknowledge(lease.threadId, ids);
-          await appendPending(lease.threadId);
-        }
-        return result;
-      }),
+    ackWithResponse: settlement.ackWithResponse,
     splitAndContinue: (input) => adopt(input),
     close: async (input) => {
       const threadId = input.lease.threadId;
-      const disposition = await threadLock.withThreadLock(threadId, async () => {
-        // Serialize the terminal decision with remote cancellation, not only the loop's cached flag.
+      return threadLock.withThreadLock(threadId, async () => {
         const receipt = await leaseStore.lockReceipt(input.lease);
-        const cause = receipt?.cancelRequested
-          ? { kind: "cancelled" as const, reason: "cancelled" }
-          : input.cause;
-        const finalCause = cause;
-        if (input.continueWith && cause.kind === "success") {
+        const cause = settlement.closeCause(input, receipt);
+        if (input.continueOnPending && cause.kind === "success") {
+          // A yield selects no rows, so the reply closes here with no successor.
           const { selection } = await selectForPreparation(threadId, "boundary");
           if (
             selection.batch.some((message) => message.intent === "message") ||
             selection.workContext
           ) {
-            return { kind: "prepare_split" as const };
+            return { kind: "continue" as const };
           }
         }
         await input.settleSummaryResponses?.();
-        const completion = await finalizeExecution(deps, {
-          threadId,
-          turnId: input.turnId,
-          cause: finalCause,
-        });
-        await acknowledgeFailedReply(threadId, completion.turn, receipt?.ids ?? []);
-        await deps.runClaim.release(input.lease);
-        await appendPending(threadId);
+        const completion = await settlement.settleTerminal(
+          input.lease,
+          input.turnId,
+          cause,
+          receipt,
+        );
         return { kind: "completed" as const, completion };
       });
-      if (disposition.kind === "completed") return disposition;
-
-      const boundary = input.continueWith as DeliveryBoundary;
-      const adopted = await adopt(boundary);
-      if (adopted.split) return { kind: "split", adopted };
-      const completion = await threadLock.withThreadLock(threadId, async () => {
-        const receipt = await leaseStore.lockReceipt(input.lease);
-        const cause = receipt?.cancelRequested
-          ? { kind: "cancelled" as const, reason: "cancelled" }
-          : input.cause;
-        const finalCause = cause;
-        const result = await finalizeExecution(deps, {
-          threadId,
-          turnId: input.turnId,
-          cause: finalCause,
-        });
-        await acknowledgeFailedReply(threadId, result.turn, receipt?.ids ?? []);
-        await deps.runClaim.release(input.lease);
-        await appendPending(threadId);
-        return result;
-      });
-      return { kind: "completed", completion };
     },
   };
 }

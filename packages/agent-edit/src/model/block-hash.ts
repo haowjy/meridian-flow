@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import type { BlockRef } from "../handles.js";
+import { type BlockRef, toRef, unwrapBlock } from "../handles.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "../model/prosemirror-fragment.js";
 
 export const DEFAULT_HASH_LENGTH = 4;
@@ -7,22 +7,39 @@ const FNV_64_OFFSET = 0xcbf29ce484222325n;
 const FNV_64_PRIME = 0x100000001b3n;
 const HEX_FIELD_WIDTH = 16;
 
-interface YItemId {
-  client: number;
-  clock: number;
-}
-
-interface YItemLike {
-  id: YItemId;
-  deleted: boolean;
-  parent: unknown;
-}
-
-type IntegratedXmlElement = Y.XmlElement & { _item: YItemLike | null; doc: Y.Doc | null };
-
 export interface BlockItemId {
   clientID: number;
   clock: number;
+}
+
+/** Immutable seed-time names for draft blocks, keyed by their own canonical item id. */
+export type BlockOriginMap = ReadonlyMap<string, BlockItemId>;
+
+const originsByDocument = new WeakMap<Y.Doc, BlockOriginMap>();
+
+export function blockItemIdKey(id: BlockItemId): string {
+  return `${id.clientID}:${id.clock}`;
+}
+
+/** Bind one document copy to its Work draft's immutable block-address context. */
+export function bindBlockOrigins(doc: Y.Doc, origins: BlockOriginMap): void {
+  originsByDocument.set(doc, new Map(origins));
+}
+
+/** Preserve a source copy's address context on another copy of the same room. */
+export function copyBlockOrigins(source: Y.Doc, target: Y.Doc): void {
+  const origins = originsByDocument.get(source);
+  if (origins) originsByDocument.set(target, origins);
+}
+
+function blockIdentity(block: Y.XmlElement | BlockRef): BlockItemId {
+  const element = xmlElement(block);
+  const own = getBlockItemId(element);
+  return (element.doc && originsByDocument.get(element.doc)?.get(blockItemIdKey(own))) ?? own;
+}
+
+export function blockIdentityForItem(doc: Y.Doc, id: BlockItemId): BlockItemId {
+  return originsByDocument.get(doc)?.get(blockItemIdKey(id)) ?? id;
 }
 
 export type BlockHashLookup =
@@ -44,10 +61,10 @@ export function getBlockItemId(block: Y.XmlElement | BlockRef): BlockItemId {
   return { clientID: item.id.client, clock: item.id.clock };
 }
 
-/** Display prefix derived from item identity, unique among current live siblings. */
+/** Display prefix derived from address identity, unique among current live siblings. */
 export function getBlockHash(block: Y.XmlElement | BlockRef): string {
   const siblings = siblingBlocks(block);
-  const element = block as unknown as Y.XmlElement;
+  const element = xmlElement(block);
   return uniqueHashFor(element, siblings.length > 0 ? siblings : [element]);
 }
 
@@ -70,7 +87,7 @@ export function lookupBlockHash(doc: Y.Doc, hash: string): BlockHashLookup {
 
   const matches: Y.XmlElement[] = [];
   for (const block of getTopLevelXmlBlocks(doc)) {
-    const fullHash = fullHashForItemId(getBlockItemId(block));
+    const fullHash = fullHashForItemId(blockIdentity(block));
     // Display hashes are flexible prefixes; resolve held old widths against immutable full hashes.
     if (fullHash.startsWith(normalized)) matches.push(block);
   }
@@ -80,8 +97,8 @@ export function lookupBlockHash(doc: Y.Doc, hash: string): BlockHashLookup {
 }
 
 export function isLiveXmlElement(block: Y.XmlElement | BlockRef): boolean {
-  const integrated = block as IntegratedXmlElement;
-  return integrated._item !== null && !integrated._item.deleted;
+  const item = xmlElement(block)._item;
+  return item !== null && !item.deleted;
 }
 
 function uniqueHashFor(target: Y.XmlElement, blocks: readonly Y.XmlElement[]): string {
@@ -93,12 +110,20 @@ function uniqueHashFor(target: Y.XmlElement, blocks: readonly Y.XmlElement[]): s
 
 /** Compute unique hashes for a set of blocks in one sorted pass. */
 function uniqueHashesForBlocks(blocks: readonly Y.XmlElement[]): string[] {
-  if (blocks.length === 0) return [];
-  const byFullHash = blocks
-    .map((block, i) => ({ i, fullHash: fullHashForItemId(getBlockItemId(block)) }))
+  return uniqueHashesForIds(blocks.map(blockIdentity));
+}
+
+/**
+ * Display hashes for item ids, each the shortest prefix (at least the default width) unique
+ * among them. Blocks that no longer exist have ids but no element.
+ */
+export function uniqueHashesForIds(ids: readonly BlockItemId[]): string[] {
+  if (ids.length === 0) return [];
+  const byFullHash = ids
+    .map((id, i) => ({ i, fullHash: fullHashForItemId(id) }))
     .sort((a, b) => (a.fullHash < b.fullHash ? -1 : a.fullHash > b.fullHash ? 1 : 0));
 
-  const hashes: string[] = new Array(blocks.length);
+  const hashes: string[] = new Array(ids.length);
   for (let sortedIndex = 0; sortedIndex < byFullHash.length; sortedIndex += 1) {
     const current = byFullHash[sortedIndex];
     const previous = byFullHash[sortedIndex - 1];
@@ -125,12 +150,16 @@ function siblingBlocks(block: Y.XmlElement | BlockRef): Y.XmlElement[] {
   if (parent instanceof Y.XmlFragment || parent instanceof Y.XmlElement) {
     return parent.toArray().filter((value): value is Y.XmlElement => value instanceof Y.XmlElement);
   }
-  const doc = (block as unknown as IntegratedXmlElement).doc;
+  const doc = xmlElement(block).doc;
   return doc ? getTopLevelXmlBlocks(doc) : [];
 }
 
-function itemFor(block: Y.XmlElement | BlockRef): YItemLike {
-  const item = (block as unknown as IntegratedXmlElement)._item;
+function xmlElement(block: Y.XmlElement | BlockRef): Y.XmlElement {
+  return unwrapBlock(toRef(block));
+}
+
+function itemFor(block: Y.XmlElement | BlockRef): Y.Item {
+  const item = xmlElement(block)._item;
   if (!item) {
     throw new Error(
       "Cannot derive a block hash before the Y.XmlElement is integrated into a Y.Doc",

@@ -1,7 +1,7 @@
 /**
  * Mock OpenAI-compatible HTTP server: a local Chat Completions endpoint (stream
  * + non-stream) for tests and offline dev so the gateway can run without a real
- * provider. Owns the canned-response server; depends only on node:http.
+ * provider. Owns the canned-response server and request-derived mock usage.
  *
  * Write tool scripting (optional, for gate probes — does not change default
  * behavior unless present in the user message that triggers a write):
@@ -14,7 +14,8 @@
  * the trigger-phrase behaviors below.
  */
 import { createServer, type Server } from "node:http";
-import type { MockModelStep } from "@meridian/contracts/protocol";
+import type { MockModelDefaultResponse, MockModelStep } from "@meridian/contracts/protocol";
+import { writeMockResponse } from "./response.js";
 import type { MockScriptQueue } from "./script-queue.js";
 import { parseWriteDirective } from "./write-directive.js";
 
@@ -23,6 +24,7 @@ interface ChatCompletionRequest {
   model?: string;
   messages?: Array<{ role: string; content?: unknown }>;
   stream?: boolean;
+  response_format?: unknown;
   tools?: Array<{ type: string; function?: { name: string } }>;
 }
 
@@ -47,6 +49,21 @@ function readJsonBody(req: import("node:http").IncomingMessage): Promise<unknown
     });
     req.on("error", reject);
   });
+}
+
+// Match the planner's three-byte heuristic on the wire input, not transport options.
+// This is synthetic usage, but must grow with history so compaction probes stay reachable.
+function inputTokens(body: ChatCompletionRequest): number {
+  return Math.ceil(
+    Buffer.byteLength(
+      JSON.stringify({
+        messages: body.messages ?? [],
+        tools: body.tools ?? [],
+        responseFormat: body.response_format ?? null,
+      }),
+      "utf8",
+    ) / 3,
+  );
 }
 
 function sseLine(payload: unknown): string {
@@ -98,16 +115,12 @@ function mockAssistantText(messages: ChatCompletionRequest["messages"]): string 
   return `Acknowledged: ${userText}`;
 }
 
-function hasWriteTool(body: ChatCompletionRequest): boolean {
-  return body.tools?.some((tool) => tool.function?.name === "write") ?? false;
-}
-
 function hasFunctionTool(body: ChatCompletionRequest, name: string): boolean {
   return body.tools?.some((tool) => tool.function?.name === name) ?? false;
 }
 
 function wantsWriteToolCall(body: ChatCompletionRequest): boolean {
-  if (!hasWriteTool(body)) return false;
+  if (!hasFunctionTool(body, "write")) return false;
   const userText = lastUserMessageText(body.messages);
   if (!userText.includes(VERTICAL_SLICE_TRIGGER)) return false;
   return lastMessageRole(body.messages) !== "tool";
@@ -127,38 +140,14 @@ function wantsReturnResult(body: ChatCompletionRequest): boolean {
 }
 
 function wantsToolCall(body: ChatCompletionRequest): boolean {
-  if (!body.tools?.length || lastMessageRole(body.messages) === "tool") return false;
+  if (!hasFunctionTool(body, "get_weather") || lastMessageRole(body.messages) === "tool")
+    return false;
   const text = lastUserMessageText(body.messages).toLowerCase();
   return text.includes("weather") || text.includes("tool");
 }
 
 function verticalSliceWriteContent(userText: string): string {
   return `# Chapter 1\n\nAcknowledged: ${userText}`;
-}
-
-function writeSse(res: import("node:http").ServerResponse, chunks: string[]): void {
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-  });
-  for (const chunk of chunks) {
-    res.write(chunk);
-  }
-  res.write("data: [DONE]\n\n");
-  res.end();
-}
-
-function writeSseLater(
-  res: import("node:http").ServerResponse,
-  chunks: string[],
-  delayMs: number,
-): void {
-  const timer = setTimeout(() => {
-    if (res.destroyed) return;
-    writeSse(res, chunks);
-  }, delayMs);
-  timer.unref();
 }
 
 function writeSlowAfterFirstChunk(
@@ -277,346 +266,56 @@ function writeOpenRouterHardCancelStream(
   req.on("close", finish);
 }
 
-function buildTextStreamChunks(id: string, model: string, text: string): string[] {
-  const chunks: string[] = [];
-  const words = text.split(" ");
-  for (let i = 0; i < words.length; i++) {
-    const word = words[i] ?? "";
-    const delta = i === 0 ? word : ` ${word}`;
-    chunks.push(
-      sseLine({
-        id,
-        object: "chat.completion.chunk",
-        model,
-        choices: [{ index: 0, delta: { content: delta }, finish_reason: null }],
-      }),
-    );
+function selectResponse(body: ChatCompletionRequest): MockModelStep | undefined {
+  const userText = lastUserMessageText(body.messages);
+  if (wantsBackgroundWriterHelperSpawn(body)) {
+    return {
+      toolCalls: [
+        {
+          name: "spawn",
+          args: {
+            agent: "writer-helper",
+            mode: "background",
+            name: "Writer helper background check",
+            prompt: `Check this request independently and return a concise writing-craft note: ${userText}`,
+          },
+        },
+      ],
+    };
   }
-  chunks.push(
-    sseLine({
-      id,
-      object: "chat.completion.chunk",
-      model,
-      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-      usage: {
-        prompt_tokens: 10,
-        completion_tokens: words.length,
-        total_tokens: 10 + words.length,
-      },
-    }),
-  );
-  return chunks;
-}
-
-function mockToolCallId(kind: string, requestCount: number): string {
-  return `call_mock_${kind}_${requestCount}`;
-}
-
-function resolveMockWriteArgs(userText: string): {
-  command: "create";
-  path: string;
-  content: string;
-  overwrite?: true;
-} {
-  const directive = parseWriteDirective(userText);
-  return {
-    command: "create",
-    path: directive?.path ?? VERTICAL_SLICE_WRITE_PATH,
-    content: verticalSliceWriteContent(userText),
-    ...(directive?.overwrite ? { overwrite: true as const } : {}),
-  };
-}
-
-function buildWriteToolCallStreamChunks(input: {
-  id: string;
-  model: string;
-  userText: string;
-  callId: string;
-}): string[] {
-  const toolName = "write";
-  const args = JSON.stringify({
-    ...resolveMockWriteArgs(input.userText),
-  });
-  return [
-    sseLine({
-      id: input.id,
-      object: "chat.completion.chunk",
-      model: input.model,
-      choices: [
+  if (wantsReturnResult(body)) {
+    return {
+      toolCalls: [
         {
-          index: 0,
-          delta: {
-            tool_calls: [
-              {
-                index: 0,
-                id: input.callId,
-                type: "function",
-                function: { name: toolName, arguments: "" },
-              },
-            ],
+          name: "return_result",
+          args: {
+            summary:
+              "Writer-helper checked the request and recommends keeping the next beat concrete.",
           },
-          finish_reason: null,
         },
       ],
-    }),
-    sseLine({
-      id: input.id,
-      object: "chat.completion.chunk",
-      model: input.model,
-      choices: [
+    };
+  }
+  if (wantsWriteToolCall(body)) {
+    const directive = parseWriteDirective(userText);
+    return {
+      toolCalls: [
         {
-          index: 0,
-          delta: {
-            tool_calls: [{ index: 0, function: { arguments: args } }],
+          name: "write",
+          args: {
+            command: "create",
+            path: directive?.path ?? VERTICAL_SLICE_WRITE_PATH,
+            content: verticalSliceWriteContent(userText),
+            ...(directive?.overwrite ? { overwrite: true } : {}),
           },
-          finish_reason: null,
         },
       ],
-    }),
-    sseLine({
-      id: input.id,
-      object: "chat.completion.chunk",
-      model: input.model,
-      choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
-      usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
-    }),
-  ];
-}
-
-function buildSingleToolCallStreamChunks(input: {
-  id: string;
-  model: string;
-  callId: string;
-  toolName: string;
-  args: Record<string, unknown>;
-}): string[] {
-  const args = JSON.stringify(input.args);
-  return [
-    sseLine({
-      id: input.id,
-      object: "chat.completion.chunk",
-      model: input.model,
-      choices: [
-        {
-          index: 0,
-          delta: {
-            tool_calls: [
-              {
-                index: 0,
-                id: input.callId,
-                type: "function",
-                function: { name: input.toolName, arguments: "" },
-              },
-            ],
-          },
-          finish_reason: null,
-        },
-      ],
-    }),
-    sseLine({
-      id: input.id,
-      object: "chat.completion.chunk",
-      model: input.model,
-      choices: [
-        {
-          index: 0,
-          delta: {
-            tool_calls: [{ index: 0, function: { arguments: args } }],
-          },
-          finish_reason: null,
-        },
-      ],
-    }),
-    sseLine({
-      id: input.id,
-      object: "chat.completion.chunk",
-      model: input.model,
-      choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
-      usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
-    }),
-  ];
-}
-
-function buildBackgroundWriterHelperSpawnChunks(
-  id: string,
-  model: string,
-  userText: string,
-): string[] {
-  return buildSingleToolCallStreamChunks({
-    id,
-    model,
-    callId: "call_mock_spawn_writer_helper_1",
-    toolName: "spawn",
-    args: {
-      agent: "writer-helper",
-      mode: "background",
-      name: "Writer helper background check",
-      prompt: `Check this request independently and return a concise writing-craft note: ${userText}`,
-    },
-  });
-}
-
-function buildReturnResultChunks(id: string, model: string): string[] {
-  return buildSingleToolCallStreamChunks({
-    id,
-    model,
-    callId: "call_mock_return_result_1",
-    toolName: "return_result",
-    args: {
-      summary: "Writer-helper checked the request and recommends keeping the next beat concrete.",
-    },
-  });
-}
-
-function buildToolCallStreamChunks(id: string, model: string): string[] {
-  const toolName = "get_weather";
-  const args = JSON.stringify({ location: "San Francisco" });
-  return [
-    sseLine({
-      id,
-      object: "chat.completion.chunk",
-      model,
-      choices: [
-        {
-          index: 0,
-          delta: {
-            tool_calls: [
-              {
-                index: 0,
-                id: "call_mock_weather_1",
-                type: "function",
-                function: { name: toolName, arguments: "" },
-              },
-            ],
-          },
-          finish_reason: null,
-        },
-      ],
-    }),
-    sseLine({
-      id,
-      object: "chat.completion.chunk",
-      model,
-      choices: [
-        {
-          index: 0,
-          delta: {
-            tool_calls: [{ index: 0, function: { arguments: args } }],
-          },
-          finish_reason: null,
-        },
-      ],
-    }),
-    sseLine({
-      id,
-      object: "chat.completion.chunk",
-      model,
-      choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
-      usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
-    }),
-  ];
-}
-
-function scriptedToolCalls(step: MockModelStep, requestCount: number) {
-  return (step.toolCalls ?? []).map((call, index) => ({
-    id: `call_mock_script_${requestCount}_${index}`,
-    type: "function" as const,
-    function: { name: call.name, arguments: JSON.stringify(call.args ?? {}) },
-  }));
-}
-
-function buildScriptedStreamChunks(
-  id: string,
-  model: string,
-  step: MockModelStep,
-  requestCount: number,
-): string[] {
-  const chunk = (delta: unknown, finishReason: string | null, usage?: unknown) =>
-    sseLine({
-      id,
-      object: "chat.completion.chunk",
-      model,
-      choices: [{ index: 0, delta, finish_reason: finishReason }],
-      ...(usage ? { usage } : {}),
-    });
-  const chunks: string[] = [];
-  const words = step.text ? step.text.split(" ") : [];
-  words.forEach((word, index) => {
-    chunks.push(chunk({ content: index === 0 ? word : ` ${word}` }, null));
-  });
-  const toolCalls = scriptedToolCalls(step, requestCount);
-  toolCalls.forEach((call, index) => {
-    chunks.push(
-      chunk(
-        {
-          tool_calls: [
-            {
-              index,
-              id: call.id,
-              type: "function",
-              function: { name: call.function.name, arguments: "" },
-            },
-          ],
-        },
-        null,
-      ),
-    );
-    chunks.push(
-      chunk({ tool_calls: [{ index, function: { arguments: call.function.arguments } }] }, null),
-    );
-  });
-  chunks.push(
-    chunk({}, toolCalls.length ? "tool_calls" : "stop", {
-      prompt_tokens: 10,
-      completion_tokens: Math.max(1, words.length),
-      total_tokens: 10 + Math.max(1, words.length),
-    }),
-  );
-  return chunks;
-}
-
-function writeScriptedResponse(
-  res: import("node:http").ServerResponse,
-  input: { id: string; model: string; stream: boolean; step: MockModelStep; requestCount: number },
-): void {
-  const { step } = input;
-  const respond = () => {
-    if (res.destroyed) return;
-    if (step.error) {
-      res.writeHead(step.error.status, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({ error: { message: step.error.message, type: "mock_script_error" } }),
-      );
-      return;
-    }
-    if (input.stream) {
-      writeSse(res, buildScriptedStreamChunks(input.id, input.model, step, input.requestCount));
-      return;
-    }
-    const toolCalls = scriptedToolCalls(step, input.requestCount);
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({
-        id: input.id,
-        object: "chat.completion",
-        model: input.model,
-        choices: [
-          {
-            index: 0,
-            message: {
-              role: "assistant",
-              content: step.text ?? null,
-              ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
-            },
-            finish_reason: toolCalls.length ? "tool_calls" : "stop",
-          },
-        ],
-        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
-      }),
-    );
-  };
-  if (step.delayMs) setTimeout(respond, step.delayMs).unref();
-  else respond();
+    };
+  }
+  if (wantsToolCall(body)) {
+    return { toolCalls: [{ name: "get_weather", args: { location: "San Francisco" } }] };
+  }
+  return undefined;
 }
 
 /**
@@ -625,6 +324,7 @@ function writeScriptedResponse(
  */
 export function createMockOpenAICompatibleServer(options?: {
   script?: MockScriptQueue;
+  defaultResponse?: MockModelDefaultResponse;
 }): Promise<MockOpenAIServer> {
   return new Promise((resolve, reject) => {
     let requestCount = 0;
@@ -641,249 +341,78 @@ export function createMockOpenAICompatibleServer(options?: {
         return;
       }
 
-      requestCount += 1;
+      const requestNumber = ++requestCount;
 
       try {
         const body = (await readJsonBody(req)) as ChatCompletionRequest;
-        const id = `chatcmpl-mock-${requestCount}`;
+        const promptTokens = inputTokens(body);
+        const id = `chatcmpl-mock-${requestNumber}`;
         const model = body.model ?? "mock-llm-v1";
-        const writeCallId = mockToolCallId("write", requestCount);
         const scripted = options?.script?.take(lastUserMessageText(body.messages));
         if (scripted) {
-          writeScriptedResponse(res, {
+          writeMockResponse(res, {
             id,
             model,
             stream: body.stream === true,
             step: scripted,
-            requestCount,
+            requestCount: requestNumber,
+            promptTokens,
           });
           return;
         }
 
-        if (!body.stream) {
-          const text =
-            wantsToolCall(body) ||
-            wantsWriteToolCall(body) ||
-            wantsBackgroundWriterHelperSpawn(body) ||
-            wantsReturnResult(body)
-              ? ""
-              : mockAssistantText(body.messages);
-          res.writeHead(200, { "Content-Type": "application/json" });
-          if (wantsBackgroundWriterHelperSpawn(body)) {
-            const userText = lastUserMessageText(body.messages);
-            res.end(
-              JSON.stringify({
-                id,
-                object: "chat.completion",
-                model,
-                choices: [
-                  {
-                    index: 0,
-                    message: {
-                      role: "assistant",
-                      content: null,
-                      tool_calls: [
-                        {
-                          id: "call_mock_spawn_writer_helper_1",
-                          type: "function",
-                          function: {
-                            name: "spawn",
-                            arguments: JSON.stringify({
-                              agent: "writer-helper",
-                              mode: "background",
-                              name: "Writer helper background check",
-                              prompt: `Check this request independently and return a concise writing-craft note: ${userText}`,
-                            }),
-                          },
-                        },
-                      ],
-                    },
-                    finish_reason: "tool_calls",
-                  },
-                ],
-                usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
-              }),
-            );
+        if (body.stream) {
+          if (messageText(body.messages).includes("openrouter hard cancel")) {
+            writeOpenRouterHardCancelStream(req, res, model);
             return;
           }
-          if (wantsReturnResult(body)) {
-            res.end(
-              JSON.stringify({
-                id,
-                object: "chat.completion",
-                model,
-                choices: [
-                  {
-                    index: 0,
-                    message: {
-                      role: "assistant",
-                      content: null,
-                      tool_calls: [
-                        {
-                          id: "call_mock_return_result_1",
-                          type: "function",
-                          function: {
-                            name: "return_result",
-                            arguments: JSON.stringify({
-                              summary:
-                                "Writer-helper checked the request and recommends keeping the next beat concrete.",
-                            }),
-                          },
-                        },
-                      ],
-                    },
-                    finish_reason: "tool_calls",
-                  },
-                ],
-                usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
-              }),
-            );
+
+          if (messageText(body.messages).includes("hang cancel drain")) {
+            writeHangCancelDrainStream(res, id, model);
             return;
           }
-          if (wantsWriteToolCall(body)) {
-            const userText = lastUserMessageText(body.messages);
-            res.end(
-              JSON.stringify({
-                id,
-                object: "chat.completion",
-                model,
-                choices: [
-                  {
-                    index: 0,
-                    message: {
-                      role: "assistant",
-                      content: null,
-                      tool_calls: [
-                        {
-                          id: writeCallId,
-                          type: "function",
-                          function: {
-                            name: "write",
-                            arguments: JSON.stringify(resolveMockWriteArgs(userText)),
-                          },
-                        },
-                      ],
-                    },
-                    finish_reason: "tool_calls",
-                  },
-                ],
-                usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
-              }),
-            );
+
+          if (messageText(body.messages).includes("cancel billing")) {
+            writeCancelBillingStream(req, res, id, model);
             return;
           }
-          if (wantsToolCall(body)) {
-            res.end(
-              JSON.stringify({
+
+          if (messageText(body.messages).includes("midstream disconnect")) {
+            res.writeHead(200, {
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache",
+              Connection: "keep-alive",
+            });
+            res.write(
+              sseLine({
                 id,
-                object: "chat.completion",
+                object: "chat.completion.chunk",
                 model,
-                choices: [
-                  {
-                    index: 0,
-                    message: {
-                      role: "assistant",
-                      content: null,
-                      tool_calls: [
-                        {
-                          id: "call_mock_weather_1",
-                          type: "function",
-                          function: {
-                            name: "get_weather",
-                            arguments: JSON.stringify({ location: "San Francisco" }),
-                          },
-                        },
-                      ],
-                    },
-                    finish_reason: "tool_calls",
-                  },
-                ],
-                usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+                choices: [{ index: 0, delta: { content: "partial" }, finish_reason: null }],
               }),
             );
+            res.write("data: {not-json}\n\n");
+            res.end();
             return;
           }
-          res.end(
-            JSON.stringify({
-              id,
-              object: "chat.completion",
-              model,
-              choices: [
-                {
-                  index: 0,
-                  message: { role: "assistant", content: text },
-                  finish_reason: "stop",
-                },
-              ],
-              usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
-            }),
-          );
-          return;
-        }
 
-        if (messageText(body.messages).includes("openrouter hard cancel")) {
-          writeOpenRouterHardCancelStream(req, res, model);
-          return;
+          if (messageText(body.messages).includes("slow after output")) {
+            writeSlowAfterFirstChunk(res, id, model);
+            return;
+          }
         }
-
-        if (messageText(body.messages).includes("hang cancel drain")) {
-          writeHangCancelDrainStream(res, id, model);
-          return;
-        }
-
-        if (messageText(body.messages).includes("cancel billing")) {
-          writeCancelBillingStream(req, res, id, model);
-          return;
-        }
-
-        if (messageText(body.messages).includes("midstream disconnect")) {
-          res.writeHead(200, {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            Connection: "keep-alive",
-          });
-          res.write(
-            sseLine({
-              id,
-              object: "chat.completion.chunk",
-              model,
-              choices: [{ index: 0, delta: { content: "partial" }, finish_reason: null }],
-            }),
-          );
-          res.write("data: {not-json}\n\n");
-          res.end();
-          return;
-        }
-
-        if (messageText(body.messages).includes("slow before output")) {
-          writeSseLater(
-            res,
-            buildTextStreamChunks(id, model, mockAssistantText(body.messages)),
-            200,
-          );
-          return;
-        }
-
-        if (messageText(body.messages).includes("slow after output")) {
-          writeSlowAfterFirstChunk(res, id, model);
-          return;
-        }
-
-        const chunks = wantsBackgroundWriterHelperSpawn(body)
-          ? buildBackgroundWriterHelperSpawnChunks(id, model, lastUserMessageText(body.messages))
-          : wantsReturnResult(body)
-            ? buildReturnResultChunks(id, model)
-            : wantsWriteToolCall(body)
-              ? buildWriteToolCallStreamChunks({
-                  id,
-                  model,
-                  userText: lastUserMessageText(body.messages),
-                  callId: writeCallId,
-                })
-              : wantsToolCall(body)
-                ? buildToolCallStreamChunks(id, model)
-                : buildTextStreamChunks(id, model, mockAssistantText(body.messages));
-        writeSse(res, chunks);
+        const step =
+          body.stream && messageText(body.messages).includes("slow before output")
+            ? { text: mockAssistantText(body.messages), delayMs: 200 }
+            : (selectResponse(body) ?? options?.defaultResponse ?? { sample: "scene" });
+        writeMockResponse(res, {
+          id,
+          model,
+          stream: body.stream === true,
+          step,
+          requestCount: requestNumber,
+          promptTokens,
+        });
       } catch (err) {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: { message: String(err) } }));

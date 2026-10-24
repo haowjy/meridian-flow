@@ -10,4 +10,5 @@
   `persistentDelayMs` 30 s; observed 0.8–22 s). Peer success then pulls the other
   connections within ~0.5 s. Lowering those caps trades reconnect load for latency;
   revisit with production deploy-restart data. Affected paths:
-  `hocuspocus-document-transport.ts`, `ws-reconnect.ts`.
+  `hocuspocus-document-transport.ts` and
+  `packages/thread-client/src/socket/ws-reconnect.ts` (shared thread-client policy).

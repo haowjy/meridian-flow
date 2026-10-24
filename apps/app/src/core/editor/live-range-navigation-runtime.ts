@@ -1,75 +1,147 @@
-/** Active live-editor registry used by document navigation after route mounting. */
+/** Active destination editors used by passage and change-trail navigation. */
 import type { Editor } from "@tiptap/core";
 import type * as Y from "yjs";
+import type { DocumentSession } from "./document-session";
 import { relativeRangeToEditorPositions } from "./extensions/LiveRangeNavigationExtension";
 import { resolvePassage } from "./passage-resolution";
 
-const editors = new Map<string, Set<Editor>>();
+export type LiveEditorContainer = "editor" | "dock";
+export type LiveEditorTarget = {
+  editor: Editor;
+  session: DocumentSession;
+  localContentReady: boolean;
+  container: LiveEditorContainer;
+  /** Registration lifetime. Retirement revokes every capability on this target. */
+  signal: AbortSignal;
+};
 
-export function registerLiveRangeEditor(documentId: string, editor: Editor): () => void {
-  const documentEditors = editors.get(documentId) ?? new Set<Editor>();
-  documentEditors.add(editor);
-  editors.set(documentId, documentEditors);
+type LiveEditorRegistration = Omit<LiveEditorTarget, "signal">;
+
+const targets = new Map<string, Map<LiveEditorContainer, LiveEditorTarget>>();
+const listeners = new Map<string, Set<() => void>>();
+
+function targetKey(documentId: string, container: LiveEditorContainer): string {
+  return `${documentId}:${container}`;
+}
+
+export function registerLiveRangeEditor(
+  documentId: string,
+  registration: LiveEditorRegistration,
+): () => void {
+  const documentTargets = targets.get(documentId) ?? new Map();
+  const prior = documentTargets.get(registration.container);
+  const lifetime = new AbortController();
+  const target: LiveEditorTarget = { ...registration, signal: lifetime.signal };
+  retirements.set(target, lifetime);
+  if (prior) retireTarget(prior);
+  documentTargets.set(target.container, target);
+  targets.set(documentId, documentTargets);
+  const key = targetKey(documentId, target.container);
+  for (const listener of listeners.get(key) ?? []) listener();
   return () => {
-    const current = editors.get(documentId);
-    current?.delete(editor);
-    if (current?.size === 0) editors.delete(documentId);
+    const current = targets.get(documentId);
+    if (current?.get(target.container) === target) current.delete(target.container);
+    retireTarget(target);
+    if (current?.size === 0) targets.delete(documentId);
+    for (const listener of listeners.get(key) ?? []) listener();
   };
 }
 
-function activeEditors(documentId: string): Editor[] {
-  return [...(editors.get(documentId) ?? [])]
-    .filter((editor) => !editor.isDestroyed)
-    .sort(
-      (left, right) =>
-        Number(right.view.dom.offsetParent !== null) - Number(left.view.dom.offsetParent !== null),
-    );
+const retirements = new WeakMap<LiveEditorTarget, AbortController>();
+
+function retireTarget(target: LiveEditorTarget): void {
+  retirements.get(target)?.abort();
+  retirements.delete(target);
 }
 
-export function showLiveRangeInEditor(
+export async function whenLiveEditor(
   documentId: string,
+  container: LiveEditorContainer,
+  signal?: AbortSignal,
+): Promise<LiveEditorTarget | null> {
+  const current = targets.get(documentId)?.get(container);
+  if (current && !current.editor.isDestroyed) return current;
+  if (signal?.aborted) return null;
+  const key = targetKey(documentId, container);
+  return new Promise((resolve) => {
+    const settle = () => {
+      const target = targets.get(documentId)?.get(container);
+      if (!target || target.editor.isDestroyed) return;
+      cleanup();
+      resolve(target);
+    };
+    const abort = () => {
+      cleanup();
+      resolve(null);
+    };
+    const cleanup = () => {
+      signal?.removeEventListener("abort", abort);
+      const currentListeners = listeners.get(key);
+      currentListeners?.delete(settle);
+      if (currentListeners?.size === 0) listeners.delete(key);
+    };
+    const currentListeners = listeners.get(key) ?? new Set();
+    currentListeners.add(settle);
+    listeners.set(key, currentListeners);
+    signal?.addEventListener("abort", abort, { once: true });
+    settle();
+  });
+}
+
+export function showLiveRangeInTarget(
+  target: LiveEditorTarget,
   range: { start: Y.RelativePosition; end: Y.RelativePosition },
   boundary = false,
 ): { shown: boolean } {
-  const editor = activeEditors(documentId)[0];
-  if (!editor) return { shown: false };
-  const positions = relativeRangeToEditorPositions(editor, range);
+  if (target.signal.aborted || target.editor.isDestroyed) return { shown: false };
+  const positions = relativeRangeToEditorPositions(target.editor, range);
   if (!positions) return { shown: false };
   const shown = boundary
-    ? editor.commands.showLivePosition(range.start)
-    : editor.commands.showLiveRange(range);
+    ? target.editor.commands.showLivePosition(range.start)
+    : target.editor.commands.showLiveRange(range);
   return { shown };
 }
 
-/**
- * Run a search hit's resolution ladder against the mounted editor and mark
- * what it found. `null` means no editor has taken this document yet (or its
- * Yjs binding has not landed) — the caller retries; it is not an answer about
- * the passage.
- */
-export function showPassageInEditor(
-  documentId: string,
-  target: {
-    /** The block the hash resolved to, or null when the hash names none. */
+export function showPassageInTarget(
+  target: LiveEditorTarget,
+  passage: {
     block: { start: Y.RelativePosition; end: Y.RelativePosition } | null;
     term: string;
   },
 ): { outcome: "landed" | "stale" } | null {
-  const editor = activeEditors(documentId)[0];
-  if (!editor) return null;
-  const blockRange = target.block ? relativeRangeToEditorPositions(editor, target.block) : null;
-  // The block is live in Yjs (the caller just looked it up), so a range that
-  // will not resolve means the binding is still coming up, not that the
-  // passage is gone.
-  if (target.block && !blockRange) return null;
-  const resolution = resolvePassage(editor.state.doc, blockRange, target.term);
+  if (target.signal.aborted || target.editor.isDestroyed) return null;
+  const blockRange = passage.block
+    ? relativeRangeToEditorPositions(target.editor, passage.block)
+    : null;
+  if (passage.block && !blockRange) return null;
+  const resolution = resolvePassage(target.editor.state.doc, blockRange, passage.term);
   if (resolution.kind === "stale") return { outcome: "stale" };
-  return editor.commands.showPassageMatches(resolution.ranges) ? { outcome: "landed" } : null;
+  return target.editor.commands.showPassageMatches(resolution.ranges)
+    ? { outcome: "landed" }
+    : null;
 }
 
-export function showPeerMarkerInEditor(documentId: string, changeId: string): { shown: boolean } {
-  for (const editor of activeEditors(documentId)) {
-    if (editor.commands.showPeerMarker(changeId)) return { shown: true };
-  }
-  return { shown: false };
+export function showPeerMarkerInTarget(
+  target: LiveEditorTarget,
+  changeId: string,
+): { shown: boolean } {
+  return {
+    shown:
+      !target.signal.aborted &&
+      !target.editor.isDestroyed &&
+      target.editor.commands.showPeerMarker(changeId),
+  };
+}
+
+export function waitForLiveRangeRetry(signal: AbortSignal, delayMs = 25): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timeout = setTimeout(finish, delayMs);
+    signal.addEventListener("abort", finish, { once: true });
+  });
 }
