@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** Recovery hints exercise the real Hocuspocus retry loop with socket-boundary fakes. */
+/** Recovery hints exercise the real Hocuspocus retry loop with socket-boundary fakes.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - transport reconnect and retry schedule
+ */
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
