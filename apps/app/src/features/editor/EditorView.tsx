@@ -51,7 +51,12 @@ export function EditorView(props: EditorViewProps) {
       ? controller.inlineReview
       : null;
   const reviewRequested = requestedItemKey !== null;
-  const reviewLocation = review ? fileForDocument(review.documentId)?.contextLocation : null;
+  const reviewFile = review ? fileForDocument(review.documentId) : null;
+  const reviewLocation = reviewFile?.contextLocation ?? null;
+  // A drafted delete has no review room: its branch tree row is the change, while the
+  // live document remains the body the writer reviews. Treat that validated identity as
+  // a shown review once the live session is ready instead of leaving the editor pending.
+  const treeOnlyReview = review?.itemKey !== undefined && reviewFile?.draft.tree?.deleted === true;
   const reviewHolderUri = reviewLocation
     ? canonicalContextUri(reviewLocation.scheme, reviewLocation.path)
     : null;
@@ -106,6 +111,7 @@ export function EditorView(props: EditorViewProps) {
   // The editor existing is not enough: the review shows with its marks, in one
   // frame, so the writer never sees the draft text unmarked.
   const reviewVisible = reviewPainted && (settledEnough || marksWaitOverFor === reviewKey);
+  const reviewOnLiveDocument = treeOnlyReview && liveSession !== null;
   useEffect(() => {
     if (!reviewPainted || settledEnough || !reviewKey) return;
     const timer = window.setTimeout(() => setMarksWaitOverFor(reviewKey), REVIEW_MARKS_WAIT_MS);
@@ -138,7 +144,8 @@ export function EditorView(props: EditorViewProps) {
   // the review body and never before it, and then stays for the draft, even
   // if the body is rebuilt. A layout effect, so the
   // controller's update lands before paint, in the same frame as the body swap.
-  const chromeShown = (reviewVisible || review?.shown === true) && !terminal;
+  const chromeShown =
+    (reviewVisible || reviewOnLiveDocument || review?.shown === true) && !terminal;
   const { setInlineReviewShown } = controller;
   useLayoutEffect(() => {
     if (!review) return;
@@ -149,7 +156,7 @@ export function EditorView(props: EditorViewProps) {
     ? "review-error"
     : reviewVisible
       ? `review:${reviewKey}`
-      : reviewRequested || !liveSession
+      : (reviewRequested && !treeOnlyReview) || !liveSession
         ? "pending"
         : `live:${liveKey}`;
   const liveVisible = surface.startsWith("live:");

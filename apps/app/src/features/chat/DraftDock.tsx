@@ -283,7 +283,7 @@ function FileTrouble({ file, row = false }: { file: DockFile; row?: boolean }) {
 
 /**
  * One document's review door, independent of the strip's expansion toggle. A file whose only
- * change is a move or delete says so ("ch13: deleting"), since its row folds into this one.
+ * change is a move or delete says so ("ch13: Deleted"), since its row folds into this one.
  */
 function DockFileName({ file, onReview }: { file: DockFile; onReview: () => void }) {
   const touch = useCoarsePointer();

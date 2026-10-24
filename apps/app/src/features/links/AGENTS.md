@@ -7,8 +7,9 @@ Link meaning and per-editor cache rules belong to
 Markdown link to an address; `[[name]]` is text and never reaches here.
 
 - An answer is keyed by the link's ref and href, never the holder's text, so two
-  links sharing an href never share an answer, an edit re-asks nothing, and a
-  gone ref is never followable. While scope is `pending` a click waits for the
+  links sharing an href never share an answer and an edit re-asks nothing. A
+  gone document opens its retained Trash view when identity is known; a purged
+  or never-existing target opens nothing. While scope is `pending` a click waits for the
   real scope.
 
 - Scope is project, Work, optional lineage, holder base URI, and catalog

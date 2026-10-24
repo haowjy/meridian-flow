@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 import { getContextOperationReceipt, restoreContextDocuments } from "@/client/api/projects-api";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { announce, announceError, getContextTabs } from "@/client/stores";
 import { documentLocationName } from "../../chat/document-display-name";
 import { useDockDocumentStore } from "../dock/dock-document-store";
@@ -276,6 +277,9 @@ export function DocumentDeleteUndoProvider({
           );
           if (alternateLocations.length > 0)
             announce(t`Restored at ${alternateLocations.join(", ")}.`);
+          void queryClient.invalidateQueries({
+            queryKey: projectQueryKeys.documentTrash(projectId),
+          });
           dismiss(operationId);
         } catch {
           if (!isActive(owner)) return;

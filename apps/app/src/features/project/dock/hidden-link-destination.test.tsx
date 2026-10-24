@@ -12,7 +12,10 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
 import { ProjectDocumentLiveOpenerContext } from "../context/project-document-live-opener-context";
 import { recentOpening } from "../context/recent-opening";
-import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
+import {
+  type OpenContextRoute,
+  ProjectNavigationProvider,
+} from "../routing/ProjectNavigationContext";
 import { EditorReviewHandoffProvider } from "./editor-review-handoff";
 import { useReviewingLinkDestination } from "./useAiDraftLauncher";
 
@@ -48,11 +51,16 @@ async function follow(gesture: "current" | "new-tab") {
       <ProjectDocumentLiveOpenerContext.Provider
         value={{ open: liveOpen, pruneTransfers: vi.fn() } as never}
       >
-        <ProjectDocumentNavigationProvider projectId="project-a">
-          <EditorReviewHandoffProvider projectId="project-a" openContextRoute={route}>
-            <Probe />
-          </EditorReviewHandoffProvider>
-        </ProjectDocumentNavigationProvider>
+        <ProjectNavigationProvider
+          openContextRoute={route}
+          trash={{ destination: undefined, navigate: vi.fn() }}
+        >
+          <ProjectDocumentNavigationProvider projectId="project-a">
+            <EditorReviewHandoffProvider projectId="project-a" openContextRoute={route}>
+              <Probe />
+            </EditorReviewHandoffProvider>
+          </ProjectDocumentNavigationProvider>
+        </ProjectNavigationProvider>
       </ProjectDocumentLiveOpenerContext.Provider>,
       async () => {
         await act(async () => {

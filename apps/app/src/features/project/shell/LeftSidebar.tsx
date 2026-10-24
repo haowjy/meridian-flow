@@ -19,6 +19,7 @@ import { useOpenProjectDocument } from "../context/open-project-document";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
 import { useDockPlacement } from "../dock/use-dock-placement";
+import { useProjectTrashNavigation } from "../routing/ProjectNavigationContext";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleButton } from "./PanelToggleButton";
 import type { ScreenKey } from "./screens";
@@ -68,6 +69,7 @@ export function LeftSidebar({
   // chat on the Chat screen (the dock hosts images, PDFs and binaries in its viewer too),
   // and the Editor path everywhere else (see `use-dock-placement`).
   const placement = useDockPlacement();
+  const { navigate: navigateTrash } = useProjectTrashNavigation();
   const openDocument = useOpenProjectDocument(projectId);
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
@@ -121,6 +123,7 @@ export function LeftSidebar({
         onSelectScreen={onSelectScreen}
         presentation="desktop"
         notice={<DocumentDeleteUndoNotice surface="sidebar" className="mx-2 mb-1" />}
+        onOpenTrash={() => void navigateTrash(true)}
         scratch={
           <RailScratchSection
             projectId={projectId}

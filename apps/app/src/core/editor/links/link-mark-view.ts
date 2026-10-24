@@ -16,7 +16,7 @@
 import { t } from "@lingui/core/macro";
 
 import { linkChip, linkChipAttributes } from "./link-chip";
-import { type LinkKey, linkKeyOfMark } from "./link-resolution";
+import { goneLinkDocumentId, type LinkKey, linkKeyOfMark } from "./link-resolution";
 import type { MountedLinks } from "./link-storage";
 import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "./link-target";
 
@@ -54,8 +54,11 @@ export function drawLinkAnswer(
     );
     // The sighted writer reads the same words on hover; outside a draft the link's own title stays.
     draw(element, "title", inBranch ?? (typeof link.title === "string" ? link.title : null));
-    // Nothing follows a gone link, so it also loses the pointer and the hover.
-    draw(element, "aria-disabled", entry?.state === "gone" ? "true" : null);
+    draw(
+      element,
+      "aria-disabled",
+      entry?.state === "gone" && !goneLinkDocumentId(entry, key) ? "true" : null,
+    );
   };
 
   sync();

@@ -162,6 +162,37 @@ documents or drafts.
 Sign in, create/open a document, delete it using its Files menu, and confirm
 the tab/tree update without an error. Capture a screenshot outside this repo.
 
+## Document trash
+
+1. Create one document at a scheme root and one inside a folder. In a third
+   document, use the Editor's link picker to link to the first one; choosing
+   the result stores the target document's stable ID. Delete the linked
+   document, then delete the folder. Trash sits below Scratch in the sidebar
+   whether or not anything is deleted.
+2. Open Trash. Both documents appear newest first with their former area and
+   folder, deletion actor and date, days left, and Restore. Reload while the
+   list is open; the same list remains.
+3. Select the linked document's row. A read-only view shows its last settled text and the
+   banner "In the trash. Deleted by <name> on <date>. Gone for good in <n>
+   days." Close and reopen the view by following a stable link to that document;
+   the link chip may still say "No longer available".
+4. Restore that document from its banner. Restore remains disabled with
+   "Restoring" until the response. The Trash view closes into the live document,
+   and the catalog stream returns it to the context tree.
+5. Restore one document from the list. Its row says Restoring until the
+   response, leaves the list after success, and the catalog stream returns it
+   to the context tree.
+6. Create a document at the other deleted document's former path, then restore
+   the deleted document. Confirm the row leaves Trash and the success message
+   names the alternate location where it landed.
+7. Empty Trash by restoring the remaining rows. The list says "Trash is empty."
+   and the sidebar row stays. Repeat through the phone navigation drawer; Trash opens
+   the same auxiliary list and closes the drawer.
+
+An already-open live tab still follows terminal resource cleanup when another
+actor deletes its document: the tab closes and the removal notice appears. The
+read-only Trash view is an auxiliary route, not a retained Editor tab.
+
 ## Removal notices in the browser
 
 Two tabs of one signed-in browser (A and B), plus `./mf doc rm` as another

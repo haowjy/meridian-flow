@@ -109,6 +109,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             return { kind: "live" };
           },
         },
+        documentTrash: {
+          retained: async () => new Set(),
+        },
       };
       for (const baseUri of [null, "scratch://@c1/holder"]) {
         viewed.length = 0;
@@ -340,6 +343,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
         branches: { viewForWork: async () => ({ kind: "live" }) },
+        documentTrash: { retained: async () => new Set() },
       };
       const routeResolve = (holderDocumentId?: string) =>
         handleDocumentLinkResolveRequest(deps, {
@@ -419,6 +423,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
         branches: { viewForWork: async () => ({ kind: "live" }) },
+        documentTrash: { retained: async () => new Set() },
       };
       const result = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,
@@ -483,6 +488,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 ? { kind: "branch", branchId: branchB }
                 : { kind: "live" },
         },
+        documentTrash: { retained: async () => new Set() },
       };
       const resolveIn = (workId: string) =>
         handleDocumentLinkResolveRequest(deps, {
@@ -604,6 +610,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             return new Map(ids.map((id) => [id, {} as never]));
           },
         },
+        documentTrash: { retained: async () => new Set() },
       };
       const response = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,

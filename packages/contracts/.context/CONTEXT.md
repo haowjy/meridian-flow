@@ -28,7 +28,7 @@ contract owns a rule and where it is consumed.
 - Durable trail contracts stay lifecycle-neutral. Receiving-writer attention is
   computed per connection as `ChangeEventProjection.swept`, a best-effort
   live-session hint that never enters `TrailChangeV1` or persisted projections.
-- `src/works/work-retention.ts` owns retention timing used by server jobs and
+- `src/deletion-retention.ts` owns deletion retention timing used by server jobs and
   UI countdowns.
 - `protocol/document-filename.ts` parses writer names. Prose uses an empty
   extension and markdown filetype; registered binary suffixes remain lowercase
