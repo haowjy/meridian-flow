@@ -6,12 +6,24 @@ import {
 } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
+import { Doc, type XmlElement } from "yjs";
 import { editSegments } from "../apply/segments.js";
 import { inlineReplacementText, type ResolvedEdit } from "../apply/types.js";
-import { createAgentEditCodecFactory } from "../codec-adapter.js";
+import { type AgentEditCodec, createAgentEditCodecFactory } from "../codec-adapter.js";
+import type { BlockRef, DocHandle } from "../handles.js";
+import {
+  blockHashesForDoc,
+  fullHashForItemId,
+  getBlockItemId,
+  getTopLevelXmlBlocks,
+  lookupBlockHash,
+} from "../model/block-hash.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
+import type { AgentEditModel } from "../ports/model.js";
+import { alignBlocks, type CanPair } from "./block-alignment.js";
+import { findTextMatches } from "./find.js";
 import { type ResolveWriteParams, type ResolveWriteResult, resolveWrite } from "./resolve.js";
-import { resolveScope } from "./scope.js";
+import { type BlockScope, resolveScope } from "./scope.js";
 import { collisionMarkdown, prefixCollisionFixture } from "./test-support/hash-collision.js";
 
 const schema = buildDocumentSchema();
@@ -321,3 +333,118 @@ it("falls back to one block segment for changed marks and hard breaks", () => {
     expect(editSegments(doc, model, edits)).toHaveLength(1);
   }
 });
+
+{
+  const schema = buildDocumentSchema();
+  const codec = mdxCodec({ schema });
+
+  describe("lookupBlockHash", () => {
+    it("resolves a longer-than-current-display prefix", () => {
+      const doc = createHashDoc("Alpha\n\nBeta\n\nGamma");
+      const blocks = getTopLevelXmlBlocks(doc);
+      const displayedHash = blockHashesForDoc(doc)[1];
+      const longerPrefix = fullHash(blocks[1]).slice(0, displayedHash.length + 3);
+
+      const lookup = lookupBlockHash(doc, longerPrefix);
+
+      expect(lookup).toMatchObject({ ok: true, hash: longerPrefix });
+      expect(lookup.ok && lookup.block).toBe(blocks[1]);
+    });
+  });
+
+  function createHashDoc(markdown: string): Doc {
+    const doc = new Doc({ gc: false });
+    doc.clientID = 1;
+    const parsed = codec.parse(markdown);
+    const root = schema.node("doc", null, parsed.blocks);
+    prosemirrorToYXmlFragment(root, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
+    return doc;
+  }
+
+  function fullHash(block: XmlElement): string {
+    return fullHashForItemId(getBlockItemId(block));
+  }
+}
+
+{
+  const schema = buildDocumentSchema();
+  it.each([
+    ["青山绿水长河天地", ["青山", "绿水", "长河天地"]],
+    ["one two one three four five six", ["one two", "one", "three four five six"]],
+  ] as const)("joins three-way split/merge with either head or tail paired: %s", (text, parts) => {
+    const paragraph = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
+    const whole = [paragraph(text)],
+      pieces = parts.map(paragraph);
+    for (const paired of [0, pieces.length - 1]) {
+      const split: CanPair = (_old, next) => next === pieces[paired];
+      const merge: CanPair = (old, _next) => old === pieces[paired];
+      for (const [before, after, canPair] of [
+        [whole, pieces, split],
+        [pieces, whole, merge],
+      ] as const) {
+        const steps = alignBlocks(before, after, canPair);
+        expect(steps).toHaveLength(3);
+        expect(steps[0].structuralBoundary).toBeDefined();
+        expect(new Set(steps.map((step) => step.structuralBoundary)).size).toBe(1);
+      }
+    }
+  });
+}
+
+{
+  describe("findTextMatches", () => {
+    it("keeps an empty block in the middle of an exact multi-block needle", () => {
+      const result = findInBodies(["A", "", "B"], "A\n\n\n\nB");
+
+      expect(result).toMatchObject({ ok: true });
+      if (!result.ok) throw new Error(result.message);
+      expect(result.matches[0]).toMatchObject({
+        startIndex: 0,
+        endIndex: 2,
+        rangeSource: "A\n\n\n\nB",
+        matchEnd: "A\n\n\n\nB".length,
+      });
+    });
+
+    it("does not reinterpret mixed prose and hash-shaped lines", () => {
+      const result = findInBodies(["tail"], "Plain text\nde0e|tail");
+
+      expect(result).toMatchObject({
+        ok: false,
+        code: "not_found",
+        message: 'Could not find "Plain text\nde0e|tail" in the selected scope',
+      });
+    });
+
+    it("keeps hash-shaped raw document content literal when literal matching succeeds", () => {
+      const result = findInBodies(["abcd|note"], "abcd|note");
+
+      expect(result).toMatchObject({ ok: true });
+      if (!result.ok) throw new Error(result.message);
+      expect(result.matches[0]).toMatchObject({
+        rangeSource: "abcd|note",
+        matchEnd: "abcd|note".length,
+      });
+    });
+  });
+
+  function findInBodies(bodies: string[], find: string, all = false) {
+    const blocks = bodies.map((_, index) => ({ index }) as unknown as BlockRef);
+    const ctx = {
+      doc: {} as DocHandle,
+      codec: {} as AgentEditCodec,
+      model: {
+        getBlocks: () => blocks,
+        serializeBlockBodies: (_doc, _codec, selected) =>
+          selected.map((block) => bodies[blocks.indexOf(block)] ?? ""),
+      } satisfies Partial<AgentEditModel> as unknown as AgentEditModel,
+    };
+    const scope: BlockScope = {
+      kind: "document",
+      blocks,
+      startIndex: 0,
+      endIndex: blocks.length - 1,
+    };
+    return findTextMatches(ctx, scope, find, all);
+  }
+}
