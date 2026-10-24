@@ -710,6 +710,9 @@ export function useContextCatalogWake(
     () =>
       projectId
         ? transport?.subscribeCatalog(projectId, (hint) => {
+            void queryClient.invalidateQueries({
+              queryKey: projectQueryKeys.documentTrash(projectId),
+            });
             const requestedScope: CatalogScope =
               hint.scope.kind === "user" ? { kind: "user", userId: "self" } : hint.scope;
             const mounted =

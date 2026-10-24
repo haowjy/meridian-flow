@@ -11,6 +11,7 @@
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type {
   ContextOperationReceipt,
+  ListDocumentTrashResponse,
   ProjectChatFeedPage,
   RestoreContextDocumentsRequest,
   RestoreContextDocumentsResponse,
@@ -389,6 +390,16 @@ export function restoreContextDocuments(
     body,
     { headers: init?.headers, signal: init?.signal },
   );
+}
+
+export function getDocumentTrash(
+  projectId: string,
+  init?: RequestInitOptions,
+): Promise<ListDocumentTrashResponse> {
+  return getJson(urlFor(`/api/projects/${encodeURIComponent(projectId)}/context/trash`, init), {
+    headers: init?.headers,
+    signal: init?.signal,
+  });
 }
 
 export async function deleteContextEntry(
