@@ -1,4 +1,9 @@
-/** Shared effective-action history across card and model selectors. */
+/**
+ * Shared effective-action history across card and model selectors.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current inverse actions persistence protocol (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ */
 import { randomUUID } from "node:crypto";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";

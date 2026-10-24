@@ -1,4 +1,9 @@
-/** PostgreSQL races and recovery contracts for durable document derivation. */
+/**
+ * PostgreSQL races and recovery contracts for durable document derivation.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - current drizzle document derivations persistence protocol
+ */
 
 import { randomUUID } from "node:crypto";
 import { folderDocumentName } from "@meridian/contracts/protocol";
