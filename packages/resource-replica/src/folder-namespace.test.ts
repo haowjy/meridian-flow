@@ -287,7 +287,12 @@ it("admits recursive deletion in the folder journal and settles a delete receipt
             ok: true,
             value: {
               status: "deleted",
-              deletedDocumentIds: ["child"],
+              removed: [
+                {
+                  documentId: "child",
+                  removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+                },
+              ],
               availabilityGeneration: "9",
             },
           },
@@ -368,7 +373,7 @@ it.each([
           },
           result: {
             ok: true,
-            value: { status: "deleted", deletedDocumentIds: [], availabilityGeneration: "2" },
+            value: { status: "deleted", removed: [], availabilityGeneration: "2" },
           },
         },
       };

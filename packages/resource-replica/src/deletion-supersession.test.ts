@@ -40,7 +40,7 @@ const at = (version: string, rows: readonly CatalogEntry[] = entries): CatalogSn
 function deleted(
   request: Extract<NamespaceRequest, { kind: "delete" }>,
   observationVersion: string,
-  deletedDocumentIds: string[],
+  removedDocumentIds: string[],
 ): ContextOperationReceipt {
   return {
     observationVersion,
@@ -52,7 +52,14 @@ function deleted(
     },
     result: {
       ok: true,
-      value: { status: "deleted", deletedDocumentIds, availabilityGeneration: "9" },
+      value: {
+        status: "deleted",
+        removed: removedDocumentIds.map((documentId) => ({
+          documentId,
+          removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+        })),
+        availabilityGeneration: "9",
+      },
     },
   };
 }

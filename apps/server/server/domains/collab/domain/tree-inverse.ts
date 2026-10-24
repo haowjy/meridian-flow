@@ -71,6 +71,14 @@ export const isTransitionEntry = <T extends Pick<StoredTreeEntry, "tree">>(
   row: T,
 ): row is T & { tree: TreeTransitionChange } => row.tree.op !== "settle";
 
+/** Drafted transitions replaced in history by the live transition that Apply materialized. */
+export const materializedTreeEditIds = (tree: readonly StoredTreeEntry[]) =>
+  new Set(
+    tree.flatMap((row) =>
+      isTransitionEntry(row) && row.tree.materializes ? [row.tree.materializes] : [],
+    ),
+  );
+
 /** A planned live transition starts where the inverse's earlier steps leave the document. */
 export type PlannedLiveTransition = {
   destination: { kind: "live" };
@@ -277,6 +285,8 @@ export function treeChangeFault(change: TreeChange): string | null {
       : typeof state === "object" && state !== null && (live ? "living" in state : "row" in state);
   if (!shaped(change.before) || !shaped(change.after))
     return `A ${change.destination.kind} transition joins ${change.destination.kind} states`;
+  if (change.materializes && (!live || change.op !== "delete"))
+    return "Only a live delete can materialize a drafted tree entry";
   if (isLiveTransition(change)) {
     const { before, after } = change;
     const fits =

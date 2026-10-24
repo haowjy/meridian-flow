@@ -175,10 +175,6 @@ export type AgentEditAccess = {
 
 type AgentTreeChange = {
   documentId: DocumentId;
-  threadId: ThreadId;
-  turnId?: TurnId;
-  responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
-  toolCallId?: string;
   change: /** Live: the placement read before the mutation; the entry reads its `after` itself. */
     | {
         destination: "live";
@@ -189,8 +185,6 @@ type AgentTreeChange = {
         import("@meridian/contracts").BranchTreeTransition,
         "destination"
       > & { branchId: import("@meridian/contracts").BranchId });
-  /** Where the model saw the document: the path it moved or deleted it from. */
-  shownAt: string;
 } & (
   | { op: "create" | "delete"; landedAt?: never }
   | {
@@ -198,7 +192,22 @@ type AgentTreeChange = {
       /** The canonical destination committed by the tree write, never the requested path. */
       landedAt: string;
     }
-);
+) &
+  (
+    | {
+        threadId: ThreadId;
+        turnId?: TurnId;
+        responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+        toolCallId?: string;
+        /** Where the model saw the document: the path it moved or deleted it from. */
+        shownAt: string;
+        materializes?: never;
+      }
+    | {
+        /** Exact drafted tree entry that Apply materialized into live. */
+        materializes: string;
+      }
+  );
 
 export type AgentTreeHistory = {
   /**

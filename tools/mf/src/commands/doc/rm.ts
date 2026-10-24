@@ -25,7 +25,7 @@ export async function deleteDocument(session: Session, projectId: string, target
     {
       decode: jsonResponse(
         deleteContextEntryResultSchema.refine(
-          (response) => response.deletedDocumentIds.includes(documentId),
+          (response) => response.removed.some((removed) => removed.documentId === documentId),
           "Deletion did not cover the requested document",
         ),
       ),

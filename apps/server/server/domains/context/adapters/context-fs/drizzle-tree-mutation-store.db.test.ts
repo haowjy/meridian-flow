@@ -393,7 +393,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!empty || !occupied) throw new Error("expected folder tokens");
 
       const emptyResult = await tree.commitRecursiveDelete({ root: empty, mode: "recursive" });
-      expect(emptyResult).toMatchObject({ ok: true, value: { deletedDocumentIds: [] } });
+      expect(emptyResult).toMatchObject({ ok: true, value: { removed: [] } });
       const scope = { kind: "project", projectId: PROJECT_ID } as const;
       const beforePopulated = await catalog.snapshot(scope);
       const populatedResult = await tree.commitRecursiveDelete({
@@ -401,7 +401,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         mode: "recursive",
       });
       if (!emptyResult.ok || !populatedResult.ok) throw new Error("expected recursive receipts");
-      expect([...populatedResult.value.deletedDocumentIds].sort()).toEqual(
+      expect([...populatedResult.value.removed.map(({ documentId }) => documentId)].sort()).toEqual(
         [DOC_DELETE_ID, binaryId, customId, nestedId].sort(),
       );
       expect(BigInt(populatedResult.value.availabilityGeneration)).toBeGreaterThan(
@@ -610,7 +610,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               root: parent,
               mode: "recursive",
             });
-            expect(deleted).toMatchObject({ ok: true, value: { deletedDocumentIds: [childId] } });
+            expect(deleted).toMatchObject({
+              ok: true,
+              value: { removed: [{ documentId: childId }] },
+            });
             await expect(outerTree.inspect(sourceId, "parent/child")).resolves.toBeNull();
             throw outerFailure;
           }),

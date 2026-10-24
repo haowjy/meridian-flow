@@ -1,6 +1,6 @@
 /** Tree mutation half of Apply. Text Apply and Un-Apply never enter this module. */
 
-import type { DocumentId, UserId } from "@meridian/contracts";
+import type { DocumentId, LiveTreeState, UserId } from "@meridian/contracts";
 import { draftItemKey } from "@meridian/contracts";
 import type { AppliedReviewItem } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
@@ -18,6 +18,7 @@ import { place } from "../../context/tree/placement.js";
 import { restoreDocument } from "../../context/tree/removal.js";
 import type { TreeStateNode } from "../../context/tree/tree-view.js";
 import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
+import type { AgentTreeHistory } from "../contracts.js";
 import { ApplyClickRefused } from "../domain/apply-click.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 
@@ -27,6 +28,7 @@ export function createApplyTreeOperations(input: {
   commandDocumentId: DocumentId;
   userId: UserId;
   removal: DocumentRemoval;
+  history: Pick<AgentTreeHistory, "recordAgentTreeChange">;
   close: Pick<DraftClose, "closeDrafts">;
   arrivals?: Pick<DocumentArrivals, "settle">;
   catalog: ContextCatalogMutationPort;
@@ -97,12 +99,24 @@ export function createApplyTreeOperations(input: {
     const [identity] = await loadDocumentIdentityRows(tx, [node.nodeId]);
     if (!identity) throw new ApplyClickRefused("not_found");
     if (node.branch?.state === "deleting") {
+      const before: LiveTreeState = {
+        living: true,
+        at: {
+          folderId: identity.folderId,
+          rootSourceId: identity.folderId ? null : identity.contextSourceId,
+          name: identity.name,
+          extension: identity.extension,
+        },
+      };
+      let removed = false;
       if (!identity.deleted && !identity.hidden) {
-        await input.removal.remove({
-          documentIds: [node.nodeId],
-          reason: "deleted",
-          userId: input.userId,
-        });
+        removed = (
+          await input.removal.remove({
+            documentIds: [node.nodeId],
+            reason: "deleted",
+            userId: input.userId,
+          })
+        ).some(({ documentId }) => documentId === node.nodeId);
         await input.catalog.refreshSources([identity.contextSourceId], [node.nodeId]);
       }
       await input.close.closeDrafts(
@@ -110,11 +124,23 @@ export function createApplyTreeOperations(input: {
         { documentIds: [node.nodeId], branchId: input.branchId },
         "document_discarded",
       );
-      await dropDocumentRows(input.db, {
+      const settled = await dropDocumentRows(input.db, {
         branchId: input.branchId,
         documentIds: [node.nodeId],
         settle: { as: "applied", userId: input.userId },
       });
+      if (removed) {
+        const source = settled.applied.find(
+          (entry) => entry.documentId === node.nodeId && entry.tree.op === "delete",
+        );
+        if (!source) throw new Error(`Applied delete of ${node.nodeId} has no drafted origin`);
+        await input.history.recordAgentTreeChange({
+          documentId: node.nodeId,
+          materializes: source.editId,
+          op: "delete",
+          change: { destination: "live", before },
+        });
+      }
       if (identity.hidden && !identity.deleted) {
         const ended = await tombstoneUnused(input.db, [node.nodeId], {
           actor: { userId: input.userId },

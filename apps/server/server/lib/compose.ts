@@ -63,6 +63,7 @@ import {
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createRemovalRecords,
+  createRestoreRemovedDocuments,
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentLinkResolver,
@@ -73,6 +74,7 @@ import {
   type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
   type PromotionService,
+  type RestoreRemovedDocuments,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
   type UploadIntake,
@@ -282,6 +284,7 @@ export type AppServices = {
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
+  restoreRemovedDocuments: RestoreRemovedDocuments;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -371,6 +374,7 @@ export type ProductionAppPorts = {
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog & ContextCatalogMutationPort & ProjectCatalogLifecyclePort;
+  restoreRemovedDocuments: RestoreRemovedDocuments;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -687,6 +691,13 @@ export async function createProductionAppPorts(input: {
     linkAheadRegistry,
     contextPorts,
     contextCatalog,
+    restoreRemovedDocuments: createRestoreRemovedDocuments({
+      db,
+      fileAccess,
+      workProjection: workProjectionMutation,
+      arrivals,
+      catalog: contextCatalog,
+    }),
     projectContextAvailability,
     documentAddresses: createDocumentAddressResolver({
       locations: createDrizzleDocumentAddressStore(db),
@@ -1124,6 +1135,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
     contextCatalog: ports.contextCatalog,
+    restoreRemovedDocuments: ports.restoreRemovedDocuments,
     projectContextAvailability: ports.projectContextAvailability,
     documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
@@ -1441,6 +1453,9 @@ export function createInMemoryAppServices(): AppServices {
     linkAheadRegistry,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
+    async restoreRemovedDocuments() {
+      throw new Error("Document restore is unavailable in memory");
+    },
     documentAddresses: {
       async resolveById() {
         return { kind: "unavailable" };

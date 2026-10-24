@@ -9,7 +9,12 @@
  */
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
-import type { ContextOperationReceipt, ProjectChatFeedPage } from "@meridian/contracts/protocol";
+import type {
+  ContextOperationReceipt,
+  ProjectChatFeedPage,
+  RestoreContextDocumentsRequest,
+  RestoreContextDocumentsResponse,
+} from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
   apiProjectChatFeedPath,
@@ -372,6 +377,18 @@ export async function getContextOperationReceipt(
     { headers: init?.headers, signal: init?.signal },
   );
   return result.receipt;
+}
+
+export function restoreContextDocuments(
+  projectId: string,
+  body: RestoreContextDocumentsRequest,
+  init?: RequestInitOptions,
+): Promise<RestoreContextDocumentsResponse> {
+  return postJson(
+    urlFor(`/api/projects/${encodeURIComponent(projectId)}/context/restore`, init),
+    body,
+    { headers: init?.headers, signal: init?.signal },
+  );
 }
 
 export async function deleteContextEntry(

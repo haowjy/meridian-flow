@@ -93,7 +93,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(deleted, "the live delete").toMatchObject({ ok: true });
       if (deleted.ok) {
         expect
-          .soft(deleted.value.deletedDocumentIds, "receipt names live rows only")
+          .soft(
+            deleted.value.removed.map(({ documentId }) => documentId),
+            "receipt names live rows only",
+          )
           .toEqual([kept]);
       }
 

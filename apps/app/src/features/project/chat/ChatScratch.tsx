@@ -23,14 +23,11 @@ import type { CatalogContextView } from "@/client/query/context-catalog-projecti
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabs } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import {
-  DeleteConfirmationDialog,
-  type DeleteTarget,
-  useDeleteConfirmation,
-} from "../context/ContextEntryActions";
+import type { DeleteTarget } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { serverTabFromFile } from "../context/context-tab-from-file";
+import { type DeleteNoticeSurface, useDeleteContextEntry } from "../context/document-delete-undo";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
@@ -141,6 +138,7 @@ export function RailScratchSection({
             threadId={threadId}
             editorWorkId={editorWorkId}
             onPicked={onPicked}
+            surface="sidebar"
           />
         </div>
       ) : null}
@@ -154,16 +152,18 @@ export function ChatScratchTree({
   threadId,
   editorWorkId = null,
   onPicked,
+  surface = "sidebar",
 }: {
   projectId: string;
   threadId: string | null;
   editorWorkId?: string | null;
   onPicked?: () => void;
+  surface?: DeleteNoticeSurface;
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
   const { primary, earlier } = useScratchCatalogs(projectId, scratch);
   const openId = useOpenDocumentId(projectId, editorWorkId);
-  const deletion = useDeleteConfirmation({ projectId });
+  const deletion = useDeleteContextEntry(surface);
   const { works, noWork } = useWorks(projectId);
   const work =
     scratch?.owner.workId === noWork?.id
@@ -251,14 +251,6 @@ export function ChatScratchTree({
           }}
         />
       ) : null}
-      <DeleteConfirmationDialog
-        projectId={projectId}
-        target={deletion.target}
-        isPending={deletion.isPending}
-        error={deletion.error}
-        onCancel={deletion.cancel}
-        onConfirm={() => void deletion.confirm()}
-      />
     </>
   );
 }

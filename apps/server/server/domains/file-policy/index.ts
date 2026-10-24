@@ -26,6 +26,7 @@ export {
   targetDocumentId,
   type WorkRef,
 } from "./domain/types.js";
+export { type EditAdmissionResult, runEditAdmission } from "./edit-admission.js";
 export {
   FileEditRefusedError,
   markReplyConfirmed,

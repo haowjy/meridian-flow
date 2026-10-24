@@ -9,7 +9,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
 import { TreeChildren, type TreeEnv, TreeEnvProvider, TreeGroup } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
 import {
@@ -18,6 +17,7 @@ import {
   schemeIcon,
   schemeLabel,
 } from "./context-schemes";
+import { useDeleteContextEntry } from "./document-delete-undo";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 import { treeFolderIds } from "./tree-expansion-state";
@@ -212,7 +212,7 @@ function SchemeSection({
     setPendingOpenPath(null);
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 
-  const deleteConfirm = useDeleteConfirmation({ projectId });
+  const deletion = useDeleteContextEntry();
   const env = useMemo<TreeEnv | null>(
     () =>
       catalog
@@ -236,7 +236,7 @@ function SchemeSection({
                 }
               : undefined,
             onSelectFile,
-            onRequestDelete: deleteConfirm.requestDelete,
+            onRequestDelete: deletion.requestDelete,
             catalog,
             isExpanded,
             toggleEntry,
@@ -251,7 +251,7 @@ function SchemeSection({
       creating,
       onSelectFile,
       requestCreate,
-      deleteConfirm.requestDelete,
+      deletion.requestDelete,
       onCreateDone,
       isExpanded,
       toggleEntry,
@@ -312,14 +312,6 @@ function SchemeSection({
           </div>
         </TreeEnvProvider>
       ) : null}
-      <DeleteConfirmationDialog
-        projectId={projectId}
-        target={deleteConfirm.target}
-        isPending={deleteConfirm.isPending}
-        error={deleteConfirm.error}
-        onCancel={deleteConfirm.cancel}
-        onConfirm={deleteConfirm.confirm}
-      />
     </section>
   );
 }

@@ -382,7 +382,10 @@ it("settles a folder receipt and exact descendant tombstones atomically, fencing
             ok: true,
             value: {
               status: "deleted",
-              deletedDocumentIds: ["one", "two", "newer", "unknown"],
+              removed: ["one", "two", "newer", "unknown"].map((documentId) => ({
+                documentId,
+                removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+              })),
               availabilityGeneration: "9",
             },
           },
@@ -480,7 +483,12 @@ it.each([
           ok: true,
           value: {
             status: "deleted",
-            deletedDocumentIds: [key.handle],
+            removed: [
+              {
+                documentId: key.handle,
+                removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+              },
+            ],
             availabilityGeneration: "9",
           },
         },
