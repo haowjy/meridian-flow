@@ -102,6 +102,16 @@ export function ContextTreePanel({
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
         {schemes.map(renderScheme)}
       </div>
+      <div className="shrink-0">
+        {schemes.map((scheme) => (
+          <DocumentDeleteUndoRows
+            key={`${projectId}:undo:${scheme}`}
+            scheme={scheme}
+            owner={{ workId: editorWorkId }}
+            style={{ paddingLeft: rowPaddingLeft(1), paddingRight: 8 }}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -309,11 +319,6 @@ function SchemeSection({
                 <Trans>No context files yet.</Trans>
               </EmptyHint>
             ) : null}
-            <DocumentDeleteUndoRows
-              scheme={scheme}
-              owner={{ workId: editorWorkId }}
-              style={{ paddingLeft: rowPaddingLeft(1), paddingRight: 8 }}
-            />
           </div>
         </TreeEnvProvider>
       ) : null}
