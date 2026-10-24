@@ -105,17 +105,17 @@ export function ContextTreePanel({
           stay on one uninterrupted rail material beneath it. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
         {schemes.map(renderScheme)}
-        {trash.data?.documents.length ? (
-          <button
-            type="button"
-            onClick={onOpenTrash}
-            className="focus-ring mx-2 mt-1 flex min-h-9 items-center gap-2 rounded-md px-2 text-left text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
-          >
-            <Trash2 className="size-4 shrink-0" aria-hidden />
-            <Trans>Trash</Trans>
-          </button>
-        ) : null}
       </div>
+      {trash.data?.documents.length ? (
+        <button
+          type="button"
+          onClick={onOpenTrash}
+          className="focus-ring mx-2 mb-2 flex min-h-9 shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+        >
+          <Trash2 className="size-4 shrink-0" aria-hidden />
+          <Trans>Trash</Trans>
+        </button>
+      ) : null}
     </div>
   );
 }
