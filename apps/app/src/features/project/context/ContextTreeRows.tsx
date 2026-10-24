@@ -77,7 +77,7 @@ export function TreeGroup({ depth, children }: { depth: number; children: ReactN
       {children}
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 z-10 border-l border-border-subtle"
+        className="pointer-events-none absolute -inset-y-1 z-10 border-l border-border-subtle"
         style={{ left: rowPaddingLeft(depth) }}
       />
     </div>
