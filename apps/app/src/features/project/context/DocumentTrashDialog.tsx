@@ -5,7 +5,7 @@ import { Trans } from "@lingui/react/macro";
 import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArchiveRestore, ChevronLeft } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { useDocumentTrash, useTrashedDocument } from "@/client/query/useDocumentTrash";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -20,30 +20,83 @@ import {
 import { documentLocation, schemeLabel } from "./context-schemes";
 import { useOpenProjectDocument } from "./open-project-document";
 import { type RemovalVoice, removalVoice } from "./RemovedDocumentNotice";
-import { restoreTrashedDocument } from "./restore-trashed-document";
+import { restoreTrashedDocument, type TrashRestoreOutcome } from "./restore-trashed-document";
 import { ReadOnlyViewerFrame } from "./viewers/ReadOnlyViewerFrame";
 import { TextViewer } from "./viewers/TextViewer";
 
 type RowState = { kind: "restoring" } | { kind: "failed"; message: string };
 type TrashEntry = DocumentTrashEntry;
+type AfterRestore = (outcome: Extract<TrashRestoreOutcome, { kind: "living" }>) => Promise<string | null>;
 
 type RestoredNotice = { id: number; location: string };
 
 export function DocumentTrashDialog({ projectId }: { projectId: string }) {
   const { destination, navigate } = useProjectTrashNavigation();
   const documentId = typeof destination === "string" ? destination : null;
+  const queryClient = useQueryClient();
   const [restored, setRestored] = useState<RestoredNotice | null>(null);
-  const [restoringView, setRestoringView] = useState(false);
+  const [restoreStates, setRestoreStates] = useState<ReadonlyMap<string, RowState>>(() => new Map());
+  const restoring = useMemo(
+    () => [...restoreStates.values()].some((state) => state.kind === "restoring"),
+    [restoreStates],
+  );
   const dismissRestored = useCallback(() => setRestored(null), []);
-  useEffect(() => {
-    if (destination === undefined) setRestoringView(false);
-  }, [destination]);
+  const restore = useCallback(
+    (entry: TrashEntry, afterRestore?: AfterRestore) => {
+      if (restoreStates.get(entry.documentId)?.kind === "restoring") return;
+      setRestoreStates((current) =>
+        new Map(current).set(entry.documentId, { kind: "restoring" }),
+      );
+      void restoreTrashedDocument(queryClient, projectId, entry)
+        .then(async (outcome) => {
+          if (outcome.kind === "living") {
+            const failure = afterRestore ? await afterRestore(outcome) : null;
+            if (failure) {
+              setRestoreStates((current) =>
+                new Map(current).set(entry.documentId, { kind: "failed", message: failure }),
+              );
+            } else {
+              setRestoreStates((current) => {
+                const next = new Map(current);
+                next.delete(entry.documentId);
+                return next;
+              });
+            }
+            if (outcome.landedAt) setRestored({ id: Date.now(), location: outcome.landedAt });
+            return;
+          }
+          if (outcome.kind === "superseded") {
+            setRestoreStates((current) => {
+              const next = new Map(current);
+              next.delete(entry.documentId);
+              return next;
+            });
+            return;
+          }
+          setRestoreStates((current) =>
+            new Map(current).set(entry.documentId, {
+              kind: "failed",
+              message: restoreFailureMessage(entry.name, outcome.kind),
+            }),
+          );
+        })
+        .catch(() =>
+          setRestoreStates((current) =>
+            new Map(current).set(entry.documentId, {
+              kind: "failed",
+              message: restoreFailureMessage(entry.name, "network"),
+            }),
+          ),
+        );
+    },
+    [projectId, queryClient, restoreStates],
+  );
 
   return (
     <>
       <Dialog
         open={destination !== undefined}
-        onOpenChange={(open) => !open && !restoringView && void navigate(false)}
+        onOpenChange={(open) => !open && !restoring && void navigate(false)}
       >
         <DialogContent
           className={
@@ -58,14 +111,15 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
               projectId={projectId}
               documentId={documentId}
               onBack={() => void navigate(true)}
-              onRestoredAt={(location) => setRestored({ id: Date.now(), location })}
-              onRestoreStateChange={setRestoringView}
+              state={restoreStates.get(documentId)}
+              onRestore={restore}
             />
           ) : (
             <DocumentTrashList
               projectId={projectId}
               onOpenDocument={(id) => void navigate(id)}
-              onRestoredAt={(location) => setRestored({ id: Date.now(), location })}
+              states={restoreStates}
+              onRestore={restore}
             />
           )}
         </DialogContent>
@@ -78,57 +132,15 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
 function DocumentTrashList({
   projectId,
   onOpenDocument,
-  onRestoredAt,
+  states,
+  onRestore,
 }: {
   projectId: string;
   onOpenDocument: (documentId: string) => void;
-  onRestoredAt: (location: string) => void;
+  states: ReadonlyMap<string, RowState>;
+  onRestore: (entry: TrashEntry) => void;
 }) {
   const query = useDocumentTrash(projectId);
-  const queryClient = useQueryClient();
-  const [rowStates, setRowStates] = useState<ReadonlyMap<string, RowState>>(() => new Map());
-
-  const restore = useCallback(
-    (entry: TrashEntry) => {
-      if (rowStates.get(entry.documentId)?.kind === "restoring") return;
-      setRowStates((current) => new Map(current).set(entry.documentId, { kind: "restoring" }));
-      void restoreTrashedDocument(queryClient, projectId, entry)
-        .then((outcome) => {
-          if (outcome.kind === "living") {
-            setRowStates((current) => {
-              const next = new Map(current);
-              next.delete(entry.documentId);
-              return next;
-            });
-            if (outcome.landedAt) onRestoredAt(outcome.landedAt);
-            return;
-          }
-          if (outcome.kind === "superseded") {
-            setRowStates((current) => {
-              const next = new Map(current);
-              next.delete(entry.documentId);
-              return next;
-            });
-            return;
-          }
-          setRowStates((current) =>
-            new Map(current).set(entry.documentId, {
-              kind: "failed",
-              message: restoreFailureMessage(entry.name, outcome.kind),
-            }),
-          );
-        })
-        .catch(() =>
-          setRowStates((current) =>
-            new Map(current).set(entry.documentId, {
-              kind: "failed",
-              message: restoreFailureMessage(entry.name, "network"),
-            }),
-          ),
-        );
-    },
-    [onRestoredAt, projectId, queryClient, rowStates],
-  );
 
   return (
     <>
@@ -151,9 +163,9 @@ function DocumentTrashList({
                 node: (
                   <TrashRow
                     entry={entry}
-                    state={rowStates.get(entry.documentId)}
+                    state={states.get(entry.documentId)}
                     onOpen={() => onOpenDocument(entry.documentId)}
-                    onRestore={() => restore(entry)}
+                    onRestore={() => onRestore(entry)}
                   />
                 ),
               };
@@ -228,79 +240,42 @@ function TrashedDocumentView({
   projectId,
   documentId,
   onBack,
-  onRestoredAt,
-  onRestoreStateChange,
+  state,
+  onRestore,
 }: {
   projectId: string;
   documentId: string;
   onBack: () => void;
-  onRestoredAt: (location: string) => void;
-  onRestoreStateChange: (restoring: boolean) => void;
+  state?: RowState;
+  onRestore: (entry: TrashEntry, afterRestore?: AfterRestore) => void;
 }) {
   const { i18n } = useLingui();
   const query = useTrashedDocument(projectId, documentId);
-  const queryClient = useQueryClient();
   const openDocument = useOpenProjectDocument(projectId);
   const captureNavigation = useCaptureProjectNavigation();
-  const [state, setState] = useState<RowState>();
   const document = query.data;
 
   const restore = useCallback(() => {
     if (!document || state?.kind === "restoring") return;
-    setState({ kind: "restoring" });
-    onRestoreStateChange(true);
     const isCurrent = captureNavigation?.() ?? (() => true);
-    let navigationCommitted = false;
-    void restoreTrashedDocument(queryClient, projectId, document)
-      .then(async (outcome) => {
-        if (outcome.kind === "living") {
-          if (!isCurrent()) {
-            setState(undefined);
-            return;
-          }
-          const opened = await openDocument({
-            documentId,
-            disposition: "current",
-            refreshIdentity: true,
-          });
-          if (opened.kind === "committed") {
-            navigationCommitted = true;
-            if (outcome.landedAt) onRestoredAt(outcome.landedAt);
-            return;
-          }
-          setState({
-            kind: "failed",
-            message: t`Restored ${document.name}, but couldn't open it. Try again from the file list.`,
-          });
-          return;
-        }
-        if (outcome.kind === "superseded") {
-          setState(undefined);
-          return;
-        }
-        setState({
-          kind: "failed",
-          message: restoreFailureMessage(document.name, outcome.kind),
-        });
-      })
-      .catch(() =>
-        setState({
-          kind: "failed",
-          message: restoreFailureMessage(document.name, "network"),
-        }),
-      )
-      .finally(() => {
-        if (!navigationCommitted) onRestoreStateChange(false);
+    onRestore(document, async () => {
+      if (!isCurrent()) return null;
+      const opened = await openDocument({
+        documentId,
+        disposition: "current",
+        refreshIdentity: true,
       });
+      return opened.kind === "committed"
+        ? null
+        : t`Restored ${document.name}, but couldn't open it. Try again from the file list.`;
+    });
   }, [
     captureNavigation,
     document,
     documentId,
-    onRestoredAt,
-    onRestoreStateChange,
+    onRestore,
     openDocument,
     projectId,
-    queryClient,
     state?.kind,
   ]);
 
