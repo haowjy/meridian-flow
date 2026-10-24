@@ -151,6 +151,11 @@ Work deletion soft-deletes its owned sources, documents, and folders marked
 `deletedByWorkId`; restore clears only those, so separately deleted content
 stays deleted.
 
+The hourly trash purge releases a deleted document's content after 30 days while keeping its
+tombstone and incoming identity links. It takes the Work, branch, namespace, document, and draft
+locks before rechecking eligibility. Any pending branch text or tree change defers purge; otherwise
+collab closes the document's active drafts before the storage-release kernel erases its content.
+
 ## Catalog and publication
 
 The catalog is a live tree view, not a second visibility policy. Branch-hidden

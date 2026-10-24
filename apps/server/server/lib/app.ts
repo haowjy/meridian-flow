@@ -50,6 +50,11 @@ async function createAppServices(): Promise<AppServices> {
       { name: "orphan-repair", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.repairOrphans },
       { name: "work-purge", delayMs: WORK_PURGE_INTERVAL_MS, run: app.recovery.purgeWorks },
       {
+        name: "document-purge",
+        delayMs: WORK_PURGE_INTERVAL_MS,
+        run: app.recovery.purgeDocuments,
+      },
+      {
         name: "report-publication",
         delayMs: WAKE_SWEEP_INTERVAL_MS,
         run: app.recovery.publishReports,

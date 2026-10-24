@@ -10,8 +10,11 @@ import { expect, it } from "vitest";
 
 const SERVER = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 
-/** The shared closer owns every closure; storage release only disposes bytes. */
-const END_OF_USE = ["domains/collab/adapters/drizzle-draft-close.ts"];
+/** The shared closer owns closure; purge deletes only drafts it has closed through that owner. */
+const END_OF_USE = [
+  "domains/collab/adapters/drizzle-draft-close.ts",
+  "domains/context/tree/node-rows.ts",
+];
 
 function sources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
