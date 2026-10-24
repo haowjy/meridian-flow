@@ -26,7 +26,9 @@ import { TextViewer } from "./viewers/TextViewer";
 
 type RowState = { kind: "restoring" } | { kind: "failed"; message: string };
 type TrashEntry = DocumentTrashEntry;
-type AfterRestore = (outcome: Extract<TrashRestoreOutcome, { kind: "living" }>) => Promise<string | null>;
+type AfterRestore = (
+  outcome: Extract<TrashRestoreOutcome, { kind: "living" }>,
+) => Promise<string | null>;
 
 type RestoredNotice = { id: number; location: string };
 
@@ -35,7 +37,9 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
   const documentId = typeof destination === "string" ? destination : null;
   const queryClient = useQueryClient();
   const [restored, setRestored] = useState<RestoredNotice | null>(null);
-  const [restoreStates, setRestoreStates] = useState<ReadonlyMap<string, RowState>>(() => new Map());
+  const [restoreStates, setRestoreStates] = useState<ReadonlyMap<string, RowState>>(
+    () => new Map(),
+  );
   const restoring = useMemo(
     () => [...restoreStates.values()].some((state) => state.kind === "restoring"),
     [restoreStates],
@@ -44,9 +48,7 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
   const restore = useCallback(
     (entry: TrashEntry, afterRestore?: AfterRestore) => {
       if (restoreStates.get(entry.documentId)?.kind === "restoring") return;
-      setRestoreStates((current) =>
-        new Map(current).set(entry.documentId, { kind: "restoring" }),
-      );
+      setRestoreStates((current) => new Map(current).set(entry.documentId, { kind: "restoring" }));
       void restoreTrashedDocument(queryClient, projectId, entry)
         .then(async (outcome) => {
           if (outcome.kind === "living") {
@@ -269,15 +271,7 @@ function TrashedDocumentView({
         ? null
         : t`Restored ${document.name}, but couldn't open it. Try again from the file list.`;
     });
-  }, [
-    captureNavigation,
-    document,
-    documentId,
-    onRestore,
-    openDocument,
-    projectId,
-    state?.kind,
-  ]);
+  }, [captureNavigation, document, documentId, onRestore, openDocument, projectId, state?.kind]);
 
   return (
     <>
