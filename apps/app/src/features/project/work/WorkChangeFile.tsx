@@ -1,7 +1,7 @@
 /**
  * A Work's pending file, expandable to its changes. Commands act in place; the file name opens
- * review. Preview reads begin only when expanded; a move or delete with no text needs no read,
- * so it shows as the file's one row ("ch13: deleting") without expanding.
+ * review. Preview reads begin only when expanded. A drafted delete is always the file's one row,
+ * even when its room also contains text changes, and never expands into those changes.
  */
 import { t } from "@lingui/core/macro";
 import { ChevronRight } from "lucide-react";
@@ -39,7 +39,8 @@ export function WorkChangeFile({
   const { openReviewFile } = useAiDraftLauncher();
   const [previewing, setPreviewing] = useState(false);
   const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
-  const treeOnly = !file.draft.hasDraft && hasTreeLine(file.draft);
+  const draftedDelete = file.draft.tree?.deleted === true;
+  const treeOnly = draftedDelete || (!file.draft.hasDraft && hasTreeLine(file.draft));
   const shown = expanded || treeOnly;
   const view = useDraftView(draft, { controller, enabled: shown, item: file.draft });
   if (
@@ -54,7 +55,7 @@ export function WorkChangeFile({
 
   const review = (focus?: ReviewFocus) => {
     controller.dismissNotice();
-    return file.draft.hasDraft
+    return file.draft.hasDraft || draftedDelete
       ? openReviewFile(file, workId, focus)
       : imageOpenable && setPreviewing(true);
   };
@@ -99,7 +100,10 @@ export function WorkChangeFile({
               "w-auto flex-1 pl-1",
               touch && "min-h-11",
             )}
-            disabled={!file.contextLocation || (file.draft.hasDraft === false && !imageOpenable)}
+            disabled={
+              !file.contextLocation ||
+              (file.draft.hasDraft === false && !imageOpenable && !draftedDelete)
+            }
             onClick={() => review()}
           >
             <span className="min-w-0 flex-1 truncate font-medium">{name}</span>

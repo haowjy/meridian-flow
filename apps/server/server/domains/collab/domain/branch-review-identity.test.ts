@@ -1,4 +1,8 @@
-/** A review key names one branch and document; a replacement branch opened mid-request never answers for it. */
+/** A review key names one branch and document; a replacement branch opened mid-request never answers for it.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Validated branch identity remains selected
+ */
 import type { BranchId } from "@meridian/contracts";
 import { draftItemKey } from "@meridian/contracts";
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";

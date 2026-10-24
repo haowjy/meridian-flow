@@ -47,8 +47,8 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   schemas. Stop and queue pass unknown bodies to the shared hand-back operation, which
   validates them before confirming. Snapshots use `threadSnapshotSchema` in both hosts.
   Work and document-reference lookups use explicitly typed identity projections, not casts
-  claiming full catalog validation. Deletion must also name the requested document in
-  `deletedDocumentIds` before `doc rm` or overwrite reports it deleted.
+  claiming full catalog validation. Deletion must also include the requested document in
+  `removed` with its removal identity before `doc rm` or overwrite reports it deleted.
   Diagnostic-only assertions remain in `project/list.ts`, `log/log.ts` and
   `thread/context.ts`; none feeds a mutation or terminal claim.
   Generic `api` explicitly requests text, then decodes JSON/transport envelopes when possible;

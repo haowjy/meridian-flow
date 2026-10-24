@@ -1,4 +1,8 @@
-/** Context router metadata propagation at the adapter-to-public-port boundary. */
+/** Context router metadata propagation at the adapter-to-public-port boundary.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Stale-target translation and owner-list row shape
+ */
 import { describe, expect, it, vi } from "vitest";
 import { Err, Ok } from "../../../shared/result.js";
 import { testWorkHandle } from "../../../test-support/work-handle.js";
@@ -60,7 +64,15 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
       ),
       commitRecursiveDelete: vi.fn(async (command) =>
         Ok({
-          deletedDocumentIds: command.root.kind === "file" ? [command.root.nodeId] : [],
+          removed:
+            command.root.kind === "file"
+              ? [
+                  {
+                    documentId: command.root.nodeId,
+                    removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+                  },
+                ]
+              : [],
           availabilityGeneration: "7",
         }),
       ),

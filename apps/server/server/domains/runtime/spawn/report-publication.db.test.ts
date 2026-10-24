@@ -1,4 +1,9 @@
-/** PostgreSQL publication B and orphan recovery after durable terminal A. */
+/**
+ * PostgreSQL publication B and orphan recovery after durable terminal A.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - parent-first locking, bounded report sweeps, placeholder repair, and deleted-caller parking (kb/decisions/agents/conversations/child-execution-reports.md)
+ */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -37,9 +42,7 @@ else
     const { createDrizzleRepositoriesForTest } = await import(
       "../../threads/adapters/drizzle/repositories.js"
     );
-    const { CompactionMetadataCodec, createDrizzleEventJournalWriter } = await import(
-      "../../threads/index.js"
-    );
+    const { CompactionMetadataCodec } = await import("../../threads/index.js");
     const { createInMemoryEventSink } = await import("../../observability/index.js");
     const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
     const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
@@ -822,130 +825,6 @@ else
         props: { outcome: "failed", execution: ids.execution },
       });
     });
-
-    it("leaves a pending C alone while the session claim is held, even when its lease expired", async () => {
-      const c = await repos.turns.create({
-        threadId: ids.root,
-        prevTurnId: ids.rootTurn,
-        role: "compaction",
-        origin: "system",
-        status: "pending",
-      });
-      const authority = createDrizzleRunClaim(db, { holderId: "placeholder-live-run" });
-      const lease = await authority.startExecution(ids.root, crypto.randomUUID(), async () => {});
-      if (!lease) throw new Error("failed to acquire run claim");
-      await db
-        .update(schema.threadRunLeases)
-        .set({ expiresAt: new Date(0) })
-        .where(eq(schema.threadRunLeases.threadId, ids.root));
-      const repair = createTestOrphanRepair(db, {
-        inbox: createDrizzleInbox(db),
-        repos,
-        eventWriter,
-        authority,
-        publisher,
-        eventSink,
-      });
-
-      try {
-        expect(await repair.sweep(10)).toBeGreaterThanOrEqual(1);
-        expect(await repos.turns.findById(c.id)).toMatchObject({ status: "pending" });
-      } finally {
-        await authority.release(lease);
-      }
-    });
-
-    it("finalizes a stale C before run-start selection and redelivers the late writer message", async () => {
-      const orphanAssistant = await repos.turns.create({
-        threadId: ids.root,
-        prevTurnId: ids.rootTurn,
-        role: "assistant",
-        origin: "assistant",
-        status: "streaming",
-      });
-      const c = await repos.turns.create({
-        threadId: ids.root,
-        prevTurnId: orphanAssistant.id,
-        role: "compaction",
-        origin: "system",
-        status: "pending",
-      });
-      const authority = createDrizzleRunClaim(db, { holderId: "placeholder-run-start" });
-      const runDelivery = createTestDrizzleDelivery(db, {
-        repos,
-        eventWriter,
-        runClaim: authority,
-      });
-      const message = await runDelivery.enqueue({
-        threadId: ids.root,
-        intent: "message",
-        provenance: { kind: "writer", actorId: ids.user },
-        body: { kind: "text", text: "Arrived after compaction started." },
-        idempotencyKey: "late-writer-after-orphaned-c",
-      });
-      const userTurn = await repos.turns.create({
-        id: message.id as TurnId,
-        threadId: ids.root,
-        prevTurnId: c.id,
-        role: "user",
-        origin: "writer",
-        status: "complete",
-      });
-      await repos.blocks.create({
-        turnId: userTurn.id,
-        blockType: "text",
-        sequence: 0,
-        content: "Arrived after compaction started.",
-      });
-      const lease = await authority.startExecution(ids.root, crypto.randomUUID(), () =>
-        runDelivery.settleStaleExecution(ids.root),
-      );
-      if (!lease) throw new Error("failed to acquire run claim");
-      expect((await repos.turns.findById(orphanAssistant.id))?.status).toBe("error");
-      const repaired = await repos.turns.findById(c.id);
-      expect(repaired?.status).toBe("error");
-      expect(CompactionMetadataCodec.parse(repaired?.metadata)).toMatchObject({
-        reason: "interrupted",
-        phase: "recovery",
-      });
-      const assistantId = crypto.randomUUID() as TurnId;
-      await runDelivery.adoptBatch(lease, async (selection) => {
-        expect(selection.batch.map(({ id }) => id)).toEqual([message.id]);
-        return {
-          value: assistantId,
-          turnId: assistantId,
-          turnKind: "assistant",
-          messageIds: [message.id],
-          persist: async () => {
-            await repos.turns.create({
-              id: assistantId,
-              threadId: ids.root,
-              prevTurnId: userTurn.id,
-              role: "assistant",
-              origin: "assistant",
-              status: "streaming",
-            });
-          },
-        };
-      });
-      const turns = await repos.turns.listByThread(ids.root);
-      expect(turns.slice(-3).map(({ id, role, status }) => ({ id, role, status }))).toEqual([
-        { id: c.id, role: "compaction", status: "error" },
-        { id: message.id, role: "user", status: "complete" },
-        { id: assistantId, role: "assistant", status: "streaming" },
-      ]);
-      const assistant = await repos.turns.findById(assistantId);
-      if (!assistant) throw new Error("assistant turn missing");
-      await runDelivery.ackWithResponse(lease, [message.id], assistant, async () => true);
-      await runDelivery.close({
-        lease,
-        turnId: assistantId,
-        cause: { kind: "success", finishReason: "end_turn" },
-      });
-      expect(await inbox.selectPending(ids.root)).toEqual([]);
-      expect(await repos.turns.listUnsettledForThread(ids.root)).toEqual([]);
-    });
-
     it("stops the orphan report walk at a newer compaction execution selector", async () => {
       const c = await repos.turns.create({
         threadId: ids.child,

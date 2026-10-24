@@ -67,6 +67,11 @@ export async function readTurnEditTargets(
           ? eq(documentEdits.editScopeId, query.responseIdentity.editScopeId)
           : undefined,
         query.documentIds ? inArray(documentEdits.documentId, query.documentIds) : undefined,
+        sql`NOT EXISTS (
+          SELECT 1 FROM document_edits AS materialized
+          WHERE materialized.document_id = ${documentEdits.documentId}
+            AND materialized.tree_change->>'materializes' = ${documentEdits.id}::text
+        )`,
       ),
     )
     .orderBy(documentEdits.documentId);

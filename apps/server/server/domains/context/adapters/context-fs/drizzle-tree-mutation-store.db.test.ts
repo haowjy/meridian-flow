@@ -1,7 +1,8 @@
 /**
- * Drizzle ContextTreeMutationStore: recursive-delete ownership and rollback proofs, and the
- * move barrier. What live folder operations do to hidden nodes is
- * `tree/folder-normalization.db.test.ts`.
+ * Drizzle ContextTreeMutationStore: recursive-delete ownership and rollback proofs, and the move barrier.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - compatible document row locks between moves and derivation admission (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 
 import { randomUUID } from "node:crypto";
@@ -392,7 +393,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!empty || !occupied) throw new Error("expected folder tokens");
 
       const emptyResult = await tree.commitRecursiveDelete({ root: empty, mode: "recursive" });
-      expect(emptyResult).toMatchObject({ ok: true, value: { deletedDocumentIds: [] } });
+      expect(emptyResult).toMatchObject({ ok: true, value: { removed: [] } });
       const scope = { kind: "project", projectId: PROJECT_ID } as const;
       const beforePopulated = await catalog.snapshot(scope);
       const populatedResult = await tree.commitRecursiveDelete({
@@ -400,7 +401,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         mode: "recursive",
       });
       if (!emptyResult.ok || !populatedResult.ok) throw new Error("expected recursive receipts");
-      expect([...populatedResult.value.deletedDocumentIds].sort()).toEqual(
+      expect([...populatedResult.value.removed.map(({ documentId }) => documentId)].sort()).toEqual(
         [DOC_DELETE_ID, binaryId, customId, nestedId].sort(),
       );
       expect(BigInt(populatedResult.value.availabilityGeneration)).toBeGreaterThan(
@@ -609,7 +610,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               root: parent,
               mode: "recursive",
             });
-            expect(deleted).toMatchObject({ ok: true, value: { deletedDocumentIds: [childId] } });
+            expect(deleted).toMatchObject({
+              ok: true,
+              value: { removed: [{ documentId: childId }] },
+            });
             await expect(outerTree.inspect(sourceId, "parent/child")).resolves.toBeNull();
             throw outerFailure;
           }),

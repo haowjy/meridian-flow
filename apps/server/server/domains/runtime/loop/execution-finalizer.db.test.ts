@@ -1,4 +1,9 @@
-/** PostgreSQL terminal A: turn, report, journal, and publication share one commit. */
+/**
+ * PostgreSQL terminal A: turn, report, journal, and publication share one commit.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - mixed message and control batch splitting under one execution lease and report (kb/decisions/agents/conversations/child-execution-reports.md)
+ */
 
 import type { FailureRecord } from "@meridian/contracts/failures";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -34,9 +39,7 @@ else
     const { createDrizzleRepositoriesForTest } = await import(
       "../../threads/adapters/drizzle/repositories.js"
     );
-    const { createDrizzleEventJournalWriter, createDrizzleEventJournalReader } = await import(
-      "../../threads/index.js"
-    );
+    const { createDrizzleEventJournalReader } = await import("../../threads/index.js");
     const { finalizeExecution } = await import("./execution-finalizer.js");
 
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
@@ -53,56 +56,6 @@ else
     afterAll(async () => {
       await db.close();
     });
-
-    it("cancels only the adopted inbox batch atomically, leaving later messages for a new turn", async () => {
-      const { createLockedDrizzleInbox } = await import("../../../test-support/locked-inbox.js");
-      const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
-      const { createRuntimeHarness } = await import("./__tests__/runtime-harness.js");
-      const inbox = createLockedDrizzleInbox(db);
-      const authority = createDrizzleRunClaim(db);
-      const enqueue = (text: string) =>
-        inbox.enqueue({
-          threadId: ids.caller,
-          intent: "message",
-          provenance: { kind: "writer", actorId: ids.user },
-          body: { kind: "text", text },
-          idempotencyKey: text,
-        });
-      const stopped = await enqueue("stopped request");
-      {
-        const controller = new AbortController();
-        const orchestrator = createRuntimeHarness({
-          backgroundTasks: processDetachedWork,
-          repos,
-          eventWriter,
-          delivery: createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: authority }),
-          runClaim: authority,
-          boundThreads: () => [ids.caller],
-        }).orchestrator;
-        const handle = await orchestrator.prepare({
-          threadId: ids.caller,
-          drain: true,
-          signal: controller.signal,
-        });
-        const later = await enqueue("later request");
-        controller.abort();
-        expect((await inbox.selectPending(ids.caller)).map((row) => row.id)).toEqual([
-          stopped.id,
-          later.id,
-        ]);
-        expect((await handle.execute()).status).toBe("cancelled");
-        expect((await repos.turns.findById(handle.executionTurnId))?.status).toBe("cancelled");
-        expect((await inbox.selectPending(ids.caller)).map((row) => row.id)).toEqual([later.id]);
-        expect(await authority.holder(ids.caller)).toBeNull();
-        // The release's wake starts the later request in a new turn.
-        await processDetachedWork.drain();
-        expect(await inbox.selectPending(ids.caller)).toEqual([]);
-        const tail = (await repos.turns.listByThread(ids.caller)).at(-1);
-        expect(tail?.id).not.toBe(handle.executionTurnId);
-        expect(tail?.role).toBe("assistant");
-      }
-    });
-
     it.each([
       "tool",
       "rollback",

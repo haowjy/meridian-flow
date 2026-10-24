@@ -1,4 +1,4 @@
-/** Listed rows retain their room even without an editor and share its projection with open review. */
+/** Listed text rows retain their room without an editor; document-only rows need no room. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
@@ -6,7 +6,7 @@ import type { DraftChangesView } from "./draft-changes";
 import { useChangeItems } from "./draft-changes";
 import type { DraftRef } from "./review-command-types";
 import { listedItemChanges, targetOfChanges } from "./review-model";
-import { hasTreeLine } from "./tree-line";
+import { hasTreeLine, treeChange, treeLineOf } from "./tree-line";
 import { useRoomReview } from "./useRoomReview";
 import type { WorkBranchCommands } from "./useWorkBranchCommands";
 export function useDraftView(
@@ -23,11 +23,18 @@ export function useDraftView(
 ): DraftChangesView {
   const owner = useDraftCommandOwner();
   const discarding = Boolean(owner.state(draft.itemKey).discarding);
-  const withoutText = item?.hasDraft === false;
+  // A delete's text projection is deliberately not part of review. Its tree
+  // command can run without opening the room, just like any other tree-only row.
+  const withoutText = item?.hasDraft === false || item?.tree?.deleted === true;
   const read = useRoomReview(enabled && !withoutText ? draft : null);
   const status = !enabled ? "idle" : withoutText ? "ready" : read.status;
+  const deleteLine = item?.tree?.deleted && !item.isNew ? treeLineOf(item) : null;
   const changes =
-    item && enabled ? listedItemChanges(item, read.listedChanges) : read.listedChanges;
+    item && enabled
+      ? deleteLine
+        ? [treeChange(item, deleteLine)]
+        : listedItemChanges(item, read.listedChanges)
+      : read.listedChanges;
   const treeLine = !!item && hasTreeLine(item);
   const { items } = useChangeItems(draft, changes);
   return {

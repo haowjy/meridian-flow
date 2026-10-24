@@ -1,4 +1,8 @@
-/** The selector's table: where a queued write-mode switch S runs relative to messages and controls. */
+/** The selector's table: where a queued write-mode switch S runs relative to messages and controls.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Run-start inbox priority policy
+ */
 import type { ControlBody } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { next } from "./next-inbox-work.js";

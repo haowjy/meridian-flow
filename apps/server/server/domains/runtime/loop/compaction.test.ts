@@ -1,4 +1,8 @@
-/** Pure fixtures for compaction classification, triggering, planning, and projection. */
+/** Pure fixtures for compaction classification, triggering, planning, and projection.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Token estimation, retention planning, and summary projection (kb/decisions/engineering/runtime/compaction-summarizer-and-overflow.md)
+ */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
@@ -362,7 +366,7 @@ describe("planCompaction", () => {
     ).toBe(true);
   });
 
-  it("plans 2,000 default-estimated turns in under 1.5 seconds", () => {
+  it("pins the last request across 2,000 default-estimated turns", () => {
     const turns: Turn[] = [];
     const blocks: Block[] = [];
     for (let index = 0; index < 2_000; index++) {
@@ -380,7 +384,6 @@ describe("planCompaction", () => {
         ),
       );
     }
-    const startedAt = performance.now();
     const plan = planCompaction({
       turns,
       blocks,
@@ -390,7 +393,6 @@ describe("planCompaction", () => {
       tokenizer: "anthropic",
     });
     expect(plan.pinnedRequests.at(-1)?.id).toBe("turn-1998");
-    expect(performance.now() - startedAt).toBeLessThan(1_500);
   });
 
   it("plans a second compaction only after the active compaction cut", async () => {

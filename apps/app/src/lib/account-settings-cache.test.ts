@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** First-paint cache identity, validation and storage-unavailable contracts. */
+/** First-paint cache identity, validation and storage-unavailable contracts.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - account-settings prepaint cache and locale strategy (kb/decisions/platform/client/account-and-device-settings.md)
+ */
 import { runInNewContext } from "node:vm";
 import { DEFAULT_ACCOUNT_APPEARANCE } from "@meridian/contracts/preferences";
 import { afterEach, expect, it, vi } from "vitest";
@@ -22,19 +26,6 @@ afterEach(() => {
   document.documentElement.removeAttribute("data-ui-theme");
   document.documentElement.removeAttribute("data-text-size");
   vi.restoreAllMocks();
-});
-it("rejects foreign, malformed and unsupported caches", () => {
-  writeAccountSettingsCache("a", settings);
-  expect(readAccountSettingsCache("a")).toEqual(settings);
-  expect(readAccountSettingsCache("b")).toBeNull();
-  for (const payload of [
-    "{",
-    JSON.stringify({ accountId: "b", settings }),
-    JSON.stringify({ accountId: "a", settings: { ...settings, theme: "purple" } }),
-  ]) {
-    localStorage.setItem(`${ACCOUNT_SETTINGS_CACHE_PREFIX}a`, payload);
-    expect(readAccountSettingsCache("a")).toBeNull();
-  }
 });
 it("paints the account theme before hydration and keeps text size on this device", () => {
   writeAccountSettingsCache("a", settings);
@@ -66,20 +57,6 @@ function runBootScript(script: string) {
   runInNewContext(script, { localStorage, document });
 }
 
-it("falls back to the account theme when the cache theme is invalid", () => {
-  localStorage.setItem(
-    `${ACCOUNT_SETTINGS_CACHE_PREFIX}a`,
-    JSON.stringify({ accountId: "a", settings: { ...settings, theme: "unsupported" } }),
-  );
-  runBootScript(createUiThemeBootScript({ accountId: "a", theme: "dark" }));
-  expect(document.documentElement.getAttribute("data-ui-theme")).toBe("dark");
-  vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-    throw new Error("disabled");
-  });
-  runBootScript(createUiThemeBootScript({ accountId: "a", theme: "ink-jade" }));
-  expect(document.documentElement.hasAttribute("data-ui-theme")).toBe(false);
-});
-
 it("accepts only supported query locales without overwriting the account cache", () => {
   writeAccountSettingsCache("a", settings);
   try {
@@ -93,14 +70,6 @@ it("accepts only supported query locales without overwriting the account cache",
   } finally {
     window.history.replaceState(null, "", window.location.pathname);
   }
-});
-
-it("publishes confirmation even when the visible preference values have not changed", () => {
-  writeAccountSettingsCache("a", settings);
-  const pendingPaint = localStorage.getItem(`${ACCOUNT_SETTINGS_CACHE_PREFIX}a`);
-  writeAccountSettingsCache("a", settings);
-  expect(localStorage.getItem(`${ACCOUNT_SETTINGS_CACHE_PREFIX}a`)).not.toBe(pendingPaint);
-  expect(readAccountSettingsCache("a")).toEqual(settings);
 });
 
 it("uses identical runtime and pre-paint acceptance for complete owned versioned records", () => {

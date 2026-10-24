@@ -27,11 +27,12 @@ with Remove link when the caret is in a link), and the context-menu key or
 Shift+F10 opens the link menu without navigating. Every follow cancels native
 navigation on `click` and `auxclick` alike (middle click is the path where a raw
 href would reach the browser's own resolution) and puts the selection back where
-the press found it. A press on a link known to be gone places the caret; a
-press before the answer arrives still follows.
+the press found it. A press on a link known to be gone places the caret unless its retained Trash
+identity is known; then it opens the Trash view. A press before the answer
+arrives still follows.
 
-A gone link draws dashed, with no hover, not followable, and an accessible
-"No longer available" state (a missing one reads "Doesn't exist yet"). Pending,
+A gone link draws dashed with an accessible "No longer available" state. It is
+followable only when the app knows a retained Trash identity (a missing one reads "Doesn't exist yet"). Pending,
 failed, and not-yet-asked links draw filled in their own family, because a link
 the editor could not ask about must never look like one that does not exist.
 `gone` never falls back to the address. External targets get no chip. Core emits

@@ -17,6 +17,7 @@ import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
+import { closeTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
@@ -248,7 +249,7 @@ export async function seedDatabase(
   });
 }
 export async function closeDatabase(db: Database): Promise<void> {
-  await db.$client.end();
+  await closeTestDatabase(db);
 }
 
 export function markdownFromUpdate(update: Uint8Array): string {

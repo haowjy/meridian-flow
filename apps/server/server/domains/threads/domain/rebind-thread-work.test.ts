@@ -1,3 +1,9 @@
+/**
+ * Tests rebind thread work behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Membership-lock lifecycle loss maps to thread_unavailable
+ */
 import type { ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { Work } from "@meridian/contracts/works";

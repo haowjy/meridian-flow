@@ -45,6 +45,8 @@ export type ProjectAddress = {
   itemKey?: string;
   /** Stable selected closure class within the addressed review. */
   changeId?: string;
+  /** Trash overlay: true selects the newest entry; an id selects that document. */
+  trash?: true | string;
   settings?: SettingsSection;
 };
 export type WorkView = "chats" | "files";
@@ -53,7 +55,7 @@ export type ParsedProjectAddress =
   | { kind: "valid"; address: ProjectAddress; href: string }
   | { kind: "invalid"; reason: string };
 const ABSENT: AddressSelection = { kind: "absent" };
-const RECOGNIZED_QUERY = new Set(["work", "chat", "item", "change", "settings", "view"]);
+const RECOGNIZED_QUERY = new Set(["work", "chat", "item", "change", "settings", "view", "trash"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function uuid(value: string | undefined): string | null {
@@ -172,6 +174,8 @@ export function parseProjectAddress(
     if (!owned || (chatParam !== null && !lineage)) return { kind: "invalid", reason: "work" };
   }
   const settings = query.get("settings");
+  const trashValue = query.get("trash");
+  const trash = trashValue === "true" ? true : trashValue || undefined;
   const workView =
     destination.kind === "work" && query.get("view") === "files" ? "files" : undefined;
   const view = query.get("view");
@@ -188,6 +192,7 @@ export function parseProjectAddress(
     ...(worksView ? { worksView } : {}),
     ...(itemKey ? { itemKey } : {}),
     ...(changeId ? { changeId } : {}),
+    ...(trash ? { trash } : {}),
     ...(isSettingsSection(settings) ? { settings } : {}),
   };
   const href = projectAddressHref(address);
@@ -270,6 +275,7 @@ export function projectAddressHref(address: ProjectAddress): string {
   }
   if (d.kind === "work" && address.workView === "files") query.set("view", "files");
   if (d.kind === "works" && address.worksView) query.set("view", address.worksView);
+  if (address.trash) query.set("trash", String(address.trash));
   if (address.settings) query.set("settings", address.settings);
   const search = query.toString();
   const path = parts.join("/");

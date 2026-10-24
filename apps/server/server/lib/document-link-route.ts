@@ -24,6 +24,7 @@ import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/
 import { createError } from "nitro/h3";
 import type { Branches, DocumentLinkScopes } from "../domains/collab/index.js";
 import type { DocumentLinkResolver, DocumentLinkTarget } from "../domains/context/index.js";
+import type { DocumentTrash } from "../domains/context/ports/document-trash.js";
 import type { FileAccess } from "../domains/file-policy/index.js";
 import type { ProjectWorkAuthorityResolver } from "../domains/projects/domain/work-authority.js";
 import { requireProjectOwner } from "../domains/projects/index.js";
@@ -38,6 +39,8 @@ export interface DocumentLinkRouteDeps {
   fileAccess: Pick<FileAccess, "listAccess">;
   /** The selected Work's view: its active branch, or live when it has none (F7). */
   branches: Pick<Branches, "viewForWork">;
+  /** Project-authorized retained identities for gone links; purged rows are absent. */
+  documentTrash: Pick<DocumentTrash, "retained">;
 }
 
 type DocumentAnswer = Extract<DocumentLinkAnswer, { state: "document" }>["document"];
@@ -66,6 +69,11 @@ export async function handleDocumentLinkResolveRequest(
     : { kind: "live" };
   const answers: DocumentLinkAnswer[] = new Array(request.links.length);
   let holderUri: string | undefined;
+  const refResolutions: Array<{
+    index: number;
+    resolution: LinkResolution;
+    candidateId?: DocumentId;
+  }> = [];
   // Relative hrefs resolve against the holder where it is now.
   let baseUri = request.baseUri;
 
@@ -110,10 +118,30 @@ export async function handleDocumentLinkResolveRequest(
         ? deps.linkScopes.holder({ documentId: holder.documentId, view })
         : deps.linkScopes.reader({ uri: request.baseUri, view });
       for (const { link, index } of refLinks) {
-        answers[index] = answerOf(reader.resolve(link));
+        const resolution = reader.resolve(link);
+        const parsed = parseLinkRef(link.ref);
+        const candidateId =
+          resolution.kind === "gone"
+            ? (resolution.documentId ?? (parsed?.kind === "doc" ? parsed.documentId : undefined))
+            : undefined;
+        refResolutions.push({
+          index,
+          resolution,
+          ...(candidateId ? { candidateId: candidateId as DocumentId } : {}),
+        });
       }
     },
   );
+  const retainedIds = await deps.documentTrash.retained(
+    projectId as ProjectId,
+    refResolutions.flatMap(({ candidateId }) => (candidateId ? [candidateId] : [])),
+  );
+  for (const { index, resolution, candidateId } of refResolutions) {
+    answers[index] = answerOf(
+      resolution,
+      candidateId && retainedIds.has(candidateId) ? candidateId : undefined,
+    );
+  }
 
   const found: Array<{ index: number; document: DocumentAnswer }> = [];
   // Address-only links the live tree left unanswered: a Work's branch may have created them.
@@ -210,7 +238,7 @@ async function answerFromBranchView(
 }
 
 /** One reader resolution as the transport answer. */
-function answerOf(resolution: LinkResolution): DocumentLinkAnswer {
+function answerOf(resolution: LinkResolution, trashedDocumentId?: string): DocumentLinkAnswer {
   // Rule 3: the client keeps the settlement and never answers this ref by address again.
   const marks: AheadMarks = "settled" in resolution ? { settled: true as const } : {};
   if (resolution.kind === "document") {
@@ -228,7 +256,7 @@ function answerOf(resolution: LinkResolution): DocumentLinkAnswer {
   }
   if (resolution.kind === "ahead") return { state: "missing", uri: resolution.uri, ...marks };
   // gone, and a snapshot miss: never a location the reader was not shown.
-  return { state: "gone", ...marks };
+  return { state: "gone", ...(trashedDocumentId ? { trashedDocumentId } : {}), ...marks };
 }
 
 /** What an answer says about how a ref was read: settled, or without its holder's bindings. */

@@ -6,10 +6,12 @@ import { requireAppUser } from "../../../../lib/auth-gate.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const { repos, hub, threadRuntime } = app;
+  const { threadRepos, threadEventHub, threadRuntime } = app;
   const { userId } = user;
   const threadId = getRouterParam(event, "threadId") ?? "";
 
-  const thread = await requireThreadOwner({ threads: repos.threads }, threadId, userId);
-  return serializeTransport(await buildThreadSnapshot(repos, hub, threadRuntime, thread.id));
+  const thread = await requireThreadOwner({ threads: threadRepos.threads }, threadId, userId);
+  return serializeTransport(
+    await buildThreadSnapshot(threadRepos, threadEventHub, threadRuntime, thread.id),
+  );
 });

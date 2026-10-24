@@ -62,6 +62,13 @@ than simulating it and calling it integrated. Stop the owned browser and stack.
    link could not be checked.” Confirm each remote check sends the draft holder's
    document id and its review-row address. Model-authored relative links arrive
    absolute, so they do not exercise the holder-relative insertion path.
+8. Have a draft-mode reply edit a document's text and delete that same document.
+   Its open draft shows “Deleted in this draft” above the document with Apply and
+   Discard, and no text-change rows. Work Files and the dock each keep one row
+   marked Deleted and never expand it into text changes. Apply removes the live
+   document. Repeat and Discard: the delete leaves at once and the remaining text
+   changes return to the ordinary review. Repeat with a delete that has no text
+   changes.
 
 ## Local Discard and its history
 

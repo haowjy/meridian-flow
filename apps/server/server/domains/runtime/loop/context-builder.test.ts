@@ -1,6 +1,9 @@
 /**
  * System-role turns project a pre-admission invocation failure as model text;
  * terminal report cards stay as transcript-only writer UI.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Display-card and reversal context projection
  */
 import {
   buildInvocationCardContent,

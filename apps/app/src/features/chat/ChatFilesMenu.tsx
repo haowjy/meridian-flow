@@ -20,6 +20,7 @@ import {
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MenuScratchSection } from "@/features/project/chat/ChatScratch";
+import { DocumentDeleteUndoNotice } from "@/features/project/context/document-delete-undo";
 import { useOpenChatResource } from "@/features/project/context/open-chat-document";
 import { cn } from "@/lib/utils";
 import { attachedAgo, uploadTypeLabel } from "./chat-upload-display";
@@ -247,6 +248,7 @@ function FilesDropdown({
             </ul>
           )}
         </div>
+        <DocumentDeleteUndoNotice surface="chat-files" className="sticky bottom-2 mx-2 mb-2" />
       </PopoverContent>
     </Popover>
   );

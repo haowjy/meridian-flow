@@ -1,4 +1,8 @@
-/** Connect-time schema compatibility behavior for live and Work-draft Yjs rooms. */
+/** Connect-time schema compatibility behavior for live and Work-draft Yjs rooms.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Yjs version subprotocol, unstamped admission, and generation plumbing
+ */
 import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,

@@ -6,10 +6,10 @@ import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
+import { DocumentDeleteUndoNotice, useDeleteContextEntry } from "../context/document-delete-undo";
 import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { useOpenProjectDocument } from "../context/open-project-document";
@@ -75,7 +75,7 @@ function MobileFolderTree({
   const { catalog, isComplete, isError, refetch } = useContextCatalogView(projectId, scheme, {
     workId: editorWorkId,
   });
-  const deletion = useDeleteConfirmation({ projectId });
+  const deletion = useDeleteContextEntry("mobile");
   const openDocument = useOpenProjectDocument(projectId);
   // One list, so Move… here ends as everywhere else: the row selected and the note with Undo.
   const list = useEntryList({
@@ -190,14 +190,7 @@ function MobileFolderTree({
         <InlineErrorRow message={t`Could not load files.`} onRetry={refetch} />
       ) : null}
       <MoveNotice className="mx-3 my-2 shrink-0" />
-      <DeleteConfirmationDialog
-        projectId={projectId}
-        target={deletion.target}
-        isPending={deletion.isPending}
-        error={deletion.error}
-        onCancel={deletion.cancel}
-        onConfirm={deletion.confirm}
-      />
+      <DocumentDeleteUndoNotice surface="mobile" className="sticky bottom-2 mx-2 mt-2" />
     </div>
   );
 }

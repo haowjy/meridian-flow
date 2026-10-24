@@ -4,7 +4,11 @@
  * may change document activity timestamps without invalidating a prepared tree
  * mutation.
  */
-import type { Filetype, RetractionCause } from "@meridian/contracts/protocol";
+import type {
+  DeleteContextEntryResult,
+  Filetype,
+  RetractionCause,
+} from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 
 export const CONTEXT_ROOT_DIRECTORY_ID = "__context_root__";
@@ -98,7 +102,7 @@ export interface ContextTreeMutationResult {
 
 export interface ContextTreeDeleteResult {
   /** Exact deleted content identities. Empty-folder deletion has none. */
-  deletedDocumentIds: string[];
+  removed: DeleteContextEntryResult["removed"];
   availabilityGeneration: string;
 }
 

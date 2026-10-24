@@ -85,12 +85,17 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
        ├─ useCreateEntryForm ────────────────┤
        ├─ useEntryInteraction ───────────────┤
        │     └─ rename forms + move picker   │
-       ├─ useDeleteConfirmation ─────────────┤
+       ├─ useDeleteContextEntry ─────────────┤
        └─ ContextEntryActions (menus) ───────┘
                      │
       useInlineEdit (components/ui, shared core)
                      │
           validateContextEntryName (pure)
+
+Delete Undo notices are owned by `DocumentDeleteUndoProvider` and rendered as
+one replaceable `SurfaceNotice` per host surface. The sidebar host sits between
+the tree and Scratch; Work Files and the mobile browser host theirs at their
+own foot.
 
 ContextPaneController
        ├─ route ↔ server-tab reconciliation
@@ -106,6 +111,19 @@ ContextPaneController
               ├─ ContextViewerHost (active read-only viewer)
               └─ RecentDocumentsLanding (empty workspace only)
 ```
+
+Document trash is a server snapshot separate from the live catalog projection.
+The tree doesn't read it: the Trash row is a fixed navigation row below Scratch
+(`WorkspaceNavBody`), always shown. The routed `DocumentTrashDialog` owns the
+newest-first list and the selected read-only record in one popup. Desktop keeps
+the list and record side by side; phone shows the list or record, with Back to
+return to the list. The detail reads the server's last Markdown projection and composes
+`ReadOnlyViewerFrame` with `TextViewer`; it never uses the live path-based read.
+Stable-ID navigation confirms a deleted document through that endpoint before
+opening the detail. List and detail restore through one command using the exact
+serialized removal identity. Committed catalog wake hints invalidate the
+snapshot after deletes and restores, while the catalog stream remains the owner
+of a restored document's return to the live tree.
 
 `ContextViewerHost` selects one read-only surface through `previewKind`. A
 tracked-classified viewer read renders as text in every host; collaborative

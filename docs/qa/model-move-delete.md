@@ -33,7 +33,10 @@ model.
 3. **Name taken.** Press Redo (ch2 deleted again), create a document at `manuscript://ch2`
    (`./mf doc put`), then press Undo: the original returns at `manuscript://ch2 (2)` and the
    expanded card reads "Restored as ch2 (2)." The new ch2 stays where it was. Redo and Undo
-   again; the same document returns and the card names the committed path.
+   again; the same document returns and the card names the committed path. Then script a model
+   move of ch1 onto the occupied `manuscript://ch2`: its tool result, expanded turn receipt,
+   Undo/Redo landing copy and Recent dock entry all name the same committed suffixed path, not
+   the requested `ch2` path.
 4. **Absorbed folder.** In a draft-mode chat, move a document into a new `arc/` folder, then
    move it out. Create a live `arc/` folder so it absorbs the hidden draft folder. Model Undo
    of the second move returns the document inside the live `arc/`, not `folder_missing`.
@@ -57,7 +60,7 @@ the text it found or a block hash from that read.
 6. **Pending rows and the notice.** Script `move` ch1 → ch1-old, `delete` ch3, `move` ch5 →
    ch6, `move` ch4 → ch5, then (next reply) a `replace` in ch1-old. The live tree keeps ch1 to
    ch5. The dock and Work page Files list "ch1: renaming to ch1-old" with the text change
-   under it, "ch3: deleting", "ch4: renaming to ch5", and "ch5: renaming to ch6", each with
+   under it, "ch3: Deleted", "ch4: renaming to ch5", and "ch5: renaming to ch6", each with
    Discard and Apply. Open live ch1: the
    identity row reads "Ascension is renaming this to ch1-old." (at 390 px, "Pending rename",
    its popover the sentence); ch3 reads "Ascension is deleting this.". The prose doesn't move.
@@ -74,10 +77,15 @@ the text it found or a block hash from that read.
    live now has sect-notes in the manuscript and not in Scratch. Move `manuscript://ch2` to
    `scratch://@w1/ch2`: the branch sees it in Scratch while live keeps ch2 in the manuscript;
    Discard removes the row and leaves live unchanged.
-9. **Undo after Apply.** Apply a drafted text replacement and a drafted move. Script `undo` for
+9. **Undo after Apply.** Apply a drafted text replacement, a drafted move and a drafted delete.
+   Script `undo` for
    the text edit: it reports `reverted`, restores the old text as a pending draft change, and
    leaves live unchanged. Script `undo` for the applied move: "Couldn't undo ch1-old"; the model
-   reads `cant_undo_applied`. Applied tree behavior is unchanged.
+   reads `cant_undo_applied`. Script `undo` for the applied delete: it restores the same document.
+   Redo deletes it again. Apply another drafted delete, then use the turn card's Undo; it restores
+   the document. Apply once more, stop the reply so rollback runs, and verify rollback restores it.
+   `write edits` lists each applied delete once. Moves and renames remain applied and cannot be
+   undone ([#1024](https://github.com/haowjy/meridian-flow/issues/1024)).
 
 With more than one file, the dock's Apply asks the same question in its footer
 ("Applying deletes ch2.") before it sends.

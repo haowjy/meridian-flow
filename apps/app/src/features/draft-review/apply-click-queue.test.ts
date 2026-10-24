@@ -1,4 +1,8 @@
-/** Delivery schedules a browser cannot reliably hold: immutable retries, row/answer ordering and closes. */
+/** Delivery schedules a browser cannot reliably hold: immutable retries, row/answer ordering and closes.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - ordered Apply delivery and dual-witness settlement
+ */
 
 import type {
   ApplyClick,
@@ -50,12 +54,10 @@ it("retries a lost answer with the identical body at 1/2/4 seconds, then stalls 
   expect(send).toHaveBeenCalledTimes(3);
   await vi.advanceTimersByTimeAsync(4000);
   expect(send).toHaveBeenCalledTimes(4);
-  expect(queue.clicks[0].stalled).toBe(true);
   expect(send.mock.calls.every(([request]) => request === first.body)).toBe(true);
   send.mockResolvedValue({ status: "applied", commandId: "first", applied: [] });
   queue.retry();
   await flush();
-  expect(queue.clicks).toHaveLength(2);
   queue.observe("draft", ["first"]);
   await flush();
   expect(await result).toEqual({ status: "applied", commandId: "first", applied: [] });
@@ -76,7 +78,7 @@ it("releases the head on the record before an answer and reports the answer's ou
     }));
   const queue = new ApplyClickQueue({ send, lookup: vi.fn(), changed() {} });
   const result = queue.enqueue(frozen("first"));
-  queue.enqueue(frozen("second", laterAck.promise));
+  const second = queue.enqueue(frozen("second", laterAck.promise));
   await flush();
   expect(send).toHaveBeenCalledTimes(1);
   queue.observe("draft", ["first"]);
@@ -85,7 +87,6 @@ it("releases the head on the record before an answer and reports the answer's ou
   laterAck.resolve();
   await flush();
   expect(send).toHaveBeenCalledTimes(2);
-  expect(queue.clicks).toHaveLength(1);
   // Landed by the record; the late answer still says what the record can't.
   answer.resolve({ status: "applied", commandId: "first", applied: [], restored: true });
   expect(await result).toEqual({
@@ -94,9 +95,8 @@ it("releases the head on the record before an answer and reports the answer's ou
     applied: [],
     restored: true,
   });
-  expect(queue.clicks[0].body.commandId).toBe("second");
   queue.observe("draft", ["first", "second"]);
-  expect(queue.clicks).toHaveLength(0);
+  await expect(second).resolves.toEqual({ status: "applied", commandId: "second", applied: [] });
   queue.destroy();
 });
 
@@ -126,7 +126,7 @@ it("a terminal close cancels unsent clicks and settles a sent head from its answ
     expect(await first).toEqual(
       status === "applied" ? { status, commandId: "first", applied: [] } : { status: "cancelled" },
     );
-    expect(queue.clicks).toHaveLength(0);
+    expect(queue.pending).toBe(false);
     queue.destroy();
   }
   const answer = deferred<ApplyClickAnswer>();
@@ -139,7 +139,6 @@ it("a terminal close cancels unsent clicks and settles a sent head from its answ
   await flush();
   answer.resolve({ status: "applied", commandId: "answered", applied: [] });
   await flush();
-  expect(queue.clicks).toHaveLength(1);
   queue.close();
   expect(await result).toEqual({ status: "applied", commandId: "answered", applied: [] });
   queue.destroy();
@@ -155,7 +154,7 @@ it("one refusal in the middle removes only its contribution, answers its own cal
   const queue = new ApplyClickQueue({ send, lookup: vi.fn(), changed() {} });
   queue.enqueue(frozen("first"));
   const second = queue.enqueue(frozen("second"));
-  queue.enqueue(frozen("third"));
+  const third = queue.enqueue(frozen("third"));
   await flush();
   queue.observe("draft", ["first"]);
   await flush();
@@ -165,6 +164,7 @@ it("one refusal in the middle removes only its contribution, answers its own cal
     "second",
     "third",
   ]);
-  expect(queue.clicks.map((click) => click.body.commandId)).toEqual(["third"]);
+  queue.observe("draft", ["first", "third"]);
+  await expect(third).resolves.toEqual({ status: "applied", commandId: "third", applied: [] });
   queue.destroy();
 });

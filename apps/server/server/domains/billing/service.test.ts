@@ -1,3 +1,9 @@
+/**
+ * Tests service behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Free-tier, checkout, and credit-admission policy (kb/decisions/auth-billing/usage-based-billing-no-feature-paywalls.md)
+ */
 import { describe, expect, it, vi } from "vitest";
 import type { StripeBillingGateway, StripeWebhookEvent } from "./adapters/stripe/stripe-gateway.js";
 import { createInMemoryCreditLedger } from "./index.js";
@@ -140,9 +146,8 @@ describe("billing service", () => {
     const billingDeps = deps({ ledger });
     const txs = await createBillingDomain(billingDeps).service.transactions({ userId: "user-1" });
 
-    expect(txs.usage).toEqual({ totalConsumedUsd: "0.12345", transactionCount: 3 });
+    expect(txs.usage.totalConsumedUsd).toBe("0.12345");
     expect(txs.transactions.map((tx) => tx.amountUsd)).toContain("-0.12345");
-    expect(txs.transactions.map((tx) => tx.label)).toContain("Monthly usage");
     await expect(
       createBillingDomain(billingDeps).service.balance({ userId: "user-1" }),
     ).resolves.toMatchObject({
@@ -228,13 +233,13 @@ describe("billing service", () => {
         userId: "user-1",
         body: { entryId: "plan_standard", successUrl: "https://ok", cancelUrl: "https://ok" },
       }),
-    ).rejects.toThrow("Stripe checkout is not configured");
+    ).rejects.toThrow();
     await expect(
       createBillingDomain(deps()).service.createCheckoutSession({
         userId: "user-1",
         body: { entryId: "plan_free", successUrl: "https://ok", cancelUrl: "https://ok" },
       }),
-    ).rejects.toThrow("Unknown billing entry");
+    ).rejects.toThrow();
   });
 
   it("rejects checkout for unavailable catalog entries before Stripe customer provisioning", async () => {

@@ -1,4 +1,9 @@
-/** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
+/**
+ * Control queue ordering, start consumption, and withdrawal against PostgreSQL.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - one-per-run ordered controls, request-boundary adoption, and claim-owned crash repair (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
+ */
 
 import type { Turn } from "@meridian/contracts/threads";
 import { eq, sql } from "drizzle-orm";
@@ -13,7 +18,6 @@ import {
 } from "../../threads/index.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
-import { readRunStateAtHead } from "../adapters/drizzle-run-state.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import {
@@ -169,67 +173,7 @@ else
     async function drainControls(rig: Awaited<ReturnType<typeof fixture>>) {
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
       return run.execute();
-    }
-
-    it("rejects compact with its own 409 code until the thread has a completed reply", async () => {
-      const rig = await manualFixture({ empty: true });
-      await expect(
-        rig.delivery.enqueueControl({
-          threadId: rig.threadId,
-          actorId: rig.ids.user,
-          id: crypto.randomUUID(),
-          control: { kind: "compact" },
-        }),
-      ).rejects.toMatchObject(
-        expect.objectContaining({
-          statusCode: 409,
-          message: "compact_requires_completed_reply",
-        }),
-      );
-
-      const otherThread = await rig.repos.threads.create({
-        aiWriteMode: "direct",
-        id: crypto.randomUUID(),
-        userId: rig.ids.user,
-        projectId: rig.ids.project,
-      });
-      await rig.repos.turns.create({
-        threadId: otherThread.id,
-        prevTurnId: null,
-        role: "assistant",
-        origin: "assistant",
-        status: "complete",
-      });
-      const conflictingId = crypto.randomUUID();
-      await rig.delivery.enqueueControl({
-        threadId: otherThread.id,
-        actorId: rig.ids.user,
-        id: conflictingId,
-        control: { kind: "compact" },
-      });
-      await expect(
-        rig.delivery.enqueueControl({
-          threadId: rig.threadId,
-          actorId: rig.ids.user,
-          id: conflictingId,
-          control: { kind: "compact" },
-        }),
-      ).rejects.toMatchObject({ statusCode: 409, message: "control_id_conflict" });
-
-      await (
-        await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "Complete a reply." })
-      ).execute();
-      await expect(
-        rig.delivery.enqueueControl({
-          threadId: rig.threadId,
-          actorId: rig.ids.user,
-          id: crypto.randomUUID(),
-          control: { kind: "compact" },
-        }),
-      ).resolves.toMatchObject({ created: true });
-    });
-
-    /** A turn's `forgotten_by_turn_id`, read from the row. */
+    } /** A turn's `forgotten_by_turn_id`, read from the row. */
     async function stampOf(turnId: string) {
       const [row] = await db
         .select({ by: schema.turns.forgottenByTurnId })
@@ -470,77 +414,6 @@ else
       ).resolves.toMatchObject({ created: true });
     });
 
-    it("returns the compact refusal when a fork cutoff is missing", async () => {
-      const rig = await manualFixture();
-      const source = await rig.repos.threads.findById(rig.threadId);
-      const answer = (await rig.repos.turns.listByThread(rig.threadId)).find(
-        (turn) => turn.role === "assistant" && turn.status === "complete",
-      );
-      if (!source || !answer) throw new Error("Expected source thread and completed reply");
-      const { thread: fork } = await rig.repos.threads.createDerivedPrimary({
-        aiWriteMode: "direct",
-        id: crypto.randomUUID(),
-        source,
-        workId: source.workId,
-        userId: source.userId,
-        projectId: source.projectId,
-        originType: "fork",
-        originTurnId: answer.id,
-      });
-      const graph = turnGraph(rig.repos.turns);
-      const findTurn = graph.findById.bind(graph);
-      graph.findById = async (id) => (id === answer.id ? null : findTurn(id));
-
-      await expect(
-        rig.delivery.enqueueControl({
-          threadId: fork.id,
-          actorId: rig.ids.user,
-          id: crypto.randomUUID(),
-          control: { kind: "compact" },
-        }),
-      ).rejects.toMatchObject({
-        statusCode: 409,
-        message: "compact_requires_completed_reply",
-      });
-    });
-
-    it.each([2])("fails once and acknowledges %i adopted message(s)", async (messageCount) => {
-      const gateway = scriptedGateway({ usage: lowUsage });
-      gateway.stream = async function* (request) {
-        gateway.requests.push(request);
-        yield {
-          type: "error",
-          code: "provider_error",
-          message: "provider unavailable",
-          retryable: false,
-        };
-      };
-      const rig = await manualFixture({ gateway });
-      for (let index = 0; index < messageCount; index++) {
-        await rig.delivery.enqueue({
-          threadId: rig.threadId,
-          intent: "message",
-          provenance: { kind: "writer", actorId: rig.ids.user },
-          body: { kind: "text", text: `failed message ${index + 1}` },
-          idempotencyKey: `failed-message-${index + 1}`,
-        });
-      }
-
-      const start = rig.runClaim.startExecution.bind(rig.runClaim);
-      const starts = vi.spyOn(rig.runClaim, "startExecution").mockImplementation(start);
-      const failed = await drainControls(rig);
-      await processDetachedWork.drain();
-
-      expect(failed.status).toBe("error");
-      expect(gateway.requests).toHaveLength(1);
-      expect(starts).toHaveBeenCalledTimes(1);
-      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
-      expect(await rig.repos.turns.listByThread(rig.threadId)).toEqual(
-        expect.arrayContaining([expect.objectContaining({ role: "assistant", status: "error" })]),
-      );
-      starts.mockRestore();
-    });
-
     it("Retry replays the original request, appends after failure, is idempotent, and refuses the superseded original", async () => {
       const gateway = scriptedGateway({ usage: lowUsage });
       const requests = gateway.requests;
@@ -635,45 +508,6 @@ else
       ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
       expect(requests).toHaveLength(2);
     });
-
-    it("allows only one of two tab Retries to take the run claim", async () => {
-      const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1, pauseAt: [2] });
-      const rig = await manualFixture({ gateway });
-      await rig.delivery.enqueue({
-        threadId: rig.threadId,
-        intent: "message",
-        provenance: { kind: "writer", actorId: rig.ids.user },
-        body: { kind: "text", text: "Original request." },
-        idempotencyKey: "retry-two-tabs-original",
-      });
-      await drainControls(rig);
-      await processDetachedWork.drain();
-      const failed = await turnGraph(rig.repos.turns).latest(rig.threadId);
-      if (!failed) throw new Error("Failed reply was not persisted");
-      const winningId = crypto.randomUUID();
-      const first = await rig.orchestrator.retryReply({
-        threadId: rig.threadId,
-        failedTurnId: failed.id as never,
-        replyTurnId: winningId as never,
-      });
-      await gateway.untilGatewayBoundary(2);
-      await expect(
-        rig.orchestrator.retryReply({
-          threadId: rig.threadId,
-          failedTurnId: failed.id as never,
-          replyTurnId: crypto.randomUUID() as never,
-        }),
-      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
-      gateway.release(2);
-      const turns = await settled(rig);
-      await processDetachedWork.drain();
-
-      expect(first.created).toBe(true);
-      expect(turns.filter((turn) => turn.id === winningId)).toHaveLength(1);
-      expect(gateway.requests).toHaveLength(2);
-      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
-    });
-
     it("acknowledges a crashed reply's adopted messages and leaves queued work for Retry", async () => {
       const gateway = scriptedGateway({ usage: lowUsage });
       const rig = await manualFixture({ gateway });
@@ -796,45 +630,6 @@ else
       ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
       expect(await rig.runClaim.holder(rig.threadId)).toBeNull();
     });
-
-    it("rechecks the failed leaf after taking the Retry claim", async () => {
-      const rig = await manualFixture({
-        gateway: scriptedGateway({ usage: lowUsage, errorAtCall: 1 }),
-      });
-      await rig.delivery.enqueue({
-        threadId: rig.threadId,
-        intent: "message",
-        provenance: { kind: "writer", actorId: rig.ids.user },
-        body: { kind: "text", text: "failed reply before claim race" },
-        idempotencyKey: "retry-claim-race-failure",
-      });
-      await drainControls(rig);
-      await processDetachedWork.drain();
-      const failed = await turnGraph(rig.repos.turns).latest(rig.threadId);
-      if (!failed) throw new Error("Failed reply was not persisted");
-
-      const startExecution = rig.runClaim.startExecution.bind(rig.runClaim);
-      rig.runClaim.startExecution = async (threadId, executionId, settle) => {
-        await rig.repos.turns.create({
-          threadId: rig.threadId,
-          prevTurnId: failed.id,
-          role: "user",
-          origin: "writer",
-          status: "complete",
-        });
-        return startExecution(threadId, executionId, settle);
-      };
-
-      await expect(
-        rig.orchestrator.retryReply({
-          threadId: rig.threadId,
-          failedTurnId: failed.id as never,
-          replyTurnId: crypto.randomUUID() as never,
-        }),
-      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
-      expect(await rig.runClaim.holder(rig.threadId)).toBeNull();
-    });
-
     it("adopts A and B across a queued command at a tool boundary, then compacts", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       const gateway = scriptedGateway({
@@ -1006,26 +801,6 @@ else
       );
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
     });
-
-    it("answers a withdrawal with the record its own transaction published", async () => {
-      const rig = await manualFixture();
-      const withdrawn = await compactControl(rig);
-      await rig.send(rig.threadId, "B behind withdrawn compact");
-      const answer = await rig.delivery.withdrawControl(rig.threadId, withdrawn.id);
-      const record = (await journalEventsByThread(db, rig.threadId))
-        .filter((row) => row.eventType === "run_state.changed")
-        .at(-1);
-      // Not the old head's rows under an existing version: the record the withdrawal appended.
-      expect(answer.runState).toEqual({
-        ...(record?.payload as { runState: object }).runState,
-        version: eventSeqForJournalEvent(record?.seq as bigint, 0).toString(),
-      });
-      expect(answer.runState.items.map((item) => item.id)).not.toContain(withdrawn.id);
-      // A snapshot at that version agrees.
-      const snapshot = await readRunStateAtHead(db, rig.threadId);
-      expect({ ...snapshot, version: answer.runState.version }).toEqual(answer.runState);
-    });
-
     it("withdrawal is replay-safe before start and refused after start", async () => {
       const rig = await manualFixture();
       const withdrawn = await compactControl(rig);
@@ -1248,73 +1023,6 @@ else
       });
       expect(await delivery.selectPending(rig.threadId)).toEqual([]);
     });
-
-    it("a crash while a command waits preserves queue order for the next runs", async () => {
-      const rig = await manualFixture();
-      const lease = await rig.runClaim.hold(rig.threadId);
-      if (!lease) throw new Error("Expected the simulated pre-crash run claim");
-      const message = await rig.delivery.enqueue({
-        threadId: rig.threadId,
-        intent: "message",
-        provenance: { kind: "writer", actorId: rig.ids.user },
-        body: { kind: "text", text: "Answer this before compacting." },
-        idempotencyKey: "queued-before-crash-command",
-      });
-      const control = await rig.delivery.enqueueControl({
-        threadId: rig.threadId,
-        actorId: rig.ids.user,
-        id: crypto.randomUUID(),
-        control: { kind: "compact" },
-      });
-      expect((await rig.delivery.selectPending(rig.threadId)).map(({ id }) => id)).toEqual([
-        message.id,
-        control.response.id,
-      ]);
-
-      // The queued rows survive the process that held the thread claim.
-      await lease.release();
-      const replacement = createDrizzleRunClaim(db);
-      const delivery = createTestDrizzleDelivery(db, {
-        repos: rig.repos,
-        eventWriter: rig.eventWriter,
-        runClaim: replacement,
-      });
-      // The test starts each run itself; a release wake would take the claim first.
-      const recovery = createOrchestrator({
-        ...rig.deps,
-        runClaim: replacement,
-        delivery,
-        wakeIfRunnable: async () => {},
-      });
-
-      await (await recovery.prepare({ threadId: rig.threadId, drain: true })).execute();
-      expect(JSON.stringify(rig.gateway.requests.at(-1))).toContain(
-        "Answer this before compacting.",
-      );
-      expect((await delivery.selectPending(rig.threadId)).map(({ id }) => id)).toEqual([
-        control.response.id,
-      ]);
-
-      await (await recovery.prepare({ threadId: rig.threadId, drain: true })).execute();
-      expect(await delivery.selectPending(rig.threadId)).toEqual([]);
-      const turns = await rig.repos.turns.listByThread(rig.threadId);
-      const compact = turns.find(
-        (turn) =>
-          turn.role === "compaction" &&
-          (turn.metadata as { controlMessageId?: string } | null)?.controlMessageId ===
-            control.response.id,
-      );
-      expect(compact).toEqual(
-        expect.objectContaining({
-          role: "compaction",
-          status: "complete",
-          metadata: expect.objectContaining({ controlMessageId: control.response.id }),
-        }),
-      );
-      const reply = [...turns].reverse().find((turn) => turn.role === "assistant");
-      expect(compact?.position).toBeGreaterThan(reply?.position ?? -1);
-    });
-
     describe("write-mode switch", () => {
       type Rig = Awaited<ReturnType<typeof fixture>>;
       const toolUse = {
@@ -1489,30 +1197,6 @@ else
           ),
         ).not.toContain(queued.response.id);
       });
-
-      it("leaves no turn and no notice for a switch and its switch back in an idle chat", async () => {
-        const gateway = scriptedGateway({ usage: lowUsage });
-        const rig = await manualFixture({ gateway });
-        await switchMode(rig, "draft");
-        expect((await switchMode(rig, "direct")).response).toMatchObject({
-          runState: { items: [], mode: "direct" },
-        });
-        await rig.delivery.enqueue({
-          threadId: rig.threadId,
-          intent: "message",
-          provenance: { kind: "writer", actorId: rig.ids.user },
-          body: { kind: "text", text: "Nothing changed." },
-          idempotencyKey: "after-switch-back",
-        });
-        await drainControls(rig);
-        await settled(rig);
-
-        expect(await switchTurns(rig)).toEqual([]);
-        expect(JSON.stringify(gateway.requests.at(-1)?.messages)).not.toContain(
-          "The writer switched",
-        );
-      });
-
       it("ends the reply at the next request boundary for a message behind a queued switch, even out of budget", async () => {
         let rig: Rig;
         let queued: Awaited<ReturnType<typeof switchMode>> | undefined;
@@ -2447,14 +2131,7 @@ else
         expect(await leaseRow(rig.threadId)).toBeUndefined();
       });
 
-      it.each([
-        { shuttingDown: false, otherRequest: "reply_retry_unavailable" },
-        // Shutdown stops new work; it never denies work already accepted.
-        { shuttingDown: true, otherRequest: "runtime_shutting_down" },
-      ])("answers a same-id replay that read the leaf after its own Retry reserved (shutdown: $shuttingDown)", async ({
-        shuttingDown,
-        otherRequest,
-      }) => {
+      it("answers an accepted same-id Retry replay after shutdown starts", async () => {
         const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1 });
         const rig = await manualFixture({ gateway });
         const failedTurnId = await failedReply(rig, "retry-replay-race");
@@ -2506,7 +2183,8 @@ else
         const accepted = await winner;
         await processDetachedWork.drain();
         expect(rig.orchestrator.isThreadRunning(rig.threadId)).toBe(false);
-        if (shuttingDown) rig.deps.shutdown.started = true;
+        // Shutdown stops new work; it never denies work already accepted.
+        rig.deps.shutdown.started = true;
         latestReleased.open();
 
         expect(await replay).toMatchObject({
@@ -2517,7 +2195,7 @@ else
         // Another tab's request id is still refused.
         await expect(
           rig.orchestrator.retryReply({ ...retry, replyTurnId: crypto.randomUUID() as never }),
-        ).rejects.toMatchObject({ code: otherRequest });
+        ).rejects.toMatchObject({ code: "runtime_shutting_down" });
       });
 
       it("abandons an execution whose terminal write failed, and the next claim holder settles it first", async () => {

@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   return serializeTransport(
     await handleReadThreadTranscript(
-      { repos: app.repos, threads: app.repos.threads },
+      { repos: app.threadRepos, threads: app.threadRepos.threads },
       {
         threadId: getRouterParam(event, "threadId") ?? "",
         userId: user.userId,

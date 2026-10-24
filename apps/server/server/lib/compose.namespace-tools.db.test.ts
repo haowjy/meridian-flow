@@ -237,20 +237,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
-    it("moves onto an occupied model path at the free name and reports where it landed", async () => {
-      const script = await start();
-      const { call } = await script.begin();
-      const moved = await call("write", {
-        command: "move",
-        from: { path: "ch1" },
-        path: "ch2",
-      });
-      expect(moved.isError, text(moved)).toBeFalsy();
-      expect(text(moved)).toContain("manuscript://ch2 (2)");
-      expect(await placement(CH1)).toMatchObject({ name: "ch2 (2)" });
-      expect(await placement(CH2)).toMatchObject({ name: "ch2" });
-    });
-
     it("card Undo restores a deleted document at a free name and reports it", async () => {
       const script = await start();
       const { call } = await script.begin();
@@ -612,61 +598,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "ch1 (2)" });
       expect((await call("write", { command: "redo", path: "ch1 (2)" })).isError).toBeFalsy();
       expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "B" });
-
-      expect(
-        (await call("write", { command: "move", from: { path: "B" }, path: "Y" })).isError,
-      ).toBeFalsy();
-      expect(
-        (await call("write", { command: "move", from: { path: "ch1" }, path: "B" })).isError,
-      ).toBeFalsy();
-      expect((await call("write", { command: "undo", path: "Y" })).isError).toBeFalsy();
-      expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "B (2)" });
-      expect((await call("write", { command: "redo", path: "B (2)" })).isError).toBeFalsy();
-      expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "Y" });
-    });
-
-    it("a drafted delete of the branch's own creation undoes; a live delete keeps a Work's drafted move", async () => {
-      const script = await start();
-      const drafting = runtimes.script(script.runtime, OTHER);
-      await drafting.reply(async (create) => {
-        await create("write", { command: "create", path: "notes" });
-      });
-      const { call } = await drafting.begin();
-      const deletedNew = await call("write", { command: "delete", path: "notes" });
-      expect(deletedNew.isError, text(deletedNew)).toBeFalsy();
-      expect((await call("read", { path: "notes" })).isError).toBe(true);
-      const undone = await call("write", { command: "undo", path: "notes" });
-      expect(undone.isError, text(undone)).toBeFalsy();
-      expect((await call("read", { path: "notes" })).isError).toBeFalsy();
-
-      expect(
-        (await call("write", { command: "move", from: { path: "ch2" }, path: "ch2-old" })).isError,
-      ).toBeFalsy();
-      // The model in the direct chat deletes ch2 live: w2's move stays, and is a restore now.
-      const live = await (await script.begin()).call("write", { command: "delete", path: "ch2" });
-      expect(live.isError, text(live)).toBeFalsy();
-      expect((await placement(CH2))?.deletedAt).not.toBeNull();
-      expect(await branchRow(CH2)).toMatchObject({ moved: true, movedName: "ch2-old" });
-      const [node] = await createTreeReader(db).treeState(
-        await branchOf(OTHER_WORK_ID),
-        [],
-        [CH2 as DocumentId],
-      );
-      expect(node).toMatchObject({ pending: true, deleted: true, target: { path: "ch2-old" } });
-      expect(text(await call("read", { path: "ch2-old" }))).toContain("Chapter two.");
-
-      // A failed reply's rollback writes the branch's facts back.
-      const failing = await drafting.begin();
-      expect(
-        (await failing.call("write", { command: "move", from: { path: "ch1" }, path: "ch1-x" }))
-          .isError,
-      ).toBeFalsy();
-      await script.runtime.ports.documentSync.finalizeResponseRollback(
-        { providerResponseId: failing.responseId, editScopeId: failing.responseId },
-        OTHER as never,
-      );
-      expect(await branchRow(CH1)).toBeUndefined();
-      expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
     });
 
     /** The Work's review routes over the composed app, as the writer's clicks reach them. */

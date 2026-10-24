@@ -1,4 +1,8 @@
-/** Durable namespace policy protects request bytes, response-loss recovery and newer intentions. */
+/** Durable namespace policy protects request bytes, response-loss recovery and newer intentions.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Durable-before-send namespace attempts and CAS replay
+ */
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { planResourceDeletion } from "./resource-deletion";
@@ -237,7 +241,12 @@ describe("namespace record transitions", () => {
         ok: true,
         value: {
           status: "deleted",
-          deletedDocumentIds: ["document"],
+          removed: [
+            {
+              documentId: "document",
+              removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+            },
+          ],
           availabilityGeneration: "2",
         },
       },
@@ -460,7 +469,12 @@ describe("namespace record transitions", () => {
             ok: true,
             value: {
               status: "deleted",
-              deletedDocumentIds: ["document"],
+              removed: [
+                {
+                  documentId: "document",
+                  removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+                },
+              ],
               availabilityGeneration: "2",
             },
           },
@@ -510,7 +524,12 @@ describe("namespace record transitions", () => {
             ok: true,
             value: {
               status: "deleted",
-              deletedDocumentIds: ["document"],
+              removed: [
+                {
+                  documentId: "document",
+                  removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+                },
+              ],
               availabilityGeneration: "2",
             },
           },
@@ -596,7 +615,12 @@ describe("a chat's Scratch owner", () => {
           ok: true,
           value: {
             status: "deleted",
-            deletedDocumentIds: ["document"],
+            removed: [
+              {
+                documentId: "document",
+                removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+              },
+            ],
             availabilityGeneration: "2",
           },
         },
@@ -1318,6 +1342,12 @@ describe("a name the writer typed with a prose suffix", () => {
     expect(intent?.attempts[0]?.request).toMatchObject({ body: { newName: "Chapter 14.md" } });
     // The optimistic location is already the name the server answers with.
     expect(projectResourceLocation("project", submitted)).toMatchObject({ name: "Chapter 14" });
+    const needsRepair = structuredClone(submitted);
+    needsRepair.intents = needsRepair.intents.map((item) => ({
+      ...item,
+      state: "needs-repair",
+    }));
+    expect(projectResourceNeedsRepair("project", needsRepair)?.name).toBe("Chapter 14.md");
     expect(
       recordNamespaceOutcome(
         submitted,

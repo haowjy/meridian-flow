@@ -1,4 +1,9 @@
-/** Real catalog/Work-authority integration for canonical document-link navigation. */
+/**
+ * Real catalog/Work-authority integration for canonical document-link navigation.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - catalog-backed canonical navigation under Work-specific readability (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   branches,
@@ -108,6 +113,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             viewed.push(workId);
             return { kind: "live" };
           },
+        },
+        documentTrash: {
+          retained: async () => new Set(),
         },
       };
       for (const baseUri of [null, "scratch://@c1/holder"]) {
@@ -340,6 +348,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
         branches: { viewForWork: async () => ({ kind: "live" }) },
+        documentTrash: { retained: async () => new Set() },
       };
       const routeResolve = (holderDocumentId?: string) =>
         handleDocumentLinkResolveRequest(deps, {
@@ -419,6 +428,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
         branches: { viewForWork: async () => ({ kind: "live" }) },
+        documentTrash: { retained: async () => new Set() },
       };
       const result = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,
@@ -483,6 +493,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 ? { kind: "branch", branchId: branchB }
                 : { kind: "live" },
         },
+        documentTrash: { retained: async () => new Set() },
       };
       const resolveIn = (workId: string) =>
         handleDocumentLinkResolveRequest(deps, {
@@ -604,6 +615,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             return new Map(ids.map((id) => [id, {} as never]));
           },
         },
+        documentTrash: { retained: async () => new Set() },
       };
       const response = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,

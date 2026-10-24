@@ -1,4 +1,5 @@
 /** Atomic move/delete CAS operations over the shared in-memory context backing. */
+import { serializeRemovalIdentity } from "@meridian/contracts";
 import {
   allocateFilename,
   parseDocumentFilename,
@@ -578,7 +579,15 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         this.markMutatorWrite();
         this.backing.availabilityGeneration.value += 1n;
         return Ok({
-          deletedDocumentIds: [doc.id],
+          removed: [
+            {
+              documentId: doc.id,
+              removal: serializeRemovalIdentity({
+                time: new Date(now),
+                locationVersion: this.backing.availabilityGeneration.value,
+              }),
+            },
+          ],
           availabilityGeneration: String(this.backing.availabilityGeneration.value),
         });
       }
@@ -588,7 +597,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       const folderNow = this.backing.folders.get(token.nodeId);
       if (!folderNow || folderNow.deletedAt !== null) return Err({ code: "stale_source" });
       const subtree = this.collectSubtree(folderNow.id, token.sourceId);
-      const deletedDocumentIds = this.documentIdsInSubtree(subtree, token.sourceId).sort();
+      const removedDocumentIds = this.documentIdsInSubtree(subtree, token.sourceId).sort();
       for (const document of this.backing.documents.values()) {
         if (
           document.contextSourceId === token.sourceId &&
@@ -612,7 +621,13 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       this.markMutatorWrite();
       this.backing.availabilityGeneration.value += 1n;
       return Ok({
-        deletedDocumentIds,
+        removed: removedDocumentIds.map((documentId) => ({
+          documentId,
+          removal: serializeRemovalIdentity({
+            time: new Date(now),
+            locationVersion: this.backing.availabilityGeneration.value,
+          }),
+        })),
         availabilityGeneration: String(this.backing.availabilityGeneration.value),
       });
     });

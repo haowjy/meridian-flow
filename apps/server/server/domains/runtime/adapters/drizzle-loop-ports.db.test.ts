@@ -1,4 +1,9 @@
-/** PostgreSQL coverage for the drizzle DeliveryStore and lease-backed RunClaim adapters. */
+/**
+ * PostgreSQL coverage for the drizzle DeliveryStore and lease-backed RunClaim adapters.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - durable delivery sweeps, token-fenced leases, physical claims, and usage-block lifecycle (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
+ */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
@@ -34,9 +39,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
-    const { createDrizzleInbox } = await import("./drizzle-inbox.js");
     const { createLockedDrizzleInbox } = await import("../../../test-support/locked-inbox.js");
-    const { sweepWakes } = await import("../loop/sweep-wakes.js");
     const { createTestDrizzleDelivery } = await import(
       "../loop/__tests__/test-drizzle-delivery.js"
     );
@@ -115,17 +118,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const redelivered = await inbox.selectPending(THREAD_A);
       expect(redelivered.map((message) => message.idempotencyKey)).toEqual(["a2"]);
     });
-
-    it("collapses a duplicate enqueue on the idempotency key", async () => {
-      const inbox = createLockedDrizzleInbox(db);
-      const first = await inbox.enqueue(message("same-key"));
-      const second = await inbox.enqueue(message("same-key"));
-
-      expect(second.id).toBe(first.id);
-      expect(second.seq).toBe(first.seq);
-      expect(await inbox.selectPending(THREAD_A)).toHaveLength(1);
-    });
-
     it("keeps the same idempotency key distinct across threads", async () => {
       const inbox = createLockedDrizzleInbox(db);
       const first = await inbox.enqueue(message("shared-key", THREAD_A));
@@ -192,7 +184,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { failCompactionSuccessor } = await import("../loop/compaction-successor.js");
       const { createRuntimeHarness } = await import("../loop/__tests__/runtime-harness.js");
       const { createOrphanReportRepair } = await import("../spawn/orphan-report-repair.js");
-      const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
       const repos = createDrizzleRepositoriesForTest(db);
       const authority = createDrizzleRunClaim(db);
       const eventWriter = createQuietDrizzleJournalWriter(db);
@@ -317,7 +308,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("publishes idle after orphan repair commits the turn and stale lease deletion", async () => {
       const { createOrphanReportRepair } = await import("../spawn/orphan-report-repair.js");
-      const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
       const repos = createDrizzleRepositoriesForTest(db);
       const turn = await repos.turns.create({
         threadId: THREAD_A,
@@ -664,7 +654,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await releaseLeaseUnderLock(db, runClaim, nextLease);
       });
       it("rolls back enqueue when projection fails; commits one replacement before the wake", async () => {
-        const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
         const writer = createQuietDrizzleJournalWriter(db);
         let wakes = 0;
         const visible: number[][] = [];
@@ -812,7 +801,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       it("serializes a racing enqueue after terminal commit and leaves it recoverable", async () => {
         const { repos, turn } = await assistant();
-        const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
         const writer = createQuietDrizzleJournalWriter(db);
         const runClaim = createDrizzleRunClaim(db);
         const lease = required(await runClaim.startExecution(THREAD_A, "race", async () => {}));

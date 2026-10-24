@@ -103,6 +103,20 @@ review?" confirmation; each chat owns its write mode.
     composer has a **Draft or Auto-apply menu** showing "Drafts (N)" while N changes
     wait for review. Switching one chat's mode leaves the others as they were.
 
+## Creation, Work goals, and account settings
+
+32. Hold a new project's create request. The app navigates to that project's
+    Chat screen before the request settles. Refuse the request. The destination
+    stays open and offers Retry. Retry uses the same project identity and title.
+33. Edit a Work goal, then try to leave before saving. Choose to keep editing;
+    the goal remains. Try again and discard it; navigation continues. In one
+    client, edit the goal and hold its Save request. Archive the Work from a
+    second client, then deliver the Save refusal before the first client receives
+    the archive update, while it still shows the Work as active. The draft
+    remains without exposing the raw server error.
+34. Hold the account-settings request open. Settings that require the account
+    record, including Sync, remain disabled until the request settles.
+
 ## Rename feedback and hand-off
 
 25. Move a folder whose record is missing locally, then let a fresh receipt arrive.
@@ -132,6 +146,14 @@ accounts, `Untitled` restoration against a hydrated local resource, and storage
 that throws on read or write. Those live in
 `apps/app/src/features/project/dock/dock-restoration.test.ts` and its neighbours,
 which are still present.
+
+## Account preferences
+
+35. Change language and theme separately, reload, and confirm each choice persists without changing the other. Disable automatic reply resume, reload, and confirm it remains off. Try an unsupported value through the request boundary and confirm the saved preferences remain unchanged.
+
+## Chat list activity
+
+36. Open the project chat list beside two chats with distinct last-message times. Complete a reply in the older chat: it becomes the most recent and previews that conversation. Produce a hidden Work-context update and a background subagent completion: neither moves the chat nor replaces its preview. Move on from a failed reply: the abandoned exchange disappears from the preview. Switch to an earlier sibling response: the chat activity follows the selected response. Trash a direct child chat: it disappears from its parent’s activity, while a fork still shows inherited turns after its source is trashed.
 
 If a check here turns out to be impractical to drive by hand, say so and it should
 become a probe recipe instead of quietly staying unrun.

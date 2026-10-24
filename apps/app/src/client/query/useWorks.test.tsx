@@ -3,6 +3,10 @@
  * Work commands show through `useWorks` as a projection over the server
  * snapshot: queued commands show at once, each failure stays on its own Work,
  * and no server read can hide a change whose command has not settled.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Work command patch ownership
+ * - Work deletion Undo window
  */
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";

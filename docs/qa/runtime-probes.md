@@ -556,7 +556,7 @@ restart smoke check.
   over one snapshot, and names what became of its own message: answered (by which
   reply, with the chain's last reply as the result), handed back, or unproven. This
   replaces the deleted interim-follow cases in `tools/mf` for steer, queued switch and
-  unrelated starts, whose risks are now `message-fate.test.ts`.
+  unrelated starts, whose risks are now `run-state.test.ts`.
 - **Stack:** mock. Use `--match` on each scripted reply, and `./mf mock clear` at the end.
 - **Steps:** (`T` is a fresh thread per case; `E` holds the evidence)
 
@@ -592,7 +592,7 @@ restart smoke check.
   `message.completed` records (record order), and `./mf mock list` is empty after case 1 (`--mock`
   removes its own script) and after the final `./mf mock clear`. The `tools/mf` cases deleted in L1c
   (usage-block, failed-successor, NDJSON shape, `--mock` cleanup, idle `tail`) have their risks here and in
-  `message-fate.test.ts`.
+  `run-state.test.ts`.
 - **Evidence:** each command, stdout, stderr and exit code, and the `thread view` after it.
 - **Last run:** 2026-10-16 on `1bfd1e703` (`feat/thread-sync-mf`, L1c's code, `./mf` on `ThreadSync`), mock;
   all four cases passed, one `result` record each, `./mf mock list` empty after each. `liveView`: case 1

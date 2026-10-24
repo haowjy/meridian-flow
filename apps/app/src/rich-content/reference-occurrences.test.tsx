@@ -1,4 +1,8 @@
-/** Static user-turn projection: original ranges, never label matches, grant authority. */
+/** Static user-turn projection: original ranges, never label matches, grant authority.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - source-range projection and renderer precedence
+ */
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";

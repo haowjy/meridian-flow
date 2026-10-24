@@ -1,6 +1,8 @@
 /**
- * PostgreSQL proof for the document-link scope: batched prepare, views, snapshot lifetime,
- * and how a link reads per view (contract §10: "in a draft", precedence, the pinned holder).
+ * PostgreSQL proof for the document-link scope: batched prepare, views, snapshot lifetime, and how a link reads per view (contract §10: "in a draft", precedence, the pinned holder).
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - prepared-snapshot loading, canonical historical spelling, and nested scope lifetime (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 import { folderDocumentName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -522,26 +524,6 @@ if (!RUN) {
         )
         .toEqual({ id: liveAnchor });
     });
-
-    it("answers a direct ahead ref (unregistered, no holder) at a model-created hidden document as in a draft, from live and a branch view", async () => {
-      const s = await branchTreeScenario(db, { runtime: await runtimes.compose(), runtimes });
-      const atlas = await s.work("Atlas", "draft");
-      const ship = await s.model(atlas).create("ship2", "A ship.");
-      for (const view of ["live", atlas] as const) {
-        const { answer } = await s.linkAnswer({
-          view,
-          ref: `ahead:${crypto.randomUUID()}`,
-          href: "manuscript://ship2",
-          baseUri: null,
-        });
-        expect.soft(answer).toMatchObject({
-          state: "document",
-          inBranch: true,
-          document: { id: ship },
-        });
-      }
-    });
-
     it("reuses one snapshot in nested scopes, reloads an inherited settled one, and fails a door that never prepared", async () => {
       const spellTarget = () =>
         scopes

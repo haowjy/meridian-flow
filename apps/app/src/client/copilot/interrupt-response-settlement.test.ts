@@ -8,6 +8,9 @@
  * and the matching server resolution event clears the entry. The routing
  * boundary for non-fatal interrupt errors lives in
  * `dispatch-ws-server-message.test.ts`.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - interrupt error-code settlement table
  */
 import type {
   AGUIEvent,

@@ -64,7 +64,9 @@ actors may be unknown. Only a Work cascade sets `deleted_by_work_id`, which
 remains its restore marker. Restore clears all removal fields. A closed draft
 has its own `closed_cause`, independent of the document's current removal
 (`discarded` or `document_removed`), so Work restore does not erase why a
-draft closed. Migrations 0072–0074 add the record, backfill in bounded,
+draft closed. `content_purged_at` marks a tombstone whose document bytes and content history have
+been released after the retention window; placement and the removal record remain. Migrations
+0072–0074 add the record, backfill in bounded,
 re-runnable no-transaction pages, retire existing tombstones' active drafts
 and tree uses, then validate. The pending-part pass is independently paged;
 an interrupted cutover must finish before serving traffic.
@@ -199,6 +201,11 @@ Focused database resets derive the complete FK closure from `pg_catalog`, lock i
 in deterministic order, and delete child-first in one transaction. History
 sequence assertions and membership assertions have different ordering
 semantics; raw SELECT order is never a lifecycle contract.
+
+DB tests seed `public.users` only through the shared fixture helper
+(`src/__test-support__/db-fixtures.ts`), which gives each suite its own
+`fixture+<suite>@test.invalid` email. A test that seeded the dev-login email
+would overwrite the real WorkOS user and break dev login.
 
 Prompt bakes are insert-only and their pointers are write-once; a rebake inserts
 a new row (only the runtime's `beginPromptEpoch` does, for compaction), and a

@@ -75,17 +75,18 @@ export async function openAuditedDatabase(
   };
   const admin = postgres(urlFor("postgres"), { max: 1 });
   let db: Database | undefined;
-  // Cleanup must never hang a suite, and a slow host (DROP DATABASE waits on a checkpoint) must not
-  // fail it. Dropping the clone WITH (FORCE) ends its sessions first, so a query a test left in
-  // flight cannot hold the pool open. Each step gets a bounded window; a drop that does not finish
-  // is warned about and left to the managed run's own cleanup, which collects by this name prefix.
+  // Cleanup must never hang a suite. Managed local runs collect every clone after Vitest exits;
+  // dropping several audited clones from parallel workers here makes PostgreSQL serialize checkpoints
+  // and charges that wait to the test files. CI has no managed collector, so it drops its serial
+  // clone after closing the pool. FORCE still ends a query whose bounded pool close timed out.
   const close = async () => {
-    await within(
-      DROP_TIMEOUT_MS,
-      `dropping ${cloneName}; the managed cleanup collects it`,
-      admin.unsafe(`DROP DATABASE IF EXISTS "${cloneName}" WITH (FORCE)`),
-    );
     await within(POOL_CLOSE_TIMEOUT_MS, `closing the pool of ${cloneName}`, db?.close());
+    if (!managed)
+      await within(
+        DROP_TIMEOUT_MS,
+        `dropping ${cloneName}`,
+        admin.unsafe(`DROP DATABASE IF EXISTS "${cloneName}" WITH (FORCE)`),
+      );
     await within(
       POOL_CLOSE_TIMEOUT_MS,
       `closing the admin connection for ${cloneName}`,

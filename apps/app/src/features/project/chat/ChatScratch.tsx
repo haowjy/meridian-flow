@@ -23,14 +23,11 @@ import type { CatalogContextView } from "@/client/query/context-catalog-projecti
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabs } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import {
-  DeleteConfirmationDialog,
-  type DeleteTarget,
-  useDeleteConfirmation,
-} from "../context/ContextEntryActions";
+import type { DeleteTarget } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { serverTabFromFile } from "../context/context-tab-from-file";
+import { type DeleteNoticeSurface, useDeleteContextEntry } from "../context/document-delete-undo";
 import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { RailPaneHeader } from "../context/RailPaneHeader";
@@ -179,7 +176,12 @@ function MenuScratchList({
     <section aria-label={scratch.heading}>
       <h3 className="px-3 py-2 text-xs font-medium text-muted-foreground">{scratch.heading}</h3>
       <EntryList list={list}>
-        <ChatScratchTree projectId={projectId} threadId={threadId} onPicked={onPicked} />
+        <ChatScratchTree
+          projectId={projectId}
+          threadId={threadId}
+          onPicked={onPicked}
+          surface="chat-files"
+        />
       </EntryList>
       <MoveNotice className="mx-2 my-1.5" />
     </section>
@@ -210,16 +212,18 @@ function ChatScratchTree({
   threadId,
   editorWorkId = null,
   onPicked,
+  surface = "sidebar",
 }: {
   projectId: string;
   threadId: string | null;
   editorWorkId?: string | null;
   onPicked?: () => void;
+  surface?: DeleteNoticeSurface;
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
   const { primary, earlier, editable } = useChatScratchCatalogs(projectId, scratch);
   const openId = useOpenDocumentId(projectId, editorWorkId);
-  const deletion = useDeleteConfirmation({ projectId });
+  const deletion = useDeleteContextEntry(surface);
   const hasEarlier = Boolean(scratch?.earlierRootThreadId && earlier.catalog?.files().length);
   const ready = primary.isComplete && (!scratch?.earlierRootThreadId || earlier.isComplete);
   const isError = primary.isError || (Boolean(scratch?.earlierRootThreadId) && earlier.isError);
@@ -301,14 +305,6 @@ function ChatScratchTree({
           }}
         />
       ) : null}
-      <DeleteConfirmationDialog
-        projectId={projectId}
-        target={deletion.target}
-        isPending={deletion.isPending}
-        error={deletion.error}
-        onCancel={deletion.cancel}
-        onConfirm={() => void deletion.confirm()}
-      />
     </>
   );
 }

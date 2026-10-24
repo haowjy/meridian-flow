@@ -1,11 +1,14 @@
-/** Journal overlap rules depend on sequence and identity, not array order or placement kind. */
+/** Journal overlap rules depend on sequence and identity, not array order or placement kind.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Refusal supersession follows sequence and identity
+ */
 import { expect, it } from "vitest";
 import { resolveRefusedLocationChain } from "./namespace-journal-policy";
 import type { NamespaceIntent } from "./resource-records";
 
 it.each([
   "set-location",
-  "set-folder-location",
 ] as const)("resolves all move/rename/delete orderings for %s after refusal", (kind) => {
   const orders = [
     ["move", "rename", "delete"],

@@ -394,8 +394,6 @@ function ReadableProjectDestination({
         owner: addressOwner,
         binding: addressBinding,
         workResolved: editorWork.status === "present",
-        catalogGeneration: addressCatalog?.normalized.generation,
-        catalogRevision: addressCatalog?.normalized.appliedRevision,
       },
       getProjectDocumentAddress,
     ),
@@ -634,6 +632,7 @@ function ReadableProjectDestination({
     return {
       ...address,
       destination: next,
+      trash: undefined,
       itemKey: undefined,
       workView: undefined,
       worksView: undefined,
@@ -693,6 +692,22 @@ function ReadableProjectDestination({
     });
   }, []);
   const queryClient = useQueryClient();
+  const navigateTrash = useCallback(
+    (trash: false | true | string, options?: { replace?: boolean }) => {
+      const current = router.history.location;
+      const query = new URLSearchParams(current.search);
+      if (trash) query.set("trash", String(trash));
+      else query.delete("trash");
+      const search = query.toString();
+      router.history[options?.replace ? "replace" : "push"](
+        `${current.pathname}${search ? `?${search}` : ""}${current.hash}`,
+        current.state,
+      );
+      return Promise.resolve();
+    },
+    [router],
+  );
+  const trashDestination = address.trash;
   useEffect(() => {
     if (!closingRef || !closeState.closed || closeState.removed) return;
     const itemKey = closingRef.itemKey;
@@ -890,6 +905,7 @@ function ReadableProjectDestination({
       }}
       isCurrentNavigation={(ticket) => latest.current.navigation?.isCurrent(ticket) ?? false}
       captureNavigation={captureNavigation}
+      trash={{ destination: trashDestination, navigate: navigateTrash }}
       isCurrentContextRoute={isCurrentContextRoute}
       registerLeaveGuard={navigation?.registerGuard}
     >

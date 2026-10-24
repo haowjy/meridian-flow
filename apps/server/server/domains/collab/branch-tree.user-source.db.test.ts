@@ -1,9 +1,10 @@
 /**
- * Drafted `user://` (D20 under 12b): a draft-mode Work in any project of the account branches
- * into the account's personal source, hidden live until Apply, and one hidden document is
- * shared by every branch of the account that uses it. Another account's source is never a
- * branch's.
+ * Drafted `user://` (D20 under 12b): a draft-mode Work in any project of the account branches into the account's personal source, hidden live until Apply, and one hidden document is shared by every branch of the account that uses it.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - account-personal user source routing for project Work drafts (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
  */
+
 import type { DocumentId } from "@meridian/contracts";
 import { branchTreeChanges, documentDrafts, documents } from "@meridian/database/schema";
 import { and, eq, inArray } from "drizzle-orm";

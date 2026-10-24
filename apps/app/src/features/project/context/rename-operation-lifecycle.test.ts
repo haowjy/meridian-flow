@@ -1,4 +1,8 @@
-/** Operation lifecycle contracts without React mounts or admission-age expiry. */
+/** Operation lifecycle contracts without React mounts or admission-age expiry.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - rename feedback and settlement lifecycle
+ */
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
 import type { NamespaceIntent, ResourceProjectionSnapshot } from "@meridian/resource-replica";
 import { afterEach, expect, it, vi } from "vitest";

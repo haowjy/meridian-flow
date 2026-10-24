@@ -77,6 +77,9 @@ import {
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
+import { DocumentTrashDialog } from "./context/DocumentTrashDialog";
+import { DocumentTrashRestoreProvider } from "./context/DocumentTrashRestoreProvider";
+import { DocumentDeleteUndoProvider } from "./context/document-delete-undo";
 import { resolveEditorFrame } from "./context/editor-presentation";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
@@ -382,29 +385,34 @@ export function ProjectView(props: ProjectViewProps) {
     contextLive: contextPhase.status === "live" && editorScope.status === "ready",
   };
   return (
-    <div className="flex h-full min-h-0 w-full bg-background text-foreground">
-      {hydrated ? (
-        <>
-          {resolvedProps.contextLive && editorScope.status === "ready" ? (
-            <ProjectContextRemovalController
-              projectId={props.projectId}
-              activeScreen={props.activeScreen}
-              activeContextScheme={props.activeContextScheme}
-              activeContextPath={props.activeContextPath}
-              activeContextChat={props.activeContextChat}
-              editorWorkId={editorScope.workId}
-              localDocumentId={props.activeLocalDocumentId}
-              route={props.contextRemovalRoute}
-            />
+    <DocumentDeleteUndoProvider key={props.projectId} projectId={props.projectId}>
+      <DocumentTrashRestoreProvider projectId={props.projectId}>
+        <div className="flex h-full min-h-0 w-full bg-background text-foreground">
+          <DocumentTrashDialog projectId={props.projectId} />
+          {hydrated ? (
+            <>
+              {resolvedProps.contextLive && editorScope.status === "ready" ? (
+                <ProjectContextRemovalController
+                  projectId={props.projectId}
+                  activeScreen={props.activeScreen}
+                  activeContextScheme={props.activeContextScheme}
+                  activeContextPath={props.activeContextPath}
+                  activeContextChat={props.activeContextChat}
+                  editorWorkId={editorScope.workId}
+                  localDocumentId={props.activeLocalDocumentId}
+                  route={props.contextRemovalRoute}
+                />
+              ) : null}
+              <HydratedReviewProject
+                {...resolvedProps}
+                projectTitle={projectTitle}
+                titleEdit={{ projectId: props.projectId, onSave: renameProject }}
+              />
+            </>
           ) : null}
-          <HydratedReviewProject
-            {...resolvedProps}
-            projectTitle={projectTitle}
-            titleEdit={{ projectId: props.projectId, onSave: renameProject }}
-          />
-        </>
-      ) : null}
-    </div>
+        </div>
+      </DocumentTrashRestoreProvider>
+    </DocumentDeleteUndoProvider>
   );
 }
 

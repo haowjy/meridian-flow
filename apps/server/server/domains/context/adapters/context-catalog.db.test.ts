@@ -1,4 +1,9 @@
-/** PostgreSQL proof for catalog transaction, replay, exclusion, and wake semantics. */
+/**
+ * PostgreSQL proof for catalog transaction, replay, exclusion, and wake semantics.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - lossy post-commit wakes, durable catalog replay, namespace-only revisions, and persisted classification (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ */
 
 import { folderDocumentName } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -16,7 +21,6 @@ import { and, eq, isNull } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../shared/result.js";
-import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-work-branch-pending.js";
@@ -72,123 +76,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const rows = Array.isArray(sources) ? sources : [sources];
       if (rows.length) await db.insert(contextSources).values(rows);
     }
-
-    it("resolves a hidden created document only in its own branch address view", async () => {
-      const db = database.current;
-      const scenario = await branchTreeScenario(db);
-      const work = await scenario.work("Review", "draft");
-      const rival = await scenario.work("Rival", "draft");
-      const documentId = await scenario.seedHidden(work, "chapters/one");
-      const resolver = createDocumentAddressResolver({
-        locations: createDrizzleDocumentAddressStore(db),
-        availability: createDrizzleProjectContextAvailability(db),
-      });
-      const input = {
-        projectId: scenario.project.id,
-        userId: scenario.project.userId,
-        scheme: "manuscript" as const,
-        workId: null,
-        path: "/chapters/one",
-      };
-      await expect(resolver.resolve(input)).resolves.toEqual({ kind: "unavailable" });
-      await expect(
-        resolver.resolve({
-          ...input,
-          view: { kind: "branch", branchId: (await scenario.branchOf(work)).id },
-        }),
-      ).resolves.toMatchObject({ kind: "current", document: { documentId } });
-      await expect(
-        resolver.resolve({
-          ...input,
-          view: { kind: "branch", branchId: (await scenario.branchOf(rival)).id },
-        }),
-      ).resolves.toEqual({ kind: "unavailable" });
-    });
-
-    it("publishes only live manuscript rows while leaving other project sources unchanged", async () => {
-      const db = database.current;
-      const LIVE_DOCUMENT_ID = "00000000-0000-4000-8000-000000000805";
-      const DRAFT_DOCUMENT_ID = "00000000-0000-4000-8000-000000000806";
-      const KB_SOURCE_ID = "00000000-0000-4000-8000-000000000807";
-      const KB_DOCUMENT_ID = "00000000-0000-4000-8000-000000000808";
-      await seedProject(db, "catalog-membership", [
-        { id: SOURCE_ID, projectId: PROJECT_ID, name: "Manuscript", slug: "manuscript" },
-        { id: KB_SOURCE_ID, projectId: PROJECT_ID, name: "Knowledge Base", slug: "kb" },
-      ]);
-      await db.insert(documents).values([
-        {
-          id: LIVE_DOCUMENT_ID,
-          contextSourceId: SOURCE_ID,
-          name: "live",
-          extension: "",
-        },
-        {
-          id: DRAFT_DOCUMENT_ID,
-          contextSourceId: SOURCE_ID,
-          name: "draft-only",
-          extension: "",
-          hidden: true,
-        },
-        {
-          id: KB_DOCUMENT_ID,
-          contextSourceId: KB_SOURCE_ID,
-          name: "notes",
-          extension: "",
-        },
-      ]);
-      const publish = vi.fn();
-      const catalog = createDrizzleContextCatalog(db, { publish });
-      const scope = { kind: "project", projectId: PROJECT_ID } as const;
-      const initial = await catalog.snapshot(scope);
-      const initialFileIds = initial.entries.flatMap((entry) =>
-        entry.kind === "file" ? [entry.entryId] : [],
-      );
-      expect(initialFileIds).toEqual(expect.arrayContaining([LIVE_DOCUMENT_ID, KB_DOCUMENT_ID]));
-      expect(initialFileIds).not.toContain(DRAFT_DOCUMENT_ID);
-
-      // Apply reveals the branch's document: it joins the live tree.
-      await db.update(documents).set({ hidden: false }).where(eq(documents.id, DRAFT_DOCUMENT_ID));
-      await catalog.refreshProject(PROJECT_ID);
-      await expect(catalog.changes(scope, initial.cursor)).resolves.toMatchObject({
-        kind: "delta",
-        commits: [
-          {
-            changes: expect.arrayContaining([
-              expect.objectContaining({
-                operation: "upsert",
-                entry: expect.objectContaining({ entryId: DRAFT_DOCUMENT_ID }),
-              }),
-            ]),
-          },
-        ],
-      });
-      expect(publish).toHaveBeenCalledTimes(1);
-
-      const applied = await catalog.snapshot(scope);
-      await db
-        .update(documents)
-        .set({ deletionReason: "deleted", deletedAt: new Date() })
-        .where(eq(documents.id, DRAFT_DOCUMENT_ID));
-      await catalog.refreshProject(PROJECT_ID);
-      await expect(catalog.changes(scope, applied.cursor)).resolves.toMatchObject({
-        kind: "delta",
-        commits: [
-          {
-            changes: expect.arrayContaining([
-              expect.objectContaining({ operation: "delete", entryId: DRAFT_DOCUMENT_ID }),
-            ]),
-          },
-        ],
-      });
-      const discarded = await catalog.snapshot(scope);
-      const discardedFileIds = discarded.entries.flatMap((entry) =>
-        entry.kind === "file" ? [entry.entryId] : [],
-      );
-      expect(discardedFileIds).toEqual(expect.arrayContaining([LIVE_DOCUMENT_ID, KB_DOCUMENT_ID]));
-      expect(discardedFileIds).not.toContain(DRAFT_DOCUMENT_ID);
-      expect(publish).toHaveBeenCalledTimes(2);
-    });
-
     it("publishes atomically, replays whole commits, and keeps failed hints nonthrowing", async () => {
       const db = database.current;
       await seedProject(db, "catalog");

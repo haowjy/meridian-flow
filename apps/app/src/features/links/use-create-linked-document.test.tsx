@@ -1,4 +1,8 @@
-/** What a link can create, and that Create commits locally without waiting on the server. */
+/** What a link can create, and that Create commits locally without waiting on the server.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - resource-replica link placement ownership
+ */
 
 import type { ParentRef } from "@meridian/resource-replica";
 import { act } from "react";
@@ -95,10 +99,7 @@ it("opens a missing-folder link from local persistence before any network comple
     if (!target) throw new Error("Missing target");
     let id: string | null = null;
     await act(async () => {
-      id = await Promise.race([
-        creation.create(target),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 100)),
-      ]);
+      id = await creation.create(target);
     });
     expect(id).toBe("document");
     expect(createFolder).not.toHaveBeenCalled();

@@ -497,7 +497,7 @@ export function planFolderDeletionResources(
 ): ResourceWrite[] {
   if (!receipt.result.ok) return [];
   const result = receipt.result.value;
-  const ids = new Set(result.deletedDocumentIds);
+  const ids = new Set(result.removed.map(({ documentId }) => documentId));
   return resources.flatMap((record): ResourceWrite[] => {
     const resource = record.resource;
     if (
