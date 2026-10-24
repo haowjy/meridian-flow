@@ -626,7 +626,7 @@ describe("forward inverse on cold Yjs replicas", () => {
       before.map((line, i) => (i === 0 ? line.replace("w0_150", "AI_150") : line)),
     );
     // A long deletion restored from a cold replica must index aliases once, not per character.
-    const restored = "r".repeat(4_000);
+    const restored = "r".repeat(10_000);
     text(v, 0).insert(0, restored);
     const deletion = write(v, [(v) => text(v, 0).delete(0, restored.length)]);
     expect(inverse(v, deletion, "invert")).toBe(1);
