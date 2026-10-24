@@ -13,7 +13,7 @@ export type TrashRestoreOutcome =
 export async function restoreTrashedDocument(
   queryClient: QueryClient,
   projectId: string,
-  entry: DocumentTrashEntry,
+  entry: Pick<DocumentTrashEntry, "documentId" | "removal">,
 ): Promise<TrashRestoreOutcome> {
   const { documents } = await restoreContextDocuments(projectId, {
     documents: [{ documentId: entry.documentId, removal: entry.removal }],

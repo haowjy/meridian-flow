@@ -24,7 +24,7 @@ export type Removal = Readonly<{ title: string | null; record: DocumentRemovalRe
  * the same for the current account and anyone else, and never says "you". A
  * user with no display name, a purged actor, or no record read passively.
  */
-type RemovalVoice =
+export type RemovalVoice =
   | { kind: "person"; name: string; reason: DocumentRemovalRecord["reason"] }
   | { kind: "work"; name: string }
   /** The model of a chat deleted it; null `chat` when that chat has no title. */
@@ -32,7 +32,7 @@ type RemovalVoice =
   | { kind: "unfinished-reply" }
   | { kind: "anonymous"; reason: DocumentRemovalRecord["reason"] };
 
-function voiceOf(record: DocumentRemovalRecord | null): RemovalVoice {
+export function removalVoice(record: DocumentRemovalRecord | null): RemovalVoice {
   const reason = record?.reason ?? "deleted";
   const actor = record?.actor;
   if (actor?.kind === "user" && actor.displayName)
@@ -130,7 +130,7 @@ function manySentence(count: number, names: string, voice: RemovalVoice | null):
 
 /** The one sentence for removed documents, wherever it is said; a null title reads "this document". */
 export function removalSentence(documents: readonly Removal[]): string {
-  const voices = documents.map((document) => voiceOf(document.record));
+  const voices = documents.map((document) => removalVoice(document.record));
   const [first] = voices;
   if (!first) return "";
   if (documents.length === 1) {
@@ -155,7 +155,7 @@ export function deletedFromManuscriptSentence(
   title: string,
   record: DocumentRemovalRecord | null,
 ): string {
-  const voice = voiceOf(record);
+  const voice = removalVoice(record);
   if (voice.kind === "person") {
     const { name } = voice;
     return t`${name} deleted ${title} from the manuscript. Applying brings it back.`;
@@ -174,7 +174,7 @@ function shortRemovalSentence(documents: readonly Removal[]): string {
   const count = documents.length;
   const reasons = new Set(
     documents.map((document) => {
-      const voice = voiceOf(document.record);
+      const voice = removalVoice(document.record);
       return voice.kind === "unfinished-reply"
         ? "removed"
         : voice.kind === "work" || voice.kind === "agent"
