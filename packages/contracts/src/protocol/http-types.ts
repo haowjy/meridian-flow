@@ -234,8 +234,9 @@ export type DocumentTrashEntry = {
   formerPath: string;
   removal: RemovalIdentity;
   actor: DocumentRemovalRecord["actor"];
-  deletedAt: string;
-  purgeAt: string;
+  retention:
+    | { kind: "scheduled"; purgeAt: string }
+    | { kind: "held"; works: Array<{ id: string; name: string }> };
 };
 
 export type ListDocumentTrashResponse = {
