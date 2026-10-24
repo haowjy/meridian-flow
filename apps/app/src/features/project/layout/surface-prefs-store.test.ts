@@ -17,7 +17,7 @@ it("restores Scratch expansion and height and Recent expansion together", async 
   });
   const store = useProjectSurfacePrefsStore;
   store.getState().setRailExpanded("scratch", true);
-  store.getState().setScratchHeight(234);
+  store.getState().setRailHeight("scratch", 234);
   store.getState().setRailExpanded("recent", false);
   const saved = values.get("meridian:project-surface-layout") ?? "";
   expect(JSON.parse(saved).version).toBe(4);
@@ -26,6 +26,7 @@ it("restores Scratch expansion and height and Recent expansion together", async 
   values.set("meridian:project-surface-layout", saved);
   await store.persist.rehydrate();
   expect(store.getState().railPrefs).toEqual({
+    ...DEFAULT_RAIL_PREFS,
     scratchExpanded: true,
     recentExpanded: false,
     scratchHeight: 234,
@@ -41,7 +42,7 @@ it("keeps layout actions usable in memory when storage fails", async () => {
   await useProjectSurfacePrefsStore.persist.rehydrate();
   expect(() => {
     useProjectSurfacePrefsStore.getState().setRailExpanded("scratch", true);
-    useProjectSurfacePrefsStore.getState().setScratchHeight(200);
+    useProjectSurfacePrefsStore.getState().setRailHeight("scratch", 200);
     useProjectSurfacePrefsStore.getState().setDockWidth(400);
   }).not.toThrow();
   expect(useProjectSurfacePrefsStore.getState().railPrefs.scratchHeight).toBe(200);

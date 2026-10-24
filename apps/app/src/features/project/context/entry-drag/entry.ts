@@ -30,14 +30,15 @@ export function dragEntry(node: CatalogNode, movable: boolean): DragEntry {
 }
 
 /**
- * Rows move freely within one system: the project areas are one, and each
- * owner's Scratch or Uploads is its own. Crossing systems is a choice
- * (Move or Copy), not a drop.
+ * Rows move freely within one system: the project's own areas are one, User
+ * (the writer's, in every project) is one, and each owner's Scratch or Uploads
+ * is its own. Crossing systems is a choice (Move or Copy), not a drop.
  */
 export function entrySystem(
   scheme: ProjectContextTreeScheme,
   owner: { workId?: string | null; rootThreadId?: string | null },
 ): string {
+  if (scheme === "user") return "user";
   if (isProjectScopedScheme(scheme)) return "project";
   return `${scheme}:${owner.rootThreadId ?? owner.workId ?? ""}`;
 }

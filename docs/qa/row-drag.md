@@ -49,7 +49,9 @@ browser reports no fine pointer, so rows render at touch height.
    names the destination; Undo returns it.
 5. Drag `Part Two` onto `Act 2`: nothing lights, the hint reads "Can't go
    inside itself", and releasing changes nothing.
-6. Drag a row over its own folder: no light, no hint, no change.
+6. Drag a row over its own folder: no light, no hint, no change. Drag a
+   Manuscript row over the User header, docked above Scratch: no light, no
+   hint, no change (User is the writer's, in every project).
 7. Drag `chapter-1` into a folder that already holds a `chapter-1`: the hint
    reads "Move to <folder>" with a warning line under it, "chapter-1 will be
    renamed chapter-1 (2)" (two clashing rows: "2 items will be renamed"). Move…

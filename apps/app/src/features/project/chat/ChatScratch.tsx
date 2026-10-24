@@ -18,7 +18,7 @@ import { t } from "@lingui/core/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { Folder } from "lucide-react";
-import { type CSSProperties, type RefObject, useMemo, useRef } from "react";
+import { type RefObject, useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabs } from "@/client/stores";
@@ -40,9 +40,8 @@ import { useScratchCatalogs } from "../context/use-scratch-catalogs";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useOpenScratchNote } from "../dock/use-open-scratch-note";
-import { ResizeHandle } from "../layout/ResizeHandle";
-import { useProjectSurfacePrefsStore } from "../layout/surface-prefs-store";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
+import { DockedRailSection } from "../shell/DockedRailSection";
 import { RailEmptyHint, RailFolderRow } from "../shell/RailSection";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
@@ -57,8 +56,6 @@ function useOpenDocumentId(projectId: string, editorWorkId: string | null): stri
 }
 
 /** Each pane keeps this much when the writer resizes between the tree and Scratch. */
-const MIN_PANE_PX = 120;
-const HEIGHT_VAR = "--scratch-section-height";
 
 export function RailScratchSection({
   projectId,
@@ -80,11 +77,6 @@ export function RailScratchSection({
   resizeAgainst?: RefObject<HTMLElement | null>;
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
-  const expanded = useProjectSurfacePrefsStore((state) => state.railPrefs.scratchExpanded);
-  const height = useProjectSurfacePrefsStore((state) => state.railPrefs.scratchHeight);
-  const setExpanded = useProjectSurfacePrefsStore((state) => state.setRailExpanded);
-  const setHeight = useProjectSurfacePrefsStore((state) => state.setScratchHeight);
-  const sectionRef = useRef<HTMLElement | null>(null);
   const { primary, earlier, editable } = useChatScratchCatalogs(projectId, scratch);
   const areas = useMemo(
     () => [
@@ -113,80 +105,41 @@ export function RailScratchSection({
   );
   const list = useEntryList({ projectId, areas });
   if (!scratch) return null;
-  const changeExpanded = (next: boolean) => {
-    setExpanded("scratch", next);
-  };
   return (
-    <section
-      ref={sectionRef}
-      className="relative flex min-h-0 shrink flex-col border-t border-border-subtle py-1"
-      // Content-sized up to 40% of the rail by default; the handle's variable (set live
-      // while dragging, and from the saved height) replaces both.
-      style={
-        expanded
-          ? ({
-              height: `var(${HEIGHT_VAR}, auto)`,
-              maxHeight: `max(40%, var(${HEIGHT_VAR}, 0px))`,
-              minHeight: height === null ? undefined : MIN_PANE_PX,
-              ...(height === null ? {} : { [HEIGHT_VAR]: `${height}px` }),
-            } as CSSProperties)
-          : undefined
-      }
-    >
-      {resizeAgainst && expanded ? (
-        <ResizeHandle
-          gridRef={sectionRef}
-          cssVariableName={HEIGHT_VAR}
-          widthPx={height}
-          minWidthPx={MIN_PANE_PX}
-          maxWidthPx={Number.MAX_SAFE_INTEGER}
-          orientation="vertical"
-          dragDirection={-1}
-          ariaLabel={t`Resize Scratch`}
-          measure={() => {
-            const own = sectionRef.current?.getBoundingClientRect().height ?? MIN_PANE_PX;
-            const above = resizeAgainst.current?.getBoundingClientRect().height ?? 0;
-            return { value: own, min: MIN_PANE_PX, max: own + above - MIN_PANE_PX };
-          }}
-          onCommit={(next) => {
-            setHeight(next);
-          }}
-          onReset={() => {
-            setHeight(null);
-          }}
-        />
-      ) : null}
-      <EntryList list={list}>
-        <AreaDropRegion
-          scheme="scratch"
-          catalogRootId={primary.catalog?.root.entryId ?? null}
-          reveal={() => !expanded && changeExpanded(true)}
-          className="flex min-h-0 flex-col"
-          header={(dropProps) => (
-            <RailPaneHeader
-              label={schemeLabel("scratch")}
-              icon={schemeIcon("scratch")}
-              title={scratch.heading}
-              ariaLabel={scratch.heading}
-              expanded={expanded}
-              onExpandedChange={changeExpanded}
-              dropProps={dropProps}
-            />
-          )}
-        >
-          {expanded ? (
-            <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
-              <ChatScratchTree
-                projectId={projectId}
-                threadId={threadId}
-                editorWorkId={editorWorkId}
-                onPicked={onPicked}
+    <DockedRailSection id="scratch" resizeAgainst={resizeAgainst}>
+      {({ expanded, setExpanded }) => (
+        <EntryList list={list}>
+          <AreaDropRegion
+            scheme="scratch"
+            catalogRootId={primary.catalog?.root.entryId ?? null}
+            reveal={() => !expanded && setExpanded(true)}
+            className="flex min-h-0 flex-col"
+            header={(dropProps) => (
+              <RailPaneHeader
+                label={schemeLabel("scratch")}
+                icon={schemeIcon("scratch")}
+                title={scratch.heading}
+                ariaLabel={scratch.heading}
+                expanded={expanded}
+                onExpandedChange={setExpanded}
+                dropProps={dropProps}
               />
-            </div>
-          ) : null}
-        </AreaDropRegion>
-      </EntryList>
-    </section>
+            )}
+          >
+            {expanded ? (
+              <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
+                <ChatScratchTree
+                  projectId={projectId}
+                  threadId={threadId}
+                  editorWorkId={editorWorkId}
+                  onPicked={onPicked}
+                />
+              </div>
+            ) : null}
+          </AreaDropRegion>
+        </EntryList>
+      )}
+    </DockedRailSection>
   );
 }
 
