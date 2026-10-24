@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { NamespaceIntent, ResourceProjectionSnapshot } from "@meridian/resource-replica";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, queryOptions, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -17,7 +17,6 @@ import {
 import { getContextOperationReceipt, restoreContextDocuments } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { announce, announceError, getContextTabs } from "@/client/stores";
-import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { documentLocationName } from "../../chat/document-display-name";
 import { useDockDocumentStore } from "../dock/dock-document-store";
 import { SurfaceNotice, type SurfaceNoticeModel } from "../shell/SurfaceNotice";
@@ -37,6 +36,7 @@ type RestoreFeedback =
 type DeleteWindow = {
   label: string;
   kind: "file" | "folder";
+  /** "restoring" from the Undo click: the restore runs once the replica shows the delete landed. */
   feedback?: RestoreFeedback;
 };
 
@@ -45,16 +45,11 @@ type PresentedDeleteWindow = DeleteWindow & {
   surface: DeleteNoticeSurface;
 };
 
-type DeleteOperationState = "pending" | "landed" | "refused" | "settled-locally" | "aborted";
+type DeleteOperationState = "pending" | "landed" | "refused" | "settled-locally";
 
-type DeleteReceiptResolution = {
-  state: DeleteOperationState;
-  documents: Awaited<ReturnType<typeof readDeleteRemovals>>;
-};
-
-type DeleteReceiptTask = {
+type ProviderLifetime = {
   controller: AbortController;
-  promise: Promise<DeleteReceiptResolution>;
+  mounted: boolean;
 };
 
 type DeleteUndoContextValue = {
@@ -129,25 +124,22 @@ export function DocumentDeleteUndoProvider({
   children: ReactNode;
 }) {
   const resources = useAccountResourceReplica();
-  const queryClient = useQueryClient();
   const notices = useOptionalRemovedNotices();
+  const queryClient = useQueryClient();
   const { snapshot } = useAccountResourceProjection(projectId);
   const deleteIntents = useMemo(() => deleteOperationIndex(snapshot), [snapshot]);
   const [noticesBySurface, setNoticesBySurface] = useState<
     ReadonlyMap<DeleteNoticeSurface, PresentedDeleteWindow>
   >(() => new Map());
-  const receiptTasks = useRef(new Map<string, DeleteReceiptTask>());
   const restores = useRef(new Set<string>());
-  const mounted = useRef(true);
-
-  const cancelReceiptTask = useCallback((operationId: string) => {
-    receiptTasks.current.get(operationId)?.controller.abort();
-    receiptTasks.current.delete(operationId);
-  }, []);
+  const folderChecks = useRef(new Set<string>());
+  const lifetime = useRef<ProviderLifetime | null>(null);
 
   const dismiss = useCallback(
     (operationId: string) => {
-      cancelReceiptTask(operationId);
+      void queryClient.cancelQueries({
+        queryKey: deleteOperationQueryKey(projectId, operationId),
+      });
       setNoticesBySurface((current) => {
         const surface = [...current].find(([, notice]) => notice.operationId === operationId)?.[0];
         if (!surface) return current;
@@ -156,45 +148,38 @@ export function DocumentDeleteUndoProvider({
         return next;
       });
     },
-    [cancelReceiptTask],
+    [projectId, queryClient],
   );
 
   useEffect(() => {
-    mounted.current = true;
+    const owner: ProviderLifetime = { controller: new AbortController(), mounted: true };
+    lifetime.current = owner;
     return () => {
-      mounted.current = false;
-      for (const task of receiptTasks.current.values()) task.controller.abort();
-      receiptTasks.current.clear();
+      owner.mounted = false;
+      owner.controller.abort();
+      restores.current.clear();
+      folderChecks.current.clear();
+      void queryClient.cancelQueries({ queryKey: deleteOperationProjectKey(projectId) });
+      if (lifetime.current === owner) lifetime.current = null;
     };
-  }, []);
-
-  const receiptTask = useCallback(
-    (operationId: string) => {
-      const existing = receiptTasks.current.get(operationId);
-      if (existing) return existing;
-      const controller = new AbortController();
-      const promise = resolveDeleteReceipt(resources, projectId, operationId, controller.signal);
-      const task = { controller, promise };
-      receiptTasks.current.set(operationId, task);
-      return task;
-    },
-    [projectId, resources],
-  );
+  }, [projectId, queryClient]);
 
   useEffect(() => {
     const active = new Set([...noticesBySurface.values()].map(({ operationId }) => operationId));
-    for (const operationId of receiptTasks.current.keys()) {
-      if (!active.has(operationId)) cancelReceiptTask(operationId);
-    }
-    for (const window of noticesBySurface.values()) {
-      const operationId = window.operationId;
-      const state = deleteOperationState(deleteIntents, operationId);
-      if (state === "refused" || state === "settled-locally") dismiss(operationId);
-    }
-  }, [cancelReceiptTask, deleteIntents, dismiss, noticesBySurface]);
+    void queryClient.cancelQueries({
+      predicate: ({ queryKey, state }) =>
+        state.fetchStatus === "fetching" &&
+        queryKey[0] === DELETE_OPERATION_QUERY_ROOT[0] &&
+        queryKey[1] === projectId &&
+        typeof queryKey[2] === "string" &&
+        !active.has(queryKey[2]),
+    });
+  }, [noticesBySurface, projectId, queryClient]);
 
   const requestDelete = useCallback(
     (target: DeleteTarget, surface: DeleteNoticeSurface) => {
+      const owner = lifetime.current;
+      if (!owner) return;
       const settleMark =
         notices?.markOwnRemoval(projectId, ownDeletedDocumentIds(projectId, target)) ??
         (() => undefined);
@@ -210,7 +195,7 @@ export function DocumentDeleteUndoProvider({
               : await resources.deleteFolder(projectId, target.entryId);
           settleMark("removed");
           const { operationId } = result;
-          if (!operationId) return;
+          if (!operationId || !isActive(owner)) return;
           const window: DeleteWindow = {
             label: target.name,
             kind: target.kind === "file" ? "file" : "folder",
@@ -218,20 +203,14 @@ export function DocumentDeleteUndoProvider({
           setNoticesBySurface((current) => {
             return new Map(current).set(surface, { ...window, operationId, surface });
           });
-          const task = receiptTask(operationId);
-          if (window.kind === "folder")
-            void task.promise
-              .then(({ state, documents }) => {
-                if (state === "landed" && documents?.length === 0) dismiss(operationId);
-              })
-              .catch(() => undefined);
         } catch {
           settleMark("kept");
+          if (!isActive(owner)) return;
           announceError(t`Couldn't delete ${target.name}. Try again.`);
         }
       })();
     },
-    [dismiss, notices, projectId, receiptTask, resources],
+    [notices, projectId, resources],
   );
 
   const updateFeedback = useCallback((operationId: string, feedback: RestoreFeedback) => {
@@ -245,24 +224,18 @@ export function DocumentDeleteUndoProvider({
   }, []);
 
   const undo = useCallback(
-    (operationId: string) => {
-      const window = [...noticesBySurface.values()].find(
-        (notice) => notice.operationId === operationId,
-      );
-      if (!window || restores.current.has(operationId)) return;
+    (operationId: string) => updateFeedback(operationId, { kind: "restoring" }),
+    [updateFeedback],
+  );
+
+  const runRestore = useCallback(
+    (window: PresentedDeleteWindow, owner: ProviderLifetime) => {
+      const { operationId } = window;
       restores.current.add(operationId);
-      updateFeedback(operationId, { kind: "restoring" });
       void (async () => {
         try {
-          const task = receiptTask(operationId);
-          const { state, documents } = await task.promise;
-          if (state === "refused" || state === "settled-locally") {
-            dismiss(operationId);
-            return;
-          }
-          if (state === "aborted") throw new Error("Delete settlement was interrupted");
-          if (state !== "landed") throw new Error("Delete settlement is unavailable");
-          if (!documents) throw new Error("Delete receipt is unavailable");
+          const documents = await resolveDeleteReceipt(queryClient, projectId, operationId);
+          if (!isActive(owner)) return;
           if (documents.length === 0) {
             dismiss(operationId);
             return;
@@ -271,9 +244,10 @@ export function DocumentDeleteUndoProvider({
             projectId,
             { documents },
             {
-              signal: task.controller.signal,
+              signal: owner.controller.signal,
             },
           );
+          if (!isActive(owner)) return;
           const fault = response.documents.find(
             (result) => result.outcome === "ancestor_taken" || result.outcome === "refused",
           );
@@ -308,7 +282,7 @@ export function DocumentDeleteUndoProvider({
           });
           dismiss(operationId);
         } catch {
-          if (!mounted.current) return;
+          if (!isActive(owner)) return;
           updateFeedback(operationId, {
             kind: "failed",
             retryable: true,
@@ -319,8 +293,37 @@ export function DocumentDeleteUndoProvider({
         }
       })();
     },
-    [dismiss, noticesBySurface, projectId, queryClient, receiptTask, updateFeedback],
+    [dismiss, projectId, queryClient, updateFeedback],
   );
+
+  // Delete progress is read from the replica, never copied: a refused or local-only delete
+  // closes its notice, a landed empty folder has nothing to restore, and a requested Undo
+  // restores once its delete has landed.
+  useEffect(() => {
+    const owner = lifetime.current;
+    if (!owner) return;
+    for (const window of noticesBySurface.values()) {
+      const { operationId } = window;
+      const state = deleteOperationState(deleteIntents, operationId);
+      if (state === "refused" || state === "settled-locally") {
+        dismiss(operationId);
+        continue;
+      }
+      if (state !== "landed") continue;
+      if (window.feedback?.kind === "restoring") {
+        if (!restores.current.has(operationId)) runRestore(window, owner);
+      } else if (window.kind === "folder" && !folderChecks.current.has(operationId)) {
+        folderChecks.current.add(operationId);
+        // A failed check leaves Undo offered; Undo reads the receipt again and closes an empty one.
+        resolveDeleteReceipt(queryClient, projectId, operationId).then(
+          (documents) => {
+            if (isActive(owner) && documents.length === 0) dismiss(operationId);
+          },
+          () => undefined,
+        );
+      }
+    }
+  }, [deleteIntents, dismiss, noticesBySurface, projectId, queryClient, runRestore]);
 
   const value = useMemo<DeleteUndoContextValue>(
     () => ({
@@ -385,97 +388,43 @@ async function readDeleteRemovals(projectId: string, operationId: string, signal
   return "removed" in value ? value.removed : null;
 }
 
+const DELETE_OPERATION_QUERY_ROOT = ["context-delete"] as const;
+
+function deleteOperationProjectKey(projectId: string) {
+  return [...DELETE_OPERATION_QUERY_ROOT, projectId] as const;
+}
+
+function deleteOperationQueryKey(projectId: string, operationId: string) {
+  return [...deleteOperationProjectKey(projectId), operationId] as const;
+}
+
+function deleteReceiptQuery(projectId: string, operationId: string) {
+  return queryOptions({
+    queryKey: [...deleteOperationQueryKey(projectId, operationId), "receipt"],
+    queryFn: async ({ signal }) => {
+      const documents = await readDeleteRemovals(projectId, operationId, signal);
+      if (!documents) throw new Error("Delete receipt is unavailable");
+      return documents;
+    },
+    retry: 2,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
 async function resolveDeleteReceipt(
-  resources: Pick<AccountResourceReplica, "observeProjection">,
+  queryClient: QueryClient,
   projectId: string,
   operationId: string,
-  signal: AbortSignal,
-): Promise<DeleteReceiptResolution> {
-  const state = await waitForDeleteSettlement(resources, projectId, operationId, signal);
-  return {
-    state,
-    documents: state === "landed" ? await retryReceiptRead(projectId, operationId, signal) : null,
-  };
-}
-
-function waitForDeleteSettlement(
-  resources: Pick<AccountResourceReplica, "observeProjection">,
-  projectId: string,
-  operationId: string,
-  signal: AbortSignal,
-): Promise<DeleteOperationState> {
-  return new Promise((resolve, reject) => {
-    let stop: (() => void) | null = null;
-    let done = false;
-    const cleanup = () => {
-      signal.removeEventListener("abort", abort);
-      stop?.();
-      stop = null;
-    };
-    function finish(state: DeleteOperationState) {
-      if (done) return;
-      done = true;
-      cleanup();
-      resolve(state);
-    }
-    function fail(error: unknown) {
-      if (done) return;
-      done = true;
-      cleanup();
-      reject(error);
-    }
-    function abort() {
-      finish("aborted");
-    }
-    try {
-      stop = resources.observeProjection(
-        projectId,
-        (current) => {
-          const state = deleteOperationState(deleteOperationIndex(current), operationId);
-          if (state !== "pending") finish(state);
-        },
-        fail,
-      );
-    } catch (error) {
-      fail(error);
-    }
-    if (done) {
-      cleanup();
-      return;
-    }
-    signal.addEventListener("abort", abort, { once: true });
-    if (signal.aborted) abort();
-  });
-}
-
-async function retryReceiptRead(projectId: string, operationId: string, signal: AbortSignal) {
-  while (!signal.aborted) {
-    try {
-      return await readDeleteRemovals(projectId, operationId, signal);
-    } catch (error) {
-      if (signal.aborted) throw error;
-      await abortableDelay(1_000, signal);
-    }
+) {
+  const receipt = deleteReceiptQuery(projectId, operationId);
+  try {
+    return await queryClient.fetchQuery(receipt);
+  } catch (error) {
+    queryClient.removeQueries({ queryKey: receipt.queryKey, exact: true });
+    throw error;
   }
-  throw signal.reason;
 }
 
-function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(finish, milliseconds);
-    function cleanup() {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", abort);
-    }
-    function finish() {
-      cleanup();
-      resolve();
-    }
-    function abort() {
-      cleanup();
-      reject(signal.reason);
-    }
-    signal.addEventListener("abort", abort, { once: true });
-    if (signal.aborted) abort();
-  });
+function isActive(owner: ProviderLifetime): boolean {
+  return owner.mounted && !owner.controller.signal.aborted;
 }
