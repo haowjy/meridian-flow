@@ -38,10 +38,11 @@ pattern). Keep a real clock only when the claim is PostgreSQL's own timing,
 such as lock contention. Never poll for work a seed suppressed; await the
 notification that proves it ran.
 
-The Scratch archival upgrade contract owns an isolated historical schema and
-fixed pre-upgrade Yjs inputs (`scratch-archive-fixture.ts`). It applies the
-committed migration chain through the real runner, then exercises typed server
-consumers. Do not regenerate historical fixture bytes with current writers.
+A populated-upgrade proof (seed the old schema, run the new migration, check the
+data) runs once, before the migration merges, as a recipe in `docs/qa/` such as
+`document-removal-records.md`. Committed migrations are frozen by
+`pnpm db:migration-history`, so no permanent test re-proves them;
+`packages/database/src/fresh-migrations.db.test.ts` runs the whole chain from empty.
 
 Branch-tree suites build one world per case. `branch-tree-seeds.ts` writes rows
 the way the product leaves them, without a runtime. `branch-tree-commands.ts`
