@@ -37,7 +37,7 @@ export function SurfaceNotice({
             disabled={notice.undoing}
             onClick={notice.undo}
           >
-            {notice.undoing ? <Trans>Restoring…</Trans> : <Trans>Undo</Trans>}
+            <Trans>Undo</Trans>
           </button>
         ) : null}
         <IconButton
