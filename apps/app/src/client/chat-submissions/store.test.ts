@@ -16,6 +16,7 @@ import {
   type ChatSubmission,
   type ChatSubmissionStorage,
   DeviceChatSubmissionJournal,
+  submissionReplayChanged,
 } from "./store";
 
 function memory(): ChatSubmissionStorage & { raw(): Map<string, string> } {
@@ -194,6 +195,17 @@ it("notifies subscribers on writes, retirement and matching cross-tab storage ch
   const unsubscribe = journal.subscribe(() => {
     observed.push(journal.entries());
   });
+  const envelope = (entry: ChatSubmission) => JSON.stringify({ payload: entry });
+  const before = envelope(existingThread());
+  expect(
+    submissionReplayChanged(
+      before,
+      envelope(existingThread({ occurrence: { requestId: "retry", attempt: 2 } })),
+    ),
+  ).toBe(false);
+  expect(submissionReplayChanged(before, envelope(existingThread({ state: "rejected" })))).toBe(
+    true,
+  );
   journal.record("account", existingThread());
   const external = existingThread({ recordId: "sub-2", submissionId: "sub-2", seq: 2 });
   storage.setItem(
