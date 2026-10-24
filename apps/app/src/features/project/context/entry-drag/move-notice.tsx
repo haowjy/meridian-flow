@@ -31,6 +31,8 @@ import type { MoveResult } from "./execute-move";
 type UndoMove = () => Promise<string | null>;
 
 type Notice = {
+  /** Stays with the notice when Undo goes or its message changes. */
+  id: number;
   message: string;
   /** Absent when nothing moved. */
   undo: UndoMove | null;
@@ -38,18 +40,27 @@ type Notice = {
   refocus: () => void;
 };
 
-type Publish = (notice: Notice) => void;
+type NoticePublisher = {
+  /** Shows a notice in place of any other; resolves to its id. */
+  publish: (notice: Omit<Notice, "id">) => number;
+  /** Drops the notice's Undo once nothing it would put back is still in place. */
+  retire: (id: number) => void;
+};
 
-const HostContext = createContext<{
-  notice: Notice | null;
-  publish: Publish;
-  /** Replace or clear `from`, unless a newer notice has taken its place. */
-  settle: (from: Notice, to: Notice | null) => void;
-} | null>(null);
+const HostContext = createContext<
+  | (NoticePublisher & {
+      notice: Notice | null;
+      /** Replace or clear notice `id`, unless a newer notice has taken its place. */
+      settle: (id: number, to: Notice | null) => void;
+    })
+  | null
+>(null);
+
+let nextNoticeId = 1;
 
 /** Where a list in this surface publishes its drops; inert outside a host. */
-export function useMoveNoticePublisher(): Publish | null {
-  return useContext(HostContext)?.publish ?? null;
+export function useMoveNoticePublisher(): NoticePublisher | null {
+  return useContext(HostContext);
 }
 
 /** A surface that takes drops and shows their notice (`MoveNotice`) somewhere inside it. */
@@ -63,15 +74,24 @@ export function MoveNoticeHost({ children }: { children: ReactNode }) {
     };
   }, []);
   // A drop can finish after its surface has gone; there is nowhere to say so.
-  const publish = useCallback<Publish>((next) => {
-    if (!mounted.current) return;
-    setNotice(next);
+  const publish = useCallback((next: Omit<Notice, "id">) => {
+    const id = nextNoticeId++;
+    if (!mounted.current) return id;
+    setNotice({ ...next, id });
     announce(next.message);
+    return id;
   }, []);
-  const settle = useCallback((from: Notice, to: Notice | null) => {
-    if (mounted.current) setNotice((now) => (now === from ? to : now));
+  const settle = useCallback((id: number, to: Notice | null) => {
+    if (mounted.current) setNotice((now) => (now?.id === id ? to : now));
   }, []);
-  const value = useMemo(() => ({ notice, publish, settle }), [notice, publish, settle]);
+  const retire = useCallback((id: number) => {
+    if (mounted.current)
+      setNotice((now) => (now?.id === id && now.undo ? { ...now, undo: null } : now));
+  }, []);
+  const value = useMemo(
+    () => ({ notice, publish, settle, retire }),
+    [notice, publish, settle, retire],
+  );
   return <HostContext.Provider value={value}>{children}</HostContext.Provider>;
 }
 
@@ -86,7 +106,7 @@ export function MoveNotice({ className }: { className?: string }) {
   // Asked before anything awaits: Undo's button disables while it runs and drops focus.
   const holdsFocus = () => ref.current?.contains(document.activeElement) ?? false;
   const close = (next: Notice | null, focused: boolean) => {
-    settle(current, next);
+    settle(current.id, next);
     if (!next && focused) current.refocus();
   };
 
