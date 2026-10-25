@@ -236,7 +236,7 @@ selection that spans systems or holds an unmovable row moves nowhere rather than
 silently dropping rows. `drag-session.ts` holds the drag (a browser hides drag
 data until the drop). The transfer carries only Meridian's entries type, no
 `text/plain` or `text/uri-list` fallback. The composer and manuscript editor
-resolve file identities through their live `@` catalog and copy them as mentions;
+resolve selected row identities through their live `@` catalog and copy files and folders as mentions;
 other surfaces ignore the drop instead of pasting names that look like a
 half-made link. A writing drop stops before the tree's move route, so it never
 moves a selected row.

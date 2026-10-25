@@ -1024,6 +1024,10 @@ msgstr "Can't delete {source}: it changed during the delete."
 msgid "Can't go inside itself"
 msgstr "Can't go inside itself"
 
+#: src/features/editor/SessionEditor.tsx
+msgid "Can’t mention inside code"
+msgstr "Can’t mention inside code"
+
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source} to that location."
 msgstr "Can't move {source} to that location."
@@ -2969,6 +2973,11 @@ msgstr "Maximum is {0}."
 msgid "Medium"
 msgstr "Medium"
 
+#: src/components/app/composer/Composer.tsx
+#: src/features/editor/SessionEditor.tsx
+msgid "Mention"
+msgstr "Mention"
+
 #. placeholder {0}: row.label
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "Mention {0}"
@@ -3356,6 +3365,14 @@ msgstr "No Work matches your search."
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work yet."
 msgstr "No Work yet."
+
+#: src/components/app/composer/Composer.tsx
+msgid "Not available in this chat"
+msgstr "Not available in this chat"
+
+#: src/features/editor/SessionEditor.tsx
+msgid "Not available in this document"
+msgstr "Not available in this document"
 
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
@@ -5088,6 +5105,10 @@ msgstr "This note is empty. Open it in the Editor to write."
 #: src/routes/dev-login.tsx
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
 msgstr "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
+
+#: src/components/app/composer/Composer.tsx
+msgid "This part of the message can’t hold mentions"
+msgstr "This part of the message can’t hold mentions"
 
 #: src/features/editor/SchemaNotices.tsx
 msgid "This passage couldn't be recovered."
