@@ -145,8 +145,13 @@ lowers its deletion version.
 `unexecutable-after-terminal` history survives revival. `publishResourceTerminal` and
 its cleanup acknowledgement are no-ops at or below `revivedFrom`'s generation.
 
-Folder and document destinations store `{ parent: ParentRef, createFolders?: string[], name }`, where a
-parent is a picked folder identity or qualified area root. Linked creation alone
+Folder and document destinations store `{ parent: ParentRef, createFolders?: string[], name,
+position? }`, where `position` is one of start, end, before a sibling identity, or after a sibling
+identity. The destination parent remains explicit: an anchor that moves cannot retarget the command.
+The server resolves this intent and mints the stored rank under the namespace lock. A parent owns an
+explicit default/manual order policy; ranks affect display only for manual parents.
+
+The `parent` is a picked folder identity or qualified area root. Linked creation alone
 captures the deepest existing identity and missing folder names beneath it.
 Projection appends that suffix to the anchor's current home and reuses navigation-only
 ancestor completion until real catalog identities arrive. Preparation carries both

@@ -125,6 +125,12 @@ same seam in its own transaction and reports after commit.
 Tree writes return changed identities; ContextFS, the mover, Apply, and Discard
 refresh the catalog in their own surrounding transaction.
 
+Sibling order is part of effective placement. Parents are either `default` (folders first, then
+numeric-aware names) or `manual` (lexical stored ranks). Position commands carry start/end or
+before/after one sibling identity; the server resolves the anchor and allocates the rank while the
+namespace lock is held. Draft-Work placement carries the same position fact, so pending detection,
+Apply, Discard, and inverse operations cannot erase a reorder.
+
 ## Removal facts
 
 `tree/removal.ts` is the removal record's one owner: `createDocumentRemoval`

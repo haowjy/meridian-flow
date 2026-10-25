@@ -9,7 +9,11 @@
  * `parentId`/`folderId` of `null` denotes the source root.
  */
 import type { ProjectId } from "@meridian/contracts";
-import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
+import type {
+  ContextParentOrderPolicy,
+  DocumentFileType,
+  Filetype,
+} from "@meridian/contracts/protocol";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 import type { LiveClaim, LiveCreateCandidate } from "../tree/hidden-node-types.js";
 import type { PathResolution, TreeView } from "../tree/tree-view.js";
@@ -26,6 +30,8 @@ export interface ContextFolder {
   id: string;
   parentId: string | null;
   name: string;
+  rank?: string | null;
+  orderPolicy?: ContextParentOrderPolicy;
 }
 
 export interface ContextDocument {
@@ -40,6 +46,7 @@ export interface ContextDocument {
   sizeBytes: number | null;
   updatedAt: string;
   provisionalName: boolean;
+  rank?: string | null;
 }
 
 export interface LocatedContextDocument {

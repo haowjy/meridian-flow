@@ -4,6 +4,7 @@ import type {
   CatalogFileClassification,
   CatalogScope,
   ContextOperationReceipt,
+  ContextSiblingPosition,
   CreateUntitledContextDocumentAnswer,
   CreateUntitledContextDocumentRequest,
   DeleteContextEntryRequest,
@@ -72,6 +73,7 @@ export type ResourceDestination = Readonly<{
   parent: ParentRef;
   createFolders?: string[];
   name: string;
+  position?: ContextSiblingPosition;
 }>;
 export type DestinationParentLookup = (folderId: string) => ResourceLocation | null;
 
