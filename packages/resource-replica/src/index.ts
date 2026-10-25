@@ -7,6 +7,7 @@ export * from "./folder-catalog-installation";
 export * from "./folder-namespace";
 export * from "./folder-projection";
 export * from "./namespace-receipts";
+export * from "./optimistic-sibling-order";
 export * from "./resource-deletion";
 export * from "./resource-intent-policy";
 export * from "./resource-join";

@@ -64,6 +64,7 @@ export function catalogObservationFence(
       revision: number;
       canonical: ResourceRecord["resource"]["canonical"];
       canonicalParent: ResourceRecord["resource"]["canonicalParent"];
+      canonicalRank: ResourceRecord["resource"]["canonicalRank"];
       classification: ResourceRecord["resource"]["classification"];
     }
   >();
@@ -72,6 +73,7 @@ export function catalogObservationFence(
       revision: resource.revision,
       canonical: structuredClone(resource.canonical),
       canonicalParent: structuredClone(resource.canonicalParent),
+      canonicalRank: resource.canonicalRank,
       classification: structuredClone(resource.classification),
     });
   }

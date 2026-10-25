@@ -26,6 +26,7 @@ export type JoinTarget = Readonly<{
   /** Null when the trigger cannot name the location yet; the catalog observation fills it. */
   location: ResourceLocation | null;
   parent?: ParentRef;
+  rank?: string | null;
   classification?: CatalogFileClassification;
   observationVersion?: string;
 }>;
@@ -170,6 +171,7 @@ export function joinReservation(input: {
         ...(target.classification ? { classification: target.classification } : {}),
         canonical: target.location,
         ...(target.parent ? { canonicalParent: target.parent } : {}),
+        ...(target.rank !== undefined ? { canonicalRank: target.rank } : {}),
         ...(target.observationVersion ? { observationVersion: target.observationVersion } : {}),
         obligations: {
           ...obligations,

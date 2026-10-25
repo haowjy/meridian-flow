@@ -170,6 +170,7 @@ function requestFor(
         .join("/"),
       ...owners.body,
       newName: intent.desired.kind === "set-location" ? intent.desired.typedName : destination.name,
+      ...(destination.position ? { position: destination.position } : {}),
     },
   };
 }
@@ -559,6 +560,7 @@ export function installCanonicalRefresh(input: {
   operationId: string;
   location: ResourceLocation;
   parent: import("./resource-records").ParentRef;
+  rank?: string | null;
   observationVersion: string;
 }): ResourceWrite | null {
   const obligation = input.record.resource.obligations.canonicalRefresh;
@@ -599,6 +601,7 @@ export function installCanonicalRefresh(input: {
           ? {
               canonical: input.location,
               canonicalParent: input.parent,
+              canonicalRank: input.rank,
               observationVersion: input.observationVersion,
             }
           : {}),
@@ -622,6 +625,7 @@ export function installNamespaceAvailability(
       operationId,
       location: availability.location,
       parent: availability.parent,
+      rank: availability.rank,
       observationVersion: availability.observationVersion,
     });
   const { canonicalRefresh: _completed, ...obligations } = record.resource.obligations;

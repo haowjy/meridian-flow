@@ -1,6 +1,9 @@
 /** Folder placement and recursive deletion share the account namespace journal, without document content. */
 
-import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
+import type {
+  ContextOperationReceipt,
+  ContextParentOrderPolicy,
+} from "@meridian/contracts/protocol";
 import { canonicalRefreshObservation, newerCanonicalObservation } from "./canonical-observation";
 import {
   namespaceIntentOutcome,
@@ -535,6 +538,8 @@ export function installFolderCanonicalRefresh(
   location: ResourceLocation,
   parent: ParentRef,
   observationVersion: string,
+  rank?: string | null,
+  orderPolicy?: ContextParentOrderPolicy,
 ): FolderNamespaceWrite | null {
   if (record.canonicalRefresh?.operationId !== operationId) return null;
   const { newer, completes } = canonicalRefreshObservation(
@@ -553,7 +558,15 @@ export function installFolderCanonicalRefresh(
     next: {
       ...(newer ? present : base),
       revision: record.revision + 1,
-      ...(newer ? { canonical: location, canonicalParent: parent, observationVersion } : {}),
+      ...(newer
+        ? {
+            canonical: location,
+            canonicalParent: parent,
+            canonicalRank: rank,
+            canonicalOrderPolicy: orderPolicy,
+            observationVersion,
+          }
+        : {}),
     },
   };
 }
@@ -572,6 +585,8 @@ export function installFolderNamespaceAvailability(
       availability.location,
       availability.parent,
       availability.observationVersion,
+      availability.rank,
+      availability.orderPolicy,
     );
   const { canonicalRefresh: _completed, ...rest } = record;
   if (
