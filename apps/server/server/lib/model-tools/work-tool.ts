@@ -1,8 +1,9 @@
 /**
  * The model `work` tool: list, show and change the project's Works. The action
- * policy decides each command (D39); a model `switch` always needs the
- * writer's approval (D37), so it only says why it can't happen or asks.
+ * policy decides each command (D39). Work rebinding and queued write-mode
+ * changes run under the calling execution's existing claim.
  */
+import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
@@ -26,6 +27,8 @@ import {
   type WorkShowResult,
   workActionRefusal,
 } from "../../domains/runtime/index.js";
+import { RebindThreadWorkError, rebindThreadWork } from "../../domains/threads/index.js";
+import { recordWorkSwitchNotice } from "../work-switch-notice.js";
 import {
   isToolError,
   type ToolErrorOutput,
@@ -121,7 +124,7 @@ async function workByHandle(
 }
 
 /**
- * Why a `switch` can't happen, or null when only approval stands in the way.
+ * Why a `switch` can't happen, or null when it can proceed.
  * An unknown Work points to `work list` (D51), an archived one can't be
  * switched to by anyone, and the chat's current Work needs no switch.
  */
@@ -179,15 +182,15 @@ function workLifecycleMessage(
     : `Work ${workHandle} is archived and read-only. Ask the user to unarchive ${workHandle}.`;
 }
 
-function policyRefusal(command: WorkCommand, decision: "ask" | "deny"): ToolErrorOutput {
+function policyRefusal(decision: "ask" | "deny"): ToolErrorOutput {
   return toolError({
     code: "permission_denied",
     reason: "action_denied" satisfies PermissionDeniedReason,
-    message: workActionRefusal(command, decision),
+    message: workActionRefusal(decision),
   });
 }
 
-type CommandName = Exclude<WorkCommand["command"], "switch">;
+type CommandName = Exclude<WorkCommand["command"], "switch" | "write_mode">;
 type CommandOf<C extends CommandName> = Extract<WorkCommand, { command: C }>;
 type CommandHandler<C extends CommandName> = (
   deps: ToolWiringDeps,
@@ -309,7 +312,8 @@ export function createWorkHandler(deps: ToolWiringDeps) {
     if (!thread) return toolError({ message: `Thread not found: ${ctx.threadId}` });
 
     if (command.command === "switch") {
-      // A switch that couldn't happen says why before the policy asks for approval (D37).
+      // Resolve lifecycle and no-op outcomes before policy, so the model gets the
+      // useful target error rather than an unrelated permission refusal.
       const precheck = await switchPrecheck(
         deps,
         thread.projectId,
@@ -317,14 +321,47 @@ export function createWorkHandler(deps: ToolWiringDeps) {
         command.work,
       );
       if (precheck) return precheck;
-      // The model's switch is `ask` until the writer prompt lands (#601).
-      return policyRefusal(command, "ask");
     }
 
     const permission = await deps.readChainPermission(thread.id as ThreadId);
     const decision = actionPolicy(permission, `work.${command.command}`);
-    if (decision !== "allow") return policyRefusal(command, decision);
+    if (decision !== "allow") return policyRefusal(decision);
     try {
+      if (command.command === "switch") {
+        const target = command.work
+          ? await workByHandle(deps, thread.projectId, command.work)
+          : await deps.works.findNoWork(thread.projectId);
+        if (!target) return toolError({ message: "No Work is missing for this project" });
+        if (isToolError(target)) return target;
+        const rebound = await deps.transaction(async () => {
+          const rebound = await rebindThreadWork(deps, {
+            threadId: thread.id as ThreadId,
+            workId: target.id,
+          });
+          const root = await deps.threads.findByIdIncludingDeleted(thread.rootThreadId);
+          if (rebound.before.handle === null && !root?.ref)
+            throw new Error("Scratch requires the first chat's assigned handle");
+          const previousScratchUri = formatParsedContextUri(
+            "scratch",
+            "",
+            rebound.before.handle === null
+              ? { kind: "lineage", rootThreadRef: root?.ref ?? "" }
+              : { kind: "work", workHandle: rebound.before.handle },
+          );
+          await recordWorkSwitchNotice(deps.notices, rebound, previousScratchUri);
+          return rebound;
+        });
+        return { handle: rebound.after.handle, name: rebound.after.name };
+      }
+      if (command.command === "write_mode") {
+        await deps.controls.enqueueControl({
+          threadId: thread.id as ThreadId,
+          id: crypto.randomUUID(),
+          provenance: { kind: "agent", threadId: thread.id },
+          control: { kind: "write_mode", mode: command.mode },
+        });
+        return { mode: command.mode, applies: "next_reply" };
+      }
       const run = COMMANDS[command.command] as CommandHandler<CommandName>;
       return await run(deps, thread, command as CommandOf<CommandName>);
     } catch (error) {
@@ -342,6 +379,15 @@ export function createWorkHandler(deps: ToolWiringDeps) {
             "work" in command && command.work ? command.work : (error.workHandle ?? null),
             mayChangeWorks(permission),
           ),
+        });
+      }
+      if (error instanceof RebindThreadWorkError) {
+        return toolError({
+          code: error.code === "target_work_unavailable" ? "work_archived" : "work_not_found",
+          message:
+            error.code === "target_work_unavailable"
+              ? 'That Work is no longer available. Use `work({"command":"list"})` and choose another.'
+              : "This chat or Work is no longer available.",
         });
       }
       return toolError({ message: error instanceof Error ? error.message : String(error) });

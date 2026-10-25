@@ -1,5 +1,5 @@
 /**
- * Writer control commands serialize idempotency, cancel-out and withdrawal
+ * Thread control commands serialize idempotency, cancel-out and withdrawal
  * with boundary reservation. Every request writes its own row, so a replay
  * always finds it and answers that row's state.
  */
@@ -76,11 +76,13 @@ export function createThreadControls(deps: {
       // things alone. Either way the row is written already acknowledged,
       // so nothing shows in the chat and a replay finds it settled.
       await deps.enqueueSettled(draft, queued && !unchanged ? [queued.id] : []);
-      if (!unchanged) await deps.setWorkDefault(input.threadId, input.control.mode);
+      if (!unchanged && draft.provenance.kind === "writer")
+        await deps.setWorkDefault(input.threadId, input.control.mode);
       return true;
     }
     await deps.enqueueWithoutWake(draft);
-    await deps.setWorkDefault(input.threadId, input.control.mode);
+    if (draft.provenance.kind === "writer")
+      await deps.setWorkDefault(input.threadId, input.control.mode);
     return true;
   }
   return {
@@ -90,7 +92,7 @@ export function createThreadControls(deps: {
         threadId: input.threadId,
         intent: "control",
         body: input.control,
-        provenance: { kind: "writer", actorId: input.actorId },
+        provenance: input.provenance,
         idempotencyKey: input.id,
       };
       // One read under the lock: every switch transition commits under it, so the control's turn

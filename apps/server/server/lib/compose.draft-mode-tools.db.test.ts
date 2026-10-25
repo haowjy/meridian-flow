@@ -277,7 +277,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ) =>
         runtime.app.delivery.enqueueControl({
           threadId: THREAD.threadId,
-          actorId: USER_ID,
+          provenance: { kind: "writer", actorId: USER_ID },
           id: crypto.randomUUID(),
           control: { kind: "write_mode", mode },
         });
@@ -308,6 +308,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       it("keeps a reply's mode past a mid-reply switch, which stays pending after the reply", async () => {
         const script = await startWithChapter("Writer live content.");
         const { runtime } = script;
+        await db
+          .update(schema.works)
+          .set({ defaultAiWriteMode: "draft" })
+          .where(eq(schema.works.id, WORK_ID));
         const lease = await runtime.ports.runClaim.startExecution(
           THREAD.threadId as never,
           crypto.randomUUID() as never,
@@ -319,11 +323,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           destination: "draft",
         });
 
-        const queued = await switchTo(runtime, "direct");
-        expect(queued.response).toMatchObject({
-          runState: { items: [{ control: { kind: "write_mode", mode: "direct" } }] },
-          turnId: null,
-        });
+        const queued = await reply.call("work", { command: "write_mode", mode: "direct" });
+        expect(queued.output).toBe("AI write mode will change to direct from the next reply.");
+        expect(
+          await db
+            .select({
+              body: schema.threadInboxMessages.body,
+              provenance: schema.threadInboxMessages.provenance,
+            })
+            .from(schema.threadInboxMessages)
+            .where(eq(schema.threadInboxMessages.threadId, THREAD.threadId)),
+        ).toMatchObject([
+          {
+            body: { kind: "write_mode", mode: "direct" },
+            provenance: { kind: "agent", threadId: THREAD.threadId },
+          },
+        ]);
+        expect(
+          (
+            await db
+              .select({ mode: schema.works.defaultAiWriteMode })
+              .from(schema.works)
+              .where(eq(schema.works.id, WORK_ID))
+          )[0]?.mode,
+        ).toBe("draft");
         expect((await create(reply.call, "after")).result).toMatchObject({
           destination: "draft",
         });
