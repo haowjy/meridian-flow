@@ -76,5 +76,70 @@ then a folder with one document and an empty subfolder:
    reloading, the chip turns dashed: the server's `gone` answer reached a link
    whose target catalog was never loaded by this Editor.
 
+9. **Server identity boundaries.** Create a fresh holder whose first content
+   includes a folder link, then rename the folder:
+
+   ```bash
+   project_id=$(./mf project default --json | jq -r .projectId)
+   ./mf doc put "manuscript://Folder Probe/Child.md" --text "Child"
+   ./mf doc put "manuscript://Folder Probe Holder.md" \
+     --text '[Folder](<manuscript://Folder Probe/>)'
+   snapshot=$(./mf api GET "/api/projects/$project_id/context/catalog/snapshot?scope=project" --json)
+   folder_id=$(printf '%s' "$snapshot" | jq -r \
+     '.entries[] | select(.kind == "folder" and .uri == "manuscript://Folder Probe") | .entryId')
+   child_id=$(printf '%s' "$snapshot" | jq -r \
+     '.entries[] | select(.kind == "file" and .uri == "manuscript://Folder Probe/Child") | .entryId')
+   no_work_id=$(printf '%s' "$snapshot" | jq -r \
+     '.entries[] | select(.kind == "authority" and .authority.workHandle == null) | .entryId')
+   operation_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+   ./mf api POST "/api/projects/$project_id/context/manuscript/move" --data "$(jq -nc \
+     --arg operationId "$operation_id" --arg nodeId "$folder_id" \
+     '{operationId: $operationId, path: "Folder Probe", expected: {kind: "folder", nodeId: $nodeId}, destinationScheme: "manuscript", destinationFolderPath: "", newName: "Folder Probe Renamed"}')"
+   ./mf doc read "manuscript://Folder Probe Holder.md"
+   ```
+
+   The read returns the Folder link with `Folder Probe Renamed/` as its
+   destination: the holder bound the folder ID before the folder moved.
+
+   Resolve a relative directory link from the child, using the same prepared
+   address for lookup and resolution:
+
+   ```bash
+   ./mf api POST "/api/projects/$project_id/links/resolve" --data "$(jq -nc \
+     --arg workId "$no_work_id" --arg holderDocumentId "$child_id" \
+     '{workId: $workId, baseUri: "manuscript://Folder Probe Renamed/Child", holderDocumentId: $holderDocumentId, links: [{ref: null, href: "../Folder Probe Renamed/"}]}')" --json
+   ```
+
+   The answer is the folder named `Folder Probe Renamed`, not `gone`. Finally,
+   send 129 distinct folder identities through the 200-link route boundary:
+
+   ```bash
+   python3 - "$no_work_id" <<'PY' >/tmp/folder-links-129.json
+   import json, sys, uuid
+   print(json.dumps({
+       "workId": sys.argv[1],
+       "baseUri": None,
+       "links": [
+           {"ref": f"folder:{uuid.uuid4()}", "href": f"manuscript://Batch {i}/"}
+           for i in range(129)
+       ],
+   }))
+   PY
+   ./mf api POST "/api/projects/$project_id/links/resolve" \
+     --data @/tmp/folder-links-129.json --json | jq '.answers | {length, states: group_by(.state) | map({state: .[0].state, count: length})}'
+   ```
+
+   It returns 129 `gone` answers rather than exceeding the availability
+   adapter's 128-identity call limit. Clean up the probe:
+
+   ```bash
+   ./mf doc rm "manuscript://Folder Probe Holder.md"
+   ./mf doc rm "manuscript://Folder Probe Renamed/Child.md"
+   operation_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+   ./mf api POST "/api/projects/$project_id/context/manuscript/delete" --data "$(jq -nc \
+     --arg operationId "$operation_id" --arg nodeId "$folder_id" \
+     '{operationId: $operationId, path: "Folder Probe Renamed", expected: {kind: "folder", nodeId: $nodeId}}')"
+   ```
+
 Record the commit, date, stack, outcome and screenshot paths in the active work
 directory after a run.
