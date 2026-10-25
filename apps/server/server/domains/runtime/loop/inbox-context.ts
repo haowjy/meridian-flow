@@ -355,7 +355,16 @@ export function messageTurnFor(
           ? workUpdateMetadata()
           : message.provenance.kind === "writer"
             ? null
-            : inboxMessageMetadata(),
+            : inboxMessageMetadata(
+                message.provenance.kind === "agent" && message.provenance.sender
+                  ? {
+                      sender: {
+                        threadId: message.provenance.threadId,
+                        ...message.provenance.sender,
+                      },
+                    }
+                  : {},
+              ),
   });
   const text =
     message.body.kind === "work_context_refresh" && workContext

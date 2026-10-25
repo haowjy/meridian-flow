@@ -14,6 +14,8 @@ import { stringInput, toolInputObject } from "./tool-command";
 type QueuedThreadMessage = {
   /** The model-facing ref the message was sent to (`pN`). */
   handle: string;
+  /** Writer-visible destination title, when the target has one. */
+  name: string | null;
 };
 
 type ThreadMessageRow =
@@ -36,7 +38,7 @@ function parseQueuedThreadMessage(value: JsonValue | null): QueuedThreadMessage 
   if (typeof value.handle !== "string" || value.handle.length === 0) return null;
   // A spawned background run carries `execution` and its own card.
   if ("execution" in value) return null;
-  return { handle: value.handle };
+  return { handle: value.handle, name: typeof value.name === "string" ? value.name : null };
 }
 
 function statusOf(value: JsonValue | null): unknown {

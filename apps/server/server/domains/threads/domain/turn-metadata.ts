@@ -37,6 +37,13 @@ export const InboxMessageMetadataCodec = z
   .object({
     kind: z.literal("inbox_message"),
     agentRequestKind: z.enum(["child_seed", "foreground_message"]).optional(),
+    sender: z
+      .object({
+        threadId: z.string(),
+        ref: z.string().nullable(),
+        title: z.string().nullable(),
+      })
+      .optional(),
   })
   .passthrough();
 

@@ -352,9 +352,9 @@ describe("loadForgettingFacts", () => {
   });
   const walks: Array<[string, Turn[], string[], boolean]> = [
     [
-      "an agent message draws no row, so the report is still under the reply",
+      "an agent message is delivered under the reply alongside its report",
       [agentMessage, report],
-      ["r"],
+      ["m", "r"],
       true,
     ],
     ["a handoff seed is a row, so the walk stops at it", [handoffSeed, report], [], true],
@@ -364,7 +364,12 @@ describe("loadForgettingFacts", () => {
       [],
       true,
     ],
-    ["a child seed without references is not a row", [childSeed, report], ["r"], false],
+    [
+      "a child seed without references is delivered under the reply",
+      [childSeed, report],
+      ["c", "r"],
+      false,
+    ],
   ];
   it.each(
     walks,

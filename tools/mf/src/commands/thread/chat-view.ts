@@ -87,6 +87,7 @@ export type ChatDelivery = {
   childThreadId: string | null;
   agentName: string | null;
   title: string | null;
+  sender: DeliveryEvent["sender"] | null;
   outcome: string | null;
   /** The notification's text; empty for an attachment-only message. */
   message: string;
@@ -334,6 +335,16 @@ function chatRow(row: ViewRow, view: TranscriptView, limits: { full: boolean }):
     if (limits.full) out.workReceipts = assistant.workReceipts;
     if (assistant.hiddenToolCallIds.length) out.hiddenToolCalls = assistant.hiddenToolCallIds;
   }
+  if (row.kind === "delivery")
+    out.items = [
+      {
+        kind: "delivery",
+        groups: row.deliveries.map((group) => ({
+          id: group.id,
+          events: group.events.map(chatDelivery),
+        })),
+      },
+    ];
   if (row.response)
     out.response = { parts: row.response.parts.map((part) => part.id), stats: row.response.stats };
   if (row.kind === "compaction") out.compaction = readCompactionFacts(turn);
@@ -355,6 +366,7 @@ function chatDelivery(event: DeliveryEvent): ChatDelivery {
     childThreadId: event.childThreadId ?? null,
     agentName: event.agentName ?? null,
     title: event.title ?? null,
+    sender: event.sender ?? null,
     outcome: event.subagentUpdate?.outcome ?? null,
     message: event.message,
   };
