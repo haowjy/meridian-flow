@@ -4,7 +4,7 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - single-snapshot migration bytes recorded before lock acquisition (kb/decisions/platform/stack/drizzle-migration-integrity.md)
  */
-import { createHash, randomInt } from "node:crypto";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -75,7 +75,6 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
   const scratchTarget = disposableTestDatabaseTarget(
     databaseUrl ?? "",
     `migration_runner_test_${process.pid}_${Date.now()}`,
-    randomInt(1000, 1_000_000),
   );
   const scratchName = scratchTarget.databaseName;
   const adminUrl = new URL(databaseUrl ?? "");
@@ -100,7 +99,7 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
   afterAll(async () => {
     try {
       await sql?.end();
-      if (scratchTarget.dropInline)
+      if (!scratchTarget.managedTemplate)
         await admin.unsafe(`DROP DATABASE IF EXISTS "${scratchName}" WITH (FORCE)`);
     } finally {
       await admin.end();
