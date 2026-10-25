@@ -59,7 +59,7 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
     }),
     vi
       .spyOn(links, "useLinkableDocuments")
-      .mockReturnValue({ documents: [], revision: "", complete: false }),
+      .mockReturnValue({ documents: [], folders: [], revision: "", complete: false }),
     vi.spyOn(references, "useReferenceBrowserCatalog").mockReturnValue(null),
     vi.spyOn(focus, "useInlineReviewFocus").mockImplementation(() => {}),
     vi.spyOn(status, "SyncStatus").mockImplementation(() => null),

@@ -50,6 +50,7 @@ import {
   createLinkAnswerCache,
   goneLinkDocumentId,
   type LinkKey,
+  linkFolderId,
   linkKeyOfMark,
 } from "./link-resolution";
 import {
@@ -81,17 +82,27 @@ export function openLinkForm(editor: Editor | null): boolean {
  * Follow a link, unless it is already known to be gone. A gone link is not
  * followable (it draws a text cursor), so its press is the editor's: the caret
  * lands, and Enter means Enter. A press before the answer arrives still
- * follows, and the follow then does nothing.
+ * follows, and the follow then does nothing. A link that names a folder opens
+ * the folder's menu at `at` instead, once the app can follow anything at all.
+ * Every follow in the lane (click, Enter, Alt+Enter, the menu's Open link)
+ * comes through here.
  */
-function followUnlessGone(
+export function followLinkFrom(
   editor: Editor,
   key: LinkKey,
   disposition: LinkFollowDisposition,
+  at: LinkPoint,
 ): LinkFollowResult {
   const surface = getLinkSurface(editor);
   const answer = getLinkAnswerCache(editor)?.read(key) ?? null;
   if (!surface || (answer?.state === "gone" && !goneLinkDocumentId(answer, key)))
     return "unavailable";
+  const folderId = linkFolderId(answer, key);
+  if (folderId) {
+    if (!surface.navigator) return "unavailable";
+    surface.openFolder({ folderId, at });
+    return "navigated";
+  }
   return followLink(
     { target: classifyLinkTarget(key.href), ref: key.ref, disposition },
     surface.navigator,
@@ -104,7 +115,10 @@ function followLinkAtSelection(editor: Editor | null): boolean {
   if (!editor || !link) return false;
   // Alt+Enter is the keyboard twin of a plain click, so it lands in the same
   // place a plain click would.
-  return followUnlessGone(editor, linkKeyOfMark(link.attributes), "current") !== "unavailable";
+  return (
+    followLinkFrom(editor, linkKeyOfMark(link.attributes), "current", caretPoint(editor.view)) !==
+    "unavailable"
+  );
 }
 
 export const LinkSurfaceExtension = Extension.create({
@@ -158,7 +172,12 @@ export const LinkSurfaceExtension = Extension.create({
       });
       if (intent.action === "place-caret") return false;
 
-      const followed = followUnlessGone(editor, linkKeyOf(view, anchor), intent.disposition);
+      const followed = followLinkFrom(
+        editor,
+        linkKeyOf(view, anchor),
+        intent.disposition,
+        belowAnchor(anchor),
+      );
       // Nothing to follow — an unrecognized href, a link known to be gone, or
       // an internal link with no navigator registered yet. A primary click
       // falls through so the caret still lands; a middle click has no caret to
@@ -231,7 +250,12 @@ export const LinkSurfaceExtension = Extension.create({
                 const anchor = anchorIn(view, document.activeElement);
                 if (!anchor) return false;
                 return (
-                  followUnlessGone(editor, linkKeyOf(view, anchor), "current") !== "unavailable"
+                  followLinkFrom(
+                    editor,
+                    linkKeyOf(view, anchor),
+                    "current",
+                    belowAnchor(anchor),
+                  ) !== "unavailable"
                 );
               },
               ContextMenu: openKeyboardMenu,
@@ -391,6 +415,12 @@ function restoreSelection(view: EditorView, selection: EditorAnchor | undefined)
   // `between` lands on the nearest valid text position rather than throwing,
   // which matters when a peer reshaped the block during the press.
   view.dispatch(view.state.tr.setSelection(TextSelection.between($from, $to)));
+}
+
+/** Where a surface summoned from a link hangs: under the link's start. */
+function belowAnchor(anchor: HTMLElement): LinkPoint {
+  const rect = anchor.getBoundingClientRect();
+  return { x: rect.left, y: rect.bottom };
 }
 
 /** Where a summoned surface hangs: the near edge of the selection, on screen. */

@@ -46,7 +46,7 @@ export function dividerView(turn: Turn): DividerView {
     summary: summaryWithoutDocuments(facts.summary),
     documents: (turn.blocks ?? []).flatMap((block) => {
       const reference = referenceOccurrenceContent(block);
-      if (!reference?.read) return [];
+      if (reference?.kind !== "document" || !reference.read) return [];
       return [{ uri: reference.uri, body: readPayloadMarkup(reference.read.result) }];
     }),
     model: facts.model,

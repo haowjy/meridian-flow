@@ -12,7 +12,13 @@ import { useMemo, useSyncExternalStore } from "react";
 
 import { getLinkSurface, type LinkSurface, type LinkSurfaceState } from "@/core/editor/links";
 
-const NO_SURFACE: LinkSurfaceState = { hint: null, form: null, menu: null, follow: null };
+const NO_SURFACE: LinkSurfaceState = {
+  hint: null,
+  form: null,
+  menu: null,
+  folder: null,
+  follow: null,
+};
 const NO_SUBSCRIPTION = () => () => {};
 
 export function useLinkSurface(editor: Editor | null): LinkSurface | null {

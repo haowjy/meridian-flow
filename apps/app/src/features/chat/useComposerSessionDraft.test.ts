@@ -62,6 +62,7 @@ describe("session composer drafts", () => {
       type: "composerReference",
       attrs: {
         reference: {
+          kind: "document",
           documentId: "01900000-0000-7000-8000-000000000001",
           uri: "manuscript://chapter.md",
           authority: { kind: "project", projectId: account },

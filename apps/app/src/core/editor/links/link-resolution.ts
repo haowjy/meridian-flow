@@ -91,12 +91,28 @@ export function pictureKeyOfNode(attrs: { readonly [attribute: string]: unknown 
   if (written.kind === "external") return null;
   const ref = storedLinkRef(attrs.ref);
   if (written.kind === "contextual") return { ref, href: src };
-  return { ref, href: storedHref(written.uri, written.suffix) };
+  return { ref, href: storedHref({ kind: written.target, uri: written.uri }, written.suffix) };
 }
 
 /** The one string a `LinkKey` is cached and deduplicated under. */
 export function linkCacheKey(key: LinkKey): string {
   return `${key.ref ?? ""}\u0000${key.href}`;
+}
+
+/** A folder a link names, where it is now. */
+export type ResolvedFolderLink = { folderId: string; title: string; uri: string };
+
+/**
+ * The folder a link names, or null: its ref's identity, else the folder its
+ * answer found at its address. A folder link opens the folder's menu.
+ */
+export function linkFolderId(
+  entry: LinkResolutionEntry | null,
+  link: Pick<LinkKey, "ref">,
+): string | null {
+  if (entry?.state === "folder") return entry.folder.folderId;
+  const ref = parseLinkRef(link.ref);
+  return ref?.kind === "folder" ? ref.folderId : null;
 }
 
 /** The branch a hidden document lives in: what the server says a link to it opens. */
@@ -106,6 +122,8 @@ export type LinkResolutionEntry =
   | { state: "pending"; document: null }
   /** `branch` is present iff the document is hidden ("in a draft"); only its review opens it. */
   | { state: "document"; document: ResolvedDocumentLink; branch?: LinkBranchDestination }
+  /** A folder: drawn with the folder icon, and a click opens its menu instead of following. */
+  | { state: "folder"; document: null; folder: ResolvedFolderLink }
   | { state: "missing"; document: null }
   /** A document the reader cannot read live. A retained Trash identity remains followable. */
   | { state: "gone"; document: null; trashedDocumentId?: string };

@@ -283,7 +283,7 @@ it("routes each link to the local index or the server", async () => {
     resolution.registerResolver(
       createProjectLinkResolver(
         scope,
-        { documents: DOCUMENTS, revision: "r", complete: row.complete ?? true },
+        { documents: DOCUMENTS, folders: [], revision: "r", complete: row.complete ?? true },
         settlements,
       ),
       { baseUri: scope.baseUri },
@@ -352,7 +352,7 @@ it("routes each link to the local index or the server", async () => {
       resolution.registerResolver(
         createProjectLinkResolver(
           scope,
-          { documents: later.documents, revision: `r${at + 2}`, complete: true },
+          { documents: later.documents, folders: [], revision: `r${at + 2}`, complete: true },
           settlements,
         ),
         { baseUri: scope.baseUri },
@@ -380,7 +380,7 @@ it("a link to a document that exists only in a draft is followed to that Work's 
   resolution.registerResolver(
     createProjectLinkResolver(
       { projectId: "p", workId: "w", baseUri: HOLDER },
-      { documents: [], revision: "r", complete: true },
+      { documents: [], folders: [], revision: "r", complete: true },
       createLinkSettlements(),
     ),
     { baseUri: HOLDER },

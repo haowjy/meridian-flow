@@ -58,15 +58,12 @@ function OpenMovePicker({
   const { works, noWork } = useWorks(projectId);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const document = useMemo(
-    () => ({ scheme, owner, heading: schemeLabel(scheme) }),
-    [scheme, owner],
-  );
+  const own = useMemo(() => ({ scheme, owner, heading: schemeLabel(scheme) }), [scheme, owner]);
   const scratch = useMemo(
     () => (scheme === "scratch" ? { owner, heading: schemeLabel(scheme) } : null),
     [scheme, owner],
   );
-  const source = useProjectMenuSource({ projectId, title: "", document, scratch });
+  const source = useProjectMenuSource({ projectId, title: "", own, scratch });
   const currentTrail = source.own.openAt(entry.path);
   const openAt = (repairMove && moveRepairTrail(source, repairMove, currentTrail)) || currentTrail;
   const name = moveEntryName(entry.name, repairMove);

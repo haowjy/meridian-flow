@@ -1,5 +1,6 @@
 /** TipTap Composer schema, clipboard, draft ownership, and exact selection snapshots. */
 
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   SubmittedReference,
   UploadIntakeResult,
@@ -22,7 +23,11 @@ import type { Selection } from "@tiptap/pm/state";
 import { Plugin, Selection as PMSelection, TextSelection } from "@tiptap/pm/state";
 import { Transform } from "@tiptap/pm/transform";
 import StarterKit from "@tiptap/starter-kit";
-import type { AuthoritativeReference } from "@/core/completion";
+import type {
+  AuthoritativeReference,
+  DocumentReference,
+  StableReferenceAuthority,
+} from "@/core/completion";
 import { referenceUriForAuthority } from "@/core/completion";
 import {
   clipboardLinkAddress,
@@ -59,10 +64,14 @@ export type ComposerSubmitEnvelope = Readonly<{
   activatedSkillSlugs: readonly string[];
 }>;
 
-export type ComposerReferenceAttrs = AuthoritativeReference &
-  RestorableReference & {
+export type ComposerDocumentReferenceAttrs = DocumentReference &
+  Extract<RestorableReference, { kind: "document" }> & {
     upload: ComposerOwnedUpload | null;
   };
+/** One atom for every reference: the document branch alone owns file facts and uploads. */
+export type ComposerReferenceAttrs =
+  | ComposerDocumentReferenceAttrs
+  | Extract<RestorableReference, { kind: "folder" }>;
 export type ComposerPendingUploadAttrs = {
   intakeId: string;
   name: string;
@@ -74,7 +83,7 @@ export type ComposerSkillAttrs = MessageSkill;
 /** HTML clipboard metadata is untrusted input; turn admission still authorizes identity. */
 function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | null {
   if (!raw) return null;
-  let value: ComposerReferenceAttrs;
+  let value: Record<string, unknown>;
   try {
     value = JSON.parse(raw);
   } catch {
@@ -83,73 +92,115 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
   if (
     !value ||
     typeof value !== "object" ||
-    ![value.documentId, value.uri, value.fileType, value.label].every(
-      (field) => typeof field === "string",
-    ) ||
-    (value.displayText !== undefined && typeof value.displayText !== "string") ||
+    typeof value.uri !== "string" ||
+    typeof value.label !== "string" ||
+    (value.displayText !== undefined && typeof value.displayText !== "string")
+  )
+    return null;
+  const shared = {
+    label: value.label,
+    ...(value.displayText !== undefined ? { displayText: value.displayText as string } : {}),
+  };
+  if (value.kind === "folder") {
+    const folderId = parseRequestId(value.folderId);
+    const uri = parseContextUri(value.uri);
+    if (!folderId || !uri.ok || !uri.value.path || uri.value.normalized !== value.uri) return null;
+    return { kind: "folder", folderId, uri: uri.value.normalized, ...shared };
+  }
+  if (
+    value.kind !== "document" ||
+    typeof value.fileType !== "string" ||
     typeof value.imageCapable !== "boolean"
   )
     return null;
   const documentId = parseRequestId(value.documentId);
-  if (!documentId) return null;
-  const rawAuthority = value.authority;
-  if (!rawAuthority || typeof rawAuthority !== "object") return null;
-  let authority: ComposerReferenceAttrs["authority"];
-  switch (rawAuthority.kind) {
-    case "user": {
-      const userId = parseRequestId(rawAuthority.userId);
-      if (!userId) return null;
-      authority = { kind: "user", userId };
-      break;
-    }
-    case "project": {
-      const projectId = parseRequestId(rawAuthority.projectId);
-      if (!projectId) return null;
-      authority = { kind: "project", projectId };
-      break;
-    }
-    case "work": {
-      const projectId = parseRequestId(rawAuthority.projectId);
-      const workId = parseRequestId(rawAuthority.workId);
-      const workHandle =
-        rawAuthority.workHandle === null ? null : decodeWorkHandle(rawAuthority.workHandle);
-      if (!projectId || !workId || (rawAuthority.workHandle !== null && !workHandle)) return null;
-      authority = { kind: "work", projectId, workId, workHandle };
-      break;
-    }
-    case "lineage": {
-      const projectId = parseRequestId(rawAuthority.projectId);
-      const rootThreadId = parseRequestId(rawAuthority.rootThreadId);
-      const rootThreadRef = rawAuthority.rootThreadRef;
-      if (!projectId || !rootThreadId || typeof rootThreadRef !== "string") return null;
-      authority = { kind: "lineage", projectId, rootThreadId, rootThreadRef };
-      break;
-    }
-    case "chat": {
-      const projectId = parseRequestId(rawAuthority.projectId);
-      const chatId = parseRequestId(rawAuthority.chatId);
-      const chatRef = rawAuthority.chatRef;
-      if (!projectId || !chatId || (chatRef !== null && typeof chatRef !== "string")) return null;
-      authority = { kind: "chat", projectId, chatId, chatRef };
-      break;
-    }
-    default:
-      return null;
-  }
+  const authority = parseAuthority(value.authority);
+  if (!documentId || !authority) return null;
   const uri = referenceUriForAuthority(value.uri, authority);
   const classification = classifyFiletype(value.fileType);
   if (!uri || classification.kind === "unknown") return null;
   // A copied occurrence owns no upload lifecycle; capability derives from the
   // file classification, not an independently supplied clipboard boolean.
   return {
+    kind: "document",
     documentId,
     authority,
     uri,
-    fileType: value.fileType,
-    label: value.label,
-    ...(value.displayText !== undefined ? { displayText: value.displayText } : {}),
+    fileType: value.fileType as DocumentReference["fileType"],
+    ...shared,
     upload: null,
     imageCapable: imageCapable(value.fileType),
+  };
+}
+
+function parseAuthority(raw: unknown): StableReferenceAuthority | null {
+  if (!raw || typeof raw !== "object") return null;
+  const rawAuthority = raw as Record<string, unknown>;
+  switch (rawAuthority.kind) {
+    case "user": {
+      const userId = parseRequestId(rawAuthority.userId);
+      return userId ? { kind: "user", userId } : null;
+    }
+    case "project": {
+      const projectId = parseRequestId(rawAuthority.projectId);
+      return projectId ? { kind: "project", projectId } : null;
+    }
+    case "work": {
+      const projectId = parseRequestId(rawAuthority.projectId);
+      const workId = parseRequestId(rawAuthority.workId);
+      const workHandle =
+        rawAuthority.workHandle === null
+          ? null
+          : typeof rawAuthority.workHandle === "string"
+            ? decodeWorkHandle(rawAuthority.workHandle)
+            : null;
+      if (!projectId || !workId || (rawAuthority.workHandle !== null && !workHandle)) return null;
+      return { kind: "work", projectId, workId, workHandle };
+    }
+    case "lineage": {
+      const projectId = parseRequestId(rawAuthority.projectId);
+      const rootThreadId = parseRequestId(rawAuthority.rootThreadId);
+      const rootThreadRef = rawAuthority.rootThreadRef;
+      if (!projectId || !rootThreadId || typeof rootThreadRef !== "string") return null;
+      return { kind: "lineage", projectId, rootThreadId, rootThreadRef };
+    }
+    case "chat": {
+      const projectId = parseRequestId(rawAuthority.projectId);
+      const chatId = parseRequestId(rawAuthority.chatId);
+      const chatRef = rawAuthority.chatRef;
+      if (!projectId || !chatId || (chatRef !== null && typeof chatRef !== "string")) return null;
+      return { kind: "chat", projectId, chatId, chatRef };
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * The chip a writer's pick inserts. A file of the chat still being created has no handle yet
+ * (`chatRef` null), and its scope is this draft's own chat, so the chip keeps the intake identity
+ * admission verifies, as an attached one does. Any other pick is an ordinary reference, which the
+ * server admits by its catalog address.
+ */
+export function pickedReferenceAttrs(
+  reference: AuthoritativeReference,
+  fileKind: "document" | "asset" | null,
+): ComposerReferenceAttrs {
+  if (reference.kind === "folder") return reference;
+  const { intake, ...document } = reference;
+  const ownDraftUpload =
+    intake && document.authority.kind === "chat" && document.authority.chatRef === null;
+  return {
+    ...document,
+    imageCapable: fileKind === "asset" && imageCapable(document.fileType),
+    upload: ownDraftUpload
+      ? {
+          intakeId: intake.intakeId,
+          documentId: document.documentId,
+          uri: document.uri,
+          locationRevision: intake.locationRevision,
+        }
+      : null,
   };
 }
 
@@ -228,7 +279,9 @@ export const ComposerReferenceNode = Node.create({
     return [
       "span",
       mergeAttributes(HTMLAttributes, {
-        "data-composer-reference": JSON.stringify({ ...value, upload: null }),
+        "data-composer-reference": JSON.stringify(
+          value.kind === "document" ? { ...value, upload: null } : value,
+        ),
         "data-meridian-link": value.uri,
         role: "link",
         tabindex: "0",
@@ -333,7 +386,8 @@ export function serializeComposerDraft(
   const seenIntakes = new Set<string>();
   const message = serializeMessageDoc(doc, {
     onReference(reference) {
-      const upload = (reference as ComposerReferenceAttrs).upload;
+      const attrs = reference as ComposerReferenceAttrs;
+      const upload = attrs.kind === "document" ? attrs.upload : null;
       if (upload && !seenIntakes.has(upload.intakeId)) {
         seenIntakes.add(upload.intakeId);
         ownedUploads.push(upload);
@@ -386,6 +440,7 @@ export function parseRestorableComposerDraft(value: unknown): ComposerDraftSnaps
       if (node.type === "composerReference") {
         const reference = parseClipboardReference(JSON.stringify(node.attrs?.reference));
         if (!reference) throw new Error("Invalid reference");
+        if (reference.kind === "folder") return composerReferenceContent(reference);
         const upload = node.attrs?.reference?.upload as ComposerOwnedUpload | null;
         if (
           upload &&

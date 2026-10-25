@@ -75,6 +75,7 @@ export type DrillInMenuProps = {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onCloseAutoFocus?: (event: Event) => void;
+  onEscapeKeyDown?: (event: KeyboardEvent) => void;
   onPick: (node: DrillNode) => void;
   /** The trigger, rendered as the menu's anchor. */
   children: ReactElement;
@@ -127,6 +128,7 @@ export function DrillInMenuBody({
   status,
   isDisabled,
   onCloseAutoFocus,
+  onEscapeKeyDown,
 }: Omit<DrillInMenuProps, "children" | "open" | "onOpenChange">) {
   const [trail, setTrail] = useState<readonly DrillNode[]>(openAt);
   const [exitedId, setExitedId] = useState<string | null>(null);
@@ -160,6 +162,7 @@ export function DrillInMenuBody({
         }
       }}
       onCloseAutoFocus={onCloseAutoFocus}
+      onEscapeKeyDown={onEscapeKeyDown}
     >
       {caption ? <p className="px-2 py-1.5 text-xs text-muted-foreground">{caption}</p> : null}
       {folder ? (
