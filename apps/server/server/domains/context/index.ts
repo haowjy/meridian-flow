@@ -19,7 +19,13 @@ export {
 } from "./adapters/lineage-scratch-lifecycle.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
-export { exportFilename, joinPath, renderFilename, splitPath } from "./context/paths.js";
+export {
+  allocateFilename,
+  exportFilename,
+  joinPath,
+  renderFilename,
+  splitPath,
+} from "./context/paths.js";
 export {
   createRestoreRemovedDocuments,
   type RestoreRemovedDocuments,
