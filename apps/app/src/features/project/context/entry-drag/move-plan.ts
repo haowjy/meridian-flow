@@ -67,6 +67,24 @@ export type SiblingPositionWitness = {
   afterId?: string;
 };
 
+/** The adjacent identities that let a later restoration survive intervening sibling changes. */
+export function siblingPositionWitness(
+  view: { records: readonly ResourceRecord[]; placement: Pick<ResourcePlacement, "childrenAt"> },
+  parent: ParentRef,
+  entryId: string,
+): SiblingPositionWitness {
+  const placed = view.placement.childrenAt(parent, view.records);
+  const original = placed.findIndex((entry) => entry.entryId === entryId);
+  if (original < 0) return {};
+  const siblings = placed.filter((entry) => entry.entryId !== entryId);
+  const before = siblings.find((_, index) => index >= original);
+  const after = original > 0 ? siblings[original - 1] : undefined;
+  return {
+    ...(before ? { beforeId: before.entryId } : {}),
+    ...(after ? { afterId: after.entryId } : {}),
+  };
+}
+
 /** One row the replica admitted: where it was and under what name, where it went and the name it arrived under. */
 export type MoveEffect = {
   entry: EntryRef;
@@ -385,7 +403,15 @@ function restorationPosition(
   effect: MoveEffect,
   working: readonly string[],
 ): ContextSiblingPosition {
-  const { beforeId, afterId } = effect.previousPosition;
+  return positionFromWitness(effect.previousPosition, working);
+}
+
+/** Restore one removed row against the siblings that still exist now. */
+export function positionFromWitness(
+  witness: SiblingPositionWitness,
+  working: readonly string[],
+): ContextSiblingPosition {
+  const { beforeId, afterId } = witness;
   if (afterId && working.includes(afterId)) return { kind: "after", siblingId: afterId };
   if (beforeId && working.includes(beforeId)) return { kind: "before", siblingId: beforeId };
   if (!afterId && beforeId) return { kind: "start" };

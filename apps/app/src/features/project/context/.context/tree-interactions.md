@@ -114,7 +114,9 @@ Writer deletion has no confirmation step. One project-scoped owner keeps the sho
 Undo windows for all mounted tree surfaces, while delete progress remains derived from the
 namespace journal. Undo waits for a pending intent, reads the delete receipt, and restores the
 receipt's named removals. The catalog stream makes restored identities visible again. A local
-document that never reached the server and an empty folder deletion have no Undo window.
+file restoration then replays the deletion-time sibling witnesses through `moveRows`, so a manual
+parent regains the file's former position and remains manual. A local document that never reached
+the server and an empty folder deletion have no Undo window.
 
 ## Downlinks
 

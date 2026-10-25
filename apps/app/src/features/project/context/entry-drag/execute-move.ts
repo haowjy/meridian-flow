@@ -28,8 +28,8 @@ import {
   type MoveEffect,
   type MoveRow,
   planUndo,
-  type SiblingPositionWitness,
   sameParent,
+  siblingPositionWitness,
 } from "./move-plan";
 
 export type MoveContext = {
@@ -162,21 +162,6 @@ async function currentView(context: MoveContext) {
   };
 }
 
-function positionWitness(row: MoveRow, view: NamingView): SiblingPositionWitness {
-  const siblings = view.placement
-    .childrenAt(row.before, view.records)
-    .filter((entry) => entry.entryId !== row.entry.id);
-  const original = view.placement
-    .childrenAt(row.before, view.records)
-    .findIndex((entry) => entry.entryId === row.entry.id);
-  if (original < 0) return {};
-  const before = siblings.find((_, index) => index >= original);
-  const after = original > 0 ? siblings[original - 1] : undefined;
-  return {
-    ...(before ? { beforeId: before.entryId } : {}),
-    ...(after ? { afterId: after.entryId } : {}),
-  };
-}
 /** Move…, a drop and Undo all move rows here, each under its predicted free name. */
 export async function moveRows(
   rows: readonly MoveRow[],
@@ -191,7 +176,7 @@ export async function moveRows(
   for (const row of rows) {
     const name = names.name(row);
     const action = sameParent(row.before, row.after) && row.position ? "reorder" : "move";
-    const previousPosition = positionWitness(row, current);
+    const previousPosition = siblingPositionWitness(current, row.before, row.entry.id);
     try {
       const operationId = await placeEntry(
         resources,
