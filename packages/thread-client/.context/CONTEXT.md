@@ -47,6 +47,12 @@ and says what it left out. The decision and its rejected alternatives are in the
   producer anchors a stand-in to it. A row's `identity` is the server turn id,
   or null for any row the server hasn't stated, judged by the input it arrived
   in, never an id's shape (local writer turns are recognized by `turn_local_`).
+- **Ask-blocked writer messages stay visible.** They remain `awaiting_run`
+  inbox rows until the continuation adopts them, so
+  `queuedWriterTurnStandIns` projects a missing row from the run-state summary.
+  The durable turn replaces it by id after adoption. The app and `./mf` pass an
+  open ask to `waitingWriterMessages` as a delivery barrier, so both mark the
+  projected row queued.
 - **`controlSlot`** places a queued switch's notice before the stand-in for the
   run that will apply it when the record says it waits for the next run
   (`awaiting_run`), otherwise at the tail. A `waiting` switch, or one only this

@@ -33,6 +33,7 @@ import {
   normalizeTurns,
   type OpenAsk,
   openAsk,
+  queuedWriterTurnStandIns,
   type RowIdentity,
   receiveAsks,
   switchState,
@@ -210,12 +211,19 @@ export type RowSelection = { full: boolean; turnId?: string; last?: number };
  * The cards are decided first, and the view keeps the rows they are anchored on, as in the app.
  */
 export function chatSnapshot(
-  snapshot: Pick<ThreadSnapshotResponse, "liveState" | "thread">,
+  snapshot: Pick<ThreadSnapshotResponse, "asks" | "liveState" | "thread">,
   turns: Turn[],
 ): { view: TranscriptView; cards: ChatCards } {
   const runState = viewOfLive(snapshot.liveState);
   const controls = durableControls(runState.record?.items ?? []);
-  const normalized = normalizeTurns({ turns });
+  const waiting = waitingWriterMessages(
+    runState,
+    snapshot.asks.some((ask) => ask.status === "open"),
+  );
+  const normalized = normalizeTurns({
+    turns,
+    standIns: queuedWriterTurnStandIns(snapshot.thread?.id ?? "", turns, waiting),
+  });
   const cards = chatCards({
     threadId: snapshot.thread?.id ?? "",
     turns: normalized,
@@ -229,7 +237,7 @@ export function chatSnapshot(
   const view = viewTranscript({
     normalized,
     activity: { awaitingSubagents: false },
-    queued: new Set(waitingWriterMessages(runState).map((item) => item.id)),
+    queued: new Set(waiting.map((item) => item.id)),
     anchoredTurnIds: cards.anchoredTurnIds,
   });
   return { view, cards };
