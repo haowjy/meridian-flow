@@ -217,6 +217,7 @@ function errorTerminal(error: MeridianError | string, reason?: string): Terminal
 }
 
 export interface OrchestratorRepositories {
+  asks: ThreadRepositories["asks"];
   threads: ThreadRepository;
   turns: TurnRepository;
   promptBakes: ThreadRepositories["promptBakes"];
@@ -546,6 +547,20 @@ async function runDrainTurn(
       if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
       const batch = selection.batch;
       const control = selection.next.kind === "control" ? selection.next.control : null;
+      if (control?.body.kind === "ask_resolved") {
+        const ask = await deps.repos.asks.findById(control.body.askId);
+        if (
+          !ask ||
+          ask.threadId !== input.threadId ||
+          ask.status === "open" ||
+          ask.status === "pending"
+        )
+          throw new Error("Ask continuation is not backed by a resolved ask");
+      }
+      const requestControl =
+        control?.body.kind === "ask_resolved"
+          ? null
+          : (control as import("./next-inbox-work.js").ControlMessage | null);
       if (selection.next.kind === "none" && !input.replyTurnId) return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
@@ -637,7 +652,7 @@ async function runDrainTurn(
             threadId: input.threadId,
             referenceTurnId: referenceUserTurnId,
             currentTurnId: input.replyTurnId ?? reservedTurnId,
-            control,
+            control: requestControl,
             remainingIterations: Math.min(
               MAX_TURN_ITERATIONS,
               treeBudget.maxTotalTurns - treeBudget.spent.totalTurns,
@@ -746,7 +761,10 @@ async function runDrainTurn(
       return {
         value,
         turnId: reservedTurn.id,
-        completedControlIds: control?.body.kind === "compact" ? [control.id] : [],
+        completedControlIds:
+          control?.body.kind === "compact" || control?.body.kind === "ask_resolved"
+            ? [control.id]
+            : [],
         turnKind: currentTurnKind(reservedTurn),
         messageIds: [...batch.map(({ id }) => id)],
         ...(preparationError === null ? {} : { preparationFailure: preparationError }),
@@ -1143,17 +1161,24 @@ async function persistToolOutcome(input: {
   threadId: ThreadId;
   turn: Turn;
   call: ReturnType<typeof collectToolCalls>[number];
-  outcome: { kind: "permission_denied"; reason: string } | { kind: "notes_held" };
+  outcome:
+    | { kind: "permission_denied"; reason: string }
+    | { kind: "notes_held" }
+    | { kind: "ask_refused"; reason: string };
   blockSeq: number;
 }): Promise<{ block: Block; nextBlockSeq: number }> {
   let blockSeq = input.blockSeq;
-  const denied = input.outcome.kind === "permission_denied";
+  const denied = input.outcome.kind === "permission_denied" || input.outcome.kind === "ask_refused";
   const result: JsonObject =
     input.outcome.kind === "permission_denied"
       ? { error: "permission_denied", reason: input.outcome.reason }
-      : { refusal: "notes_step" };
+      : input.outcome.kind === "ask_refused"
+        ? { error: "ask_refused", reason: input.outcome.reason }
+        : { refusal: "notes_step" };
   const output = denied
-    ? result
+    ? input.outcome.kind === "ask_refused"
+      ? input.outcome.reason
+      : result
     : "Not run: before compaction only Scratch operations within the 3-call budget execute. This call will not be replayed. Finish this step without tools to start the summary.";
   const extraEvents: OrchestratorEvent[] =
     input.outcome.kind === "permission_denied"
@@ -2543,12 +2568,34 @@ async function executeLoop({
             }
 
             const batchOutcomes: ToolDispatchOutcome[] = [];
+            const batchHasReturnResult = toolCallsFromResult.some(
+              (candidate) => candidate.name === "return_result",
+            );
+            let acceptedAsk = false;
             // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
             // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
             for (const call of toolCallsFromResult) {
               if (isCancelled()) {
                 return cancelExit();
               }
+
+              if (call.name === "ask" && (batchHasReturnResult || acceptedAsk)) {
+                const reason = batchHasReturnResult
+                  ? "You returned a result; there's no one left to answer."
+                  : "One question at a time: ask this after the answer arrives";
+                const refused = await persistToolOutcome({
+                  deps,
+                  threadId: input.threadId,
+                  turn: currentTurn,
+                  call,
+                  outcome: { kind: "ask_refused", reason },
+                  blockSeq,
+                });
+                blockSeq = refused.nextBlockSeq;
+                allBlocks.push(refused.block);
+                continue;
+              }
+              if (call.name === "ask") acceptedAsk = true;
 
               if (continuation.kind === "notes") {
                 const withinBudget = continuation.remaining > 0;
@@ -2610,6 +2657,7 @@ async function executeLoop({
                   runClaim: deps.runClaim,
                   shownLinks: deps.shownLinks,
                   observationFrontiers: deps.observationFrontiers,
+                  asks: deps.repos.asks,
                 },
                 call,
                 {
@@ -2653,6 +2701,12 @@ async function executeLoop({
             }
 
             if (batchDisposition.kind === "end") {
+              if (batchDisposition.cause === "asked") {
+                return exitRun(false, {
+                  kind: "asked",
+                  askId: batchDisposition.askId,
+                });
+              }
               // A child called return_result: the report is captured and persisted,
               // so the turn ends here instead of looping into another model round.
               // A message that landed in the exit window keeps the run going.

@@ -23,7 +23,7 @@ const SERVER_VERSION = "0.0.0";
 export type WsAuthenticatedContext = Readonly<{
   app: Pick<
     AppServices,
-    "eventSink" | "threadEventHub" | "projectRepo" | "contextCatalogWakeHub"
+    "eventSink" | "threadEventHub" | "projectRepo" | "contextCatalogWakeHub" | "asks"
   > & {
     threadRuntime: Pick<AppServices["threadRuntime"], "requireOwnedThread" | "liveState">;
   };
@@ -336,6 +336,45 @@ export function createThreadWebSocketSession(peer: WsPeer) {
           }
 
           switch (message.type) {
+            case "ask.answer": {
+              if (!peer.context) return;
+              const threadId = parseRequestId(message.threadId) as ThreadId | null;
+              const askId = parseRequestId(message.askId);
+              if (!threadId || !askId) {
+                sendFrame(peer, {
+                  type: "ask.answer.error",
+                  requestId: message.requestId,
+                  threadId: message.threadId,
+                  code: "ask_not_open",
+                });
+                return;
+              }
+              const result = await peer.context.app.asks.answer({
+                userId: peer.context.userId,
+                threadId,
+                askId,
+                submissionId: message.submissionId,
+                answer: message.answer,
+              });
+              sendFrame(
+                peer,
+                result.ok
+                  ? {
+                      type: "ask.answer.ok",
+                      requestId: message.requestId,
+                      threadId,
+                      ask: result.ask,
+                    }
+                  : {
+                      type: "ask.answer.error",
+                      requestId: message.requestId,
+                      threadId,
+                      code: result.code,
+                      ...(result.ask ? { ask: result.ask } : {}),
+                    },
+              );
+              return;
+            }
             case "subscribe":
               await subscribeThread(
                 peer,

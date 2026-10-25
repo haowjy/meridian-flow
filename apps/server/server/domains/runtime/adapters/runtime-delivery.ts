@@ -66,6 +66,7 @@ export function createDeliveryAdapter(
     work: Awaited<ReturnType<typeof workBatch>>;
     /** A due switch applies only with the reservation, so preparation must hold the thread lock. */
     requiresLock?: boolean;
+    eligibilityKey: string;
   };
   async function selectForPreparation(
     threadId: ThreadId,
@@ -81,7 +82,7 @@ export function createDeliveryAdapter(
     at: "run_start" | "boundary" | "prefix",
     retry = false,
   ): Promise<SelectedDelivery<DeliverySelection | DeliveryBoundarySelection>> {
-    const { pendingBatch, boundIds, eligible } = await eligiblePending(threadId);
+    const { pendingBatch, boundIds, eligible, eligibilityKey } = await eligiblePending(threadId);
     // Materialization puts every waiting non-command row into the graph in seq
     // order; it is not a request boundary, so a queued switch never yields it.
     const nextWork: InboxWorkSelection =
@@ -108,30 +109,40 @@ export function createDeliveryAdapter(
       at === "run_start"
         ? { ...selectionFields, next: nextWork }
         : { ...selectionFields, yieldReply: nextWork.kind === "yield" };
-    return { selection, pendingBatch, work };
+    return { selection, pendingBatch, work, eligibilityKey };
   }
   async function eligiblePending(threadId: ThreadId) {
     const pendingBatch = await inbox.selectPending(threadId);
     const projection = await inbox.readPendingProjection(threadId);
     const boundIds = new Set(projection.run?.messageIds ?? []);
+    const continuation = pendingBatch.find(
+      (row) => row.intent === "control" && row.body.kind === "ask_resolved",
+    );
+    const openAsk = continuation ? null : await deps.repos.asks.findOpenByThread(threadId);
     return {
       pendingBatch,
       boundIds,
-      eligible: pendingBatch.filter((row) => !boundIds.has(row.id)),
+      eligibilityKey: continuation ? `continuation:${continuation.id}` : openAsk ? "open" : "free",
+      eligible: openAsk
+        ? []
+        : continuation
+          ? [continuation]
+          : pendingBatch.filter((row) => !boundIds.has(row.id)),
     };
   }
   async function selectionStillCurrent(
     threadId: ThreadId,
     selected: SelectedDelivery<DeliverySelectionFields>,
   ) {
-    const [allPending, thread] = await Promise.all([
-      inbox.selectPending(threadId),
+    const [eligibility, thread] = await Promise.all([
+      eligiblePending(threadId),
       deps.repos.threads.findById(threadId),
     ]);
     if (!thread) throw new Error(`Thread not found: ${threadId}`);
     return (
       thread.activeLeafTurnId === selected.selection.activeLeafTurnId &&
-      sameInboxBatch(allPending, selected.pendingBatch)
+      sameInboxBatch(eligibility.pendingBatch, selected.pendingBatch) &&
+      eligibility.eligibilityKey === selected.eligibilityKey
     );
   }
 

@@ -7,6 +7,7 @@
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type { PromptBakeId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type {
+  AskResolution,
   Block,
   ModelResponse,
   PromptBake,
@@ -30,6 +31,7 @@ import { toThreadListItem } from "../../domain/thread-list-projection.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import { isVisibleConversationalTurn } from "../../domain/visible-conversation-policy.js";
 import { orderTurnsByPosition } from "../../order-turns.js";
+import type { StoredAsk } from "../../ports/ask-repository.js";
 import type {
   BlockRepository,
   CreateBlockInput,
@@ -219,6 +221,7 @@ export function createInMemoryRepositories(
   >();
   const userStateByThreadUser = transactionOwner.map<string, { isFavorite: boolean }>();
   const threadCounters = transactionOwner.map<string, number>();
+  const asks = transactionOwner.map<string, StoredAsk>();
 
   function nextRef(projectId: string, kind: Thread["kind"]): string {
     const n = (threadCounters.get(projectId) ?? 0) + 1;
@@ -1404,6 +1407,80 @@ export function createInMemoryRepositories(
   };
 
   return {
+    asks: {
+      async create(input) {
+        const existing = [...asks.values()].find(
+          (ask) => ask.askingTurnId === input.askingTurnId && ask.toolCallId === input.toolCallId,
+        );
+        if (existing) return { ...existing };
+        const row: StoredAsk = {
+          ...input,
+          id: input.id ?? crypto.randomUUID(),
+          submissionId: input.submissionId ?? null,
+          createdAt: new Date(),
+          resolvedAt: input.resolvedAt ?? null,
+        };
+        asks.set(row.id, row);
+        return { ...row };
+      },
+      async findById(id) {
+        const row = asks.get(id);
+        return row ? { ...row } : null;
+      },
+      async findOpenByThread(threadId) {
+        return (
+          [...asks.values()].find((ask) => ask.threadId === threadId && ask.status === "open") ??
+          null
+        );
+      },
+      async listByThread(threadId) {
+        return [...asks.values()].filter((ask) => ask.threadId === threadId);
+      },
+      async listOpenDueBy(deadline, limit) {
+        return [...asks.values()]
+          .filter((ask) => ask.status === "open" && ask.deadlineAt && ask.deadlineAt <= deadline)
+          .slice(0, limit);
+      },
+      async listByTurnIds(turnIds) {
+        const ids = new Set(turnIds);
+        return [...asks.values()].filter((ask) => ids.has(ask.askingTurnId));
+      },
+      async openPending(id, turnId, deadline) {
+        const ask = asks.get(id);
+        if (!ask || ask.askingTurnId !== turnId || ask.status !== "pending") return null;
+        const opened = { ...ask, status: "open" as const, deadlineAt: deadline };
+        asks.set(id, opened);
+        return opened;
+      },
+      async cancelPendingByTurn(turnId) {
+        const cancelled: StoredAsk[] = [];
+        for (const ask of asks.values()) {
+          if (ask.askingTurnId !== turnId || ask.status !== "pending") continue;
+          const row: StoredAsk = {
+            ...ask,
+            status: "cancelled",
+            resolution: { kind: "cancelled" },
+            resolvedAt: new Date(),
+          };
+          asks.set(row.id, row);
+          cancelled.push(row);
+        }
+        return cancelled;
+      },
+      async resolveOpen(input) {
+        const ask = asks.get(input.id);
+        if (ask?.status !== "open") return null;
+        const row: StoredAsk = {
+          ...ask,
+          status: input.status,
+          resolution: input.resolution as AskResolution,
+          submissionId: input.submissionId ?? null,
+          resolvedAt: input.resolvedAt,
+        };
+        asks.set(row.id, row);
+        return row;
+      },
+    },
     threads: threadRepo,
     chatFeed,
     threadUserState,

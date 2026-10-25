@@ -42,7 +42,11 @@ allow the target, and the action policy must allow the operation.
 
 Advertisement and the per-turn gate use this policy. Dispatch and direct
 executor calls do not silently reapply it; callers must choose the policy seam.
-`ask_user` remains unadvertised until its interrupt rework.
+`ask` creates a durable question for a primary chat and ends that execution.
+The answer's tool result is written onto the asking turn before an internal
+continuation starts through ordinary request assembly. Agent definitions keep
+the `ask_user` capability name. Children temporarily do not receive the Flow
+tool; the subagent-question change removes that exclusion.
 
 ## Document and cost boundaries
 

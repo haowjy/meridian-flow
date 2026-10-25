@@ -52,6 +52,7 @@ import type {
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { CreateDerivedPrimaryThreadInput } from "../domain/thread-create-derived-primary.js";
 import type { CreateSubagentThreadInput } from "../domain/thread-create-subagent.js";
+import type { AskRepository } from "./ask-repository.js";
 import { TURN_GRAPH, type TurnGraph } from "./turn-graph.js";
 
 export interface CreateBlockInput {
@@ -612,6 +613,7 @@ export interface TurnDocumentTouchRepository {
 }
 
 export type ThreadRepositories = {
+  asks: AskRepository;
   threads: ThreadRepository;
   chatFeed: ProjectChatFeedRepository;
   threadUserState: ThreadUserStateRepository;

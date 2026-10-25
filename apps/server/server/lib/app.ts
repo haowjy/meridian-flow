@@ -24,6 +24,7 @@ const SYSTEM_UPDATE_SWEEP_MS = 1_000;
 const DRAFT_EFFECT_SWEEP_MS = 30_000;
 const RETENTION_PURGE_INTERVAL_MS = 60 * 60 * 1_000;
 const WAKE_SWEEP_INTERVAL_MS = resolveWakeSweepIntervalMs(process.env.WAKE_SWEEP_INTERVAL_MS);
+const ASK_EXPIRY_SWEEP_MS = 15_000;
 
 let initPromise: Promise<AppServices> | undefined;
 
@@ -48,6 +49,7 @@ async function createAppServices(): Promise<AppServices> {
     [
       { name: "wake-scan", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.scanWakes },
       { name: "orphan-repair", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.repairOrphans },
+      { name: "ask-expiry", delayMs: ASK_EXPIRY_SWEEP_MS, run: app.recovery.expireAsks },
       { name: "work-purge", delayMs: RETENTION_PURGE_INTERVAL_MS, run: app.recovery.purgeWorks },
       {
         name: "document-purge",

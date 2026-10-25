@@ -20,6 +20,7 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
+import { testHook } from "../../../shared/test-hooks.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { readThreadActivity } from "../../threads/index.js";
 import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
@@ -51,6 +52,7 @@ export interface ToolDispatchDeps {
   runClaim: Pick<import("./ports.js").RunClaim, "readMany" | "setCurrentTool">;
   shownLinks: Pick<ShownLinkStore, "record">;
   observationFrontiers: ObservationFrontiers;
+  asks: import("../../threads/ports/ask-repository.js").AskRepository;
 }
 
 export interface ToolDispatchContext {
@@ -86,17 +88,24 @@ export type CompletedToolOutcome = {
 export type ToolDispatchOutcome =
   | CompletedToolOutcome
   /** Reserved for durable tools whose result is written after this execution settles. */
-  | { kind: "deferred" };
+  | { kind: "deferred"; askId: string };
 
 export type ToolDispatchResult = ToolDispatchOutcome | { kind: "cancelled" };
 
-export type BatchDisposition = { kind: "continue" } | { kind: "end"; cause: "success" };
+export type BatchDisposition =
+  | { kind: "continue" }
+  | { kind: "end"; cause: "success" }
+  | { kind: "end"; cause: "asked"; askId: string };
 
 /** Reduce once per provider batch; ask-specific exclusivity joins this boundary in B2. */
 export function reduceToolBatch(outcomes: readonly ToolDispatchOutcome[]): BatchDisposition {
   let disposition: BatchDisposition = { kind: "continue" };
   for (const outcome of outcomes) {
-    if (outcome.kind === "deferred") throw new Error("Deferred tool outcomes are not enabled");
+    if (outcome.kind === "deferred") {
+      if (disposition.kind === "end") throw new Error("Only one batch-ending tool call is allowed");
+      disposition = { kind: "end", cause: "asked", askId: outcome.askId };
+      continue;
+    }
     if (!outcome.end) continue;
     if (disposition.kind === "end") throw new Error("Only one batch-ending tool call is allowed");
     disposition = { kind: "end", cause: outcome.end.cause };
@@ -332,6 +341,23 @@ export async function dispatchToolCall(
   await drainOutput();
   if (ctx.signal?.aborted) {
     return { kind: "cancelled" };
+  }
+
+  if (call.name === "ask" && execResult.isError !== true) {
+    const ask = await deps.asks.create({
+      threadId: ctx.threadId,
+      askingTurnId: ctx.currentTurn.id,
+      executionId: ctx.lease.executionId,
+      toolCallId: call.id,
+      kind: "question",
+      payload: execResult.result as import("@meridian/contracts/threads").QuestionAskPayload,
+      deadlineAt: null,
+      status: "pending",
+      resolution: null,
+      submissionId: null,
+    });
+    await testHook("ask.pending");
+    return { kind: "deferred", askId: ask.id };
   }
 
   const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;

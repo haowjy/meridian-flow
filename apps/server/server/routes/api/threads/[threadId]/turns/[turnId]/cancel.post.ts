@@ -12,7 +12,12 @@ export default defineEventHandler(async (event) => {
   const turnId = requireRequestId(getRouterParam(event, "turnId"), "turnId");
 
   const thread = await requireThreadOwner({ threads: threadRepos.threads }, threadId, userId);
-  const status = await runner.cancel(thread.id, turnId);
+  let status = await runner.cancel(thread.id, turnId);
+  if (status === "already_finished") {
+    const ask = await threadRepos.asks.findOpenByThread(thread.id);
+    if (ask?.askingTurnId === turnId && (await app.asks.cancelOpen(thread.id, ask.id)).ok)
+      status = "cancelled";
+  }
 
   return { threadId: thread.id, turnId, status };
 });

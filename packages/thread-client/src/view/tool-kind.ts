@@ -1,7 +1,7 @@
 /**
  * tool-kind — the two kinds of assistant activity on the turn surface.
  *
- * An **artifact** is writer-facing and stays visible: a custom card (`ask_user`
+ * An **artifact** is writer-facing and stays visible: a custom card (`ask`
  * interrupt, spawn report, child Return), an image, or a file. A **process**
  * item is scaffolding — reasoning, reads, searches, shell, context — and belongs
  * inside the collapsed Thinking disclosure. The kind comes from the surface a

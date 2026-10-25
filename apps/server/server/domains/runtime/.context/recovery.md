@@ -53,6 +53,13 @@ Recovery decisions must be proven against the production database adapter; an
 in-memory claim is not parity authority. Paid response rows held only in memory
 at process death are lost and cannot be debited.
 
+Questions use a separate 15-second recovery lane. It conditionally claims open
+asks whose 270-second deadline passed, writes the timeout tool result, completes
+the asking turn, and enqueues the same internal continuation as a writer answer.
+The ask row's conditional update makes answer, expiry, and cancellation one
+multi-process-safe race. Stale execution repair cancels pending asks instead of
+publishing them.
+
 ## Handoff and process lanes
 
 A pending handoff seed is repaired by the ordinary placeholder sweep after a

@@ -19,8 +19,8 @@ export {
 } from "./response-write-lifecycle.js";
 export type { ToolWiringDeps } from "./tool-context.js";
 
-async function askUserHandler() {
-  return { error: "ask_user is disabled" };
+async function askHandler(input: unknown) {
+  return input;
 }
 
 export function createModelToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
@@ -31,7 +31,7 @@ export function createModelToolRegistrations(deps: ToolWiringDeps): ToolRegistra
       work: createWorkHandler(deps),
       ls: createLsHandler(deps),
       search: createSearchHandler(deps),
-      ask_user: askUserHandler,
+      ask: askHandler,
     }),
     ...createSkillToolRegistrations(deps),
   ];

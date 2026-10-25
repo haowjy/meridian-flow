@@ -7,7 +7,7 @@ seeds, not inbox controls; see [handoff](handoff.md).
 Two terms keep one meaning here. An **execution** is one run of a chat, one
 hold of its run lease from run start until it releases the run claim
 ([run identity](delivery.md#run-identity)); it can span several assistant
-turns, automatic compaction and interrupt waits. A **request boundary** is the
+turns and automatic compaction. A **request boundary** is the
 point between two model requests inside an execution, where steers are adopted.
 "Reply" means only one assistant turn or the writer-facing grouping.
 
