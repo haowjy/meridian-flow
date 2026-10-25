@@ -24,9 +24,15 @@ then a folder with one document and an empty subfolder:
 2. **Composer chip.** Choose "Mention Act 1". The chip looks like a document
    chip, with a folder icon and the label Act 1. Reload: the chip returns.
    Copy the chip and paste it into the same composer: it pastes as a folder chip.
+   Copy it again, open a document, and paste into the Editor: the pasted link
+   keeps its folder icon and opens inside Act 1 rather than becoming a missing
+   document link.
 3. **Composer menu.** Click the chip. The menu opens inside Act 1: Back,
    Opening, Battle. Battle drills, Back climbs to Manuscript, and Opening opens
-   the document. Enter on the focused chip opens the same menu.
+   the document. Enter on the focused chip opens the same menu. Focus the chip
+   and press Shift+F10: the reference-editing menu opens with Edit display text,
+   Change reference, and Remove reference. Its accessibility role is button and
+   it exposes a menu popup.
 4. **Editor link.** Open Opening in the Editor and type `@`, then mention Act 1.
    The link chip has a folder icon; the stored Markdown (`./mf doc read
    "manuscript://Act 1/Opening.md"` after the save) is
@@ -39,7 +45,8 @@ then a folder with one document and an empty subfolder:
 6. **Transcript and model input.** Send a message with the folder chip. It has
    the folder icon, and clicking it opens inside the folder. Rename or move the
    folder, then click the sent chip again: the menu opens at the current
-   location, while the message text keeps its send-time label. Run `./mf thread
+   location, while the message text keeps its send-time label. Focus it and
+   press Shift+F10: its context menu opens. Run `./mf thread
    context <thread>` and confirm the user message contains the send-time
    Markdown link (`[Act 1](<manuscript://Act 1/>)`). Run `./mf thread view
    <thread> --json` and confirm no folder read was inlined (`readDocuments`

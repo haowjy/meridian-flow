@@ -14,6 +14,7 @@ import { qualifyWrittenHref } from "@meridian/markup/links";
 import {
   createContext,
   type ReactNode,
+  type Ref,
   useCallback,
   useContext,
   useEffect,
@@ -105,7 +106,7 @@ export function TranscriptReference({
   const navigation = useContext(TranscriptLinkNavigationContext);
   const folderHost = useFolderMenuHost();
   const target = targetHref ? classifyLinkTarget(targetHref) : null;
-  const trigger = useRef<HTMLSpanElement>(null);
+  const trigger = useRef<HTMLElement>(null);
   const exact = documentId
     ? { kind: "document" as const, id: documentId }
     : folderId
@@ -170,10 +171,19 @@ export function TranscriptReference({
         : gone
           ? t`No longer available`
           : t`Doesn't exist yet`;
-  const element = (
-    // biome-ignore lint/a11y/useSemanticElements: Internal references have no browser URL; unavailable links still expose keyboard context actions.
+  const element = folderMenu ? (
+    <button
+      ref={trigger as Ref<HTMLButtonElement>}
+      type="button"
+      aria-haspopup="menu"
+      {...(chip ? linkChipAttributes(chip) : {})}
+    >
+      {label}
+    </button>
+  ) : (
+    // biome-ignore lint/a11y/useSemanticElements: Internal document references have no browser URL.
     <span
-      ref={trigger}
+      ref={trigger as Ref<HTMLSpanElement>}
       role="link"
       tabIndex={0}
       aria-disabled={!follow && !folderMenu}
@@ -182,8 +192,7 @@ export function TranscriptReference({
       {...(chip ? linkChipAttributes(chip) : {})}
       onClick={follow}
       onKeyDown={(event) => {
-        // A folder chip's Enter is its menu trigger's to handle.
-        if (event.key === "Enter" && !folderMenu) {
+        if (event.key === "Enter") {
           event.preventDefault();
           follow?.();
         }

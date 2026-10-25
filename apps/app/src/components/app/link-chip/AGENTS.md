@@ -18,9 +18,10 @@ classification, resolution, and follow policy belong to
   asking or that failed draws filled: a guess that corrects itself is worse than
   waiting. Dashed carries its quietness in the border, never the ink: a dashed
   name stays at 4.5:1 on every surface.
-- Hover is for chips that go somewhere: an enabled `role="link"` in transcript or
-  composer, and an Editor chip always unless it is gone. Do not make Editor hover
-  depend on a role on the `<a>`.
+- Hover is for chips that go somewhere: an enabled document link or a folder
+  button with `aria-haspopup="menu"` in transcript or composer, and an Editor
+  chip always unless it is gone. Do not make Editor hover depend on a role on
+  the `<a>`.
 - A new family is a new scheme in contracts plus a node here; the
   `Record<LinkChipIcon, …>` makes a missing image a type error. Core names
   families and never imports icons.
