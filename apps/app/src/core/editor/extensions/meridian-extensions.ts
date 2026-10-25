@@ -333,12 +333,14 @@ const LINK_MARK_REF_ATTRIBUTE = {
  */
 function linkElementAttributes(HTMLAttributes: Record<string, unknown>): Record<string, unknown> {
   const target = classifyLinkTarget(String(HTMLAttributes.href ?? ""));
+  const folder = target && isInternalLinkTarget(target) && target.addressKind === "folder";
   return target
     ? {
         ...HTMLAttributes,
         href: isInternalLinkTarget(target) ? undefined : linkTargetHref(target),
         "data-meridian-link": isInternalLinkTarget(target) ? HTMLAttributes.href : undefined,
-        role: "link",
+        role: folder ? "button" : "link",
+        "aria-haspopup": folder ? "menu" : undefined,
         tabindex: "0",
         "data-link-kind": target.kind,
       }

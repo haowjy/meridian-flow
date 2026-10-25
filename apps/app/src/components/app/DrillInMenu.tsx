@@ -11,6 +11,8 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
 import {
+  type ComponentPropsWithoutRef,
+  type ForwardedRef,
   Fragment,
   type ReactElement,
   type ReactNode,
@@ -87,11 +89,15 @@ export function DrillInMenuRoot({
   body,
   open: controlledOpen,
   onOpenChange,
+  triggerProps,
+  triggerRef,
 }: {
   children: ReactElement;
   body: ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  triggerProps?: Omit<ComponentPropsWithoutRef<typeof DropdownMenuTrigger>, "asChild">;
+  triggerRef?: ForwardedRef<HTMLButtonElement>;
 }) {
   const [localOpen, setOpen] = useState(false);
   const open = controlledOpen ?? localOpen;
@@ -103,7 +109,9 @@ export function DrillInMenuRoot({
         onOpenChange?.(next);
       }}
     >
-      <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+      <DropdownMenuTrigger asChild {...triggerProps} ref={triggerRef}>
+        {children}
+      </DropdownMenuTrigger>
       {open ? body : null}
     </DropdownMenu>
   );

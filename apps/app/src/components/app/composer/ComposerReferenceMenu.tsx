@@ -8,7 +8,7 @@
 import { t } from "@lingui/core/macro";
 import { closeHistory } from "@tiptap/pm/history";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { type Ref, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -49,7 +49,7 @@ export function ComposerReferenceMenu({
   readRuntime: () => ComposerReferenceRuntime;
 }) {
   const reference = node.attrs.reference as ComposerReferenceAttrs;
-  const trigger = useRef<HTMLSpanElement>(null);
+  const trigger = useRef<HTMLElement>(null);
   const [editing, setEditing] = useState<"destination" | "label" | null>(null);
   // Opening before the menu releases its focus scope immediately dismisses the picker.
   const changeAfterClose = useRef<"destination" | "label" | null>(null);
@@ -89,32 +89,43 @@ export function ComposerReferenceMenu({
     setEditing(null);
     editor.commands.focus();
   };
-  const chipElement = (
-    // biome-ignore lint/a11y/useSemanticElements: Internal references have no browser URL; unavailable links still expose keyboard context actions.
-    <span
-      ref={trigger}
-      data-composer-reference=""
-      {...linkChipAttributes(referenceChip(reference))}
-      tabIndex={0}
-      role="link"
-      aria-disabled={reference.kind === "folder" ? !folderHost : !follow}
-      aria-label={label}
-      onClick={(event) => {
-        event.preventDefault();
-        follow?.();
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter") return;
-        event.stopPropagation();
-        // A folder chip's Enter is its menu trigger's to handle.
-        if (reference.kind === "folder") return;
-        event.preventDefault();
-        follow?.();
-      }}
-    >
-      {label}
-    </span>
-  );
+  const chipElement =
+    reference.kind === "folder" ? (
+      <button
+        ref={trigger as Ref<HTMLButtonElement>}
+        type="button"
+        data-composer-reference=""
+        {...linkChipAttributes(referenceChip(reference))}
+        aria-haspopup="menu"
+        aria-disabled={!folderHost}
+        aria-label={label}
+      >
+        {label}
+      </button>
+    ) : (
+      // biome-ignore lint/a11y/useSemanticElements: Internal document references have no browser URL.
+      <span
+        ref={trigger as Ref<HTMLSpanElement>}
+        data-composer-reference=""
+        {...linkChipAttributes(referenceChip(reference))}
+        tabIndex={0}
+        role="link"
+        aria-disabled={!follow}
+        aria-label={label}
+        onClick={(event) => {
+          event.preventDefault();
+          follow?.();
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.stopPropagation();
+          event.preventDefault();
+          follow?.();
+        }}
+      >
+        {label}
+      </span>
+    );
   return (
     <NodeViewWrapper as="span" className="inline" contentEditable={false}>
       <Popover

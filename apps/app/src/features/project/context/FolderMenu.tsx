@@ -17,12 +17,19 @@ import {
   contextOwner,
 } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
-import { createContext, type ReactElement, useContext, useMemo } from "react";
-import { lookupProjectFolderAvailability } from "@/client/query/project-context-availability";
+import {
+  type ComponentPropsWithoutRef,
+  createContext,
+  forwardRef,
+  type ReactElement,
+  useContext,
+  useMemo,
+} from "react";
+import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useProject } from "@/client/query/useProjectList";
 import { DrillInMenuBody, DrillInMenuRoot, type DrillNode } from "@/components/app/DrillInMenu";
-import { DropdownMenuContent } from "@/components/ui/dropdown-menu";
+import { DropdownMenuContent, type DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useDockBrowseScratch } from "../dock/use-dock-browse-scratch";
 import { useOwnAreaHeading, useProjectMenuSource } from "./use-project-menu-source";
 
@@ -40,21 +47,26 @@ export function useFolderMenuHost(): FolderMenuHost | null {
 }
 
 /** Wraps a folder chip: pressing it opens the menu inside the folder. */
-export function FolderMenu({
-  host,
-  folderId,
-  children,
-}: {
+type FolderMenuProps = {
   host: FolderMenuHost;
   folderId: string;
   children: ReactElement;
-}) {
+} & Omit<ComponentPropsWithoutRef<typeof DropdownMenuTrigger>, "asChild">;
+
+export const FolderMenu = forwardRef<HTMLButtonElement, FolderMenuProps>(function FolderMenu(
+  { host, folderId, children, ...triggerProps },
+  ref,
+) {
   return (
-    <DrillInMenuRoot body={<FolderMenuBody host={host} folderId={folderId} />}>
+    <DrillInMenuRoot
+      body={<FolderMenuBody host={host} folderId={folderId} />}
+      triggerProps={triggerProps}
+      triggerRef={ref}
+    >
       {children}
     </DrillInMenuRoot>
   );
-}
+});
 
 type MenuContentHandlers = {
   onCloseAutoFocus?: (event: Event) => void;
@@ -70,11 +82,12 @@ export function FolderMenuBody({
   const { projectId } = host;
   const lookup = useQuery({
     queryKey: projectQueryKeys.folderIdentity(projectId, folderId),
-    queryFn: ({ signal }) => lookupProjectFolderAvailability(projectId, folderId, signal),
+    queryFn: ({ signal }) => lookupProjectContextAvailability(projectId, [], signal, [folderId]),
     // Where the folder is now: a rename or move since the last open must not reopen the old place.
     staleTime: 0,
   });
-  const found = lookup.data?.kind === "available" ? lookup.data.entry : null;
+  const resolution = lookup.data?.folderResolutions?.[0];
+  const found = resolution?.kind === "available" ? resolution.entry : null;
   const own = useMemo(() => (found ? ownArea(found) : null), [found]);
   const heading = useOwnAreaHeading(projectId, own);
   const title = useProject(projectId)?.title ?? "";
@@ -99,7 +112,7 @@ export function FolderMenuBody({
       />
     );
   }
-  const kind = lookup.data?.kind;
+  const kind = resolution?.kind;
   const failed = lookup.isError || kind === "indeterminate";
   const gone = kind === "deleted" || kind === "not-visible" || kind === "authority-unavailable";
   return (
