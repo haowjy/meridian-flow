@@ -1,4 +1,5 @@
 /** Thread event subscription, cancellation, and connection-state contract. */
+import type { FailureOccurrence } from "@meridian/contracts/failures";
 import type {
   CancelTurnResponse,
   CatalogWakeHint,
@@ -51,6 +52,8 @@ export interface ThreadTransportHandlers {
   onConnectionState?: (state: ConnectionState) => void;
   onClose?: (event: SocketClose) => void;
   onError?: (err: Error) => void;
+  /** Terminal feed failure, or null after this thread acquired its lease. Retryable errors do not change it. */
+  onUnavailable?: (failure: FailureOccurrence | null) => void;
 }
 
 export interface ThreadTransportSubscribeOptions {

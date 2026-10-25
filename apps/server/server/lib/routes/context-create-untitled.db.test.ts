@@ -78,9 +78,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return { ...bootstrap, workId };
     }
 
-    const collabs: Array<{ dispose(): void }> = [];
-    afterEach(() => {
-      for (const collab of collabs.splice(0)) collab.dispose();
+    const collabs: Array<{ dispose(): Promise<void> }> = [];
+    afterEach(async () => {
+      for (const collab of collabs.splice(0)) await collab.dispose();
     });
 
     function createBoundCollab() {

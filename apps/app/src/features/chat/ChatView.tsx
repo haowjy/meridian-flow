@@ -15,6 +15,7 @@
  * Reads AI-draft review state from `DraftReviewProvider`; the dock and the
  * editor bar share one controller so preview selection cannot drift.
  */
+
 import { t } from "@lingui/core/macro";
 import type { ProjectId, UserId } from "@meridian/contracts";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
@@ -390,10 +391,14 @@ export function ChatView({
   );
   // Every chat failure the writer sees comes from here; the rest of this component draws and
   // announces what `chatCards` decided.
+  const unavailable = useThreadStore(
+    (state) => state.syncedByThread[threadId]?.unavailable ?? null,
+  );
   const projectedFailureCards = useMemo(
     () =>
       chatCards({
         threadId,
+        unavailable,
         turns: normalized,
         runState,
         handBack: [...handBack.unresolved, ...(sendNow.failed ? [sendNow.failed] : [])],
@@ -404,6 +409,7 @@ export function ChatView({
         sends: new Map([...(submissions.presentation ?? [])].map(([id, row]) => [id, row.failure])),
       }),
     [
+      unavailable,
       brief.outcomes,
       brief.stopFailures,
       controls.queued,

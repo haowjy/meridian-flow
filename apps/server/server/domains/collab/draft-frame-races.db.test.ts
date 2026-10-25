@@ -39,9 +39,8 @@ describe("writer frames racing rewrites (postgres)", () => {
     await resetDatabase(db);
     fixture = await inverseFixture(db);
   });
-  afterEach(() => {
-    fixture.harness.cancelScheduledPulls();
-    fixture.harness.destroyWarmState();
+  afterEach(async () => {
+    await fixture.harness.dispose();
   });
   afterAll(() => closeDatabase(db));
 

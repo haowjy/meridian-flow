@@ -1230,6 +1230,10 @@ msgstr ""
 msgid "Chat deleted"
 msgstr ""
 
+#: src/features/chat/chat-card-copy.ts
+msgid "Chat updates disconnected"
+msgstr ""
+
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
@@ -3777,9 +3781,16 @@ msgstr ""
 msgid "Reference a file"
 msgstr ""
 
-#: src/components/app/ConnectionBanner.tsx
 #: src/features/editor/SchemaNotices.tsx
 msgid "Refresh"
+msgstr ""
+
+#: src/features/chat/ChatCards.tsx
+msgid "Reload"
+msgstr ""
+
+#: src/features/chat/ChatCards.tsx
+msgid "Reload to see the latest replies."
 msgstr ""
 
 #: src/features/billing/UsageCard.tsx
@@ -4179,8 +4190,8 @@ msgid "Sent a message to {line}"
 msgstr ""
 
 #: src/components/app/ConnectionBanner.tsx
-msgid "Session expired. Please refresh."
-msgstr ""
+#~ msgid "Session expired. Please refresh."
+#~ msgstr ""
 
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/PhoneSettings.tsx

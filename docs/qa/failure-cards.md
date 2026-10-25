@@ -117,3 +117,34 @@ generating brief. Restore `fetch` and press Try again: the brief stops and the c
 Restore credits, fetch/storage wrappers and scripts after each injected failure.
 Raw `./mf` error lines are diagnostic; compare the `card` lines and anchors, not
 provider error strings, with the app's cards.
+
+## FC-07: unavailable feed and correlated diagnostics
+
+On a loaded chat, use browser fault injection to close its WebSocket with 4401.
+Expect one composer card: “Chat updates disconnected”, “Reload to see the latest
+replies.” and Reload, with no “Session expired” banner. Type and Send: HTTP
+admission must still work. Click Reload: history catches up and the card goes.
+A recoverable disconnect or retryable subscription error must not create this
+card. Refuse one subscribe while another chat stays live: only the refused chat
+gets a card; retain it until that thread's subscribe acknowledgment.
+
+Read `[data-failure-id]` on a card and match it to the local trace's
+`failure.recorded` occurrenceId, then `./mf log --source client --full --json`.
+Exercise Retry, Dismiss, target completion/removal and pane unmount for a failed
+Stop, Send now, brief Stop, Retry and queued control. Each failure records once;
+retirement records once with the appropriate end, and a retry gets a new key.
+Restore a saved hand-back command: its saved attempt key must not be reminted.
+Server-owned reply/usage failures must not gain duplicate client records.
+
+For a non-chat owner, fail a Work goal save and Retry save, Cancel, or archive
+the Work. Copy stays beside the goal; the local failure records and ends once.
+Return HTTP 200 with `{}` for a validated app route (for example turn cancel):
+it must reject without changing state from the unproved body. Repeat with a
+valid body, a transport-envelope body, a 4xx and a 5xx.
+
+Block `/api/diagnostics/failures`: local records remain, there is one local
+`failure.ingest_failed` event per failed batch, and no recursive diagnostic
+requests or new cards. POST duplicate records, another accountId, a foreign
+threadId, arbitrary text fields and more than 32 records: deduplicate the first
+and reject the invalid batches. Switch accounts during delivery: the old batch
+must not be accepted under the new account.

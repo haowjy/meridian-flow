@@ -8,16 +8,20 @@
  * the cancelled execution, idle after. A failed Send now is a card (`chatCards`).
  */
 import { t } from "@lingui/core/macro";
+import type { FailureEnd } from "@meridian/contracts/failures";
 import type { SendNowRequest } from "@meridian/contracts/threads";
 import {
+  type CommandFailure,
   type FailedSendNow,
+  logCommandFailure,
   postSendNow,
   type StopStatus,
   sendNowRequest,
   stopStatus,
 } from "@meridian/thread-client";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { postCommand } from "@/client/api/threads-api";
+import { useFailureLog } from "@/client/failures/failure-log";
 import { announce, useRunState, useThreadActions } from "@/client/stores";
 
 export type SendNow = {
@@ -34,6 +38,7 @@ export type SendNow = {
 
 export function useSendNow(threadId: string): SendNow {
   const view = useRunState(threadId);
+  const log = useFailureLog();
   const actions = useThreadActions();
   const latest = useRef({ view, actions });
   latest.current = { view, actions };
@@ -42,6 +47,41 @@ export function useSendNow(threadId: string): SendNow {
     cancelledExecutionId: string | null;
   }>({ request: "idle", cancelledExecutionId: null });
   const [failed, setFailed] = useState<FailedSendNow | null>(null);
+  const failedRef = useRef(failed);
+  const mounted = useRef(false);
+  const retire = useCallback(
+    (end: FailureEnd) => {
+      const f = failedRef.current;
+      if (f)
+        logCommandFailure(
+          log,
+          {
+            requestId: f.requestId,
+            attempt: f.attempt,
+            kind: f.status === "refused" ? "refused" : "lost",
+          },
+          { threadId },
+          end,
+        );
+      failedRef.current = null;
+      if (mounted.current) setFailed(null);
+    },
+    [log, threadId],
+  );
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      retire("moot");
+    };
+  }, [retire]);
+  useEffect(() => {
+    if (
+      failedRef.current &&
+      view.record?.execution?.executionId !== failedRef.current.request.seenExecutionId
+    )
+      retire("moot");
+  }, [view, retire]);
   const busyRef = useRef(false);
   /** Posts of the current body: a Try again is a new attempt of the same request. */
   const attempts = useRef({ key: "", count: 0 });
@@ -53,13 +93,14 @@ export function useSendNow(threadId: string): SendNow {
   const post = useCallback(
     (body: SendNowRequest) => {
       setCommand({ request: "pending", cancelledExecutionId: null });
-      setFailed(null);
+      retire("retried");
       const key = body.seenExecutionId;
       attempts.current = {
         key,
         count: attempts.current.key === key ? attempts.current.count + 1 : 1,
       };
       const attempt = attempts.current.count;
+      const requestId = crypto.randomUUID();
       void postSendNow(
         {
           http: postCommand,
@@ -79,15 +120,31 @@ export function useSendNow(threadId: string): SendNow {
           cancelledExecutionId: outcome.kind === "confirmed" ? outcome.cancelledExecutionId : null,
         });
         if (outcome.kind === "confirmed") return;
-        setFailed({
+        const failure: CommandFailure = {
+          requestId,
+          attempt,
+          kind: outcome.kind === "refused" ? "refused" : "lost",
+        };
+        logCommandFailure(log, failure, { threadId });
+        if (
+          !mounted.current ||
+          latest.current.view.record?.execution?.executionId !== body.seenExecutionId
+        ) {
+          logCommandFailure(log, failure, { threadId }, "moot");
+          return;
+        }
+        const next: FailedSendNow = {
           kind: "send-now",
           status: outcome.kind,
           request: body,
           attempt,
-        });
+          requestId,
+        };
+        failedRef.current = next;
+        setFailed(next);
       });
     },
-    [threadId],
+    [threadId, log, retire],
   );
 
   const send = useCallback(() => {
@@ -100,7 +157,7 @@ export function useSendNow(threadId: string): SendNow {
   const retry = useCallback(() => {
     if (failed && !busyRef.current) post(failed.request);
   }, [failed, post]);
-  const dismiss = useCallback(() => setFailed(null), []);
+  const dismiss = useCallback(() => retire("dismissed"), [retire]);
 
   return { available: sendNowRequest(view) !== null, busy, send, failed, retry, dismiss };
 }

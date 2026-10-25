@@ -30,8 +30,6 @@ rebake silently on a model change, an idle timer, or an Agent revision update.
 A mid-thread change the model needs to learn about is a system notification in
 conversation, never a prompt or tool-list rewrite.
 
-## Cold replay initialization
-
-- `thread-event-hub.ts`: cold initialization still projects from journal zero. If cold reconnect cost warrants it, initialize the shared live projector from a reset boundary independently of subscriber cursors, then replay each subscriber's suffix. Preserve concurrent subscribers, append-during-initialization and retry after initialization failure. Warm old-cursor seeking does not address this lifecycle change.
+## Journal writes
 
 - **One-statement batch append.** `adapters/drizzle/event-writer.ts` `appendEvents` runs BEGIN, `UPDATE threads.next_seq`, a multi-row INSERT, `pg_notify` and COMMIT: about five round trips per batch. A single CTE (update, insert, notify) would make it one. Backpressure batching already keeps turn completion off this cost; trigger: a profile of many concurrent paced streams showing journal write load or pool waits.

@@ -1207,7 +1207,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async shutdown() {
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
-      ports.documentSync.dispose();
+      await ports.documentSync.dispose();
       await ports.documentSync.documentDerivations.stop();
       const timeoutMs = APP_DRAIN_DEADLINE_MS;
       const drained = await backgroundTasks.drain(timeoutMs);
@@ -1335,9 +1335,6 @@ export function createInMemoryAppServices(): AppServices {
     },
     async catchup() {
       return [];
-    },
-    subscribe() {
-      return () => undefined;
     },
     async catchupAndSubscribe() {
       return { catchup: [], unsubscribe: () => undefined };

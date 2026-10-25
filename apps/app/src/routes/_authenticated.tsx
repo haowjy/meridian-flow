@@ -10,6 +10,7 @@ import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { bindChatSubmissions } from "@/client/chat-submissions";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
 import { readCurrentChat } from "@/client/current-chat";
+import { FailureLogProvider } from "@/client/failures/failure-log";
 import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
@@ -207,33 +208,35 @@ function AuthenticatedProviderTree({
   }, [resources, user.userId]);
 
   return (
-    <ProjectStoreProvider now={now}>
-      <ThreadStoreProvider now={now}>
-        <TransportProvider>
-          <MeridianCopilotProvider>
-            <DensityPopoverCollisionProvider>
-              <div className="app-frame flex flex-col">
-                <ConnectionBanner />
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  {/* Project parents key their shell by resolved identity; account fencing stays above. */}
-                  <Outlet />
+    <FailureLogProvider accountId={user.userId}>
+      <ProjectStoreProvider now={now}>
+        <ThreadStoreProvider now={now}>
+          <TransportProvider>
+            <MeridianCopilotProvider>
+              <DensityPopoverCollisionProvider>
+                <div className="app-frame flex flex-col">
+                  <ConnectionBanner />
+                  <div className="min-h-0 flex-1 overflow-hidden">
+                    {/* Project parents key their shell by resolved identity; account fencing stays above. */}
+                    <Outlet />
+                  </div>
                 </div>
-              </div>
-              <SettingsDialog />
-              {DebugOverlay ? (
-                <Suspense fallback={null}>
-                  <DebugOverlay />
-                </Suspense>
-              ) : null}
-              {ReactQueryDevtools ? (
-                <Suspense fallback={null}>
-                  <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
-                </Suspense>
-              ) : null}
-            </DensityPopoverCollisionProvider>
-          </MeridianCopilotProvider>
-        </TransportProvider>
-      </ThreadStoreProvider>
-    </ProjectStoreProvider>
+                <SettingsDialog />
+                {DebugOverlay ? (
+                  <Suspense fallback={null}>
+                    <DebugOverlay />
+                  </Suspense>
+                ) : null}
+                {ReactQueryDevtools ? (
+                  <Suspense fallback={null}>
+                    <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
+                  </Suspense>
+                ) : null}
+              </DensityPopoverCollisionProvider>
+            </MeridianCopilotProvider>
+          </TransportProvider>
+        </ThreadStoreProvider>
+      </ProjectStoreProvider>
+    </FailureLogProvider>
   );
 }
