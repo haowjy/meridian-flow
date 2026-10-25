@@ -2511,7 +2511,7 @@ msgstr ""
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "From {senderName}: "
-msgstr ""
+msgstr "来自 {senderName}："
 
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"

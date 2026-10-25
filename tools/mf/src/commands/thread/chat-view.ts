@@ -563,14 +563,24 @@ function rowLines(row: ChatRow): string[] {
       case "delivery":
         for (const group of item.groups)
           lines.push(
-            ...indent(
-              `delivery:${group.id} ${group.events.map((event) => `${event.agentName ?? "message"}${event.outcome ? ` ${event.outcome}` : ""}${event.childThreadId ? ` [${event.childThreadId}]` : ""}${event.message && !event.outcome ? ` ${oneLine(event.message)}` : ""}`).join("; ")}`,
-            ),
+            ...indent(`delivery:${group.id} ${group.events.map(deliveryLine).join("; ")}`),
           );
         break;
     }
   });
   return lines;
+}
+
+function deliveryLine(event: ChatDelivery): string {
+  const sender = event.sender;
+  const senderName = sender
+    ? sender.title?.trim()
+      ? sender.ref
+        ? `${sender.title.trim()} (${sender.ref})`
+        : sender.title.trim()
+      : sender.ref
+    : null;
+  return `${senderName ? `from ${senderName}:` : (event.agentName ?? "message")}${event.outcome ? ` ${event.outcome}` : ""}${event.childThreadId ? ` [${event.childThreadId}]` : ""}${event.message && !event.outcome ? ` ${oneLine(event.message)}` : ""}`;
 }
 
 /** One card as a line: its copy key, where it sits, its action and its occurrence key. */
