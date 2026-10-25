@@ -283,8 +283,8 @@ function ActiveSessionEditorView({
         kind === "accept"
           ? t`Mention`
           : kind === "unavailable"
-            ? t`Can’t mention that`
-            : t`Can’t mention there`,
+            ? t`Not available in this document`
+            : t`Can’t mention inside code`,
       showHint: (owner, verdict, point) => showDragHint(owner, verdict, point),
       clearHint: clearDragHint,
     }),

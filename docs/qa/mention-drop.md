@@ -26,11 +26,19 @@ not exercise Chromium's hidden drag payload or ProseMirror's event order.
    spacing, order, focus, and one-step Undo.
 3. Drop at a table-cell seam. The caret and insertion both resolve inside the
    nearest cell; the table keeps its row and column counts. Drop over a code
-   block: no caret appears, the hint reads **Can’t mention there**, and content
-   does not change.
-4. Drag a row the surface's `@` catalog cannot name. The hint reads **Can’t
-   mention that** and content does not change. On the documents-only build this
-   includes folders; there is no folder-specific drop rule.
+   block: no caret appears, the hint reads **Can’t mention inside code**, and
+   content does not change.
+4. Drag a row the surface's `@` catalog cannot name. The hint reads **Not
+   available in this chat** over the composer and **Not available in this
+   document** over the manuscript; content does not change. On a build where
+   the catalog cannot resolve a folder, it follows this path with no
+   folder-specific copy.
+5. Insert a multiword reference with `@`, then drop a row over the middle of
+   its label. The caret snaps to the nearer outside edge and the whole original
+   reference remains one chip after the drop. Repeat over a composer reference
+   atom.
+6. In the composer, type one character immediately after a drop. The first Undo
+   removes only that character; the second removes every chip from the drop.
 
 ## Ownership and recovery
 

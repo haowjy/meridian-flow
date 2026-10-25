@@ -204,10 +204,11 @@ keyboard, pointer, drop, or draft-recovery answer.
 - A drop inside a table lands inside a cell, never between two. `table-drop.ts`
   is the one landing for the dropcursor, node drag, OS-file drop, and tree-row
   reference drop. StarterKit's dropcursor stays disabled; two landings answering
-  one drag is the bug this seam prevents. A reference drop then snaps an inline
-  landing to the nearer edge of the word under the pointer, refuses code, and
-  inserts every reference in one transaction. `drop-caret.ts` is the shared
-  geometry for the generic drop cursor and that reference caret.
+  one drag is the bug this seam prevents. A reference drop treats an existing
+  identity link or inline atom as one unit, then snaps an inline landing to the
+  nearer word edge, refuses code, and inserts every reference in one
+  transaction. `drop-caret.ts` is the shared geometry for the generic drop
+  cursor and that reference caret.
 - A node view that hides its own text derives that face from the selection and
   never restructures around it. A caret inside a rendered diagram fence shows
   the source face without changing selection, whether it arrived by key,

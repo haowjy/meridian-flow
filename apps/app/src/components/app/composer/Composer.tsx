@@ -278,8 +278,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           kind === "accept"
             ? t`Mention`
             : kind === "unavailable"
-              ? t`Can’t mention that`
-              : t`Can’t mention there`,
+              ? t`Not available in this chat`
+              : t`This part of the message can’t hold mentions`,
         showHint: (owner, verdict, point) => showDragHint(owner, verdict, point),
         clearHint: clearDragHint,
       }),
