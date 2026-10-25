@@ -493,5 +493,7 @@ resolved ask retires this device's attempt.
   resolution, or this device's sending answer marked `pending`.
 - `answerAsk(ports, …)` is the one answer command. A Retry of the same answer
   reuses its `submissionId`; a different answer is a new submission.
-  `ask_not_open` takes the winning resolution from the reply when it has one
-  and always asks for a read.
+  `ask_not_open` takes the winning resolution from the reply when it has one.
+  Without one, the attempt goes `settling` (no takeover, nothing can answer)
+  until a read says how the ask ended; a failed read leaves it `unsettled`, and
+  the takeover offers only to read again (`settleAsk`).

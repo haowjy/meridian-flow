@@ -15,10 +15,11 @@ export function useAskTakeover(
   composer: RefObject<ComposerHandle | null>,
 ) {
   const open = useOpenAsk(threadId);
-  const answer = useAnswerAsk(threadId);
+  const commands = useAnswerAsk(threadId);
   const openId = open?.ask.id ?? null;
   // A failed own-words answer comes back into the field, where the rule above keeps it.
-  const failedText = open?.failed?.answer.kind === "text" ? open.failed.answer.text : null;
+  const failed = open?.attempt?.state === "failed" ? open.attempt : null;
+  const failedText = failed?.answer.kind === "text" ? failed.answer.text : null;
   const [field, setField] = useState({ askId: openId, text: failedText ?? "" });
   // The ref is the field's truth for the close effect: it changes with each write, before any
   // render the answer's store update causes.
@@ -42,10 +43,11 @@ export function useAskTakeover(
       agentName={agentName}
       text={field.askId === open.ask.id ? field.text : ""}
       onTextChange={(text) => write({ askId: open.ask.id, text })}
+      onSettle={() => commands.settle(open.ask.id)}
       onAnswer={(next) => {
         // Sent words leave the field; anything else typed there stays for the draft.
         if (next.kind === "text") write({ askId: open.ask.id, text: "" });
-        answer(open.ask.id, next);
+        commands.answer(open.ask.id, next);
       }}
     />
   );
