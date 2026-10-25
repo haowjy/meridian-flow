@@ -13,7 +13,7 @@
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Trash2 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
@@ -28,11 +28,15 @@ export type WorkspaceNavBodyProps = {
   presentation: WorkspaceNavPresentation;
   /** Persistent navigation content between the controls and account row. */
   children?: ReactNode;
+  /** The pane holding `children`, for a section below that resizes against it. */
+  childrenRef?: Ref<HTMLDivElement>;
+  /** The User section, docked above Scratch: the writer's documents, not the project's. */
+  user?: ReactNode;
   /** The chat's Scratch section, pinned above the account row. */
   scratch?: ReactNode;
   /** Opens the project's Trash; its row sits below Scratch. */
   onOpenTrash?: () => void;
-  /** One replaceable notice between the file tree and Scratch. */
+  /** One replaceable notice under the file tree: it takes height from the tree, so nothing shifts or is covered. */
   notice?: ReactNode;
 };
 
@@ -41,6 +45,8 @@ export function WorkspaceNavBody({
   onSelectScreen,
   presentation,
   children,
+  childrenRef,
+  user,
   scratch,
   notice,
   onOpenTrash,
@@ -74,13 +80,17 @@ export function WorkspaceNavBody({
         ))}
       </div>
 
-      <div className={cn("min-h-0 flex-1 overflow-hidden", !phone && "min-h-[120px]")}>
+      <div
+        ref={childrenRef}
+        className={cn("min-h-0 flex-1 overflow-hidden", !phone && "min-h-[120px]")}
+      >
         {children}
       </div>
 
       {notice}
 
-      {/* The Scratch section draws its own divider, so none shows with no chat on screen. */}
+      {/* Docked sections draw their own dividers, so none shows for an absent one. */}
+      {user}
       {scratch}
       {onOpenTrash ? (
         <div

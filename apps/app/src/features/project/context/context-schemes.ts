@@ -16,8 +16,14 @@ import { familyIcon } from "@/components/app/link-chip/family-icons";
 /** Complete vocabulary for references and tools, including chat resources. */
 export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = CONTEXT_URI_SCHEMES;
 
-/** Ordinary Editor surfaces contain only project documents. */
+/** Ordinary Editor surfaces hold project-scoped documents: the project's areas and the writer's User. */
 export const EDITOR_CONTEXT_SCHEMES = PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
+
+/**
+ * The project's own areas, the rail's Files tree. User is the writer's across
+ * every project, so the rail docks it at the bottom beside Scratch instead.
+ */
+export const PROJECT_TREE_SCHEMES = EDITOR_CONTEXT_SCHEMES.filter((scheme) => scheme !== "user");
 
 /**
  * Whether the writer can create files/folders inside a scheme from a browse

@@ -8,9 +8,9 @@ import { useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { RailScratchSection } from "../chat/ChatScratch";
-import { ContextTreePanel } from "../context/ContextTreePanel";
-import { DocumentDeleteUndoNotice } from "../context/document-delete-undo";
+import { ContextTreePanel, UserRailSection } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
+import { SurfaceNotices } from "../context/project-notices";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
 import { useProjectTrashNavigation } from "../routing/ProjectNavigationContext";
 import { InlineProjectTitle, type ProjectTitleEdit } from "../shell/InlineProjectTitle";
@@ -143,11 +143,25 @@ export function NavigationDrawer({
                 onOpenChange(false);
               }}
               presentation="phone"
-              notice={<DocumentDeleteUndoNotice surface="sidebar" className="mx-3 mb-1" />}
+              notice={<SurfaceNotices surface="sidebar" className="mx-3 my-1 shrink-0" />}
               onOpenTrash={() => {
                 void trashNavigation.navigate(true);
                 onOpenChange(false);
               }}
+              user={
+                contextLive ? (
+                  <UserRailSection
+                    projectId={projectId}
+                    editorWorkId={editorWorkId}
+                    activeScheme={activeContextScheme}
+                    activePath={activeContextPath}
+                    onSelectFile={handleSelectFile}
+                    creating={creating}
+                    onRequestCreate={setCreating}
+                    onCreateDone={() => setCreating(null)}
+                  />
+                ) : null
+              }
               scratch={
                 <RailScratchSection
                   projectId={projectId}

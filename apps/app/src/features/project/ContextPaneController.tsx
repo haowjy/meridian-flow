@@ -65,6 +65,8 @@ export type ContextViewerSurfaceControllerProps = {
    * recently-opened chooser.
    */
   onShowEditorRecents: (options: NavigationOptions) => void;
+  /** The Editor owns the current screen, including while its route verdict masks the body. */
+  routeDisplayed: boolean;
   active: boolean;
   /** Project left-sidebar expand toggle, surfaced via the tab strip. */
   sidebarToggle: PaneHeaderRailToggle;
@@ -87,6 +89,7 @@ export function ContextViewerSurfaceController({
   dockToggle,
   onSelectContextPath,
   onOpenContextTarget,
+  routeDisplayed,
 }: ContextViewerSurfaceControllerProps) {
   const routeWorkId = editorWorkId ?? undefined;
   const captureNavigation = useCaptureProjectNavigation();
@@ -318,7 +321,7 @@ export function ContextViewerSurfaceController({
         continue;
       }
       const routeFollowsTab =
-        active &&
+        routeDisplayed &&
         tab.kind !== "new" &&
         projection.tab.kind !== "new" &&
         selectedDocumentId === tab.documentId &&
@@ -328,9 +331,6 @@ export function ContextViewerSurfaceController({
           projection.tab.path !== tab.path ||
           projection.tab.workId !== tab.workId ||
           projection.tab.rootThreadId !== tab.rootThreadId);
-      void reconcileResourceTab(projectId, projection.resourceHandle, projection.tab).catch(
-        (error: unknown) => reportError(error),
-      );
       if (routeFollowsTab && projection.tab.kind !== "new")
         void onOpenContextTarget(
           {
@@ -340,6 +340,9 @@ export function ContextViewerSurfaceController({
             ...(projection.tab.rootThreadId ? { rootThreadId: projection.tab.rootThreadId } : {}),
             documentId: projection.tab.documentId,
           },
+          // Keep the tab at the route's old locator until replacement is accepted. The
+          // prepared tab and address then commit together, so admission can retain the
+          // already-open document by identity while a move or rename is in flight.
           { replace: true, tab: projection.tab },
         ).then(
           (settlement) => {
@@ -347,9 +350,12 @@ export function ContextViewerSurfaceController({
           },
           (error: unknown) => reportError(error),
         );
+      else
+        void reconcileResourceTab(projectId, projection.resourceHandle, projection.tab).catch(
+          (error: unknown) => reportError(error),
+        );
     }
   }, [
-    active,
     activeContextPath,
     activeContextScheme,
     availability,
@@ -359,6 +365,7 @@ export function ContextViewerSurfaceController({
     reconcileResourceTab,
     resourceProjection.records,
     resourceProjection.placement,
+    routeDisplayed,
     routeWorkId,
     selectedDocumentId,
     tabs,

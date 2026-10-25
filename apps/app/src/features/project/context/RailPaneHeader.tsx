@@ -13,6 +13,7 @@ export function RailPaneHeader({
   expanded,
   onExpandedChange,
   actions,
+  dropProps,
 }: {
   /** Header text, rendered in UPPERCASE at the tree rows' `text-sm` scale. */
   label: string;
@@ -27,10 +28,15 @@ export function RailPaneHeader({
   onExpandedChange: (expanded: boolean) => void;
   /** Hover-revealed `PaneHeaderActionButton`s; hidden while collapsed. */
   actions?: React.ReactNode;
+  /** Drop handlers when the header is a drop target (the tree's areas). */
+  dropProps?: React.HTMLAttributes<HTMLElement>;
 }) {
   return (
     /* This row stays on the rail material at rest and only lifts on hover. */
-    <div className="group relative mx-2 flex h-7 items-center rounded-md transition-colors hover:bg-sidebar-accent/50">
+    <div
+      {...dropProps}
+      className="group relative mx-2 flex h-7 items-center rounded-md transition-colors hover:bg-sidebar-accent/50"
+    >
       <button
         type="button"
         aria-expanded={expanded}

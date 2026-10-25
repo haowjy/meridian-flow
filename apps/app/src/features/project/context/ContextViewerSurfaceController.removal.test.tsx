@@ -123,6 +123,7 @@ const shellProps = {
   onSelectContextPath: vi.fn(),
   onOpenContextTarget: vi.fn(),
   onShowEditorRecents: vi.fn(),
+  routeDisplayed: true,
   mask: {},
 };
 

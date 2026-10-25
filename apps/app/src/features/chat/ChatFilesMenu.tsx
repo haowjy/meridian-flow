@@ -19,10 +19,9 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ChatScratchTree } from "@/features/project/chat/ChatScratch";
-import { useChatScratchSource } from "@/features/project/chat/use-chat-scratch-source";
-import { DocumentDeleteUndoNotice } from "@/features/project/context/document-delete-undo";
+import { MenuScratchSection } from "@/features/project/chat/ChatScratch";
 import { useOpenChatResource } from "@/features/project/context/open-chat-document";
+import { SurfaceNotices } from "@/features/project/context/project-notices";
 import { cn } from "@/lib/utils";
 import { attachedAgo, uploadTypeLabel } from "./chat-upload-display";
 import { insertIntoChatComposer, removeFromChatComposer } from "./composer-insertion";
@@ -68,7 +67,6 @@ function FilesDropdown({
   chatThread: Thread | null;
 }) {
   const { uploads } = useChatUploads(projectId, chatId);
-  const scratch = useChatScratchSource(projectId, threadId);
   const continuesFrom = useContinuesFrom(chatThread);
   const openResource = useOpenChatResource(projectId);
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
@@ -211,19 +209,11 @@ function FilesDropdown({
           </p>
         ) : null}
         <div className={cn(dropdownResultsClass, "max-h-72 px-1 py-2")}>
-          {scratch ? (
-            <section aria-label={scratch.heading}>
-              <h3 className="px-3 py-2 text-xs font-medium text-muted-foreground">
-                {scratch.heading}
-              </h3>
-              <ChatScratchTree
-                projectId={projectId}
-                threadId={threadId}
-                onPicked={() => close(false)}
-                surface="chat-files"
-              />
-            </section>
-          ) : null}
+          <MenuScratchSection
+            projectId={projectId}
+            threadId={threadId}
+            onPicked={() => close(false)}
+          />
           <h3 className="px-3 py-2 text-xs font-medium text-muted-foreground">
             <Trans>Uploads</Trans>
           </h3>
@@ -258,7 +248,7 @@ function FilesDropdown({
             </ul>
           )}
         </div>
-        <DocumentDeleteUndoNotice surface="chat-files" className="sticky bottom-2 mx-2 mb-2" />
+        <SurfaceNotices surface="chat-files" className="sticky bottom-2 mx-2 mb-2" />
       </PopoverContent>
     </Popover>
   );

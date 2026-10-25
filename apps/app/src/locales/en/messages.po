@@ -101,10 +101,25 @@ msgstr "“{name}” doesn't exist yet"
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, one {# call} other {# calls}}"
 
+#. placeholder {0}: renamed.length
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
+msgstr "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
+
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 msgstr "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
+
+#. placeholder {0}: failed.length
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
+msgstr "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
+
+#. placeholder {0}: failed.length
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
+msgstr "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
 
 #. placeholder {0}: card.count
 #: src/features/chat/chat-card-copy.ts
@@ -115,6 +130,11 @@ msgstr "{0, plural, one {Couldn't move your queued message to the message box.} 
 #: src/features/chat/chat-card-copy.ts
 msgid "{0, plural, one {Couldn't move your queued message.} other {Couldn't move your queued messages.}}"
 msgstr "{0, plural, one {Couldn't move your queued message.} other {Couldn't move your queued messages.}}"
+
+#. placeholder {0}: moved.length
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0, plural, one {Moved # item to {destinationName}.} other {Moved # items to {destinationName}.}}"
+msgstr "{0, plural, one {Moved # item to {destinationName}.} other {Moved # items to {destinationName}.}}"
 
 #. placeholder {0}: digest.readDocuments
 #: src/features/chat/thinking-digest.ts
@@ -207,6 +227,12 @@ msgstr "{0} subagents finished ({1} stopped)"
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} tok/s"
 msgstr "{0} tok/s"
+
+#. placeholder {0}: only.name
+#. placeholder {1}: only.as
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0} will be renamed {1}"
+msgstr "{0} will be renamed {1}"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -994,6 +1020,10 @@ msgstr "Can't delete {source} from this location."
 msgid "Can't delete {source}: it changed during the delete."
 msgstr "Can't delete {source}: it changed during the delete."
 
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+msgid "Can't go inside itself"
+msgstr "Can't go inside itself"
+
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source} to that location."
 msgstr "Can't move {source} to that location."
@@ -1678,6 +1708,20 @@ msgstr "Couldn't load. Check your connection."
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't move"
 msgstr "Couldn't move"
+
+#. placeholder {0}: lost.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Couldn't move {0} back."
+msgstr "Couldn't move {0} back."
+
+#. placeholder {0}: lost.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Couldn't move {0}."
+msgstr "Couldn't move {0}."
+
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Couldn't move it back."
+msgstr "Couldn't move it back."
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't move this entry. Try again."
@@ -3009,6 +3053,10 @@ msgstr "Move row up"
 msgid "Move to {0}"
 msgstr "Move to {0}"
 
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+msgid "Move to {destinationName}"
+msgstr "Move to {destinationName}"
+
 #: src/features/chat/UserTurn.tsx
 msgid "Move to the message box"
 msgstr "Move to the message box"
@@ -3024,6 +3072,17 @@ msgstr "Move…"
 #: src/features/chat/command-descriptor.ts
 msgid "Moved"
 msgstr "Moved"
+
+#. placeholder {0}: first.previousName
+#. placeholder {1}: first.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Moved {0} to {destinationName} as {1}."
+msgstr "Moved {0} to {destinationName} as {1}."
+
+#. placeholder {0}: first.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Moved {0} to {destinationName}."
+msgstr "Moved {0} to {destinationName}."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Moved {source} to"
@@ -3047,8 +3106,8 @@ msgstr "Moved since"
 
 #. placeholder {0}: folder ?? ""
 #: src/features/project/context/LinkUpdateNote.tsx
-msgid "Moved to {0}"
-msgstr "Moved to {0}"
+#~ msgid "Moved to {0}"
+#~ msgstr "Moved to {0}"
 
 #. placeholder {0}: documentLocationName(landing.landedAt, names)
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -3813,13 +3872,18 @@ msgstr "Reset column widths"
 msgid "Reset size"
 msgstr "Reset size"
 
+#. placeholder {0}: schemeLabel(id)
+#: src/features/project/shell/DockedRailSection.tsx
+msgid "Resize {0}"
+msgstr "Resize {0}"
+
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize right rail"
 msgstr "Resize right rail"
 
 #: src/features/project/chat/ChatScratch.tsx
-msgid "Resize Scratch"
-msgstr "Resize Scratch"
+#~ msgid "Resize Scratch"
+#~ msgstr "Resize Scratch"
 
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize sidebar"

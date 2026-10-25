@@ -79,13 +79,14 @@ import {
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
 import { DocumentTrashDialog } from "./context/DocumentTrashDialog";
 import { DocumentTrashRestoreProvider } from "./context/DocumentTrashRestoreProvider";
-import { DocumentDeleteUndoProvider } from "./context/document-delete-undo";
 import { resolveEditorFrame } from "./context/editor-presentation";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
+import { ProjectNoticesProvider } from "./context/project-notices";
 import { useRemovedNoticeLifetime } from "./context/RemovedDocumentNotice";
 import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
+import { DragHint } from "./context/tree-drop/drag-hint";
 import {
   DesktopProjectPresentationProvider,
   useDesktopProjectController,
@@ -384,7 +385,7 @@ export function ProjectView(props: ProjectViewProps) {
     contextLive: contextPhase.status === "live" && editorScope.status === "ready",
   };
   return (
-    <DocumentDeleteUndoProvider key={props.projectId} projectId={props.projectId}>
+    <ProjectNoticesProvider key={props.projectId} projectId={props.projectId}>
       <DocumentTrashRestoreProvider projectId={props.projectId}>
         <div className="flex h-full min-h-0 w-full bg-background text-foreground">
           <DocumentTrashDialog projectId={props.projectId} />
@@ -411,7 +412,7 @@ export function ProjectView(props: ProjectViewProps) {
           ) : null}
         </div>
       </DocumentTrashRestoreProvider>
-    </DocumentDeleteUndoProvider>
+    </ProjectNoticesProvider>
   );
 }
 
@@ -463,6 +464,8 @@ function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentity
         openContextRoute={props.onOpenContextTarget}
       >
         <HydratedReviewScopes {...props} />
+        {/* Every row drop in the view (rail, Work Files) labels the pointer here. */}
+        <DragHint />
       </EditorReviewHandoffProvider>
     </ChatThreadNavigationProvider>
   );
@@ -836,6 +839,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                   ? props.editorWork
                   : (mountedEditor?.editorWork ?? null)
               }
+              routeDisplayed={props.activeScreen === "context"}
               active={editorActive}
               sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
               dockToggle={surfaceToggle("chat", t`Expand chat`)}
