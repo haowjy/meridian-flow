@@ -64,11 +64,12 @@ export function createDrizzleBranchTree(deps: {
       });
       return retracted.retracted ? "retracted" : "stands";
     },
-    async moveInBranch({ branch, documentId, dir, name, extension, changedBy }) {
+    async moveInBranch({ branch, documentId, dir, name, extension, position, changedBy }) {
       return moveInBranch(deps.db, {
         branchId: branch.id,
         documentId,
         to: { contextSourceId: await lockedSource(), dir, name, extension },
+        ...(position ? { position } : {}),
         changedBy,
       });
     },

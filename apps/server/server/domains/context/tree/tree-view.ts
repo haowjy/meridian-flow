@@ -193,6 +193,7 @@ export type TreeStateNode = {
     parentFolderId: FolderId | null;
     name: string;
     extension: string;
+    rank: string | null;
     path: string;
     /** Folder names from the source root to the parent: a move target by path. */
     dir: readonly string[];
@@ -812,7 +813,7 @@ export function createTreeReader(
       row: DocumentIdentityRow;
       branch: BranchTreeRow | null;
       state: BranchLogicalState | null;
-      at: Pick<DocumentIdentityRow, "contextSourceId" | "folderId" | "name" | "extension">;
+      at: Pick<DocumentIdentityRow, "contextSourceId" | "folderId" | "name" | "extension" | "rank">;
     };
     const items: Item[] = [
       // A tombstone is no longer the branch's: repair-on-touch drops its row (§12.4).
@@ -892,6 +893,7 @@ export function createTreeReader(
           parentFolderId: at.folderId,
           name: at.name,
           extension: at.extension,
+          rank: at.rank,
           path,
           dir: [...chain].reverse().map((folder) => folder.name),
           uri: address,
