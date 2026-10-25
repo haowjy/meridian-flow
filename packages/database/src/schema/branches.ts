@@ -218,7 +218,7 @@ export const branchTreeRanks = pgTable(
       table.branchId,
       table.parentKind,
       table.parentId,
-      table.rank,
+      sql`${table.rank} COLLATE "C"`,
       table.nodeId,
     ),
     check("branch_tree_ranks_parent_kind_valid", sql`${table.parentKind} IN ('source', 'folder')`),
