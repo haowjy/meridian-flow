@@ -189,7 +189,6 @@ export async function moveRows(
         after: row.after,
         previousPosition,
         action,
-        ...(row.position ? { position: row.position } : {}),
         ...(operationId ? { operationId } : {}),
       });
     } catch {

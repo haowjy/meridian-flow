@@ -115,7 +115,8 @@ Undo windows for all mounted tree surfaces, while delete progress remains derive
 namespace journal. Undo waits for a pending intent, reads the delete receipt, and restores the
 receipt's named removals. The catalog stream makes restored identities visible again. A local
 file restoration then replays the deletion-time sibling witnesses through `moveRows`, so a manual
-parent regains the file's former position and remains manual. A local document that never reached
+parent regains the file's former position and remains manual; it is skipped when the writer admitted
+a newer placement of the restored file meanwhile (`placementTakenSince`). A local document that never reached
 the server and an empty folder deletion have no Undo window.
 
 ## Downlinks
@@ -319,9 +320,13 @@ refusal lands on the row as its failure mark. A row the replica won't admit is
 named in the notice, and Undo still covers the rows that moved. Undo returns
 each row to its previous parent and sibling position (the next free name there if its own was taken
 since, read from the replica's placement with `childrenAt`). The reverse placement
-leaves that parent manually ordered. Undo skips a row renamed, moved, reordered
-or deleted since by comparing its operation with later journal/catalog evidence,
-and reads the replica as it
+leaves that parent manually ordered. Undo is a compensating placement batch: it
+skips a row whose placement another operation owns now (`placementStillOwned`:
+a newer live placement of that row in the journal, or after the receipt is
+covered by the catalog, a different `locationVersion`), never because a sibling
+gap looks different, so rows moved together can all be undone before any is
+acknowledged. The compensation is admitted after the originals and projects at
+once. It reads the replica as it
 is when pressed, not as it was at the drop. Verdicts likewise resolve each
 dragged row by identity from the replica's placement graph (rows another list
 dragged included), so a peer's rename or move during the drag can't slip a

@@ -5,6 +5,7 @@ import { Trans } from "@lingui/react/macro";
 import {
   type NamespaceIntent,
   type ParentRef,
+  placementTakenSince,
   type ResourceProjectionSnapshot,
   resourceIdentityIndex,
   resourcePlacementForSnapshot,
@@ -236,10 +237,16 @@ async function restoreDeletedPosition(
   resources: AccountResourceReplica,
   projectId: string,
   deleted: DeletedPlacement,
+  deleteOperationId: string,
   signal: AbortSignal,
 ): Promise<void> {
   const restored = await waitForRestoredFile(resources, projectId, deleted.documentId, signal);
   if (!sameParent(restored.parent, deleted.parent)) return;
+  // Seeing the row again does not mean the restoration still owns it: a placement the writer
+  // admitted after the delete is newer than the position this Undo would put back.
+  const journal = resourceIdentityIndex(restored.view.records).byDocumentId(deleted.documentId);
+  const deletion = journal?.intents.find((intent) => intent.operationId === deleteOperationId);
+  if (journal && deletion && placementTakenSince(journal.intents, deletion)) return;
   const siblings = restored.view.placement
     .childrenAt(deleted.parent, restored.view.records)
     .map((entry) => entry.entryId)
@@ -445,6 +452,7 @@ export function DocumentDeleteUndoProvider({
               resources,
               projectId,
               window.restorePlacement,
+              operationId,
               owner.controller.signal,
             );
           if (
