@@ -129,7 +129,9 @@ Sibling order is part of effective placement. Parents are either `default` (fold
 numeric-aware names) or `manual` (lexical stored ranks). Position commands carry start/end or
 before/after one sibling identity; the server resolves the anchor and allocates the rank while the
 namespace lock is held. Draft-Work placement carries the same position fact, so pending detection,
-Apply, Discard, and inverse operations cannot erase a reorder.
+Apply, Discard, and inverse operations cannot erase a reorder. Settlement reconciles only the
+parents the document left or entered. If an inverse restores a ranked fact after its parent baseline
+was cleaned up, it rebuilds that baseline before reinstalling the saved rank.
 
 ## Removal facts
 
