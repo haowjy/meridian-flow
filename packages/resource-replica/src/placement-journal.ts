@@ -30,7 +30,22 @@ export type PlacementOp = {
   /** The entry id the catalog and anchors name. */
   subject: string;
   intent: NamespaceIntent & { admission: PlacementAdmission };
+  /** The accepted operation whose canonical refresh is still outstanding for this identity. */
+  refreshing?: string;
 };
+
+/**
+ * Whether the op still shapes the displayed list: unresolved, or accepted with the canonical
+ * observation that covers it not yet installed. Past that point the catalog is the truth.
+ */
+export function placementShapesList(op: PlacementOp): boolean {
+  return (
+    placementUnresolved(op.intent.state) ||
+    (op.intent.state === "settled" &&
+      op.intent.operationId !== undefined &&
+      op.intent.operationId === op.refreshing)
+  );
+}
 
 /** Every admitted intent in the snapshot, in admission order. */
 export function placementOps(snapshot: {
@@ -43,15 +58,34 @@ export function placementOps(snapshot: {
     handle: string,
     subject: string,
     intents: readonly NamespaceIntent[],
+    refreshing: string | undefined,
   ) => {
     for (const intent of intents)
       if (intent.admission)
-        ops.push({ kind, handle, subject, intent: intent as PlacementOp["intent"] });
+        ops.push({
+          kind,
+          handle,
+          subject,
+          intent: intent as PlacementOp["intent"],
+          ...(refreshing ? { refreshing } : {}),
+        });
   };
   for (const record of snapshot.records)
-    add("resource", record.resource.handle, record.resource.identity.documentId, record.intents);
+    add(
+      "resource",
+      record.resource.handle,
+      record.resource.identity.documentId,
+      record.intents,
+      record.resource.obligations.canonicalRefresh?.operationId,
+    );
   for (const folder of snapshot.folders)
-    add("folder", folder.handle, folder.folderId, folder.intents);
+    add(
+      "folder",
+      folder.handle,
+      folder.folderId,
+      folder.intents,
+      folder.canonicalRefresh?.operationId,
+    );
   return ops.sort((left, right) => left.intent.admission.order - right.intent.admission.order);
 }
 
