@@ -998,10 +998,20 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           typeof event.result === "object" &&
           "stopReason" in event.result &&
           event.result.stopReason === "user_cancelled";
-        store.patchTurnStatus(threadId, turn.id, stopReason ? "cancelled" : "complete", {
-          completedAt: now(),
-          finishReason: stopReason ? "stop_sequence" : "end_turn",
-        });
+        const awaitingAnswer =
+          event.result &&
+          typeof event.result === "object" &&
+          "turnStatus" in event.result &&
+          event.result.turnStatus === "awaiting_answer";
+        store.patchTurnStatus(
+          threadId,
+          turn.id,
+          stopReason ? "cancelled" : awaitingAnswer ? "awaiting_answer" : "complete",
+          {
+            completedAt: now(),
+            finishReason: stopReason ? "stop_sequence" : "end_turn",
+          },
+        );
         return;
       }
 
