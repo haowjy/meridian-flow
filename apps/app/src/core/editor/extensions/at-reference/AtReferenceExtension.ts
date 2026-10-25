@@ -5,13 +5,17 @@ import type {
   ReferenceBrowserOpenContext,
   ReferenceCatalogPort,
   ReferenceMenuRow,
-  ReferenceRow,
+  ReferenceTerminalRow,
   SuggestionMenu,
 } from "@/core/completion";
 import { createReferenceBrowserController } from "@/core/completion";
 import { createSuggestionLane, type SuggestionLaneOptions } from "../suggestion";
 import { allowsAtTrigger } from "./at-trigger";
-import { insertDocumentReference, insertLinkAhead } from "./document-link-insertion";
+import {
+  insertDocumentReference,
+  insertFolderReference,
+  insertLinkAhead,
+} from "./document-link-insertion";
 
 export type AtReferenceCatalog = {
   port: ReferenceCatalogPort;
@@ -19,7 +23,7 @@ export type AtReferenceCatalog = {
   insertReference?: (
     editor: import("@tiptap/core").Editor,
     range: Range,
-    row: Extract<ReferenceRow, { kind: "file" }>,
+    row: ReferenceTerminalRow,
   ) => boolean;
   openContext: () => ReferenceBrowserOpenContext | null;
   label: string;
@@ -38,8 +42,10 @@ export type AtReferenceMenu = SuggestionMenu<
 function insertReference(
   editor: import("@tiptap/core").Editor,
   range: Range,
-  row: Extract<ReferenceRow, { kind: "file" }>,
+  row: ReferenceTerminalRow,
 ) {
+  if (row.kind === "folder-mention")
+    return insertFolderReference(editor, range, row.action.reference);
   const reference = row.action.reference;
   if (row.fileKind === "asset") {
     return editor

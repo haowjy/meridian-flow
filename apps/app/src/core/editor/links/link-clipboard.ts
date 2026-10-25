@@ -87,18 +87,24 @@ function linkHrefAddress(href: string, holderUri: string | null): string | null 
       ? resolveDocumentHref(target.uri, null)
       : resolveDocumentHref(target.path, holderUri);
   if (!resolved) return null;
-  return storedHref(qualifyContextUriByHolder(resolved.uri, holderUri), resolved.suffix);
+  return storedHref(
+    { kind: resolved.kind, uri: qualifyContextUriByHolder(resolved.uri, holderUri) },
+    resolved.suffix,
+  );
 }
 
 /**
- * Where a stored link points now, as a full address: the document its ref
- * resolved to, at that document's current address, else the address its href
- * names. Null for an external or unresolvable link.
+ * Where a stored link points now, as a full address: the document or folder its
+ * ref resolved to, at its current address, else the address its href names.
+ * Null for an external or unresolvable link.
  */
 function currentLinkAddress(link: LinkKey, resolution: LinkAnswerCache | null): string | null {
   const entry = link.ref && resolution ? resolution.read(link) : null;
+  const { suffix } = splitDocumentHrefSuffix(link.href);
   if (entry?.state === "document")
-    return storedHref(entry.document.uri, splitDocumentHrefSuffix(link.href).suffix);
+    return storedHref({ kind: "document", uri: entry.document.uri }, suffix);
+  if (entry?.state === "folder")
+    return storedHref({ kind: "folder", uri: entry.folder.uri }, suffix);
   return linkHrefAddress(link.href, resolution?.baseUri ?? null);
 }
 
@@ -109,7 +115,7 @@ function currentLinkAddress(link: LinkKey, resolution: LinkAnswerCache | null): 
 export function clipboardLinkAddress(value: string | null): string | null {
   if (!value) return null;
   const resolved = resolveDocumentHref(value, null);
-  return resolved && storedHref(resolved.uri, resolved.suffix) === value ? value : null;
+  return resolved && storedHref(resolved, resolved.suffix) === value ? value : null;
 }
 
 /** A recorded ref read back from untrusted clipboard HTML, or null. */
@@ -179,7 +185,10 @@ function pictureMetadata(attrs: PMNode["attrs"], resolution: LinkAnswerCache) {
   const uploadRef = clipboardUploadRef(src);
   if (uploadRef) {
     const upload = uploadDocument(uploadRef, resolution);
-    return { ref: uploadRef, address: upload ? storedHref(upload.uri, "") : null };
+    return {
+      ref: uploadRef,
+      address: upload ? storedHref({ kind: "document", uri: upload.uri }, "") : null,
+    };
   }
   const picture = pictureKeyOfNode(attrs);
   return picture ? linkMetadata(picture, resolution) : null;

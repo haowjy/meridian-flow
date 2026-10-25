@@ -48,6 +48,14 @@ mismatched ranges stay ordinary Markdown. Projection is app-owned: never match
 displayed labels or store presentation schema attrs. No source map enters the
 worker streaming path.
 
+An occurrence is a document or a folder, keyed `kind:id` (`referenceKey`) in
+the chat's `ReferenceAvailability` store, which asks by identity in one batch
+(`documentIds`, `folderIds`). A document chip follows only while its current
+URI equals the authored one; a folder chip has no such gate, because it follows
+the folder by ID. Both keep the authored label, since the message text stays as
+sent. A folder chip that isn't gone opens `FolderMenu` from the chat's
+`FolderMenuContext`.
+
 ## Shared Editor pieces
 
 The walker handles the Markdown codec's nodes, not MDX figure or JSX editing

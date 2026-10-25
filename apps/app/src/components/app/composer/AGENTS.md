@@ -6,6 +6,9 @@ is the authoring boundary; admission and server authority live outside it.
 - A reference is a standard Markdown link to a canonical URI. Rich HTML on the
   clipboard keeps identity but is untrusted: admission, not clipboard metadata,
   authorizes access.
+- One `composerReference` atom whose `reference` is a union on `kind`: a
+  document (with authority and an optional owned upload) or a folder (identity
+  and URI only). Narrow on `kind`; only documents own uploads or follow.
 - Only registered command atoms execute; typed `/slug` prose never activates a
   skill. `compact`, `handoff` and `clear` are reserved slugs.
 - One button: Stop while the box is empty and a reply runs, Send once the

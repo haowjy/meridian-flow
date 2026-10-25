@@ -15,6 +15,10 @@ paste policy). The surface is `AtReferenceMenu` in
   parsed path, so the link follows the document through moves while every
   surface spells its current path. An uploaded picture goes in as an image with
   its `asset:` identity instead.
+- **A folder mention is a link that names its folder.** The listing's
+  "Mention <folder>" row runs `insertFolderReference`: `{ href: <folder URI
+  with trailing />, ref: folder:<id> }`. Pressing it opens the folder menu
+  (`../../links/`), not a document.
 - **The Editor links ahead.** When a root search names no listed document
   exactly, the catalog's `linkAhead` adds one row that links
   `<holder folder>/<name>.md` (`linkAheadAddress`, the filename rule a follow's

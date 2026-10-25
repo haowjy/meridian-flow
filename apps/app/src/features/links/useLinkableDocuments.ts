@@ -1,6 +1,6 @@
 /**
- * Every document a link in this scope can reach, from the trees the app already
- * has.
+ * Every document and folder a link in this scope can reach, from the trees the
+ * app already has.
  *
  * One index answers the link questions an editor scope asks: what the
  * document holding a link is called (its address, which a relative link
@@ -42,8 +42,12 @@ export type LinkableDocument = {
   rootThreadId?: string;
 };
 
+/** A folder a link can name: by entry id, at its current canonical address. */
+export type LinkableFolder = { folderId: string; title: string; uri: string };
+
 export type LinkableDocumentIndex = {
   readonly documents: readonly LinkableDocument[];
+  readonly folders: readonly LinkableFolder[];
   /**
    * Which catalog these rows are. Content, not an object identity and not a
    * counter: a refetch that found the same documents is the same revision and
@@ -85,6 +89,7 @@ export function useLinkableDocuments({
 
   return useMemo(() => {
     const documents: LinkableDocument[] = [];
+    const folders: LinkableFolder[] = [];
     let complete = scopes !== null;
     for (const scheme of schemes) {
       const { catalog, isComplete } = views[scheme];
@@ -99,10 +104,12 @@ export function useLinkableDocuments({
             )
           : linkableDocuments(catalog, null)),
       );
+      folders.push(...linkableFolders(catalog));
     }
     const next = {
       documents,
-      revision: `${draftEpoch}\n${catalogRevision(documents)}`,
+      folders,
+      revision: `${draftEpoch}\n${catalogRevision(documents, folders)}`,
       complete,
     };
     if (prior.current?.revision === next.revision && prior.current.complete === next.complete)
@@ -118,8 +125,29 @@ export function useLinkableDocuments({
  * where any link goes, which is the property the resolution scope needs — a
  * link is re-asked when this changes and left alone when it does not.
  */
-function catalogRevision(documents: readonly LinkableDocument[]): string {
-  return documents.map((entry) => `${entry.documentId} ${entry.uri}`).join("\n");
+function catalogRevision(
+  documents: readonly LinkableDocument[],
+  folders: readonly LinkableFolder[],
+): string {
+  return [
+    ...documents.map((entry) => `${entry.documentId} ${entry.uri}`),
+    ...folders.map((entry) => `${entry.folderId} ${entry.uri}/`),
+  ].join("\n");
+}
+
+/** The catalog's folders with a server identity; device-synthesized ancestry names nothing. */
+function linkableFolders(catalog: CatalogContextView): LinkableFolder[] {
+  const folders: LinkableFolder[] = [];
+  const walk = (parentId: string) => {
+    for (const node of catalog.children(parentId)) {
+      if (node.kind !== "dir") continue;
+      if (!node.navigationOnly)
+        folders.push({ folderId: node.entryId, title: node.name, uri: node.uri });
+      walk(node.entryId);
+    }
+  };
+  walk(catalog.root.entryId);
+  return folders;
 }
 
 function linkableDocuments(

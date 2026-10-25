@@ -58,6 +58,7 @@ import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
+import { FolderMenuContext } from "@/features/project/context/FolderMenu";
 import {
   displayedChatThreadId,
   useChatNavigation,
@@ -643,70 +644,72 @@ export function ChatView({
     <ChatCardsProvider cards={failureCards.cards} handlers={cardHandlers}>
       <TranscriptLinkNavigationContext.Provider value={links.navigation}>
         <ReferenceAvailabilityContext.Provider value={links.references}>
-          <ChatContextNavigationProvider
-            onOpenContextUri={links.doors?.open}
-            canOpenContextUri={links.doors?.canOpen}
-          >
-            <ChatSurface
-              title={pageTitle}
-              surfaceRef={chatSurfaceRef}
-              footer={
-                <ChatComposer
-                  ref={composerRef}
-                  threadId={threadId}
-                  projectId={projectId}
-                  accountId={accountId}
-                  chatId={topChat.chatId}
-                  active={active}
-                  activeWork={activeWork}
-                  agentName={composerAgentName}
-                  running={running}
-                  stopStatus={chatStop.status}
-                  generating={generating}
-                  writeMode={controls.writeMode}
-                  onWriteModeChange={handleWriteModeChange}
-                  composerStrip={composerStrip}
-                  availableSkills={availableSkills.skills}
-                  referenceCatalog={referenceCatalog}
-                  chatCommands={chatCommands}
-                  hasComposerCards={composerCards.length > 0}
-                  onSubmit={handleSubmit}
-                  onStop={handleStop}
-                />
-              }
+          <FolderMenuContext.Provider value={links.folders}>
+            <ChatContextNavigationProvider
+              onOpenContextUri={links.doors?.open}
+              canOpenContextUri={links.doors?.canOpen}
             >
-              <TurnDerivationProvider value={turnDerivation}>
-                <SubagentDisclosureProvider>
-                  <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
-                    <div className="relative flex min-h-0 flex-1 flex-col">
-                      <RunningSubagentsStrip threadId={threadId} />
-                      <TurnList
-                        threadId={threadId}
-                        uploadsChat={topChat.chatRef ?? undefined}
-                        view={view}
-                        historySettled={historySettled}
-                        tailFollowRevision={tailFollowRevision}
-                        ariaLabel={t`Chat`}
-                        onRespondToInterrupt={handleRespondToInterrupt}
-                        changeTrails={changeTrails.byId}
-                        submissionRecoveryByTurnId={submissions.presentation}
-                        controls={controls}
-                        chatStop={chatStop}
-                        queue={queue}
-                        brief={brief}
-                        isStandIn={isStandIn}
-                        busy={running}
-                        inherited={inheritedView}
-                        onRetryInherited={inherited.failed ? inherited.retry : null}
-                        threadUsage={snapshotThreadUsage}
-                      />
-                    </div>
-                  </SubagentActivityProvider>
-                </SubagentDisclosureProvider>
-              </TurnDerivationProvider>
-            </ChatSurface>
-            <LinkFollowDialog {...links.dialog} />
-          </ChatContextNavigationProvider>
+              <ChatSurface
+                title={pageTitle}
+                surfaceRef={chatSurfaceRef}
+                footer={
+                  <ChatComposer
+                    ref={composerRef}
+                    threadId={threadId}
+                    projectId={projectId}
+                    accountId={accountId}
+                    chatId={topChat.chatId}
+                    active={active}
+                    activeWork={activeWork}
+                    agentName={composerAgentName}
+                    running={running}
+                    stopStatus={chatStop.status}
+                    generating={generating}
+                    writeMode={controls.writeMode}
+                    onWriteModeChange={handleWriteModeChange}
+                    composerStrip={composerStrip}
+                    availableSkills={availableSkills.skills}
+                    referenceCatalog={referenceCatalog}
+                    chatCommands={chatCommands}
+                    hasComposerCards={composerCards.length > 0}
+                    onSubmit={handleSubmit}
+                    onStop={handleStop}
+                  />
+                }
+              >
+                <TurnDerivationProvider value={turnDerivation}>
+                  <SubagentDisclosureProvider>
+                    <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
+                      <div className="relative flex min-h-0 flex-1 flex-col">
+                        <RunningSubagentsStrip threadId={threadId} />
+                        <TurnList
+                          threadId={threadId}
+                          uploadsChat={topChat.chatRef ?? undefined}
+                          view={view}
+                          historySettled={historySettled}
+                          tailFollowRevision={tailFollowRevision}
+                          ariaLabel={t`Chat`}
+                          onRespondToInterrupt={handleRespondToInterrupt}
+                          changeTrails={changeTrails.byId}
+                          submissionRecoveryByTurnId={submissions.presentation}
+                          controls={controls}
+                          chatStop={chatStop}
+                          queue={queue}
+                          brief={brief}
+                          isStandIn={isStandIn}
+                          busy={running}
+                          inherited={inheritedView}
+                          onRetryInherited={inherited.failed ? inherited.retry : null}
+                          threadUsage={snapshotThreadUsage}
+                        />
+                      </div>
+                    </SubagentActivityProvider>
+                  </SubagentDisclosureProvider>
+                </TurnDerivationProvider>
+              </ChatSurface>
+              <LinkFollowDialog {...links.dialog} />
+            </ChatContextNavigationProvider>
+          </FolderMenuContext.Provider>
         </ReferenceAvailabilityContext.Provider>
       </TranscriptLinkNavigationContext.Provider>
     </ChatCardsProvider>
