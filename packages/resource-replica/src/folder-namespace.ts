@@ -117,6 +117,7 @@ export function planFolderDeletion(input: {
   sourceObservationVersion?: string;
   intentId: string;
   operationId: string;
+  admissionOrder?: number;
 }): FolderNamespaceWrite | null {
   const previous = input.record ?? null;
   if (
@@ -158,6 +159,7 @@ export function planFolderDeletion(input: {
           sequence: Math.max(0, ...record.intents.map((intent) => intent.sequence)) + 1,
           identityRevision: 1,
           desired: { kind: "delete" },
+          ...(input.admissionOrder !== undefined ? { admissionOrder: input.admissionOrder } : {}),
           attempts: [],
           state: "pending",
         },
