@@ -45,10 +45,14 @@ import {
   type CreateThreadResponse,
   type CreateUntitledContextDocumentAnswer,
   type CreateUntitledContextDocumentRequest,
+  contextReadResponseSchema,
+  createContextEntryResultSchema,
   type DeleteContextEntryRequest,
   type DeleteContextEntryResult,
   type DocumentAddressRequestOptions,
   type DocumentAddressResult,
+  deleteContextEntryResultSchema,
+  documentAddressSchema,
   type LineageInfo,
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
@@ -64,7 +68,9 @@ import {
   type Work,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
+import { threadSchema } from "@meridian/contracts/threads";
 import type { CreateWorkRequest, UpdateWorkRequest } from "@meridian/contracts/works";
+import { workSchema, worksSnapshotSchema } from "@meridian/contracts/works";
 
 import { deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
 
@@ -129,6 +135,7 @@ export async function listProjectWorks(
   return getJson<ListWorksResponse>(urlFor(path, options), {
     headers: options?.headers,
     signal: options?.signal,
+    schema: worksSnapshotSchema,
   });
 }
 
@@ -139,6 +146,7 @@ export function createProjectWork(
 ): Promise<Work> {
   return postJson<Work>(urlFor(apiProjectWorksPath(projectId), init), data, {
     headers: init?.headers,
+    schema: workSchema,
     signal: init?.signal,
   });
 }
@@ -150,6 +158,7 @@ export function updateWork(
 ): Promise<Work> {
   return patchJson<Work>(urlFor(`/api/works/${workId}`, init), data, {
     headers: init?.headers,
+    schema: workSchema,
     signal: init?.signal,
   });
 }
@@ -158,7 +167,7 @@ export function archiveWork(workId: string, init?: RequestInitOptions): Promise<
   return postJson<Work>(
     urlFor(`/api/works/${workId}/archive`, init),
     {},
-    { headers: init?.headers, signal: init?.signal },
+    { headers: init?.headers, schema: workSchema, signal: init?.signal },
   );
 }
 
@@ -166,7 +175,7 @@ export function unarchiveWork(workId: string, init?: RequestInitOptions): Promis
   return postJson<Work>(
     urlFor(`/api/works/${workId}/unarchive`, init),
     {},
-    { headers: init?.headers, signal: init?.signal },
+    { headers: init?.headers, schema: workSchema, signal: init?.signal },
   );
 }
 
@@ -178,7 +187,7 @@ export function restoreWork(workId: string, init?: RequestInitOptions): Promise<
   return postJson<Work>(
     urlFor(`/api/works/${workId}/restore`, init),
     {},
-    { headers: init?.headers, signal: init?.signal },
+    { headers: init?.headers, schema: workSchema, signal: init?.signal },
   );
 }
 
@@ -196,6 +205,7 @@ export async function getProjectDocumentAddress(
 ): Promise<DocumentAddressResult> {
   return getJson(urlFor(apiProjectDocumentAddressPath(projectId, scheme, path, opts), init), {
     headers: init?.headers,
+    schema: documentAddressSchema,
   });
 }
 
@@ -291,6 +301,7 @@ export async function createProjectThread(
   init?: RequestInitOptions,
 ): Promise<CreateThreadResponse> {
   return postJson<CreateThreadResponse>(urlFor(apiProjectThreadsPath(projectId), init), data, {
+    schema: threadSchema,
     headers: init?.headers,
     signal: init?.signal,
   });
@@ -314,6 +325,10 @@ export async function createContextEntry(
   init?: RequestInitOptions,
 ): Promise<CreateContextEntryResult> {
   return postJson(urlFor(apiProjectContextCreatePath(projectId, scheme, opts), init), body, {
+    schema: createContextEntryResultSchema.refine(
+      (result) =>
+        result.status !== "created" || body.type === "folder" || result.documentId !== undefined,
+    ),
     headers: init?.headers,
     acceptErrorResponse: acceptsContextConflict,
   });
@@ -429,6 +444,7 @@ export async function deleteContextEntry(
     body,
     {
       headers: init?.headers,
+      schema: deleteContextEntryResultSchema,
       signal: init?.signal,
     },
   );
@@ -443,7 +459,7 @@ export async function getProjectContextRead(
 ): Promise<ContextReadResponse> {
   return getJson<ContextReadResponse>(
     urlFor(apiProjectContextReadPath(projectId, scheme, path, opts), init),
-    { headers: init?.headers },
+    { headers: init?.headers, schema: contextReadResponseSchema },
   );
 }
 

@@ -458,3 +458,18 @@ ordered prose/process folds. Results can follow intervening model text in a cold
 snapshot; the normalized ToolView travels into each fold without encoding it back into
 protocol blocks. Visibility, reports, folds and Work receipts consume the same
 turn-wide normalization. Source blocks remain unchanged identity/raw data.
+
+## Client failure delivery
+
+`FailureLog` is an injected diagnostics port, not a failure store. Command
+owners log before retaining a failed attempt and when they retire it; the
+bounded batch adapter only handles delivery and deduplication. Retry replaces
+an occurrence, not its frozen wire request. Send now also allocates a request
+identity independent of the execution it targets.
+
+Socket-wide terminal episodes share one occurrence across affected threads.
+A refused subscribe owns a per-thread occurrence. `onUnavailable` carries these
+facts separately from `onError`; retryable replay and reconnect errors do not
+create a failure card. A matching subscribed acknowledgment clears that thread;
+last-handler removal retires a per-thread refusal. HTTP snapshot cursors remain
+in `liveState.resumeAfterSeq`; socket `ThreadLiveState` carries no cursor.

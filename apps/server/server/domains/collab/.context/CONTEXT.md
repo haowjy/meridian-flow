@@ -626,3 +626,12 @@ retires the addressed peer and does not roll back unrelated documents in the rep
 
 [kb-archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/work/management/work-archive-and-delete.md
 [eventual]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/eventual-consistency-over-latency.md
+
+## Producer shutdown
+
+`DraftPullService.shutdown` and `DraftProjection.dispose` stop scheduling and
+join their running work. Callers await collaboration disposal before destroying
+warm documents or resetting fixture rows. The PostgreSQL change-trail harness
+owns that ordering in `dispose`; its mid-case `cancelScheduledPulls` and
+`destroyWarmState` controls are not teardown. `flush` remains assertion-time
+convergence, not shutdown.

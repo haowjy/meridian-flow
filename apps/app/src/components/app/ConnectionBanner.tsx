@@ -7,6 +7,7 @@
  * real disruption. Owns the banner visibility/timer logic; the underlying
  * connection lifecycle is owned by the transport.
  */
+
 import { Trans } from "@lingui/react/macro";
 import type { ConnectionState } from "@meridian/thread-client";
 import { useEffect, useRef, useState } from "react";
@@ -60,14 +61,12 @@ export function ConnectionBanner() {
   }, [showReconnected]);
 
   const kind = bannerKind(state, showReconnected);
-  if (!kind) return null;
+  if (!kind || kind === "terminal") return null;
 
   const toneClassName =
-    kind === "terminal"
-      ? "border-destructive bg-card text-destructive"
-      : kind === "reconnected"
-        ? "border-status-done-bg bg-status-done-bg text-status-done-foreground"
-        : "border-border bg-status-live-bg text-status-live-foreground";
+    kind === "reconnected"
+      ? "border-status-done-bg bg-status-done-bg text-status-done-foreground"
+      : "border-border bg-status-live-bg text-status-live-foreground";
 
   return (
     <Alert
@@ -85,8 +84,6 @@ export function ConnectionBanner() {
               <Trans>Reconnecting… attempt {state.attempt}</Trans>
             ) : kind === "degraded" && state.kind === "degraded" ? (
               <Trans>Connection lost. Retrying… attempt {state.attempt}</Trans>
-            ) : kind === "terminal" ? (
-              <Trans>Session expired. Please refresh.</Trans>
             ) : (
               <Trans>Reconnected</Trans>
             )}
@@ -94,17 +91,6 @@ export function ConnectionBanner() {
           {kind === "degraded" ? (
             <Button type="button" variant="outline" size="sm" onClick={() => transport.reconnect()}>
               <Trans>Reconnect now</Trans>
-            </Button>
-          ) : null}
-          {kind === "terminal" ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:text-destructive"
-              onClick={() => window.location.reload()}
-            >
-              <Trans>Refresh</Trans>
             </Button>
           ) : null}
         </div>

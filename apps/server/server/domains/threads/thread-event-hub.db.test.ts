@@ -72,7 +72,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const localDelivered = new Promise<void>((resolve) => {
         localArrived = resolve;
       });
-      const unsubscribe = hub.subscribe(THREAD_ID, (entry) => {
+      const { unsubscribe } = await hub.catchupAndSubscribe(THREAD_ID, 0n, (entry) => {
         local.push(entry.seq);
         localArrived();
       });

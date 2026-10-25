@@ -35,7 +35,6 @@ const LIVE_STATE = {
     mode: "direct" as const,
     blocked: null,
   },
-  resumeAfterSeq: "1",
 };
 
 type FakeFrame = { type?: string; requestId?: string; threadId?: string; lastSeq?: string };

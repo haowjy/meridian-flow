@@ -145,7 +145,7 @@ describe("thread event hub background journaling", () => {
   it("journals produced background lifecycle metadata without projecting a live frame", async () => {
     const { hub } = createHub();
     const received: SequencedEventInternal[] = [];
-    hub.subscribe(THREAD_ID, (entry) => received.push(entry));
+    await hub.catchupAndSubscribe(THREAD_ID, 0n, (entry) => received.push(entry));
 
     for (const event of backgroundEvents()) {
       await hub.appendEvent(THREAD_ID, event);
@@ -175,13 +175,12 @@ describe("thread event hub committed invalidations", () => {
       { journalWriter: journal, journalReader: reader, eventSink: createNoopEventSink() },
       { evictionGraceMs: 5 },
     );
-    const unsubscribe = hub.subscribe(THREAD_ID, () => {});
-    hub.invalidateCommittedJournal(THREAD_ID);
+    const failed = hub.catchupAndSubscribe(THREAD_ID, 0n, () => {}).catch(() => undefined);
     await started;
-    unsubscribe();
     await vi.advanceTimersByTimeAsync(20);
     expect(hub.hasThreadState(THREAD_ID)).toBe(true);
     rejectRead(new Error("injected read failure"));
+    await failed;
     await vi.advanceTimersByTimeAsync(5);
     expect(hub.hasThreadState(THREAD_ID)).toBe(false);
   });
@@ -212,13 +211,12 @@ describe("thread event hub committed invalidations", () => {
       { journalWriter: journal, journalReader: reader, eventSink: createNoopEventSink() },
       { evictionGraceMs: 5 },
     );
-    const unsubscribe = hub.subscribe(THREAD_ID, () => {});
-    hub.invalidateCommittedJournal(THREAD_ID);
+    const failed = hub.catchupAndSubscribe(THREAD_ID, 0n, () => {}).catch(() => undefined);
     await firstStarted;
-    unsubscribe();
     hub.invalidateCommittedJournal(THREAD_ID);
     await vi.advanceTimersByTimeAsync(20);
     rejectFirst(new Error("first read failed"));
+    await failed;
     await secondStarted;
     await vi.advanceTimersByTimeAsync(20);
     expect(hub.hasThreadState(THREAD_ID)).toBe(true);
@@ -258,7 +256,7 @@ describe("thread event hub committed invalidations", () => {
       },
       { evictionGraceMs: 1 },
     );
-    const unsubscribe = hub.subscribe(THREAD_ID, () => {});
+    const { unsubscribe } = await hub.catchupAndSubscribe(THREAD_ID, 0n, () => {});
     blockRead = true;
     await hub.appendEvent(THREAD_ID, { type: "stream.delta", kind: "text", text: "a" });
     callbacks[0]?.();
@@ -368,7 +366,7 @@ describe("thread event hub committed invalidations", () => {
       },
     });
     const received: SequencedEventInternal[] = [];
-    hub.subscribe(THREAD_ID, (entry) => received.push(entry));
+    await hub.catchupAndSubscribe(THREAD_ID, 0n, (entry) => received.push(entry));
 
     for (const marker of ["one", "two", "three"]) {
       await hub.appendEvent(THREAD_ID, {
@@ -447,7 +445,7 @@ describe("thread event hub committed invalidations", () => {
 it("projects the spawn source hint live and on journal replay", async () => {
   const { hub } = createHub();
   const received: SequencedEventInternal[] = [];
-  hub.subscribe(THREAD_ID, (entry) => received.push(entry));
+  await hub.catchupAndSubscribe(THREAD_ID, 0n, (entry) => received.push(entry));
   const spawn: OrchestratorEvent = {
     type: "agent.spawn",
     parentThreadId: THREAD_ID,

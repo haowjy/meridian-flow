@@ -132,7 +132,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         hocuspocus.closeConnections();
         hocuspocus.flushPendingStores();
         await collab.drainHocuspocusPersistence();
-        collab.dispose();
+        await collab.dispose();
       }
     });
 

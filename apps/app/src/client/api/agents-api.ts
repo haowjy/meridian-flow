@@ -1,10 +1,12 @@
 /** Account/system Agent catalog; exact selections remain stable after a catalog update. */
+
 import type {
   AgentCatalogCursor,
   AgentCatalogItem,
   AgentCatalogPage,
   AgentSelection,
 } from "@meridian/contracts/agents";
+import { agentCatalogPageSchema } from "@meridian/contracts/agents";
 import { getJson, postJson } from "./http-client";
 
 export async function listAgents(
@@ -18,7 +20,10 @@ export async function listAgents(
     query.set("afterId", after.id);
     query.set("afterNameSortKey", after.nameSortKey);
   }
-  return getJson<AgentCatalogPage>(`/api/agents?${query}`, { signal });
+  return getJson<AgentCatalogPage>(`/api/agents?${query}`, {
+    signal,
+    schema: agentCatalogPageSchema,
+  });
 }
 
 /** Acquire the complete visible catalog before treating a missing choice as unavailable. */

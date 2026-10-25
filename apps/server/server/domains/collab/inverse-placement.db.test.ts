@@ -107,7 +107,6 @@ it("card Undo during an open response drops writes into undone text and keeps an
       );
     expect(entries).toHaveLength(1);
   } finally {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+    await harness.dispose();
   }
 });

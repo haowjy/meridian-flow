@@ -24,7 +24,6 @@ const LIVE_STATE = {
   runningTurnId: null,
   activity: { children: [] },
   pending: { items: [] },
-  resumeAfterSeq: "0",
 };
 
 function deferred<T>() {

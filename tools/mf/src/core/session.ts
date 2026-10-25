@@ -26,12 +26,17 @@ export type ResponseDecoder<T> = (body: string, request: string) => T;
 export const textResponse: ResponseDecoder<string> = (body) => body;
 
 export const unknownJsonResponse: ResponseDecoder<unknown> = (body, request) => {
-  if (!body) throw new CliError("http_error", `${request}: empty JSON response`);
+  if (!body)
+    throw new CliError("http_error", `${request}: empty JSON response`, {
+      malformedResponse: true,
+    });
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
   } catch {
-    throw new CliError("http_error", `${request}: invalid JSON response`);
+    throw new CliError("http_error", `${request}: invalid JSON response`, {
+      malformedResponse: true,
+    });
   }
   // Many routes answer through serializeTransport; callers see the bare value.
   return deserializeTransport(parsed);
@@ -44,7 +49,7 @@ export function jsonResponse<T>(schema: {
     const result = schema.safeParse(unknownJsonResponse(body, request));
     if (!result.success) {
       throw new CliError("http_error", `${request}: invalid response`, {
-        details: result.error,
+        malformedResponse: true,
       });
     }
     return result.data;

@@ -9,6 +9,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived, type UpdateWorkRequest, type Work } from "@meridian/contracts/works";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useFailure } from "@/client/failures/useFailure";
 import { workUpdateFailure } from "@/client/query/work-update-failure";
 import { Button } from "@/components/ui/button";
 import { InlineEditTextarea } from "@/components/ui/inline-edit";
@@ -23,7 +24,8 @@ export function useWorkMetadataController(
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { failure, fail, end } = useFailure();
+  const error = failure?.message ?? null;
   const [hasPendingIntent, setHasPendingIntent] = useState(false);
   const heldRef = useRef<HeldIntent>(null);
   const takeHeld = useCallback(() => {
@@ -33,17 +35,21 @@ export function useWorkMetadataController(
     return intent;
   }, []);
   const readOnly = isWorkArchived(work);
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const [shownReadOnly, setShownReadOnly] = useState(readOnly);
   if (shownReadOnly !== readOnly) {
     setShownReadOnly(readOnly);
     if (readOnly) {
       setEditing(false);
-      setError(null);
     }
   }
   useEffect(() => {
-    if (readOnly) takeHeld()?.cancel();
-  }, [readOnly, takeHeld]);
+    if (readOnly) {
+      takeHeld()?.cancel();
+      end("moot");
+    }
+  }, [readOnly, takeHeld, end]);
   useEffect(
     () => () => {
       heldRef.current?.cancel();
@@ -62,23 +68,23 @@ export function useWorkMetadataController(
   const cancel = useCallback(() => {
     if (!editing || saving) return;
     setEditing(false);
-    setError(null);
+    end("dismissed");
     takeHeld()?.cancel();
     setAnnouncement(t`Goal edit canceled`);
     focusDisplay();
-  }, [editing, focusDisplay, saving, takeHeld]);
+  }, [editing, focusDisplay, saving, takeHeld, end]);
   const save = useCallback(async (): Promise<boolean> => {
     if (!editing) return true;
     if (saving) return false;
     if (!dirty) {
       setEditing(false);
-      setError(null);
+      end("dismissed");
       focusDisplay();
       return true;
     }
     const goal = draft.trim();
     setSaving(true);
-    setError(null);
+    end("retried");
     try {
       await saveWork({ goal });
       setEditing(false);
@@ -86,12 +92,16 @@ export function useWorkMetadataController(
       focusDisplay();
       return true;
     } catch (cause) {
-      setError(workUpdateFailure(cause, t`Couldn’t save the goal. Try again.`));
+      fail(
+        cause,
+        workUpdateFailure(cause, t`Couldn’t save the goal. Try again.`),
+        !readOnlyRef.current,
+      );
       return false;
     } finally {
       setSaving(false);
     }
-  }, [dirty, draft, editing, focusDisplay, saveWork, saving]);
+  }, [dirty, draft, editing, focusDisplay, saveWork, saving, end, fail]);
   const request = useCallback(
     (intent: HeldIntent) => {
       if (!dirty) {
@@ -109,8 +119,8 @@ export function useWorkMetadataController(
     if (readOnly) return;
     setEditing(true);
     setDraft(work.goal ?? "");
-    setError(null);
-  }, [readOnly, work.goal]);
+    end("dismissed");
+  }, [readOnly, work.goal, end]);
   const saveAndResume = useCallback(async () => {
     const intent = heldRef.current;
     if (intent && (await save()) && heldRef.current === intent) takeHeld()?.run();
@@ -118,9 +128,9 @@ export function useWorkMetadataController(
   const discardAndResume = useCallback(() => {
     if (!heldRef.current || saving) return;
     setEditing(false);
-    setError(null);
+    end("dismissed");
     takeHeld()?.run();
-  }, [saving, takeHeld]);
+  }, [saving, takeHeld, end]);
   const keepEditing = useCallback(() => {
     takeHeld()?.cancel();
     requestAnimationFrame(() => editorRef.current?.focus());

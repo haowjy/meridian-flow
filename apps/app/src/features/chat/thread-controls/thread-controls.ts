@@ -23,6 +23,7 @@ import type { ControlBody, PendingInboxItem } from "@meridian/contracts/threads"
 
 import {
   type CardControl,
+  type CommandFailure,
   durableControls,
   nextOccurrence,
   type Occurrence,
@@ -35,10 +36,14 @@ export type LocalSend = {
   control: CompactControl;
   request: "sending" | "sent" | "failed" | "finished";
   attempt: number;
+  failure?: CommandFailure;
 };
 
 /** `settled`: the server confirmed it, either withdrawn or already started. */
-export type Withdrawal = Occurrence & { status: "withdrawing" | "failed" | "settled" };
+export type Withdrawal = Occurrence & {
+  status: "withdrawing" | "failed" | "settled";
+  failure?: CommandFailure;
+};
 
 export type LocalControls = {
   sends: readonly LocalSend[];
@@ -68,12 +73,13 @@ export type ControlAction =
   | { type: "retry"; id: string }
   /** The server took the command; `sent` when the record lists it, else it already ran or was withdrawn. */
   | { type: "enqueued"; id: string; sent: boolean }
-  | { type: "enqueue_failed"; id: string }
+  | { type: "enqueue_failed"; id: string; failure?: CommandFailure }
   | { type: "withdraw"; id: string; requestId: string }
   | { type: "withdrawn"; id: string }
   /** The server had no such command (404) when the withdrawal reached it. */
   | { type: "withdraw_not_found"; id: string }
-  | { type: "withdraw_failed"; id: string }
+  | { type: "withdraw_failed"; id: string; failure?: CommandFailure }
+  | { type: "retire"; ids: ReadonlySet<string> }
   /** The server inbox lists these ids: it owns them from now on. */
   | { type: "listed"; pendingIds: ReadonlySet<string> };
 
@@ -85,9 +91,21 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
   const withdrawal = (id: string, status: Withdrawal["status"], next?: Occurrence) => {
     const occurrence = next ?? state.withdrawals.get(id);
     if (!occurrence) return state;
-    return { ...state, withdrawals: new Map(state.withdrawals).set(id, { ...occurrence, status }) };
+    return {
+      ...state,
+      withdrawals: new Map(state.withdrawals).set(id, {
+        ...occurrence,
+        status,
+        failure: undefined,
+      }),
+    };
   };
   switch (action.type) {
+    case "retire":
+      return {
+        sends: state.sends.filter((e) => !action.ids.has(e.id)),
+        withdrawals: new Map([...state.withdrawals].filter(([id]) => !action.ids.has(id))),
+      };
     case "enqueue":
       if (state.sends.some((entry) => entry.id === action.id)) return state;
       return {
@@ -102,7 +120,7 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
         ...state,
         sends: state.sends.map((entry) =>
           entry.id === action.id
-            ? { ...entry, request: "sending", attempt: entry.attempt + 1 }
+            ? { ...entry, request: "sending", attempt: entry.attempt + 1, failure: undefined }
             : entry,
         ),
       };
@@ -110,7 +128,22 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
       // Not in the record: it already ran or was withdrawn earlier.
       return patchSend(action.id, action.sent ? "sent" : "finished");
     case "enqueue_failed":
-      return patchSend(action.id, "failed");
+      return {
+        ...state,
+        sends: state.sends.map((entry) =>
+          entry.id === action.id
+            ? {
+                ...entry,
+                request: "failed",
+                failure: action.failure ?? {
+                  requestId: entry.id,
+                  attempt: entry.attempt,
+                  kind: "lost",
+                },
+              }
+            : entry,
+        ),
+      };
     case "withdraw":
       return withdrawal(
         action.id,
@@ -119,8 +152,23 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
       );
     case "withdrawn":
       return withdrawal(action.id, "settled");
-    case "withdraw_failed":
-      return withdrawal(action.id, "failed");
+    case "withdraw_failed": {
+      const next = withdrawal(action.id, "failed");
+      const entry = next.withdrawals.get(action.id);
+      return entry
+        ? {
+            ...next,
+            withdrawals: new Map(next.withdrawals).set(action.id, {
+              ...entry,
+              failure: action.failure ?? {
+                requestId: entry.requestId,
+                attempt: entry.attempt,
+                kind: "lost",
+              },
+            }),
+          }
+        : next;
+    }
     case "withdraw_not_found": {
       const withdrawals = new Map(state.withdrawals);
       withdrawals.delete(action.id);
@@ -159,7 +207,11 @@ export function mergeQueuedControls(input: MergeInput): QueuedControl[] {
         id: item.id,
         control: item.control,
         status: "withdraw_failed",
-        failure: { requestId: withdrawal.requestId, attempt: withdrawal.attempt, kind: "lost" },
+        failure: withdrawal.failure ?? {
+          requestId: withdrawal.requestId,
+          attempt: withdrawal.attempt,
+          kind: "lost",
+        },
       });
     }
   }
@@ -173,13 +225,17 @@ export function mergeQueuedControls(input: MergeInput): QueuedControl[] {
       result.push({
         ...row,
         status: "withdraw_failed",
-        failure: { requestId: withdrawal.requestId, attempt: withdrawal.attempt, kind: "lost" },
+        failure: withdrawal.failure ?? {
+          requestId: withdrawal.requestId,
+          attempt: withdrawal.attempt,
+          kind: "lost",
+        },
       });
     } else if (status === "failed") {
       result.push({
         ...row,
         status,
-        failure: { requestId: entry.id, attempt: entry.attempt, kind: "lost" },
+        failure: entry.failure ?? { requestId: entry.id, attempt: entry.attempt, kind: "lost" },
       });
     } else {
       result.push({ ...row, status });

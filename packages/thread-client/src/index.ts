@@ -2,6 +2,7 @@
 
 export * from "./cards";
 export * from "./commands";
+export { createBatchedFailureLog } from "./failure-log";
 export * from "./hand-back";
 export { buildMessageDoc } from "./message/build";
 export {

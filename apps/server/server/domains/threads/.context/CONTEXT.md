@@ -137,13 +137,17 @@ logs.
 - `ThreadEventHub` is process-local pub/sub and hot cache over the durable
   journal. One ordered drain reads committed rows after its cursor. Catchup
   installs a guard listener, replays, then merges buffered live events without
-  gaps. The hot cache is bounded at 500 events. For a warm hub, replay older
+  gaps. The hot cache is bounded at 500 events. Replay older
   than that cache seeks to the last projector reset strictly before the cursor's
   journal row, then projects the suffix. Terminal rows reset the projector;
   seeking into a reply without reconstructing it would change message ids and
   frame sub-indexes. The lookup uses the thread/seq index and may scan backward
-  through a long unfinished reply. Cold hub initialization still reconstructs
-  from journal zero and is O(history). Invalidations carry no event payload.
+  through a long unfinished reply. Cold initialization captures a journal head,
+  builds a private projector after the last reset at or before that head, then
+  publishes the projector, cache and cursor together. Bootstrap emits nothing
+  to listeners; cold and warm subscribers use the same catchup path. A failed
+  bootstrap leaves no partial state, and a queued invalidation drains appends
+  beyond the captured head. Invalidations carry no event payload.
   Client cursors are journal `seq` times 1000 (`EVENT_SEQ_FACTOR`) so one
   journal entry can project several AG-UI events; sequence gaps from rolled-back
   allocations are legal.
