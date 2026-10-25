@@ -6,7 +6,7 @@
  * which is where a link surface actually renders.
  */
 
-export { LinkSurfaceExtension, openLinkForm } from "./LinkSurfaceExtension";
+export { followLinkFrom, LinkSurfaceExtension, openLinkForm } from "./LinkSurfaceExtension";
 export {
   addressDocumentName,
   type CreatableLinkScheme,
@@ -14,12 +14,12 @@ export {
   isLinkDocumentScheme,
   linkAheadAddress,
   linkedDocumentName,
-  linkTargetAddress,
 } from "./link-address";
 export {
   type AssignedLink,
   assignWrittenHref,
   indexedDocumentAt,
+  indexedFolderAt,
   type LinkAssignmentDocument,
   type LinkAssignmentIndex,
   type LinkAssignmentScope,
@@ -71,6 +71,7 @@ export {
   type LinkResolutionEntry,
   type LocalLinkAnswer,
   linkCacheKey,
+  linkFolderId,
   linkKeyOfMark,
   pictureKeyOfNode,
 } from "./link-resolution";
@@ -81,6 +82,7 @@ export {
   mountedLinks,
 } from "./link-storage";
 export {
+  type LinkFolderRequest,
   type LinkFollowOutcome,
   type LinkFormRequest,
   type LinkHint,

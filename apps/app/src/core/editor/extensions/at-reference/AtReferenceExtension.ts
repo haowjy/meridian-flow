@@ -1,26 +1,30 @@
 import type { Range } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
+import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import type {
   ReferenceBrowserOpenContext,
   ReferenceCatalogPort,
   ReferenceMenuRow,
-  ReferenceRow,
+  ReferenceTerminalRow,
   SuggestionMenu,
 } from "@/core/completion";
 import { createReferenceBrowserController } from "@/core/completion";
 import { createSuggestionLane, type SuggestionLaneOptions } from "../suggestion";
 import { allowsAtTrigger } from "./at-trigger";
-import { insertDocumentReference, insertLinkAhead } from "./document-link-insertion";
+import {
+  documentReferenceNode,
+  folderReferenceNode,
+  insertLinkAhead,
+} from "./document-link-insertion";
 
-export type AtReferenceCatalog = {
+export type ReferenceBrowserCatalog = {
   port: ReferenceCatalogPort;
-  /** Host-owned terminal transaction; trigger/browser/menu ownership stays shared. */
-  insertReference?: (
-    editor: import("@tiptap/core").Editor,
-    range: Range,
-    row: Extract<ReferenceRow, { kind: "file" }>,
-  ) => boolean;
+  /** Cheap identity lookup over the catalog snapshots already installed for this surface. */
+  resolveReference: (reference: {
+    kind: "file" | "folder";
+    id: string;
+  }) => ReferenceTerminalRow | null;
   openContext: () => ReferenceBrowserOpenContext | null;
   label: string;
   /**
@@ -30,32 +34,33 @@ export type AtReferenceCatalog = {
    */
   linkAhead?: (name: string) => { uri: string } | null;
 };
+
+export type AtReferenceCatalog = ReferenceBrowserCatalog & {
+  /** The host's canonical node for a terminal row, shared by `@` and row drops. */
+  referenceNode: (schema: Schema, row: ReferenceTerminalRow) => PMNode | null;
+};
+
+/** The exact Editor node shape written by `@`, also used by row drops. */
+export function editorReferenceNode(schema: Schema, row: ReferenceTerminalRow): PMNode | null {
+  if (row.kind === "folder-mention") return folderReferenceNode(schema, row.action.reference);
+  const reference = row.action.reference;
+  if (row.fileKind === "asset")
+    return (
+      schema.nodes.image?.create({
+        src: `asset:${reference.documentId}`,
+        alt: reference.label,
+        title: null,
+      }) ?? null
+    );
+  return documentReferenceNode(schema, reference);
+}
 export type AtReferenceMenu = SuggestionMenu<
   ReferenceMenuRow,
   import("@/core/completion").ReferenceBrowserMeta
 >;
 
-function insertReference(
-  editor: import("@tiptap/core").Editor,
-  range: Range,
-  row: Extract<ReferenceRow, { kind: "file" }>,
-) {
-  const reference = row.action.reference;
-  if (row.fileKind === "asset") {
-    return editor
-      .chain()
-      .focus()
-      .insertContentAt(range, {
-        type: "image",
-        attrs: { src: `asset:${reference.documentId}`, alt: reference.label, title: null },
-      })
-      .run();
-  }
-  return insertDocumentReference(editor, range, {
-    label: reference.label,
-    documentId: reference.documentId,
-    uri: reference.uri,
-  });
+function insertReference(editor: import("@tiptap/core").Editor, range: Range, node: PMNode) {
+  return editor.chain().focus().insertContentAt(range, node).unsetMark("link").run();
 }
 
 const lane = createSuggestionLane<
@@ -100,8 +105,8 @@ const lane = createSuggestionLane<
         yUndoPluginKey.getState(editor.state)?.undoManager.stopCapturing();
         editor.view.dispatch(closeHistory(editor.state.tr));
         const current = catalog();
-        if (current?.insertReference) current.insertReference(editor, triggerRange, row);
-        else insertReference(editor, triggerRange, row);
+        const node = current?.referenceNode(editor.schema, row);
+        if (node) insertReference(editor, triggerRange, node);
       },
     }),
   keyBindings: (menu) => ({

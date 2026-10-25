@@ -7,18 +7,21 @@
  * no document is yet and settles on the first one to arrive there.
  */
 import { parseContextUri } from "./context-uri.js";
+import type { FolderId } from "./ids.js";
 import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
 import { parseRequestId } from "./request-id.js";
 
 export type DocumentRef = `doc:${string}`;
+export type FolderRef = `folder:${string}`;
 export type AheadRef = `ahead:${string}`;
-export type LinkRef = DocumentRef | AheadRef;
+export type LinkRef = DocumentRef | FolderRef | AheadRef;
 
 export type ParsedLinkRef =
   | { kind: "doc"; documentId: string }
+  | { kind: "folder"; folderId: FolderId }
   | { kind: "ahead"; aheadId: string };
 
-const REF = /^(doc|ahead):(.*)$/s;
+const REF = /^(doc|folder|ahead):(.*)$/s;
 
 /**
  * Null for null, the empty string, and anything malformed (never throws).
@@ -31,7 +34,9 @@ export function parseLinkRef(value: unknown): ParsedLinkRef | null {
   const match = REF.exec(value);
   const id = match ? parseRequestId(match[2]) : null;
   if (!match || !id) return null;
-  return match[1] === "doc" ? { kind: "doc", documentId: id } : { kind: "ahead", aheadId: id };
+  if (match[1] === "doc") return { kind: "doc", documentId: id };
+  if (match[1] === "folder") return { kind: "folder", folderId: id };
+  return { kind: "ahead", aheadId: id };
 }
 
 /**
@@ -49,6 +54,12 @@ export function documentRef(documentId: string): DocumentRef {
   const parsed = parseLinkRef(`doc:${documentId}`);
   if (parsed?.kind !== "doc") throw new RangeError(`Invalid document id for a ref: ${documentId}`);
   return `doc:${parsed.documentId}`;
+}
+
+export function folderRef(folderId: FolderId): FolderRef {
+  const parsed = parseLinkRef(`folder:${folderId}`);
+  if (parsed?.kind !== "folder") throw new RangeError(`Invalid folder id for a ref: ${folderId}`);
+  return `folder:${parsed.folderId}`;
 }
 
 /** `ahead:` + crypto.randomUUID(). The only minting function, server and client. */

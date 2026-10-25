@@ -11,6 +11,8 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
 import {
+  type ComponentPropsWithoutRef,
+  type ForwardedRef,
   Fragment,
   type ReactElement,
   type ReactNode,
@@ -75,6 +77,7 @@ export type DrillInMenuProps = {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onCloseAutoFocus?: (event: Event) => void;
+  onEscapeKeyDown?: (event: KeyboardEvent) => void;
   onPick: (node: DrillNode) => void;
   /** The trigger, rendered as the menu's anchor. */
   children: ReactElement;
@@ -86,11 +89,15 @@ export function DrillInMenuRoot({
   body,
   open: controlledOpen,
   onOpenChange,
+  triggerProps,
+  triggerRef,
 }: {
   children: ReactElement;
   body: ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  triggerProps?: Omit<ComponentPropsWithoutRef<typeof DropdownMenuTrigger>, "asChild">;
+  triggerRef?: ForwardedRef<HTMLButtonElement>;
 }) {
   const [localOpen, setOpen] = useState(false);
   const open = controlledOpen ?? localOpen;
@@ -102,7 +109,9 @@ export function DrillInMenuRoot({
         onOpenChange?.(next);
       }}
     >
-      <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+      <DropdownMenuTrigger asChild {...triggerProps} ref={triggerRef}>
+        {children}
+      </DropdownMenuTrigger>
       {open ? body : null}
     </DropdownMenu>
   );
@@ -127,6 +136,7 @@ export function DrillInMenuBody({
   status,
   isDisabled,
   onCloseAutoFocus,
+  onEscapeKeyDown,
 }: Omit<DrillInMenuProps, "children" | "open" | "onOpenChange">) {
   const [trail, setTrail] = useState<readonly DrillNode[]>(openAt);
   const [exitedId, setExitedId] = useState<string | null>(null);
@@ -160,6 +170,7 @@ export function DrillInMenuBody({
         }
       }}
       onCloseAutoFocus={onCloseAutoFocus}
+      onEscapeKeyDown={onEscapeKeyDown}
     >
       {caption ? <p className="px-2 py-1.5 text-xs text-muted-foreground">{caption}</p> : null}
       {folder ? (

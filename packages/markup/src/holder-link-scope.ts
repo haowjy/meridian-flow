@@ -11,18 +11,24 @@ import {
   type AheadRef,
   aheadAddress,
   type CatalogDocument,
+  type CatalogFolder,
   classifyWrittenLink,
   classifyWrittenSource,
   type DocumentRef,
   documentRef,
+  type FolderRef,
+  folderRef,
   formatParsedContextUri,
   type LinkCatalog,
   type LinkHolder,
   type LinkResolution,
   mintAheadRef,
+  parseLinkRef,
   qualifyContextUriByHolder,
+  type ResolvedDocumentHref,
   resolveDocumentHref,
   resolveStoredLink,
+  resolveStoredLinkAddress,
   type SpelledHref,
   spellStoredLink,
   storedHref,
@@ -36,13 +42,18 @@ import type { DocumentLinkScope } from "./types.js";
 /** One holder's synchronous view over a catalog. */
 export interface HolderLinkScope extends DocumentLinkScope {
   readonly holder: LinkHolder;
-  resolve(link: { ref: string | null; href: string }): LinkResolution;
+  resolve(
+    link: { ref: string | null; href: string },
+    address?: ResolvedDocumentHref | null,
+  ): LinkResolution;
   /** Pass 3 resolve: exact, then unique extension-omitted (matchDocumentPath), in this view. */
   documentFor(uri: string): CatalogDocument | null;
+  /** Pass 3 exact folder lookup in this view. */
+  folderFor(uri: string): CatalogFolder | null;
   /** Shipped image rule: an asset document id for a known manuscript image path, else null. */
   assetFor(manuscriptPath: string): string | null;
   /**
-   * Whether an identity leads to a live document now: a stored ref (an
+   * Whether an identity leads to a live document or folder now: a stored ref (an
    * unsettled ahead ref by its href) or an upload's `asset:<id>`.
    */
   isLive(link: { ref: string; href: string }): boolean;
@@ -92,8 +103,11 @@ export function createHolderLinkScope(
   catalog: HolderCatalog,
   onMiss: (what: string) => void = () => {},
 ): HolderLinkScope {
-  const resolve = (link: { ref: string | null; href: string }): LinkResolution => {
-    const resolution = resolveStoredLink(link, catalog);
+  const resolve = (
+    link: { ref: string | null; href: string },
+    address = resolveStoredLinkAddress(link, holder.uri),
+  ): LinkResolution => {
+    const resolution = resolveStoredLink(link, address, catalog);
     if (resolution.kind === "unknown") onMiss(link.ref ?? link.href);
     return resolution;
   };
@@ -109,15 +123,25 @@ export function createHolderLinkScope(
         if (!address) return UNSPELLED_UPLOAD;
         return address.kind === "path"
           ? { href: address.path, address: `manuscript://${address.path}` }
-          : { href: storedHref(address.uri, ""), address: address.uri };
+          : {
+              href: storedHref({ kind: "document", uri: address.uri }, ""),
+              address: address.uri,
+            };
       }
       const link = { ref: attrs.ref, href: attrs.src };
-      return spellStoredLink(link, holder, resolve(link), "manuscript-root");
+      const resolution =
+        parseLinkRef(attrs.ref)?.kind === "folder" ? { kind: "gone" as const } : resolve(link);
+      return spellStoredLink(link, holder, resolution, "manuscript-root");
     },
     documentFor(uri) {
       const document = catalog.documentFor(uri);
       if (document === undefined) onMiss(uri);
       return document ?? null;
+    },
+    folderFor(uri) {
+      const folder = catalog.folderAt(uri);
+      if (folder === undefined) onMiss(uri);
+      return folder ?? null;
     },
     assetFor(manuscriptPath) {
       const uri = MANUSCRIPT_SCHEME.test(manuscriptPath)
@@ -132,12 +156,14 @@ export function createHolderLinkScope(
       if (id === undefined) onMiss(uri);
       return id ?? null;
     },
-    isLive: (link) =>
-      resolve(
+    isLive(link) {
+      const resolution = resolve(
         link.ref.startsWith(ASSET_PREFIX)
           ? { ref: `doc:${link.ref.slice(ASSET_PREFIX.length)}`, href: link.href }
           : link,
-      ).kind === "document",
+      );
+      return resolution.kind === "document" || resolution.kind === "folder";
+    },
   };
 }
 
@@ -148,21 +174,26 @@ export type WrittenGrammar = "link" | "source";
 export type FreshAssignment =
   | { kind: "literal" }
   | { kind: "document"; ref: DocumentRef; href: string }
+  | { kind: "folder"; ref: FolderRef; href: string }
+  | { kind: "folder-address"; href: string }
   /** `address` is what the host registers the minted ref at (`aheadAddress`). */
   | { kind: "ahead"; ref: AheadRef; href: string; address: string };
 
 /**
  * Pass 3 of ref assignment, the same on server and client: classify; an
- * internal address names the document `documentFor` finds there (exact, then
- * unique extension-omitted) and is spelled as its canonical address; else it
- * gets a fresh ahead ref at `aheadAddress`. External and contextual hrefs,
- * and a scheme root (no address to mint for), stay literal.
+ * internal document address names the document `documentFor` finds there
+ * (exact, then unique extension-omitted), while a directory address names the
+ * folder `folderFor` finds there. Each is spelled with its target kind; a
+ * missing document gets a fresh ahead ref at `aheadAddress`, while a missing
+ * folder keeps its directory address. External and contextual hrefs, and a
+ * scheme root (no address to mint for), stay literal.
  */
 export function assignFreshLink(input: {
   href: string;
   grammar: WrittenGrammar;
   holderUri: string | null;
   documentFor: (uri: string) => { documentId: string; uri: string } | null;
+  folderFor: (uri: string) => { folderId: string; uri: string } | null;
   /** Default `mintAheadRef`; injected only by tests. */
   mint?: () => AheadRef;
 }): FreshAssignment {
@@ -171,17 +202,36 @@ export function assignFreshLink(input: {
       ? classifyWrittenLink(input.href, input.holderUri)
       : classifyWrittenSource(input.href);
   if (classified.kind !== "internal") return { kind: "literal" };
+  if (classified.target === "folder") {
+    if (input.grammar === "source") return { kind: "literal" };
+    const folder = input.folderFor(classified.uri);
+    return folder
+      ? {
+          kind: "folder",
+          ref: folderRef(folder.folderId),
+          href: storedHref({ kind: "folder", uri: folder.uri }, classified.suffix),
+        }
+      : {
+          kind: "folder-address",
+          href: storedHref({ kind: "folder", uri: classified.uri }, classified.suffix),
+        };
+  }
   const document = input.documentFor(classified.uri);
   if (document)
     return {
       kind: "document",
       ref: documentRef(document.documentId),
-      href: storedHref(document.uri, classified.suffix),
+      href: storedHref({ kind: "document", uri: document.uri }, classified.suffix),
     };
   const address = aheadAddress(classified.uri, input.grammar);
   if (!address) return { kind: "literal" };
   const ref = (input.mint ?? mintAheadRef)();
-  return { kind: "ahead", ref, href: storedHref(address, classified.suffix), address };
+  return {
+    kind: "ahead",
+    ref,
+    href: storedHref({ kind: "document", uri: address }, classified.suffix),
+    address,
+  };
 }
 
 /**
@@ -199,7 +249,7 @@ export function qualifyWrittenHref(href: string, uploadsChat: string | undefined
     resolved.uri,
     formatParsedContextUri("uploads", "_", { kind: "chat", chatRef: uploadsChat }),
   );
-  return uri === resolved.uri ? href : storedHref(uri, resolved.suffix);
+  return uri === resolved.uri ? href : storedHref({ kind: resolved.kind, uri }, resolved.suffix);
 }
 
 /**
@@ -212,22 +262,29 @@ export function writtenAddresses(
   blocks: readonly PMNode[],
   holderUri: string | null,
   uploadsChat?: string,
-): string[] {
-  const out = new Set<string>();
+): ResolvedDocumentHref[] {
+  const out = new Map<string, ResolvedDocumentHref>();
   for (const { kind, attrs } of walkLinkOccurrences(blocks)) {
     const href = qualifyWrittenHref(attrs.href, uploadsChat);
-    const uri =
-      kind === "link" ? internalUri(classifyWrittenLink(href, holderUri)) : writtenSourceUri(href);
-    if (uri) out.add(uri);
+    const target =
+      kind === "link"
+        ? internalTarget(classifyWrittenLink(href, holderUri))
+        : writtenSourceTarget(href);
+    if (target) out.set(`${target.kind}:${target.uri}`, target);
   }
-  return [...out];
+  return [...out.values()];
 }
 
-/** A written image/figure source as a decoded internal address, or null. */
-export function writtenSourceUri(src: string): string | null {
-  return internalUri(classifyWrittenSource(src));
+/** A written image/figure source as a decoded document address, or null. */
+export function writtenSourceTarget(src: string): ResolvedDocumentHref | null {
+  const written = classifyWrittenSource(src);
+  return written.kind === "internal" && written.target === "document"
+    ? { kind: "document", uri: written.uri, suffix: written.suffix }
+    : null;
 }
 
-function internalUri(written: WrittenLinkClass): string | null {
-  return written.kind === "internal" ? written.uri : null;
+function internalTarget(written: WrittenLinkClass): ResolvedDocumentHref | null {
+  return written.kind === "internal"
+    ? { kind: written.target, uri: written.uri, suffix: written.suffix }
+    : null;
 }

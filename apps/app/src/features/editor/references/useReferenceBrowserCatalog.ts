@@ -1,4 +1,9 @@
-import type { CatalogScope } from "@meridian/contracts/protocol";
+import type {
+  CatalogAuthorityEntry,
+  CatalogFileEntry,
+  CatalogFolderEntry,
+  CatalogScope,
+} from "@meridian/contracts/protocol";
 import {
   type CatalogCacheView,
   catalogViewFromCheckpoint,
@@ -15,7 +20,12 @@ import {
 } from "@/client/query/useContextCatalog";
 import { useIsProjectPendingCreation } from "@/client/query/useProjectCreation";
 import { useIsThreadPendingCreation } from "@/client/stores";
-import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
+import {
+  referenceAuthorityIndex,
+  referenceRowForFile,
+  referenceRowForFolder,
+} from "@/core/completion/reference-policy";
+import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import {
   useAccountResourceProjection,
   useOptionalAccountResourceReplica,
@@ -29,7 +39,7 @@ export function useReferenceBrowserCatalog(
   rootThreadId?: string | null,
   /** The chat whose uploads the picker offers: a subagent's top chat. */
   chatId?: string | null,
-): AtReferenceCatalog | null {
+): ReferenceBrowserCatalog | null {
   const queryClient = useContext(QueryClientContext);
   const resources = useOptionalAccountResourceReplica();
   const projection = useAccountResourceProjection(projectId ?? "");
@@ -80,8 +90,45 @@ export function useReferenceBrowserCatalog(
                   )
                 : null;
             };
+            let referenceIndex: Map<
+              string,
+              NonNullable<ReturnType<ReferenceBrowserCatalog["resolveReference"]>>
+            > | null = null;
+            const buildReferenceIndex = () => {
+              const authorities: CatalogAuthorityEntry[] = [];
+              const files: CatalogFileEntry[] = [];
+              const folders: CatalogFolderEntry[] = [];
+              for (const scope of scopes) {
+                const view = read(scope);
+                if (!view) continue;
+                for (const entry of view.entries.values()) {
+                  if (entry.kind === "authority") authorities.push(entry);
+                  else if (entry.kind === "file") files.push(entry);
+                  else if (entry.kind === "folder") folders.push(entry);
+                }
+              }
+              const authorityIndex = referenceAuthorityIndex(authorities);
+              const next = new Map<
+                string,
+                NonNullable<ReturnType<ReferenceBrowserCatalog["resolveReference"]>>
+              >();
+              for (const entry of files) {
+                const row = referenceRowForFile(entry, authorityIndex);
+                if (row) next.set(`file:${entry.entryId}`, row);
+              }
+              for (const entry of folders) {
+                const row = referenceRowForFolder(entry, authorityIndex);
+                if (row) next.set(`folder:${entry.entryId}`, row);
+              }
+              return next;
+            };
+            const resolveReference: ReferenceBrowserCatalog["resolveReference"] = (reference) => {
+              referenceIndex ??= buildReferenceIndex();
+              return referenceIndex.get(`${reference.kind}:${reference.id}`) ?? null;
+            };
             return {
               label,
+              resolveReference,
               openContext: () => {
                 for (const scope of scopes)
                   void queryClient.prefetchQuery(
@@ -98,14 +145,17 @@ export function useReferenceBrowserCatalog(
                       key[1] === projectId &&
                       key[2] === "context-catalog" &&
                       (event.type === "updated" || event.type === "removed")
-                    )
+                    ) {
+                      referenceIndex = null;
                       listener();
+                    }
                   });
                   const stopProjection = resources.observeProjection(
                     projectId,
                     (next) => {
                       snapshot = next;
                       projectionError = null;
+                      referenceIndex = null;
                       listener();
                     },
                     (error) => {

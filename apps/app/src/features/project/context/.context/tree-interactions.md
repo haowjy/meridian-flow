@@ -235,9 +235,11 @@ when its surface grants Move (an archived Work's Scratch doesn't), and a
 selection that spans systems or holds an unmovable row moves nowhere rather than
 silently dropping rows. `drag-session.ts` holds the drag (a browser hides drag
 data until the drop). The transfer carries only Meridian's entries type, no
-`text/plain` or `text/uri-list` fallback: a surface that can't take rows yet
-(the composer, the editor, until mention drops land) ignores the drop instead of
-pasting names that look like a half-made link.
+`text/plain` or `text/uri-list` fallback. The composer and manuscript editor
+resolve selected row identities through their live `@` catalog and copy files and folders as mentions;
+other surfaces ignore the drop instead of pasting names that look like a
+half-made link. A writing drop stops before the tree's move route, so it never
+moves a selected row.
 
 Each list has a `TreeDropScope` whose entries route (`use-entry-list.tsx`,
 planning in `move-plan.ts`) answers every hovered target: accept ("Move to Act 2"), refuse ("Can't go inside

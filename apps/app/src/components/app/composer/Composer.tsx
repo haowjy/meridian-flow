@@ -4,6 +4,7 @@ import { t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts";
 import type { UploadIntakeResult } from "@meridian/contracts/protocol";
 import { imageCapable } from "@meridian/thread-client";
+import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ArrowUp, Paperclip } from "lucide-react";
@@ -20,12 +21,19 @@ import {
 } from "react";
 import { FailureCard } from "@/components/app/FailureCard";
 import { Button } from "@/components/ui/button";
-import type { AuthoritativeReference, StableReferenceAuthority } from "@/core/completion";
+import type {
+  DocumentReference,
+  ReferenceTerminalRow,
+  StableReferenceAuthority,
+} from "@/core/completion";
 import { ChromeKernelExtension, getEditorChrome } from "@/core/editor/chrome";
-import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
+import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import { AtReferenceExtension } from "@/core/editor/extensions/at-reference";
+import { ReferenceDropExtension } from "@/core/editor/extensions/reference-drop";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
 import { AtReferenceMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
+import { activeEntryDrag } from "@/features/project/context/entry-drag/drag-session";
+import { clearDragHint, showDragHint } from "@/features/project/context/tree-drop/drag-hint";
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
 import { ComposerSkillAtom } from "./ComposerSkillAtom";
@@ -42,12 +50,14 @@ import {
   type ComposerDraftChange,
   type ComposerDraftSnapshot,
   type ComposerPendingUploadAttrs,
+  type ComposerReferenceAttrs,
   ComposerReferenceNode,
   ComposerSkillNode,
   type ComposerSubmitEnvelope,
   ComposerUploadNode,
   composerReferenceContent,
   composerSelection,
+  pickedReferenceAttrs,
   plainComposerDoc,
   restoreComposerSelection,
   serializeComposerDraft,
@@ -82,6 +92,14 @@ function authorityForUpload(
   };
 }
 
+function composerReferenceNode(schema: Schema, row: ReferenceTerminalRow): PMNode {
+  return schema.nodeFromJSON(
+    composerReferenceContent(
+      pickedReferenceAttrs(row.action.reference, row.kind === "file" ? row.fileKind : null),
+    ),
+  );
+}
+
 /** Intake may allocate a free leaf name; the chip must spell the authoritative URI it received. */
 function uploadLabel(uri: UploadIntakeResult["uri"], fallback: string): string {
   const parsed = parseContextUri(uri);
@@ -101,7 +119,7 @@ export type ComposerProps = {
   /** Hydrated before mounting; later prop changes never replace writer input. */
   initialDraft?: ComposerDraftSnapshot | null;
   onSubmit: (envelope: ComposerSubmitEnvelope) => Promise<boolean>;
-  onOpenReference?: (reference: AuthoritativeReference) => void;
+  onOpenReference?: (reference: DocumentReference) => void;
   onDraftChange?: (change: ComposerDraftChange) => void;
   onStop?: () => void;
   /**
@@ -125,7 +143,7 @@ export type ComposerProps = {
   submitDisabledReason?: string;
   uploadScope?: ComposerUploadScope;
   uploadPort?: ComposerUploadPort;
-  referenceCatalog?: AtReferenceCatalog | null;
+  referenceCatalog?: ReferenceBrowserCatalog | null;
   availableSkills?: readonly ComposerAvailableSkill[] | null;
   /** Chat verbs (`/compact`) the owning surface can run on its thread. */
   commands?: readonly ComposerChatCommand[] | null;
@@ -137,7 +155,7 @@ export type ComposerProps = {
 export type ComposerHandle = {
   focus: () => void;
   /** Adds a file the writer picked outside the `@` menu (the chat's uploads list) at the caret. */
-  insertReference: (reference: AuthoritativeReference, fileKind: "document" | "asset") => void;
+  insertReference: (reference: DocumentReference, fileKind: "document" | "asset") => void;
   /** Drops every chip that references the document (a file the writer deleted elsewhere). */
   removeReferences: (documentId: string) => void;
   getDraft: () => string;
@@ -150,32 +168,6 @@ export type ComposerHandle = {
   snapshot: () => ComposerDraftSnapshot;
   restoreSnapshot: (snapshot: ComposerDraftSnapshot, expectedRevision?: number) => boolean;
 };
-
-/**
- * The chip the `@` picker and the uploads list both insert for a file the writer chose. A file
- * of the chat still being created has no handle yet (`chatRef` null), and its scope is this
- * draft's own chat, so the chip keeps the intake identity admission verifies, as an attached one
- * does. Any other pick is an ordinary reference, which the server admits by its catalog address.
- */
-function pickedReferenceContent(
-  { intake, ...reference }: AuthoritativeReference,
-  fileKind: "document" | "asset",
-) {
-  const ownDraftUpload =
-    intake && reference.authority.kind === "chat" && reference.authority.chatRef === null;
-  return composerReferenceContent({
-    ...reference,
-    imageCapable: fileKind === "asset" && imageCapable(reference.fileType),
-    upload: ownDraftUpload
-      ? {
-          intakeId: intake.intakeId,
-          documentId: reference.documentId,
-          uri: reference.uri,
-          locationRevision: intake.locationRevision,
-        }
-      : null,
-  });
-}
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(props, ref) {
   const {
@@ -258,16 +250,30 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           if (!catalog) return null;
           return {
             ...catalog,
-            insertReference: (current, range, row) => {
-              return current
-                .chain()
-                .focus()
-                .insertContentAt(range, pickedReferenceContent(row.action.reference, row.fileKind))
-                .run();
-            },
+            referenceNode: composerReferenceNode,
           };
         },
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),
+      }),
+      ReferenceDropExtension.configure({
+        activeDrag: activeEntryDrag,
+        content: (schema, entries) => {
+          const catalog = referenceCatalogRef.current;
+          if (!catalog) return null;
+          const nodes = entries.map((entry) => {
+            const row = catalog.resolveReference(entry.ref);
+            return row ? composerReferenceNode(schema, row) : null;
+          });
+          return nodes.every((node) => node !== null) ? nodes : null;
+        },
+        label: (kind) =>
+          kind === "accept"
+            ? t`Mention`
+            : kind === "unavailable"
+              ? t`Not available in this chat`
+              : t`This part of the message can’t hold mentions`,
+        showHint: (owner, verdict, point) => showDragHint(owner, verdict, point),
+        clearHint: clearDragHint,
       }),
       ComposerCommandExtension.configure({
         catalog: () => {
@@ -401,15 +407,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       },
       insertReference: (reference, fileKind) => {
         if (!editor || editor.isDestroyed) return;
-        editor.chain().focus().insertContent(pickedReferenceContent(reference, fileKind)).run();
+        editor
+          .chain()
+          .focus()
+          .insertContent(composerReferenceContent(pickedReferenceAttrs(reference, fileKind)))
+          .run();
       },
       removeReferences: (documentId) => {
         if (!editor || editor.isDestroyed) return;
         const ranges: { from: number; to: number }[] = [];
         editor.state.doc.descendants((node, pos) => {
+          const reference = node.attrs.reference as ComposerReferenceAttrs;
           if (
             node.type.name === "composerReference" &&
-            (node.attrs.reference as AuthoritativeReference).documentId === documentId
+            reference.kind === "document" &&
+            reference.documentId === documentId
           )
             ranges.push({ from: pos, to: pos + node.nodeSize });
         });
@@ -504,6 +516,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           .setNodeSelection(position)
           .insertContent(
             composerReferenceContent({
+              kind: "document",
               ...ready,
               authority: authorityForUpload(scope, ready.uri),
               label: uploadLabel(ready.uri, file.name),

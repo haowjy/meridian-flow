@@ -273,6 +273,7 @@ if (!RUN) {
           { type: "text" as const, text: "Compare " },
           {
             type: "reference" as const,
+            kind: "document" as const,
             text: spelled(referenceUri),
             documentId,
             uri: referenceUri,
@@ -281,6 +282,7 @@ if (!RUN) {
           { type: "text" as const, text: "\nwith " },
           {
             type: "reference" as const,
+            kind: "document" as const,
             text: spelled(referenceUri),
             documentId,
             uri: referenceUri,
@@ -292,6 +294,7 @@ if (!RUN) {
             documentId,
             uri: referenceUri,
             // A picked file, not the attach door: consumption follows the admitted reference.
+            kind: "document" as const,
             purpose: "reference" as const,
           },
         ],
@@ -321,6 +324,7 @@ if (!RUN) {
         modelText: spelled(uri),
         content: {
           type: "reference",
+          kind: "document",
           text: spelled(uri),
           documentId: DOCUMENT,
           uri,
@@ -331,6 +335,7 @@ if (!RUN) {
         modelText: spelled(uri),
         content: {
           type: "reference",
+          kind: "document",
           text: spelled(uri),
           documentId: DOCUMENT,
           uri,

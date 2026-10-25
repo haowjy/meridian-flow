@@ -52,6 +52,12 @@ server-side. A link surface that outlives a keystroke holds a `LinkAnchor` and
 re-reads the mark by attributes, so a link replaced or retargeted by a peer
 closes the surface rather than re-aiming it.
 
+A folder link resolves to the `folder` state (`ResolvedFolderLink`: id, current
+name, URI) and draws filled with the folder icon. Following one, by press, Enter
+or the menu's Open, goes through `followLinkFrom`: with a navigator registered it
+sets the surface's `folder` request instead of navigating, and the app draws the
+folder menu there. A folder link with no folder answer follows like any address.
+
 ## Resolution generations
 
 The cache is live and keyed by canonical target identity. Each registration

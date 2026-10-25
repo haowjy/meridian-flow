@@ -8,7 +8,7 @@
  * own destination and host rather than by writing a second follow.
  */
 
-import { draftItemKey } from "@meridian/contracts";
+import { draftItemKey, resolveStoredLinkAddress } from "@meridian/contracts";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import {
   type DocumentAnswer as DocumentEntry,
@@ -17,7 +17,6 @@ import {
   type LinkFollowDisposition,
   type LinkFollowOutcome,
   type LinkTarget,
-  linkTargetAddress,
   linkTargetHref,
 } from "@/core/editor/links";
 
@@ -109,7 +108,7 @@ export async function followProjectLink({
   const outcome = (state: LinkFollowOutcome["state"]): LinkFollowOutcome => ({
     state,
     target,
-    address: linkTargetAddress(target, resolution.baseUri),
+    address: resolveStoredLinkAddress(link, resolution.baseUri)?.uri ?? null,
   });
 
   let settled = false;
@@ -127,6 +126,12 @@ export async function followProjectLink({
   // The common case: the link was resolved to draw it, so following is
   // instant and nothing is ever shown.
   const known = resolution.read(link);
+  // A folder opens nothing here: each surface opens a folder link's menu itself.
+  if (known?.state === "folder") {
+    settle();
+    reporter.clear();
+    return;
+  }
   if (known?.state === "gone") {
     settle();
     reporter.clear();
@@ -156,6 +161,10 @@ export async function followProjectLink({
   if (entry?.state === "document") {
     reporter.clear();
     await open(documentRef(entry), gesture);
+    return;
+  }
+  if (entry?.state === "folder") {
+    reporter.clear();
     return;
   }
   if (entry?.state !== "missing") {

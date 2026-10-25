@@ -178,8 +178,17 @@ export async function chooseImportantFiles<T extends { text: string }>(input: {
   candidates: readonly ImportantFileCandidate[];
   budgetTokens: number;
   tokenizer: TokenizerFamily;
-  read: (reference: ReferenceOccurrence, input: ReadToolInput) => Promise<T | null>;
-}): Promise<{ reference: ReferenceOccurrence; input: ReadToolInput; read: T }[]> {
+  read: (
+    reference: Extract<ReferenceOccurrence, { kind: "document" }>,
+    input: ReadToolInput,
+  ) => Promise<T | null>;
+}): Promise<
+  {
+    reference: Extract<ReferenceOccurrence, { kind: "document" }>;
+    input: ReadToolInput;
+    read: T;
+  }[]
+> {
   // The rewritten list is part of the summary: reserve the longest one it can become.
   const listTokens = estimateModelPartTokens(
     {
@@ -189,13 +198,18 @@ export async function chooseImportantFiles<T extends { text: string }>(input: {
     input.tokenizer,
   );
   let remaining = Math.max(0, input.budgetTokens - listTokens);
-  const kept: { reference: ReferenceOccurrence; input: ReadToolInput; read: T }[] = [];
+  const kept: {
+    reference: Extract<ReferenceOccurrence, { kind: "document" }>;
+    input: ReadToolInput;
+    read: T;
+  }[] = [];
   for (const candidate of input.candidates) {
     // Nothing more can fit; the list stops where the reads stopped.
     if (remaining <= 0) break;
     const uri = candidate.uri;
-    const reference: ReferenceOccurrence = {
+    const reference: Extract<ReferenceOccurrence, { kind: "document" }> = {
       type: "reference",
+      kind: "document",
       documentId: candidate.documentId,
       uri,
       text: uri,

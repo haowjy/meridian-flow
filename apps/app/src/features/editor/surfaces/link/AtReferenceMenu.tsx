@@ -109,6 +109,11 @@ export function ReferenceSuggestionMenu({
                   link is followed. */}
               <span className="truncate">{t`Link to “${row.label}” (not written yet)`}</span>
             </>
+          ) : row.kind === "folder-mention" ? (
+            <>
+              <Folder aria-hidden />
+              <span className="truncate">{t`Mention ${row.label}`}</span>
+            </>
           ) : (
             <>
               <ReferenceIcon row={row} />
@@ -128,14 +133,14 @@ export function ReferenceSuggestionMenu({
  * Where a file lives, so two documents with one name are told apart: its
  * folder, after the area it is in unless that is the manuscript.
  */
-function rowLocation(row: ReferenceRow): string {
+function rowLocation(row: Exclude<ReferenceRow, { kind: "folder-mention" }>): string {
   if (row.kind !== "file") return row.location;
   const parsed = parseContextUri(row.action.reference.uri);
   if (!parsed.ok) return row.location;
   return documentLocation(parsed.value.scheme, row.location);
 }
 
-function ReferenceIcon({ row }: { row: ReferenceRow }) {
+function ReferenceIcon({ row }: { row: Exclude<ReferenceRow, { kind: "folder-mention" }> }) {
   if (row.kind === "file")
     return row.fileKind === "asset" ? <Image aria-hidden /> : <FileText aria-hidden />;
   return <Folder aria-hidden />;

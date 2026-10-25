@@ -52,6 +52,7 @@ export function validateProjectContextAvailabilityResult(
   projectId: string,
   requestedDocumentIds: readonly string[],
   value: unknown,
+  requestedFolderIds?: readonly string[],
 ): ProjectContextIdentityLookupResult {
   if (!value || typeof value !== "object") return malformed();
   const result = value as Record<string, unknown>;
@@ -79,47 +80,74 @@ export function validateProjectContextAvailabilityResult(
     resolutions: requested.map(
       (documentId) => byId.get(documentId) as ProjectContextIdentityResolution,
     ),
+    ...(requestedFolderIds
+      ? {
+          folderResolutions: validateFolderResolutions(
+            requestedFolderIds,
+            result.folderResolutions,
+          ),
+        }
+      : {}),
   };
+}
+
+/** One answer per requested folder, each about that folder: the same rule documents follow. */
+function validateFolderResolutions(
+  requestedFolderIds: readonly string[],
+  value: unknown,
+): ProjectContextFolderResolution[] {
+  if (!Array.isArray(value)) return malformed();
+  const requested = [...new Set(requestedFolderIds)];
+  const byId = new Map<string, ProjectContextFolderResolution>();
+  for (const raw of value) {
+    const resolution = validateFolderResolution(raw);
+    if (!requested.includes(resolution.folderId) || byId.has(resolution.folderId))
+      return malformed();
+    byId.set(resolution.folderId, resolution);
+  }
+  if (byId.size !== requested.length) return malformed();
+  return requested.map((folderId) => byId.get(folderId) as ProjectContextFolderResolution);
+}
+
+function validateFolderResolution(value: unknown): ProjectContextFolderResolution {
+  if (!value || typeof value !== "object") return malformed();
+  const resolution = value as ProjectContextFolderResolution;
+  if (typeof resolution.folderId !== "string") return malformed();
+  try {
+    switch (resolution.kind) {
+      case "available":
+        if (resolution.entry?.kind !== "folder" || resolution.entry.entryId !== resolution.folderId)
+          return malformed();
+        assertAvailabilityGeneration(resolution.generation);
+        return resolution;
+      case "deleted":
+        assertAvailabilityGeneration(resolution.generation);
+        return resolution;
+      case "not-visible":
+      case "indeterminate":
+      case "authority-unavailable":
+        assertAvailabilityGeneration(resolution.checkedGeneration);
+        return resolution;
+      default:
+        return malformed();
+    }
+  } catch {
+    return malformed();
+  }
 }
 
 export async function lookupProjectContextAvailability(
   projectId: string,
   documentIds: readonly string[],
   signal?: AbortSignal,
+  folderIds?: readonly string[],
 ): Promise<ProjectContextIdentityLookupResult> {
   const requested = [...new Set(documentIds)];
+  const folders = folderIds?.length ? [...new Set(folderIds)] : undefined;
   return validateProjectContextAvailabilityResult(
     projectId,
     requested,
-    await getProjectContextAvailability(projectId, requested, signal),
+    await getProjectContextAvailability(projectId, requested, signal, folders),
+    folders,
   );
-}
-
-/** Folder refreshes share the stable-ID availability endpoint, not catalog membership guesses. */
-export async function lookupProjectFolderAvailability(
-  projectId: string,
-  folderId: string,
-  signal?: AbortSignal,
-): Promise<ProjectContextFolderResolution> {
-  const result = await getProjectContextAvailability(projectId, [], signal, [folderId]);
-  if (result.projectId !== projectId || result.folderResolutions?.length !== 1) return malformed();
-  const resolution = result.folderResolutions[0];
-  if (resolution.folderId !== folderId) return malformed();
-  switch (resolution.kind) {
-    case "available":
-      if (resolution.entry.kind !== "folder" || resolution.entry.entryId !== folderId)
-        return malformed();
-      assertAvailabilityGeneration(resolution.generation);
-      return resolution;
-    case "deleted":
-      assertAvailabilityGeneration(resolution.generation);
-      return resolution;
-    case "not-visible":
-    case "indeterminate":
-    case "authority-unavailable":
-      assertAvailabilityGeneration(resolution.checkedGeneration);
-      return resolution;
-    default:
-      return malformed();
-  }
 }

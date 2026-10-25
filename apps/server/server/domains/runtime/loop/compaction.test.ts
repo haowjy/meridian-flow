@@ -524,6 +524,7 @@ describe("compaction-owned elisions", () => {
     };
     const reshown = {
       type: "reference",
+      kind: "document",
       text: "manuscript://chapter",
       documentId: "00000000-0000-4000-8000-000000000001",
       uri: "manuscript://chapter",

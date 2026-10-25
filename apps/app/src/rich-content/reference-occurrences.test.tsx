@@ -23,6 +23,7 @@ const skill = (from: number, to = from + 8): MarkdownSkillOccurrence => ({
 const reference = (from: number, to: number): MarkdownReferenceOccurrence => ({
   from,
   to,
+  kind: "document",
   documentId: "chapter-id",
   uri: "manuscript://chapter.md",
 });
@@ -38,7 +39,9 @@ const render = (
         references={references}
         skills={skills}
         referenceResolutions={
-          new Map([["chapter-id", { documentId: "chapter-id", available: false }]])
+          new Map([
+            ["document:chapter-id", { kind: "document", id: "chapter-id", available: false }],
+          ])
         }
       >
         {source}

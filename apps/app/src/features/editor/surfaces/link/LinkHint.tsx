@@ -76,7 +76,9 @@ export function LinkHint({ editor, hint }: { editor: Editor; hint: LinkHintTarge
       <span className="meridian-link-hint__destination">
         {resolution?.state === "document"
           ? resolution.document.title
-          : linkTargetLabel(shown.target)}
+          : resolution?.state === "folder"
+            ? resolution.folder.title
+            : linkTargetLabel(shown.target)}
       </span>
       {resolution?.state === "document" ? (
         <span className="meridian-link-hint__note">{resolution.document.path}</span>

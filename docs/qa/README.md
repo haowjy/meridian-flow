@@ -34,6 +34,7 @@ stack.
 - [Chat session](chat-session.md): compare a chat in the browser with `./mf thread view --json` by row identity, kind, item kinds and text, the `cN` ref steps, and SY-01 to SY-07, the live-sync recipes (join, reload, navigate, another client's message, Stop, a held write-mode switch, a network gap).
 - [Chat submissions](chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
 - [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
+- [Folder mentions](folder-mentions.md): the `@` Mention row, composer and Editor folder chips, the drill-in menu a folder chip opens, and rename or delete then click.
 - [Chat Files menu](chat-files.md): shared nested Scratch plus chat uploads; search, rename, move, delete, fork source and phone parity.
 - [Crash and two processes](crash-and-two-process.md): P5, a server crash between a draft write's commit and its ack, then the resend; P6, two servers on one database with a tab on each, using `tools/qa/shared-db-server.ts` and `draft-readback.ts`.
 - [Draft content rebase](draft-review-rebase.md): fresh client-1 seeds, the server append rebase, late typing recovery, badge convergence and inverse cutover through PostgreSQL.
@@ -53,6 +54,7 @@ stack.
 - [Text-derived draft disposition](draft-disposition.md): inverse policy, historical Apply evidence and whole-Work close, with an isolated PostgreSQL runner.
 - [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.
 - [Row selection and drag](row-drag.md): multi-select, dragging rows into folders and areas, refusals, Undo, Scratch and Work Files.
+- [Mention drops](mention-drop.md): selected rows copied into the composer and manuscript as word-snapped `@` references, with refusals and drop-regression checks.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
 - [CI quality groups](../../tools/ci/README.md): partition coverage and required-status failure propagation.
 - [Staged typechecking](../../tools/ci/README.md#staged-hook-probe-recipe): index selection, dependent projects, shared configuration, cache invalidation and hook failures.

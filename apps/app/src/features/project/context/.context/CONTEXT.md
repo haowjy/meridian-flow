@@ -177,6 +177,20 @@ Resting crumbs are passive: project-menu acquisition mounts only when a crumb
 opens. The source owns `own.crumbTrail(path, depth)`, including the exception for
 an area not offered at the root; `own.openAt(path)` remains the full folder trail
 used by placement. The first menu mounts with its final trail and highlight IDs.
+Both trails come from `trailAlong(area, folders)` in `menu-tree.ts`; a folder
+chip's menu uses `trailInside(folderId)`, the trail that ends inside that folder.
+
+### Folder chip menu
+
+`FolderMenu` is the menu every folder chip opens (composer, transcript, Editor):
+the crumbs' drill-in menu, opened inside the folder. It is opened by identity:
+a folder already in a held catalog opens at once; otherwise
+`lookupProjectFolderAvailability` (the `folderIds` availability lookup, never
+cached past the open) says which area holds it now, and the menu source acquires
+that area. Nothing is acquired until a chip is pressed. A surface provides
+`FolderMenuContext` (project and how it opens a document); the Editor builds its
+host from the editor scope and link destination. Deleted, not visible or
+unreachable folders say "This folder is no longer available."
 `DocumentIdentityBar` wraps first: the path and chip stay on line one, and the
 review controls drop to a second line when they don't fit beside them (flex-wrap,
 no breakpoint). The dock's trailing Collapse is pinned to line one and precedes

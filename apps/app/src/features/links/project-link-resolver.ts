@@ -19,9 +19,17 @@
  * - A link with no ref resolves by its address: the complete index first
  *   (`matchDocumentPath`, through the catalog's `documentFor`), then the
  *   server.
+ * - A folder (a `folder:` ref, or a directory address) resolves from the local
+ *   index when it can. Otherwise the server answers it in the same request as
+ *   documents, so another Work's Scratch folder still becomes filled or gone.
  */
 
-import { type DocumentLinkAnswer, parseLinkRef, resolveStoredLink } from "@meridian/contracts";
+import {
+  type DocumentLinkAnswer,
+  parseLinkRef,
+  resolveStoredLink,
+  resolveStoredLinkAddress,
+} from "@meridian/contracts";
 import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/context-uri";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
@@ -31,7 +39,6 @@ import {
   type InternalLinkResolver,
   type LinkAnswer,
   type LocalLinkAnswer,
-  linkTargetAddress,
   linkTargetHref,
 } from "@/core/editor/links";
 
@@ -91,12 +98,23 @@ export function createProjectLinkResolver(
       // A relative path with no base cannot be asked; the base arriving is a
       // new registration, which asks it again.
       if (target.kind === "external" || (target.kind === "relative" && !baseUri)) return UNASKED;
-      const resolution = resolveStoredLink({ ref, href: linkTargetHref(target) }, catalog);
+      const link = { ref, href: linkTargetHref(target) };
+      const address = resolveStoredLinkAddress(link, baseUri);
+      const resolution = resolveStoredLink(link, address, catalog);
       let provisional: DocumentAnswer | null = null;
       if (resolution.kind === "gone") return answered(GONE);
+      if (resolution.kind === "folder") {
+        const folder = catalog.indexedFolder(resolution.folder.folderId);
+        return folder
+          ? answered({
+              state: "folder",
+              document: null,
+              folder: { folderId: folder.folderId, title: folder.title, uri: folder.uri },
+            })
+          : UNASKED;
+      }
       if (resolution.kind === "address") {
-        const uri = linkTargetAddress(target, baseUri);
-        const document = uri ? catalog.documentFor(uri) : null;
+        const document = address?.kind === "document" ? catalog.documentFor(address.uri) : null;
         const answer = document ? indexedAnswer(document.documentId) : null;
         if (answer) return answered(answer);
       }
@@ -155,6 +173,16 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
         ? { ...found, branch: answer.branch }
         : found;
     }
+    case "folder":
+      return {
+        state: "folder",
+        document: null,
+        folder: {
+          folderId: answer.folder.id,
+          title: answer.folder.name,
+          uri: answer.folder.uri,
+        },
+      };
     case "gone":
       return answer.trashedDocumentId
         ? { ...GONE, trashedDocumentId: answer.trashedDocumentId }

@@ -45,6 +45,7 @@ import {
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
 import type { ContextOwner } from "./context-request-options";
+import { bumpLinkResolutionEpoch } from "./link-resolution-epoch";
 import { projectQueryKeys } from "./project-query-keys";
 import { useIsProjectPendingCreation } from "./useProjectCreation";
 
@@ -583,6 +584,7 @@ export function useContextCatalogWake(
     () =>
       projectId
         ? transport?.subscribeCatalog(projectId, (hint) => {
+            bumpLinkResolutionEpoch(projectId);
             void queryClient.invalidateQueries({
               queryKey: projectQueryKeys.documentTrash(projectId),
             });

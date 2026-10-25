@@ -46,7 +46,9 @@ import {
   identityDocuments,
   identityFolderFields,
   identityFolders,
+  identityFoldersSql,
   LIVE_TREE,
+  type TreeView,
   visibleDocuments,
   visibleFolders,
 } from "../tree/tree-view.js";
@@ -106,6 +108,33 @@ type IdentityFolder = Pick<
   typeof folders.$inferSelect,
   "id" | "name" | "parentId" | "contextSourceId"
 > & { deletedAt?: Date | null };
+
+/** Requested parent folders and only the identity-visible ancestors needed to spell them. */
+async function loadIdentityFolderClosure(
+  db: Database,
+  view: TreeView,
+  folderIds: readonly string[],
+): Promise<IdentityFolder[]> {
+  const ids = [...new Set(folderIds)];
+  if (ids.length === 0) return [];
+  return db.execute<IdentityFolder>(sql`
+    WITH RECURSIVE ancestor_folders AS (
+      SELECT f.id, f.name, f.parent_id, f.context_source_id, f.deleted_at
+      FROM ${identityFoldersSql(view)} f
+      WHERE f.id IN (${sql.join(
+        ids.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})
+      UNION
+      SELECT f.id, f.name, f.parent_id, f.context_source_id, f.deleted_at
+      FROM ${identityFoldersSql(view)} f
+      JOIN ancestor_folders child ON child.parent_id = f.id
+    )
+    SELECT id::text, name, parent_id::text AS "parentId",
+      context_source_id::text AS "contextSourceId", deleted_at AS "deletedAt"
+    FROM ancestor_folders
+  `);
+}
 
 export function classifyAuthoritativeIdentity(input: {
   row: AvailabilityRow;
@@ -459,17 +488,10 @@ export function createDrizzleProjectContextAvailability(
                 .where(inArray(folders.id, folderIds as never))
             : [];
           const byId = new Map(rows.map((row) => [row.document.id, row]));
-          const sourceIds = [
-            ...new Set(
-              [...rows, ...requestedFolders].flatMap((row) => (row.source ? [row.source.id] : [])),
-            ),
-          ];
-          const folderRows = sourceIds.length
-            ? await tx
-                .select()
-                .from(folders)
-                .where(inArray(folders.contextSourceId, sourceIds as never))
-            : [];
+          const folderRows = await loadIdentityFolderClosure(tx, view, [
+            ...rows.flatMap((row) => (row.document.folderId ? [row.document.folderId] : [])),
+            ...requestedFolders.map((row) => row.folder.id),
+          ]);
           const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
 
           const tombstoned = rows

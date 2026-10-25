@@ -1,7 +1,8 @@
 /**
  * The ref a link the writer puts in a document is assigned: the document it
- * names (`doc:`), an address nothing is at yet (`ahead:`), or none (an external
- * or contextual link, kept as written).
+ * names (`doc:`), the folder at a directory address (`folder:`), an address
+ * nothing is at yet (`ahead:`), or none (an external or contextual link, or a
+ * directory address with no folder, kept as written).
  *
  * Every client producer that turns written text into a link comes through
  * here (Ctrl+K and the link form, a Markdown or HTML paste, a rich paste from
@@ -31,8 +32,14 @@ import { Fragment, type Mark, type Node as PMNode, Slice } from "@tiptap/pm/mode
 /** One document the editor's local index knows, by id and current address. */
 export type LinkAssignmentDocument = { documentId: string; uri: string };
 
-/** The editor's local document index, as assignment reads it. */
-export type LinkAssignmentIndex = { readonly documents: readonly LinkAssignmentDocument[] };
+/** One folder the editor's local index knows, by id and current address. */
+type LinkAssignmentFolder = { folderId: string; uri: string };
+
+/** The editor's local document and folder index, as assignment reads it. */
+export type LinkAssignmentIndex = {
+  readonly documents: readonly LinkAssignmentDocument[];
+  readonly folders: readonly LinkAssignmentFolder[];
+};
 
 /** Everything an assignment is relative to: the holder's address, its project, its index. */
 export type LinkAssignmentScope = {
@@ -60,10 +67,11 @@ export function assignWrittenHref(
     grammar: "link",
     holderUri,
     documentFor: (uri) => (index ? indexedDocumentAt(index.documents, uri) : null),
+    folderFor: (uri) => (index ? indexedFolderAt(index.folders, uri) : null),
   });
-  return assigned.kind === "literal"
-    ? { ref: null, href }
-    : { ref: assigned.ref, href: assigned.href };
+  if (assigned.kind === "literal") return { ref: null, href };
+  if (assigned.kind === "folder-address") return { ref: null, href: assigned.href };
+  return { ref: assigned.ref, href: assigned.href };
 }
 
 /**
@@ -78,10 +86,12 @@ export function assignWrittenSource(src: string, index: LinkAssignmentIndex | nu
     grammar: "source",
     holderUri: null,
     documentFor: (uri) => (index ? indexedDocumentAt(index.documents, uri) : null),
+    // A picture's source is never a folder.
+    folderFor: () => null,
   });
-  return assigned.kind === "literal"
-    ? { ref: null, href: src }
-    : { ref: assigned.ref, href: assigned.href };
+  if (assigned.kind === "literal") return { ref: null, href: src };
+  if (assigned.kind === "folder-address") return { ref: null, href: assigned.href };
+  return { ref: assigned.ref, href: assigned.href };
 }
 
 /**
@@ -108,6 +118,31 @@ export function indexedDocumentAt<T extends LinkAssignmentDocument>(
     return [{ document, path: candidate.value.path }];
   });
   return matchDocumentPath(candidates, path, (candidate) => candidate.path)?.document ?? null;
+}
+
+/**
+ * The indexed folder at exactly a directory address. A contextual address
+ * means the scope's own Work, as for documents.
+ */
+export function indexedFolderAt<T extends LinkAssignmentFolder>(
+  folders: readonly T[],
+  uri: string,
+): T | null {
+  const requested = parseContextUri(uri);
+  if (!requested.ok) return null;
+  const { scheme, path, authority } = requested.value;
+  return (
+    folders.find((folder) => {
+      const candidate = parseContextUri(folder.uri);
+      return (
+        candidate.ok &&
+        candidate.value.scheme === scheme &&
+        candidate.value.path === path &&
+        (authority.kind === "contextual" ||
+          JSON.stringify(candidate.value.authority) === JSON.stringify(authority))
+      );
+    }) ?? null
+  );
 }
 
 /**

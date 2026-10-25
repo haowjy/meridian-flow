@@ -86,8 +86,13 @@ Anything deciding whether a node may stand at a path asks as a kind (document
 or folder) through one rule. Create refuses an occupied claim; moves, restores and Apply
 allocate a free leaf name but refuse a document blocking an ancestor. A
 folder holds its document alias (`Lore.md` holds `Lore`); folders never clash
-with folders through it. Browsing never asks as a kind, and a path two nodes
-share answers a clash, never a pick.
+with folders through it. Generic browsing never asks as a kind, and a path two
+nodes share answers a clash, never a pick.
+
+An address consumer that already carries a target kind is not making a
+namespace claim. Folder-link preparation passes `directory` to
+`inspectTreeLocation`, so it can select the folder from a legacy same-address
+folder/document collision instead of letting document-first inspection hide it.
 
 ## Lifecycle rules
 

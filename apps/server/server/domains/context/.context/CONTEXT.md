@@ -207,9 +207,11 @@ classification metadata allowed by the schema guard.
 
 ## Links, arrivals, and addresses
 
-Stored links and image sources carry stable `doc:` or `ahead:` refs; Markdown
-does not. The link scope resolves refs against the selected tree view and file
-policy, and the codec spells relative links from the holder's current URI.
+Stored links carry stable `doc:`, `folder:`, or `ahead:` refs; image sources use
+document refs only, while Markdown carries none. The link scope resolves refs
+against the selected tree view and current availability, and the codec spells
+relative links from the holder's current URI. Folder identities resolve to
+their current canonical URI and spell with a trailing slash.
 Moves and renames therefore do not rewrite document content. An ahead ref is a
 path until an arrival claims it; once a document arrives, settlement binds the
 ref through the final tree. Every tracked create, upload, move-in, Work

@@ -202,9 +202,13 @@ keyboard, pointer, drop, or draft-recovery answer.
   prose tab is written `&#x9;`; the `packages/markup` codec test keeps it safe.
   Enter in cell prose splits the paragraph; Shift-Enter is the hard break.
 - A drop inside a table lands inside a cell, never between two. `table-drop.ts`
-  is the one landing for the dropcursor, node drag, and OS-file drop. StarterKit's
-  dropcursor stays disabled; two landings answering one drag is the bug this
-  seam prevents.
+  is the one landing for the dropcursor, node drag, OS-file drop, and tree-row
+  reference drop. StarterKit's dropcursor stays disabled; two landings answering
+  one drag is the bug this seam prevents. A reference drop treats an existing
+  identity link or inline atom as one unit, then snaps an inline landing to the
+  nearer word edge, refuses code, and inserts every reference in one
+  transaction. `drop-caret.ts` is the shared geometry for the generic drop
+  cursor and that reference caret.
 - A node view that hides its own text derives that face from the selection and
   never restructures around it. A caret inside a rendered diagram fence shows
   the source face without changing selection, whether it arrived by key,

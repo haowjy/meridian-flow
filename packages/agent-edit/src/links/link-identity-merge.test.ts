@@ -41,13 +41,13 @@ type Stored = Array<[text: string, ref: string | null]>;
 const dLink = (text: string, title?: string): Segment => ({
   text,
   ref: documentRef(D),
-  href: storedHref(ch("old"), ""),
+  href: storedHref({ kind: "document", uri: ch("old") }, ""),
   ...(title ? { title } : {}),
 });
 const rLink = (text: string): Segment => ({
   text,
   ref: documentRef(R),
-  href: storedHref(ch("retarget"), ""),
+  href: storedHref({ kind: "document", uri: ch("retarget") }, ""),
 });
 
 function base(first: Segment[] = [dLink("Target"), " waits."]): Y.Doc {

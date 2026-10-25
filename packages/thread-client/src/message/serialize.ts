@@ -45,18 +45,30 @@ export function serializeMessageDoc(
       const occurrence = referenceOccurrence(value);
       blocks.push(occurrence);
       text += occurrence.text;
+      if (value.kind === "folder") {
+        const key = `folder:${value.folderId}\0${value.uri}`;
+        references.set(key, { kind: "folder", folderId: value.folderId, uri: value.uri });
+        return;
+      }
       if (value.imageCapable)
         blocks.push({ type: "image", documentId: value.documentId, uri: value.uri });
-      const key = `${value.documentId}\0${value.uri}`;
+      const key = `document:${value.documentId}\0${value.uri}`;
       const proposed: SubmittedReference = value.upload
         ? {
+            kind: "document",
             documentId: value.documentId,
             uri: value.uri,
             purpose: "draft-upload",
             intakeId: value.upload.intakeId,
           }
-        : { documentId: value.documentId, uri: value.uri, purpose: "reference" };
-      if (!references.has(key) || proposed.purpose === "draft-upload")
+        : {
+            kind: "document",
+            documentId: value.documentId,
+            uri: value.uri,
+            purpose: "reference",
+          };
+      const previous = references.get(key);
+      if (!previous || (proposed.kind === "document" && proposed.purpose === "draft-upload"))
         references.set(key, proposed);
       return;
     }

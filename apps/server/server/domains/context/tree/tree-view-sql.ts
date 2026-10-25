@@ -709,12 +709,22 @@ function branchShowsDeleted(b: SQL): SQL {
 }
 
 /** Canonical visible folders plus non-hidden deleted ancestor diagnostics, each once. */
-export function identityFolders(view: TreeView) {
-  const columns = getTableColumns(folders);
-  const query = sql`SELECT f.* FROM (${foldersQuery(view)}) shown JOIN folders f ON f.id = shown.id
+function identityFoldersQuery(view: TreeView): SQL {
+  return sql`SELECT f.* FROM (${foldersQuery(view)}) shown JOIN folders f ON f.id = shown.id
     UNION ALL SELECT f.* FROM folders f WHERE ${deletedFolder}${
       view.kind === "branch" ? sql` AND f.id NOT IN (${usedFolderIds(view.branchId)})` : sql``
     }`;
+}
+
+/** The identity-folder relation for raw-SQL readers. */
+export function identityFoldersSql(view: TreeView): SQL {
+  return sql`(${identityFoldersQuery(view)})`;
+}
+
+/** Canonical visible folders plus non-hidden deleted ancestor diagnostics, each once. */
+export function identityFolders(view: TreeView) {
+  const columns = getTableColumns(folders);
+  const query = identityFoldersQuery(view);
   return subquery(query, columns, "folder_identities");
 }
 

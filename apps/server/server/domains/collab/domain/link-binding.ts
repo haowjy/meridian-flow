@@ -204,11 +204,22 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
     if (schemaType === "code") return finish(parsed.blocks, markdown);
 
     const written = parsed.blocks;
+    const addresses = documentId ? [] : writtenAddresses(written, holderUri);
     await deps.links.prepare({
       holders: documentId ? [{ documentId, view }] : [],
       stored: previous ?? [],
       written,
-      ...(documentId ? {} : { addresses: writtenAddresses(written, holderUri), views: [view] }),
+      ...(documentId
+        ? {}
+        : {
+            addresses: addresses
+              .filter((target) => target.kind === "document")
+              .map((target) => target.uri),
+            folderAddresses: addresses
+              .filter((target) => target.kind === "folder")
+              .map((target) => target.uri),
+            views: [view],
+          }),
     });
     const scope: HolderLinkScope = documentId
       ? deps.links.holder({ documentId, view })

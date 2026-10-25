@@ -9,7 +9,7 @@
  * one document, or the note count and revision digest drift from what
  * assignment sees. agent-edit's `assign-refs.test.ts` pins that parity.
  */
-import { parseLinkRef, resolveDocumentHref, storedLinkRef } from "@meridian/contracts";
+import { parseLinkRef, resolveStoredLinkAddress, storedLinkRef } from "@meridian/contracts";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema/protocol";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
@@ -72,11 +72,13 @@ function sameLinkMark(a: Record<string, unknown>, b: Record<string, unknown>): b
   );
 }
 
-/** What spelling stored occurrences needs loaded: refs, ahead addresses and `asset:` ids. */
+/** What spelling stored occurrences needs loaded: refs, address-bound targets and `asset:` ids. */
 export interface StoredLinkKeys {
   refs: Set<string>;
   /** Decoded addresses of stored ahead refs (an arrival there settles them). */
   aheadAddresses: Set<string>;
+  /** Decoded addresses of ref-less directory hrefs, which resolve live or gone. */
+  folderAddresses: Set<string>;
   assetIds: Set<string>;
 }
 
@@ -86,10 +88,13 @@ export function storedLinkKeys(input: {
   nodes?: readonly PMNode[];
   /** Identities to load besides the stored ones, such as shown facts' (an `asset:` one loads its id). */
   refs?: readonly string[];
+  /** URI of the document holding `docs` and `nodes`; required by relative directory hrefs. */
+  holderUri: string | null;
 }): StoredLinkKeys {
   const keys: StoredLinkKeys = {
     refs: new Set(),
     aheadAddresses: new Set(),
+    folderAddresses: new Set(),
     assetIds: new Set(),
   };
   for (const ref of input.refs ?? []) {
@@ -100,10 +105,13 @@ export function storedLinkKeys(input: {
     if (ref) {
       keys.refs.add(ref);
       if (parseLinkRef(ref)?.kind === "ahead") {
-        const stored = resolveDocumentHref(href, null);
-        if (stored) keys.aheadAddresses.add(stored.uri);
+        const stored = resolveStoredLinkAddress({ href }, input.holderUri);
+        if (stored?.kind === "document") keys.aheadAddresses.add(stored.uri);
       }
-    } else if (kind !== "link" && href.startsWith("asset:")) {
+    } else if (kind === "link") {
+      const stored = resolveStoredLinkAddress({ href }, input.holderUri);
+      if (stored?.kind === "folder") keys.folderAddresses.add(stored.uri);
+    } else if (href.startsWith("asset:")) {
       keys.assetIds.add(href.slice("asset:".length));
     }
   };

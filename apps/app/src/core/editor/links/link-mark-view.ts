@@ -14,6 +14,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { parseLinkRef } from "@meridian/contracts";
 
 import { linkChip, linkChipAttributes } from "./link-chip";
 import { goneLinkDocumentId, type LinkKey, linkKeyOfMark } from "./link-resolution";
@@ -40,8 +41,14 @@ export function drawLinkAnswer(
     // An editor with no project behind it draws its links as plain anchors.
     const chip = resolution.available ? linkChip(target, entry, resolution.baseUri) : null;
     const attributes = chip ? linkChipAttributes(chip) : null;
+    const folder =
+      parseLinkRef(stored.ref)?.kind === "folder" ||
+      target.addressKind === "folder" ||
+      entry?.state === "folder";
     draw(element, "data-link-chip", attributes?.["data-link-chip"] ?? null);
     draw(element, "data-link-chip-icon", attributes?.["data-link-chip-icon"] ?? null);
+    draw(element, "role", folder ? "button" : "link");
+    draw(element, "aria-haspopup", folder ? "menu" : null);
     const inBranch = entry?.state === "document" && entry.branch ? t`In a draft` : null;
     draw(
       element,
