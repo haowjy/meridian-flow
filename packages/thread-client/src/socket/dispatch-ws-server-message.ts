@@ -21,6 +21,9 @@ export type WsServerMessageDispatchDeps = {
   handleGap: (message: Extract<WsServerMessage, { type: "gap" }>) => void;
   send: (payload: unknown) => void;
   onConnected: (connectionToken: string) => void;
+  onAskAnswerReply: (
+    message: Extract<WsServerMessage, { type: "ask.answer.ok" | "ask.answer.error" }>,
+  ) => void;
   /** An error that names a request. The client ends the request it matches and drops the rest. */
   onRequestError: (requestId: string, error: Error, retryable: boolean) => void;
   /** An error that names a thread but no request. Ends nothing. */
@@ -55,6 +58,11 @@ export function dispatchWsServerMessage(
 
     case "gap":
       deps.handleGap(message);
+      return;
+
+    case "ask.answer.ok":
+    case "ask.answer.error":
+      deps.onAskAnswerReply(message);
       return;
 
     case "error": {

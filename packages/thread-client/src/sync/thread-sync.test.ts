@@ -115,6 +115,7 @@ function read(turns: Turn[], nextSeq: string, runState: RunState = IDLE): Thread
   return {
     thread: { id: THREAD, projectId: "project-1", userId: "account-1" },
     turns,
+    asks: [],
     nextSeq,
     actionRequired: false,
     liveState: { runningTurnId: null, resumeAfterSeq: nextSeq, runState },

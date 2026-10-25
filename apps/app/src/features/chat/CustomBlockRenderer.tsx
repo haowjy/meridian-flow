@@ -5,9 +5,6 @@
  * component registry, and mounts the registered component with the component
  * protocol props. Unknown or malformed content renders a visible placeholder
  * rather than falling through to the generic block-step renderer.
- * Key decision: components only call `respond(value)` with component-local data;
- * this renderer attaches the interrupt correlation tuple before handing the
- * message to the chat transport/controller layer.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";

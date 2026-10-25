@@ -14,7 +14,6 @@ import {
 } from "@meridian/contracts/failures";
 import {
   type AGUIEvent,
-  type AskAnswerReply,
   type CancelTurnResponse,
   type MeridianError,
   parseWsServerMessage,
@@ -24,11 +23,14 @@ import {
 import { dispatchWsServerMessage } from "./dispatch-ws-server-message";
 import { SocketLifecycleController, type SocketLifecycleOptions } from "./socket-lifecycle";
 import type {
+  AskAnswerInput,
+  AskAnswerOutcome,
   ConnectionState,
   ThreadTransport,
   ThreadTransportHandlers,
   ThreadTransportSubscribeOptions,
 } from "./thread-transport";
+import { DEFAULT_WS_ASK_ANSWER_DEADLINE_MS } from "./ws-thread-socket-utils";
 import { WsThreadSubscriptionRegistry } from "./ws-thread-subscription";
 
 export type ThreadSocketClientOptions = SocketLifecycleOptions & {
@@ -53,15 +55,13 @@ export class ThreadSocketClient implements ThreadTransport {
     string,
     Set<(hint: Extract<WsServerMessage, { type: "context-catalog-hint" }>) => void>
   >();
-  private wantsConnection = false;
-  private requestCounter = 0;
+  /** Unanswered `ask.answer` frames by request id; a close settles every one as unconfirmed. */
   private readonly askAnswers = new Map<
     string,
-    {
-      message: import("@meridian/contracts/protocol").WsClientMessage & { type: "ask.answer" };
-      resolve: (reply: AskAnswerReply) => void;
-    }
+    { resolve: (outcome: AskAnswerOutcome) => void; deadline: ReturnType<typeof setTimeout> }
   >();
+  private wantsConnection = false;
+  private requestCounter = 0;
 
   constructor(private readonly options: ThreadSocketClientOptions) {
     this.socket = new SocketLifecycleController(
@@ -74,6 +74,7 @@ export class ThreadSocketClient implements ThreadTransport {
           // (it only advances on the next `startSocket`/`teardown`), so a send
           // tagged with it can be recognized as unconfirmed.
           this.subscriptions.connectionLost();
+          this.settleAskAnswers();
           for (const handler of this.subscriptions.handlers()) handler.onClose?.(event);
         },
         onSocketError: () => this.publishError(new Error("WebSocket error")),
@@ -93,6 +94,7 @@ export class ThreadSocketClient implements ThreadTransport {
     this.wantsConnection = false;
     this.socket.teardown();
     this.subscriptions.connectionLost();
+    this.settleAskAnswers();
     this.subscriptions.clearAvailability();
     this.endConnectionFailure("moot");
   }
@@ -145,23 +147,38 @@ export class ThreadSocketClient implements ThreadTransport {
     };
   }
 
-  cancel(threadId: string, turnId: string) {
-    return this.options.cancelTurn(threadId, turnId);
+  answerAsk(input: AskAnswerInput): Promise<AskAnswerOutcome> {
+    const requestId = this.nextRequestId();
+    if (!this.socket.isServerConnected() || !this.send({ type: "ask.answer", requestId, ...input }))
+      return Promise.resolve({ type: "unconfirmed" });
+    return new Promise((resolve) =>
+      this.askAnswers.set(requestId, {
+        resolve,
+        deadline: setTimeout(
+          () => this.settleAskAnswer(requestId, { type: "unconfirmed" }),
+          DEFAULT_WS_ASK_ANSWER_DEADLINE_MS,
+        ),
+      }),
+    );
   }
 
-  answerAsk(input: {
-    threadId: string;
-    askId: string;
-    submissionId: string;
-    answer: import("@meridian/contracts/threads").AskAnswer;
-  }): Promise<AskAnswerReply> {
-    const requestId = this.nextRequestId();
-    const message = { type: "ask.answer" as const, requestId, ...input };
-    this.ensureConnected();
-    return new Promise((resolve) => {
-      this.askAnswers.set(requestId, { message, resolve });
-      if (this.socket.isServerConnected()) this.send(message);
-    });
+  /** The one settlement for an answer request: its reply, a request error, a close, or its deadline. */
+  private settleAskAnswer(requestId: string, outcome: AskAnswerOutcome): boolean {
+    const pending = this.askAnswers.get(requestId);
+    if (!pending) return false;
+    this.askAnswers.delete(requestId);
+    clearTimeout(pending.deadline);
+    pending.resolve(outcome);
+    return true;
+  }
+
+  private settleAskAnswers(): void {
+    for (const requestId of [...this.askAnswers.keys()])
+      this.settleAskAnswer(requestId, { type: "unconfirmed" });
+  }
+
+  cancel(threadId: string, turnId: string) {
+    return this.options.cancelTurn(threadId, turnId);
   }
 
   private nextRequestId(): string {
@@ -179,14 +196,6 @@ export class ThreadSocketClient implements ThreadTransport {
 
     const message = parseWsServerMessage(data);
     if (!message) return;
-    if (message.type === "ask.answer.ok" || message.type === "ask.answer.error") {
-      const pending = this.askAnswers.get(message.requestId);
-      if (pending) {
-        this.askAnswers.delete(message.requestId);
-        pending.resolve(message);
-      }
-      return;
-    }
     if (message.type === "context-catalog-hint") {
       const projectId = message.scope.kind === "user" ? null : message.scope.projectId;
       const targets = projectId
@@ -213,10 +222,12 @@ export class ThreadSocketClient implements ThreadTransport {
         for (const projectId of this.catalogSubscriptions.keys()) {
           this.send({ type: "catalog.subscribe", requestId: this.nextRequestId(), projectId });
         }
-        for (const pending of this.askAnswers.values()) this.send(pending.message);
       },
-      onRequestError: (requestId, error, retryable) =>
-        this.subscriptions.handleRequestError(requestId, error, retryable),
+      onAskAnswerReply: (reply) => this.settleAskAnswer(reply.requestId, reply),
+      onRequestError: (requestId, error, retryable) => {
+        if (this.settleAskAnswer(requestId, { type: "unconfirmed" })) return;
+        this.subscriptions.handleRequestError(requestId, error, retryable);
+      },
       onThreadError: (threadId, error) => {
         for (const handler of this.subscriptions.handlers(threadId)) {
           handler.onError?.(error);

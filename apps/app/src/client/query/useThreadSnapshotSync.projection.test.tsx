@@ -82,6 +82,7 @@ function readResponse(turns: unknown, nextSeq: string, threadId = "thread-1") {
   return {
     thread: { id: threadId, projectId: "project-1", userId: "account-1" },
     turns,
+    asks: [],
     nextSeq,
     actionRequired: false,
     liveState: { runningTurnId: null, resumeAfterSeq: nextSeq, runState: IDLE_RUN_STATE },
@@ -290,6 +291,7 @@ describe("stale acquisition and missing targets", () => {
       .mockResolvedValueOnce({
         thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
         turns: [],
+        asks: [],
         nextSeq: "1000",
         actionRequired: false,
         liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
@@ -319,6 +321,7 @@ describe("stale acquisition and missing targets", () => {
     held.resolve({
       thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
       turns: [],
+      asks: [],
       nextSeq: "4000",
       actionRequired: false,
       liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
@@ -332,6 +335,7 @@ describe("stale acquisition and missing targets", () => {
         { id: "turn-1", threadId: "thread-1", role: "assistant", status: "complete", blocks: [] },
       ],
       nextSeq: "7000",
+      asks: [],
       actionRequired: false,
       liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
     });
@@ -392,6 +396,7 @@ describe("stale acquisition and missing targets", () => {
         },
       ],
       nextSeq: "1000",
+      asks: [],
       actionRequired: false,
       liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
     });
