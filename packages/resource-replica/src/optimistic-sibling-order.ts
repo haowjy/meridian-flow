@@ -30,7 +30,7 @@ function activeActions(
     entryId: string,
     intent:
       | {
-          admissionOrder?: number;
+          admission?: { order: number };
           desired: { destination: { position?: ContextSiblingPosition } };
         }
       | undefined,
@@ -50,7 +50,7 @@ function activeActions(
       ...(desired.destination.position ? { position: desired.destination.position } : {}),
       movedParent,
       promote: Boolean(desired.destination.position),
-      admissionOrder: intent?.admissionOrder ?? 0,
+      admissionOrder: intent?.admission?.order ?? 0,
     });
   };
 
@@ -76,10 +76,10 @@ function activeActions(
     add(
       record.resource.identity.documentId,
       intent?.desired.kind === "set-location"
-        ? { admissionOrder: intent.admissionOrder, desired: intent.desired }
+        ? { admission: intent.admission, desired: intent.desired }
         : create?.desired.kind === "create" && create.desired.destination
           ? {
-              admissionOrder: create.admissionOrder,
+              admission: create.admission,
               desired: { destination: create.desired.destination },
             }
           : undefined,
@@ -94,7 +94,7 @@ function activeActions(
     add(
       folder.folderId,
       intent?.desired.kind === "set-folder-location"
-        ? { admissionOrder: intent.admissionOrder, desired: intent.desired }
+        ? { admission: intent.admission, desired: intent.desired }
         : undefined,
     );
   }

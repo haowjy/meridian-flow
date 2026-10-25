@@ -134,7 +134,7 @@ it("projects only the requesting project's durable location intention", () => {
       projectId: "project-a",
       intentId: `move-${id}`,
       eligibleAt: 1,
-      admissionOrder,
+      admission: { order: admissionOrder, scope: [], predecessors: [] },
       destination: {
         parent: { kind: "folder", folderId: "P" },
         name: id,
@@ -182,7 +182,7 @@ it("projects only the requesting project's durable location intention", () => {
     projectId: "project-a",
     intentId: "promote",
     eligibleAt: 1,
-    admissionOrder: 2,
+    admission: { order: 2, scope: [], predecessors: [] },
     destination: {
       parent: { kind: "folder", folderId: "P" },
       name: "B",
@@ -210,7 +210,7 @@ it("projects only the requesting project's durable location intention", () => {
     projectId: "project-a",
     intentId: "move-arrival",
     eligibleAt: 1,
-    admissionOrder: 3,
+    admission: { order: 3, scope: [], predecessors: [] },
     destination: { parent: { kind: "folder", folderId: "P" }, name: "A" },
   });
   if (!movedArrival) throw new Error("Missing arrival");

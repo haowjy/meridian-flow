@@ -62,7 +62,7 @@ function candidateForResource(record: ResourceRecord): ReconciliationCandidate {
   return {
     kind: "resource",
     key: record.resource,
-    admissionOrder: activeNamespaceIntent(record)?.admissionOrder ?? Number.MAX_SAFE_INTEGER,
+    admissionOrder: activeNamespaceIntent(record)?.admission?.order ?? Number.MAX_SAFE_INTEGER,
   };
 }
 
@@ -70,7 +70,7 @@ function candidateForFolder(record: FolderNamespaceRecord): ReconciliationCandid
   return {
     kind: "folder",
     key: record,
-    admissionOrder: activeNamespaceIntent(record)?.admissionOrder ?? Number.MAX_SAFE_INTEGER,
+    admissionOrder: activeNamespaceIntent(record)?.admission?.order ?? Number.MAX_SAFE_INTEGER,
   };
 }
 

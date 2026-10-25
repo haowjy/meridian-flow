@@ -4,6 +4,7 @@ import { newerCanonicalObservation } from "./canonical-observation";
 import { owningLocationIntent, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type {
   NamespaceIntent,
+  PlacementAdmission,
   ResourceDescriptor,
   ResourceDestination,
   ResourceRecord,
@@ -25,7 +26,7 @@ export function reserveResourceDocument(input: {
   provisionalName?: string;
   /** A named create is dispatchable at once: the writer chose where it goes. */
   destination?: { value: ResourceDestination; eligibleAt: number };
-  admissionOrder?: number;
+  admission?: PlacementAdmission;
 }): ResourceWrite {
   const resource: ResourceDescriptor = {
     handle: input.handle,
@@ -48,7 +49,7 @@ export function reserveResourceDocument(input: {
     handle: input.handle,
     intentId: input.intentId,
     sequence: 1,
-    ...(input.admissionOrder !== undefined ? { admissionOrder: input.admissionOrder } : {}),
+    ...(input.admission ? { admission: input.admission } : {}),
     identityRevision: 1,
     desired: {
       kind: "create",
@@ -92,7 +93,7 @@ export function planResourceLocation(input: {
   projectId: string;
   intentId: string;
   eligibleAt: number;
-  admissionOrder?: number;
+  admission?: PlacementAdmission;
   operationId?: string;
   destination: ResourceDestination;
   typedName?: string;
@@ -126,7 +127,7 @@ export function planResourceLocation(input: {
     handle: record.resource.handle,
     intentId: input.intentId,
     sequence: nextSequence(record),
-    ...(input.admissionOrder !== undefined ? { admissionOrder: input.admissionOrder } : {}),
+    ...(input.admission ? { admission: input.admission } : {}),
     identityRevision: record.resource.identity.revision,
     desired: {
       kind: "set-location",
@@ -204,6 +205,8 @@ export function remintCreateConflict(input: {
     sequence: nextSequence(record),
     identityRevision,
     desired: conflicted.desired,
+    // The retry stands where the conflicted create stood in the account's causal order.
+    ...(conflicted.admission ? { admission: conflicted.admission } : {}),
     attempts: [],
     state: "pending",
   };

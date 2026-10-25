@@ -2,14 +2,19 @@
 
 import { newerCanonicalObservation } from "./canonical-observation";
 import { intentOwnsDeletionAt, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
-import type { NamespaceIntent, ResourceRecord, ResourceWrite } from "./resource-records";
+import type {
+  NamespaceIntent,
+  PlacementAdmission,
+  ResourceRecord,
+  ResourceWrite,
+} from "./resource-records";
 
 export function planResourceDeletion(
   record: ResourceRecord,
   projectId: string,
   intentId: string,
   operationId?: string,
-  admissionOrder?: number,
+  admission?: PlacementAdmission,
 ): ResourceWrite | null {
   if (
     record.resource.lifecycle.kind === "terminal" ||
@@ -30,7 +35,7 @@ export function planResourceDeletion(
     sequence: Math.max(0, ...record.intents.map((intent) => intent.sequence)) + 1,
     identityRevision: record.resource.identity.revision,
     desired: { kind: "delete" },
-    ...(admissionOrder !== undefined ? { admissionOrder } : {}),
+    ...(admission ? { admission } : {}),
     ...(operationId ? { operationId } : {}),
     attempts: [],
     state: neverSubmitted ? "settled-locally" : "pending",

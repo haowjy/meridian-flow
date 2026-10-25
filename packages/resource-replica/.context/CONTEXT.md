@@ -150,12 +150,39 @@ position? }`, where `position` is one of start, end, before a sibling identity, 
 identity. The destination parent remains explicit: an anchor that moves cannot retarget the command.
 The server resolves this intent and mints the stored rank under the namespace lock. A parent owns an
 explicit default/manual order policy; ranks affect display only for manual parents.
-The local projection derives the same parent promotion and visible position from the durable journal
-intent. Placement intents carry one account-local admission order across file and folder journals,
-so reload replays multiple offline changes in writer order. Synthetic ranks are projection-only:
-transport sends the relative position, and a newer
-catalog observation replaces the prediction. Canonical ranks and folder child-order policy are
-retained with canonical identity metadata as checkpoints reload or temporarily disappear.
+Canonical ranks and folder child-order policy are retained with canonical identity metadata as
+checkpoints reload or temporarily disappear. Synthetic ranks are projection-only: transport sends the
+relative position, and a newer catalog observation replaces the prediction.
+
+### Placement journal (`placement-journal.ts`)
+
+A position reads the list earlier placements produced ("put B after A" means after A *as moved*), so
+placements across file and folder journals have a causal order that no single entry's journal holds.
+Each placement-bearing intent (move, reorder, delete, create with a destination) carries a
+`PlacementAdmission`, written once under the account's cross-tab admission lock and immutable after:
+a sequence `order`, conflict `scope` keys (subject; the sibling sequences it leaves and joins; its
+anchor; the destination's folder ancestry) and `predecessors`, the intents still unresolved at that
+moment with an overlapping scope. The lock covers reading the snapshot and committing the intent, so
+two tabs cannot assign contradictory order; the order is one past the highest in the journal, so it
+survives reload with no counter to lose.
+
+Three consumers read that record and nothing else:
+
+- **Projection** folds every unresolved placement in `order` over canonical state: membership,
+  parent-policy promotion and sequence position together (`optimistic-sibling-order.ts`). An accepted
+  placement leaves the fold when its canonical refresh installs.
+- **Dispatch** sends an intent only after every predecessor is resolved (`placementDispatchVerdict`).
+  Unrelated intents share no scope and never wait on each other. A predecessor that never took effect
+  (refused, cancelled) while this intent's position was anchored on its subject sends this intent to
+  typed repair instead of executing it against a different list.
+- **Undo** is a compensating placement batch. It asks which operation owns a subject's placement
+  (the newest live placement intent; after a receipt, the canonical `locationVersion`), never whether
+  a sibling gap still looks the same.
+
+Exact replay of one client's intents is guaranteed. Its predicted final list under arbitrary peer
+changes is not: the server resolves each command against the current list. A create that is reminted
+after a conflict keeps its admission; third parties' predecessor references to the reminted
+dependents' old intent ids then read as cancelled (resolved), a known gap.
 
 The `parent` is a picked folder identity or qualified area root. Linked creation alone
 captures the deepest existing identity and missing folder names beneath it.

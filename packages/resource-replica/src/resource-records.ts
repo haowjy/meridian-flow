@@ -202,14 +202,36 @@ export type NamespaceAttempt = {
   };
 }[NamespaceRequest["kind"]];
 
+/** An intent a later one waits on, found in the journal of `kind` under `handle`. */
+export type PlacementPredecessor = {
+  kind: "resource" | "folder";
+  handle: string;
+  intentId: string;
+  /** The later intent's position names this predecessor's subject, so a failure changes its premise. */
+  anchor?: true;
+};
+
+/**
+ * Where a placement stands in the account's causal order. Written once with the intent, under the
+ * account's cross-tab admission lock, and never revised: dispatch, projection and Undo all read it.
+ */
+export type PlacementAdmission = {
+  /** Account-wide admission sequence, comparable across file and folder journals. */
+  order: number;
+  /** Conflict keys: the subject, the sibling sequences it leaves and joins, its anchor and destination ancestry. */
+  scope: readonly string[];
+  /** Intents still unresolved at admission whose scope overlaps; they dispatch first. */
+  predecessors: readonly PlacementPredecessor[];
+};
+
 export type NamespaceIntent = ResourceKey & {
   projectId: string;
   intentId: string;
   /** Caller-issued id lets surfaces correlate settlement before background dispatch. */
   operationId?: string;
   sequence: number;
-  /** Account-local placement admission order; comparable across file and folder journals. */
-  admissionOrder?: number;
+  /** Placement ordering captured at admission; see `PlacementAdmission`. */
+  admission?: PlacementAdmission;
   identityRevision: number;
   desired:
     | {
