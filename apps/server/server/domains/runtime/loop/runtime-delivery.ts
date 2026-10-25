@@ -35,7 +35,8 @@ export class HandBackConflictError extends Error {
 export type DeliveryTransaction = {
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   acknowledge(ids: readonly string[]): Promise<void>;
-  materializePrefix(): Promise<void>;
+  /** Materialize every eligible predecessor, then say whether this writer turn may be placed now. */
+  materializePrefix(): Promise<boolean>;
   /**
    * Appends the chat's run-state record now and returns its stream version, so an admission can store
    * it. Null where no record is published.
