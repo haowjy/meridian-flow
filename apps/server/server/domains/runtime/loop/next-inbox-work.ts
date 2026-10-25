@@ -38,7 +38,11 @@ export function next(
   const continuation = pending.find(isAskResolved);
   if (continuation)
     return at === "run_start"
-      ? { kind: "control", control: continuation, rows: [] }
+      ? {
+          kind: "control",
+          control: continuation,
+          rows: pending.filter((row) => row.intent !== "control"),
+        }
       : { kind: "none" };
   const queuedSwitch = pending.find(isWriteModeSwitch);
   if (queuedSwitch && at === "run_start" && retry) return { kind: "switch", control: queuedSwitch };

@@ -126,7 +126,10 @@ export function createDeliveryAdapter(
       eligible: openAsk
         ? []
         : continuation
-          ? [continuation]
+          ? pendingBatch.filter(
+              (row) =>
+                row.id === continuation.id || (row.intent !== "control" && !boundIds.has(row.id)),
+            )
           : pendingBatch.filter((row) => !boundIds.has(row.id)),
     };
   }
@@ -232,7 +235,8 @@ export function createDeliveryAdapter(
     };
   }
   async function materializePrefix(threadId: ThreadId) {
-    const { selection, work } = await selectForPreparation(threadId, "prefix");
+    const selected = await selectForPreparation(threadId, "prefix");
+    const { selection, work } = selected;
     const turns = await Promise.all(
       work.batch.map((message) => turnGraph(deps.repos.turns).findById(message.id)),
     );
@@ -247,12 +251,14 @@ export function createDeliveryAdapter(
       prevTurnPosition: leafTurn?.position ?? null,
       knownTurnIds: new Set(turns.flatMap((turn) => (turn ? [turn.id] : []))),
     });
-    if (plan.events.length === 0) return;
-    await persistAndAppendTurnStartEvents(deps, threadId, leaf, async () => ({
-      result: undefined,
-      events: plan.events,
-    }));
-    await ack(threadId, work.ids);
+    if (plan.events.length > 0) {
+      await persistAndAppendTurnStartEvents(deps, threadId, leaf, async () => ({
+        result: undefined,
+        events: plan.events,
+      }));
+      await ack(threadId, work.ids);
+    }
+    return selected.eligibilityKey === "free";
   }
   async function materializeIdle(threadId: ThreadId) {
     await deps.runClaim.withExclusiveThread(threadId, async () => {
