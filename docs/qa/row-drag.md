@@ -125,6 +125,17 @@ One-shot move rewrite (swap the `if` for delete and `delete body.expected`):
    mark.
 6. Hover or focus the mark: `title` and `aria-label` are the mark copy above.
    No console errors beyond the expected 400s.
+7. Successful move, then install the rewrite so it catches the reverse POST,
+   then Undo: the notice hides at once. The row returns to the destination with
+   the mark. The rail reads "Couldn't move <name> back." with Dismiss and no
+   Undo. Exactly one POST; after 35s still one.
+8. Undo without a rewrite: the notice stays gone after 40s.
+9. After Undo, another move or delete on that surface before the reverse
+   settles (hold the reverse response, then refuse it): the newer notice stays;
+   "Couldn't move <name> back." does not replace it.
+10. Two-row move, Undo with only the first reverse rewritten: "Couldn't move
+    <name> back." The accepted reverse goes home; the refused row stays at the
+    destination with the mark.
 
 ## Scratch and Work Files
 
