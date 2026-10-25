@@ -136,7 +136,7 @@ alias can point at the deleted branch), and a remote-tracking candidate must
 still exist upstream and still contain the commit when planning checks it (a
 branch that moved is refreshed once), so a deleted or reset integration branch
 cannot be cited. PR evidence rests on
-GitHub's merge record rather than a local ref. Cleanup executes one run at a
+GitHub's merge record rather than a local ref. Worktree deletion executes one run at a
 time per repository: a second run refuses while one is executing, because two
 runs' containment refs can be each other's branches, and a stale lock refuses
 too rather than risking two owners; an interrupted run can leave a stale lock
