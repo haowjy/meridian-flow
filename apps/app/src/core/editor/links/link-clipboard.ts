@@ -42,6 +42,7 @@ import {
   parseLinkRef,
   qualifyContextUriByHolder,
   resolveDocumentHref,
+  resolveStoredLinkAddress,
   spellStoredLink,
   splitDocumentHrefSuffix,
   storedHref,
@@ -58,7 +59,6 @@ import {
   linkKeyOfMark,
   pictureKeyOfNode,
 } from "./link-resolution";
-import { classifyLinkTarget } from "./link-target";
 
 export const LINK_ADDRESS_ATTRIBUTE = "data-meridian-address";
 export const LINK_REF_ATTRIBUTE = "data-meridian-ref";
@@ -80,12 +80,7 @@ const linkClipboardPluginKey = new PluginKey<LinkAnswerCache>("meridianLinkClipb
  * lineage Scratch keeps its chat handle while Uploads keep No Work ownership.
  */
 function linkHrefAddress(href: string, holderUri: string | null): string | null {
-  const target = classifyLinkTarget(href);
-  if (!target || target.kind === "external") return null;
-  const resolved =
-    target.kind === "scheme"
-      ? resolveDocumentHref(target.uri, null)
-      : resolveDocumentHref(target.path, holderUri);
+  const resolved = resolveStoredLinkAddress({ href }, holderUri);
   if (!resolved) return null;
   return storedHref(
     { kind: resolved.kind, uri: qualifyContextUriByHolder(resolved.uri, holderUri) },

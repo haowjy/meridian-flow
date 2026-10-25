@@ -188,10 +188,18 @@ export function createDrizzleDocumentLinkScopes(deps: {
     if (!snapshot?.open) return;
     snapshot.prepared = true;
 
+    const holder = request.holders[0];
+    const holderIds = [...new Set(request.holders.map(({ documentId }) => documentId))].filter(
+      (id) => !snapshot.rows.has(id),
+    );
+    for (const id of holderIds) snapshot.rows.set(id, null);
+    for (const row of await loadRows({ ids: holderIds })) remember(snapshot, row);
+    const holderUri = holder ? await holderAddress(snapshot, holder) : null;
     const stored = storedLinkKeys({
       docs: request.docs,
       nodes: request.stored,
       refs: request.refs,
+      holderUri,
     });
     const ids = new Set([
       ...request.holders.map((holder) => holder.documentId),
@@ -224,9 +232,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
     await followForwards(snapshot, newIds);
 
     // Written relative links resolve against the holder, at its address in its view.
-    const holder = request.holders[0];
     if (holder && request.written?.length) {
-      const holderUri = await holderAddress(snapshot, holder);
       for (const target of writtenAddresses(request.written, holderUri, request.uploadsChat)) {
         (target.kind === "folder" ? folderAddresses : addresses).add(target.uri);
       }

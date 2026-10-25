@@ -5,7 +5,6 @@ import {
   isProjectScopedScheme,
   matchDocumentPath,
   parseContextUri,
-  resolveDocumentHref,
 } from "@meridian/contracts";
 import type { CatalogFileEntry, CatalogScope } from "@meridian/contracts/protocol";
 import type { ProjectWorkAuthorityResolver } from "../projects/domain/work-authority.js";
@@ -97,13 +96,7 @@ export function createDocumentLinkResolver({
   }
   return {
     async resolve(input) {
-      const { target } = input;
-      const resolved =
-        target.kind === "scheme"
-          ? resolveDocumentHref(target.uri, null)
-          : resolveDocumentHref(target.path, target.baseUri);
-      if (!resolved) return null;
-      return atUri(input, resolved.uri, input.previousLocations === true);
+      return atUri(input, input.uri, input.previousLocations === true);
     },
   };
 }

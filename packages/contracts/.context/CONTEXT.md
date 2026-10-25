@@ -75,7 +75,9 @@ Stored links are never respelt in place: they carry refs and spell on read.
 canonical UUIDs parse), the only ahead-ref mint, the ahead-address rule, and
 preservation of malformed present refs so they resolve as gone instead of
 falling back to the link's address. `document-link.ts` owns written-link classification and stored-link resolution over a
-host `LinkCatalog`.
+host `LinkCatalog`. `resolveStoredLinkAddress` is the holder-relative boundary:
+it returns the target's `{ kind, uri, suffix }` once, and hosts carry that value
+through document or folder lookup instead of parsing the href again.
 
 `DocumentLinkAnswer` returns a live folder as
 `{ state: "folder", folder: { id, name, uri } }`. An inaccessible or deleted

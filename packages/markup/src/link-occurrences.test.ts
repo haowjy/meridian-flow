@@ -8,6 +8,7 @@ import {
   isAheadFilename,
   type LinkHolder,
   resolveStoredLink,
+  resolveStoredLinkAddress,
   spellStoredLink,
 } from "@meridian/contracts";
 import { expect, it } from "vitest";
@@ -60,10 +61,21 @@ const catalog = {
   documentAt: () => null,
 };
 const scope: DocumentLinkScope = {
-  spellLink: (link) => spellStoredLink(link, holder, resolveStoredLink(link, catalog), "holder"),
+  spellLink: (link) =>
+    spellStoredLink(
+      link,
+      holder,
+      resolveStoredLink(link, resolveStoredLinkAddress(link, holder.uri), catalog),
+      "holder",
+    ),
   spellSource: ({ src, ref }) => {
     const link = { href: src, ref };
-    return spellStoredLink(link, holder, resolveStoredLink(link, catalog), "manuscript-root");
+    return spellStoredLink(
+      link,
+      holder,
+      resolveStoredLink(link, resolveStoredLinkAddress(link, holder.uri), catalog),
+      "manuscript-root",
+    );
   },
 };
 
@@ -180,7 +192,12 @@ it("aligns parse spans with walk order for links, images, figures and table anch
     .soft(
       spelledLinks(malformed, {
         spellLink: (link) =>
-          spellStoredLink(link, holder, resolveStoredLink(link, atAddress), "holder"),
+          spellStoredLink(
+            link,
+            holder,
+            resolveStoredLink(link, resolveStoredLinkAddress(link, holder.uri), atAddress),
+            "holder",
+          ),
         spellSource: scope.spellSource,
       }),
       "malformed ref is gone, never its address",

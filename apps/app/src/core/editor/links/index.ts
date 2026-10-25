@@ -14,7 +14,6 @@ export {
   isLinkDocumentScheme,
   linkAheadAddress,
   linkedDocumentName,
-  linkTargetAddress,
 } from "./link-address";
 export {
   type AssignedLink,

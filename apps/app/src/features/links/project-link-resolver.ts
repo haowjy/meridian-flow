@@ -24,7 +24,12 @@
  *   documents, so another Work's Scratch folder still becomes filled or gone.
  */
 
-import { type DocumentLinkAnswer, parseLinkRef, resolveStoredLink } from "@meridian/contracts";
+import {
+  type DocumentLinkAnswer,
+  parseLinkRef,
+  resolveStoredLink,
+  resolveStoredLinkAddress,
+} from "@meridian/contracts";
 import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/context-uri";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
@@ -34,7 +39,6 @@ import {
   type InternalLinkResolver,
   type LinkAnswer,
   type LocalLinkAnswer,
-  linkTargetAddress,
   linkTargetHref,
 } from "@/core/editor/links";
 
@@ -94,7 +98,9 @@ export function createProjectLinkResolver(
       // A relative path with no base cannot be asked; the base arriving is a
       // new registration, which asks it again.
       if (target.kind === "external" || (target.kind === "relative" && !baseUri)) return UNASKED;
-      const resolution = resolveStoredLink({ ref, href: linkTargetHref(target) }, catalog);
+      const link = { ref, href: linkTargetHref(target) };
+      const address = resolveStoredLinkAddress(link, baseUri);
+      const resolution = resolveStoredLink(link, address, catalog);
       let provisional: DocumentAnswer | null = null;
       if (resolution.kind === "gone") return answered(GONE);
       if (resolution.kind === "folder") {
@@ -108,8 +114,7 @@ export function createProjectLinkResolver(
           : UNASKED;
       }
       if (resolution.kind === "address") {
-        const uri = linkTargetAddress(target, baseUri);
-        const document = uri ? catalog.documentFor(uri) : null;
+        const document = address?.kind === "document" ? catalog.documentFor(address.uri) : null;
         const answer = document ? indexedAnswer(document.documentId) : null;
         if (answer) return answered(answer);
       }

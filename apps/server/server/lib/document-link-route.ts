@@ -18,13 +18,13 @@ import {
   type ResolveDocumentLinksRequest,
   ResolveDocumentLinksRequestSchema,
   type ResolveDocumentLinksResponse,
-  resolveDocumentHref,
-  storedHref,
+  type ResolvedDocumentHref,
+  resolveStoredLinkAddress,
 } from "@meridian/contracts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type { Branches, DocumentLinkScopes } from "../domains/collab/index.js";
-import type { DocumentLinkResolver, DocumentLinkTarget } from "../domains/context/index.js";
+import type { DocumentLinkResolver } from "../domains/context/index.js";
 import type { DocumentTrash } from "../domains/context/ports/document-trash.js";
 import type { FileAccess } from "../domains/file-policy/index.js";
 import type { ProjectWorkAuthorityResolver } from "../domains/projects/domain/work-authority.js";
@@ -77,6 +77,7 @@ export async function handleDocumentLinkResolveRequest(
   }> = [];
   // Relative hrefs resolve against the holder where it is now.
   let baseUri = request.baseUri;
+  let linkAddresses: Array<ResolvedDocumentHref | null> = [];
 
   // A ref is not a capability: the scope answers readability for this account.
   await deps.linkScopes.within(
@@ -100,35 +101,31 @@ export async function handleDocumentLinkResolveRequest(
         baseUri = holder.uri;
         if (holder.uri !== request.baseUri) holderUri = holder.uri;
       }
-      const refLinks = request.links.flatMap((link, index) => {
-        const resolved = resolveDocumentHref(link.href, baseUri);
-        return link.ref !== null || resolved?.kind === "folder" ? [{ link, index, resolved }] : [];
+      linkAddresses = request.links.map((link) => resolveStoredLinkAddress(link, baseUri));
+      const scopedLinks = request.links.flatMap((link, index) => {
+        const address = linkAddresses[index] ?? null;
+        return link.ref !== null || address?.kind === "folder" ? [{ link, index, address }] : [];
       });
-      if (refLinks.length === 0) return;
+      if (scopedLinks.length === 0) return;
       await deps.linkScopes.prepare({
         holders: holder ? [{ documentId: holder.documentId, view }] : [],
         views: [view],
-        refs: refLinks.flatMap(({ link }) => (link.ref === null ? [] : [link.ref])),
+        refs: scopedLinks.flatMap(({ link }) => (link.ref === null ? [] : [link.ref])),
         // An unsettled ahead ref resolves by its exact stored address.
-        addresses: refLinks.flatMap(({ link }) =>
-          parseLinkRef(link.ref)?.kind === "ahead"
-            ? (resolveDocumentHref(link.href, null)?.uri ?? [])
+        addresses: scopedLinks.flatMap(({ link, address }) =>
+          parseLinkRef(link.ref)?.kind === "ahead" && address?.kind === "document"
+            ? [address.uri]
             : [],
         ),
-        folderAddresses: refLinks.flatMap(({ resolved }) =>
-          resolved?.kind === "folder" ? [resolved.uri] : [],
+        folderAddresses: scopedLinks.flatMap(({ address }) =>
+          address?.kind === "folder" ? [address.uri] : [],
         ),
       });
       const reader = holder
         ? deps.linkScopes.holder({ documentId: holder.documentId, view })
         : deps.linkScopes.reader({ uri: request.baseUri, view });
-      for (const { link, index } of refLinks) {
-        const resolved = resolveDocumentHref(link.href, baseUri);
-        const resolution = reader.resolve(
-          resolved?.kind === "folder"
-            ? { ...link, href: storedHref(resolved, resolved.suffix) }
-            : link,
-        );
+      for (const { link, index, address } of scopedLinks) {
+        const resolution = reader.resolve(link, address);
         const parsed = parseLinkRef(link.ref);
         const candidateId =
           resolution.kind === "gone"
@@ -159,8 +156,8 @@ export async function handleDocumentLinkResolveRequest(
   const byHref = new Map<string, ReturnType<DocumentLinkResolver["resolve"]>>();
   for (const [index, link] of request.links.entries()) {
     if (link.ref !== null || answers[index] !== undefined) continue;
-    const target = addressTarget(link.href, baseUri);
-    if (!target) {
+    const target = linkAddresses[index];
+    if (target?.kind !== "document") {
       answers[index] = { state: "unresolvable" };
       continue;
     }
@@ -172,7 +169,7 @@ export async function handleDocumentLinkResolveRequest(
         workId,
         rootThreadId: request.rootThreadId,
         chatId: request.chatId,
-        target: target.target,
+        uri: target.uri,
         // Chat alone may follow a vacated path to the document that left it.
         previousLocations: baseUri === null && request.holderDocumentId === undefined,
       });
@@ -283,23 +280,6 @@ function answerOf(resolution: LinkResolution, trashedDocumentId?: string): Docum
 
 /** What an answer says about how a ref was read: settled, or without its holder's bindings. */
 type AheadMarks = { settled?: true };
-
-/** The address a ref-less href names, or null for external and malformed hrefs. */
-function addressTarget(
-  href: string,
-  baseUri: string | null,
-): { target: DocumentLinkTarget; uri: string } | null {
-  const resolved = resolveDocumentHref(href, baseUri);
-  if (resolved?.kind !== "document") return null;
-  const absolute = /^[a-z][a-z0-9+.-]*:\/\//i.test(href);
-  return {
-    uri: resolved.uri,
-    target:
-      absolute || baseUri === null
-        ? { kind: "scheme", uri: href }
-        : { kind: "relative", path: href, baseUri },
-  };
-}
 
 /** Flatten the prepared document's resolved owner at the transport boundary. */
 function describeDocument(document: CatalogDocument): DocumentAnswer | null {

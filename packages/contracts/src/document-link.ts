@@ -14,6 +14,7 @@ import { isProjectScopedScheme, parseContextUri } from "./context-uri.js";
 import {
   documentPathKey,
   type LinkAddress,
+  type ResolvedDocumentHref,
   resolveDocumentHref,
   spellDocumentHref,
   splitDocumentHrefSuffix,
@@ -93,16 +94,28 @@ export type LinkResolution =
   | { kind: "unknown" };
 
 /**
+ * The address written by one stored link, resolved relative to its holder once.
+ * Hosts carry this kind-aware value through lookup instead of reconstructing a
+ * document address from the href later.
+ */
+export function resolveStoredLinkAddress(
+  link: { href: string },
+  holderUri: string | null,
+): ResolvedDocumentHref | null {
+  return resolveDocumentHref(link.href, holderUri);
+}
+
+/**
  * The resolution rules, in order (design "Resolution"). They do not depend on
  * the holder: what a reader may name is the catalog's `nameable`, and only
  * spelling (`spellStoredLink`) reads the holder.
  */
 export function resolveStoredLink(
   link: { ref: string | null; href: string },
+  address: ResolvedDocumentHref | null,
   catalog: LinkCatalog,
 ): LinkResolution {
   if (link.ref === null) {
-    const address = resolveDocumentHref(link.href, null);
     if (address?.kind !== "folder") return { kind: "address" };
     return resolveFolder(catalog.folderAt(address.uri));
   }
@@ -120,7 +133,7 @@ export function resolveStoredLink(
     return resolution.kind === "unknown" ? resolution : { ...resolution, settled: true };
   }
 
-  const stored = resolveDocumentHref(link.href, null);
+  const stored = address;
   if (stored?.kind !== "document") return { kind: "gone" };
   const parsed = parseContextUri(stored.uri);
   const uri = parsed.ok
