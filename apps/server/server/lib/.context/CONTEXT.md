@@ -114,7 +114,7 @@ ownership `createError`) into a typed, non-retryable envelope with the same stat
 message and `data`. It leaves 401, 408 and 429 bare, so they stay
 uncertain and the client retries. A new route that queue replays needs the same wrapper.
 Domain failures go through `contextErrorToHttp`, which types every code;
-`stale_source` and `io_error` are the retryable ones. The boundary stays per route rather
+`stale_source`, `stale_target` and `io_error` are the retryable ones. The boundary stays per route rather
 than in the global error handler: typing every error there would make a 401
 final, and app code on other routes branches on the untyped `HttpResponseError`. Identity conflicts may name a renamed or relocated destination;
 URI-only conflicts must still match the requested home. If immutable destination
