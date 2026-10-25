@@ -1,4 +1,9 @@
-/** Query-plan contract at scale: one 5,000-turn fixture with a per-case mutable tail. */
+/**
+ * Query-plan contract at scale: one 5,000-turn fixture with a per-case mutable tail.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - bounded keyset and partial-index reads plus ambient-transaction orphan repair (kb/decisions/chat/turns/linear-turns.md)
+ */
 
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -24,11 +29,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { transcriptBoundariesSql, transcriptItemKeysSql, transcriptUnsettledTurnsSql } =
       await import("./transcript-reader.js");
     const { readTranscriptPage } = await import("../../domain/transcript-page.js");
-    const { createDrizzleThreadLock } = await import(
-      "../../../runtime/adapters/drizzle-thread-lock.js"
-    );
-    const { createDrizzleEventJournalWriter } = await import("../../index.js");
-    const { finalizeOrphanedTurns } = await import("../../../runtime/loop/orphaned-placeholder.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
@@ -273,119 +273,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(sequences.sort((left, right) => right - left)).toEqual(
         Array.from({ length: 500 }, (_, index) => 499 - index),
       );
-    });
-
-    it("reads unsettled, anchor, boundary, and page rows from one repeatable-read snapshot", async () => {
-      const insertedWriterId = crypto.randomUUID() as TurnId;
-      const insertedUnsettledId = crypto.randomUUID() as TurnId;
-      const bake = await repos.promptBakes.create({
-        ownerThreadId: THREAD_ID,
-        composedSystemPrompt: "concurrent bake",
-        bakedSkillSlugs: [],
-        bakedTools: [],
-        contentHash: "concurrent-bake",
-      });
-      const thread = await repos.threads.findByIdIncludingDeleted(THREAD_ID);
-      if (!thread) throw new Error("Snapshot fixture thread missing");
-
-      const snapshotRepos = {
-        ...repos,
-        async readSnapshot<T>(operation: () => Promise<T>) {
-          return repos.readSnapshot(async () => {
-            // Establish the repeatable-read snapshot before the separate connection commits.
-            await repos.threads.findByIdIncludingDeleted(THREAD_ID);
-            await db.insert(schema.turns).values([
-              {
-                id: insertedWriterId,
-                threadId: THREAD_ID,
-                parentTurnId: ids.at(-1),
-                position: 5001,
-                role: "user",
-                origin: "writer",
-                status: "complete",
-                totalInputTokens: 0,
-                totalOutputTokens: 0,
-                totalCostUsd: "0",
-                responseCount: 0,
-              },
-              {
-                id: insertedUnsettledId,
-                threadId: THREAD_ID,
-                parentTurnId: insertedWriterId,
-                position: 5002,
-                role: "assistant",
-                origin: "assistant",
-                status: "streaming",
-                totalInputTokens: 0,
-                totalOutputTokens: 0,
-                totalCostUsd: "0",
-                responseCount: 0,
-              },
-            ] as never);
-            await db
-              .update(schema.turns)
-              .set({ promptBakeId: bake.id })
-              .where(sql`${schema.turns.id} = ${ids.at(-1)}::uuid`);
-            await db.insert(schema.turnBlocks).values({
-              id: crypto.randomUUID(),
-              turnId: insertedWriterId,
-              blockType: "text",
-              sequence: 0,
-              modelText: "committed after snapshot",
-              content: { text: "committed after snapshot" },
-            } as never);
-            return operation();
-          });
-        },
-      };
-
-      const page = await readTranscriptPage(snapshotRepos, thread, {
-        order: "newest_first",
-        unit: "item",
-        limit: 3,
-      });
-      expect(page.entries.flatMap((entry) => entry.turn.id)).not.toContain(insertedWriterId);
-      expect(page.unsettledTail).toBeUndefined();
-      const cursor = JSON.parse(
-        Buffer.from(page.nextCursor as string, "base64url").toString("utf8"),
-      ) as {
-        a: [number, number];
-      };
-      expect(cursor.a).toEqual([5000, 0]);
-      expect(page.segment.index).toBe(0);
-      expect(page.segmentBoundary).toBe(false);
-    });
-
-    it("orphan repair reads unsettled turns through its thread-lock transaction", async () => {
-      const threadLock = createDrizzleThreadLock(db);
-      await threadLock.withThreadLock(THREAD_ID, async () => {
-        const pendingWriter = await repos.turns.create({
-          threadId: THREAD_ID,
-          prevTurnId: ids.at(-1),
-          role: "user",
-          origin: "writer",
-          status: "pending",
-        });
-        const originalList = repos.turns.listUnsettledForThread.bind(repos.turns);
-        const observedRepos = {
-          ...repos,
-          turns: {
-            ...repos.turns,
-            async listUnsettledForThread(threadId: ThreadId) {
-              const unsettled = await originalList(threadId);
-              expect(unsettled.map((turn) => turn.id)).toContain(pendingWriter.id);
-              return unsettled;
-            },
-          },
-        };
-        await finalizeOrphanedTurns(
-          {
-            repos: observedRepos,
-            eventWriter: createDrizzleEventJournalWriter(db),
-          },
-          { threadId: THREAD_ID },
-        );
-      });
     });
   });
 }

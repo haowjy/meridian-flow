@@ -8,7 +8,7 @@
  * Skill files (`skills://`, D52) have their own rule, `skillLevel`.
  */
 
-import type { ContextUriScheme } from "@meridian/contracts/context-uri";
+import { type ContextUriScheme, isDraftedScheme } from "@meridian/contracts/context-uri";
 import { matchAncestors } from "./ancestors.js";
 import {
   type AgentChain,
@@ -26,43 +26,33 @@ import {
   type WorkRef,
 } from "./types.js";
 
-interface SourceRule {
-  /** Whether a draft-mode Work holds agent writes to this source for review. */
-  readonly drafted: boolean;
-  /** The most any agent may do here, whatever its permission. */
-  readonly agentCap: FileAccessLevel;
-}
-
-/**
- * Per-source rules. Scratch is the Work's own working area and uploads are
- * read-only for agents, so neither is ever drafted (D9, D11).
- */
-const SOURCE_RULES: Readonly<Record<ContextUriScheme, SourceRule>> = {
-  manuscript: { drafted: true, agentCap: "edit" },
-  kb: { drafted: true, agentCap: "edit" },
-  user: { drafted: true, agentCap: "edit" },
-  unfiled: { drafted: true, agentCap: "edit" },
-  scratch: { drafted: false, agentCap: "edit" },
-  uploads: { drafted: false, agentCap: "read" },
+/** The most any agent may do in each source, whatever its permission. */
+const SOURCE_AGENT_CAPS: Readonly<Record<ContextUriScheme, FileAccessLevel>> = {
+  manuscript: "edit",
+  kb: "edit",
+  user: "edit",
+  unfiled: "edit",
+  scratch: "edit",
+  uploads: "read",
 };
 
-/** Whether agent writes to this source go to the Work draft in draft mode. */
+/** Whether agent writes to this source go to the Work branch in draft mode. */
 export function isDrafted(scheme: ContextUriScheme): boolean {
-  return SOURCE_RULES[scheme].drafted;
+  return isDraftedScheme(scheme);
 }
 
 /**
  * Where an agent's access to a file of this source goes: its draft-mode
- * Work's draft for a drafted source, otherwise live. People always write
+ * Work's branch for a drafted source, otherwise live. People always write
  * live. List and view paths ask this per source; tool calls carry it on
  * their grant (`destinationFor`).
  */
 export function sourceDestination(
   scheme: ContextUriScheme,
-  draftWork: WorkRef | null,
+  branchWork: WorkRef | null,
 ): FileDestination {
-  return draftWork && isDrafted(scheme)
-    ? { kind: "draft", workId: draftWork.id, workSlug: draftWork.slug }
+  return branchWork && isDrafted(scheme)
+    ? { kind: "draft", workId: branchWork.id, workHandle: branchWork.handle }
     : { kind: "live" };
 }
 
@@ -75,14 +65,16 @@ export interface NodeGrant {
 /**
  * Where this access reads or writes: an explicit draft target is that draft;
  * an agent in draft mode writes a drafted source's document, or creates in a
- * drafted source's folder, through its Work draft.
+ * drafted source's folder, through its Work branch.
  */
 function destinationFor(principal: Principal, facts: FileFacts): FileDestination {
   const target = facts.target;
   if (target.kind === "draft") {
-    return { kind: "draft", workId: target.workId, workSlug: facts.draftWork?.slug ?? null };
+    return { kind: "draft", workId: target.workId, workHandle: facts.branchWork?.handle ?? null };
   }
-  return sourceDestination(facts.scheme, principal.agent?.draftWork ?? null);
+  // A deleted document comes back live, where it was.
+  if (target.kind === "restore") return { kind: "live" };
+  return sourceDestination(facts.contentScheme, principal.agent?.branchWork ?? null);
 }
 
 /** The whole decision: the destination, then the level there. */
@@ -131,20 +123,24 @@ export function personLevel(facts: FileFacts, grants: readonly NodeGrant[]): Fil
 }
 
 /**
- * Deleted anywhere up the chain: none. Its owning Work archived: read. A
- * draft also takes its own Work's lifecycle (§2).
+ * Deleted anywhere up the chain: none, except at a draft destination whose
+ * draft outlived the document's own delete (`survivingDraft`, keyed on the
+ * destination, never on which view supplied the facts: a writer's review list
+ * reads branch views for a live destination). Its owning Work archived: read.
+ * A draft also takes its own Work's lifecycle (§2).
  */
 function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
   const terms: Term[] = [];
-  if (facts.projectDeleted || facts.deleted || facts.ownerWork?.deleted) {
+  const deleted = facts.deleted && !(at.kind === "draft" && facts.survivingDraft);
+  if (facts.projectDeleted || deleted || facts.ownerWork?.deleted) {
     terms.push({ cap: "none", limit: "not_found" });
   }
   if (facts.ownerWork) terms.push(...workTerms(facts.ownerWork));
   if (at.kind === "draft") {
-    if (!facts.draftWork || facts.draftWork.id !== at.workId) {
-      throw new Error(`File facts lack the draft Work ${at.workId}`);
+    if (!facts.branchWork || facts.branchWork.id !== at.workId) {
+      throw new Error(`File facts lack the branch Work ${at.workId}`);
     }
-    terms.push(...workTerms(facts.draftWork));
+    terms.push(...workTerms(facts.branchWork));
   }
   return terms;
 }
@@ -152,7 +148,7 @@ function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
 function workTerms(work: FileWorkFacts): Term[] {
   if (work.deleted) return [{ cap: "none", limit: "not_found" }];
   if (work.archived) {
-    return [{ cap: "read", limit: "work_archived", work: { id: work.id, slug: work.slug } }];
+    return [{ cap: "read", limit: "work_archived", work: { id: work.id, handle: work.handle } }];
   }
   return [];
 }
@@ -163,10 +159,12 @@ function workTerms(work: FileWorkFacts): Term[] {
  * of its thread's current Work, No Work's included (D55). The minimum wins.
  */
 function agentTerms(chain: AgentChain, facts: FileFacts): Term[] {
-  const terms: Term[] = [{ cap: SOURCE_RULES[facts.scheme].agentCap, limit: "uploads_read_only" }];
+  const terms: Term[] = [
+    { cap: SOURCE_AGENT_CAPS[facts.contentScheme], limit: "uploads_read_only" },
+  ];
   for (const link of chain) {
     const ownScratch =
-      facts.scheme === "scratch" &&
+      facts.contentScheme === "scratch" &&
       (link.scratchOwner.scope === "lineage"
         ? facts.ownerRootThreadId === link.scratchOwner.rootThreadId
         : facts.ownerWork?.id === link.scratchOwner.workId);

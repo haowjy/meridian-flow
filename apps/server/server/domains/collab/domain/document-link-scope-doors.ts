@@ -6,18 +6,14 @@
  *
  * Text crosses these doors: the Markdown engine (reads, the read API and
  * download, writer and import writes, projections), the model's edit core, a
- * reply's save, the draft-aware reads (Markdown, hashlines and revision), offline
- * reconciliation. Draft preview scopes both sides
- * in `work-draft-review-service.ts`; ContextFS.search scopes its source's
- * chapters together. A push scopes itself before branch locks in
- * `branch-push.ts`, and its settlement in `branch-push-transition.ts`. Links
+ * reply's save and draft-aware reads (Markdown, hashlines and revision).
+ * ContextFS.search scopes its source's chapters together. Links
  * spelled outside every scope are reported (`createLinkScopeObserver`).
  */
 
-import type { BranchPeerShadowAccess, ResponseWriteFinalizer } from "../contracts.js";
+import type { DraftPeerShadowAccess, ResponseWriteFinalizer } from "../contracts.js";
 import { asThreadPeerAgentEditCore, type ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
-import type { OfflineReconciliation } from "./offline-reconciliation.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 export function scopeMarkdownEngine(
@@ -46,13 +42,20 @@ export function scopeMarkdownEngine(
     announceSeeds: engine.announceSeeds,
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
+    // Neither spells a link: the repair reads its projection with links unbound.
+    initializeEmptyDocument: engine.initializeEmptyDocument,
+    repairDocumentAuthority: engine.repairDocumentAuthority,
+    // The lease spells nothing; the held write spells as the document it admits.
+    withLiveDocument: engine.withLiveDocument,
+    writeDocumentHeld: (input) =>
+      scopes.within(by(input.held.documentId), () => engine.writeDocumentHeld(input)),
   };
 }
 
 /**
  * A model call is scoped by its grant's project, which exists even for a
- * chapter the call is creating, and read as the account it acts for.
- * Each command binds its codec through DocumentLinksPort.
+ * chapter the call is creating, and read as the account it acts for; a
+ * call by the thread it reads in.
  */
 export function scopeAgentEdit(
   core: ThreadPeerAgentEditCore,
@@ -70,16 +73,14 @@ export function scopeAgentEdit(
   });
   return asThreadPeerAgentEditCore({
     // Passed through: no Markdown of their own, or it comes from the scoped engine.
-    recover: core.recover,
     // Saved and rolled back within the reply's thread, by the finalizer below.
     rollbackResponse: core.rollbackResponse,
     commitResponse: core.commitResponse,
     hasResponseDocument: core.hasResponseDocument,
-    prepare: core.prepare,
-    responseDocuments: core.responseDocuments,
-    responseDestination: core.responseDestination,
-    invalidateThreadDocument: core.invalidateThreadDocument,
-    evictThread: core.evictThread,
+    readRoom: core.readRoom,
+    refuseStaged: core.refuseStaged,
+    retirePeer: core.retirePeer,
+    dropStaged: core.dropStaged,
     retireThreadPeers: core.retireThreadPeers,
     read: (command, context) => scopes.within(byGrant(context), () => core.read(command, context)),
     write: (command, context) =>
@@ -104,26 +105,15 @@ export function scopeResponseFinalizer(
   };
 }
 
-/** Offline edits land in the change trail as text the writer reads back. */
-export function scopeOfflineReconciliation(
-  reconciliation: OfflineReconciliation,
-  scopes: DocumentLinkScopes,
-): OfflineReconciliation {
-  return {
-    reconcile: (input) =>
-      scopes.within({ documentId: input.documentId }, () => reconciliation.reconcile(input)),
-  };
-}
-
 /**
  * Draft-aware reads, in the reader's thread: its manifest peer and reply's
- * staged creates decide what a draft view holds. The revision depends on the
+ * staged creates decide what a branch view holds. The revision depends on the
  * tree, so it is scoped like the text.
  */
-export function scopeBranchPeer(
-  access: BranchPeerShadowAccess,
+export function scopeDraftPeer(
+  access: DraftPeerShadowAccess,
   scopes: DocumentLinkScopes,
-): BranchPeerShadowAccess {
+): DraftPeerShadowAccess {
   const by = (command: { documentId: string; threadId?: string | null }) => ({
     documentId: command.documentId,
     ...(command.threadId ? { viewer: { threadId: command.threadId } } : {}),
@@ -132,15 +122,11 @@ export function scopeBranchPeer(
     readEffectiveRevision: (command) =>
       scopes.within(by(command), () => access.readEffectiveRevision(command)),
     // Passed through: no Markdown of their own.
-    pullThreadPeer: access.pullThreadPeer,
-    flushBranchLivePull: access.flushBranchLivePull,
+    flushDraftLivePull: access.flushDraftLivePull,
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
-    resolveManifestMembership: access.resolveManifestMembership,
-    reconcileProjectManifest: access.reconcileProjectManifest,
-    transferLiveManifestMembership: access.transferLiveManifestMembership,
-    recordManifestDocumentCreated: access.recordManifestDocumentCreated,
-    recordManifestDocumentDeleted: access.recordManifestDocumentDeleted,
+    ensureCreatedDocumentDraft: access.ensureCreatedDocumentDraft,
+    retractCreatedDocumentDraft: access.retractCreatedDocumentDraft,
     readEffectiveHashlines: (command) =>
       scopes.within(by(command), () => access.readEffectiveHashlines(command)),
   };

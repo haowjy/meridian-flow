@@ -1,7 +1,9 @@
-import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
-import { createLocalFileAccessChanges } from "../../domains/file-policy/index.js";
-import { createDrizzleProjectWorkRepository } from "../../domains/projects/index.js";
-/** Route seam coverage for create-with-content followed by the public read projection. */
+/**
+ * Route seam coverage for create-with-content followed by the public read projection.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - upload-only binary creation, archived Scratch refusal, and lazy source provisioning
+ */
 
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,8 +13,18 @@ import {
   createTestDocumentLinkScopes,
   testLinkDeps,
 } from "../../domains/collab/test-support/document-link-scopes.js";
-import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
+import { createDrizzleContextCatalog } from "../../domains/context/adapters/context-catalog.js";
+import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
+import {
+  createAllowAllFileAccess,
+  createLocalFileAccessChanges,
+} from "../../domains/file-policy/index.js";
+import { createDrizzleProjectWorkRepository } from "../../domains/projects/index.js";
 import { createProjectRepositoryForTest } from "../../domains/projects/test-support/project-repository.js";
+import {
+  createTestDocumentRemoval,
+  createTestRemovalDeps,
+} from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -78,7 +90,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
+        ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
+        catalogMutations: createDrizzleContextCatalog(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -103,10 +117,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         collab,
         hocuspocus,
         contextPorts: createProductionUnifiedContextPortFactory({
+          pendingBranch: createTestWorkProjectionMutation(db),
           links: createTestDocumentLinkScopes(db),
           db,
+          removal: createTestDocumentRemoval(db),
           documentSync: collab,
-          manifestMembership: collab,
+          branches: collab.branches,
         }),
       };
     }
@@ -172,6 +188,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               fileAccess: drizzleFileAccess(db),
               projectRepo: createDrizzleProjectRepository({ db }),
               workRepo: createDrizzleProjectWorkRepository({
+                removal: createTestDocumentRemoval(db),
                 db,
                 lineageScratch: createDrizzleLineageScratchLifecycle(db),
                 fileAccessChanges: createLocalFileAccessChanges(),
@@ -288,7 +305,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("registers kb and user documents and unregisters deleted documents", async () => {
+    it("creates kb and user documents and hides deleted documents", async () => {
       const { collab, contextPorts } = createFixture();
       const port = contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
 
@@ -307,10 +324,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const kbDocumentId = await create(port, "kb", "/kb");
       await collab.drainHocuspocusPersistence();
-      const kbMembership = await collab.resolveManifestMembership({
-        projectId: PROJECT_ID as never,
+      await expect(port.stat("kb://kb.md")).resolves.toMatchObject({
+        ok: true,
+        value: { documentId: kbDocumentId },
       });
-      expect(kbMembership.members).toContain(kbDocumentId);
 
       const userDocumentId = await create(port, "user", "/user");
       await collab.drainHocuspocusPersistence();
@@ -318,10 +335,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         (project) => project.isPersonal,
       );
       if (!personalProject) throw new Error("user context project was not provisioned");
-      const userMembership = await collab.resolveManifestMembership({
-        projectId: personalProject.id as never,
+      await expect(port.stat("user://user.md")).resolves.toMatchObject({
+        ok: true,
+        value: { documentId: userDocumentId },
       });
-      expect(userMembership.members).toContain(userDocumentId);
 
       await expect(
         port.delete("user://user", {
@@ -331,15 +348,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: true,
         value: {
           status: "deleted",
-          deletedDocumentIds: [userDocumentId],
+          removed: [
+            {
+              documentId: userDocumentId,
+              removal: {
+                time: expect.any(String),
+                locationVersion: expect.stringMatching(/^[1-9]\d*$/),
+              },
+            },
+          ],
           availabilityGeneration: expect.not.stringMatching(/^0$/),
         },
       });
       await collab.drainHocuspocusPersistence();
-      const deletedMembership = await collab.resolveManifestMembership({
-        projectId: personalProject.id as never,
+      await expect(port.stat("user://user.md")).resolves.toMatchObject({
+        ok: false,
+        error: { code: "not_found" },
       });
-      expect(deletedMembership.members).not.toContain(userDocumentId);
     });
 
     it("refuses a writer's create in an archived Work's scratch before anything is written", async () => {
@@ -348,7 +373,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Archived",
-        slug: "archived",
+        handle: "w1",
         archivedAt: new Date(),
       });
       const { contextPorts } = createFixture({ load: false });
@@ -356,12 +381,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         PROJECT_ID,
         WORK_ID,
       );
-      if (!authority?.workSlug) throw new Error("missing Work authority");
+      if (!authority?.workHandle) throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         PROJECT_ID,
         USER_ID,
-        new Map([[authority.workSlug, authority]]),
+        new Map([[authority.workHandle, authority]]),
       );
       const fileAccess = drizzleFileAccess(db);
       const container = await containerTarget(
@@ -398,7 +423,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Empty archived Work",
-        slug: "empty-archived-work",
+        handle: "w2",
         archivedAt: new Date(),
       });
       const { contextPorts } = createFixture({ load: false });
@@ -406,70 +431,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         PROJECT_ID,
         WORK_ID,
       );
-      if (!authority?.workSlug) throw new Error("missing Work authority");
+      if (!authority?.workHandle) throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         PROJECT_ID,
         USER_ID,
-        new Map([[authority.workSlug, authority]]),
+        new Map([[authority.workHandle, authority]]),
       );
 
-      await expect(port.list(`scratch://@${authority.workSlug}/`)).resolves.toMatchObject({
+      await expect(port.list(`scratch://@${authority.workHandle}/`)).resolves.toMatchObject({
         ok: true,
         value: { entries: [] },
       });
       await expect(
         db.select().from(schema.contextSources).where(eq(schema.contextSources.workId, WORK_ID)),
       ).resolves.toEqual([]);
-    });
-
-    it("only backfills observer-less scratch documents during explicit reconciliation", async () => {
-      const projectSourceId = "00000000-0000-4000-8000-000000000925";
-      const workSourceId = "00000000-0000-4000-8000-000000000926";
-      const scratchDocumentId = "00000000-0000-4000-8000-000000000924";
-      await db.insert(schema.contextSources).values({
-        id: projectSourceId,
-        projectId: PROJECT_ID,
-        name: "Manuscript",
-        slug: "manuscript",
-        scope: "project",
-        isPrimary: true,
-      });
-      await db.insert(schema.works).values({
-        id: WORK_ID,
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        name: "Scratch Work",
-        slug: "scratch-work",
-      });
-      const { collab } = createFixture({ load: false, store: false });
-
-      await collab.resolveManifestMembership({ projectId: PROJECT_ID as never });
-
-      await db.insert(schema.contextSources).values({
-        id: workSourceId,
-        workId: WORK_ID,
-        name: "Scratch",
-        slug: "scratch",
-        scope: "work",
-      });
-      await db.insert(schema.documents).values({
-        id: scratchDocumentId,
-        contextSourceId: workSourceId,
-        name: "legacy-notes",
-        extension: "",
-        fileType: "markdown",
-      });
-
-      await expect(
-        collab.resolveManifestMembership({ projectId: PROJECT_ID as never }),
-      ).resolves.toMatchObject({ members: [] });
-
-      await collab.reconcileProjectManifest(PROJECT_ID as never);
-
-      await expect(
-        collab.resolveManifestMembership({ projectId: PROJECT_ID as never }),
-      ).resolves.toMatchObject({ members: [scratchDocumentId] });
     });
 
     it("denies the websocket document path for Work content after project deletion", async () => {
@@ -480,7 +456,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Deleted Project Work",
-        slug: "deleted-project-work",
+        handle: "w3",
       });
       await db.insert(schema.contextSources).values({
         id: workSourceId,

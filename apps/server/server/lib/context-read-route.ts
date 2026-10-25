@@ -1,14 +1,13 @@
 import {
   type CanonicalContextAuthority,
+  isOwnedContextScheme,
+  isWorkScopedScheme,
   parseUnifiedContextUri,
 } from "@meridian/contracts/context-uri";
 import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { ThreadId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
-import {
-  isWorkScopedBrowseScheme,
-  projectBrowseContextUri,
-  workScopedBrowseUri,
-} from "../domains/context/browse-layer-scheme.js";
+import { ownedBrowseUri, projectBrowseContextUri } from "../domains/context/browse-layer-scheme.js";
 import {
   contextPortForProjectBrowse,
   type UnifiedContextPortFactory,
@@ -41,6 +40,8 @@ export interface ContextReadRouteInput {
   rawPath: unknown;
   workId?: string | null;
   rootThreadId?: string | null;
+  /** The chat whose uploads the path names, when the route scopes to one. */
+  chatId?: string | null;
 }
 interface ResolvedReadPath {
   uri: string;
@@ -75,35 +76,36 @@ export function resolveContextReadPath(
       throw createError({ statusCode: 400, message: "Context path scheme does not match route" });
     const parsed = parseUnifiedContextUri(trimmed);
     if (!parsed.ok) throw createError({ statusCode: 400, message: parsed.error.reason });
-    if (isWorkScopedBrowseScheme(scheme)) {
+    if (isOwnedContextScheme(scheme)) {
       if ("kind" in authority && authority.kind === "contextual")
         throw createError({ statusCode: 500, message: "Missing resolved context authority" });
       if (parsed.value.authority.kind === "contextual") {
-        uri = workScopedBrowseUri(scheme, authority, parsed.value.path);
+        uri = ownedBrowseUri(scheme, authority, parsed.value.path);
       } else {
         const sameAuthority =
-          "workSlug" in authority
-            ? authority.workSlug === null
-              ? parsed.value.authority.kind === "none"
-              : parsed.value.authority.kind === "work" &&
-                parsed.value.authority.workSlug === authority.workSlug
+          "workHandle" in authority
+            ? parsed.value.authority.kind === "work" &&
+              parsed.value.authority.workHandle === authority.workHandle
             : "kind" in authority && authority.kind === "lineage"
               ? parsed.value.authority.kind === "lineage" &&
                 parsed.value.authority.rootThreadRef === authority.rootThreadRef
-              : parsed.value.authority.kind === "none";
+              : "kind" in authority && authority.kind === "chat"
+                ? parsed.value.authority.kind === "chat" &&
+                  parsed.value.authority.chatRef === authority.chatRef
+                : false;
         if (!sameAuthority) {
           throw createError({ statusCode: 400, message: "Context authority does not match route" });
         }
-        uri = workScopedBrowseUri(scheme, authority, parsed.value.path);
+        uri = ownedBrowseUri(scheme, authority, parsed.value.path);
       }
     } else uri = parsed.value.normalized;
   } else if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) {
     throw createError({ statusCode: 400, message: 'Malformed URI: expected "scheme://path"' });
-  } else if (isWorkScopedBrowseScheme(scheme)) {
+  } else if (isOwnedContextScheme(scheme)) {
     if ("kind" in authority && authority.kind === "contextual") {
       throw createError({ statusCode: 500, message: "Missing resolved context authority" });
     }
-    uri = workScopedBrowseUri(scheme, authority, trimmed);
+    uri = ownedBrowseUri(scheme, authority, trimmed);
   } else {
     uri = normalizeSchemePath(scheme, trimmed);
   }
@@ -127,8 +129,19 @@ export async function handleContextReadRequest(
     const lineage = await deps.contextPorts.lineages.byId(input.projectId, input.rootThreadId);
     if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
     authority = { kind: "lineage", rootThreadRef: lineage.rootThreadRef };
-  } else if (isWorkScopedBrowseScheme(input.scheme)) {
-    if (!input.workId) authority = { kind: "none" };
+  } else if (input.chatId) {
+    if (input.workId || input.scheme !== "uploads")
+      throw createError({ statusCode: 400, message: "Choose one uploads owner" });
+    const chat = await deps.contextPorts.topPrimaryChats.resolveTopPrimaryChat(
+      input.chatId as ThreadId,
+    );
+    if (!chat) throw createError({ statusCode: 404, message: "Chat not found" });
+    authority = { kind: "chat", chatRef: chat.chatRef };
+  } else if (input.scheme === "uploads") {
+    throw createError({ statusCode: 400, message: "Uploads belong to a chat" });
+  } else if (isWorkScopedScheme(input.scheme)) {
+    if (!input.workId)
+      throw createError({ statusCode: 400, message: "Scratch belongs to a Work or a chat" });
     else {
       const resolved = await deps.workAuthorityResolver.byId(input.projectId, input.workId);
       if (!resolved) {
@@ -140,12 +153,11 @@ export async function handleContextReadRequest(
   if (
     input.scheme === "scratch" &&
     !input.rootThreadId &&
-    !("workSlug" in authority && authority.workSlug !== null)
+    !("workHandle" in authority && authority.workHandle !== null)
   ) {
     throw createError({
       statusCode: 400,
-      message:
-        "Scratch requires a chat lineage or named Work. Use scratch://x in a chat, or scratch://@/c12/x.",
+      message: "Scratch belongs to a Work or a chat.",
     });
   }
   const path = resolveContextReadPath(input.scheme, input.rawPath, authority);
@@ -159,6 +171,7 @@ export async function handleContextReadRequest(
     userId: input.userId,
     workId: input.workId,
     rootThreadId: input.rootThreadId,
+    chatId: input.chatId,
   });
   if (!port) throwContextWorkUnavailableHttpError("work_missing");
   const ref = await port.stat(path.uri);

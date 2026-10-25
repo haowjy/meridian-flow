@@ -3,15 +3,14 @@
  * (project, reader) operation, filled in batches by what each door is about to
  * spell or bind (contract §4.4).
  *
- * A prepare loads only keys the snapshot has not seen: settlements by ahead id,
- * documents by id (with the canonical URI their folder chain spells today), and
- * every document at an exact or extension-omitted address. Readability comes
- * from the file policy's list path; presence from `deleted_at` plus the same
- * manifest membership ContextFS lists through, read only when a row needs it.
- * A draft view's own manifest decides what it holds; the live manifest only
- * tells a live document from a draft-only one.
+ * A prepare loads only keys the snapshot has not seen: an ahead ref's live settlement, documents
+ * by id, and every document at an exact or extension-omitted address. Each view reads
+ * from the tree view's identity status: where a document is in that view, and, for a
+ * hidden one, which branch it reads "in a draft" in and where that branch has it.
+ * Readability comes from the file policy's list path.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { BranchId, CatalogFolder } from "@meridian/contracts";
 import {
   type CatalogDocument,
   type ContextUriScheme,
@@ -24,10 +23,11 @@ import {
 } from "@meridian/contracts";
 import {
   contextOwner,
+  PROJECT_CONTEXT_AVAILABILITY_MAX_IDS,
   parseDocumentFilename,
   type ResolvedContextOwner,
 } from "@meridian/contracts/protocol";
-import type { DocumentId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   createHolderLinkScope,
@@ -45,57 +45,87 @@ import type {
   ScopePrepareRequest,
 } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
+import type { ProjectContextAvailabilityPort } from "../ports/project-context-availability.js";
+import type { HiddenNodeRepair } from "../tree/hidden-node-repair.js";
 import {
   type DocumentAddressSelection,
-  listsThroughLiveManifest,
+  type DocumentCoordinates,
   loadDocumentAddresses,
+  presentSourceId,
+} from "../tree/tree-addresses.js";
+import {
+  createTreeReader,
+  type IdentityStatus,
+  LIVE_TREE,
+  type TreeView,
+} from "../tree/tree-view.js";
+import { inspectTreeLocation } from "./context-fs/drizzle-tree-mutation-store.js";
+import {
+  resolveCanonicalAddress,
+  resolveCanonicalFolderAddress,
+  UnresolvableAddressError,
 } from "./document-address.js";
-
-/** Manifest membership of one view (the resolver ContextFS lists through). */
-export type LinkScopeMembership = (input: {
-  projectId: string;
-  workId?: string | null;
-  threadId?: string | null;
-  responseId?: string | null;
-  destination?: "live" | "draft";
-}) => Promise<{ members: readonly string[] }>;
+import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
 type Row = {
   id: string;
   projectId: string;
   scheme: ContextUriScheme;
   owner: ResolvedContextOwner;
-  /** Path inside its source, with extension. */
+  /** Path inside its source, with extension, at the row's own location. */
   path: string;
-  /** Decoded canonical URI. */
+  /** Decoded canonical URI at the row's own location. */
   uri: string;
-  /** Without the filename's extension: the key pass 3's extension-omitted match uses. */
-  stem: string | null;
   deleted: boolean;
   image: boolean;
   /** In the project's own manuscript (not a Work's): the only images the `asset:` rule spells by path. */
   manuscript: boolean;
 };
 
+/** One view's index: where each loaded document sits in that view. */
+type ViewIndex = {
+  statuses: ReadonlyMap<DocumentId, IdentityStatus>;
+  /** Decoded URI in this view → rows visible there. */
+  byUri: Map<string, Row[]>;
+  /** The same URI without its filename's extension: pass 3's extension-omitted key. */
+  byStem: Map<string, Row[]>;
+  /**
+   * Hidden documents this view doesn't use, by the address of the branch each reads "in a
+   * draft" in, oldest branch first. Only `documentAt` reads it: an ahead ref's address
+   * shows a branch's hidden document, while typed links (`documentFor`) never bind to one.
+   */
+  hiddenByUri: Map<string, Row[]>;
+};
+
 type Snapshot = {
   projectId: string | null;
   personalProjectId: string | null;
   viewer: string | null;
-  /** The thread read in: its manifest peer and reply's staged creates count in a draft view. */
+  /** The reader's thread, used to join nested scopes with the same authority. */
   viewerThreadId: string | null;
   /** Doors known to share this project. */
   members: Set<string>;
   open: boolean;
   prepared: boolean;
   rows: Map<string, Row | null>;
+  /** Row URIs: the image rules' last-address lookups. */
   byUri: Map<string, Row[]>;
-  byStem: Map<string, Row[]>;
+  folderIds: Set<string>;
+  folderAddresses: Set<string>;
+  foldersByView: Map<string, Map<string, CatalogFolder | null>>;
+  foldersAtByView: Map<string, Map<string, CatalogFolder | null>>;
   /** Decoded addresses whose exact and extension-omitted rows are all loaded. */
   addresses: Set<string>;
+  /** The live settlement by ahead id; null = unsettled or unregistered. */
   settlements: Map<string, string | null>;
+  /**
+   * Ids no document holds that a device's join forwarded to the joined document: a link
+   * typed offline to the new document names the device's id.
+   */
+  forwards: Map<string, string>;
   readable: Map<string, boolean>;
-  /** View key → member ids; absent until a row needs it. */
-  membership: Map<string, ReadonlySet<string>>;
+  /** View key → that view's identity statuses and address index. */
+  views: Map<string, ViewIndex>;
 };
 
 const memberKey = (key: LinkScopeKey) =>
@@ -105,25 +135,23 @@ const memberKey = (key: LinkScopeKey) =>
       ? `thread:${key.threadId}`
       : `document:${key.documentId}`;
 
-/** Baseline live is `live`; a reply's live view sees its own staged creates, so it is keyed apart. */
-const viewKey = (view: LinkView) =>
-  view.kind === "live"
-    ? view.responseId
-      ? `live:${view.responseId}`
-      : "live"
-    : `draft:${view.workId}:${view.responseId ?? ""}`;
+/** One key per tree view: a reply sees what its view sees. */
+const viewKey = (view: LinkView) => (view.kind === "live" ? "live" : `branch:${view.branchId}`);
+
+const treeViewOf = (view: LinkView): TreeView =>
+  view.kind === "live" ? LIVE_TREE : { kind: "branch", branchId: view.branchId as BranchId };
 
 export function createDrizzleDocumentLinkScopes(deps: {
   db: Database;
   fileAccess: Pick<FileAccess, "listAccess">;
-  /** The manifest authority; tests without one pass an explicit controlled resolver. */
-  membership: LinkScopeMembership;
+  availability?: ProjectContextAvailabilityPort;
   observer: LinkScopeObserver;
+  /** Repair on touch (§12.4): an inconsistent hidden node a resolve meets is tombstoned after it. */
+  repair?: Pick<HiddenNodeRepair, "schedule">;
 }): DocumentLinkScopes {
   const { db, observer } = deps;
-  if (typeof deps.membership !== "function") {
-    throw new TypeError("Document-link scopes need a manifest membership resolver");
-  }
+  const availability = deps.availability ?? createDrizzleProjectContextAvailability(db);
+  const tree = createTreeReader(db, deps.repair ? { repair: deps.repair } : {});
   const storage = new AsyncLocalStorage<Snapshot>();
 
   async function resolveProject(key: LinkScopeKey, threadId: string | null) {
@@ -140,11 +168,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
         : "threadId" in key
           ? sql`(SELECT t.project_id FROM threads t WHERE t.id = ${id}::uuid)`
           : sql`(
-            SELECT COALESCE(cs.project_id, w.project_id)
-            FROM documents d
-            JOIN context_sources cs ON cs.id = d.context_source_id
-            LEFT JOIN works w ON w.id = cs.work_id
-            WHERE d.id = ${id}::uuid)`;
+            SELECT ${await tree.projectOfDocument(id as DocumentId)}::uuid)`;
     const [row] = await currentDrizzleDb(db).execute<{
       project_id: string;
       owner: string;
@@ -164,52 +188,58 @@ export function createDrizzleDocumentLinkScopes(deps: {
     if (!snapshot?.open) return;
     snapshot.prepared = true;
 
+    const holder = request.holders[0];
+    const holderIds = [...new Set(request.holders.map(({ documentId }) => documentId))].filter(
+      (id) => !snapshot.rows.has(id),
+    );
+    for (const id of holderIds) snapshot.rows.set(id, null);
+    for (const row of await loadRows({ ids: holderIds })) remember(snapshot, row);
+    const holderUri = holder ? await holderAddress(snapshot, holder) : null;
     const stored = storedLinkKeys({
       docs: request.docs,
       nodes: request.stored,
       refs: request.refs,
+      holderUri,
     });
-    const refs = stored.refs;
     const ids = new Set([
       ...request.holders.map((holder) => holder.documentId),
       ...stored.assetIds,
     ]);
     const addresses = new Set([...(request.addresses ?? []), ...stored.aheadAddresses]);
+    const folderIds = new Set<string>();
+    const folderAddresses = new Set([
+      ...stored.folderAddresses,
+      ...(request.folderAddresses ?? []),
+    ]);
     const aheadIds = new Set<string>();
-    for (const ref of refs) {
+    for (const ref of stored.refs) {
       const parsed = parseLinkRef(ref);
       if (parsed?.kind === "doc") ids.add(parsed.documentId);
+      else if (parsed?.kind === "folder") folderIds.add(parsed.folderId);
       else if (parsed?.kind === "ahead") aheadIds.add(parsed.aheadId);
     }
-
-    const newAheadIds = [...aheadIds].filter((id) => !snapshot.settlements.has(id));
-    if (newAheadIds.length > 0) {
-      const settled = await currentDrizzleDb(db).execute<{
-        ahead_id: string;
-        settled: string | null;
-      }>(
-        sql`SELECT ahead_id::text, settled_document_id::text AS settled FROM link_ahead_refs
-          WHERE ahead_id IN (${uuidList(newAheadIds)})`,
-      );
-      const byId = new Map(settled.map((row) => [row.ahead_id, row.settled]));
-      for (const id of newAheadIds) {
-        const documentId = byId.get(id) ?? null;
-        snapshot.settlements.set(id, documentId);
-        if (documentId) ids.add(documentId);
-      }
-    }
+    const views: LinkView[] = [
+      { kind: "live" },
+      ...request.holders.map((holder) => holder.view),
+      ...(request.views ?? []),
+    ];
+    for (const documentId of await loadMeanings(snapshot, aheadIds)) ids.add(documentId);
 
     const newIds = [...ids].filter((id) => !snapshot.rows.has(id));
     const loadedById = await loadRows({ ids: newIds });
     for (const id of newIds) snapshot.rows.set(id, null);
     for (const row of loadedById) remember(snapshot, row);
+    await followForwards(snapshot, newIds);
 
-    // Written relative links resolve against the holder, which is loaded now.
-    const holderUri = request.holders[0]
-      ? (snapshot.rows.get(request.holders[0].documentId)?.uri ?? null)
-      : null;
-    for (const uri of writtenAddresses(request.written ?? [], holderUri)) addresses.add(uri);
-    // A deleted picture keeps its path only while no other image holds it.
+    // Written relative links resolve against the holder, at its address in its view.
+    if (holder && request.written?.length) {
+      for (const target of writtenAddresses(request.written, holderUri, request.uploadsChat)) {
+        (target.kind === "folder" ? folderAddresses : addresses).add(target.uri);
+      }
+    }
+    // A deleted picture keeps its path only while no other image holds it. Loading by the
+    // row's own deleted flag is a superset of the view's rule: presence is still decided
+    // by identity status alone.
     for (const id of newIds) {
       const row = snapshot.rows.get(id);
       if (row?.deleted && row.image) addresses.add(row.uri);
@@ -217,16 +247,169 @@ export function createDrizzleDocumentLinkScopes(deps: {
     await loadAddresses(
       snapshot,
       [...addresses].filter((uri) => !snapshot.addresses.has(uri)),
+      views,
     );
 
+    await loadViews(snapshot, views);
     await loadReadability(snapshot);
-    await loadMembership(snapshot, [
-      ...request.holders.map((holder) => holder.view),
-      ...(request.views ?? []),
-    ]);
+    await loadFolders(snapshot, views, folderIds, folderAddresses);
   }
 
-  async function loadAddresses(snapshot: Snapshot, uris: readonly string[]) {
+  async function loadFolders(
+    snapshot: Snapshot,
+    views: readonly LinkView[],
+    requestedIds: ReadonlySet<string>,
+    requestedAddresses: ReadonlySet<string>,
+  ) {
+    if (!snapshot.projectId || !snapshot.viewer) return;
+    for (const id of requestedIds) snapshot.folderIds.add(id);
+    for (const uri of requestedAddresses) snapshot.folderAddresses.add(uri);
+    for (const view of new Map(views.map((item) => [viewKey(item), item])).values()) {
+      const byId = snapshot.foldersByView.get(viewKey(view)) ?? new Map();
+      const atAddress = snapshot.foldersAtByView.get(viewKey(view)) ?? new Map();
+      const addressIds = new Map<string, string | null>();
+      for (const uri of snapshot.folderAddresses) {
+        if (atAddress.has(uri)) continue;
+        let folderId: string | null = null;
+        try {
+          const coordinates = await resolveCanonicalFolderAddress(db, {
+            holderProjectId: snapshot.projectId as ProjectId,
+            address: uri,
+          });
+          const sourceId = await presentSourceId(db, {
+            scheme: coordinates.scheme,
+            workId: coordinates.workId,
+            rootThreadId: coordinates.rootThreadId,
+            chatThreadId: coordinates.chatThreadId,
+            project: { id: coordinates.projectId },
+          });
+          const location = sourceId
+            ? await inspectTreeLocation(
+                db,
+                sourceId,
+                coordinates.path,
+                treeViewOf(view),
+                "directory",
+              )
+            : null;
+          folderId = location?.kind === "directory" ? location.nodeId : null;
+        } catch (cause) {
+          if (!(cause instanceof UnresolvableAddressError)) throw cause;
+        }
+        addressIds.set(uri, folderId);
+      }
+      const ids = new Set([
+        ...[...snapshot.folderIds].filter((id) => !byId.has(id)),
+        ...[...addressIds.values()].filter((id): id is string => id !== null && !byId.has(id)),
+      ]);
+      if (ids.size > 0) {
+        const answers = new Map<
+          string,
+          NonNullable<Awaited<ReturnType<typeof availability.lookup>>["folderResolutions"]>[number]
+        >();
+        const requested = [...ids];
+        for (
+          let start = 0;
+          start < requested.length;
+          start += PROJECT_CONTEXT_AVAILABILITY_MAX_IDS
+        ) {
+          const resolved = await availability.lookup(
+            {
+              projectId: snapshot.projectId as ProjectId,
+              documentIds: [],
+              folderIds: requested.slice(start, start + PROJECT_CONTEXT_AVAILABILITY_MAX_IDS),
+              view: treeViewOf(view),
+            },
+            { userId: snapshot.viewer },
+          );
+          for (const item of resolved.folderResolutions ?? []) answers.set(item.folderId, item);
+        }
+        for (const id of ids) {
+          const answer = answers.get(id);
+          byId.set(
+            id,
+            answer?.kind === "available"
+              ? {
+                  folderId: id,
+                  uri: answer.entry.uri,
+                  readable: true,
+                  nameable: true,
+                }
+              : null,
+          );
+        }
+      }
+      for (const [uri, id] of addressIds) {
+        const folder = id ? (byId.get(id) ?? null) : null;
+        atAddress.set(uri, folder?.uri === uri ? folder : null);
+      }
+      snapshot.foldersByView.set(viewKey(view), byId);
+      snapshot.foldersAtByView.set(viewKey(view), atAddress);
+    }
+  }
+
+  /** Loads the joined document for each id that names no document but was forwarded to one. */
+  async function followForwards(snapshot: Snapshot, ids: readonly string[]) {
+    if (!snapshot.projectId) return;
+    const missing = ids.filter((id) => isUuid(id) && snapshot.rows.get(id) === null);
+    if (missing.length === 0) return;
+    const forwarded = await currentDrizzleDb(db).execute<{ from_id: string; to_id: string }>(
+      sql`SELECT from_document_id::text AS from_id, to_document_id::text AS to_id
+        FROM document_forwards
+        WHERE from_document_id IN (${uuidList(missing)}) AND project_id = ${snapshot.projectId}::uuid`,
+    );
+    const targets = forwarded.map((row) => row.to_id).filter((id) => !snapshot.rows.has(id));
+    for (const id of targets) snapshot.rows.set(id, null);
+    for (const row of await loadRows({ ids: targets })) remember(snapshot, row);
+    for (const row of forwarded) snapshot.forwards.set(row.from_id, row.to_id);
+  }
+
+  /** The live settlement of every ahead id the snapshot doesn't hold yet; returns the documents they name. */
+  async function loadMeanings(snapshot: Snapshot, requested: ReadonlySet<string>) {
+    const named = new Set<string>();
+    const fresh = [...requested].filter((id) => !snapshot.settlements.has(id) && isUuid(id));
+    for (const id of requested) if (!isUuid(id)) snapshot.settlements.set(id, null);
+    if (fresh.length > 0) {
+      const settled = await currentDrizzleDb(db).execute<{
+        ahead_id: string;
+        settled: string | null;
+      }>(
+        sql`SELECT ahead_id::text, settled_document_id::text AS settled FROM link_ahead_refs
+          WHERE ahead_id IN (${uuidList(fresh)})`,
+      );
+      const byId = new Map(settled.map((row) => [row.ahead_id, row.settled]));
+      for (const id of fresh) {
+        const documentId = byId.get(id) ?? null;
+        snapshot.settlements.set(id, documentId);
+        if (documentId) named.add(documentId);
+      }
+    }
+    return named;
+  }
+
+  async function holderAddress(
+    snapshot: Snapshot,
+    holder: { documentId: string; view: LinkView },
+  ): Promise<string | null> {
+    const status = (await tree.identityStatus(treeViewOf(holder.view), [holder.documentId])).get(
+      holder.documentId as DocumentId,
+    );
+    return status?.kind === "visible"
+      ? status.address.uri
+      : (snapshot.rows.get(holder.documentId)?.uri ?? null);
+  }
+
+  /**
+   * Rows whose own name matches each address (exact and extension-omitted), plus, in a
+   * branch view, whatever that branch has at the exact address (its location may not be
+   * its row's).
+   */
+  async function loadAddresses(
+    snapshot: Snapshot,
+    uris: readonly string[],
+    views: readonly LinkView[],
+  ) {
+    if (uris.length === 0) return;
     const names = new Set<string>();
     for (const uri of uris) {
       const parsed = parseContextUri(uri);
@@ -238,30 +421,50 @@ export function createDrizzleDocumentLinkScopes(deps: {
     );
     const rows = await loadRows({ names: [...names], projectIds: projects });
     for (const row of rows) if (!snapshot.rows.get(row.id)) remember(snapshot, row);
+
+    const branches = views.filter((view) => view.kind === "branch");
+    if (branches.length > 0 && snapshot.projectId) {
+      const coordinates = await coordinatesOf(snapshot.projectId as ProjectId, uris);
+      const occupants = new Set<string>();
+      for (const view of branches) {
+        for (const ids of (await tree.occupantsAt(treeViewOf(view), coordinates)).values()) {
+          for (const id of ids) occupants.add(id);
+        }
+      }
+      const unknown = [...occupants].filter((id) => !snapshot.rows.get(id));
+      for (const row of await loadRows({ ids: unknown })) remember(snapshot, row);
+    }
     for (const uri of uris) snapshot.addresses.add(uri);
+  }
+
+  /** Storage coordinates of canonical addresses; an address naming nothing is skipped. */
+  async function coordinatesOf(projectId: ProjectId, uris: readonly string[]) {
+    const out: DocumentCoordinates[] = [];
+    for (const address of uris) {
+      try {
+        out.push(await resolveCanonicalAddress(db, { holderProjectId: projectId, address }));
+      } catch (cause) {
+        // Not canonical, no extension, or a Work that doesn't exist: nothing sits there.
+        if (!(cause instanceof UnresolvableAddressError)) throw cause;
+      }
+    }
+    return out;
   }
 
   /** Documents and the canonical URIs their folder chains spell, deleted rows included. */
   async function loadRows(selection: DocumentAddressSelection): Promise<Row[]> {
-    return (await loadDocumentAddresses(db, selection)).map((address) => {
-      const filename = address.path.slice(address.path.lastIndexOf("/") + 1);
-      const name = parseDocumentFilename(filename);
-      return {
-        id: address.documentId,
-        projectId: address.projectId,
-        scheme: address.scheme,
-        owner: contextOwner(address.lockWorkId, address.rootThreadId),
-        path: address.path,
-        uri: address.uri,
-        stem:
-          name.ok && name.value.extension
-            ? address.uri.slice(0, address.uri.lastIndexOf("/") + 1) + name.value.name
-            : null,
-        deleted: address.deleted,
-        image: address.image,
-        manuscript: address.scheme === "manuscript" && address.lockWorkId === null,
-      };
-    });
+    if ("ids" in selection && selection.ids.length === 0) return [];
+    return (await loadDocumentAddresses(db, selection)).map((address) => ({
+      id: address.documentId,
+      projectId: address.projectId,
+      scheme: address.scheme,
+      owner: contextOwner(address.lockWorkId, address.rootThreadId, address.chatThreadId),
+      path: address.path,
+      uri: address.uri,
+      deleted: address.deleted,
+      image: address.image,
+      manuscript: address.scheme === "manuscript" && address.lockWorkId === null,
+    }));
   }
 
   async function loadReadability(snapshot: Snapshot) {
@@ -269,66 +472,66 @@ export function createDrizzleDocumentLinkScopes(deps: {
       (row): row is Row => row !== null && !snapshot.readable.has(row.id),
     );
     if (unknown.length === 0) return;
+    // A hidden document's facts come from the branch it reads "in a draft" in.
+    const branchViews = new Map<DocumentId, TreeView>();
+    for (const { statuses } of snapshot.views.values()) {
+      for (const [id, status] of statuses) {
+        const branch = status.kind === "hidden" || status.kind === "visible" ? status.branch : null;
+        if (branch && !branchViews.has(id)) {
+          branchViews.set(id, { kind: "branch", branchId: branch.branchId });
+        }
+      }
+    }
     const access = snapshot.viewer
       ? await deps.fileAccess.listAccess(
           { accountId: snapshot.viewer as UserId },
           unknown.map((row) => row.id as DocumentId),
+          { branchViews },
         )
       : new Map();
     for (const row of unknown) snapshot.readable.set(row.id, access.has(row.id as DocumentId));
   }
 
-  /**
-   * Membership of each view about to be spelled or read in, read only once a
-   * present manifest-governed row needs it: the baseline live set always (it
-   * tells live from draft-only), and each other view's own set, which alone
-   * decides what it holds: a draft's, or a reply's live view with that reply's
-   * staged creates, each read with its thread and response authority. A
-   * failure propagates: authority failure is never permission to expose rows.
-   */
-  async function loadMembership(snapshot: Snapshot, views: readonly LinkView[]) {
-    const projectId = snapshot.projectId;
-    if (!projectId) return;
-    const governed = [...snapshot.rows.values()].some(
-      (row) =>
-        row !== null &&
-        !row.deleted &&
-        row.projectId === projectId &&
-        listsThroughLiveManifest(row.scheme),
-    );
-    if (!governed) return;
-    await members(snapshot, "live", { projectId });
-    for (const view of views) {
-      const key = viewKey(view);
-      if (key === "live") continue;
-      await members(snapshot, key, {
-        projectId,
-        workId: view.kind === "draft" ? view.workId : null,
-        threadId: snapshot.viewerThreadId,
-        responseId: view.responseId ?? null,
-        destination: view.kind,
-      });
+  async function loadViews(snapshot: Snapshot, views: readonly LinkView[]) {
+    const ids = [...snapshot.rows.keys()] as DocumentId[];
+    const keys = new Map(views.map((view) => [viewKey(view), view]));
+    for (const [key, view] of keys) {
+      const statuses = await tree.identityStatus(treeViewOf(view), ids);
+      const index: ViewIndex = {
+        statuses,
+        byUri: new Map(),
+        byStem: new Map(),
+        hiddenByUri: new Map(),
+      };
+      const hidden: { row: Row; at: IdentityStatus & { kind: "hidden" } }[] = [];
+      for (const [id, status] of statuses) {
+        const row = snapshot.rows.get(id);
+        if (!row) continue;
+        if (status.kind === "hidden") hidden.push({ row, at: status });
+        if (status.kind !== "visible") continue;
+        push(index.byUri, status.address.uri, row);
+        const stem = stemOf(status.address.uri);
+        if (stem) push(index.byStem, stem, row);
+      }
+      hidden.sort(
+        (a, b) =>
+          a.at.branch.createdAt.getTime() - b.at.branch.createdAt.getTime() ||
+          a.at.branch.branchId.localeCompare(b.at.branch.branchId),
+      );
+      for (const { row, at } of hidden) push(index.hiddenByUri, at.address.uri, row);
+      snapshot.views.set(key, index);
     }
-  }
-
-  async function members(
-    snapshot: Snapshot,
-    key: string,
-    view: Parameters<LinkScopeMembership>[0],
-  ): Promise<void> {
-    if (snapshot.membership.has(key)) return;
-    snapshot.membership.set(key, new Set((await deps.membership(view)).members));
   }
 
   return {
     async within(key, operation) {
       const enclosing = storage.getStore();
-      const outer = !key.memberships && enclosing?.open ? enclosing : undefined;
+      const outer = enclosing?.open ? enclosing : undefined;
       const member = memberKey(key);
       const members = [member, ...(key.documentIds ?? []).map((id) => `document:${id}`)];
       const threadId = key.viewer?.threadId ?? ("threadId" in key ? key.threadId : null);
-      // A door joins only a snapshot read as its account in its thread: membership and
-      // readability depend on both, so a more specific reader never inherits a vaguer one.
+      // A door joins only a snapshot read as its account in its thread: readability
+      // depends on both, so a more specific reader never inherits a vaguer one.
       const joins = (snapshot: Snapshot) =>
         (key.viewer?.accountId === undefined || snapshot.viewer === key.viewer.accountId) &&
         (threadId === null || snapshot.viewerThreadId === threadId);
@@ -353,13 +556,15 @@ export function createDrizzleDocumentLinkScopes(deps: {
         prepared: false,
         rows: new Map(),
         byUri: new Map(),
-        byStem: new Map(),
+        folderIds: new Set(),
+        folderAddresses: new Set(),
+        foldersByView: new Map(),
+        foldersAtByView: new Map(),
         addresses: new Set(),
         settlements: new Map(),
+        forwards: new Map(),
         readable: new Map(),
-        membership: new Map(
-          key.memberships?.map(({ view, members }) => [viewKey(view), new Set(members)]),
-        ),
+        views: new Map(),
       };
       try {
         return await storage.run(opened, operation);
@@ -380,10 +585,11 @@ export function createDrizzleDocumentLinkScopes(deps: {
         observer.snapshotMiss({ documentId, key, prepared: snapshot.prepared });
       const holderRow = snapshot.rows.get(documentId);
       if (holderRow === undefined) miss(`holder:${documentId}`);
+      const status = snapshot.views.get(viewKey(view))?.statuses.get(documentId as DocumentId);
       // The holder's own row owns its project; a key that named no project leaves it empty.
       return createHolderLinkScope(
         {
-          uri: holderRow?.uri ?? null,
+          uri: status?.kind === "visible" ? status.address.uri : (holderRow?.uri ?? null),
           projectId: holderRow?.projectId ?? snapshot.projectId ?? "",
           view,
         },
@@ -401,28 +607,66 @@ export function createDrizzleDocumentLinkScopes(deps: {
       const miss = (key: string) =>
         observer.snapshotMiss({ documentId: uri ?? "reader", key, prepared: snapshot.prepared });
       return createHolderLinkScope(
-        {
-          uri,
-          projectId: snapshot.projectId ?? "",
-          view,
-        },
+        { uri, projectId: snapshot.projectId ?? "", view },
         snapshotCatalog(snapshot, view, miss),
         miss,
       );
     },
+    branchCreatedAt({ view, uri }) {
+      const snapshot = storage.getStore();
+      return snapshot?.open ? snapshotCatalog(snapshot, view, () => {}).branchCreatedAt(uri) : null;
+    },
+    async pinHolder({ view, documentId, uri }) {
+      // Pinning answers for the snapshot's reader: no open snapshot, no authority to pin in.
+      const snapshot = storage.getStore();
+      if (!snapshot?.open || !snapshot.projectId) return null;
+      let candidate: string | null = null;
+      if (documentId !== undefined) {
+        candidate = isUuid(documentId) ? documentId : null;
+      } else if (uri !== null) {
+        const [coordinates] = await coordinatesOf(snapshot.projectId as ProjectId, [uri]);
+        const [occupants = []] = coordinates
+          ? (await tree.occupantsAt(treeViewOf(view), [coordinates])).values()
+          : [];
+        candidate = occupants.length === 1 ? (occupants[0] ?? null) : null;
+      }
+      if (candidate === null) return null;
+      // A holder is a document this reader may name and read, by the catalog's own rule:
+      // an id alone is no capability, so an unreachable one stays unresolved and unspelled.
+      await prepare({ holders: [], refs: [`doc:${candidate}`], views: [view] });
+      const document = snapshotCatalog(snapshot, view, () => {}).document(candidate);
+      const status = snapshot.views.get(viewKey(view))?.statuses.get(candidate as DocumentId);
+      return document && reachable(document) && status?.kind === "visible"
+        ? { documentId: candidate, uri: status.address.uri }
+        : null;
+    },
   };
+}
+
+/** A document the reader may name, read and reach: the one authorization boundary. */
+function reachable(document: CatalogDocument | null): document is CatalogDocument {
+  return (
+    document !== null && document.presence !== "deleted" && document.readable && document.nameable
+  );
 }
 
 function remember(snapshot: Snapshot, row: Row) {
   snapshot.rows.set(row.id, row);
   push(snapshot.byUri, row.uri, row);
-  if (row.stem) push(snapshot.byStem, row.stem, row);
 }
 
 function push(map: Map<string, Row[]>, key: string, row: Row) {
   const rows = map.get(key);
   if (!rows) map.set(key, [row]);
   else if (!rows.some((existing) => existing.id === row.id)) rows.push(row);
+}
+
+/** The address with its registered extension omitted; prose names have none to omit. */
+function stemOf(uri: string): string | null {
+  const name = parseDocumentFilename(uri.slice(uri.lastIndexOf("/") + 1));
+  return name.ok && name.value.extension
+    ? uri.slice(0, uri.lastIndexOf("/") + 1) + name.value.name
+    : null;
 }
 
 function uuidList(ids: readonly string[]): SQL {
@@ -436,6 +680,8 @@ function uuidList(ids: readonly string[]): SQL {
 
 const EMPTY_CATALOG: HolderCatalog = {
   document: () => null,
+  folder: () => null,
+  folderAt: () => null,
   settlement: () => null,
   documentAt: () => null,
   documentFor: () => null,
@@ -443,103 +689,179 @@ const EMPTY_CATALOG: HolderCatalog = {
   assetFor: () => null,
 };
 
-/** Membership this view needs was never loaded: the lookup is a miss, not an absence. */
+/** Identity status this view needs was never loaded: the lookup is a miss, not an absence. */
 const UNLOADED = Symbol("unloaded");
 
-/** The snapshot as one view sees it; reads the maps at each call, so later prepares count. */
+/**
+ * The snapshot as one view sees it, from one holder (null for a reader door); reads the
+ * maps at each call, so later prepares count.
+ */
 function snapshotCatalog(
   snapshot: Snapshot,
   view: LinkView,
   miss: (key: string) => void,
-): HolderCatalog {
-  const presence = (row: Row): CatalogDocument["presence"] | null | typeof UNLOADED => {
-    if (row.deleted) return "deleted";
-    if (row.projectId !== snapshot.projectId || !listsThroughLiveManifest(row.scheme))
-      return "live";
-    const live = snapshot.membership.get("live");
-    const own = snapshot.membership.get(viewKey(view));
-    if (!live || !own) {
-      miss(`membership:${own ? "live" : viewKey(view)}`);
-      return UNLOADED;
-    }
-    // The view's own manifest wins: a draft that removed a live document lacks
-    // it; a reply's staged create is in its own view only, not yet live.
-    if (!own.has(row.id)) return null;
-    return live.has(row.id) ? "live" : "draft";
+): HolderCatalog & { branchCreatedAt(uri: string): CatalogDocument | null } {
+  const key = viewKey(view);
+  /** This view's identity status for a row; a status it never loaded is a miss, never an absence. */
+  const statusOf = (row: Row) => {
+    const status = snapshot.views.get(key)?.statuses.get(row.id as DocumentId);
+    if (status) return status;
+    miss(`identity:${row.id}`);
+    return UNLOADED;
   };
-  const toDocument = (row: Row): CatalogDocument | null | undefined => {
-    const present = presence(row);
-    if (present === UNLOADED) return undefined;
-    if (present === null) return null;
+  const toDocument = (row: Row): CatalogDocument | null | typeof UNLOADED => {
+    const status = statusOf(row);
+    if (status === UNLOADED) return UNLOADED;
+    if (status.kind === "gone") return null;
+    const address =
+      status.kind === "deleted"
+        ? status.lastAddress
+        : status.kind === "hidden" || status.kind === "visible"
+          ? status.address
+          : null;
+    // "In a draft": hidden, wherever the reader sees it, named by the branch it reads in.
+    const hidden = status.kind === "hidden" || (status.kind === "visible" && status.hidden);
+    const branch =
+      status.kind === "hidden" || status.kind === "visible" ? status.branch : undefined;
     return {
       documentId: row.id,
       owner: row.owner,
       projectId: row.projectId,
-      uri: row.uri,
-      presence: present,
+      uri: address?.uri ?? row.uri,
+      presence: status.kind === "deleted" ? "deleted" : hidden ? "branch" : "live",
+      ...(branch ? { branch: { branchId: branch.branchId, workId: branch.originWorkId } } : {}),
       readable: snapshot.readable.get(row.id) ?? false,
       nameable:
         row.projectId === snapshot.projectId ||
         (row.projectId === snapshot.personalProjectId && row.scheme === "user"),
     };
   };
-  const reachable = (document: CatalogDocument | null): document is CatalogDocument =>
-    document !== null && document.presence !== "deleted" && document.readable && document.nameable;
-  const images = (uri: string) =>
-    (snapshot.byUri.get(uri) ?? []).filter((row) => row.image && row.manuscript);
-  const liveImage = (uri: string) => images(uri).find((row) => !row.deleted);
+  const atAddress = (uri: string, stems: boolean) => {
+    const index = snapshot.views.get(key);
+    if (!index) {
+      miss(`view:${key}`);
+      return undefined;
+    }
+    const rows = [...(index.byUri.get(uri) ?? []), ...(stems ? (index.byStem.get(uri) ?? []) : [])];
+    const documents = rows.map(toDocument);
+    return documents.includes(UNLOADED)
+      ? undefined
+      : documents.filter((document): document is CatalogDocument | null => document !== UNLOADED);
+  };
+  // Pictures by their rows' own addresses; presence, as for every link, is the view's
+  // identity status: a hidden tombstone is gone, never a deleted picture at its path.
+  // Each answers UNLOADED when any image at the path has no status in this view.
+  const images = (uri: string) => {
+    const found: { row: Row; kind: IdentityStatus["kind"] }[] = [];
+    for (const row of snapshot.byUri.get(uri) ?? []) {
+      if (!row.image || !row.manuscript) continue;
+      const status = statusOf(row);
+      if (status === UNLOADED) return UNLOADED;
+      found.push({ row, kind: status.kind });
+    }
+    return found;
+  };
+  const liveImage = (uri: string) => {
+    const found = images(uri);
+    if (found === UNLOADED) return UNLOADED;
+    return found.find((image) => image.kind === "visible")?.row;
+  };
   const soleDeletedImage = (uri: string) => {
-    const deleted = images(uri).filter((row) => row.deleted);
-    return !liveImage(uri) && deleted.length === 1 ? deleted[0] : undefined;
+    const found = images(uri);
+    if (found === UNLOADED) return UNLOADED;
+    const deleted = found.filter((image) => image.kind === "deleted");
+    return !found.some((image) => image.kind === "visible") && deleted.length === 1
+      ? deleted[0]?.row
+      : undefined;
   };
   return {
-    document(id) {
-      const row = snapshot.rows.get(id);
-      if (row === undefined) return undefined;
-      return row && toDocument(row);
+    /**
+     * What this branch view created at an address a typed link names: the exact address, else
+     * the one extension-omitted match. Only the view's own branch counts (`documentAt` shows
+     * an ahead ref any branch's creation), and only a document the reader may name and read.
+     */
+    branchCreatedAt(uri) {
+      if (view.kind !== "branch" || !snapshot.addresses.has(uri)) return null;
+      const statuses = snapshot.views.get(key)?.statuses;
+      const created = [...(statuses ?? [])].flatMap(([id, status]) => {
+        const row = snapshot.rows.get(id);
+        const own =
+          (status.kind === "hidden" || (status.kind === "visible" && status.hidden)) &&
+          status.branch?.branchId === view.branchId;
+        return row && own ? [{ row, address: status.address.uri }] : [];
+      });
+      const match = matchDocumentPath(created, uri, (entry) => entry.address);
+      const document = match ? toDocument(match.row) : null;
+      return document && document !== UNLOADED && reachable(document) ? document : null;
     },
+    document(id) {
+      const row = snapshot.rows.get(snapshot.forwards.get(id) ?? id);
+      if (row === undefined) return undefined;
+      if (row === null) return null;
+      const document = toDocument(row);
+      return document === UNLOADED ? undefined : document;
+    },
+    folder(id) {
+      if (!snapshot.folderIds.has(id)) return undefined;
+      return snapshot.foldersByView.get(key)?.get(id) ?? null;
+    },
+    folderAt(uri) {
+      if (!snapshot.folderAddresses.has(uri)) return undefined;
+      return snapshot.foldersAtByView.get(key)?.get(uri) ?? null;
+    },
+    // An ahead ref binds once, globally, on a live arrival; until then it reads by address.
     settlement: (aheadId) => snapshot.settlements.get(aheadId),
     documentAt(uri) {
       if (!snapshot.addresses.has(uri)) return undefined;
-      const documents = (snapshot.byUri.get(uri) ?? []).map(toDocument);
-      if (documents.includes(undefined)) return undefined;
+      const documents = atAddress(uri, false);
+      if (documents === undefined) return undefined;
+      const present = documents.find(
+        (document): document is CatalogDocument =>
+          document !== null && document.presence !== "deleted",
+      );
+      if (present) return present;
+      // Nothing visible there: a branch's hidden document reads "in a draft".
+      const hidden = (snapshot.views.get(key)?.hiddenByUri.get(uri) ?? []).map(toDocument);
+      if (hidden.includes(UNLOADED)) return undefined;
       return (
-        documents.find(
-          (document): document is CatalogDocument =>
-            document != null && document.presence !== "deleted",
+        hidden.find(
+          (document): document is CatalogDocument => document !== null && document !== UNLOADED,
         ) ?? null
       );
     },
     documentFor(uri) {
       if (!snapshot.addresses.has(uri)) return undefined;
-      const key = documentPathKey(uri);
-      const documents = [
-        ...(snapshot.byUri.get(key) ?? []),
-        ...(snapshot.byStem.get(key) ?? []),
-      ].map(toDocument);
-      if (documents.includes(undefined)) return undefined;
-      const candidates = documents.filter(
-        (document): document is CatalogDocument => document !== undefined && reachable(document),
-      );
-      return matchDocumentPath(candidates, uri, (document) => document.uri);
+      const documents = atAddress(documentPathKey(uri), true);
+      if (documents === undefined) return undefined;
+      return matchDocumentPath(documents.filter(reachable), uri, (document) => document.uri);
     },
     assetAddress(id) {
       const row = snapshot.rows.get(id);
       if (row === undefined) return undefined;
       // Never another project's address: its id names nothing this reader has.
       if (!row?.image || row.projectId !== snapshot.projectId) return null;
-      if (row.manuscript && !row.deleted) return { kind: "path", path: row.path };
+      const status = statusOf(row);
+      if (status === UNLOADED) return undefined;
+      // "gone" is a hidden tombstone, a hidden row no branch uses, or a row with no
+      // spellable address: it names nothing this reader can reach, so it is unspelled like a
+      // missing id. A row in a retired source still spells its last address.
+      if (status.kind === "gone") return null;
+      if (row.manuscript && status.kind === "visible") return { kind: "path", path: row.path };
       if (row.manuscript) {
         if (!snapshot.addresses.has(row.uri)) return undefined;
-        if (soleDeletedImage(row.uri)?.id === row.id) return { kind: "path", path: row.path };
+        const deleted = soleDeletedImage(row.uri);
+        if (deleted === UNLOADED) return undefined;
+        if (deleted?.id === row.id) return { kind: "path", path: row.path };
       }
       return { kind: "last", uri: row.uri };
     },
     assetFor(uri) {
       const live = liveImage(uri);
+      if (live === UNLOADED) return undefined;
       if (live && live.projectId === snapshot.projectId) return live.id;
       if (!snapshot.addresses.has(uri)) return undefined;
       const deleted = soleDeletedImage(uri);
+      if (deleted === UNLOADED) return undefined;
       return deleted && deleted.projectId === snapshot.projectId ? deleted.id : null;
     },
   };

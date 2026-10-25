@@ -7,6 +7,9 @@
  * restyles the sentence they were writing, or one that lands the caret outside
  * the thing they just asked for, is the F4/law 2 failure the rebuild exists to
  * fix — and neither is visible from the trigger's own tests.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - slash-command insertion semantics
  */
 import type { Editor, JSONContent } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";

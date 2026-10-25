@@ -14,26 +14,35 @@ import {
   useRef,
 } from "react";
 import type {
-  CatalogDirectory as ContextDir,
+  CatalogContextView,
   CatalogFile as ContextFile,
   CatalogNode as ContextNode,
 } from "@/client/query/context-catalog-projection";
 import { useToastRegistry } from "@/components/app/toast-registry";
-import { type ImportedTree, type PendingRow, rowId, siblingsOf } from "@/features/import/tree-rows";
+import {
+  type ImportedTree,
+  type PendingRow,
+  plainTree,
+  rowId,
+  siblingsOf,
+} from "@/features/import/tree-rows";
 import { cn } from "@/lib/utils";
 import { type DeleteTarget, EntryKebabButton } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import {
-  contextTreeDropTargetClassName,
   contextTreeFileRowClassName,
   contextTreeRowClassName,
   contextTreeRowGrowClassName,
+  contextTreeSelectedRowClassName,
 } from "./context-row-geometry";
 import { EntryNameField } from "./EntryNameField";
+import { dragEntry } from "./entry-drag/entry";
+import { useEntryRow } from "./entry-drag/use-entry-row";
 import { LinkUpdateNote } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
+import { DropRegion } from "./tree-drop/DropRegion";
 import { type TreeDropTarget, useTreeDropTarget } from "./tree-drop/tree-drop";
 import { useCreateEntryForm } from "./use-create-entry-form";
 import {
@@ -59,9 +68,7 @@ export type TreeEnv = {
   };
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
   onRequestDelete: (target: DeleteTarget) => void;
-  /** Opens the OS picker for an import into a folder; absent where the area takes no imports. */
   importHere?: {
-    /** False where the browser cannot pick a whole folder. */
     folders: boolean;
     start: (
       folder: { entryId: string; path: string; uri: string; name: string } | null,
@@ -70,8 +77,10 @@ export type TreeEnv = {
   };
   isExpanded: (entryId: string) => boolean;
   toggleEntry: (entryId: string) => void;
-  /** The rows to draw: catalog nodes with import marks, and rows only an import draws. */
-  tree: ImportedTree;
+  catalog: CatalogContextView;
+  tree?: ImportedTree;
+  visibleIds?: ReadonlySet<string>;
+  rename?: { path: string; done: () => void };
 };
 
 const TreeEnvContext = createContext<TreeEnv | null>(null);
@@ -86,7 +95,21 @@ function useTreeEnv(): TreeEnv {
   return env;
 }
 
-/** The sole child renderer; root and nested folders mount creation identically. */
+/** A visible child group, which may span more than one catalog. */
+export function TreeGroup({ depth, children }: { depth: number; children: ReactNode }) {
+  return (
+    <div className="relative isolate">
+      {children}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -inset-y-1 z-10 border-l border-border-subtle"
+        style={{ left: rowPaddingLeft(depth) }}
+      />
+    </div>
+  );
+}
+
+/** The sole catalog child renderer; standalone lists start at depth zero. */
 export function TreeChildren({
   parentId,
   parentPath,
@@ -94,18 +117,18 @@ export function TreeChildren({
   parent = null,
 }: {
   parentId: string;
-  /** The folder's catalog path; null under a pending folder, which takes no new entries. */
-  parentPath: string | null;
+  parentPath: string;
   depth: number;
   /** The folder these rows sit in; null at the area root. File rows drop into it. */
   parent?: DropFolder | null;
 }) {
   const env = useTreeEnv();
-  const rows = env.tree.rows(parentId);
-  const siblings = useMemo(() => siblingsOf(rows), [rows]);
+  const tree = useMemo(() => env.tree ?? plainTree(env.catalog), [env.tree, env.catalog]);
+  const children = tree.rows(parentId);
+  const siblings = useMemo(() => siblingsOf(children), [children]);
   return (
     <>
-      {parentPath !== null && env.creation?.creating?.parentPath === parentPath ? (
+      {env.creation?.creating?.parentPath === parentPath ? (
         <CreateRow
           kind={env.creation?.creating.kind}
           parent={parentPath}
@@ -113,21 +136,26 @@ export function TreeChildren({
           siblings={siblings}
         />
       ) : null}
-      {rows.map((row) =>
-        row.origin === "import" ? (
-          <PendingTreeRow key={row.id} row={row} depth={depth} />
-        ) : row.node.kind === "dir" ? (
-          <DirRow key={rowId(row)} dir={row.node} depth={depth} siblings={siblings} />
-        ) : (
-          <FileRow
-            key={rowId(row)}
-            file={row.node}
-            depth={depth}
-            siblings={siblings}
-            parent={parent}
-          />
-        ),
-      )}
+      {children
+        .filter(
+          (child) =>
+            child.origin === "import" || !env.visibleIds || env.visibleIds.has(child.node.entryId),
+        )
+        .map((child) =>
+          child.origin === "import" ? (
+            <PendingTreeRow key={child.id} row={child} depth={depth} />
+          ) : child.node.kind === "dir" ? (
+            <DirRow key={rowId(child)} dir={child.node} depth={depth} siblings={siblings} />
+          ) : (
+            <FileRow
+              key={rowId(child)}
+              file={child.node}
+              depth={depth}
+              siblings={siblings}
+              parent={parent}
+            />
+          ),
+        )}
     </>
   );
 }
@@ -138,11 +166,11 @@ export function rowPaddingLeft(depth: number): number {
   return depth * 16;
 }
 
-function activateOnKey(handler: () => void) {
+function activateOnKey(handler: (event: KeyboardEvent) => void) {
   return (event: KeyboardEvent) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      handler();
+      handler(event);
     }
   };
 }
@@ -158,27 +186,11 @@ export function Twistie({ expanded }: { expanded: boolean }) {
   );
 }
 
-export function RowIcon({ icon: Icon, muted = false }: { icon: typeof Folder; muted?: boolean }) {
+export function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
   return (
     <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
-      <Icon aria-hidden className={cn("size-3.5", muted && "opacity-60")} />
+      <Icon aria-hidden className="size-3.5" />
     </span>
-  );
-}
-
-export function ContextTreeEntry({
-  node,
-  depth,
-  siblings,
-}: {
-  node: ContextNode;
-  depth: number;
-  siblings: readonly ContextEntrySibling[];
-}) {
-  return node.kind === "dir" ? (
-    <DirRow dir={node} depth={depth} siblings={siblings} />
-  ) : (
-    <FileRow file={node} depth={depth} siblings={siblings} parent={null} />
   );
 }
 
@@ -187,11 +199,17 @@ function DirRow({
   depth,
   siblings,
 }: {
-  dir: ContextDir;
+  dir: Extract<ContextNode, { kind: "dir" }>;
   depth: number;
   siblings: readonly ContextEntrySibling[];
 }) {
   const env = useTreeEnv();
+  const folder: DropFolder = {
+    entryId: dir.entryId,
+    path: dir.path,
+    uri: dir.uri,
+    name: dir.name,
+  };
   const interaction = useEntryInteraction({
     projectId: env.projectId,
     node: dir,
@@ -209,11 +227,13 @@ function DirRow({
     siblings,
   });
   const isOpen = env.isExpanded(dir.entryId);
-  const folder: DropFolder = { entryId: dir.entryId, path: dir.path, uri: dir.uri, name: dir.name };
   const drop = useTreeDropTarget(
-    { scheme: env.scheme, folder },
-    { onSpring: () => !env.isExpanded(dir.entryId) && env.toggleEntry(dir.entryId) },
+    { scheme: env.scheme, catalogRootId: env.catalog.root.entryId, folder },
+    { reveal: () => !env.isExpanded(dir.entryId) && env.toggleEntry(dir.entryId) },
   );
+  const movable = interaction.actions.includes("move");
+  const entry = useMemo(() => dragEntry(dir, movable), [dir, movable]);
+  const row = useEntryRow(entry, false);
   const toggle = () => {
     if (env.creation?.creating) env.creation.done();
     env.toggleEntry(dir.entryId);
@@ -225,7 +245,7 @@ function DirRow({
   }
 
   return (
-    <>
+    <DropRegion state={drop.dropState}>
       <EntryInteractionShell interaction={interaction}>
         {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
         <div
@@ -233,13 +253,14 @@ function DirRow({
           tabIndex={0}
           aria-expanded={isOpen}
           aria-label={t`Toggle folder ${dir.name}`}
-          onClick={toggle}
-          onKeyDown={activateOnKey(toggle)}
+          onClick={row.activate(toggle)}
+          onKeyDown={activateOnKey(row.activate(toggle))}
+          {...row.rowProps}
           {...drop.dropProps}
           className={cn(
-            "group focus-ring mx-2 flex items-center rounded-md pr-1 text-sm text-foreground hover:bg-sidebar-accent/50",
+            "group focus-ring mx-2 flex items-center rounded-md pr-1 text-sm text-foreground",
+            row.selected ? contextTreeSelectedRowClassName : "hover:bg-sidebar-accent/50",
             contextTreeRowGrowClassName,
-            drop.dropState === "over" && contextTreeDropTargetClassName,
           )}
           style={{ paddingLeft: rowPaddingLeft(depth) }}
         >
@@ -254,11 +275,6 @@ function DirRow({
               layout="stacked"
             />
           </span>
-          {drop.dropState === "over" ? (
-            <span className="ml-2 mr-1 shrink-0 text-caption text-ink-muted">
-              <Trans>Import here</Trans>
-            </span>
-          ) : null}
           {dir.namespaceFailure ? (
             <NamespaceFailureMark
               failure={dir.namespaceFailure}
@@ -270,14 +286,49 @@ function DirRow({
         </div>
       </EntryInteractionShell>
       {isOpen ? (
-        <TreeChildren
-          parentId={dir.entryId}
-          parentPath={dir.path}
-          depth={depth + 1}
-          parent={folder}
-        />
+        <TreeGroup depth={depth + 1}>
+          <TreeChildren
+            parentId={dir.entryId}
+            parentPath={dir.path}
+            depth={depth + 1}
+            parent={folder}
+          />
+        </TreeGroup>
       ) : null}
-    </>
+    </DropRegion>
+  );
+}
+
+/** A folder root shown while its import is still being built out of sight. */
+function PendingTreeRow({ row, depth }: { row: PendingRow; depth: number }) {
+  const registry = useToastRegistry();
+  const element = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    element.current?.scrollIntoView({ block: "nearest" });
+  }, []);
+  return (
+    <button
+      type="button"
+      ref={element}
+      data-import-root={row.id}
+      onClick={() => registry.reveal(row.importId)}
+      className={cn(
+        "focus-ring mx-2 flex w-[calc(100%-1rem)] items-center rounded-md pr-2 text-left text-sm text-ink-muted hover:bg-sidebar-accent/50",
+        contextTreeRowGrowClassName,
+      )}
+      style={{ paddingLeft: rowPaddingLeft(depth) }}
+    >
+      <span className="w-4 shrink-0" aria-hidden />
+      <RowIcon icon={Folder} />
+      <span className="ml-0.5 min-w-0 flex-1 truncate">{row.name}</span>
+      <LoaderCircle
+        aria-hidden
+        className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
+      />
+      <span className="sr-only">
+        <Trans>Import in progress. Show activity</Trans>
+      </span>
+    </button>
   );
 }
 
@@ -294,10 +345,16 @@ function FileRow({
 }) {
   const env = useTreeEnv();
   // A file is not a drop target of its own: it hands the drop to its folder (or the area).
-  const { dropProps } = useTreeDropTarget({ scheme: env.scheme, folder: parent });
+  const { dropProps } = useTreeDropTarget({
+    scheme: env.scheme,
+    catalogRootId: env.catalog.root.entryId,
+    folder: parent,
+  });
   const interaction = useEntryInteraction({
     projectId: env.projectId,
     node: file,
+    requestRename: env.rename?.path === file.path,
+    onRenameDone: env.rename?.done,
     owner: env.owner,
     scheme: env.scheme,
     capabilities: env.capabilities,
@@ -306,11 +363,13 @@ function FileRow({
     siblings,
   });
   const select = () => env.onSelectFile(env.scheme, file);
+  const active = env.scheme === env.activeScheme && file.path === env.activePath;
+  const movable = interaction.actions.includes("move");
+  const entry = useMemo(() => dragEntry(file, movable), [file, movable]);
+  const row = useEntryRow(entry, active);
   if (interaction.renaming) {
     return <RenameRow options={interaction.rename} depth={depth} icon={fileKindIcon(file)} />;
   }
-
-  const active = env.scheme === env.activeScheme && file.path === env.activePath;
 
   return (
     <EntryInteractionShell interaction={interaction}>
@@ -318,10 +377,11 @@ function FileRow({
       <div
         role="button"
         tabIndex={0}
-        onClick={select}
-        onKeyDown={activateOnKey(select)}
+        onClick={row.activate(select)}
+        onKeyDown={activateOnKey(row.activate(select))}
+        {...row.rowProps}
         {...dropProps}
-        className={cn("focus-ring", contextTreeFileRowClassName(active))}
+        className={cn("focus-ring", contextTreeFileRowClassName(active, row.selected))}
         style={{ paddingLeft: rowPaddingLeft(depth) }}
       >
         <span className="h-7 w-4 shrink-0" aria-hidden />
@@ -344,39 +404,6 @@ function FileRow({
         <EntryKebabButton allowedActions={interaction.actions} onAction={interaction.onAction} />
       </div>
     </EntryInteractionShell>
-  );
-}
-
-/** A row the importing tab draws before the server has made it: muted, inert, no menu. */
-function PendingTreeRow({ row, depth }: { row: PendingRow; depth: number }) {
-  const registry = useToastRegistry();
-  const element = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    element.current?.scrollIntoView({ block: "nearest" });
-  }, []);
-  return (
-    <button
-      type="button"
-      ref={element}
-      data-import-root={row.id}
-      onClick={() => registry.reveal(row.importId)}
-      className={cn(
-        "focus-ring mx-2 flex w-[calc(100%-1rem)] items-center rounded-md pr-2 text-left text-sm text-ink-muted hover:bg-sidebar-accent/50",
-        contextTreeRowGrowClassName,
-      )}
-      style={{ paddingLeft: rowPaddingLeft(depth) }}
-    >
-      <span className="w-4 shrink-0" aria-hidden />
-      <RowIcon icon={Folder} muted />
-      <span className="ml-0.5 min-w-0 flex-1 truncate">{row.name}</span>
-      <LoaderCircle
-        aria-hidden
-        className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
-      />
-      <span className="sr-only">
-        <Trans>Import in progress. Show activity</Trans>
-      </span>
-    </button>
   );
 }
 

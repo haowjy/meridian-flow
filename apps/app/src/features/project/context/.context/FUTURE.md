@@ -41,12 +41,6 @@ here is a known defect.
   that batch into the device record. An unfocused tab can keep a deleted or
   renamed row on the landing until one of those fires. Do not recheck the set
   on catalog cache writes to close that lag.
-- A local-draft recents row directly awaits `openKnownDocument`. A missing
-  handle returns silently, and this path does not use the by-ID opener's
-  abort/latest-attempt fence. Add a visible unavailable result and the shared
-  navigation fence only if the dead click or competing open appears in use;
-  preserve the empty-path local-draft route and Back behavior.
-
 # Context tree follow-ups
 
 - `use-create-entry-form.ts` and `ContextTreeRows.tsx`: offer **Open existing**
@@ -58,3 +52,16 @@ here is a known defect.
   rename cannot change type (for example `data.json` to `data.md`), instead of
   generic retry copy. Verify the message stays on the attempted rename and
   the existing document remains unchanged.
+- Sidebar rows are `role="button"` and report a multi-row selection with
+  `aria-pressed`. The ARIA tree pattern (`role="tree"`/`treeitem`,
+  `aria-selected`, arrow-key navigation) would describe the selection natively;
+  it changes every tree surface (Files, Scratch, Work Files), so it is its own
+  change.
+
+## Delete Undo notice
+
+For `document-delete-undo.tsx` and `shell/SurfaceNotice.tsx`.
+
+- A restore that lands at another name says so only through `announce()`, so a
+  sighted writer learns the new name by scanning the tree. Keep the card open for
+  a moment with "Restored at ‹location›" if that confuses anyone.

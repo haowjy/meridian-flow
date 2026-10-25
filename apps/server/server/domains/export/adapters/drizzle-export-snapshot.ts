@@ -1,55 +1,21 @@
 /** Atomic export inventory from persisted metadata and the canonical live document tree. */
 import { canonicalContextUri, type ProjectId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import {
-  contextSources,
-  documents,
-  linkAheadRefs,
-  threads,
-  works,
-} from "@meridian/database/schema";
-import { eq, or } from "drizzle-orm";
+import { linkAheadRefs, threads, works } from "@meridian/database/schema";
+import { eq } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
-import {
-  catalogSourceAuthority,
-  listsThroughLiveManifest,
-  loadDocumentAddresses,
-} from "../../context/index.js";
+import { catalogSourceAuthority } from "../../context/adapters/catalog-file-mapper.js";
+import { loadLiveProjectExportDocuments } from "../../context/tree/export-inventory.js";
 import type { ExportSnapshotStore, ExportSourceRoot } from "../ports/export-snapshot.js";
 
 export function createDrizzleExportSnapshotStore(db: Database): ExportSnapshotStore {
   return {
     read: (projectId) =>
       runInRootDrizzleReadSnapshot(db, async () => {
-        const rows = await currentDrizzleDb(db)
-          .select({
-            id: documents.id,
-            name: documents.name,
-            extension: documents.extension,
-            fileType: documents.fileType,
-            storageUrl: documents.storageUrl,
-            metadata: documents.metadata,
-            workName: works.name,
-            chatTitle: threads.title,
-          })
-          .from(documents)
-          .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-          .leftJoin(works, eq(contextSources.workId, works.id))
-          .leftJoin(threads, eq(contextSources.rootThreadId, threads.id))
-          .where(
-            or(
-              eq(contextSources.projectId, projectId as ProjectId),
-              eq(works.projectId, projectId as ProjectId),
-            ),
-          );
-        const addresses = new Map(
-          (await loadDocumentAddresses(db, { ids: rows.map((row) => row.id) }))
-            .filter((row) => !row.deleted && row.projectId === projectId)
-            .map((row) => [row.documentId, row]),
-        );
+        const rows = await loadLiveProjectExportDocuments(db, projectId);
         const settlements = await currentDrizzleDb(db)
           .select({
             id: linkAheadRefs.aheadId,
@@ -58,7 +24,7 @@ export function createDrizzleExportSnapshotStore(db: Database): ExportSnapshotSt
             workId: linkAheadRefs.workId,
             rootThreadId: linkAheadRefs.rootThreadId,
             workName: works.name,
-            workSlug: works.slug,
+            workHandle: works.handle,
             noWork: works.isNoWork,
             workDeleted: works.deletedAt,
             chatTitle: threads.title,
@@ -82,7 +48,7 @@ export function createDrizzleExportSnapshotStore(db: Database): ExportSnapshotSt
               catalogSourceAuthority(
                 row.scheme,
                 row.workId,
-                row.noWork ? null : row.workSlug,
+                row.noWork ? null : row.workHandle,
                 row.rootThreadRef,
               ),
             );
@@ -105,22 +71,14 @@ export function createDrizzleExportSnapshotStore(db: Database): ExportSnapshotSt
           settlements: new Map(
             settlements.flatMap((row) => (row.documentId ? [[row.id, row.documentId]] : [])),
           ),
-          documents: rows.flatMap((row) => {
-            const address = addresses.get(row.id);
-            return address
-              ? [
-                  {
-                    ...row,
-                    manifestScoped: listsThroughLiveManifest(address.scheme),
-                    uri: address.uri,
-                    path: address.path,
-                    scheme: address.scheme,
-                    workId: address.workId,
-                    rootThreadId: address.rootThreadId ?? null,
-                  },
-                ]
-              : [];
-          }),
+          documents: rows.map(({ address, ...row }) => ({
+            ...row,
+            uri: address.uri,
+            path: address.path,
+            scheme: address.scheme,
+            workId: address.workId,
+            rootThreadId: address.rootThreadId ?? null,
+          })),
         };
       }),
   };

@@ -1,4 +1,8 @@
-/** Result and CAS semantics at the ContextTreeMover production owner. */
+/** Result and CAS semantics at the ContextTreeMover production owner.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Independent mover commands do not share a callback barrier
+ */
 import { describe, expect, it, vi } from "vitest";
 import { Err, Ok } from "../../../shared/result.js";
 import type { ContextSchemeAdapter } from "../ports/context-adapter.js";
@@ -41,7 +45,15 @@ function dispatch(input: {
       ),
       commitRecursiveDelete: vi.fn(async (command) =>
         Ok({
-          deletedDocumentIds: command.root.kind === "file" ? [command.root.nodeId] : [],
+          removed:
+            command.root.kind === "file"
+              ? [
+                  {
+                    documentId: command.root.nodeId,
+                    removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+                  },
+                ]
+              : [],
           availabilityGeneration: "7",
         }),
       ),
@@ -80,11 +92,11 @@ describe("ContextTreeMover result-aware command ownership", () => {
     });
     let entries = 0;
     const transaction: ContextCommandTransaction = {
-      async run<T>(operation: () => Promise<T>): Promise<T> {
+      async run<T>(operation: (command: { branch: null }) => Promise<T>): Promise<T> {
         entries += 1;
         const current = entries;
         try {
-          return await operation();
+          return await operation({ branch: null });
         } catch (error) {
           if (current === 1) await firstSettled;
           throw error;

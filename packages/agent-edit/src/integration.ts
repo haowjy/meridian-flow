@@ -1,36 +1,28 @@
 // Explicit composition and low-level integration surface for agent-edit hosts.
-export {
-  classifyDestructiveSnapshotEffect,
-  type DestructiveEffect,
-  type DestructiveSnapshotInput,
-} from "./apply/destructive-classification.js";
 export type { BlockSnapshot } from "./apply/echo.js";
-export {
-  applyConcurrentUpdates,
-  CONCURRENT_REWRITE_DENSITY,
-  DEFAULT_CONCURRENT_RUN_GAP,
-  diffSnapshots,
-  lineageCovered,
-  renderConcurrentRuns,
-  snapshotBlocks,
-  touchedBlockHashesBetween,
-} from "./apply/echo.js";
+export { snapshotBlocks } from "./apply/echo.js";
 export { overwriteWithAssigned } from "./apply/overwrite.js";
-export type {
-  ConcurrentEditInfo,
-  ConcurrentEditRun,
-  ConcurrentUpdateOrigin,
-} from "./apply/types.js";
+export type { ConcurrentUpdate, ConcurrentUpdateOrigin } from "./apply/types.js";
 export type { AgentEditCodec, AgentEditCodecFactory } from "./codec-adapter.js";
 export { createAgentEditCodecFactory } from "./codec-adapter.js";
 export type { Block, Span } from "./codec-types.js";
-export {
-  applyConcurrentRenderBudget,
-  type ConcurrentRenderBudget,
-  renderedRunBytes,
-} from "./concurrent-render-budget.js";
 export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
 export { formatDocumentFile, parseDocumentAddress } from "./document-address.js";
+export type {
+  FrontierLookup,
+  FrontierLookups,
+  ObservationFrontier,
+  ReplyMutations,
+  ResolvedObservationFrontier,
+  SeedAttributionBridge,
+} from "./frontier.js";
+export {
+  createReplyMutations,
+  decodeSnapshot,
+  frontierBlockId,
+  frontierDelta,
+  projectSeedFrontier,
+} from "./frontier.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export * from "./index.js";
@@ -48,7 +40,13 @@ export type { ShownLink } from "./links/correspondence.js";
 export { rebuildOccurrences } from "./links/occurrences.js";
 export type { LinkShowing } from "./links/shown.js";
 export type { BlockItemId } from "./model/block-hash.js";
-export { getBlockItemId } from "./model/block-hash.js";
+export {
+  type BlockOriginMap,
+  bindBlockOrigins,
+  blockItemIdKey,
+  getBlockItemId,
+  getTopLevelXmlBlocks,
+} from "./model/block-hash.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
 export type {
@@ -56,15 +54,24 @@ export type {
   ActorSessionStore,
 } from "./ports/actor-session-store.js";
 export type {
+  DocumentAccess,
   DocumentCoordinator,
-  DocumentLockOptions,
-  StagedHelperCut,
+  RetiredWriteReason,
+  RoomRead,
+  SaveCut,
+  SavePrecondition,
+  StagedCut,
+  StagedReconcile,
+  StagedRoomEntries,
+  StagedWriteCommit,
   StagedWriteRejectionReason,
-  StagedWriteReplayResult,
+  StagedWriteSaveResult,
 } from "./ports/document-coordinator.js";
 export {
+  DocumentAccessLostError,
   DocumentNotFoundError,
   isDocumentNotFoundError,
+  SavePreconditionRefused,
 } from "./ports/document-coordinator.js";
 export type {
   DocumentEditRequest,
@@ -72,7 +79,6 @@ export type {
   DocumentEdits,
   ModelInverseCommand,
 } from "./ports/document-edits.js";
-export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
 export type {
   AheadMint,
   DocumentLinksPort,
@@ -101,13 +107,14 @@ export type {
   UpdateOrigin,
 } from "./ports/types.js";
 export type {
+  AgentEditJournal,
   JournalAuthority,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   JournalReadOptions,
   UpdateJournal,
 } from "./ports/update-journal.js";
-export { parseWriteHandle, writeHandle } from "./ports/update-journal.js";
+export { editHandle, parseEditHandle } from "./ports/update-journal.js";
 export type {
   MappedContinuation,
   PmSourceContinuation,
@@ -125,10 +132,18 @@ export type {
   Utf16Span,
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
-export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
-export { isResponseLifecycleError } from "./tool/response-committer.js";
+export {
+  rejectedWriteExplanation,
+  rejectedWriteResult,
+  removedWriteRefusal,
+} from "./tool/receipt.js";
+export {
+  isResponseLifecycleError,
+  ResponseAttemptStaleError,
+  type ResponseCommitAttempt,
+} from "./tool/response-committer.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
-export type { LinkSpliceFallbackDetail } from "./tool/write-deps.js";
+export type { LinkSpliceFallbackDetail, ObservationFailedDetail } from "./tool/write-deps.js";
 export type {
   CapturedPart,
   ComputedInverse,

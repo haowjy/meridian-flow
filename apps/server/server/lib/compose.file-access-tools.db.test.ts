@@ -1,9 +1,11 @@
 /**
- * The file and action policies at the production-composed model tools
- * (file-access §4, §6, §9; D34, D35): `ls` reports each file's real access, and
- * a `read` agent has `write` but edits only its own scratch and changes no Work.
+ * The file and action policies at the production-composed model tools (file-access §4, §6, §9; D34, D35): `ls` reports each file's real access, and a `read` agent has `write` but edits only its own scratch and changes no Work.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - lifecycle-aware file access projection and target resolution before refusal (kb/decisions/documents/access/file-access-policy.md)
  */
 
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
@@ -57,7 +59,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Rewrite",
-        slug: "rewrite",
+        handle: "w1",
       });
       await db.insert(schema.contextSources).values([
         {
@@ -119,11 +121,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID },
         threadId: THREAD.threadId,
       });
-      for (const documentId of [CHAPTER_ID, NOTES_ID]) {
-        await runtime.ports.documentSync.recordManifestDocumentCreated(documentId as never, {
-          projectId: PROJECT_ID as never,
-        });
-      }
       return runtimes.script(runtime, THREAD);
     }
 
@@ -142,25 +139,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const scratchCall = await call("ls", { path: "scratch://" });
       const scratch = listed(scratchCall);
       expect(scratch).toEqual([
-        expect.objectContaining({ uri: "scratch://@rewrite/notes", readonly: true }),
+        expect.objectContaining({ uri: "scratch://@w1/notes", readonly: true }),
       ]);
       expect(scratch[0]).not.toHaveProperty("editable");
       expect(scratch[0]).not.toHaveProperty("documentId");
-      expect(scratchCall.output).toBe("scratch://@rewrite/\n  notes (read-only)");
+      expect(scratchCall.output).toBe("scratch://@w1/\n  notes (read-only)");
       const search = await call("search", { pattern: "Writer" });
       expect(search.output).toContain("manuscript://chapter");
       expect(search.output).not.toContain(".md");
       const data = crypto.randomUUID();
-      await db.insert(schema.folders).values({ contextSourceId: MANUSCRIPT_ID, name: "scenes" });
+      await db.insert(schema.folders).values({
+        contextSourceId: MANUSCRIPT_ID,
+        name: "scenes",
+        documentAlias: folderDocumentName("scenes"),
+      });
       await db.insert(schema.documents).values({
         id: data,
         contextSourceId: MANUSCRIPT_ID,
         name: "outline",
         extension: "json",
         fileType: "json",
-      });
-      await script.runtime.ports.documentSync.recordManifestDocumentCreated(data as never, {
-        projectId: PROJECT_ID as never,
       });
       const manuscriptCall = await call("ls", { path: "manuscript://" });
       expect(manuscriptCall.output).toBe("manuscript://\n  scenes/\n  chapter\n  outline.json");
@@ -173,12 +171,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     // D37, D51: a switch that couldn't happen says why instead of asking for approval.
     it("resolves a switch's target before asking for the user's approval", async () => {
       await db.insert(schema.works).values([
-        { projectId: PROJECT_ID, createdByUserId: USER_ID, name: "Other", slug: "other" },
+        { projectId: PROJECT_ID, createdByUserId: USER_ID, name: "Other", handle: "w2" },
         {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "Frozen",
-          slug: "frozen",
+          handle: "w3",
           archivedAt: new Date(),
         },
       ]);
@@ -188,15 +186,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         (await call("work", { command: "switch", work })).output;
 
       // D65: a refusal reaches the model as its message and code.
-      expect(await switchTo("ghost")).toBe(
-        'Unknown Work @ghost. List Works with work({"command":"list"}). (work_not_found)',
+      expect(await switchTo("ghost")).toBe("Unknown Work ghost. Use work list. (work_not_found)");
+      expect(await switchTo("w3")).toBe(
+        "Work w3 is archived. Ask the user to unarchive it before switching. (work_archived)",
       );
-      expect(await switchTo("frozen")).toBe(
-        "Work @frozen is archived, so this chat can't switch to it until the user unarchives it. (work_archived)",
-      );
-      expect(await switchTo("@rewrite")).toBe("This chat is already in @rewrite.");
-      expect(await switchTo("other")).toBe(
-        "Switching this chat's Work needs the user's approval. Ask them to switch it to @other from the chat. (permission_denied)",
+      expect(await switchTo("@w1")).toBe("This chat is already in w1.");
+      expect(await switchTo("w2")).toBe(
+        "Ask the user to switch this chat to Work w2. (permission_denied)",
       );
     });
 
@@ -271,7 +267,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await script.text("scratch://ideas")).toContain("Agent ideas.");
       const { call: next } = await script.begin();
       expect(listed(await next("ls", { path: "scratch://", verbose: true }))).toContainEqual(
-        expect.objectContaining({ uri: "scratch://@rewrite/ideas", wordCount: 2 }),
+        expect.objectContaining({ uri: "scratch://@w1/ideas", wordCount: 2 }),
       );
     });
   });

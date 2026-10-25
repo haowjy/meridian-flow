@@ -1,97 +1,15 @@
 /**
- * Pure reads of compaction dividers.
- *
- * A compaction turn is a transcript row that shows where the model's context
- * was summarized. Metadata is read defensively: the server's codecs own the
- * shape, the client only picks the fields the writer sees.
+ * Presentation reads of compaction dividers. The metadata readers live in
+ * `@meridian/contracts/threads`.
  */
-import { t } from "@lingui/core/macro";
-import type { Turn } from "@meridian/contracts/protocol";
-
-export type CompactionTrigger = "auto" | "manual";
-
-export type CompactionFacts = {
-  trigger: CompactionTrigger;
-  /** The writer command this divider ran (`controlMessageId`); null for an automatic one. */
-  controlId: string | null;
-  /** The writer's `/compact <instructions>`, verbatim; null for a plain `/compact`. */
-  instructions: string | null;
-  summary: string | null;
-  /** The model that wrote the summary: the summary block's, else the turn's. */
-  model: string | null;
-  tokensBefore: number | null;
-  tokensAfter: number | null;
-};
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function count(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
-}
-
-/** Writer instructions are shown verbatim; only whitespace-only text counts as none. */
-export function instructionsText(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value : null;
-}
-
-export function isCompactionTurn(turn: Turn): boolean {
-  return turn.role === "compaction";
-}
-
-export function readCompactionFacts(turn: Turn): CompactionFacts {
-  const metadata = record(turn.metadata);
-  const controlMessageId = text(metadata?.controlMessageId);
-  const trigger: CompactionTrigger =
-    metadata?.trigger === "manual" || (metadata?.trigger === undefined && controlMessageId)
-      ? "manual"
-      : "auto";
-  const summaryBlock = (turn.blocks ?? []).find(
-    (block) => block.blockType === "custom" && record(block.content)?.kind === "compaction",
-  );
-  const props = record(record(summaryBlock?.content)?.props);
-  return {
-    trigger,
-    controlId: controlMessageId,
-    instructions: instructionsText(metadata?.instructions),
-    summary: text(props?.summary),
-    model: text(props?.model) ?? text(turn.model),
-    tokensBefore: count(props?.tokensBefore),
-    tokensAfter: count(props?.tokensAfter),
-  };
-}
-
-/** Every writer command a divider already answers: a queued item for one is no longer queued. */
-export function answeredControlIds(turns: readonly Turn[]): ReadonlySet<string> {
-  const ids = new Set<string>();
-  for (const turn of turns) {
-    const id = turn.role === "compaction" ? readCompactionFacts(turn).controlId : null;
-    if (id) ids.add(id);
-  }
-  return ids;
-}
-
-/**
- * R4: a context-window overflow completes the running assistant turn empty
- * before the compaction that recovers it. It says nothing to the writer.
- */
-export function isOverflowShell(turn: Turn, next: Turn | undefined): boolean {
-  return (
-    next?.role === "compaction" &&
-    turn.role === "assistant" &&
-    turn.status === "complete" &&
-    (turn.blocks ?? []).length === 0
-  );
-}
+import { referenceOccurrenceContent, type Turn } from "@meridian/contracts/protocol";
+import { type CompactionTrigger, readCompactionFacts } from "@meridian/contracts/threads";
+import { readPayloadMarkup } from "../read-payload";
 
 export type DividerState = "pending" | "complete" | "failed" | "cancelled";
+
+/** A document the compaction re-showed, as a read row above its text. */
+export type DividerDocument = { uri: string; body: string };
 
 export type DividerView = {
   state: DividerState;
@@ -99,17 +17,12 @@ export type DividerView = {
   /** What the writer asked the summary to do (`/compact <instructions>`). */
   instructions: string | null;
   summary: string | null;
+  /** Documents the compaction re-showed, in the order it read them. */
+  documents: DividerDocument[];
   /** Stats for nerds: the summary's model and the context size either side. */
   model: string | null;
   tokens: { before: number; after: number } | null;
-  /** Writer copy for a failure the writer must hear about; null keeps R3's quiet divider. */
-  failureCopy: string | null;
 };
-
-/** A failed compaction in the writer's words: the server's generic copy owns it. */
-export function compactionFailureCopy(turn: Turn): string {
-  return turn.error ?? t`This conversation couldn't be compacted.`;
-}
 
 /** One divider's view state. */
 export function dividerView(turn: Turn): DividerView {
@@ -126,17 +39,30 @@ export function dividerView(turn: Turn): DividerView {
     facts.tokensBefore !== null && facts.tokensAfter !== null
       ? { before: facts.tokensBefore, after: facts.tokensAfter }
       : null;
-  // R3: an autocompaction's failure is carried by the failed reply under the
-  // writer's newest message. A manual one has no reply to carry it.
-  const failureCopy =
-    state === "failed" && facts.trigger === "manual" ? compactionFailureCopy(turn) : null;
   return {
     state,
     trigger: facts.trigger,
     instructions: facts.instructions,
-    summary: facts.summary,
+    summary: summaryWithoutDocuments(facts.summary),
+    documents: (turn.blocks ?? []).flatMap((block) => {
+      const reference = referenceOccurrenceContent(block);
+      if (reference?.kind !== "document" || !reference.read) return [];
+      return [{ uri: reference.uri, body: readPayloadMarkup(reference.read.result) }];
+    }),
     model: facts.model,
     tokens,
-    failureCopy,
   };
+}
+
+const DOCUMENTS_HEADING = /^#{1,6}\s+documents to keep open\s*:?\s*$/i;
+
+/** The server's list is the manifest of the read rows below, not summary prose. */
+function summaryWithoutDocuments(summary: string | null): string | null {
+  if (!summary) return summary;
+  const lines = summary.split("\n");
+  const at = lines.findIndex((line) => DOCUMENTS_HEADING.test(line.trim()));
+  if (at < 0) return summary;
+  const next = lines.findIndex((line, index) => index > at && /^#{1,6}\s/u.test(line.trim()));
+  const kept = next < 0 ? lines.slice(0, at) : [...lines.slice(0, at), ...lines.slice(next)];
+  return kept.join("\n").trim();
 }

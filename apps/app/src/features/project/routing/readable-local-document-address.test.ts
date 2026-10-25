@@ -4,7 +4,7 @@ import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { catalogViewFromSnapshot } from "@meridian/resource-replica";
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import {
   gateLiveView,
   reconcileDocumentAddress,
@@ -133,9 +133,10 @@ it("uses local content through lookup failure, then yields to a successful canon
       },
     },
   };
-  expect(reconcileDocumentAddress(local, canonical)).toEqual({
+  expect(reconcileDocumentAddress(local, canonical, "live")).toEqual({
     result: canonical,
     localFile: undefined,
+    view: "live",
   });
 });
 
@@ -154,6 +155,7 @@ it("keeps the path of the writer's unconfirmed move over a server alias for the 
   expect(reconcileDocumentAddress(pending, alias)).toEqual({
     result: local.result,
     localFile: pending.file,
+    view: "local",
   });
   expect(reconcileDocumentAddress(local, alias).result).toBe(alias);
 });
@@ -171,11 +173,11 @@ describe("gateLiveView", () => {
       isError: false,
       ...state,
     }) as unknown as Parameters<typeof gateLiveView>[1];
-  const group = (isNewDocument: boolean) =>
+  const group = (isNew: boolean) =>
     ({
       documentId: "document-id",
-      isNewDocument,
-      draft: { draftId: "draft-id", status: "active", isNewDocument },
+      draftOnly: isNew,
+      draft: { itemKey: "draft-id", status: "active", isNew },
     }) as unknown as ReviewFileTarget;
   const ready = (...files: ReviewFileTarget[]) => ({ status: "ready", files });
   const noTab = () => false;
@@ -188,7 +190,7 @@ describe("gateLiveView", () => {
     expect(gateLiveView(resolved, manifest([]), ready(group(true)), noTab)).toMatchObject({
       outcome: "ready",
       result: resolved,
-      draftOnly: { draft: { draftId: "draft-id" } },
+      draftOnly: { draft: { itemKey: "draft-id" } },
     });
     // Discarded, or a draft of an existing document: no live view and no review.
     expect(gateLiveView(resolved, manifest([]), ready(), noTab).result).toEqual({
@@ -250,4 +252,20 @@ it.each([
       selection: bound(selectionWork),
     }),
   ).toBe(expected);
+});
+
+it.each([
+  "loading",
+  "error",
+])("an admitted review survives a %s or incomplete list without proving Live", (status) => {
+  const result = { kind: "current", document: { documentId: "hidden" } } as DocumentAddressResult;
+  const gated = gateLiveView(
+    result,
+    { catalog: null, isComplete: false, isFetching: true, isError: true },
+    { status, files: null },
+    () => false,
+    "review",
+  );
+  expect(gated).toEqual({ outcome: "ready", result });
+  expect(gated).not.toHaveProperty("draftOnly");
 });

@@ -13,6 +13,8 @@
 import { isProjectScopedScheme, parseContextUri } from "./context-uri.js";
 import {
   documentPathKey,
+  type LinkAddress,
+  type ResolvedDocumentHref,
   resolveDocumentHref,
   spellDocumentHref,
   splitDocumentHrefSuffix,
@@ -20,9 +22,8 @@ import {
 import { parseLinkRef } from "./document-ref.js";
 import type { ResolvedContextOwner } from "./protocol/context-owner.js";
 
-export type LinkView =
-  | { kind: "live"; responseId?: string }
-  | { kind: "draft"; workId: string; responseId?: string };
+/** The tree a link is read in: live, or one branch's view (the live tree plus what it created). */
+export type LinkView = { kind: "live" } | { kind: "branch"; branchId: string };
 
 export interface LinkHolder {
   /** Canonical URI of the holder in this view; null for chat (no holder). */
@@ -38,17 +39,37 @@ export interface CatalogDocument {
   projectId: string;
   /** Decoded canonical absolute URI in the catalog's view, with extension. */
   uri: string;
-  /** live: in the live tree; draft: exists only in a Work draft (or is staged by this response). */
-  presence: "live" | "draft" | "deleted";
+  /**
+   * live: in the live tree; branch: a hidden document in a pending file tree;
+   * deleted: soft-deleted, at its last address.
+   */
+  presence: "live" | "branch" | "deleted";
+  /**
+   * Present iff presence is "branch": the branch holding the document, the reader's own
+   * if it uses the document, otherwise the oldest active branch that does.
+   */
+  branch?: { branchId: string; workId: string | null };
   /** The reader may read it (file policy). False is answered exactly like a missing row. */
   readable: boolean;
   /** Nameable from the holder: same project, or the reader's personal `user://` space. */
   nameable: boolean;
 }
 
+export interface CatalogFolder {
+  folderId: string;
+  /** Decoded canonical absolute URI, without a trailing slash. */
+  uri: string;
+  readable: boolean;
+  nameable: boolean;
+}
+
 export interface LinkCatalog {
   /** undefined = not loaded (a snapshot miss); null = loaded and unknown. */
   document(documentId: string): CatalogDocument | null | undefined;
+  /** The folder identity, or null when gone; undefined when the snapshot did not load it. */
+  folder(folderId: string): CatalogFolder | null | undefined;
+  /** The folder at an exact canonical address, or null; undefined when not loaded. */
+  folderAt(uri: string): CatalogFolder | null | undefined;
   /** Settled document id; null = registered and unsettled or not registered; undefined = not loaded. */
   settlement(aheadId: string): string | null | undefined;
   /** The document at an exact canonical address in this view, or null; undefined = not loaded. */
@@ -61,9 +82,10 @@ export type LinkResolution =
    * rule 3, an ahead ref answered through its settlement, which never again
    * answers by address.
    */
-  | { kind: "document"; document: CatalogDocument; inDraft: boolean; settled?: true }
+  | { kind: "document"; document: CatalogDocument; inBranch: boolean; settled?: true }
+  | { kind: "folder"; folder: CatalogFolder }
   /** Rule 2 (and 3, `settled`, when the settled document is gone). */
-  | { kind: "gone"; settled?: true }
+  | { kind: "gone"; settled?: true; documentId?: string }
   /** Rule 4: an unsettled ahead ref with nothing at its address. */
   | { kind: "ahead"; uri: string; suffix: string }
   /** Rule 5: no ref; the host applies today's address rules. */
@@ -72,20 +94,37 @@ export type LinkResolution =
   | { kind: "unknown" };
 
 /**
+ * The address written by one stored link, resolved relative to its holder once.
+ * Hosts carry this kind-aware value through lookup instead of reconstructing a
+ * document address from the href later.
+ */
+export function resolveStoredLinkAddress(
+  link: { href: string },
+  holderUri: string | null,
+): ResolvedDocumentHref | null {
+  return resolveDocumentHref(link.href, holderUri);
+}
+
+/**
  * The resolution rules, in order (design "Resolution"). They do not depend on
  * the holder: what a reader may name is the catalog's `nameable`, and only
  * spelling (`spellStoredLink`) reads the holder.
  */
 export function resolveStoredLink(
   link: { ref: string | null; href: string },
+  address: ResolvedDocumentHref | null,
   catalog: LinkCatalog,
 ): LinkResolution {
-  if (link.ref === null) return { kind: "address" };
+  if (link.ref === null) {
+    if (address?.kind !== "folder") return { kind: "address" };
+    return resolveFolder(catalog.folderAt(address.uri));
+  }
   const ref = parseLinkRef(link.ref);
   // A malformed ref names nothing the reader can reach; it never falls back to
   // the address, so nothing can capture it.
   if (!ref) return { kind: "gone" };
   if (ref.kind === "doc") return resolveDocument(catalog.document(ref.documentId));
+  if (ref.kind === "folder") return resolveFolder(catalog.folder(ref.folderId));
 
   const settled = catalog.settlement(ref.aheadId);
   if (settled === undefined) return { kind: "unknown" };
@@ -94,8 +133,8 @@ export function resolveStoredLink(
     return resolution.kind === "unknown" ? resolution : { ...resolution, settled: true };
   }
 
-  const stored = resolveDocumentHref(link.href, null);
-  if (!stored) return { kind: "gone" };
+  const stored = address;
+  if (stored?.kind !== "document") return { kind: "gone" };
   const parsed = parseContextUri(stored.uri);
   const uri = parsed.ok
     ? stored.uri.slice(0, -parsed.value.path.length) + documentPathKey(parsed.value.path)
@@ -110,11 +149,21 @@ export function resolveStoredLink(
   return { kind: "ahead", uri, suffix: stored.suffix };
 }
 
+function resolveFolder(
+  folder: CatalogFolder | null | undefined,
+): Extract<LinkResolution, { kind: "folder" | "gone" | "unknown" }> {
+  if (folder === undefined) return { kind: "unknown" };
+  return folder?.readable && folder.nameable ? { kind: "folder", folder } : { kind: "gone" };
+}
+
 function resolveDocument(
   document: CatalogDocument | null | undefined,
 ): Extract<LinkResolution, { kind: "document" | "gone" | "unknown" }> {
   if (document === undefined) return { kind: "unknown" };
-  return document && nameableLive(document) ? documentResolution(document) : { kind: "gone" };
+  if (document && nameableLive(document)) return documentResolution(document);
+  return document?.presence === "deleted"
+    ? { kind: "gone", documentId: document.documentId }
+    : { kind: "gone" };
 }
 
 function nameableLive(document: CatalogDocument): boolean {
@@ -124,24 +173,24 @@ function nameableLive(document: CatalogDocument): boolean {
 function documentResolution(
   document: CatalogDocument,
 ): Extract<LinkResolution, { kind: "document" }> {
-  return { kind: "document", document, inDraft: document.presence === "draft" };
+  return { kind: "document", document, inBranch: document.presence === "branch" };
 }
 
 export type WrittenLinkClass =
   | { kind: "external" }
   | { kind: "contextual" }
   /** Decoded canonical absolute address, and the still-escaped `?`/`#` suffix. */
-  | { kind: "internal"; uri: string; suffix: string };
+  | { kind: "internal"; target: LinkAddress["kind"]; uri: string; suffix: string };
 
 /**
  * The stored `href`/`src` for a ref-bearing link: the escaped full spelling of
  * a decoded canonical address plus its suffix. The only way to build one, so
  * `%`, a literal `%20` or a `#` in a filename round-trips through resolution.
  */
-export function storedHref(uri: string, suffix: string): string {
+export function storedHref(address: LinkAddress, suffix: string): string {
   if (suffix && !/^[?#]/.test(suffix))
     throw new RangeError(`A stored href suffix starts with ? or #: ${suffix}`);
-  return spellDocumentHref(null, uri) + suffix;
+  return spellDocumentHref(null, address) + suffix;
 }
 
 /**
@@ -163,7 +212,7 @@ export function classifyWrittenLink(href: string, holderUri: string | null): Wri
     : holderScheme?.ok === true && holderScheme.value.scheme === "user" && scheme !== "user";
   return contextual
     ? { kind: "contextual" }
-    : { kind: "internal", uri: resolved.uri, suffix: resolved.suffix };
+    : { kind: "internal", target: resolved.kind, uri: resolved.uri, suffix: resolved.suffix };
 }
 
 /** The grammar image and figure sources are written in: a bare source is manuscript-root-relative. */
@@ -185,8 +234,12 @@ const MANUSCRIPT_ROOT_HOLDER = `${IMAGE_SOURCE_BASE}_`;
 export function classifyWrittenSource(src: string): WrittenLinkClass {
   const classified = classifyWrittenLink(src, MANUSCRIPT_ROOT_HOLDER);
   const { path, suffix } = splitDocumentHrefSuffix(src);
+  if (classified.kind === "internal" && classified.target === "folder") return { kind: "external" };
   if (classified.kind !== "external" || decodes(path)) return classified;
-  return classifyWrittenLink(path.replaceAll("%", "%25") + suffix, MANUSCRIPT_ROOT_HOLDER);
+  const escaped = classifyWrittenLink(path.replaceAll("%", "%25") + suffix, MANUSCRIPT_ROOT_HOLDER);
+  return escaped.kind === "internal" && escaped.target === "folder"
+    ? { kind: "external" }
+    : escaped;
 }
 
 function decodes(path: string): boolean {
@@ -226,13 +279,21 @@ export function spellStoredLink(
     case "document":
       return {
         href:
-          spellDocumentHref(base, resolution.document.uri) +
+          spellDocumentHref(base, { kind: "document", uri: resolution.document.uri }) +
           splitDocumentHrefSuffix(link.href).suffix,
         address: resolution.document.uri,
       };
+    case "folder":
+      return {
+        href:
+          spellDocumentHref(base, { kind: "folder", uri: resolution.folder.uri }) +
+          splitDocumentHrefSuffix(link.href).suffix,
+        address: resolution.folder.uri,
+      };
     case "ahead":
       return {
-        href: spellDocumentHref(base, resolution.uri) + resolution.suffix,
+        href:
+          spellDocumentHref(base, { kind: "document", uri: resolution.uri }) + resolution.suffix,
         address: resolution.uri,
       };
     case "gone":

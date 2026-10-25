@@ -1,7 +1,15 @@
-/** Fork history hydration resolves the cutoff owner and refuses incomplete lineage. */
+/**
+ * Fork history hydration resolves the cutoff owner and refuses incomplete lineage.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - missing fork cutoffs fail closed for reply eligibility (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
+ */
+
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { TURN_GRAPH, turnGraph } from "../ports/turn-graph.js";
 import {
+  hasCompletedReplyInLineage,
   loadThreadConversationContext,
   type ThreadConversationContextDeps,
   ThreadConversationContextError,
@@ -21,7 +29,11 @@ function depsFor(threads: Thread[], turns: Turn[], blocks: Block[]): ThreadConve
     },
     turns: {
       listByThread: async (id: string) => turns.filter((t) => t.threadId === id),
-      findById: async (id: string) => turns.find((t) => t.id === id) ?? null,
+      [TURN_GRAPH]: {
+        listByThread: async (id: string) => turns.filter((t) => t.threadId === id),
+        findById: async (id: string) => turns.find((t) => t.id === id) ?? null,
+      },
+      listHandedBackIds: async () => new Set<string>(),
     },
     blocks: {
       listByThread: async (id: string) =>
@@ -91,7 +103,7 @@ describe("loadThreadConversationContext", () => {
     const owner = thread("owner");
     const fork = thread("fork", { originType: "fork", originTurnId: "after-cutoff" });
     const deps = depsFor([owner, fork], [turn("after-cutoff", "owner")], []);
-    deps.turns.listByThread = async () => [];
+    turnGraph(deps.turns).listByThread = async () => [];
 
     await expect(loadThreadConversationContext(deps, fork)).rejects.toMatchObject({
       code: "cutoff_not_in_transcript",
@@ -109,5 +121,19 @@ describe("loadThreadConversationContext", () => {
         forkA,
       ),
     ).rejects.toMatchObject({ code: "fork_cycle" });
+  });
+});
+
+describe("hasCompletedReplyInLineage", () => {
+  it("returns false when a fork cutoff is missing", async () => {
+    const fork = thread("fork", { originType: "fork", originTurnId: "missing" });
+    const deps = depsFor([fork], [], []);
+
+    await expect(
+      hasCompletedReplyInLineage(
+        deps as unknown as Parameters<typeof hasCompletedReplyInLineage>[0],
+        fork.id as never,
+      ),
+    ).resolves.toBe(false);
   });
 });

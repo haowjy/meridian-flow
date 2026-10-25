@@ -179,8 +179,18 @@ export function evidence(
               ok: true,
               value: {
                 status: "deleted",
-                deletedDocumentIds:
-                  request.body.expected.kind === "file" ? [request.body.expected.documentId] : [],
+                removed:
+                  request.body.expected.kind === "file"
+                    ? [
+                        {
+                          documentId: request.body.expected.documentId,
+                          removal: {
+                            time: "2026-01-01T00:00:00.000Z",
+                            locationVersion: "1",
+                          },
+                        },
+                      ]
+                    : [],
                 availabilityGeneration: "9",
               },
             },

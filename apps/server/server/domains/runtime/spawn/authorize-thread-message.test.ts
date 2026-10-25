@@ -1,7 +1,13 @@
-/** thread_message authority: background is lineage, foreground is subtree. */
+/** thread_message authority: background is lineage, foreground is subtree.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Connected-lineage messaging policy
+ */
+
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { TURN_GRAPH } from "../../threads/ports/turn-graph.js";
 
 const CALLER = "caller" as ThreadId;
 const SIBLING = "sibling" as ThreadId;
@@ -52,7 +58,7 @@ async function authorize(input: {
     targetRef: input.targetRef,
     mode: input.mode,
     threads: repo(input.threads) as never,
-    turns: { findById: async () => null },
+    turns: { [TURN_GRAPH]: { findById: async () => null } as never },
   });
 }
 
@@ -73,7 +79,7 @@ describe("authorizeThreadMessage", () => {
       callerThread,
       targetRef,
       threads: repo([source, handoff]),
-      turns: { findById: async () => ({ threadId: source.id }) as Turn },
+      turns: { [TURN_GRAPH]: { findById: async () => ({ threadId: source.id }) as Turn } as never },
     };
     const { authorizeThreadMessage } = await import("./authorize-thread-message.js");
     expect(await authorizeThreadMessage({ ...input, mode: "background" })).toMatchObject({

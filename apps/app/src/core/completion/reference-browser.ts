@@ -1,9 +1,12 @@
 /** Hierarchical, renderer-neutral reference browser composed with the suggestion lifecycle. */
-import { type ContextUriScheme, parseContextUri } from "@meridian/contracts/context-uri";
+import {
+  type ContextUriScheme,
+  ownerSegment,
+  parseContextUri,
+} from "@meridian/contracts/context-uri";
 import type {
   CatalogAuthorityEntry,
   CatalogEntry,
-  CatalogFileEntry,
   CatalogScope,
 } from "@meridian/contracts/protocol";
 import {
@@ -13,16 +16,19 @@ import {
 } from "@meridian/contracts/protocol";
 import { type CatalogCacheView, catalogChildren } from "@meridian/resource-replica";
 import {
-  authoritativeReferenceForFile,
   canonicalReferenceUri,
+  folderReferenceForEntry,
   normalizeReferenceName,
   type ReferenceAuthorityIndex,
   type ReferenceKind,
   type ReferenceNavigationAction,
   type ReferenceRankingPriors,
   type ReferenceRow,
+  type ReferenceTerminalRow,
   rankReferenceRows,
   referenceAuthorityIndex,
+  referenceRowForFile,
+  referenceRowForFolder,
 } from "./reference-policy";
 import {
   createSuggestionDriverCore,
@@ -106,10 +112,7 @@ export type ReferenceBrowserOptions = {
   openContext: () => ReferenceBrowserOpenContext | null;
   label: () => string;
   priors?: ReferenceRankingPriors;
-  onSelect: (input: {
-    row: Extract<ReferenceRow, { kind: "file" }>;
-    triggerRange: SuggestionTriggerRange;
-  }) => void;
+  onSelect: (input: { row: ReferenceTerminalRow; triggerRange: SuggestionTriggerRange }) => void;
   onCompleteSegment: (input: { prefix: string; triggerRange: SuggestionTriggerRange }) => void;
   /**
    * Where a link to a not-yet-written document named `name` would point, or
@@ -244,16 +247,10 @@ export function createReferenceBrowserController(
           if (parsed.scheme === "kb" || parsed.scheme === "manuscript")
             return scope.kind === "project";
           if (parsed.scheme === "user") return scope.kind === "user";
-          if (parsed.authority.kind === "none") {
-            return (
-              scope.kind === "work" &&
-              [...authorityIndex.values()].some(
-                (entry) =>
-                  entry.authority.workId === scope.workId && entry.authority.workSlug === null,
-              )
-            );
-          }
           if (parsed.authority.kind === "lineage") return scope.kind === "lineage";
+          if (parsed.authority.kind === "chat") return scope.kind === "chat";
+          // A bare `uploads://` is this chat's.
+          if (parsed.scheme === "uploads") return scope.kind === "chat";
           // A No Work chat's bare Scratch is its lineage's.
           if (parsed.authority.kind === "contextual")
             return parsed.scheme === "scratch" && scopes.some((other) => other.kind === "lineage")
@@ -265,7 +262,7 @@ export function createReferenceBrowserController(
               (entry) =>
                 entry.authority.workId === scope.workId &&
                 parsed.authority.kind === "work" &&
-                entry.authority.workSlug === parsed.authority.workSlug,
+                entry.authority.workHandle === parsed.authority.workHandle,
             )
           );
         })
@@ -312,7 +309,17 @@ export function createReferenceBrowserController(
       options.linkAhead && location.kind === "root" && !parsed && !queriedContainer
         ? linkAheadRow(search, ranked, options.linkAhead)
         : null;
-    return ahead ? [...ranked, ahead] : ranked;
+    // A folder's own listing opens with the folder itself, for a host that takes folders.
+    const listed = queriedContainer
+      ? { scope: queriedContainer.action.scope, containerId: queriedContainer.action.containerId }
+      : location.kind === "drilled"
+        ? { scope: location.activeScope, containerId: location.containerId }
+        : null;
+    const mention =
+      listed && !hasSearch && foldersMentionable(referenceKinds)
+        ? folderMentionRow(listed, options.catalog, authorityIndex, override)
+        : null;
+    return [...(mention ? [mention] : []), ...ranked, ...(ahead ? [ahead] : [])];
   };
 
   const publish = (
@@ -373,7 +380,7 @@ export function createReferenceBrowserController(
       requestExit?.();
       return;
     }
-    if (row.kind !== "file") {
+    if (row.kind !== "file" && row.kind !== "folder-mention") {
       void navigate(row.action, row.label);
       if (action === "tab") {
         completedPrefix = row.action.prefix;
@@ -528,6 +535,7 @@ function rootRows(
         if (!entry.available || authorityRows.has(entry.entryId)) continue;
         authorityRows.add(entry.entryId);
         const row = rowForAuthority(entry);
+        if (!row) continue;
         const authorityView = catalog.read(row.action.scope);
         if (
           !includeEmpty &&
@@ -591,11 +599,37 @@ function drilledRows(
   });
 }
 
+function foldersMentionable(kinds: readonly ReferenceKind[] | undefined): boolean {
+  return !kinds || kinds.includes("folder");
+}
+
+/** The row that mentions the folder a level lists; sources (area roots) list no such row. */
+function folderMentionRow(
+  listed: { scope: CatalogScope; containerId?: string },
+  catalog: ReferenceCatalogPort,
+  authorities: ReferenceAuthorityIndex,
+  override?: CatalogCacheView,
+): Extract<ReferenceRow, { kind: "folder-mention" }> | null {
+  if (!listed.containerId) return null;
+  const view =
+    override && catalogScopeKey(override.scope) === catalogScopeKey(listed.scope)
+      ? override
+      : catalog.read(listed.scope);
+  const entry = view?.entries.get(listed.containerId);
+  if (entry?.kind !== "folder") return null;
+  return referenceRowForFolder(entry, authorities);
+}
+
 function catalogIncomplete(view: CatalogCacheView | null): boolean {
   return !view?.generation;
 }
 
-/** Snapshot metadata proves emptiness; cold containers must not disappear. */
+/**
+ * The containers worth browsing into: each holds something selectable here. A
+ * mentionable folder is selectable itself, so where folders are taken an empty
+ * folder and its ancestors stay reachable. Snapshot metadata proves emptiness;
+ * cold containers must not disappear.
+ */
 function populatedContainers(
   view: CatalogCacheView,
   authorities: ReferenceAuthorityIndex,
@@ -607,11 +641,17 @@ function populatedContainers(
       if (entry.kind === "source" || entry.kind === "folder") populated.add(entry.entryId);
     return populated;
   }
+  const folders = foldersMentionable(kinds);
   for (const entry of view.entries.values()) {
-    if (entry.kind !== "file") continue;
-    const row = rowForFile(entry, authorities);
-    if (!row || (kinds && !kinds.includes(row.fileKind))) continue;
-    let parentId: string | undefined = entry.parentId;
+    let parentId: string | undefined;
+    if (entry.kind === "folder") {
+      if (!folders || !folderReferenceForEntry(entry, authorities)) continue;
+      parentId = entry.entryId;
+    } else if (entry.kind === "file") {
+      const row = referenceRowForFile(entry, authorities);
+      if (!row || (kinds && !kinds.includes(row.fileKind))) continue;
+      parentId = entry.parentId;
+    } else continue;
     while (parentId && !populated.has(parentId)) {
       populated.add(parentId);
       const parent = view.entries.get(parentId);
@@ -621,9 +661,12 @@ function populatedContainers(
   return populated;
 }
 
+/** A Work's row in the browser; No Work owns no Scratch, so it has none. */
 function rowForAuthority(
   entry: CatalogAuthorityEntry,
-): Extract<ReferenceRow, { kind: "authority" }> {
+): Extract<ReferenceRow, { kind: "authority" }> | null {
+  const { workHandle } = entry.authority;
+  if (workHandle === null) return null;
   const scope: CatalogScope = {
     kind: "work",
     projectId: entry.scope.projectId,
@@ -635,21 +678,30 @@ function rowForAuthority(
     rowId: `authority:${entry.entryId}`,
     label: entry.name,
     location: "",
-    matchAliases: entry.authority.workSlug === null ? ["@"] : [entry.authority.workSlug],
+    matchAliases: [workHandle],
     action: {
       type: "navigate",
-      prefix: entry.authority.workSlug === null ? "@/" : `@${entry.authority.workSlug}/`,
+      prefix: ownerSegment({ kind: "work", workHandle }) ?? "",
       scope,
       acquire: true,
     },
   };
 }
 
+/**
+ * The writer's name for the area's owner, never its handle. Only a Work has a
+ * name the catalog carries; a chat, the project and the account name no one
+ * beside the row's own label.
+ */
+function ownerLabel(scope: CatalogScope, authorities: ReferenceAuthorityIndex): string {
+  return scope.kind === "work" ? (authorities.get(`work:${scope.workId}`)?.name ?? "") : "";
+}
+
 function rowForEntry(
   entry: BrowsableCatalogEntry,
   authorities: ReferenceAuthorityIndex,
 ): ReferenceRow | null {
-  if (entry.kind === "file") return rowForFile(entry, authorities);
+  if (entry.kind === "file") return referenceRowForFile(entry, authorities);
   const prefix = canonicalReferenceUri(entry.scope, entry.uri, authorities);
   if (!prefix) return null;
   if (entry.kind === "source") {
@@ -657,8 +709,7 @@ function rowForEntry(
       kind: "source",
       rowId: `source:${catalogScopeKey(entry.scope)}:${entry.entryId}`,
       label: entry.name,
-      // A chat's Scratch is named by the chat, never by the first chat's handle.
-      location: entry.scope.kind === "lineage" ? "" : prefix,
+      location: ownerLabel(entry.scope, authorities),
       matchAliases: [entry.scheme],
       action: {
         type: "navigate",
@@ -682,24 +733,6 @@ function rowForEntry(
       containerId: entry.entryId,
       acquire: false,
     },
-  };
-}
-
-function rowForFile(
-  entry: CatalogFileEntry,
-  authorities: ReferenceAuthorityIndex,
-): Extract<ReferenceRow, { kind: "file" }> | null {
-  const reference = authoritativeReferenceForFile(entry, authorities);
-  if (!reference) return null;
-  return {
-    kind: "file",
-    rowId: `file:${entry.entryId}`,
-    label: entry.name,
-    location: entry.path.slice(0, -1).join("/"),
-    fileKind: entry.editable ? "document" : "asset",
-    aliases: entry.aliases,
-    matchedAlias: null,
-    action: { type: "select", reference },
   };
 }
 

@@ -1,24 +1,32 @@
 /**
  * Projector wire contracts: the client-facing custom event names and payloads
  * for durable block lifecycle facts. Pins the names the app reducer reads.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Replies without run identity use the turn identity
  */
 import { EventType } from "@meridian/contracts/protocol";
+import {
+  SIMPLE_TEXT_TURN_AGUI,
+  SIMPLE_TEXT_TURN_ORCHESTRATOR,
+} from "@meridian/contracts/test-support";
 import { describe, expect, it } from "vitest";
-import { createOrchestratorEventProjector } from "./orchestrator-event-projector.js";
+import {
+  createOrchestratorEventProjector,
+  projectOrchestratorEvents,
+} from "./orchestrator-event-projector.js";
 
 describe("tool results", () => {
-  it("sends the typed result beside the model's text", () => {
+  it("sends the typed result beside the model's text, and states a cancellation on the finish", () => {
     const projector = createOrchestratorEventProjector();
-    projector.project({
-      type: "turn.created",
-      turn: {
-        id: "turn-1",
-        threadId: "thread-1",
-        role: "assistant",
-        blocks: [],
-        writeMode: "direct",
-      } as never,
-    });
+    const turn = {
+      id: "turn-1",
+      threadId: "thread-1",
+      role: "assistant",
+      blocks: [],
+      writeMode: "direct",
+    } as never;
+    projector.project({ type: "turn.created", turn });
     const result = { schema: "meridian.agent-edit.v1", command: "read", status: "success" };
     const events = projector.project({
       type: "tool.result",
@@ -32,6 +40,13 @@ describe("tool results", () => {
       content: "status: success; path: ch1.md",
       result,
     });
+
+    const finish = (type: "turn.completed" | "turn.cancelled") => {
+      projector.project({ type: "turn.created", turn });
+      return projector.project({ type, turn }).find((e) => e.type === EventType.RUN_FINISHED);
+    };
+    expect(finish("turn.completed")).not.toHaveProperty("result");
+    expect(finish("turn.cancelled")).toMatchObject({ result: { stopReason: "user_cancelled" } });
   });
 });
 
@@ -74,5 +89,52 @@ describe("historical card replacement", () => {
     expect(first.find((event) => event.type === EventType.TEXT_MESSAGE_START)).toMatchObject({
       messageId: "active-turn::0",
     });
+  });
+});
+
+describe("run identity", () => {
+  it("projects the golden send: start, text, finish", () => {
+    expect(projectOrchestratorEvents(SIMPLE_TEXT_TURN_ORCHESTRATOR)).toEqual(SIMPLE_TEXT_TURN_AGUI);
+  });
+
+  it("reads a reply journaled before run identity as unknown", () => {
+    const projector = createOrchestratorEventProjector();
+    const [start] = projector.project({
+      type: "turn.created",
+      turn: {
+        id: "old",
+        threadId: "thread-1",
+        role: "assistant",
+        blocks: [],
+        writeMode: null,
+      } as never,
+    });
+    expect(start).toMatchObject({
+      rawEvent: { writeMode: null },
+    });
+    // Risk: a stateful projector reusing the first segment's identity. A split reply's second
+    // segment names its own run, execution, reservation and position.
+    const second = {
+      id: "b",
+      position: 4,
+      threadId: "thread-1",
+      role: "assistant",
+      blocks: [],
+      writeMode: "direct",
+      executionId: "e1",
+      reservedForUserTurnIds: ["m2"],
+    } as never;
+    projector.project({
+      type: "turn.completed",
+      turn: { id: "old", threadId: "thread-1", role: "assistant", blocks: [] } as never,
+    });
+    expect(projector.project({ type: "turn.created", turn: second })).toEqual([
+      {
+        type: EventType.RUN_STARTED,
+        threadId: "thread-1",
+        runId: "b",
+        rawEvent: { writeMode: "direct" },
+      },
+    ]);
   });
 });

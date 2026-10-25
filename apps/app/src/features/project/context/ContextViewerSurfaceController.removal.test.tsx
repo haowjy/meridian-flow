@@ -25,7 +25,7 @@ function ContextViewerSurfaceController(
 ) {
   const presentation = useDesktopEditorPresentation({
     projectId: props.projectId,
-    current: props,
+    current: props.editorWorkId ? { ...props, editorWorkId: props.editorWorkId } : null,
     requestedWorkId: props.editorWorkId,
     screen: "context",
     contextLive: props.active,
@@ -66,6 +66,7 @@ vi.mock("@/client/query/useContextCatalog", () => ({
 }));
 type ViewerCapture = {
   tabs: ContextTab[];
+  paneState: { kind: string; settledTab?: ContextTab | null };
   onNewDocument: () => void;
   onUntitledBecameNonEmpty: (documentId: string) => void;
 };
@@ -122,6 +123,8 @@ const shellProps = {
   onSelectContextPath: vi.fn(),
   onOpenContextTarget: vi.fn(),
   onShowEditorRecents: vi.fn(),
+  routeDisplayed: true,
+  mask: {},
 };
 
 it("persists and admits the real New action without an empty working-set route", async () => {
@@ -446,4 +449,50 @@ it("does not admit an old bound document while its retained controller is inacti
       lease.disposeIfSuspended();
     }
   });
+});
+
+it("a pending navigation to a document only another Work reviews shows one loading entry", async () => {
+  useContextTabsStore.setState({
+    byProject: {
+      project: {
+        tabs: [
+          {
+            kind: "tracked",
+            documentId: "a",
+            tabInstanceId: "instance-a",
+            scheme: "manuscript",
+            path: "/a.md",
+            name: "a.md",
+            editable: true,
+            filetype: "markdown",
+            schemaType: "document",
+            reviews: { "work-1": { itemKey: "draft-1", tabInstanceToken: "token" } },
+          },
+        ],
+        selectedTabIdByWork: {},
+      },
+    },
+    _workspaceHydrated: false,
+  });
+  queryState.isFetching = true;
+  await withReactRoot(
+    <AccountFeatureTestProvider accountId="account-a">
+      <ContextViewerSurfaceController
+        {...shellProps}
+        projectId="project"
+        editorWorkId="work-2"
+        activeContextScheme="manuscript"
+        activeContextPath="/a.md"
+        active
+      />
+    </AccountFeatureTestProvider>,
+    async () => {
+      // Work 1's hidden tab is not work 2's strip entry, so it cannot settle work 2's destination.
+      expect(viewerProps?.tabs).toEqual([]);
+      expect(viewerProps?.paneState).toMatchObject({
+        kind: "optimistic-loading",
+        settledTab: null,
+      });
+    },
+  );
 });

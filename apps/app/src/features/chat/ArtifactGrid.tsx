@@ -5,7 +5,7 @@
  * context navigation, image arms as thumbnails in a responsive grid, and the
  * reserved `liveView` arm gets a full-width isolated iframe slot. Extracted
  * from `FormBlock` so ask_user interrupts and agent report cards render the same
- * artifacts identically. `isArtifactRef` admits untrusted artifact values.
+ * artifacts identically.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -20,27 +20,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { DocumentName } from "./DocumentName";
-
-export function isArtifactRef(value: unknown): value is ArtifactRef {
-  if (!value || typeof value !== "object") return false;
-  const record = value as Record<string, unknown>;
-  if (record.type === "image" && typeof record.url === "string") {
-    return (
-      (record.mimeType === undefined || typeof record.mimeType === "string") &&
-      (record.label === undefined || typeof record.label === "string")
-    );
-  }
-  if (record.type === "object" && typeof record.uri === "string") {
-    return (
-      (record.label === undefined || typeof record.label === "string") &&
-      (record.mimeType === undefined || typeof record.mimeType === "string")
-    );
-  }
-  if (record.type === "liveView" && typeof record.url === "string") {
-    return record.expiresAt === undefined || typeof record.expiresAt === "string";
-  }
-  return false;
-}
 
 export function ArtifactGrid({ artifacts }: { artifacts: ArtifactRef[] }) {
   // Documents read as compact links, images as thumbnails, and live views get

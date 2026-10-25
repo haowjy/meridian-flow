@@ -1,0 +1,10 @@
+{
+  "steps": [
+    {
+      "text": "The gate opened, and Mei saw",
+      "reasoning": "I will stop mid-sentence to exercise the truncated-response state.",
+      "finishReason": "length",
+      "chunkDelayMs": 30
+    }
+  ]
+}

@@ -1,11 +1,19 @@
 /** Renders the transcript and owns its scroll viewport. */
 
 import { t } from "@lingui/core/macro";
-import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
+import { isTerminalTurnStatus } from "@meridian/contracts/protocol";
+import type {
+  AssistantView,
+  InheritedMark,
+  TranscriptView,
+  ViewRow,
+  WriterText,
+} from "@meridian/thread-client";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
+import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { AssistantTurn } from "./AssistantTurn";
@@ -13,33 +21,36 @@ import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { CompactionDivider } from "./compaction/CompactionDivider";
-import { answeredControlIds } from "./compaction/compaction-model";
-import { QueuedControlRows } from "./compaction/QueuedControlRows";
-import type { QueuedControl } from "./compaction/thread-controls";
-import type { ThreadControls } from "./compaction/useThreadControls";
 import { HandoffBriefCard } from "./derivation/HandoffBriefCard";
 import { ForkPointRule, InheritedSourceHeader } from "./derivation/InheritedMarks";
 import type { InheritedView } from "./derivation/inherited-view";
 import { ThreadReferenceChip } from "./derivation/ThreadReferenceChip";
 import type { HandoffBrief } from "./derivation/useHandoffBrief";
-import { buildTranscriptModel, type InheritedMark, type TranscriptRow } from "./transcript-model";
-import type { ReplyRetry } from "./useReplyRetry";
-
-export { continuesResponse } from "./transcript-model";
-
-import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
+import { QueuedControlRows } from "./thread-controls/QueuedControlRows";
+import type { QueuedControl } from "./thread-controls/thread-controls";
+import type { ThreadControls } from "./thread-controls/useThreadControls";
+import { AppliedWriteModeNotice } from "./thread-controls/WriteModeNotice";
 import { UserTurn } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
+import type { ChatStop } from "./useChatStop";
 import { useTurnRevealLanding } from "./useTurnRevealLanding";
+
+/** What the queued rows can do; the hooks behind them are `useQueueControls` and `useSendNow`. */
+export type TurnQueueControls = {
+  /** The x on a queued row. */
+  remove: (turnId: string) => void;
+  cancelQueue: () => void;
+  sendNow: { available: boolean; busy: boolean; send: () => void };
+};
 
 export type TurnListProps = {
   threadId: string;
-  /** Settled history with the live turn merged in by id, oldest first. */
-  turns: Turn[];
+  /** The chat's handle once it is named: a just-sent upload link follows before the stored text is reloaded. */
+  uploadsChat?: string;
+  /** What the transcript shows, decided by `viewTranscript`: rows, items and writer text. */
+  view: TranscriptView;
   historySettled: boolean;
-  /** Background subagents are still running; their notification will wake the latest reply. */
-  awaitingSubagents?: boolean;
   /** Monotonic submit signal: new local messages intentionally reacquire tail-follow. */
   tailFollowRevision: number;
   /** Accessible label for the scroll log region. */
@@ -48,14 +59,16 @@ export type TurnListProps = {
   changeTrails?: Record<string, ChangeTrailShell>;
   /** Recovered failed submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
-  queuedWriterTurnIds?: ReadonlySet<string>;
-  waitingForUsage?: boolean;
-  /** Writer commands: queued `/compact`, withdrawal, and Stop on a running divider. */
+  /** Writer commands: queued `/compact` and switches with their Stop, and Stop on a running divider. */
   controls?: ThreadControls | null;
+  /** The chat's Stop: a compaction divider's Stop is this one, not a turn cancel. */
+  chatStop?: ChatStop | null;
+  /** The queued rows' x, Cancel queue and Send now. */
+  queue?: TurnQueueControls | null;
   /** Retry and Stop on this handoff destination's brief cards. */
   brief?: HandoffBrief | null;
-  /** Retry on the latest failed reply, and the new replies it stands in for. */
-  replyRetry?: ReplyRetry | null;
+  /** Whether a reply is a Retry's stand-in the server doesn't have yet: nothing to read or act on. */
+  isStandIn?: ((turnId: string) => boolean) | null;
   /** Something holds this chat (a reply, a compaction, a brief): a brief card's Retry waits. */
   busy?: boolean;
   /** A fork's frozen prefix from its source, rendered read-only above its own turns. */
@@ -78,11 +91,12 @@ export type TurnListProps = {
  * queued commands at the tail.
  */
 type ListRow =
-  | TranscriptRow
+  | ViewRow
   | { kind: "inherited-failed" }
-  | { kind: "queued-controls"; controls: readonly QueuedControl[] };
+  | { kind: "queued-controls"; key: string; controls: readonly QueuedControl[] };
 
 const QUEUED_CONTROLS_KEY = "queued-controls";
+const SWITCHES_BEFORE_REPLY_KEY = "queued-controls-before-reply";
 const INHERITED_FAILED_KEY = "inherited-failed";
 const NO_CONTROLS: readonly QueuedControl[] = [];
 
@@ -93,19 +107,19 @@ const TOP_INSET = 24;
 
 export function TurnList({
   threadId,
-  turns,
+  uploadsChat,
+  view,
   historySettled,
-  awaitingSubagents = false,
   tailFollowRevision,
   ariaLabel,
   onRespondToInterrupt,
   changeTrails = {},
   submissionRecoveryByTurnId,
-  queuedWriterTurnIds,
-  waitingForUsage,
   controls = null,
+  chatStop = null,
+  queue = null,
   brief = null,
-  replyRetry = null,
+  isStandIn = null,
   busy = false,
   inherited = null,
   onRetryInherited = null,
@@ -114,32 +128,63 @@ export function TurnList({
   const viewportRef = useRef<HTMLDivElement>(null);
   const navigateToChange = useChangeTrailNavigation(threadId);
   const bottomInset = useChatSurfaceBottomInset();
-  const inheritedTranscript = inherited?.transcript ?? null;
-  const transcript = useMemo(
-    () => buildTranscriptModel(turns, awaitingSubagents, inheritedTranscript),
-    [turns, awaitingSubagents, inheritedTranscript],
-  );
-  const visibleTurns = transcript.visibleTurns;
-  const lastAssistantIdx = findLastLocalAssistantIndex(transcript.rows);
+  const { rows } = view;
+  const visibleTurns = useMemo(() => rows.map((row) => row.turn), [rows]);
+  const lastAssistantIdx = findLastLocalAssistantIndex(rows);
+  // While a run is active, usage belongs to that live row. Once it settles,
+  // keep the final aggregate on the latest settled action row. This avoids
+  // moving the snapshot through historical model-step rows at each boundary.
+  const usageAssistantIdx = busy ? findLatestLocalLiveAssistantIndex(rows) : lastAssistantIdx;
+  // Cancel queue and Send now sit on the last queued row; Cancel queue needs two to differ from the x.
+  const { lastQueuedTurnId, queuedCount } = useMemo(() => {
+    const queued = rows.filter((row) => row.queued);
+    return { lastQueuedTurnId: queued.at(-1)?.turn.id ?? null, queuedCount: queued.length };
+  }, [rows]);
   // A command runs only when no message waits, so queued commands sit at the
-  // tail, after every queued message: they take no position until they run.
-  const tailControls = useMemo(() => {
-    const answered = answeredControlIds(turns);
-    return (controls?.queued ?? NO_CONTROLS).filter((control) => !answered.has(control.id));
-  }, [controls?.queued, turns]);
-  // List rows are transcript rows shifted down by the alert, when it shows.
+  // tail, after every queued message: they take no position until they run. A switch the
+  // record says applies at the next run's start is the exception: its turn lands before that
+  // run's reply, so its notice sits where `viewTranscript` puts the slot.
+  const { beforeReply, tailControls } = useMemo(() => {
+    const pending = controls?.queued ?? NO_CONTROLS;
+    return {
+      beforeReply: pending.filter((control) => control.awaitsRun),
+      tailControls: pending.filter((control) => !control.awaitsRun),
+    };
+  }, [controls?.queued]);
+  // List rows are transcript rows shifted down by the alert, when it shows, and by the notice
+  // that sits among them.
   const rowOffset = onRetryInherited ? 1 : 0;
+  const { controlSlot } = view;
+  const noticeAt = beforeReply.length ? rowOffset + controlSlot : -1;
   const listRows = useMemo<ListRow[]>(
     () => [
       ...(onRetryInherited ? [{ kind: "inherited-failed" as const }] : []),
-      ...transcript.rows,
+      ...rows.slice(0, controlSlot),
+      ...(beforeReply.length
+        ? [
+            {
+              kind: "queued-controls" as const,
+              key: SWITCHES_BEFORE_REPLY_KEY,
+              controls: beforeReply,
+            },
+          ]
+        : []),
+      ...rows.slice(controlSlot),
       ...(tailControls.length
-        ? [{ kind: "queued-controls" as const, controls: tailControls }]
+        ? [{ kind: "queued-controls" as const, key: QUEUED_CONTROLS_KEY, controls: tailControls }]
         : []),
     ],
-    [onRetryInherited, tailControls, transcript.rows],
+    [onRetryInherited, beforeReply, tailControls, rows, controlSlot],
   );
-  const { continuing, partsByFinalTurnId } = transcript;
+  /** A transcript row's place in the list, and back. */
+  const listIndexOf = useCallback(
+    (rowIdx: number) => rowIdx + rowOffset + (noticeAt >= 0 && rowIdx >= controlSlot ? 1 : 0),
+    [rowOffset, noticeAt, controlSlot],
+  );
+  const rowIndexOf = useCallback(
+    (listIdx: number) => listIdx - rowOffset - (noticeAt >= 0 && listIdx > noticeAt ? 1 : 0),
+    [rowOffset, noticeAt],
+  );
   const byTurnId = useMemo(() => {
     const byTurnId = new Map<string, ChangeTrailShell>();
     for (const shell of Object.values(changeTrails)) {
@@ -156,7 +201,7 @@ export function TurnList({
       const row = listRows[index];
       if (!row) return index;
       if (row.kind === "inherited-failed") return INHERITED_FAILED_KEY;
-      return row.kind === "queued-controls" ? QUEUED_CONTROLS_KEY : row.turn.id;
+      return row.kind === "queued-controls" ? row.key : row.renderKey;
     },
     overscan: 8,
     paddingStart: TOP_INSET,
@@ -198,7 +243,7 @@ export function TurnList({
     // The launch card lives in the origin turn; only "latest" follows the child forward.
     resolveTurnId: (turnId, subagentThreadId, subagentBlock) =>
       subagentThreadId && subagentBlock !== "card"
-        ? transcript.resolveRevealTurnId(subagentThreadId, turnId)
+        ? (view.revealTurnByChildThreadId.get(subagentThreadId) ?? turnId)
         : turnId,
     historySettled,
     viewportRef,
@@ -206,7 +251,7 @@ export function TurnList({
       // A transcript that has just mounted is still following the live edge,
       // and would pin back to the bottom once the target's rows are measured.
       releaseFollow();
-      virtualizer.scrollToIndex(index + rowOffset, { align: "center" });
+      virtualizer.scrollToIndex(listIndexOf(index), { align: "center" });
     },
   });
 
@@ -215,119 +260,6 @@ export function TurnList({
     if (tailFollowRevision === 0) return;
     enterFollow();
   }, [tailFollowRevision, enterFollow]);
-
-  const renderTranscriptRow = useCallback(
-    (row: TranscriptRow, idx: number) => {
-      const turn = row.turn;
-      // Inherited rows are the source's history: read-only, and owned by the source.
-      const local = !row.inherited;
-      if (row.kind === "compaction") {
-        return (
-          <CompactionDivider
-            turn={turn}
-            stopping={local && (controls?.stoppingTurnIds.has(turn.id) ?? false)}
-            onStop={local ? controls?.stop : undefined}
-          />
-        );
-      }
-      if (row.kind === "thread-reference") {
-        return (
-          <div data-thread-references className="flex flex-wrap gap-[var(--chat-space-inline)]">
-            {row.references.map((reference) => (
-              <ThreadReferenceChip key={reference.threadId} reference={reference} />
-            ))}
-          </div>
-        );
-      }
-      if (row.kind === "handoff-seed") {
-        const actions = local ? brief : null;
-        return (
-          <HandoffBriefCard
-            turn={turn}
-            latest={row.latest}
-            stopping={actions?.stopping.has(turn.id) ?? false}
-            stopFailed={actions?.stopFailed.has(turn.id) ?? false}
-            retryRefused={actions?.retryRefused.has(turn.id) ?? false}
-            destinationBusy={busy}
-            onStop={actions?.canStop(turn) ? actions.stop : undefined}
-            onRetry={actions?.retry}
-          />
-        );
-      }
-      if (turn.role === "user") {
-        return (
-          <UserTurn
-            turn={turn}
-            submissionRecovery={local ? submissionRecoveryByTurnId?.get(turn.id) : undefined}
-            queued={local && queuedWriterTurnIds?.has(turn.id)}
-            waitingForUsage={waitingForUsage}
-          />
-        );
-      }
-      // A divider is a row: once one follows a failed reply, that failure is
-      // history. The queued-controls tail is not a row and never counts. An
-      // inherited reply is the source's history, even with nothing below it.
-      const endsTranscript = local && idx === visibleTurns.length - 1;
-
-      const standIn = local ? (replyRetry?.requestOf(turn.id) ?? null) : null;
-      const retry =
-        local && replyRetry && turn.status === "error"
-          ? {
-              // Only the latest turn can be retried: the server answers its
-              // messages again below it.
-              onRetry: endsTranscript
-                ? () => {
-                    // Retry leaves with this row's error; keep focus in the
-                    // transcript and bring the new reply into view.
-                    viewportRef.current?.focus({ preventScroll: true });
-                    enterFollow();
-                    replyRetry.retry(turn);
-                  }
-                : undefined,
-              // Like Retry, the refused note is only for the current reply.
-              refused: endsTranscript && replyRetry.refused.has(turn.id),
-              requestLost: standIn === "failed",
-            }
-          : undefined;
-      return (
-        <AssistantTurn
-          threadId={row.inherited?.ownerThreadId ?? threadId}
-          turn={turn}
-          responseParts={partsByFinalTurnId.get(turn.id)}
-          threadUsage={local ? threadUsage : null}
-          deliveryEvents={transcript.deliveryEventsFor(turn.id)}
-          isLatestAssistant={idx === lastAssistantIdx}
-          endsTranscript={endsTranscript}
-          continuesResponse={continuing[idx] ?? false}
-          replyRetry={retry}
-          standIn={standIn !== null}
-          onRespondToInterrupt={local ? onRespondToInterrupt : undefined}
-          changeTrail={local ? byTurnId.get(turn.id) : undefined}
-          navigateToChange={navigateToChange}
-        />
-      );
-    },
-    [
-      brief,
-      busy,
-      byTurnId,
-      enterFollow,
-      replyRetry,
-      controls,
-      lastAssistantIdx,
-      navigateToChange,
-      onRespondToInterrupt,
-      submissionRecoveryByTurnId,
-      queuedWriterTurnIds,
-      waitingForUsage,
-      threadId,
-      threadUsage,
-      transcript,
-      visibleTurns.length,
-      continuing,
-      partsByFinalTurnId,
-    ],
-  );
 
   const renderRow = useCallback(
     (row: ListRow, idx: number) => {
@@ -346,10 +278,10 @@ export function TurnList({
         return (
           <QueuedControlRows
             controls={row.controls}
-            onWithdraw={
+            onStop={
               withdraw
                 ? (control) => {
-                    // Withdraw removes the row at once. The last one takes the
+                    // Stop removes the row at once. The last one takes the
                     // whole tail with it, so keep focus in the transcript.
                     if (row.controls.length === 1)
                       viewportRef.current?.focus({ preventScroll: true });
@@ -357,20 +289,74 @@ export function TurnList({
                   }
                 : undefined
             }
-            onRetry={controls?.retry}
           />
         );
       }
-      const content = renderTranscriptRow(row, idx - rowOffset);
-      return row.inherited ? (
-        <InheritedRow mark={row.inherited} owners={inherited?.owners ?? null}>
-          {content}
-        </InheritedRow>
-      ) : (
-        content
+      const rowIndex = rowIndexOf(idx);
+      const local = !row.inherited;
+      const writer = view.writer.get(row.turn.id);
+      const items = view.items.get(row.turn.id);
+      const queuedWriter = Boolean(writer && row.queued && local);
+      const compaction = row.kind === "compaction" && local;
+      const handoff = row.kind === "handoff-seed" && local;
+      const assistant = Boolean(items && row.response);
+      return (
+        <TranscriptRow
+          row={row}
+          items={items}
+          writer={writer}
+          threadId={threadId}
+          uploadsChat={local ? uploadsChat : undefined}
+          submissionRecovery={local ? submissionRecoveryByTurnId?.get(row.turn.id) : undefined}
+          queue={queuedWriter ? queue : null}
+          lastQueued={queuedWriter && row.turn.id === lastQueuedTurnId}
+          queuedCount={queuedWriter ? queuedCount : 0}
+          isLatestAssistant={rowIndex === lastAssistantIdx}
+          standIn={local && (isStandIn?.(row.turn.id) ?? false)}
+          stopping={
+            compaction && (chatStop?.status === "pending" || chatStop?.status === "stopping")
+          }
+          onStop={compaction ? chatStop?.stop : undefined}
+          brief={handoff ? brief : null}
+          destinationBusy={handoff && busy}
+          owners={row.inherited ? (inherited?.owners ?? null) : null}
+          onRespondToInterrupt={assistant && local ? onRespondToInterrupt : undefined}
+          changeTrail={assistant && local ? byTurnId.get(row.turn.id) : undefined}
+          navigateToChange={assistant ? navigateToChange : undefined}
+          // Thread cache stats follow the active run, or the latest settled
+          // action row once no assistant row is live. Passing the snapshot to
+          // every historical model-step row defeats the row memo boundary.
+          threadUsage={
+            assistant && local && usageAssistantIdx !== null && rowIndex === usageAssistantIdx
+              ? threadUsage
+              : null
+          }
+        />
       );
     },
-    [controls, inherited?.owners, onRetryInherited, renderTranscriptRow, rowOffset],
+    [
+      brief,
+      busy,
+      byTurnId,
+      chatStop,
+      controls,
+      inherited?.owners,
+      isStandIn,
+      lastAssistantIdx,
+      lastQueuedTurnId,
+      navigateToChange,
+      onRespondToInterrupt,
+      onRetryInherited,
+      queue,
+      queuedCount,
+      rowIndexOf,
+      submissionRecoveryByTurnId,
+      threadId,
+      threadUsage,
+      uploadsChat,
+      view.items,
+      view.writer,
+    ],
   );
 
   return (
@@ -411,9 +397,13 @@ export function TurnList({
                   data-chat-turn-row={transcriptRow ? "settled" : row.kind}
                   data-chat-turn-role={transcriptRow?.turn.role}
                   data-chat-turn-kind={row.kind}
-                  data-chat-turn-continues={
-                    continuing[virtualItem.index - rowOffset] ? "" : undefined
+                  // Compaction and handoff-seed rows draw no turn of their own; the id lets a comparison match them.
+                  data-turn-id={
+                    transcriptRow && (row.kind === "compaction" || row.kind === "handoff-seed")
+                      ? transcriptRow.turn.id
+                      : undefined
                   }
+                  data-chat-turn-continues={transcriptRow?.continuing ? "" : undefined}
                   data-chat-turn-inherited={transcriptRow?.inherited ? "" : undefined}
                   ref={virtualizer.measureElement}
                   className="absolute inset-x-0 top-0"
@@ -471,6 +461,118 @@ function JumpToLatestButton({
   );
 }
 
+const TranscriptRow = memo(function TranscriptRow({
+  row,
+  items,
+  writer,
+  threadId,
+  uploadsChat,
+  submissionRecovery,
+  queue,
+  lastQueued,
+  queuedCount,
+  isLatestAssistant,
+  standIn,
+  stopping,
+  onStop,
+  brief,
+  destinationBusy,
+  owners,
+  onRespondToInterrupt,
+  changeTrail,
+  navigateToChange,
+  threadUsage,
+}: {
+  row: ViewRow;
+  items?: AssistantView;
+  writer?: WriterText;
+  threadId: string;
+  uploadsChat?: string;
+  submissionRecovery?: UserTurnRecovery;
+  queue?: TurnQueueControls | null;
+  lastQueued: boolean;
+  queuedCount: number;
+  isLatestAssistant: boolean;
+  standIn: boolean;
+  stopping: boolean;
+  onStop?: () => void;
+  brief?: HandoffBrief | null;
+  destinationBusy: boolean;
+  owners: InheritedView["owners"] | null;
+  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
+  changeTrail?: ChangeTrailShell;
+  navigateToChange?: ReturnType<typeof useChangeTrailNavigation>;
+  threadUsage: TurnListProps["threadUsage"];
+}) {
+  const { turn } = row;
+  let content: ReactNode;
+  if (row.kind === "compaction") {
+    content = <CompactionDivider turn={turn} stopping={stopping} onStop={onStop} />;
+  } else if (row.kind === "write-mode") {
+    content = <AppliedWriteModeNotice turn={turn} />;
+  } else if (row.kind === "thread-reference") {
+    content = (
+      <div data-thread-references className="flex flex-wrap gap-[var(--chat-space-inline)]">
+        {row.references.map((reference) => (
+          <ThreadReferenceChip key={reference.threadId} reference={reference} />
+        ))}
+      </div>
+    );
+  } else if (row.kind === "handoff-seed") {
+    content = (
+      <HandoffBriefCard
+        turn={turn}
+        latest={row.latest}
+        stopping={brief?.stopping.has(turn.id) ?? false}
+        destinationBusy={destinationBusy}
+        onStop={brief?.canStop(turn) ? brief.stop : undefined}
+        onRetry={brief?.retry}
+      />
+    );
+  } else if (writer) {
+    content = (
+      <UserTurn
+        turn={turn}
+        writer={writer}
+        uploadsChat={uploadsChat}
+        submissionRecovery={submissionRecovery}
+        queued={row.queued}
+        queueControls={queue}
+        lastQueued={lastQueued}
+        queuedCount={queuedCount}
+      />
+    );
+  } else if (items && row.response) {
+    content = (
+      <AssistantTurn
+        threadId={row.inherited?.ownerThreadId ?? threadId}
+        turn={turn}
+        view={items}
+        response={row.response}
+        threadUsage={threadUsage}
+        deliveries={row.deliveries}
+        isLatestAssistant={isLatestAssistant}
+        movedPast={row.movedPast}
+        continuesResponse={row.continuing}
+        standIn={standIn}
+        onRespondToInterrupt={onRespondToInterrupt}
+        changeTrail={changeTrail}
+        navigateToChange={navigateToChange}
+      />
+    );
+  } else {
+    content = null;
+  }
+
+  return row.inherited ? (
+    <InheritedRow mark={row.inherited} owners={owners}>
+      {content}
+    </InheritedRow>
+  ) : (
+    content
+  );
+});
+
 /** One inherited row: its source's header when a run starts, the fork point when it ends. */
 function InheritedRow({
   mark,
@@ -496,11 +598,26 @@ function InheritedRow({
 }
 
 /** Index of this thread's own last settled assistant turn, or -1 if none; inherited rows never count. */
-function findLastLocalAssistantIndex(rows: readonly TranscriptRow[]): number {
+function findLastLocalAssistantIndex(rows: readonly ViewRow[]): number {
   for (let i = rows.length - 1; i >= 0; i--) {
     const row = rows[i];
     if (!row || row.inherited) continue;
     if (row.turn.role === "assistant" && isTerminalTurnStatus(row.turn.status)) return i;
   }
   return -1;
+}
+
+/** Index of the latest local assistant still running, if any. */
+function findLatestLocalLiveAssistantIndex(rows: readonly ViewRow[]): number | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (
+      row &&
+      !row.inherited &&
+      row.turn.role === "assistant" &&
+      !isTerminalTurnStatus(row.turn.status)
+    )
+      return i;
+  }
+  return null;
 }

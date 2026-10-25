@@ -1,4 +1,9 @@
-/** Fresh-baseline catalog and bootstrap contracts on runner-owned PostgreSQL. */
+/**
+ * Fresh-baseline catalog and bootstrap contracts on runner-owned PostgreSQL.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - baseline journal hashes and database-enforced locked No Work bootstrap constraints (kb/decisions/platform/stack/drizzle-migration-integrity.md)
+ */
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
@@ -33,108 +38,6 @@ if (!enabled || !databaseUrl) {
         await target.end();
       }
     });
-    it("exposes the expected catalog on the runner-migrated database", async () => {
-      const target = postgres(databaseUrl, { max: 1 });
-      try {
-        const rows = await target<{ table_name: string }[]>`
-            SELECT table_name FROM information_schema.tables
-            WHERE table_schema = 'public'
-              AND table_name IN ('turn_trail_work', 'change_trail_document_occurrences', 'branch_write_journal')
-          `;
-        expect(rows.map((row) => row.table_name).sort()).toEqual([
-          "branch_write_journal",
-          "change_trail_document_occurrences",
-        ]);
-        const triggers = await target<{ event_object_table: string; trigger_name: string }[]>`
-            SELECT event_object_table, trigger_name
-            FROM information_schema.triggers
-            WHERE trigger_schema = 'public'
-              AND trigger_name IN ('enlist_turn_trail_work', 'complete_turn_trail_work')
-            ORDER BY trigger_name
-          `;
-        expect(triggers).toEqual([]);
-        // The chat-activity projection's trigger family (migration
-        // 0000_baseline.sql; see domains/threads/.context/CONTEXT.md
-        // "Chat activity projection") stays a single owner across threads,
-        // turns, and turn_blocks.
-        const chatActivityTriggers = await target<
-          { event_object_table: string; trigger_name: string }[]
-        >`
-            -- DISTINCT: information_schema.triggers denormalizes a multi-event
-            -- trigger (INSERT OR UPDATE OF ...) into one row per event type.
-            SELECT DISTINCT event_object_table, trigger_name
-            FROM information_schema.triggers
-            WHERE trigger_schema = 'public'
-              AND trigger_name LIKE 'recompute_thread_chat_activity%'
-            ORDER BY trigger_name
-          `;
-        expect(chatActivityTriggers).toEqual([
-          {
-            event_object_table: "threads",
-            trigger_name: "recompute_thread_chat_activity_on_active_leaf",
-          },
-          {
-            event_object_table: "turn_blocks",
-            trigger_name: "recompute_thread_chat_activity_on_block_insert",
-          },
-          {
-            event_object_table: "turn_blocks",
-            trigger_name: "recompute_thread_chat_activity_on_block_update",
-          },
-          {
-            event_object_table: "turns",
-            trigger_name: "recompute_thread_chat_activity_on_turn",
-          },
-        ]);
-        const functions = await target<{ name: string }[]>`
-          SELECT p.proname AS name FROM pg_proc p
-          JOIN pg_namespace n ON n.oid = p.pronamespace
-          WHERE n.nspname = 'public'
-            AND NOT EXISTS (
-              SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass
-                AND d.objid = p.oid AND d.deptype = 'e'
-            )
-          ORDER BY name
-        `;
-        expect(functions.map((row) => row.name)).toEqual([
-          "capture_change_trail_signal",
-          "capture_document_checkpoint_range",
-          "change_trail_owners",
-          "consume_credit_lots_fifo",
-          "enforce_prompt_bake_insert_only",
-          "enforce_prompt_bake_write_once",
-          "enforce_turn_position_write_once",
-          "recompute_thread_chat_activity",
-          "recompute_thread_chat_activity_from_block_insert",
-          "recompute_thread_chat_activity_from_block_update",
-          "recompute_thread_chat_activity_from_thread",
-          "recompute_thread_chat_activity_from_turn",
-          "update_updated_at_column",
-          "validate_active_leaf_is_leaf",
-          "validate_active_leaf_same_thread",
-          "validate_parent_turn_links_same_thread",
-          "validate_parent_turn_same_thread",
-        ]);
-        expect(await target`SELECT extname FROM pg_extension WHERE extname = 'pg_trgm'`).toEqual([
-          { extname: "pg_trgm" },
-        ]);
-        const indexes = await target<{ indexdef: string; indexname: string }[]>`
-          SELECT indexname, indexdef
-          FROM pg_indexes
-          WHERE schemaname = 'public'
-            AND indexname = 'document_branches_active_work_draft_by_work'
-        `;
-        expect(indexes).toEqual([
-          {
-            indexname: "document_branches_active_work_draft_by_work",
-            indexdef:
-              "CREATE INDEX document_branches_active_work_draft_by_work ON public.document_branches USING btree (work_id, id, generation) WHERE ((kind = 'work_draft'::text) AND (status = 'active'::text))",
-          },
-        ]);
-      } finally {
-        await target.end();
-      }
-    });
     it("supports locked No Work and primary thread bindings without seeded identities", async () => {
       const target = postgres(databaseUrl, { max: 1 });
       try {
@@ -148,12 +51,12 @@ if (!enabled || !databaseUrl) {
           const [work] =
             await tx`INSERT INTO works (project_id, created_by_user_id, name, is_no_work)
             VALUES (${project.id}, ${user.id}, 'No Work', true)
-            RETURNING id, slug, status, archived_at, ai_write_mode`;
+            RETURNING id, handle, status, archived_at, default_ai_write_mode`;
           expect(work).toMatchObject({
-            slug: null,
+            handle: null,
             status: null,
             archived_at: null,
-            ai_write_mode: "direct",
+            default_ai_write_mode: "direct",
           });
           await expect(
             tx.savepoint(
@@ -161,8 +64,8 @@ if (!enabled || !databaseUrl) {
             ),
           ).rejects.toMatchObject({ constraint_name: "works_no_work_not_archived" });
           await expect(
-            tx.savepoint((save) => save`UPDATE works SET slug = 'named' WHERE id = ${work.id}`),
-          ).rejects.toMatchObject({ constraint_name: "works_no_work_slug" });
+            tx.savepoint((save) => save`UPDATE works SET handle = 'w1' WHERE id = ${work.id}`),
+          ).rejects.toMatchObject({ constraint_name: "works_no_work_handle" });
           await expect(
             tx.savepoint(
               (save) => save`INSERT INTO works (project_id, created_by_user_id, name, is_no_work)

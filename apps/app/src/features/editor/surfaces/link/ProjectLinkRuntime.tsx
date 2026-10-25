@@ -38,6 +38,7 @@ import {
   useLinkFollower,
 } from "@/features/links";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useReviewingLinkDestination } from "@/features/project/dock/useAiDraftLauncher";
 
 import { useEditorScope } from "../../editor-scope";
 
@@ -48,18 +49,21 @@ import { useEditorScope } from "../../editor-scope";
 export function useEditorLinkDestination(): LinkDestination {
   const { projectId, workId } = useEditorScope();
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
-  return useCallback(
+  const openLive = useCallback<LinkDestination>(
     (document, gesture) =>
       openDocument({
         documentId: document.documentId,
+        ...(document.trashed ? { trashed: true as const } : {}),
+        ...(document.focus ? { focus: true as const } : {}),
         workId: workId ?? undefined,
         disposition: gesture === "new-tab" ? "background" : "current",
       }),
     [openDocument, workId],
   );
+  return useReviewingLinkDestination(openLive);
 }
 
-/** Runtime over the scope's document index, which the Editor also reads its holder from. */
+/** Runtime over the scope's document index and the holder address supplied by its surface. */
 export function ProjectLinkRuntime({
   editor,
   documentId,

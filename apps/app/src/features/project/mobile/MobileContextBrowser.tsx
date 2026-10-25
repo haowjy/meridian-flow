@@ -1,39 +1,20 @@
-/** Renders the mobile context browser. */
-
+/** Phone area navigation around the same nested catalog rows used by the desktop tree. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { AlertCircle, ChevronRight, Folder, LoaderCircle } from "lucide-react";
-import type {
-  CatalogContextView,
-  CatalogDirectory as ContextDir,
-  CatalogFile as ContextFile,
-} from "@/client/query/context-catalog-projection";
+import { ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
-import { useToastRegistry } from "@/components/app/toast-registry";
-import type { InlineEdit } from "@/components/ui/use-inline-edit";
-import { type PendingRow, rowKind, siblingsOf } from "@/features/import/tree-rows";
-import { useImportedTree } from "@/features/import/use-imported-tree";
-import { cn } from "@/lib/utils";
-import {
-  DeleteConfirmationDialog,
-  type DeleteTarget,
-  type EntryAction,
-  EntryKebabButton,
-  useDeleteConfirmation,
-} from "../context/ContextEntryActions";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import type { ContextCreateKind } from "../context/context-create-kind";
-import type { ContextEntrySibling } from "../context/context-entry-name";
-import { fileKindIcon } from "../context/context-file-icon";
-import { mobileContextTreeOverflowTriggerClassName } from "../context/context-row-geometry";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
-import { EntryNameField } from "../context/EntryNameField";
-import { LinkUpdateNote } from "../context/LinkUpdateNote";
-import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
+import { useDeleteContextEntry } from "../context/document-delete-undo";
+import { MoveFeedbackProvider } from "../context/entry-drag/move-notice";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import { useCreateEntryForm } from "../context/use-create-entry-form";
-import { EntryInteractionShell, useEntryInteraction } from "../context/use-entry-interaction";
-import { useRenameEntryForm } from "../context/use-rename-entry-form";
+import { SurfaceNotices } from "../context/project-notices";
+import { treeFolderIds } from "../context/tree-expansion-state";
+import { useTreeExpansion } from "../context/use-tree-expansion";
 import type { ResolvedProjectViewProps } from "../ProjectView";
 
 export type MobileContextBrowserProps = Pick<
@@ -46,560 +27,160 @@ export type MobileContextBrowserProps = Pick<
   | "onSelectContextFolder"
   | "onSelectContextPath"
 > & {
-  /** Pending inline create row, or null. */
   creating: {
     kind: ContextCreateKind;
     scheme: ProjectContextTreeScheme;
     parentPath: string;
   } | null;
-  /** Closes the create row (after commit, cancel, or empty blur). */
   onCreateDone: () => void;
 };
 
-function MobileEntryActionsMenu({
-  allowedActions,
-  onAction,
-}: {
-  allowedActions: readonly EntryAction[];
-  onAction: (action: EntryAction) => void;
-}) {
+export function MobileContextBrowser(props: MobileContextBrowserProps) {
+  if (props.activeContextScheme)
+    return <MobileFolderTree {...props} scheme={props.activeContextScheme} />;
   return (
-    <EntryKebabButton
-      allowedActions={allowedActions}
-      align="end"
-      sideOffset={6}
-      className={mobileContextTreeOverflowTriggerClassName}
-      onAction={onAction}
-    />
-  );
-}
-
-/** The area's own root arrives as `/` or null; only a real folder path is looked up. */
-function isScopeFolder(folder: string | null): folder is string {
-  return folder !== null && folder !== "/" && folder !== "";
-}
-
-export function MobileContextBrowser({
-  projectId,
-  editorWorkId,
-  activeContextScheme,
-  activeContextFolder,
-  onSelectContextScheme,
-  onSelectContextFolder,
-  onSelectContextPath,
-  creating,
-  onCreateDone,
-}: MobileContextBrowserProps) {
-  const schemes = EDITOR_CONTEXT_SCHEMES;
-
-  if (activeContextScheme) {
-    return (
-      <MobileFolderListing
-        projectId={projectId}
-        editorWorkId={editorWorkId}
-        scheme={activeContextScheme}
-        folder={activeContextFolder}
-        onSelectContextFolder={onSelectContextFolder}
-        onSelectContextPath={onSelectContextPath}
-        creating={creating}
-        onCreateDone={onCreateDone}
-      />
-    );
-  }
-
-  return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <ul className="flex flex-col">
-          {schemes.map((scheme) => {
-            // Schemes are context sources, not folders — each carries its
-            // identity icon; folder icons are reserved for real directories.
-            const SchemeIcon = schemeIcon(scheme);
-            return (
-              <li key={scheme}>
-                <DrillRow
-                  icon={
-                    <SchemeIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                  }
-                  label={schemeLabel(scheme)}
-                  trailing={
-                    <ChevronRight aria-hidden className="size-3 shrink-0 text-muted-foreground" />
-                  }
-                  onClick={() => onSelectContextScheme(scheme)}
-                />
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </div>
-  );
-}
-
-function MobileFolderListing({
-  projectId,
-  editorWorkId,
-  scheme,
-  folder,
-  onSelectContextFolder,
-  onSelectContextPath,
-  creating,
-  onCreateDone,
-}: {
-  projectId: string;
-  editorWorkId: string | null;
-  scheme: ProjectContextTreeScheme;
-  /** Current folder path (`/a/b`) or null for the scheme root. */
-  folder: string | null;
-  onSelectContextFolder: MobileContextBrowserProps["onSelectContextFolder"];
-  onSelectContextPath: MobileContextBrowserProps["onSelectContextPath"];
-  creating: MobileContextBrowserProps["creating"];
-  onCreateDone: () => void;
-}) {
-  const workId = editorWorkId;
-  const { catalog, isError, isFetching } = useContextCatalogView(projectId, scheme, {
-    workId: editorWorkId,
-  });
-
-  // Resolve the current folder's sibling names for collision detection. When
-  // the tree isn't loaded yet (or the folder URL is stale), fall back to an
-  // empty list — the server still rejects duplicates, this just gives live
-  // client-side feedback matching the desktop tree panel.
-  const currentEntry = isScopeFolder(folder) ? catalog?.findPath(folder) : catalog?.root;
-  const currentDir = currentEntry?.kind === "dir" ? currentEntry : null;
-  const siblings = currentDir ? (catalog?.children(currentDir.entryId) ?? []) : [];
-
-  const deleteConfirm = useDeleteConfirmation({ projectId });
-
-  // The create row pins above the scroll area (iOS Files style) so it stays
-  // visible regardless of listing scroll position — and, with the on-screen
-  // keyboard up, it sits just under the top bar, far from the keyboard.
-  return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
-      {creating ? (
-        <MobileCreateRow
-          projectId={projectId}
-          scheme={creating.scheme}
-          parent={creating.parentPath}
-          kind={creating.kind}
-          siblings={siblings}
-          onDone={onCreateDone}
-        />
-      ) : null}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <FolderListingBody
-          catalog={catalog}
-          isError={isError}
-          isFetching={isFetching}
-          projectId={projectId}
-          editorWorkId={editorWorkId}
-          scheme={scheme}
-          folder={folder}
-          workId={workId}
-          onSelectContextFolder={onSelectContextFolder}
-          onSelectContextPath={onSelectContextPath}
-          onRequestDelete={deleteConfirm.requestDelete}
-        />
-      </div>
-      <DeleteConfirmationDialog
-        target={deleteConfirm.target}
-        isPending={deleteConfirm.isPending}
-        error={deleteConfirm.error}
-        onCancel={deleteConfirm.cancel}
-        onConfirm={deleteConfirm.confirm}
-      />
-    </div>
-  );
-}
-
-function FolderListingBody({
-  catalog,
-  isError,
-  isFetching,
-  projectId,
-  editorWorkId,
-  scheme,
-  folder,
-  workId,
-  onSelectContextFolder,
-  onSelectContextPath,
-  onRequestDelete,
-}: {
-  catalog: CatalogContextView | null;
-  isError: boolean;
-  isFetching: boolean;
-  projectId: string;
-  editorWorkId: string | null;
-  scheme: ProjectContextTreeScheme;
-  folder: string | null;
-  workId: string | null;
-  onSelectContextFolder: MobileContextBrowserProps["onSelectContextFolder"];
-  onSelectContextPath: MobileContextBrowserProps["onSelectContextPath"];
-  onRequestDelete: (target: DeleteTarget) => void;
-}) {
-  const openDocument = useOpenProjectDocument(projectId);
-  const tree = useImportedTree(catalog, scheme, projectId);
-  if (isError && !catalog) {
-    return (
-      <ListingStatus tone="error">
-        <AlertCircle className="size-4" aria-hidden />
-        <Trans>Could not load files.</Trans>
-      </ListingStatus>
-    );
-  }
-  if (!catalog) {
-    if (isFetching) return <div className="min-h-24" aria-busy />;
-    return (
-      <ListingStatus tone="muted">
-        <Trans>No context files yet.</Trans>
-      </ListingStatus>
-    );
-  }
-
-  const found = isScopeFolder(folder) ? catalog.findPath(folder) : catalog.root;
-  const dir = found?.kind === "dir" ? found : null;
-  if (!dir || !tree) {
-    // Stale URL (folder renamed/deleted out from under the route) — honest
-    // dead-end; the breadcrumb/back chevron still leads out.
-    return (
-      <ListingStatus tone="muted">
-        <Trans>This folder no longer exists.</Trans>
-      </ListingStatus>
-    );
-  }
-
-  const rows = tree.rows(dir.entryId);
-  // The run's own status for this listing: reading its files, or an import that did not start.
-
-  if (rows.length === 0) {
-    return (
-      <div className="flex h-full flex-col">
-        <div className="min-h-0 flex-1">
-          <ListingStatus tone="muted">
-            <Trans>This folder is empty.</Trans>
-          </ListingStatus>
-        </div>
-      </div>
-    );
-  }
-
-  function openFile(file: ContextFile) {
-    if (!file.editable) {
-      onSelectContextPath(file.path, scheme);
-      return;
-    }
-    void openDocument({ documentId: file.documentId, workId: workId ?? undefined });
-  }
-
-  const siblings = siblingsOf(rows);
-  // Folders first, then files, as the listing has always read.
-  const listing = [
-    ...rows.filter((r) => rowKind(r) === "dir"),
-    ...rows.filter((r) => rowKind(r) !== "dir"),
-  ];
-
-  return (
-    <ul className="flex flex-col">
-      {listing.map((row) => {
-        if (row.origin === "import") return <MobilePendingRow key={row.id} row={row} />;
-        const { node } = row;
-        return node.kind === "dir" ? (
-          <MobileFolderRow
-            key={node.entryId}
-            dir={node}
-            projectId={projectId}
-            editorWorkId={editorWorkId}
-            scheme={scheme}
-            siblings={siblings}
-            onDrill={() => onSelectContextFolder(node.path)}
-            onRequestDelete={onRequestDelete}
-          />
-        ) : (
-          <MobileFileRow
-            key={node.entryId}
-            file={node}
-            projectId={projectId}
-            editorWorkId={editorWorkId}
-            scheme={scheme}
-            siblings={siblings}
-            onOpen={() => openFile(node)}
-            onRequestDelete={onRequestDelete}
-          />
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-background">
+      {EDITOR_CONTEXT_SCHEMES.map((scheme) => {
+        const Icon = schemeIcon(scheme);
+        return (
+          <button
+            key={scheme}
+            type="button"
+            onClick={() => props.onSelectContextScheme(scheme)}
+            className="focus-ring flex min-h-11 items-center gap-2.5 px-4 text-left text-sm text-foreground hover:bg-sidebar-accent/50"
+          >
+            <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="flex-1">{schemeLabel(scheme)}</span>
+            <ChevronRight className="size-3 text-muted-foreground" aria-hidden />
+          </button>
         );
       })}
-    </ul>
-  );
-}
-
-/** Phone inline naming row, pinned above the folder listing (iOS Files style). */
-function MobileCreateRow({
-  projectId,
-  scheme,
-  parent,
-  kind,
-  siblings,
-  onDone,
-}: {
-  projectId: string;
-  scheme: ProjectContextTreeScheme;
-  /** Parent folder path (`""` for the scheme root). */
-  parent: string;
-  kind: ContextCreateKind;
-  /** Names of siblings in the current folder, for live collision detection. */
-  siblings: readonly ContextEntrySibling[];
-  onDone: () => void;
-}) {
-  const form = useCreateEntryForm({
-    projectId,
-    scheme,
-    kind,
-    parent,
-    siblings,
-    onDone,
-  });
-  return (
-    <div className="shrink-0 border-b border-border-subtle">
-      <MobileNameRow
-        form={form}
-        icon={form.icon}
-        label={form.placeholder}
-        placeholder={form.placeholder}
-      />
     </div>
   );
 }
 
-/** Folder row with trailing `...` actions. Supports inline rename. */
-function MobileFolderRow({
-  dir,
+function MobileFolderTree({
   projectId,
   editorWorkId,
   scheme,
-  siblings,
-  onDrill,
-  onRequestDelete,
-}: {
-  dir: ContextDir;
-  projectId: string;
-  editorWorkId: string | null;
-  scheme: ProjectContextTreeScheme;
-  siblings: readonly ContextEntrySibling[];
-  onDrill: () => void;
-  onRequestDelete: (target: DeleteTarget) => void;
-}) {
-  const interaction = useEntryInteraction({
-    projectId,
-    node: dir,
-    owner: { workId: editorWorkId },
-    scheme,
-    siblings,
-    capabilities: scheme === "uploads" ? ["rename", "move"] : ["rename", "move", "delete"],
-    onRequestDelete,
+  activeContextFolder: folder,
+  onSelectContextPath,
+  creating,
+  onCreateDone,
+}: MobileContextBrowserProps & { scheme: ProjectContextTreeScheme }) {
+  const { catalog, isComplete, isError, refetch } = useContextCatalogView(projectId, scheme, {
+    workId: editorWorkId,
   });
-  if (interaction.renaming) {
-    return (
-      <li>
-        <MobileRenameRow options={interaction.rename} icon={Folder} />
-      </li>
-    );
-  }
-
-  return (
-    <li>
-      <EntryInteractionShell interaction={interaction} contextMenu={false}>
-        <DrillRow
-          icon={<Folder aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
-          label={dir.name}
-          trailing={
-            <span className="flex items-center">
-              <LinkUpdateNote
-                projectId={projectId}
-                subject={{ kind: "folder", id: dir.entryId }}
-                operationId={interaction.operationId}
-              />
-              {dir.namespaceFailure ? (
-                <NamespaceFailureMark
-                  failure={dir.namespaceFailure}
-                  move={Boolean(dir.namespaceRepairMove)}
-                  folder
-                />
-              ) : null}
-              <MobileEntryActionsMenu
-                allowedActions={interaction.actions}
-                onAction={interaction.onAction}
-              />
-            </span>
-          }
-          onClick={onDrill}
-        />
-      </EntryInteractionShell>
-    </li>
+  const deletion = useDeleteContextEntry("mobile");
+  const openDocument = useOpenProjectDocument(projectId);
+  const [localCreate, setLocalCreate] = useState<{
+    kind: ContextCreateKind;
+    parentPath: string;
+  } | null>(null);
+  const pending = creating?.scheme === scheme ? creating : localCreate;
+  const done = () => {
+    setLocalCreate(null);
+    onCreateDone();
+  };
+  const folderIds = useMemo(
+    () =>
+      catalog && isComplete
+        ? treeFolderIds((id) =>
+            catalog
+              .children(id ?? catalog.root.entryId)
+              .filter((node) => node.kind === "dir")
+              .map((node) => node.entryId),
+          )
+        : null,
+    [catalog, isComplete],
   );
-}
-
-/** File row with trailing `...` actions. Supports inline rename. */
-function MobileFileRow({
-  file,
-  projectId,
-  editorWorkId,
-  scheme,
-  siblings,
-  onOpen,
-  onRequestDelete,
-}: {
-  file: ContextFile;
-  projectId: string;
-  editorWorkId: string | null;
-  scheme: ProjectContextTreeScheme;
-  siblings: readonly ContextEntrySibling[];
-  onOpen: () => void;
-  onRequestDelete: (target: DeleteTarget) => void;
-}) {
-  const interaction = useEntryInteraction({
+  const { isExpanded, toggleEntry, setExpandedEntryIds } = useTreeExpansion(
     projectId,
-    node: file,
-    owner: { workId: editorWorkId },
-    scheme,
-    siblings,
-    capabilities: scheme === "uploads" ? ["rename", "move"] : ["rename", "move", "delete"],
-    onRequestDelete,
-  });
-  const FileIcon = fileKindIcon(file);
-  if (interaction.renaming) {
-    return (
-      <li>
-        <MobileRenameRow options={interaction.rename} icon={FileIcon} />
-      </li>
-    );
-  }
-
-  return (
-    <li>
-      <EntryInteractionShell interaction={interaction} contextMenu={false}>
-        <DrillRow
-          icon={<FileIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
-          label={file.name}
-          trailing={
-            <span className="flex items-center">
-              <LinkUpdateNote
-                projectId={projectId}
-                subject={{ kind: "file", id: file.documentId }}
-                operationId={interaction.operationId}
-              />
-              {file.namespaceFailure ? (
-                <NamespaceFailureMark
-                  failure={file.namespaceFailure}
-                  move={Boolean(file.namespaceRepairMove)}
-                />
-              ) : null}
-              <MobileEntryActionsMenu
-                allowedActions={interaction.actions}
-                onAction={interaction.onAction}
-              />
-            </span>
-          }
-          onClick={onOpen}
-        />
-      </EntryInteractionShell>
-    </li>
+    `editor:${scheme}:project`,
+    folderIds,
   );
-}
-
-/** Mobile inline rename row — replaces the DrillRow while renaming. */
-function MobileRenameRow({
-  options,
-  icon: Icon,
-}: {
-  options: Parameters<typeof useRenameEntryForm>[0];
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-}) {
-  const form = useRenameEntryForm(options);
-
-  return <MobileNameRow form={form} icon={Icon} label={t`Rename`} />;
-}
-
-/** A listing row whose name is being typed: same geometry as `DrillRow`. */
-function MobileNameRow({
-  form,
-  icon: Icon,
-  label,
-  placeholder,
-}: {
-  form: InlineEdit;
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-  label: string;
-  placeholder?: string;
-}) {
+  useEffect(() => {
+    if (!pending || !catalog) return;
+    const parent = catalog.findPath(pending.parentPath);
+    if (parent?.kind !== "dir") return;
+    setExpandedEntryIds((entries) => {
+      const expanded = { ...entries };
+      let path = pending.parentPath;
+      while (path && path !== "/") {
+        const node = catalog.findPath(path);
+        if (node?.kind === "dir") expanded[node.entryId] = true;
+        path = path.replace(/\/[^/]+$/, "");
+      }
+      return expanded;
+    });
+  }, [catalog, pending, setExpandedEntryIds]);
+  const current = folder ? catalog?.findPath(folder) : catalog?.root;
+  const dir = current?.kind === "dir" ? current : null;
   return (
-    <div className="flex min-h-10 items-center gap-2.5 px-4 text-sm text-foreground">
-      <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-      <EntryNameField form={form} label={label} placeholder={placeholder} />
-    </div>
-  );
-}
-
-/** A pending root only reveals its activity card; it is not a namespace destination. */
-function MobilePendingRow({ row }: { row: PendingRow }) {
-  const registry = useToastRegistry();
-  return (
-    <li>
-      <button
-        type="button"
-        data-import-root={row.id}
-        onClick={() => registry.reveal(row.importId)}
-        className="focus-ring flex min-h-11 w-full items-center gap-2.5 px-4 text-left text-sm text-ink-muted"
-      >
-        <Folder aria-hidden className="size-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{row.name}</span>
-        <LoaderCircle aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
-        <span className="sr-only">
-          <Trans>Import in progress. Show activity</Trans>
-        </span>
-      </button>
-    </li>
-  );
-}
-
-function DrillRow({
-  icon,
-  label,
-  trailing,
-  onClick,
-  muted = false,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  trailing?: React.ReactNode;
-  onClick: () => void;
-  /** Still arriving from an import: the same secondary text as the tree. */
-  muted?: boolean;
-}) {
-  return (
-    <div className="flex min-h-10 w-full items-center text-left text-sm text-foreground transition-colors active:bg-sidebar-accent">
-      <button
-        type="button"
-        onClick={onClick}
-        className="focus-ring flex min-h-10 min-w-0 flex-1 items-center gap-2.5 px-4"
-      >
-        {icon}
-        <span className={cn("min-w-0 flex-1 truncate text-left", muted && "text-ink-muted")}>
-          {label}
-        </span>
-      </button>
-      {trailing ? <span className="shrink-0 pr-2">{trailing}</span> : null}
-    </div>
-  );
-}
-
-function ListingStatus({ children, tone }: { children: React.ReactNode; tone: "muted" | "error" }) {
-  return (
-    <div
-      className={cn(
-        "grid h-full place-items-center px-6 text-center text-sm",
-        tone === "error" ? "text-destructive" : "text-muted-foreground",
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-background">
+      {!catalog ? (
+        isError ? (
+          <InlineErrorRow message={t`Could not load files.`} onRetry={refetch} />
+        ) : (
+          <div aria-busy className="min-h-24" />
+        )
+      ) : !dir ? (
+        <p className="p-4 text-sm text-muted-foreground">
+          <Trans>This folder no longer exists.</Trans>
+        </p>
+      ) : (
+        <TreeEnvProvider
+          value={{
+            projectId,
+            owner: {},
+            scheme,
+            catalog,
+            capabilities: ["rename", "move", "delete"],
+            activeScheme: null,
+            activePath: null,
+            isExpanded,
+            toggleEntry,
+            onRequestDelete: deletion.requestDelete,
+            creation: {
+              creating: pending
+                ? {
+                    kind: pending.kind,
+                    parentPath: pending.parentPath === "/" ? "" : pending.parentPath,
+                  }
+                : null,
+              request: (kind, parentPath) => setLocalCreate({ kind, parentPath }),
+              done,
+              createdFile: (path) => onSelectContextPath(path, scheme),
+            },
+            onSelectFile: (_scheme, file) => {
+              if (file.editable)
+                void openDocument({
+                  documentId: file.documentId,
+                  known: { scheme, file, workId: editorWorkId },
+                  workId: editorWorkId ?? undefined,
+                });
+              else onSelectContextPath(file.path, scheme);
+            },
+          }}
+        >
+          <MoveFeedbackProvider feedback={{ surface: "mobile" }}>
+            <TreeChildren
+              parentId={dir.entryId}
+              parentPath={dir.entryId === catalog.root.entryId ? "" : dir.path}
+              depth={0}
+            />
+          </MoveFeedbackProvider>
+          {!pending && catalog.children(dir.entryId).length === 0 ? (
+            <p className="p-4 text-sm text-muted-foreground">
+              <Trans>This folder is empty.</Trans>
+            </p>
+          ) : null}
+        </TreeEnvProvider>
       )}
-    >
-      <div className="flex items-center gap-2">{children}</div>
+      {catalog && isError ? (
+        <InlineErrorRow message={t`Could not load files.`} onRetry={refetch} />
+      ) : null}
+      <SurfaceNotices surface="mobile" className="sticky bottom-2 mx-2 mt-2" />
     </div>
   );
 }

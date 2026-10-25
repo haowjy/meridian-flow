@@ -35,6 +35,8 @@ Three facts must stay separate:
 | --- | --- |
 | [AccountFeatureLifetime](../context/account-feature-lifetime.ts) | Creates one account document runtime, resource replica, availability coordinator, removal coordinator, and opener. Storage invalidation closes the complete account lifetime. |
 | [AccountResourceReplica](../../../core/resources/account-resource-replica.ts) | Owns reservation, exact local opening, catalog acquisition, durable namespace replay, remint, terminal transitions, and projection subscriptions. |
+| [AccountResourceReconciler](../../../core/resources/account-resource-reconciler.ts) | The replica's background runner per handle: namespace dispatch, join and remint through one failure-safe identity commit, session adoption, local cleanup, and retry triggers. |
+| [ResourceIdentityFeed](../../../core/resources/resource-identity-feed.ts) and [IdentityContinuity](../context/identity-continuity.ts) | The feed hands each projection to its readers (and announces live identity changes). Continuity, one per account, reconciles recent routes and device recents against the current projection whenever it, or a store, changes: an id is rewritten only when `resourceIdentityIndex` resolves it to a different current id, never from a remembered transition, and never an id a record holds as its own. |
 | [Resource replica package](../../../../../../packages/resource-replica/src/index.ts) | Pure resource, catalog, intent, deletion, adoption, and projection policy. It imports no React, browser storage, HTTP, or Yjs session objects. |
 | [IndexedDB metadata adapter](../../../core/resources/indexeddb-resource-metadata.ts) | Stores account-global resource descriptors, project-qualified intentions, and project-qualified catalog checkpoints with revision CAS. One account-wide reactive read feeds project projections. |
 | [Editor workspace reducer](../../../client/stores/context-tabs-store/editor-workspace-state.ts) | Owns synchronous tab membership, selection, order, stable member identity, and account-scoped `sessionStorage` restoration. |
@@ -50,6 +52,8 @@ Three facts must stay separate:
 5. Acknowledgement adopts the same Y.Doc into authorized registry transport. Metadata, tab labels, the sidebar row, and the readable URL reconcile without replacing the editor ancestry.
 6. If creation collides with a foreign server Document ID, remint changes the resource's current Document ID while retaining its handle, persistence database, Y.Doc, view member, and obsolete-ID alias.
 
+7. The sidebar's New file and a link's Create carry their destination (scheme, parent identity, missing folders, leaf name) on the create itself. Both await `reserveDocument` before they open the destination ([#836][navigate-first-reserve] tracks opening it first). If a branch's hidden document waits at that name, the server joins it and answers `joined`, or the catalog entry names the reservation in `joinedFrom`. Whichever arrives first runs one transition (`resource-join.ts`): the joined id becomes current, the handle stays, the old id becomes an alias, queued intents are rebased, and the same Y.Doc goes to the joined document's room. The document was hidden only because it is a draft, so there is no draft text to merge: what the writer typed goes live and the draft stays an ordinary draft over it. If another record already holds the joined id, nothing folds; the create reminting as a conflict does.
+
 Closing the view never abandons the resource or cancels synchronization. Explicit Delete is the writer command that changes resource lifecycle.
 
 ## Catalogs, addresses, and opening
@@ -64,7 +68,7 @@ Known exact content opens locally before remote admission. The returned admissio
 
 File rename, filing, and the identity bar issue one durable resource-location command. The desired projection replaces the old server row immediately; an eventual receipt or catalog refresh converges canonical metadata without remounting content. Folder operations remain on the direct context API because they have no document resource identity.
 
-Delete appends durable intent and hides the exact resource optimistically. A rejected attempt restores it with repair state. A terminal server generation closes matching tabs and session access through the existing availability/removal coordinator. Path reuse resolves the new Document ID rather than resurrecting stale content. Server-backed storage cleanup requires an authorized terminal transition. Explicit deletion of a never-submitted local resource settles locally and records an exact-database cleanup obligation without a server receipt. Catalog disappearance alone is not deletion evidence.
+Delete appends durable intent and hides the exact resource optimistically. A rejected attempt restores it with repair state. A terminal server generation closes matching tabs and session access through the existing availability/removal coordinator. The separate Trash auxiliary route can then read the retained server Markdown projection by Document ID; it is not a retained Editor tab and never reuses purged local content. Path reuse resolves the new Document ID rather than resurrecting stale content. Server-backed storage cleanup requires an authorized terminal transition. Explicit deletion of a never-submitted local resource settles locally and records an exact-database cleanup obligation without a server receipt. Catalog disappearance alone is not deletion evidence.
 
 ## Tabs, history, and loading
 
@@ -85,3 +89,5 @@ The repository has no production users or legacy data. The old Untitled lineage,
 Cold offline application boot, generalized durable folder commands, Scratch/Uploads Editor viewers, socket multiplexing, and multi-pane Editor layout are outside this lifecycle. Scratch and Uploads remain valid chat/reference/tool resources. See [tracked follow-ups](../context/.context/TODO.md) for separate product work.
 
 Cold boot and folder commands are tracked with the [resource adapter follow-ups](../../../core/resources/.context/FUTURE), multi-pane layout with the [project shell follow-ups](FUTURE), and socket multiplexing with the [transport follow-ups](../../../core/transport/.context/FUTURE).
+
+[navigate-first-reserve]: https://github.com/haowjy/meridian-flow/issues/836

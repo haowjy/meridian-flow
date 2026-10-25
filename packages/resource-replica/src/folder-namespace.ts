@@ -11,7 +11,7 @@ import {
 } from "./namespace-journal-policy";
 import { committedResourceDeletion } from "./resource-deletion";
 import {
-  intentOwnsDeletion,
+  intentOwnsDeletionAt,
   owningLocationIntent,
   supersedeRepairableNamespaceWork,
 } from "./resource-intent-policy";
@@ -95,8 +95,12 @@ export function projectFolderLocation(
     : record.canonical;
 }
 
+/** A newer present observation clears `terminal` and retires an accepted delete's ownership. */
 export function folderOwnsDeletion(record: FolderNamespaceRecord): boolean {
-  return Boolean(record.terminal) || record.intents.some(intentOwnsDeletion);
+  return (
+    Boolean(record.terminal) ||
+    record.intents.some((intent) => intentOwnsDeletionAt(intent, record.observationVersion))
+  );
 }
 
 /** Recursive deletion is namespace work; its receipt settles descendants atomically. */
@@ -171,6 +175,7 @@ export function planFolderLocation(input: {
   intentId: string;
   operationId: string;
   destination: ResourceDestination;
+  typedName?: string;
 }): FolderNamespaceWrite | null {
   const previous = input.record ?? null;
   if (previous && folderOwnsDeletion(previous)) throw new Error("Folder is being deleted");
@@ -223,7 +228,11 @@ export function planFolderLocation(input: {
     operationId: input.operationId,
     sequence: Math.max(0, ...record.intents.map((item) => item.sequence)) + 1,
     identityRevision: 1,
-    desired: { kind: "set-folder-location", destination: input.destination },
+    desired: {
+      kind: "set-folder-location",
+      typedName: input.typedName ?? input.destination.name,
+      destination: input.destination,
+    },
     attempts: [],
     state: "pending",
   };
@@ -276,8 +285,14 @@ export function validateFolderNamespaceUpdate(
     previous.canonicalRefresh.operationId !== next.canonicalRefresh.operationId
   )
     throw new Error("Folder canonical refresh cannot be replaced");
-  if (previous?.terminal && JSON.stringify(previous.terminal) !== JSON.stringify(next.terminal))
-    throw new Error("Terminal folders cannot be revived");
+  if (previous?.terminal && JSON.stringify(previous.terminal) !== JSON.stringify(next.terminal)) {
+    // Only a strictly newer server observation of the folder as present supersedes deletion.
+    const restored =
+      !next.terminal &&
+      next.observationVersion !== undefined &&
+      newerCanonicalObservation(next.observationVersion, previous.observationVersion);
+    if (!restored) throw new Error("Terminal folders revive only from newer server observations");
+  }
   validateNamespaceJournal({
     previous,
     next,
@@ -344,7 +359,7 @@ export function prepareFolderNamespaceAttempt(
       kind: "delete",
       scheme: source.scheme,
       workId: source.workId,
-      workSlug: source.workSlug ?? null,
+      workHandle: source.workHandle ?? null,
       rootThreadId: source.rootThreadId ?? null,
       rootThreadRef: source.rootThreadRef ?? null,
       body: {
@@ -384,7 +399,7 @@ export function prepareFolderNamespaceAttempt(
         "/",
       ),
       ...owners.body,
-      ...(destination.name !== source.name ? { newName: destination.name } : {}),
+      ...(intent.desired.typedName !== source.name ? { newName: intent.desired.typedName } : {}),
     },
   };
   return replaceIntent(record, intent.intentId, (current) => ({
@@ -482,7 +497,7 @@ export function planFolderDeletionResources(
 ): ResourceWrite[] {
   if (!receipt.result.ok) return [];
   const result = receipt.result.value;
-  const ids = new Set(result.deletedDocumentIds);
+  const ids = new Set(result.removed.map(({ documentId }) => documentId));
   return resources.flatMap((record): ResourceWrite[] => {
     const resource = record.resource;
     if (
@@ -529,11 +544,14 @@ export function installFolderCanonicalRefresh(
   );
   if (!newer && !completes) return null;
   resourceContextAuthority(location.scheme, location);
-  const { canonicalRefresh: _completed, ...rest } = record;
+  const { canonicalRefresh: _completed, ...withoutRefresh } = record;
+  const base = completes ? withoutRefresh : record;
+  // A strictly newer observation of the folder as present supersedes a terminal witness.
+  const { terminal: _superseded, ...present } = base;
   return {
     expectedRevision: record.revision,
     next: {
-      ...(completes ? rest : record),
+      ...(newer ? present : base),
       revision: record.revision + 1,
       ...(newer ? { canonical: location, canonicalParent: parent, observationVersion } : {}),
     },

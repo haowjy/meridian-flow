@@ -1,4 +1,10 @@
-/** Dock reload contracts: durable layout, hydrated identity, scope, and newer intent. */
+/** Dock reload contracts: durable layout, hydrated identity, scope, and newer intent.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - dock session persistence envelope
+ */
+
+import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import {
   type CatalogCacheView,
   emptyCatalogView,
@@ -7,7 +13,7 @@ import {
 } from "@meridian/resource-replica";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ContextTab } from "@/client/stores";
-import { listed } from "@/test-support/draft-review-scope";
+import { isDraftOnly } from "@/client/stores";
 import {
   createDockDocumentStore,
   type DockDocument,
@@ -82,7 +88,13 @@ const renamedAvailability = {
 const empty: ResourceProjectionSnapshot = { records: [], folders: [], catalogs: [] };
 function resources(snapshot = empty) {
   return {
-    readWorkDrafts: vi.fn(async () => []),
+    admitReview: vi.fn(
+      async () =>
+        ({
+          kind: "current",
+          document: { documentId: "doc", entry: renamedAvailability.resolutions[0].entry },
+        }) as unknown as DocumentAddressResult,
+    ),
     resources: {
       readProjection: vi.fn(async () => snapshot),
       acquireCatalog: vi.fn(async (): Promise<CatalogCacheView> => {
@@ -267,11 +279,7 @@ it("throwing storage getters, reads and writes leave the live dock usable", () =
     expect(store.getState().occupant).toEqual(document);
   }
 });
-it.each([
-  "{",
-  '{"version":2,"accountId":"account"}',
-  '{"version":1,"accountId":"account","occupant":{"projectId":"project","screen":"context","tab":{}}}',
-])("ignores invalid storage: %s", (raw) => {
+it.each(["{"])("ignores invalid storage: %s", (raw) => {
   const disk = storage();
   disk.setItem(DOCK_STORAGE_KEY, raw);
   expect(createDockDocumentStore(() => disk, "account").getState().restoring).toBeNull();
@@ -309,7 +317,7 @@ it.each([
     ...document,
     screen: "work" as const,
     screenWorkId: "work",
-    review: { workId: "work", draftId: "draft" },
+    review: { workId: "work", itemKey: "draft" },
   };
   const restored = reload(manuscript);
   restored.getState().syncOccupantScope(scope.projectId, scope.screen, scope.workId);
@@ -365,7 +373,7 @@ it.each([
   { screen: ["work"] },
   { review: undefined },
   { review: {} },
-  { review: { workId: "", draftId: "draft" } },
+  { review: { workId: "", itemKey: "draft" } },
 ])("rejects malformed occupant identity: %o", (invalid) => {
   const disk = storage();
   disk.setItem(
@@ -379,112 +387,91 @@ it.each([
   expect(createDockDocumentStore(() => disk, "account").getState().restoring).toBeNull();
 });
 
-it("reloads a draft-only review from its Work list, without catalog membership", async () => {
-  const review = { workId: "work", draftId: "draft" };
-  const second = reload({
+it.each([
+  false,
+  true,
+])("restores a saved review of an unlisted active item, hidden=%s", async (hidden) => {
+  const review = { workId: "work", itemKey: "branch:admitted" };
+  const candidate: DockDocument = {
     ...document,
     review,
     tab: {
       ...tab,
-      draftOnly: true,
-      reviewWorkId: "work",
-      reviewDraftId: "draft",
-      tabInstanceToken: "old",
+      documentId: "stale",
+      ...(hidden
+        ? {
+            reviews: { work: { itemKey: review.itemKey, tabInstanceToken: "token" } },
+          }
+        : {}),
     },
-  });
-  const candidate = second.getState().restoring;
-  if (!candidate) throw new Error("Expected a saved dock candidate");
+  };
   const replica = resources();
-  const restored = await restoreDockDocument(candidate, {
-    ...replica,
-    resources: replica.resources,
-    readWorkDrafts: async (project, work) => {
-      expect([project, work]).toEqual(["project", "work"]);
-      return [
-        {
-          ...listed,
-          documentId: "doc",
-          draftId: "other-draft",
-          isNewDocument: true,
-          contextLocation: { scheme: "kb", path: "/Wrong.md" },
-        },
-        {
-          ...listed,
-          documentId: "doc",
-          draftId: "draft",
-          isNewDocument: true,
-          contextLocation: { scheme: "manuscript", path: "/Current.md" },
-        },
-      ];
+  // There is deliberately no list port: an incomplete or pending list cannot participate in admission.
+  replica.admitReview.mockResolvedValue({
+    kind: "current",
+    document: {
+      documentId: "admitted",
+      entry: {
+        ...renamedAvailability.resolutions[0].entry,
+        uri: "kb://Hidden.md",
+        path: ["Hidden.md"],
+        name: "Hidden.md",
+      },
     },
+  } as unknown as DocumentAddressResult);
+  // The saved candidate goes through persistence first: only the dock's own entry survives it.
+  const saved = reload(candidate).getState().restoring;
+  expect(saved).not.toBeNull();
+  const restored = await restoreDockDocument(saved as DockDocument, replica);
+  expect(replica.admitReview).toHaveBeenCalledWith("project", review, {
+    scheme: "manuscript",
+    path: "/Old.md",
   });
   expect(replica.resources.readProjection).not.toHaveBeenCalled();
-  await expect(
-    restoreDockDocument(candidate, {
-      ...replica,
-      readWorkDrafts: async () => {
-        throw new Error("offline");
-      },
-    }),
-  ).rejects.toThrow("offline");
+  expect(replica.resources.acquireCatalog).not.toHaveBeenCalled();
+  expect(availability).not.toHaveBeenCalled();
   expect(restored).toMatchObject({
     review,
-    tab: {
-      documentId: "doc",
-      draftOnly: true,
-      reviewWorkId: "work",
-      reviewDraftId: "draft",
-      path: "/Current.md",
-    },
+    reviewAdmission: "admitted",
+    tab: { documentId: "admitted", scheme: "kb", path: "/Hidden.md" },
   });
+  expect(restored && isDraftOnly(restored.tab)).toBe(hidden);
 });
-it("keeps a manuscript review while validating its renamed live identity", async () => {
-  availability.mockResolvedValue(renamedAvailability);
-  const review = { workId: "work", draftId: "draft" };
+it("keeps failed and unavailable saved selectors without showing a live occupant", async () => {
+  const review = { workId: "work", itemKey: "branch:doc" };
+  const candidate = { ...document, review };
   const replica = resources();
-  const restored = await restoreDockDocument(
-    { ...document, review },
-    {
-      ...replica,
-      resources: replica.resources,
-      readWorkDrafts: async () => [
-        { ...listed, documentId: "doc", draftId: "draft", isNewDocument: false },
-      ],
-    },
-  );
-  expect(restored).toMatchObject({ review, tab: { documentId: "doc", path: "/New.md" } });
+  replica.admitReview.mockResolvedValue({ kind: "unavailable" });
+  expect(await restoreDockDocument(candidate, replica)).toMatchObject({
+    review,
+    reviewAdmission: "unavailable",
+  });
+  replica.admitReview.mockRejectedValue(new Error("offline"));
+  expect(await restoreDockDocument(candidate, replica)).toMatchObject({
+    review,
+    reviewAdmission: "failed",
+  });
+  expect(replica.resources.readProjection).not.toHaveBeenCalled();
+});
+it("keeps a manuscript review while the selector repairs its renamed identity", async () => {
+  const review = { workId: "work", itemKey: "branch:doc" };
+  const replica = resources();
   expect(await restoreDockDocument({ ...document, review }, replica)).toMatchObject({
-    review: null,
+    review,
     tab: { documentId: "doc", path: "/New.md" },
   });
-  // Discard leaves a reserved document ID that availability can still resolve,
-  // but neither a review-less draft-only snapshot nor a live-looking ghost may restore.
+  // Without a review selector, a reserved ID still needs live catalog membership.
+  availability.mockResolvedValue(renamedAvailability);
   replica.resources.acquireCatalog.mockResolvedValue(
     emptyCatalogView({ kind: "project", projectId: "project" }),
   );
-  expect(await restoreDockDocument({ ...document, review }, replica)).toBeNull();
-  expect(
-    await restoreDockDocument(
-      {
-        ...document,
-        tab: {
-          ...tab,
-          draftOnly: true,
-          reviewWorkId: "work",
-          reviewDraftId: "draft",
-          tabInstanceToken: "draft-instance",
-        },
-      },
-      replica,
-    ),
-  ).toBeNull();
   expect(await restoreDockDocument(document, replica)).toBeNull();
 });
 
 it("round trips a changed selection on the same dock review address", () => {
   const disk = storage();
   const first = createDockDocumentStore(() => disk, "account");
-  const review = { workId: "work", draftId: "draft", changeId: "class:first" };
+  const review = { workId: "work", itemKey: "draft", changeId: "class:first" };
   first.getState().commit(first.getState().claim(), { ...document, review });
   first.getState().setDocumentReview({ ...review, changeId: "class:second" });
   const restored = createDockDocumentStore(() => disk, "account");

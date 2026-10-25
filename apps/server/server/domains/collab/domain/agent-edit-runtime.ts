@@ -4,19 +4,18 @@ import {
   createAgentEditCore,
   type DocumentCoordinator,
   type DocumentEdits,
-  type DocumentLifecycle,
   type UpdateJournal,
   type UpdateMeta,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { TurnId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
-import { createLinkBinder } from "./link-binding.js";
+import { createLinkBinder, createUnboundParser } from "./link-binding.js";
 import {
   createMarkdownDocumentEngine,
   type MarkdownSerializationAnomalyObserver,
@@ -24,6 +23,7 @@ import {
 } from "./markdown-document.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import { createSemanticProvenanceWriter } from "./provenance.js";
 
 type AgentEditObservability = Pick<
@@ -34,13 +34,16 @@ type AgentEditObservability = Pick<
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
   | "onLinkSpliceFallback"
+  | "onObservationFailed"
 >;
 
 export function createAgentEditRuntime(input: {
   journal: UpdateJournal;
   documentEdits?: DocumentEdits;
-  coordinator: DocumentCoordinator;
-  lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
+  /** The live room door the Markdown engine and link binder work on. */
+  coordinator: LiveDocumentCoordinator;
+  /** The live agent-edit core's reads and saves (production delivers a save after commit). */
+  agentCoordinator: DocumentCoordinator;
   initialDocumentSeeds: InitialDocumentSeeds;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   runDocumentWriteHook: DocumentWriteHookRunner;
@@ -68,12 +71,10 @@ export function createAgentEditRuntime(input: {
       }),
       journal: input.journal,
       documentEdits: input.documentEdits,
-      coordinator: input.coordinator,
-      lifecycle: input.lifecycle,
+      coordinator: input.agentCoordinator,
       codec,
       model,
       semanticProvenance,
-      createRuntimeDoc: () => createCollabYDoc({ gc: false }),
       ...input.observability,
     }),
   );
@@ -85,8 +86,8 @@ export function createAgentEditRuntime(input: {
       model,
       journal: input.journal,
       coordinator: input.coordinator,
-      lifecycle: input.lifecycle,
       initialDocumentSeeds: input.initialDocumentSeeds,
+      parseStored: createUnboundParser({ codec: markupCodec, schema }),
       deferUntilCommit: input.deferUntilCommit,
       metaForOrigin,
       afterWrite: input.runDocumentWriteHook,

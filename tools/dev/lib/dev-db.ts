@@ -137,6 +137,23 @@ export async function listWorktreeDatabasesForUrl(
   }
 }
 
+/** Names of the databases that start with `prefix` (a prefix match, not a LIKE pattern: `_` is literal). */
+export async function listDatabasesWithPrefixForUrl(
+  databaseUrl: string,
+  prefix: string,
+): Promise<string[]> {
+  assertLocalDevPostgresEndpoint(databaseUrl, "list databases");
+  const { adminConnString } = parseTargetDatabase(databaseUrl);
+  const adminSql = postgres(adminConnString, { max: 1 });
+  try {
+    const rows = await adminSql<{ datname: string }[]>`
+      SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname`;
+    return rows.map((row) => row.datname).filter((name) => name.startsWith(prefix));
+  } finally {
+    await adminSql.end();
+  }
+}
+
 /** Connect to target DB when present; auto-create only on the local dev endpoint. */
 export async function ensureDatabaseForUrl(
   databaseUrl: string,
@@ -177,13 +194,24 @@ export async function ensureDatabaseForUrl(
   }
 }
 
-/** Clone a migrated local test database without replaying the migration chain. */
+/** A CI runner's own loopback Postgres: discarded with the runner, so test databases may be made on it. */
+export function isCiRunnerPostgres(databaseUrl: string): boolean {
+  if (process.env.CI !== "true") return false;
+  try {
+    const { hostname } = new URL(databaseUrl);
+    return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
+/** Clone a migrated test database without replaying the migration chain. */
 export async function cloneDatabaseForUrl(
   templateDatabaseUrl: string,
   targetDatabaseUrl: string,
 ): Promise<{ targetDb: string }> {
-  assertLocalDevPostgresEndpoint(templateDatabaseUrl, "clone test database");
-  assertLocalDevPostgresEndpoint(targetDatabaseUrl, "clone test database");
+  for (const url of [templateDatabaseUrl, targetDatabaseUrl])
+    if (!isCiRunnerPostgres(url)) assertLocalDevPostgresEndpoint(url, "clone test database");
   const template = parseTargetDatabase(templateDatabaseUrl);
   const target = parseTargetDatabase(targetDatabaseUrl);
   validateDbName(template.targetDb);

@@ -4,11 +4,13 @@
   "packageManager": "pnpm@10.34.3",
   "scripts": {
     "bootstrap": "tsx tools/dev/bootstrap.ts",
+    "changelog": "node tools/ci/build-changelog.mjs",
     "db:migrate": "pnpm --filter @meridian/database db:migrate",
     "db:generate": "pnpm --filter @meridian/database db:generate",
     "db:apply-functions": "pnpm --filter @meridian/database db:apply-functions",
     "db:studio": "pnpm --filter @meridian/database db:studio",
     "dev": "tsx tools/dev/dev-tmux.ts",
+    "dev:production-client": "tsx tools/dev/dev-tmux.ts --production-client",
     "dev:local": "tsx tools/dev/dev-tmux.ts --no-tailscale",
     "dev:stop": "tsx tools/dev/dev-tmux.ts --stop",
     "dev:restart": "tsx tools/dev/dev-tmux.ts --restart --preserve-mode",
@@ -19,8 +21,9 @@
     "format": "biome check .",
     "format:write": "biome check --write .",
     "typecheck": "node tools/ci/run-nx-target.mjs typecheck",
+    "typecheck:staged": "node tools/ci/run-nx-target.mjs typecheck --staged",
     "test": "vitest run --passWithNoTests --pool=threads",
-    "check": "pnpm lint && pnpm check:debug-probes && pnpm check:negative-space && pnpm check:i18n && pnpm typecheck && pnpm test && pnpm check:graph && pnpm check:db",
+    "check": "pnpm lint && pnpm check:debug-probes && pnpm check:negative-space && pnpm check:tree-visibility && pnpm check:i18n && pnpm typecheck && pnpm test && pnpm check:graph && pnpm check:db",
     "portless:trust": "portless trust",
     "portless:list": "portless list",
     "prepare": "lefthook install",
@@ -40,15 +43,18 @@
     "smoke:app-dev-transform": "tsx tools/dev/smoke-app-dev-transform.ts",
     "smoke:prod-boot": "tsx tools/dev/smoke-app-prod-boot.ts",
     "dev:gc-dbs": "tsx tools/dev/gc-dbs.ts",
+    "dev:stacks": "tsx tools/dev/dev-stacks.ts",
     "dev:prune-worktrees": "tsx tools/dev/prune-worktrees.ts",
     "test:db": "tsx tools/dev/run-db-tests.ts",
-    "probe:db": "tsx tools/dev/run-db-probe.ts",
-    "test:all": "tsx tools/dev/run-db-tests.ts --all"
+    "test:all": "tsx tools/dev/run-db-tests.ts --all",
+    "check:tree-visibility": "node tools/ci/check-tree-visibility.mjs",
+    "probe:db": "tsx tools/dev/run-db-probe.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",
     "@meridian/contracts": "workspace:*",
     "@meridian/database": "workspace:*",
+    "@meridian/prosemirror-schema": "workspace:*",
     "@playwright/test": "^1.61.1",
     "@types/node": "catalog:",
     "@types/ws": "^8.18.1",
@@ -61,6 +67,7 @@
     "tsx": "^4.22.4",
     "typescript": "catalog:",
     "vitest": "catalog:",
-    "ws": "^8.21.0"
+    "ws": "^8.21.0",
+    "yjs": "13.6.31"
   }
 }

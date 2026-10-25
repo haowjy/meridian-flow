@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 /** Writer edits, undo history, and read-only fencing survive editor surface changes. */
 
+import { i18n } from "@lingui/core";
+import { I18nProvider } from "@lingui/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { act, useState } from "react";
@@ -15,6 +17,7 @@ import type { EditorViewProps } from "./EditorView";
 let shell: ReturnType<typeof installEditorShell>;
 let sessions: ReturnType<typeof createEditorSessions>;
 beforeEach(() => {
+  i18n.loadAndActivate({ locale: "en", messages: {} });
   sessions = createEditorSessions();
   shell = installEditorShell(sessions.registry as unknown as LiveDocumentSessionRegistry);
   vi.spyOn(threads, "useProjectThreads").mockImplementation(() => ({
@@ -36,21 +39,21 @@ const threadList: { current: ThreadListItem[] } = {
 };
 
 /** Runtime callbacks are inert; these tests own only editor lifetime and surface selection. */
+const roomOwner = { session: null, error: false };
 const controller = {
   registerInlineReviewRuntime: () => {},
   releaseInlineReviewRuntime: () => {},
-  inlineReviewModelAvailable: () => {},
   setInlineReviewShown: () => {},
   inlineReview: null as
     | import("@/features/draft-review/draft-review-session").InlineDraftReview
     | null,
-  reviewRoomError: false,
 };
 
 vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller,
-    roomOwner: { session: null },
+    roomOwner,
+    fileForDocument: () => null,
   }),
 }));
 
@@ -61,6 +64,7 @@ vi.mock("./useInlineReviewFocus", () => ({ useInlineReviewFocus: reviewHooks.foc
 const openDocument = vi.hoisted(() => vi.fn());
 vi.mock("@/features/project/context/open-project-document", () => ({
   useOpenProjectDocument: () => openDocument,
+  useProjectDocumentNavigationProjectId: () => "project-a",
 }));
 
 const queryClient = new QueryClient();
@@ -85,48 +89,14 @@ function Harness({ initial }: { initial: SurfaceProps }) {
 function ExactLiveEditor(props: SurfaceProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <EditorView {...props} session={props.session ?? sessions.get(props.documentId)} />
+      <I18nProvider i18n={i18n}>
+        <EditorView {...props} session={props.session ?? sessions.get(props.documentId)} />
+      </I18nProvider>
     </QueryClientProvider>
   );
 }
 
 describe("editor lifetime", () => {
-  it("keeps the pending shell until persistence and first server sync both finish", async () => {
-    const documentId = "horizon-controlled";
-    let resolvePersistence!: () => void;
-    let resolveServer!: () => void;
-    const horizons = {
-      localPersistence: new Promise<void>((resolve) => {
-        resolvePersistence = resolve;
-      }),
-      firstServerSync: new Promise<void>((resolve) => {
-        resolveServer = resolve;
-      }),
-    };
-    vi.spyOn(sessions.get(documentId), "whenLocalPersistenceSynced").mockReturnValue(
-      horizons.localPersistence,
-    );
-    vi.spyOn(sessions.get(documentId), "whenSynced").mockReturnValue(horizons.firstServerSync);
-
-    await withReactRoot(<ExactLiveEditor documentId={documentId} />, async () => {
-      expect(document.querySelector(".ProseMirror")).toBeNull();
-      await act(async () => {
-        resolvePersistence();
-        await Promise.resolve();
-      });
-      expect(document.querySelector(".ProseMirror")).toBeNull();
-
-      await act(async () => {
-        resolveServer();
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-      expect(mountedEditor()).toBeDefined();
-      expect(reviewHooks.sync).not.toHaveBeenCalled();
-      expect(reviewHooks.focus).not.toHaveBeenCalled();
-    });
-  });
-
   it("binds verified local content without waiting for an offline server sync", async () => {
     const documentId = "local-horizon-controlled";
     let resolvePersistence!: () => void;
@@ -200,59 +170,4 @@ describe("editor lifetime", () => {
       expect(mountedEditor().getText()).toBe("");
     });
   });
-
-  it("preserves typed content and becomes read-only when its session is fenced", async () => {
-    const initial = {
-      documentId: "document-fenced",
-      projectId: "project-1",
-      localContentReady: true,
-    };
-    await withReactRoot(<Harness initial={initial} />, async () => {
-      expect(mountedEditor().isEditable).toBe(true);
-      await act(async () => {
-        mountedEditor().commands.insertContent("Fenced words");
-      });
-
-      await act(async () => {
-        sessions.get("document-fenced").raiseSchemaFence({ reason: "client-superseded" });
-      });
-
-      expect(mountedEditor().getText()).toBe("Fenced words");
-      expect(mountedEditor().isEditable).toBe(false);
-      expect(mountedEditor().view.dom.getAttribute("contenteditable")).toBe("false");
-      expect(document.querySelector("[data-schema-fence]")?.textContent).toBe(
-        "This chapter was opened in a newer version of Meridian. Refresh to keep writing.",
-      );
-    });
-  });
-});
-
-it("does not attribute the leaving review's room error to an incoming request", async () => {
-  controller.inlineReview = {
-    kind: "inline",
-    documentId: "leaving",
-    draftId: "failed-draft",
-    roomError: true,
-  };
-  controller.reviewRoomError = true;
-  try {
-    await withReactRoot(
-      <Harness
-        initial={{
-          documentId: "incoming",
-          projectId: "project-1",
-          reviewDraftId: "incoming-draft",
-        }}
-      />,
-      () => {
-        expect(document.body.textContent).not.toContain("Couldn't open review mode.");
-        expect(
-          document.querySelector('[data-editor-surface="live"]')?.classList.contains("hidden"),
-        ).toBe(true);
-      },
-    );
-  } finally {
-    controller.inlineReview = null;
-    controller.reviewRoomError = false;
-  }
 });

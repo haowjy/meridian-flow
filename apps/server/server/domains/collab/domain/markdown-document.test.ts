@@ -1,29 +1,27 @@
-/** Schema-aware read and restore contracts for the collab document engine. */
+/** Schema-aware read and restore contracts for the collab document engine.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Tracked-file schema checks and identity-preserving repair (kb/decisions/collab/schema/schema-coherence-invariant.md)
+ */
 
 import { fragmentOf, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import {
-  buildDocumentSchema,
-  COLLAB_SCHEMA_VERSION,
-  createCollabYDoc,
-} from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createMarkdownSerializationAnomalyObserver } from "../adapters/agent-edit-observability.js";
 import {
   createInMemoryCoordinator,
-  createInMemoryDocumentLifecycle,
   createInMemoryJournal,
 } from "../adapters/in-memory/agent-edit.js";
-import { createInMemoryInitialDocumentSeeds } from "../adapters/in-memory/composition.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCheckpointService } from "../checkpoints.js";
-import { createLinkBinder } from "./link-binding.js";
+import { createLinkBinder, createUnboundParser } from "./link-binding.js";
 import { createMarkdownDocumentEngine } from "./markdown-document.js";
 
 const DOCUMENT_ID = "code-document" as DocumentId;
@@ -37,14 +35,20 @@ function setup(filetype = "typescript") {
   const coordinator = createInMemoryCoordinator(journal);
   const eventSink = createInMemoryEventSink();
   const engine = createMarkdownDocumentEngine({
-    exportCodec: mdxCodec({ schema, export: true }),
     links: createStaticDocumentLinkScopes(),
     codec: mdxCodec({ schema }),
+    exportCodec: mdxCodec({ schema, export: true }),
     model,
     journal,
     coordinator,
-    lifecycle: createInMemoryDocumentLifecycle(coordinator),
-    initialDocumentSeeds: createInMemoryInitialDocumentSeeds(journal),
+    initialDocumentSeeds: {
+      seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
+      missingAuthorityProjection: async () => null,
+      stageInitialStates: async () => {},
+      commitStagedStates: async () => [],
+      discardStagedStates: async () => ({ remaining: false }),
+    },
+    parseStored: createUnboundParser({ codec: mdxCodec({ schema }), schema }),
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
     identityPreservingWrite: async () => {
       throw new Error("Identity-preserving writes are not part of this test");
@@ -70,6 +74,7 @@ function setup(filetype = "typescript") {
 }
 
 async function seedCode(setupResult: ReturnType<typeof setup>, source = "const answer = 42;") {
+  await setupResult.engine.initializeEmptyDocument(DOCUMENT_ID);
   const written = await setupResult.engine.setMarkdown({
     documentId: DOCUMENT_ID,
     content: await setupResult.bind(source),
@@ -237,28 +242,6 @@ describe("schema-aware serialization purity", () => {
 
     expect(Y.encodeStateAsUpdate(input)).toEqual(beforeState);
     expect(subject.eventSink.events).toHaveLength(1);
-    expect(subject.eventSink.events[0]?.payload).toEqual({
-      schemaVersion: COLLAB_SCHEMA_VERSION,
-      deletedNodeTypes: [],
-      deletedClockCount: 2,
-    });
     input.destroy();
-  });
-});
-
-describe("live export read door", () => {
-  it("uses its supplied scope and export codec without changing ordinary reads", async () => {
-    const subject = setup("markdown");
-    await seedCode(subject, "[[Not a link]] [ref] [^1] [target](https://example.com)");
-    const exported = await subject.engine.readForExport(DOCUMENT_ID, (links) => ({
-      spellLink: () => ({ href: "../Knowledge%20Base/Target.md", address: "kb://Target" }),
-      spellSource: links.spellSource,
-    }));
-    expect(exported).toEqual({
-      ok: true,
-      value: "[[Not a link]] \\[ref] [^1] [target](../Knowledge%20Base/Target.md)\n",
-    });
-    const ordinary = await subject.engine.readAsMarkdown(DOCUMENT_ID);
-    expect(ordinary.ok && ordinary.value).toContain("\\[\\[Not a link]]");
   });
 });

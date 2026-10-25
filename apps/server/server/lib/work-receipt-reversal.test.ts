@@ -1,4 +1,8 @@
-/** Typed Work receipt reversal behavior and ordering. */
+/** Typed Work receipt reversal behavior and ordering.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Work reversal aggregation, transaction notices, and unchanged filtering
+ */
 
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { WorkReceipt } from "@meridian/contracts/works";
@@ -80,7 +84,10 @@ describe("Work receipt reversal", () => {
     ).toBe("reversed");
     expect(
       combineWorkReversalOutcome(
-        { status: "reconciled", documents: [{ uri: "manuscript://a", status: "reconciled" }] },
+        {
+          status: "reconciled",
+          documents: [{ documentId: "document-a", uri: "manuscript://a", status: "reconciled" }],
+        },
         [
           {
             command: "restore",

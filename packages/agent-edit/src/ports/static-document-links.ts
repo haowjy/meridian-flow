@@ -5,6 +5,7 @@
  */
 import {
   type CatalogDocument,
+  type CatalogFolder,
   matchDocumentPath,
   parseContextUri,
   parseLinkRef,
@@ -30,6 +31,8 @@ export interface StaticDocumentCatalog {
   projectId: string;
   /** Read at every call, so replacing an entry moves, deletes or creates a document. */
   documents: readonly StaticCatalogDocument[];
+  /** Read at every call, so replacing an entry moves or removes a folder. */
+  folders?: readonly CatalogFolder[];
   /** Ahead id → settled document id. */
   settlements?: ReadonlyMap<string, string>;
 }
@@ -50,8 +53,10 @@ export interface StaticDocumentLinksOptions {
  */
 interface Loaded {
   ids: Set<string>;
+  folderIds: Set<string>;
   aheadIds: Set<string>;
   addresses: Set<string>;
+  folderAddresses: Set<string>;
 }
 
 export function createStaticDocumentLinks(
@@ -62,7 +67,13 @@ export function createStaticDocumentLinks(
   const misses: string[] = [];
   const loaded: Loaded | null = options.preloaded
     ? null
-    : { ids: new Set(), aheadIds: new Set(), addresses: new Set() };
+    : {
+        ids: new Set(),
+        folderIds: new Set(),
+        aheadIds: new Set(),
+        addresses: new Set(),
+        folderAddresses: new Set(),
+      };
   const byId = (id: string) => catalog.documents.find((entry) => entry.documentId === id);
   const scopeFor = (documentId: string): HolderLinkScope => {
     const miss = (key: string) => misses.push(key);
@@ -80,17 +91,21 @@ export function createStaticDocumentLinks(
     async prepare(request) {
       if (!loaded) return;
       loaded.ids.add(request.documentId);
+      const holderUri = byId(request.documentId)?.uri ?? null;
       const keys = storedLinkKeys({
         docs: request.docs,
         ...(request.stored ? { nodes: request.stored } : {}),
         refs: [...(request.shown ?? []).map((showing) => showing.ref), ...(request.refs ?? [])],
+        holderUri,
       });
       for (const address of request.addresses ?? []) loaded.addresses.add(address);
       for (const id of keys.assetIds) loaded.ids.add(id);
       for (const address of keys.aheadAddresses) loaded.addresses.add(address);
+      for (const address of keys.folderAddresses) loaded.folderAddresses.add(address);
       for (const ref of keys.refs) {
         const parsed = parseLinkRef(ref);
         if (parsed?.kind === "doc") loaded.ids.add(parsed.documentId);
+        if (parsed?.kind === "folder") loaded.folderIds.add(parsed.folderId);
         if (parsed?.kind !== "ahead") continue;
         loaded.aheadIds.add(parsed.aheadId);
         const settled = catalog.settlements?.get(parsed.aheadId);
@@ -101,14 +116,20 @@ export function createStaticDocumentLinks(
         const entry = byId(id);
         if (entry?.image && entry.presence === "deleted") loaded.addresses.add(entry.uri);
       }
-      const holderUri = byId(request.documentId)?.uri ?? null;
-      for (const uri of writtenAddresses(request.written ?? [], holderUri)) {
-        loaded.addresses.add(uri);
+      for (const target of writtenAddresses(
+        request.written ?? [],
+        holderUri,
+        request.context?.uploadsChat,
+      )) {
+        loaded[target.kind === "folder" ? "folderAddresses" : "addresses"].add(target.uri);
       }
       // A row an address load found is known by id too, as the server remembers it.
       for (const entry of catalog.documents) {
         if ([...loaded.addresses].some((uri) => matchDocumentPath([entry], uri, (doc) => doc.uri)))
           loaded.ids.add(entry.documentId);
+      }
+      for (const folder of catalog.folders ?? []) {
+        if (loaded.folderAddresses.has(folder.uri)) loaded.folderIds.add(folder.folderId);
       }
     },
     scopeFor,
@@ -123,11 +144,22 @@ function staticHolderCatalog(catalog: StaticDocumentCatalog, loaded: Loaded | nu
   const present = () => catalog.documents.filter((entry) => entry.presence !== "deleted");
   const reachable = (entry: CatalogDocument) => entry.readable && entry.nameable;
   const byId = (id: string) => catalog.documents.find((entry) => entry.documentId === id) ?? null;
+  const folderById = (id: string) =>
+    catalog.folders?.find((entry) => entry.folderId === id) ?? null;
   // `undefined` is a snapshot miss: the key was never prepared.
   const ifLoaded = <T>(set: keyof Loaded, key: string, answer: () => T): T | undefined =>
     !loaded || loaded[set].has(key) ? answer() : undefined;
   return {
     document: (id) => ifLoaded("ids", id, () => byId(id)),
+    folder: (id) => ifLoaded("folderIds", id, () => folderById(id)),
+    folderAt: (uri) =>
+      ifLoaded(
+        "folderAddresses",
+        uri,
+        () =>
+          catalog.folders?.find((entry) => entry.uri === uri && entry.readable && entry.nameable) ??
+          null,
+      ),
     settlement: (aheadId) =>
       ifLoaded("aheadIds", aheadId, () => catalog.settlements?.get(aheadId) ?? null),
     documentAt: (uri) =>
@@ -178,6 +210,12 @@ function staticRevision(doc: Y.Doc, scope: HolderLinkScope, catalog: StaticDocum
       JSON.stringify([
         scope.holder.uri,
         catalog.documents.map((entry) => [entry.documentId, entry.uri, entry.presence]),
+        catalog.folders?.map((entry) => [
+          entry.folderId,
+          entry.uri,
+          entry.readable,
+          entry.nameable,
+        ]),
         [...(catalog.settlements ?? [])],
       ]),
     ),

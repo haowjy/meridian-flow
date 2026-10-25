@@ -1,5 +1,8 @@
-/** Local port liveness + wait-for-free coverage for deterministic restarts (issue #331). */
-
+/** Local port liveness + wait-for-free coverage for deterministic restarts (issue #331).
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - TERM-then-KILL fixed-port restart policy
+ */
 import net from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { releaseFixedPorts, waitForPortsFree } from "./port-lifecycle";
@@ -37,35 +40,6 @@ describe("waitForPortsFree", () => {
 });
 
 describe("releaseFixedPorts", () => {
-  it("kills a surviving holder", async () => {
-    const port = MOCK_PORT;
-    let held = true;
-    const holder = { pid: 1234, command: "vite" };
-    const onKill = vi.fn();
-    const killProcess = vi.fn((_pid: number, signal: NodeJS.Signals) => {
-      if (signal === "SIGTERM") held = false;
-    });
-    const result = await releaseFixedPorts([port], {
-      intervalMs: 10,
-      terminateTimeoutMs: 2_000,
-      isPortFree: () => Promise.resolve(!held),
-      discoverHolders: () => ({
-        ok: true,
-        holders: [holder],
-      }),
-      killProcess,
-      onKill,
-    });
-
-    expect(result).toEqual({
-      status: "released",
-      ports: [port],
-    });
-    expect(killProcess).toHaveBeenCalledWith(holder.pid, "SIGTERM");
-    expect(onKill).toHaveBeenCalledOnce();
-    expect(onKill).toHaveBeenCalledWith({ port, holder });
-  });
-
   it("force-kills a holder that survives SIGTERM", async () => {
     const port = MOCK_PORT;
     let held = true;

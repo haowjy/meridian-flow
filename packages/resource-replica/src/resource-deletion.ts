@@ -1,15 +1,21 @@
 /** Local deletion records cleanup work; server-backed deletion still needs terminal authority. */
 
 import { newerCanonicalObservation } from "./canonical-observation";
-import { intentOwnsDeletion, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
+import { intentOwnsDeletionAt, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type { NamespaceIntent, ResourceRecord, ResourceWrite } from "./resource-records";
 
 export function planResourceDeletion(
   record: ResourceRecord,
   projectId: string,
   intentId: string,
+  operationId?: string,
 ): ResourceWrite | null {
-  if (record.resource.lifecycle.kind === "terminal" || record.intents.some(intentOwnsDeletion))
+  if (
+    record.resource.lifecycle.kind === "terminal" ||
+    record.intents.some((intent) =>
+      intentOwnsDeletionAt(intent, record.resource.observationVersion),
+    )
+  )
     return null;
   const neverSubmitted =
     record.resource.lifecycle.kind === "local" &&
@@ -23,6 +29,7 @@ export function planResourceDeletion(
     sequence: Math.max(0, ...record.intents.map((intent) => intent.sequence)) + 1,
     identityRevision: record.resource.identity.revision,
     desired: { kind: "delete" },
+    ...(operationId ? { operationId } : {}),
     attempts: [],
     state: neverSubmitted ? "settled-locally" : "pending",
   };
@@ -71,11 +78,18 @@ export function committedResourceDeletion(
     canonicalRefresh: _unexecutable,
     ...obligations
   } = resource.obligations;
+  // An editor terminal may already hold newer exact-ID deletion evidence; keep the higher.
+  const held =
+    resource.lifecycle.kind === "terminal" ? resource.lifecycle.deletionVersion : undefined;
+  const deletionVersion =
+    held !== undefined && !newerCanonicalObservation(observationVersion, held)
+      ? held
+      : observationVersion;
   return {
     ...resource,
     canonical: null,
     observationVersion,
     obligations,
-    lifecycle: { kind: "terminal", generation, transitionId },
+    lifecycle: { kind: "terminal", generation, transitionId, deletionVersion },
   };
 }

@@ -1,28 +1,16 @@
 /** Drizzle backing-scoped atomic ContextFS tree mutations. */
-import type { DocumentFileType } from "@meridian/contracts/protocol";
+
+import type { ContextSourceId, FolderId, ThreadId, UserId } from "@meridian/contracts";
 import {
   parseDocumentFilename,
   renderFilename as renderDocumentFilename,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  contentDocumentKindSql,
-  contentDocumentPredicate,
-  contextSources,
-  documents,
-  folders,
-  works,
-} from "@meridian/database/schema";
+import { documents, folders } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { lockDocumentMutation } from "../../../../shared/document-mutation-lock.js";
-import {
-  currentDrizzleDb,
-  runAfterDrizzleCommit,
-  runInDrizzleSavepoint,
-} from "../../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, runInDrizzleSavepoint } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
-import type { EventSink } from "../../../observability/index.js";
 import { splitPath } from "../../context/paths.js";
 import { countIncomingLinks } from "../../links/move-link-count.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
@@ -38,25 +26,19 @@ import {
   type ContextTreeMutationStore,
 } from "../../ports/context-tree-mutation-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
-import type { LiveMembership } from "../../ports/live-membership.js";
+import type { DocumentRemoval } from "../../ports/document-removal.js";
+import { splitHiddenContents } from "../../tree/folder-normalization.js";
+import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
+import { bumpLocationVersions } from "../../tree/node-locations.js";
+import { moveNode } from "../../tree/node-moves.js";
+import { lockDocuments } from "../../tree/node-rows.js";
+import { createTreeReader, LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
+import { isStorageBackedDocument } from "../catalog-file-mapper.js";
 import {
-  claimDocumentLocation,
-  hasOppositeContextEntry,
   lockContextSources,
   lockMovedDocumentRows,
-  type NamespaceLocation,
   readTreeLocations,
-  recordDocumentMove,
 } from "./document-locations.js";
-import {
-  type ContextDocumentMembershipEvent,
-  type ContextDocumentMembershipObserver,
-  createMembershipCommandId,
-  dispatchMembershipEvents,
-} from "./membership-event-dispatcher.js";
-
-type FolderRow = typeof folders.$inferSelect;
-const BINARY_FILE_TYPES = new Set<DocumentFileType>(["docx", "image", "pdf", "binary"]);
 
 function normalizeTreePath(path: string): string {
   return path.split("/").filter(Boolean).join("/");
@@ -104,18 +86,95 @@ function rollback(code: ContextTreeMutationError["code"]): never {
   throw new ContextTreeMutationRollback(code);
 }
 
+/** The node at `path` in the selected tree, as a location token; null when nothing is there. */
+export async function inspectTreeLocation(
+  db: Database,
+  sourceId: string,
+  path: string,
+  view: TreeView = LIVE_TREE,
+  expectedKind?: ContextLocationToken["kind"],
+): Promise<ContextLocationToken | null> {
+  const normalized = normalizeTreePath(path);
+  if (!normalized) {
+    return {
+      kind: "directory",
+      nodeId: CONTEXT_ROOT_DIRECTORY_ID,
+      sourceId,
+      path: "",
+    };
+  }
+  const tree = createTreeReader(db);
+  if (expectedKind === "directory") {
+    const found = await tree.resolvePath(view, {
+      contextSourceId: sourceId as ContextSourceId,
+      path: normalized,
+    });
+    const folderIds =
+      found.kind === "found"
+        ? found.node.kind === "folder"
+          ? [found.node.folder.id]
+          : []
+        : found.kind === "ambiguous"
+          ? found.nodes.flatMap((node) => (node.kind === "folder" ? [node.id] : []))
+          : [];
+    return folderIds.length === 1
+      ? { kind: "directory", nodeId: folderIds[0] as FolderId, sourceId, path: normalized }
+      : null;
+  }
+  // A document answers at its canonical name (`ch1.md` is `ch1`); a folder at its literal one.
+  const documentPath = canonicalDocumentPath(normalized);
+  const asDocument =
+    documentPath === null
+      ? null
+      : await tree.resolvePath(view, {
+          contextSourceId: sourceId as ContextSourceId,
+          path: documentPath,
+        });
+  if (asDocument?.kind === "found" && asDocument.node.kind === "document") {
+    const document = asDocument.node.document;
+    return {
+      kind: "file",
+      nodeId: document.id,
+      sourceId,
+      path: documentPath as string,
+      filetype: isStorageBackedDocument(document) ? null : document.fileType,
+    };
+  }
+  const found =
+    documentPath === normalized && asDocument
+      ? asDocument
+      : await tree.resolvePath(view, {
+          contextSourceId: sourceId as ContextSourceId,
+          path: normalized,
+        });
+  if (found.kind !== "found" || found.node.kind !== "folder") return null;
+  return { kind: "directory", nodeId: found.node.folder.id, sourceId, path: normalized };
+}
+
 /** Drizzle implementation of the backing-scoped atomic ContextFS tree mutator. */
 export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore {
   private beforeDestructiveWrite: (() => void | Promise<void>) | null = null;
 
+  private readonly catalogMutations?: ContextCatalogMutationPort;
+  private readonly arrivals?: Pick<DocumentArrivals, "settle">;
+  /** Repair on touch (§12.4): the move's link count reads identity with it. */
+  private readonly repair?: Pick<HiddenNodeRepair, "schedule">;
+  private readonly removal: DocumentRemoval;
+
   constructor(
     private readonly db: Database,
-    private readonly membershipObserver?: ContextDocumentMembershipObserver,
-    private readonly catalogMutations?: ContextCatalogMutationPort,
-    private readonly eventSink?: EventSink,
-    private readonly arrivals?: Pick<DocumentArrivals, "settle">,
-    private readonly liveMembership?: LiveMembership,
-  ) {}
+    options: {
+      removal: DocumentRemoval;
+      catalogMutations?: ContextCatalogMutationPort;
+      arrivals?: Pick<DocumentArrivals, "settle">;
+      repair?: Pick<HiddenNodeRepair, "schedule">;
+    },
+  ) {
+    this.removal = options.removal;
+    this.catalogMutations = options.catalogMutations;
+    this.arrivals = options.arrivals;
+    this.repair = options.repair;
+  }
 
   /** Test hook: runs after CAS rechecks, immediately before destructive writes. */
   setBeforeDestructiveWrite(hook: (() => void | Promise<void>) | null): void {
@@ -128,70 +187,32 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
 
   /**
    * Move-in arrival (contract §9.3): once per move, after all DML and history, so a folder
-   * move settles against its final tree. Every participating namespace is already locked. A
-   * cross-project move (personal ↔ project) first carries live membership to the destination
-   * project, so the arrival is live there. Then the note's count, which includes refs this
+   * move settles against its final tree. Every participating namespace is already locked.
+   * The destination source determines project visibility. The note's count includes refs this
    * settlement just bound (contract §10).
    */
   private async settleMovedIn(
     input: ContextTreeMoveCommand,
-    previous: readonly NamespaceLocation[],
+    moved: readonly DocumentId[],
   ): Promise<{ links: number; documents: number }> {
-    const moved = previous.flatMap((entry) =>
-      entry.kind === "file" ? [entry.id as DocumentId] : [],
-    );
     if (moved.length > 0) {
-      if (input.source.sourceId !== input.destinationSourceId && this.liveMembership) {
-        const from = await this.sourceProjectId(input.source.sourceId);
-        const to = await this.sourceProjectId(input.destinationSourceId);
-        if (from !== to) await this.liveMembership.transfer(moved, { from, to });
-      }
       await this.arrivals?.settle(moved);
     }
     return input.linkNoteProjectId
       ? countIncomingLinks(
           this.db,
           { projectId: input.linkNoteProjectId as ProjectId, movedDocumentIds: moved },
-          this.liveMembership,
+          this.repair,
         )
       : { links: 0, documents: 0 };
   }
 
-  private async sourceProjectId(sourceId: string): Promise<ProjectId> {
-    const [row] = await currentDrizzleDb(this.db)
-      .select({
-        projectId: sql<ProjectId>`coalesce(${contextSources.projectId}, ${works.projectId})`,
-      })
-      .from(contextSources)
-      .leftJoin(works, eq(works.id, contextSources.workId))
-      .where(eq(contextSources.id, sourceId));
-    if (!row?.projectId) throw new Error(`Context source ${sourceId} has no project`);
-    return row.projectId;
-  }
-
   private async withMutationTransaction<T>(
-    operation: (
-      events: ContextDocumentMembershipEvent[],
-    ) => Promise<Result<T, ContextTreeMutationError>>,
+    operation: () => Promise<Result<T, ContextTreeMutationError>>,
   ): Promise<Result<T, ContextTreeMutationError>> {
-    const events: ContextDocumentMembershipEvent[] = [];
-    const commandId = createMembershipCommandId();
     let result: Result<T, ContextTreeMutationError>;
     try {
-      result = await runInDrizzleSavepoint(this.db, async () => {
-        const mutationResult = await operation(events);
-        if (mutationResult.ok && events.length > 0) {
-          runAfterDrizzleCommit(() =>
-            dispatchMembershipEvents({
-              observer: this.membershipObserver,
-              events,
-              commandId,
-              eventSink: this.eventSink,
-            }),
-          );
-        }
-        return mutationResult;
-      });
+      result = await runInDrizzleSavepoint(this.db, operation);
     } catch (error) {
       if (error instanceof ContextTreeMutationRollback) return Err({ code: error.code });
       if (isPgConstraintError(error)) return Err({ code: "conflict" });
@@ -200,168 +221,9 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     return result;
   }
 
-  private async findDirectFolder(
-    sourceId: string,
-    parentId: string | null,
-    name: string,
-  ): Promise<FolderRow | null> {
-    const [row] = await currentDrizzleDb(this.db)
-      .select()
-      .from(folders)
-      .where(
-        and(
-          eq(folders.contextSourceId, sourceId),
-          parentId === null ? isNull(folders.parentId) : eq(folders.parentId, parentId),
-          eq(folders.name, name),
-          isNull(folders.deletedAt),
-        ),
-      )
-      .limit(1);
-    return row ?? null;
-  }
-
-  private async findFolderId(
-    sourceId: string,
-    dir: readonly string[],
-  ): Promise<string | null | undefined> {
-    let parentId: string | null = null;
-    for (const name of dir) {
-      const row = await this.findDirectFolder(sourceId, parentId, name);
-      if (!row) return undefined;
-      parentId = row.id;
-    }
-    return parentId;
-  }
-
-  private async ensureFolderPath(sourceId: string, dir: readonly string[]): Promise<string | null> {
-    let parentId: string | null = null;
-    for (const name of dir) {
-      const existing = await this.findDirectFolder(sourceId, parentId, name);
-      if (existing) {
-        parentId = existing.id;
-        continue;
-      }
-      if (await hasOppositeContextEntry(this.db, sourceId, parentId, name, "folder"))
-        rollback("conflict");
-      const createdRows: Array<{ id: string }> = await currentDrizzleDb(this.db)
-        .insert(folders)
-        .values({ contextSourceId: sourceId, parentId, name })
-        .returning({ id: folders.id });
-      const createdFolderId = createdRows[0]?.id;
-      if (!createdFolderId) rollback("conflict");
-      await claimDocumentLocation(this.db, sourceId, parentId, name);
-      parentId = createdFolderId;
-    }
-    return parentId;
-  }
-
-  private async findFolderAtPath(
-    sourceId: string,
-    path: string,
-  ): Promise<{ id: string; updatedAt: string } | null> {
-    const segments = treePathSegments(path);
-    if (segments.length === 0) return null;
-    const folderId = await this.findFolderId(sourceId, segments);
-    if (folderId === undefined || folderId === null) return null;
-    const [row] = await currentDrizzleDb(this.db)
-      .select({
-        id: folders.id,
-        updatedAt: sql<string>`${folders.updatedAt}::text`,
-      })
-      .from(folders)
-      .where(
-        and(
-          eq(folders.id, folderId),
-          eq(folders.contextSourceId, sourceId),
-          isNull(folders.deletedAt),
-        ),
-      )
-      .limit(1);
-    return row ?? null;
-  }
-
-  private async findDocumentAtPath(
-    sourceId: string,
-    path: string,
-  ): Promise<{
-    id: string;
-    updatedAt: string;
-    filetype: string | null;
-    name: string;
-    extension: string;
-  } | null> {
-    const { dir, filename } = splitPath(normalizeTreePath(path));
-    if (!filename) return null;
-    const folderId = await this.findFolderId(sourceId, dir);
-    if (folderId === undefined) return null;
-    const parsed = parseDocumentFilename(filename);
-    if (!parsed.ok) return null;
-    const { name, extension } = parsed.value;
-    const [row] = await currentDrizzleDb(this.db)
-      .select({
-        id: documents.id,
-        updatedAt: sql<string>`${documents.updatedAt}::text`,
-        name: documents.name,
-        extension: documents.extension,
-        storedType: documents.fileType,
-        storageUrl: documents.storageUrl,
-      })
-      .from(documents)
-      .where(
-        and(
-          eq(documents.contextSourceId, sourceId),
-          contentDocumentPredicate(),
-          folderId === null ? isNull(documents.folderId) : eq(documents.folderId, folderId),
-          eq(documents.name, name),
-          eq(documents.extension, extension),
-          isNull(documents.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (!row) return null;
-    const isStorageBacked =
-      row.storageUrl !== null || BINARY_FILE_TYPES.has(row.storedType as DocumentFileType);
-    return {
-      id: row.id,
-      name: row.name,
-      extension: row.extension,
-      updatedAt: row.updatedAt,
-      filetype: isStorageBacked ? null : row.storedType,
-    };
-  }
-
-  async inspect(sourceId: string, path: string): Promise<ContextLocationToken | null> {
-    const normalized = normalizeTreePath(path);
-    if (!normalized) {
-      return {
-        kind: "directory",
-        nodeId: CONTEXT_ROOT_DIRECTORY_ID,
-        sourceId,
-        path: "",
-      };
-    }
-    const doc = await this.findDocumentAtPath(sourceId, normalized);
-    if (doc) {
-      return {
-        kind: "file",
-        nodeId: doc.id,
-        sourceId,
-        path: [...splitPath(normalized).dir, renderDocumentFilename(doc.name, doc.extension)].join(
-          "/",
-        ),
-        filetype: doc.filetype,
-      };
-    }
-    const folder = await this.findFolderAtPath(sourceId, normalized);
-    if (folder) {
-      return {
-        kind: "directory",
-        nodeId: folder.id,
-        sourceId,
-        path: normalized,
-      };
-    }
-    return null;
+  /** Reads the selected tree; mutation callers default to live and cannot touch hidden nodes. */
+  inspect(sourceId: string, path: string, view: TreeView = LIVE_TREE) {
+    return inspectTreeLocation(this.db, sourceId, path, view);
   }
 
   private async expectationStillMatches(
@@ -378,7 +240,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   async commitMove(
     input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
-    return this.withMutationTransaction(async (events) => {
+    return this.withMutationTransaction(async () => {
       await lockContextSources(this.db, [input.source.sourceId, input.destinationSourceId]);
       const destinationPath = normalizeTreePath(input.destinationPath);
       const targetBasename = treeBasename(destinationPath);
@@ -398,6 +260,9 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         return Err({ code: "stale_target" });
       }
 
+      // The writer's identity parent, still at its path under these locks: the path move
+      // below lands in that live folder, and `destinationCreateFolders` beneath it are a
+      // live create (revealing a hidden folder of the same name, §6.3).
       if (
         input.destinationParentToken &&
         !sameLocation(
@@ -410,9 +275,11 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       const targetToken =
         input.expectedTarget.state === "occupied" ? input.expectedTarget.token : null;
       if (targetToken) {
-        if (targetToken.kind !== input.source.kind) return Err({ code: "conflict" });
         if (targetToken.nodeId === input.source.nodeId) return Err({ code: "invalid_operation" });
-        if (!input.overwrite || input.source.kind === "directory") {
+        if (
+          input.overwrite &&
+          (targetToken.kind !== input.source.kind || input.source.kind === "directory")
+        ) {
           return Err({ code: "conflict" });
         }
       }
@@ -428,206 +295,77 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       }
 
       const previousLocations = await readTreeLocations(this.db, input.source);
-      // A move between sources can change a document's owner, so it waits for
-      // any write that confirmed the old owner (file-access §5, step 3).
-      if (input.source.sourceId !== input.destinationSourceId) {
-        const moved = previousLocations.filter((location) => location.kind === "file");
-        for (const id of moved.map((location) => location.id).sort()) {
-          await lockDocumentMutation(currentDrizzleDb(this.db), id);
-        }
-      }
+      const mutationIds = [
+        ...(input.source.sourceId !== input.destinationSourceId || (targetToken && input.overwrite)
+          ? previousLocations.flatMap((entry) => (entry.kind === "file" ? [entry.id] : []))
+          : []),
+        ...(targetToken?.kind === "file" && input.overwrite ? [targetToken.nodeId] : []),
+      ];
+      await lockDocuments(this.db, mutationIds);
       // Moved files and an overwrite victim, row-locked in id order: orders this move against
       // derive certification and journal FK inserts. A move writes nothing into any holder.
       await lockMovedDocumentRows(this.db, [
         ...previousLocations.flatMap((entry) =>
           entry.kind === "file" ? [entry.id as DocumentId] : [],
         ),
-        ...(targetToken?.kind === "file" ? [targetToken.nodeId as DocumentId] : []),
+        ...(targetToken?.kind === "file" && input.overwrite
+          ? [targetToken.nodeId as DocumentId]
+          : []),
       ]);
-      const destParentId =
-        input.destinationParentToken && !input.destinationCreateFolders?.length
-          ? input.destinationParentToken.nodeId === CONTEXT_ROOT_DIRECTORY_ID
-            ? null
-            : input.destinationParentToken.nodeId
-          : await this.ensureFolderPath(
-              input.destinationSourceId,
-              treePathSegments(targetParentPath),
-            );
-      if (
-        await hasOppositeContextEntry(
-          this.db,
-          input.destinationSourceId,
-          destParentId,
-          targetBasename,
-          input.source.kind === "file" ? "file" : "folder",
-        )
-      )
-        rollback("conflict");
-      const now = new Date();
-
-      if (input.source.kind === "file") {
-        if (targetToken?.kind === "file") {
-          await this.runBeforeDestructiveWrite();
-          const deletedTarget = await currentDrizzleDb(this.db)
-            .update(documents)
-            .set({ deletedAt: now, updatedAt: now })
-            .where(
-              and(
-                eq(documents.id, targetToken.nodeId),
-                eq(documents.contextSourceId, input.destinationSourceId),
-                isNull(documents.deletedAt),
-              ),
-            )
-            .returning({ id: documents.id });
-          if (deletedTarget.length !== 1) rollback("stale_target");
-          events.push({ method: "documentDeleted", documentId: targetToken.nodeId });
-        }
-
-        const parsed = parseDocumentFilename(targetBasename);
-        if (!parsed.ok) return Err({ code: "invalid_operation" });
-        const { name, extension } = parsed.value;
-        const basenameChanged = targetBasename !== treeBasename(input.source.path);
-        await this.runBeforeDestructiveWrite();
-        const moved = await currentDrizzleDb(this.db)
-          .update(documents)
-          .set({
-            contextSourceId: input.destinationSourceId,
-            folderId: destParentId,
-            name,
-            extension,
-            ...(basenameChanged ||
-            ("graduateProvisionalName" in input && input.graduateProvisionalName)
-              ? { provisionalName: false }
-              : {}),
-            ...(input.destinationFiletype == null ? {} : { fileType: input.destinationFiletype }),
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(documents.id, input.source.nodeId),
-              eq(documents.contextSourceId, input.source.sourceId),
-              isNull(documents.deletedAt),
-            ),
-          )
-          .returning({ id: documents.id });
-        if (moved.length !== 1) rollback("stale_source");
-        await recordDocumentMove(
-          this.db,
-          input.source.sourceId,
-          input.destinationSourceId,
-          previousLocations,
-          input.source.path,
-          destinationPath,
-        );
-        const linkUpdate = await this.settleMovedIn(input, previousLocations);
-        await this.catalogMutations?.refreshSources(
-          [input.source.sourceId, input.destinationSourceId],
-          [input.source.nodeId],
-        );
-        return Ok({ movedNodeId: input.source.nodeId, linkUpdate });
-      }
-
-      if (input.source.sourceId === input.destinationSourceId) {
-        await this.runBeforeDestructiveWrite();
-        const movedRoot = await currentDrizzleDb(this.db)
-          .update(folders)
-          .set({
-            parentId: destParentId,
-            name: targetBasename,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(folders.id, input.source.nodeId),
-              eq(folders.contextSourceId, input.source.sourceId),
-              isNull(folders.deletedAt),
-            ),
-          )
-          .returning({ id: folders.id });
-        if (movedRoot.length !== 1) rollback("stale_source");
-        await recordDocumentMove(
-          this.db,
-          input.source.sourceId,
-          input.destinationSourceId,
-          previousLocations,
-          input.source.path,
-          destinationPath,
-        );
-        const linkUpdate = await this.settleMovedIn(input, previousLocations);
-        await this.catalogMutations?.refreshSources([input.source.sourceId], [input.source.nodeId]);
-        return Ok({ movedNodeId: input.source.nodeId, linkUpdate });
-      }
-
       await this.runBeforeDestructiveWrite();
-      const movedRoot = await currentDrizzleDb(this.db)
-        .update(folders)
-        .set({
-          contextSourceId: input.destinationSourceId,
-          parentId: destParentId,
-          name: targetBasename,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(folders.id, input.source.nodeId),
-            eq(folders.contextSourceId, input.source.sourceId),
-            isNull(folders.deletedAt),
-          ),
-        )
-        .returning({ id: folders.id });
-      if (movedRoot.length !== 1) rollback("stale_source");
+      if (targetToken?.kind === "file" && input.overwrite) {
+        await this.removal.remove({
+          documentIds: [targetToken.nodeId as DocumentId],
+          reason: "deleted",
+          userId: input.actorUserId as UserId,
+        });
+      }
 
-      await currentDrizzleDb(this.db).execute(sql`
-        WITH RECURSIVE subtree AS (
-          SELECT id FROM folders
-          WHERE parent_id = ${input.source.nodeId}
-            AND context_source_id = ${input.source.sourceId}
-            AND deleted_at IS NULL
-          UNION ALL
-          SELECT f.id FROM folders f
-          JOIN subtree s ON f.parent_id = s.id
-          WHERE f.context_source_id = ${input.source.sourceId}
-            AND f.deleted_at IS NULL
-        )
-        UPDATE folders
-        SET context_source_id = ${input.destinationSourceId},
-            updated_at = NOW()
-        WHERE id IN (SELECT id FROM subtree)
-      `);
-
-      await currentDrizzleDb(this.db).execute(sql`
-        WITH RECURSIVE subtree AS (
-          SELECT id FROM folders
-          WHERE id = ${input.source.nodeId}
-            AND deleted_at IS NULL
-          UNION ALL
-          SELECT f.id FROM folders f
-          JOIN subtree s ON f.parent_id = s.id
-          WHERE f.deleted_at IS NULL
-        )
-        UPDATE documents
-        SET context_source_id = ${input.destinationSourceId},
-            updated_at = NOW()
-        WHERE deleted_at IS NULL
-          AND ${contentDocumentKindSql()}
-          AND folder_id IN (SELECT id FROM subtree)
-      `);
-
-      await recordDocumentMove(
-        this.db,
-        input.source.sourceId,
-        input.destinationSourceId,
-        previousLocations,
-        input.source.path,
-        destinationPath,
-      );
-      const linkUpdate = await this.settleMovedIn(input, previousLocations);
+      const isFile = input.source.kind === "file";
+      const parsed = isFile ? parseDocumentFilename(targetBasename) : null;
+      if (parsed && !parsed.ok) return Err({ code: "invalid_operation" });
+      const { name, extension } = parsed?.ok
+        ? parsed.value
+        : { name: targetBasename, extension: undefined };
+      const moved = await moveNode(this.db, {
+        node: isFile
+          ? { kind: "document", id: input.source.nodeId as DocumentId }
+          : { kind: "folder", id: input.source.nodeId as FolderId },
+        to: {
+          contextSourceId: input.destinationSourceId as ContextSourceId,
+          dir: treePathSegments(targetParentPath),
+          name,
+          ...(extension === undefined ? {} : { extension }),
+        },
+        filetype: input.destinationFiletype ?? null,
+      });
+      if (!moved.ok) rollback(moved.error.code);
+      if (
+        input.source.kind === "file" &&
+        (targetBasename !== treeBasename(input.source.path) ||
+          ("graduateProvisionalName" in input && input.graduateProvisionalName))
+      ) {
+        await currentDrizzleDb(this.db)
+          .update(documents)
+          .set({ provisionalName: false })
+          .where(eq(documents.id, input.source.nodeId));
+      }
+      // What actually moved: a folder leaving its project left its hidden contents behind.
+      const linkUpdate = await this.settleMovedIn(input, moved.value.documentIds);
       await this.catalogMutations?.refreshSources(
-        [input.source.sourceId, input.destinationSourceId],
+        [...new Set([input.source.sourceId, input.destinationSourceId])],
         [input.source.nodeId],
       );
-
-      return Ok({ movedNodeId: input.source.nodeId, linkUpdate });
+      return Ok({
+        movedNodeId: input.source.nodeId,
+        destinationPath: [
+          ...moved.value.target.dir,
+          moved.value.target.extension
+            ? renderDocumentFilename(moved.value.target.name, moved.value.target.extension)
+            : moved.value.target.name,
+        ].join("/"),
+        linkUpdate,
+      });
     });
   }
 
@@ -662,7 +400,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       throw new Error("Recursive deletion requires catalog generation authority");
     }
     const catalogMutations = this.catalogMutations;
-    return this.withMutationTransaction(async (events) => {
+    return this.withMutationTransaction(async () => {
       const token = command.root;
       await lockContextSources(this.db, [token.sourceId]);
       if (token.nodeId === CONTEXT_ROOT_DIRECTORY_ID) return Err({ code: "invalid_operation" });
@@ -671,29 +409,32 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       const now = new Date();
 
       if (token.kind === "file") {
+        await lockDocuments(this.db, [token.nodeId]);
         await this.runBeforeDestructiveWrite();
-        const deleted = await currentDrizzleDb(this.db)
-          .update(documents)
-          .set({ deletedAt: now, updatedAt: now })
-          .where(
-            and(
-              eq(documents.id, token.nodeId),
-              eq(documents.contextSourceId, token.sourceId),
-              contentDocumentPredicate(),
-              isNull(documents.deletedAt),
-            ),
-          )
-          .returning({ id: documents.id });
-        const [deletedDocument] = deleted;
-        if (!deletedDocument || deleted.length !== 1) rollback("stale_source");
-        events.push({ method: "documentDeleted", documentId: deletedDocument.id });
+        const removed = await this.removal.remove({
+          documentIds: [token.nodeId as DocumentId],
+          reason: command.removal?.reason ?? "deleted",
+          cause: command.removal?.cause,
+          userId: command.actorUserId as UserId,
+          threadId: command.actorThreadId as ThreadId | undefined,
+        });
         const availabilityGeneration = await catalogMutations.refreshSources(
           [token.sourceId],
           [token.nodeId],
         );
-        return Ok({ deletedDocumentIds: [deletedDocument.id], availabilityGeneration });
+        return Ok({ removed: [...removed], availabilityGeneration });
       }
 
+      // Splitting also updates hidden boundary document rows. Lock the complete
+      // pre-split subtree before any of those rows, not just the later delete set.
+      await lockDocuments(
+        this.db,
+        (await readTreeLocations(this.db, token)).flatMap((entry) =>
+          entry.kind === "file" ? [entry.id] : [],
+        ),
+      );
+      // Hidden contents stay where their branches placed them, under twins at their paths (§8.3).
+      await splitHiddenContents(this.db, token.nodeId as FolderId);
       const folderClosure = await currentDrizzleDb(this.db).execute<{ id: string }>(sql`
         WITH RECURSIVE subtree AS (
           SELECT id FROM folders
@@ -711,7 +452,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       const folderIds = folderClosure.map((row) => row.id);
       if (!folderIds.includes(token.nodeId)) rollback("stale_source");
       const documentClosure = await currentDrizzleDb(this.db)
-        .select({ id: documents.id, kind: documents.kind })
+        .select({ id: documents.id })
         .from(documents)
         .where(
           and(
@@ -720,23 +461,13 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             isNull(documents.deletedAt),
           ),
         );
-      const deletedDocumentIds = documentClosure
-        .filter((row) => row.kind === "content")
-        .map((row) => row.id)
-        .sort();
-
       await this.runBeforeDestructiveWrite();
-      if (documentClosure.length > 0) {
-        await currentDrizzleDb(this.db)
-          .update(documents)
-          .set({ deletedAt: now, updatedAt: now })
-          .where(
-            inArray(
-              documents.id,
-              documentClosure.map((row) => row.id),
-            ),
-          );
-      }
+      const removed = await this.removal.remove({
+        documentIds: documentClosure.map((row) => row.id),
+        reason: command.removal?.reason ?? "deleted",
+        cause: command.removal?.cause,
+        userId: command.actorUserId as UserId,
+      });
       const deletedFolders = await currentDrizzleDb(this.db)
         .update(folders)
         .set({ deletedAt: now, updatedAt: now })
@@ -749,14 +480,22 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         )
         .returning({ id: folders.id });
       if (deletedFolders.length !== folderIds.length) rollback("stale_source");
-      for (const documentId of deletedDocumentIds) {
-        events.push({ method: "documentDeleted", documentId });
-      }
+      await bumpLocationVersions(this.db, {
+        folderIds,
+      });
       const availabilityGeneration = await catalogMutations.refreshSources(
         [token.sourceId],
         [token.nodeId],
       );
-      return Ok({ deletedDocumentIds, availabilityGeneration });
+      return Ok({ removed: [...removed], availabilityGeneration });
     });
   }
+}
+
+/** `path` with its leaf spelled as the codec's canonical document name; null when it can't name one. */
+function canonicalDocumentPath(path: string): string | null {
+  const { dir, filename } = splitPath(path);
+  const parsed = parseDocumentFilename(filename);
+  if (!parsed.ok) return null;
+  return [...dir, renderDocumentFilename(parsed.value.name, parsed.value.extension)].join("/");
 }

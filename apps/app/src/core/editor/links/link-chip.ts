@@ -25,14 +25,15 @@ import type { LinkTarget } from "./link-target";
 /**
  * A document family by scheme. Every internal link knows its family from its
  * address; `file` is the fallback for the one that cannot yet: a relative
- * path whose holder's URI has not arrived.
+ * path whose holder's URI has not arrived. A folder is drawn as a folder,
+ * whatever area holds it.
  */
-export type LinkChipIcon = ContextUriScheme | "file";
+export type LinkChipIcon = ContextUriScheme | "file" | "folder";
 
-export type LinkChip = { state: "filled" | "dashed"; icon: LinkChipIcon };
+export type LinkChip = { state: "filled" | "dashed" | "draft"; icon: LinkChipIcon };
 
 /** Every icon a chip can ask for; the app supplies one image per entry. */
-export const LINK_CHIP_ICONS: readonly LinkChipIcon[] = [...CONTEXT_URI_SCHEMES, "file"];
+export const LINK_CHIP_ICONS: readonly LinkChipIcon[] = [...CONTEXT_URI_SCHEMES, "file", "folder"];
 
 /**
  * The chip for an internal target in its current state, or null for an
@@ -49,18 +50,32 @@ export function linkChip(
   baseUri: string | null = null,
 ): LinkChip | null {
   if (target.kind === "external") return null;
-  if (entry?.state === "document") return { state: "filled", icon: entry.document.scheme };
+  // A document found only in a draft reads differently from live text; the answer says so, the mark never does.
+  if (entry?.state === "document")
+    return { state: entry.branch ? "draft" : "filled", icon: entry.document.scheme };
+  if (entry?.state === "folder") return { state: "filled", icon: "folder" };
+  if (target.addressKind === "folder")
+    return {
+      state: entry?.state === "gone" ? "dashed" : "filled",
+      icon: "folder",
+    };
   const icon = targetFamily(target, baseUri) ?? "file";
   const reachesNothing = entry?.state === "missing" || entry?.state === "gone";
   return { state: reachesNothing ? "dashed" : "filled", icon };
 }
 
 /**
- * An exact reference: identity is known, so the family is its URI's. A
- * reference whose document is gone draws dashed.
+ * An exact reference: identity is known, so the family is its URI's, or a
+ * folder's. A reference whose document or folder is gone draws dashed.
  */
-export function referenceChip(uri: string, available = true): LinkChip {
-  return { state: available ? "filled" : "dashed", icon: uriFamily(uri) ?? "file" };
+export function referenceChip(
+  reference: { kind: "document" | "folder"; uri: string },
+  available = true,
+): LinkChip {
+  return {
+    state: available ? "filled" : "dashed",
+    icon: reference.kind === "folder" ? "folder" : (uriFamily(reference.uri) ?? "file"),
+  };
 }
 
 /** The rendered-only attributes the link-chip stylesheet is keyed by. */

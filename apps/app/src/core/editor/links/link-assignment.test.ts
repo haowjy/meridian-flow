@@ -10,10 +10,8 @@ import { Slice } from "@tiptap/pm/model";
 import { afterEach, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../config";
-import {
-  insertDocumentReference,
-  insertLinkAhead,
-} from "../extensions/at-reference/document-link-insertion";
+import { editorReferenceNode } from "../extensions/at-reference";
+import { insertLinkAhead } from "../extensions/at-reference/document-link-insertion";
 import { commitLinkDraft, resolveLinkDraft } from "./link-commands";
 import { getLinkAnswerCache } from "./link-storage";
 import { linkPastedWikilinks } from "./wikilink-paste";
@@ -38,7 +36,10 @@ function editor(content = "<p>Kael waits.</p>", projectId = "project-1"): Editor
   const created = new Editor({ extensions: createStandaloneEditorExtensions(), content });
   live.push(created);
   getLinkAnswerCache(created)?.registerResolver(
-    { index: { documents: DOCUMENTS }, remote: async (questions) => questions.map(() => null) },
+    {
+      index: { documents: DOCUMENTS, folders: [] },
+      remote: async (questions) => questions.map(() => null),
+    },
     { baseUri: HOLDER, projectId },
   );
   return created;
@@ -106,15 +107,27 @@ it("assigns what each producer writes", () => {
       "@ document row: doc ref at its full address",
       () => {
         const target = editor();
-        insertDocumentReference(
-          target,
-          { from: 1, to: 5 },
-          {
-            label: "Lin",
-            documentId: LIN,
-            uri: "kb://characters/Lin Feng",
+        const node = editorReferenceNode(target.schema, {
+          kind: "file",
+          rowId: `file:${LIN}`,
+          label: "Lin",
+          location: "Characters",
+          fileKind: "document",
+          aliases: [],
+          matchedAlias: null,
+          action: {
+            type: "select",
+            reference: {
+              kind: "document",
+              label: "Lin",
+              documentId: LIN,
+              uri: "kb://characters/Lin Feng",
+              fileType: "markdown",
+              authority: { kind: "project", projectId: "project-1" },
+            },
           },
-        );
+        });
+        if (node) target.commands.insertContentAt({ from: 1, to: 5 }, node);
         return links(target);
       },
       [{ text: "Lin", ref: `doc:${LIN}`, href: "kb://characters/Lin Feng" }],

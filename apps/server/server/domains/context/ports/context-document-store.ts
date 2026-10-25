@@ -8,8 +8,11 @@
  *
  * `parentId`/`folderId` of `null` denotes the source root.
  */
+import type { ProjectId } from "@meridian/contracts";
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
+import type { LiveClaim, LiveCreateCandidate } from "../tree/hidden-node-types.js";
+import type { PathResolution, TreeView } from "../tree/tree-view.js";
 
 /** Opposite-kind occupancy is a normal namespace conflict, not a storage failure. */
 export class ContextEntryConflictError extends Error {
@@ -30,7 +33,6 @@ export interface ContextDocument {
   folderId: string | null;
   name: string;
   extension: string;
-  markdown: string;
   fileType: DocumentFileType | null;
   filetype: Filetype | null;
   storageUrl: string | null;
@@ -46,7 +48,6 @@ export interface LocatedContextDocument {
   contextSourceId: string;
   document: ContextDocument;
   path: string;
-  active: boolean;
 }
 
 export interface CreateDocumentInput {
@@ -58,6 +59,11 @@ export interface CreateDocumentInput {
   markdown: string;
   filetype: Filetype;
   provisionalName?: boolean;
+  /**
+   * A device's create id this reveal forwards to the revealed document: written with the
+   * reveal, before the catalog refresh that reads it, so a join and its forward commit together.
+   */
+  joinFrom?: { fromId: string; projectId: ProjectId };
   metadata?: DocumentCreationMetadata;
 }
 
@@ -74,8 +80,19 @@ export interface CreateBinaryDocumentInput {
   metadata?: DocumentCreationMetadata;
 }
 
-/** Input for creating or overwriting a binary document at the same path. */
-export type UpsertBinaryDocumentInput = CreateBinaryDocumentInput;
+/** A live create's identity: inserted, or a hidden document revealed at the path (§6.3). */
+export interface LiveDocumentCreation {
+  document: ContextDocument;
+  revealed: boolean;
+}
+
+/** The hidden candidate seen before a live create's transaction is no longer the one under its lock. */
+export class LiveCreateCandidateChangedError extends Error {
+  constructor() {
+    super("The hidden document at this path changed before the create could reveal it");
+    this.name = "LiveCreateCandidateChangedError";
+  }
+}
 
 export interface ContextDocumentStore {
   /** Run several per-source CRUD operations atomically when the adapter supports it. */
@@ -84,26 +101,53 @@ export interface ContextDocumentStore {
   contextSourceId(): Promise<string>;
   /** Return the backing source when already materialized, without provisioning it. */
   existingContextSourceId(): Promise<string | null>;
-  findFolder(parentId: string | null, name: string): Promise<ContextFolder | null>;
-  createFolder(parentId: string | null, name: string): Promise<ContextFolder>;
+  /**
+   * What `view` shows at a source-relative path, by the tree reader's one meaning of "same
+   * path": two nodes there answer `ambiguous`, never a pick. A path of the other kind is
+   * `not_found`. The source root (`""`) is the folder `null`.
+   */
+  resolveDocumentAt(view: TreeView, path: string): Promise<PathResolution<ContextDocument>>;
+  resolveFolderAt(view: TreeView, path: string): Promise<PathResolution<ContextFolder | null>>;
+  /** The live document under this canonical name: for mutations that already hold the namespace. */
   findDocument(
     folderId: string | null,
     name: string,
     extension: string,
   ): Promise<ContextDocument | null>;
-  /** Find a document globally by stable id so caller-chosen id conflicts can be classified. */
-  findDocumentById(documentId: string): Promise<LocatedContextDocument | null>;
-  /** Persist membership inside the caller's ambient document-creation transaction. */
-  recordDocumentMembership(documentId: string): Promise<void>;
-  createDocument(input: CreateDocumentInput): Promise<ContextDocument>;
+  /** A document visible in the view, by id, with its path there. */
+  findDocumentById(view: TreeView, documentId: string): Promise<LocatedContextDocument | null>;
+  /** The document a device's create `fromId` joined, within `projectId`; null when none. */
+  findForward(fromId: string, projectId: ProjectId): Promise<string | null>;
+  /** Filenames hidden documents and folders hold in `folderId`: names no live create may take. */
+  listHiddenNames(folderId: string | null): Promise<string[]>;
+  /** A document of this source by id, deleted ones too, with its path there. */
+  findDocumentLastLocation(
+    documentId: string,
+  ): Promise<{ path: string; name: string; deleted: boolean } | null>;
+  readProjections(ids: string[]): Promise<Map<string, string>>;
+  listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]>;
+  listDocuments(view: TreeView, folderId: string | null): Promise<ContextDocument[]>;
   /**
-   * Claim only the SQL/tree identity. The document-creation aggregate owns
-   * Yjs initialization and manifest membership around this operation.
+   * Live folders for `dir`, revealing a hidden folder at a path instead of making a twin;
+   * throws {@link ContextEntryConflictError} when a document holds a segment's path.
    */
-  /** Opposite-kind occupancy throws ContextEntryConflictError with the folder kind. */
-  createDocumentRecordIfAbsent(input: CreateDocumentInput): Promise<ContextDocument | null>;
+  ensureFolderPath(dir: readonly string[]): Promise<string | null>;
+  /** What a live create at this path would reveal, holding nothing (§6.3 step 1). */
+  findLiveCreateCandidate(
+    dir: readonly string[],
+    name: string,
+    extension: string,
+  ): Promise<LiveCreateCandidate>;
+  /**
+   * Claim only the SQL/tree identity, live, under `claim` (default `any`: reveal the
+   * hidden document at the path or insert). Null when the path is taken; a claim the
+   * locks don't confirm throws {@link LiveCreateCandidateChangedError}; a live folder at the
+   * document's canonical name throws {@link ContextEntryConflictError} with the folder kind.
+   * The document-creation aggregate owns Yjs initialization around this operation.
+   */
+  createDocumentRecordIfAbsent(
+    input: CreateDocumentInput,
+    claim?: LiveClaim,
+  ): Promise<LiveDocumentCreation | null>;
   createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument>;
-  upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument>;
-  listFolders(parentId: string | null): Promise<ContextFolder[]>;
-  listDocuments(folderId: string | null): Promise<ContextDocument[]>;
 }

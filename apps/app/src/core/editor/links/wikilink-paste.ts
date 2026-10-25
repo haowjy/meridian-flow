@@ -124,7 +124,7 @@ function wikilinkResolver(
     if (match?.documentId)
       return {
         ref: documentRef(match.documentId),
-        href: storedHref(match.uri, occurrence.suffix),
+        href: storedHref({ kind: "document", uri: match.uri }, occurrence.suffix),
       };
     const ahead = catalog.linkAhead(target.name, target.folders)?.uri;
     const address = ahead ? aheadAddress(ahead, "link") : null;
@@ -134,7 +134,7 @@ function wikilinkResolver(
       ref = mintAheadRef();
       aheadRefs.set(address, ref);
     }
-    return { ref, href: storedHref(address, occurrence.suffix) };
+    return { ref, href: storedHref({ kind: "document", uri: address }, occurrence.suffix) };
   };
 }
 

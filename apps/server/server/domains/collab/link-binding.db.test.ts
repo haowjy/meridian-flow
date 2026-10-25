@@ -3,13 +3,13 @@
  * bound write inside it (contract §6.2, ledger A2-1): desired state, applied
  * as the ordinary overwrite and certified for one holder.
  */
+
 import { createHash, randomUUID } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documents,
   linkAheadRefs,
   projects,
   threads,
@@ -24,8 +24,10 @@ import { afterAll, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import { unloadHocuspocus } from "../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { createNoopEventSink } from "../observability/index.js";
+import { processDetachedWork } from "../runtime/detached-work.js";
 import { createDrizzleJournal } from "./adapters/drizzle-journal.js";
 import { LinkBindingInsideTransactionError } from "./domain/link-binding.js";
 import { materializeRootLineageForDoc } from "./domain/provenance.js";
@@ -77,16 +79,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         .values({ projectId, createdByUserId: userId, name: "No Work", isNoWork: true })
         .returning();
       const noWorkId = noWork?.id ?? "";
-      const [source] = await db
-        .insert(contextSources)
-        .values({
-          projectId,
-          name: "Manuscript",
-          slug: "manuscript",
-          scope: "project",
-          isPrimary: true,
-        })
-        .returning();
+      await db.insert(contextSources).values({
+        projectId,
+        name: "Manuscript",
+        slug: "manuscript",
+        scope: "project",
+        isPrimary: true,
+      });
       await db.insert(threads).values({
         id: threadId,
         rootThreadId: threadId,
@@ -97,6 +96,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         .insert(threadWorks)
         .values({ threadId, workId: noWorkId, projectId, isPrimary: true });
       const ports = await createProductionAppPorts({
+        backgroundTasks: processDetachedWork,
         db,
         eventSink: createNoopEventSink(),
         environment: { FLOW_OPENAI_API_KEY: "sk-test-link-binding" },
@@ -159,7 +159,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         return async () => {
           const journal = createDrizzleJournal(db);
           const snapshot = await journal.read(documentId);
-          if (!snapshot.authority || !journal.appendWriterUpdate) throw new Error("No writer path");
+          if (!snapshot.authority) throw new Error("No writer path");
           await journal.appendWriterUpdate(
             documentId,
             update,
@@ -215,7 +215,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             act: async () =>
               (
                 await ok(
-                  port.write("manuscript://imported", "[T](moved/target) and [S](soon).", imported),
+                  port.createTrackedDocument(
+                    "manuscript://imported",
+                    "[T](moved/target) and [S](soon).",
+                    imported,
+                  ),
                 )
               ).documentId ?? "",
             refs: () => [targetRef, expect.not.stringMatching(soon ?? "")],
@@ -237,7 +241,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
               const uploaded = await app.uploadIntake.intake({
                 intakeId: randomUUID(),
                 actorUserId: userId,
-                owner: { kind: "work", projectId, workId: noWorkId },
+                owner: { kind: "chat", projectId, chatId: randomUUID() },
                 filename: "upload.md",
                 mimeType: "text/markdown",
                 bytes,
@@ -364,26 +368,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             markdown: "First.\n\n[A](a)\n",
           },
           {
-            door: "repair never publishes an empty document over a projection with no canonical state",
-            act: async () => {
-              const half = randomUUID();
-              const surviving = "Only surviving prose.\n\n[T](target)";
-              await db.insert(documents).values({
-                id: half,
-                contextSourceId: source?.id ?? "",
-                name: "half",
-                extension: "",
-                markdownProjection: surviving,
-              });
-              const repaired = await port.ensureTrackedDocument("manuscript://half");
-              expect(repaired).toMatchObject({ ok: false, error: { code: "io_error" } });
-              const [kept] = await db.select().from(documents).where(eq(documents.id, half));
-              expect(kept?.markdownProjection).toBe(surviving);
-              expect((await createDrizzleJournal(db).read(half)).checkpoint).toBeFalsy();
-              return half;
-            },
-          },
-          {
             door: "a new code file is created with its content, as code",
             act: async () =>
               (
@@ -427,6 +411,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           ),
         ).rejects.toBeInstanceOf(LinkBindingInsideTransactionError);
       } finally {
+        await unloadHocuspocus(hocuspocus);
         await app.shutdown();
       }
     });

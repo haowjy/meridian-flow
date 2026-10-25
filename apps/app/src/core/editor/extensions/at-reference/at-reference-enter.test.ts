@@ -3,6 +3,9 @@
  * The Editor's `@` with link-ahead: a sentence after `@` that names no document
  * still ends in a new paragraph on Enter, and the link-ahead row stays one
  * arrow away.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - reference-menu Enter key ownership
  */
 import type { CatalogScope } from "@meridian/contracts/protocol";
 import type { CatalogCacheView } from "@meridian/resource-replica";
@@ -10,7 +13,7 @@ import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../../config";
-import { getAtReferenceMenu } from "./AtReferenceExtension";
+import { editorReferenceNode, getAtReferenceMenu } from "./AtReferenceExtension";
 
 const PROJECT = "01900000-0000-7000-8000-000000000002";
 const scope = { kind: "project", projectId: PROJECT } as CatalogScope;
@@ -49,6 +52,8 @@ function mount(): Editor {
             read: () => catalog,
             acquire: async () => catalog,
           },
+          resolveReference: () => null,
+          referenceNode: editorReferenceNode,
           openContext: () => ({ warmScopes: [scope] }),
           label: "Reference a file",
           holderUri: "manuscript://volume-1/chapter-2.md",

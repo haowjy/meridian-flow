@@ -20,14 +20,13 @@ import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol
 
 export { renderFilename } from "@meridian/contracts/protocol";
 
-/** Exact file names and both literal and document-normalized folder names (R5). */
 export type FilenameOccupancy = {
   files: ReadonlySet<string>;
   folders: ReadonlySet<string>;
   folderAliases: ReadonlySet<string>;
 };
 
-/** Smallest available writer name; callers own atomic claims and batch reservations. */
+/** Smallest available name; the caller owns atomic claims and batch reservations. */
 export async function allocateFilename(
   parts: { name: string; extension: string; kind?: "file" | "folder" },
   occupied: ((filename: string) => boolean | Promise<boolean>) | FilenameOccupancy,

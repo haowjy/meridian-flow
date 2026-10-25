@@ -1,4 +1,8 @@
-/** Result-aware command barriers at the ContextFS production owner. */
+/** Result-aware command barriers at the ContextFS production owner.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Same-owner commands serialize through callback settlement
+ */
 import { describe, expect, it, vi } from "vitest";
 import { Ok } from "../../../../shared/result.js";
 import { createResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
@@ -14,7 +18,7 @@ describe("ResultAwareCommandExecutor at the ContextFS owner", () => {
     const transaction: ContextCommandTransaction = {
       run: async (operation) => {
         transactionEntries += 1;
-        const result = await operation();
+        const result = await operation({ branch: null });
         if (transactionEntries === 1) await firstCallbacksSettled;
         return result;
       },

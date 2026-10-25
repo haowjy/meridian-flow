@@ -9,12 +9,16 @@
   and used by `shouldAutoLink` and a chat remark step; linkifying in one
   surface only would make them disagree about what a link is.
 
-- External links have no shared scheme policy, so the surfaces disagree. Chat's
-  Streamdown (`rich-content/Markdown.tsx`) allows `tel:` links; the Editor's
-  classifier (`core/editor/links/link-target.ts`, `EXTERNAL_SCHEMES`) allows
-  only `http:`, `https:` and `mailto:`. A protocol-relative URL
-  (`//example.com/x`) renders as `href="/"` in chat, while the Editor
-  normalizes it to https. Neither comes from the link-follow work. Decide one
-  external-link scheme policy (allowed schemes, protocol-relative handling) in
-  `core/editor/links`, and have chat's Streamdown sanitize and `link-target.ts`
-  both use it.
+- A catalog wake invalidates every watched link answer in the project, so each
+  wake re-asks all visible links, including ones in scopes that did not change
+  (`project-link-resolver.ts`, `link-resolution-epoch.ts`). Not measured as a
+  problem yet. If it shows up in long chats or long documents, scope the
+  invalidation to the woken catalog's identities.
+- Folder chips open their menu only where a folder-menu host is mounted (the
+  chat view, the new-chat composer, the Editor). Other Markdown surfaces, such as
+  `TextViewer` and the model-request inspector, render a folder chip that does
+  nothing on click. Mount the host there, or render those chips as plain links.
+- A transcript folder chip's context menu (Shift+F10 or right-click) shows only
+  its title and the send-time address, with no action. A document chip's menu
+  has "Open link". Add "Open folder" to the folder chip's menu, so the keyboard
+  path matches clicking (`rich-content/TranscriptReference.tsx`).

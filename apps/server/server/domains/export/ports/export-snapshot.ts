@@ -1,6 +1,5 @@
 /** Project export inventory, captured atomically before any content is streamed. */
 export type ExportDocument = {
-  manifestScoped: boolean;
   id: string;
   uri: string;
   path: string;

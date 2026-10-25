@@ -1,6 +1,6 @@
 /** Shared authoritative row-to-file mapping for catalog and project availability. */
 
-import { hasDisplayableProperties } from "@meridian/contracts";
+import { type DocumentId, hasDisplayableProperties } from "@meridian/contracts";
 import {
   type CanonicalContextAuthority,
   type ContextUriScheme,
@@ -8,10 +8,19 @@ import {
 } from "@meridian/contracts/context-uri";
 import type { CatalogFileEntry, CatalogScope, Filetype } from "@meridian/contracts/protocol";
 import { classifyFiletype } from "@meridian/contracts/protocol";
-import { decodeWorkSlug, type ResolvedWorkAuthority } from "@meridian/contracts/works";
+import { decodeWorkHandle, type ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { documentAliases } from "../document-metadata.js";
 
-const BINARY_FILE_TYPES = new Set(["docx", "image", "pdf", "binary"]);
+/** The stored file types whose bytes live in object storage (one definition, SQL included). */
+export const BINARY_FILE_TYPES: ReadonlySet<string> = new Set(["docx", "image", "pdf", "binary"]);
+
+/** Bytes in object storage rather than a Yjs document. */
+export function isStorageBackedDocument(document: {
+  fileType: string;
+  storageUrl: string | null;
+}): boolean {
+  return document.storageUrl !== null || BINARY_FILE_TYPES.has(document.fileType);
+}
 
 export type CatalogFileRow = {
   id: string;
@@ -24,21 +33,29 @@ export type CatalogFileRow = {
   mimeType: string | null;
   metadata: unknown;
   provisionalName: boolean;
+  /** Ids a device's create forwarded into this document (a join). */
+  joinedFrom?: readonly string[];
 };
 
 export function catalogSourceAuthority(
   scheme: ContextUriScheme,
   workId: string | null,
-  workSlug: string | null,
-  rootThreadRef?: string | null,
+  workHandle: string | null,
+  /** The ref of the thread that owns a lineage Scratch or chat uploads source. */
+  ownerThreadRef?: string | null,
+  /** A chat-owned source: its address is the chat's, or bare until the chat row exists. */
+  chatOwned = false,
 ): CanonicalContextAuthority {
   if (scheme !== "scratch" && scheme !== "uploads") return { kind: "contextual" };
-  if (scheme === "scratch" && rootThreadRef) return { kind: "lineage", rootThreadRef };
+  if (chatOwned)
+    return ownerThreadRef ? { kind: "chat", chatRef: ownerThreadRef } : { kind: "contextual" };
+  if (scheme === "scratch" && ownerThreadRef)
+    return { kind: "lineage", rootThreadRef: ownerThreadRef };
   if (!workId) throw new Error("Work-scoped catalog row is missing Work id");
-  if (workSlug === null) return { workId, workSlug: null } as ResolvedWorkAuthority;
-  const decoded = decodeWorkSlug(workSlug);
+  if (workHandle === null) return { workId, workHandle: null } as ResolvedWorkAuthority;
+  const decoded = decodeWorkHandle(workHandle);
   if (!decoded) throw new Error("Persisted Work authority is inconsistent");
-  return { workId, workSlug: decoded } as ResolvedWorkAuthority;
+  return { workId, workHandle: decoded } as ResolvedWorkAuthority;
 }
 
 export function mapAuthoritativeFile(input: {
@@ -47,15 +64,18 @@ export function mapAuthoritativeFile(input: {
   scope: CatalogScope;
   scheme: ContextUriScheme;
   workId: string | null;
-  workSlug: string | null;
+  workHandle: string | null;
   parentPath: readonly string[];
-  rootThreadRef?: string | null;
+  ownerThreadRef?: string | null;
+  chatOwned?: boolean;
+  /** A chat upload's intake facts; absent for every other file. */
+  upload?: { attachedAt: Date; consumed: boolean; intakeId: string; locationRevision: string };
 }): CatalogFileEntry {
   const { document, scope, scheme } = input;
   const filename = document.extension ? `${document.name}.${document.extension}` : document.name;
   const path = [...input.parentPath, filename];
   const classification = classifyFiletype(document.fileType);
-  const storageBacked = document.storageUrl !== null || BINARY_FILE_TYPES.has(document.fileType);
+  const storageBacked = isStorageBackedDocument(document);
   const persistedClassification =
     !storageBacked && classification.kind === "tracked"
       ? {
@@ -99,9 +119,26 @@ export function mapAuthoritativeFile(input: {
     uri: canonicalContextUri(
       scheme,
       path.join("/"),
-      catalogSourceAuthority(scheme, input.workId, input.workSlug, input.rootThreadRef),
+      catalogSourceAuthority(
+        scheme,
+        input.workId,
+        input.workHandle,
+        input.ownerThreadRef,
+        input.chatOwned,
+      ),
     ),
     ...persistedClassification,
     provisionalName: document.provisionalName,
+    ...(input.upload
+      ? {
+          upload: {
+            attachedAt: input.upload.attachedAt.toISOString(),
+            used: input.upload.consumed,
+            intakeId: input.upload.intakeId,
+            locationRevision: input.upload.locationRevision,
+          },
+        }
+      : {}),
+    ...(document.joinedFrom?.length ? { joinedFrom: document.joinedFrom as DocumentId[] } : {}),
   };
 }

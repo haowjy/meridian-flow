@@ -10,13 +10,14 @@ import {
 import { createThreadForProject } from "../../../../../lib/thread-creation.js";
 
 import {
+  parseCreationAiWriteMode,
   parseCreationTitle,
   throwThreadCreationError,
 } from "../../../../../lib/thread-creation-http.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const { repos, projectRepo, workRepo } = app;
+  const { threadRepos, projectRepo, workRepo } = app;
   const { userId } = user;
   const projectId = requireRequestId(getRouterParam(event, "projectId"), "projectId");
   const body = (await readBody<CreateThreadRequest>(event)) ?? ({} as CreateThreadRequest);
@@ -26,9 +27,9 @@ export default defineEventHandler(async (event) => {
       {
         projects: projectRepo,
         workRepo,
-        threads: repos.threads,
-        threadWorks: repos.threadWorks,
-        transaction: repos.transaction,
+        threads: threadRepos.threads,
+        threadWorks: threadRepos.threadWorks,
+        transaction: threadRepos.transaction,
         agentRevisions: app.agentRevisions,
         agentCatalog: app.agentCatalog,
         eventSink: app.eventSink,
@@ -40,6 +41,7 @@ export default defineEventHandler(async (event) => {
         title: parseCreationTitle(body.title),
         agentSelection: requireAgentSelection(body.agentSelection),
         workId: body.workId == null ? null : parseOptionalRequestId(body.workId, "workId"),
+        aiWriteMode: parseCreationAiWriteMode(body.aiWriteMode),
       },
     );
 

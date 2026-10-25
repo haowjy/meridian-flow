@@ -14,6 +14,8 @@ export interface UpdateMeta {
   origin: string;
   /** Groups updates into undo units when present. */
   actorTurnId?: string;
+  /** Opaque model-facing author label resolved by the host (for example `agent (c15)`). */
+  author?: string;
   /** Successful model response that authored this update. */
   authoringResponseId?: string;
   /** Prepared scope used for save and rollback selection, never a provider FK. */

@@ -13,12 +13,14 @@ import { PanelLeftClose } from "lucide-react";
 import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { RailScratchSection } from "../chat/ChatScratch";
-import { ContextTreePanel } from "../context/ContextTreePanel";
+import { ContextTreePanel, UserRailSection } from "../context/ContextTreePanel";
 import { serverTabFromFile } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
+import { SurfaceNotices } from "../context/project-notices";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
 import { useDockPlacement } from "../dock/use-dock-placement";
+import { useProjectTrashNavigation } from "../routing/ProjectNavigationContext";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleButton } from "./PanelToggleButton";
 import { ProjectMenu } from "./ProjectMenu";
@@ -35,7 +37,7 @@ import { WorkspaceNavBody } from "./WorkspaceNavBody";
  * The collapse control sits at the far-left (same x as the PaneHeader expand
  * control) so toggling the rail never moves the cursor.
  */
-export type LeftSidebarProps = {
+type LeftSidebarProps = {
   projectId: string;
   projectTitle: string;
   titleEdit: ProjectTitleEdit;
@@ -66,17 +68,22 @@ export function LeftSidebar({
   onSelectContextPath,
   onCollapse,
 }: LeftSidebarProps) {
+  const trashNavigation = useProjectTrashNavigation();
   // A tree click is a known file, so it enters at the dock's commit boundary: beside the
   // chat on the Chat screen (the dock hosts images, PDFs and binaries in its viewer too),
   // and the Editor path everywhere else (see `use-dock-placement`).
   const placement = useDockPlacement();
   const titleEditor = useRef<TitleEditHandle>(null);
   const openDocument = useOpenProjectDocument(projectId);
-  const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) => {
+  const handleSelectFile = (
+    scheme: ProjectContextTreeScheme,
+    file: ContextFile,
+    options?: { focus?: true },
+  ) => {
     if (placement.besideChat) {
       const tab = serverTabFromFile(scheme, file, {});
       if (tab) {
-        placement.commit(tab);
+        placement.commit(tab, undefined, options?.focus);
         return;
       }
     }
@@ -84,17 +91,29 @@ export function LeftSidebar({
       onSelectContextPath(file.path, scheme);
       return;
     }
-    void openDocument({ documentId: file.documentId, workId: editorWorkId ?? undefined });
+    void openDocument({
+      documentId: file.documentId,
+      known: { scheme, file, workId: editorWorkId },
+      workId: editorWorkId ?? undefined,
+      ...options,
+    });
   };
   // On the Chat screen the row to highlight is the document open in the dock.
   const dockDocument = useDockDocument(activeScreen, projectId);
   const projectedDock = useDockDocumentTab(projectId, dockDocument);
   const docked = activeScreen === "chat" && !projectedDock.gone ? projectedDock.tab : null;
+  const treePane = useRef<HTMLDivElement>(null);
+  const treeActiveScheme = docked
+    ? docked.kind === "new"
+      ? "unfiled"
+      : docked.scheme
+    : activeContextScheme;
+  const treeActivePath = docked ? (docked.kind === "new" ? null : docked.path) : activeContextPath;
 
   return (
     <nav
       aria-label={t`Workspace navigation`}
-      className="flex h-full min-h-0 w-full flex-col text-foreground"
+      className="relative flex h-full min-h-0 w-full flex-col text-foreground"
     >
       <div className="flex h-10 shrink-0 items-center gap-1 px-2">
         <PanelToggleButton
@@ -121,12 +140,27 @@ export function LeftSidebar({
         activeScreen={activeScreen}
         onSelectScreen={onSelectScreen}
         presentation="desktop"
+        childrenRef={treePane}
+        notice={<SurfaceNotices surface="sidebar" className="mx-2 my-1 shrink-0" />}
+        onOpenTrash={() => void trashNavigation.navigate(true)}
+        user={
+          contextLive ? (
+            <UserRailSection
+              projectId={projectId}
+              editorWorkId={editorWorkId}
+              activeScheme={treeActiveScheme}
+              activePath={treeActivePath}
+              onSelectFile={handleSelectFile}
+              resizeAgainst={treePane}
+            />
+          ) : null
+        }
         scratch={
           <RailScratchSection
             projectId={projectId}
             threadId={chatThreadId}
             editorWorkId={editorWorkId}
-            resizable
+            resizeAgainst={treePane}
           />
         }
       >
@@ -134,10 +168,8 @@ export function LeftSidebar({
           <ContextTreePanel
             projectId={projectId}
             editorWorkId={editorWorkId}
-            activeScheme={
-              docked ? (docked.kind === "new" ? "unfiled" : docked.scheme) : activeContextScheme
-            }
-            activePath={docked ? (docked.kind === "new" ? null : docked.path) : activeContextPath}
+            activeScheme={treeActiveScheme}
+            activePath={treeActivePath}
             onSelectFile={handleSelectFile}
           />
         ) : null}

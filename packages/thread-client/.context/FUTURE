@@ -1,0 +1,14 @@
+# FUTURE: nice-to-have follow-ups (`@meridian/thread-client`)
+
+- Document hand-back chips are inferred, not exact. A stored document
+  occurrence keeps its kind, document ID and URI, while a folder occurrence
+  already restores directly by folder ID. `chatReferenceResolver`
+  (`src/message/hand-back.ts`) rebuilds a chip only when the URI proves the
+  owner, and returns link text otherwise: a reference to another named Work
+  comes back as text, and an extension-less document of a non-markdown type
+  gets a markdown chip (an image block in the message still makes an image
+  chip). No content is lost. The exact fix keeps the chip's `fileType` and
+  owner (`RestorableReference`) in the send contract
+  (`packages/contracts/src/protocol/user-turn-admission.ts`, the message
+  builder in `src/message/`, and the server's stored occurrence), so the
+  inverse reads them instead of inferring.

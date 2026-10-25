@@ -55,7 +55,7 @@ A removed subtree has no surviving entries. The installed checkpoint contains
 only the complete resulting entries, never a persistent invalidated/hidden set.
 
 For deterministic repair-order evidence, run `pnpm test
-packages/resource-replica/src/catalog.test.ts` and `pnpm test:db
+packages/resource-replica/src/catalog-state.test.ts` and `pnpm test:db
 context-catalog.db.test.ts`; runtime timing need not produce split commits on
 every move.
 
@@ -137,15 +137,19 @@ In an owned project, seed two Manuscript folders and an editable Work's Scratch
 with two folders and a note. Open a chat bound to that Work (for example Beats).
 
 1. In Files tree, chat Scratch, and Work Files, rename a file in place, move it
-   to another folder, and open Delete then Cancel. Verify its content at the new
-   URI through `./mf doc read`. Keep all operations in the isolated project.
-2. In Work Files, repeat Rename and Delete then Cancel on a folder; its menu
-   must also offer Move…. Archived Work folders and files must expose no actions.
+   to another folder, then delete it. The file leaves the list at once and that
+   surface ends with `Deleted <name>` and Undo. Choose Undo. The file returns at
+   its prior path, and `./mf doc read` returns its content. Keep all operations
+   in the isolated project.
+2. In Work Files, repeat Rename, Delete, and Undo on a populated folder. Its menu
+   must also offer Move…. Delete removes the folder and descendants at once;
+   Undo restores them. Archived Work folders and files must expose no actions.
 3. Scratch's menus offer only Rename, Move… and Delete (no create commands).
-   When Earlier notes are present, request Delete on a lineage entry and on a
-   Work entry; each opens the same surface dialog with the correct target.
-4. At phone width, repeat file and folder Rename, Move… and Delete then Cancel
-   from Files. The folder tap target must still drill in independently.
+   When Earlier notes are present, delete a lineage entry and a Work entry in
+   turn. Each removal appears at the end of the surface that owned the entry;
+   choose Undo and confirm the entry returns to that same surface.
+4. At phone width, repeat file and folder Rename, Move…, Delete, and Undo from
+   Files. The folder tap target must still drill in independently.
 5. A new Work note must still open its naming field when it arrives. Cancelling
    the field keeps the note; renaming it clears the pending naming request.
 
@@ -161,13 +165,15 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
    and Scratch. The same note must return in the loaded profile, not just in a
    fresh one. Repeat with Work trash/restore cascading over the lineage's chats.
 4. Seed a `zz-probe` folder with nested documents. Keep descendants open in
-   Editor tabs and the document dock. Delete the folder from its list: the
-   dialog and rows disappear after local admission, without waiting for HTTP.
-   Descendant tabs and dock close through resource projection. Repeat offline,
-   reload, then reconnect: the same journal attempt settles from its receipt.
-   Switch accounts during dispatch and return: only the original account settles.
-   Inject a typed nonretryable refusal for one delete: the folder and descendants
-   return, with a delete failure mark and no rename field.
+   Editor tabs and the document dock. Delete the folder from its list: the rows
+   disappear after local admission, without waiting for HTTP, and the list ends
+   with `Deleted zz-probe` and Undo. Descendant tabs and dock close through
+   resource projection. Choose Undo after the receipt lands; the folder and its
+   descendants return. Repeat offline, reload, then reconnect: the same journal
+   attempt settles from its receipt and Undo restores it. Switch accounts during
+   dispatch and return: only the original account settles. Inject a typed
+   nonretryable refusal for one delete: the folder and descendants return, with
+   a delete failure mark, no rename field, and no stale Undo row.
 5. Delete another open folder through `./mf api` using its catalog folder node
    ID. Availability reconciliation closes its tabs and dock (wake/focus/poll),
    without a general durable deletion intake (session authority retains its adopted
@@ -177,18 +183,19 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
    and its Work. Availability must still say `deleted`, including while its lineage
    is hidden; the independently deleted note never returns.
 7. Open a folder descendant and confirm it appears in Recently opened. Go
-   offline in the browser and delete the parent. The dialog closes after local
-   persistence, the tree/tab/dock closes, and Recently opened loses the link
-   before the server deletion runs. Reconnect: the accepted deletion refetches
-   `/api/projects/$PROJECT/recent-documents`; its response and the reloaded
-   Recently opened list omit the deleted document. No deleted-state view or
-   Undo is expected: deletion is permanent.
+   offline in the browser and delete the parent. The tree, tab, and dock close
+   after local persistence; Recently opened loses the link before the server
+   deletion runs, and the Files list ends with an Undo row. Reconnect: the
+   accepted deletion refetches `/api/projects/$PROJECT/recent-documents`; its
+   response and the reloaded Recently opened list omit the deleted document.
+   Choose Undo after the delete settles. The parent and descendant return and
+   the Undo row closes.
 8. A deleted file disappears from Chat Recent despite a cached touches response.
    A live renamed file uses its current catalog name; a not-yet-loaded identity
    may still use its touch-row name.
 
 Known independent issue: a mounted project can recreate a deleted Work's shared
-draft and make Work restore fail ([#761](https://github.com/haowjy/meridian-flow/issues/761)).
+branch and make Work restore fail ([#761](https://github.com/haowjy/meridian-flow/issues/761)).
 Record this separately from Scratch availability; never delete real branches to force restoration.
 
 Clean up `zz-probe` notes and chats and close only the owned browser profiles.
@@ -209,7 +216,7 @@ Focused automated proofs: `indexeddb-resource-metadata.test.ts` (atomic folder s
    convergence, and reload. Read the document through `./mf` at its new URI.
 4. Repeat across two named Works: move alpha's B to beta without changing B's
    name, then move beta's X under B/sub. Both row orders must place X at
-   `scratch://@beta/B/sub/X`.
+   `scratch://@w2/B/sub/X`.
 5. If availability returns `unavailable` while a move refresh fences a queued
    command, the queued command becomes repair, not deletion. Even without the
    folder's catalog row, its journal identity must remain reachable in the
@@ -220,10 +227,9 @@ Focused automated proofs: `indexeddb-resource-metadata.test.ts` (atomic folder s
    permit navigation but expose no create, rename, move or delete controls.
    These recovery rows do not establish server visibility or catalog completeness.
 
-Automated boundary evidence: `folder-placement-selectors.test.ts` exercises the
-real tree and tab selectors through pending, accepted and folder-only refreshed
-placements, absent-row/absent-catalog repair, and placement-relative deletion.
-`cross-owner-placement.test.ts` guards qualified alias binding. The folder
+Automated boundary evidence: `useRecentDocuments.test.tsx` covers pending
+folder and file deletes, refusal restoring them, and a delete with no loaded catalog.
+`folder-namespace.test.ts` guards qualified alias binding. The folder
 schedule suite retains its full schedule inventory and validates that any new
 non-catalog rows belong to a reachable journal repair chain.
 

@@ -1,4 +1,8 @@
-/** Durable namespace policy protects request bytes, response-loss recovery and newer intentions. */
+/** Durable namespace policy protects request bytes, response-loss recovery and newer intentions.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Durable-before-send namespace attempts and CAS replay
+ */
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { planResourceDeletion } from "./resource-deletion";
@@ -192,7 +196,6 @@ describe("namespace record transitions", () => {
           documentId: "document",
           identityRevision: 1,
           exactDatabaseName: "content",
-          generation: null,
         },
       },
     });
@@ -238,7 +241,12 @@ describe("namespace record transitions", () => {
         ok: true,
         value: {
           status: "deleted",
-          deletedDocumentIds: ["document"],
+          removed: [
+            {
+              documentId: "document",
+              removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+            },
+          ],
           availabilityGeneration: "2",
         },
       },
@@ -253,6 +261,7 @@ describe("namespace record transitions", () => {
       kind: "terminal",
       generation: "2",
       transitionId: "operation",
+      deletionVersion: "1",
     });
     expect(settled?.next.resource.content).toEqual(before.resource.content);
     expect(settled?.next.resource.canonical).toBeNull();
@@ -460,7 +469,12 @@ describe("namespace record transitions", () => {
             ok: true,
             value: {
               status: "deleted",
-              deletedDocumentIds: ["document"],
+              removed: [
+                {
+                  documentId: "document",
+                  removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+                },
+              ],
               availabilityGeneration: "2",
             },
           },
@@ -476,7 +490,7 @@ describe("namespace record transitions", () => {
       path: "/note",
       name: "note",
       workId: "work-a",
-      workSlug: "alpha",
+      workHandle: "w1",
     };
     before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
     before.intents = [
@@ -503,14 +517,19 @@ describe("namespace record transitions", () => {
           operationId: "operation",
           command: {
             kind: "delete",
-            uri: "scratch://@beta/note",
+            uri: "scratch://@w2/note",
             expected: { kind: "file", documentId: "document" },
           },
           result: {
             ok: true,
             value: {
               status: "deleted",
-              deletedDocumentIds: ["document"],
+              removed: [
+                {
+                  documentId: "document",
+                  removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+                },
+              ],
               availabilityGeneration: "2",
             },
           },
@@ -596,7 +615,12 @@ describe("a chat's Scratch owner", () => {
           ok: true,
           value: {
             status: "deleted",
-            deletedDocumentIds: ["document"],
+            removed: [
+              {
+                documentId: "document",
+                removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+              },
+            ],
             availabilityGeneration: "2",
           },
         },
@@ -607,7 +631,7 @@ describe("a chat's Scratch owner", () => {
         submitted.next,
         "delete",
         "attempt",
-        receipt("scratch://@/c12/duel/beats"),
+        receipt("scratch://@c12/duel/beats"),
       ),
     ).not.toThrow();
     expect(() =>
@@ -615,7 +639,7 @@ describe("a chat's Scratch owner", () => {
         submitted.next,
         "delete",
         "attempt",
-        receipt("scratch://@/c40/duel/beats"),
+        receipt("scratch://@c40/duel/beats"),
       ),
     ).toThrow("does not match current attempt");
   });
@@ -742,7 +766,7 @@ it.each([
     path: "/before",
     name: "before",
     workId: "work",
-    workSlug: "notes",
+    workHandle: "w5",
   };
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
   before.intents = [
@@ -753,7 +777,7 @@ it.each([
         kind: "set-location",
         typedName: "after",
         destination: {
-          parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workSlug: "notes" } },
+          parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workHandle: "w5" } },
           name: "after",
         },
       },
@@ -787,11 +811,11 @@ it.each([
                   destinationParent: {
                     kind: "root" as const,
                     scheme: "scratch" as const,
-                    owner: { workId: "work", workSlug: "notes" },
+                    owner: { workId: "work", workHandle: "w5" },
                   },
                   kind: "move",
-                  sourceUri: "scratch://@notes/before",
-                  destinationUri: "scratch://@notes/after",
+                  sourceUri: "scratch://@w5/before",
+                  destinationUri: "scratch://@w5/after",
                   expected: { kind: "file", nodeId: "document" },
                 },
                 result: {
@@ -799,8 +823,8 @@ it.each([
                   error: {
                     code: "context_unavailable",
                     reason,
-                    workSlug: "notes",
-                    uri: "scratch://@notes/after",
+                    workHandle: "w5",
+                    uri: "scratch://@w5/after",
                   },
                 },
               },
@@ -815,7 +839,7 @@ it.each([
     kind: "set-location",
     name: "after",
     destination: {
-      parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workSlug: "notes" } },
+      parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workHandle: "w5" } },
       name: "after",
     },
   });
@@ -861,10 +885,10 @@ it.each([
             operationId: "delete-operation",
             command: {
               kind: "delete",
-              uri: "scratch://@notes/before",
+              uri: "scratch://@w5/before",
               expected: { kind: "file", documentId: "document" },
             },
-            result: { ok: false, error: { code: "conflict", uri: "scratch://@notes/before" } },
+            result: { ok: false, error: { code: "conflict", uri: "scratch://@w5/before" } },
           },
         }),
       }),
@@ -881,7 +905,7 @@ it("restores a rejected delete after retry and admits another delete", async () 
     path: "/note",
     name: "note",
     workId: "work",
-    workSlug: "alpha",
+    workHandle: "w1",
   };
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
   before.intents = [];
@@ -908,10 +932,10 @@ it("restores a rejected delete after retry and admits another delete", async () 
               operationId: `operation-${number}`,
               command: {
                 kind: "delete",
-                uri: "scratch://@alpha/note",
+                uri: "scratch://@w1/note",
                 expected: { kind: "file", documentId: "document" },
               },
-              result: { ok: false, error: { code: "conflict", uri: "scratch://@alpha/note" } },
+              result: { ok: false, error: { code: "conflict", uri: "scratch://@w1/note" } },
             },
           }),
         }),
@@ -1107,8 +1131,8 @@ it("refuses a move receipt for a different captured destination parent", () => {
     request: {
       kind: "move",
       scheme: "manuscript",
-      sourceWorkSlug: null,
-      destinationWorkSlug: null,
+      sourceWorkHandle: null,
+      destinationWorkHandle: null,
       body: {
         operationId: "operation",
         path: "A",
@@ -1163,7 +1187,7 @@ it("matches immutable identity moves after the destination's path and owner chan
   const submitted = prepareNamespaceAttempt(
     before,
     { attemptId: "attempt", operationId: "operation" },
-    () => ({ scheme: "scratch", path: "/B", name: "B", workId: "work", workSlug: "notes" }),
+    () => ({ scheme: "scratch", path: "/B", name: "B", workId: "work", workHandle: "w5" }),
   );
   if (!submitted) throw new Error("Missing attempt");
   expect(() =>
@@ -1318,6 +1342,12 @@ describe("a name the writer typed with a prose suffix", () => {
     expect(intent?.attempts[0]?.request).toMatchObject({ body: { newName: "Chapter 14.md" } });
     // The optimistic location is already the name the server answers with.
     expect(projectResourceLocation("project", submitted)).toMatchObject({ name: "Chapter 14" });
+    const needsRepair = structuredClone(submitted);
+    needsRepair.intents = needsRepair.intents.map((item) => ({
+      ...item,
+      state: "needs-repair",
+    }));
+    expect(projectResourceNeedsRepair("project", needsRepair)?.name).toBe("Chapter 14.md");
     expect(
       recordNamespaceOutcome(
         submitted,

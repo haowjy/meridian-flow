@@ -14,9 +14,10 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { parseLinkRef } from "@meridian/contracts";
 
 import { linkChip, linkChipAttributes } from "./link-chip";
-import { type LinkKey, linkKeyOfMark } from "./link-resolution";
+import { goneLinkDocumentId, type LinkKey, linkKeyOfMark } from "./link-resolution";
 import type { MountedLinks } from "./link-storage";
 import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "./link-target";
 
@@ -40,8 +41,15 @@ export function drawLinkAnswer(
     // An editor with no project behind it draws its links as plain anchors.
     const chip = resolution.available ? linkChip(target, entry, resolution.baseUri) : null;
     const attributes = chip ? linkChipAttributes(chip) : null;
+    const folder =
+      parseLinkRef(stored.ref)?.kind === "folder" ||
+      target.addressKind === "folder" ||
+      entry?.state === "folder";
     draw(element, "data-link-chip", attributes?.["data-link-chip"] ?? null);
     draw(element, "data-link-chip-icon", attributes?.["data-link-chip-icon"] ?? null);
+    draw(element, "role", folder ? "button" : "link");
+    draw(element, "aria-haspopup", folder ? "menu" : null);
+    const inBranch = entry?.state === "document" && entry.branch ? t`In a draft` : null;
     draw(
       element,
       "aria-description",
@@ -49,10 +57,15 @@ export function drawLinkAnswer(
         ? t`No longer available`
         : entry?.state === "missing"
           ? t`Doesn't exist yet`
-          : null,
+          : inBranch,
     );
-    // Nothing follows a gone link, so it also loses the pointer and the hover.
-    draw(element, "aria-disabled", entry?.state === "gone" ? "true" : null);
+    // The sighted writer reads the same words on hover; outside a draft the link's own title stays.
+    draw(element, "title", inBranch ?? (typeof link.title === "string" ? link.title : null));
+    draw(
+      element,
+      "aria-disabled",
+      entry?.state === "gone" && !goneLinkDocumentId(entry, key) ? "true" : null,
+    );
   };
 
   sync();

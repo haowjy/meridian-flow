@@ -1,4 +1,8 @@
-/** Storage conformance: atomic visibility, durable attempts, isolated accounts and shutdown. */
+/** Storage conformance: atomic visibility, durable attempts, isolated accounts and shutdown.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - IndexedDB metadata compaction policy
+ */
 import "fake-indexeddb/auto";
 import {
   type NamespaceOutcome,
@@ -378,7 +382,10 @@ it("settles a folder receipt and exact descendant tombstones atomically, fencing
             ok: true,
             value: {
               status: "deleted",
-              deletedDocumentIds: ["one", "two", "newer", "unknown"],
+              removed: ["one", "two", "newer", "unknown"].map((documentId) => ({
+                documentId,
+                removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+              })),
               availabilityGeneration: "9",
             },
           },
@@ -391,9 +398,15 @@ it("settles a folder receipt and exact descendant tombstones atomically, fencing
   expect(snapshot.folders[0]?.intents.at(-1)?.state).toBe("settled");
   expect(snapshot.records.map(({ resource }) => [resource.handle, resource.lifecycle])).toEqual([
     ["newer", { kind: "acknowledged", availabilityGeneration: "10" }],
-    ["one", { kind: "terminal", generation: "9", transitionId: "delete-folder" }],
+    [
+      "one",
+      { kind: "terminal", generation: "9", transitionId: "delete-folder", deletionVersion: "1" },
+    ],
     ["survivor", { kind: "acknowledged", availabilityGeneration: "7" }],
-    ["two", { kind: "terminal", generation: "9", transitionId: "delete-folder" }],
+    [
+      "two",
+      { kind: "terminal", generation: "9", transitionId: "delete-folder", deletionVersion: "1" },
+    ],
   ]);
 });
 
@@ -470,7 +483,12 @@ it.each([
           ok: true,
           value: {
             status: "deleted",
-            deletedDocumentIds: [key.handle],
+            removed: [
+              {
+                documentId: key.handle,
+                removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
+              },
+            ],
             availabilityGeneration: "9",
           },
         },

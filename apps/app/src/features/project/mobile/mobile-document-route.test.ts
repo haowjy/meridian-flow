@@ -29,9 +29,7 @@ describe("phone draft-only review route", () => {
     editable: true,
     filetype: "markdown",
     schemaType: "document",
-    draftOnly: true,
-    reviewWorkId: "work-a",
-    reviewDraftId: "draft-a",
+    reviews: { "work-a": { itemKey: "draft-a", tabInstanceToken: "token" } },
   } as const;
   const emptyCatalog = { findPath: () => null, findDocument: () => null } as never;
   const route = (
@@ -51,7 +49,7 @@ describe("phone draft-only review route", () => {
 
   it("is never another Work's draft, and never a live tab", () => {
     expect(route({ workId: "work-b" }).tab).toBeNull();
-    expect(route({ workspaceTabs: [{ ...draftTab, draftOnly: undefined }] }).tab).toBeNull();
+    expect(route({ workspaceTabs: [{ ...draftTab, reviews: undefined }] }).tab).toBeNull();
   });
 
   it("keeps a bound draft-only document when another document now holds its old path", () => {
@@ -68,7 +66,7 @@ describe("phone draft-only review route", () => {
       workspaceTabs: [moved],
       catalog,
     });
-    expect(resolved.tab).toMatchObject({ documentId: "document-draft", draftOnly: true });
+    expect(resolved.tab).toMatchObject({ documentId: "document-draft" });
     // A bound document no source resolves is pending, never the occupant.
     expect(
       route({ path: "/old.md", boundDocumentId: "document-draft", workspaceTabs: [], catalog }).tab,

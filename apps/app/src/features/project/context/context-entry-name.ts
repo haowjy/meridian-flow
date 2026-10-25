@@ -5,6 +5,9 @@ import {
   validateContextEntryName as validateSharedContextEntryName,
 } from "@meridian/contracts/context-entry-validation";
 import {
+  filenameCandidates,
+  type NamespaceNameClaim,
+  namespaceName,
   parseDocumentFilename,
   renderFilename,
   storedFilename,
@@ -38,7 +41,7 @@ function validationReason(error: ContextEntryValidationError): string {
     case "name/reserved":
       return t`'.' and '..' cannot be used as names`;
     case "name/reserved-authority-qualifier":
-      return t`Names cannot begin with '@'. That prefix is reserved for authority qualifiers`;
+      return t`Names cannot begin with '@' or '~'. Those prefixes are reserved for authority qualifiers`;
     case "name/invalid-character":
       return t`Names cannot contain “${error.character ?? ""}”`;
     case "path/empty-segment":
@@ -126,4 +129,52 @@ export function validateContextEntryName(
 /** A move retry preserves the complete refused intent, including a queued rename. */
 export function moveEntryName(currentName: string, repair?: { name: string }): string {
   return repair?.name ?? currentName;
+}
+
+/**
+ * The names a folder's rows hold, indexed once so each candidate checks in
+ * constant time. A claim collides with the same kind by its literal name and
+ * with the other kind by its alias (`sameNamespaceName`).
+ */
+export type NameOccupancy = {
+  taken: (candidate: NamespaceNameClaim) => boolean;
+  claim: (candidate: NamespaceNameClaim) => void;
+};
+
+export function nameOccupancy(siblings: readonly ContextEntrySibling[]): NameOccupancy {
+  const literal = { document: new Set<string>(), folder: new Set<string>() };
+  const alias = { document: new Set<string>(), folder: new Set<string>() };
+  const claim = (candidate: NamespaceNameClaim) => {
+    literal[candidate.kind].add(candidate.filename);
+    alias[candidate.kind].add(namespaceName(candidate));
+  };
+  for (const sibling of siblings)
+    claim({ kind: sibling.kind === "dir" ? "folder" : "document", filename: sibling.name });
+  return {
+    taken: (candidate) =>
+      literal[candidate.kind].has(candidate.filename) ||
+      alias[candidate.kind === "folder" ? "document" : "folder"].has(namespaceName(candidate)),
+    claim,
+  };
+}
+
+/** Predict the first free name for a rename or move; the server remains authoritative. */
+export function allocateContextEntryArrivalName(
+  typed: string,
+  occupied: NameOccupancy,
+  kind: ContextCreateKind,
+  current?: string,
+): string {
+  const stored = kind === "folder" ? null : storedFilename(typed, current);
+  if (stored && !stored.ok) return typed.trim();
+  const desired = stored
+    ? ({
+        kind: "document",
+        name: stored.filename.name,
+        extension: stored.filename.extension,
+      } as const)
+    : ({ kind: "folder", name: typed.trim() } as const);
+  for (const candidate of filenameCandidates(desired))
+    if (!occupied.taken(candidate)) return candidate.filename;
+  throw new Error("unreachable");
 }

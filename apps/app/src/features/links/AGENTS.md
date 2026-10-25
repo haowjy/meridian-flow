@@ -1,95 +1,46 @@
 # features/links — following an internal link
 
-What a click on a link to `manuscript://…` or `./cast` does in any surface
-that shows one: resolve the address in that surface's scope, then open the
-document or say what the follow found. A link is a standard Markdown link to
-an address; `[[name]]` is text and never reaches here. Owned by neither the
-Editor nor chat.
-What a link *means* (classification, the per-editor cache, the click decision)
-is [`core/editor/links/`](../../core/editor/links/AGENTS.md); what a writer
-*sees* is the calling surface's host.
+Shared link following for Editor and chat. A surface supplies resolution scope,
+an `open` destination, and an outcome host; this module resolves and follows.
+Link meaning and per-editor cache rules belong to
+[`core/editor/links`](../../core/editor/links/AGENTS.md). A link is a standard
+Markdown link to an address; `[[name]]` is text and never reaches here.
 
-## Mental model
+- An answer is keyed by the link's ref and href, never the holder's text, so two
+  links sharing an href never share an answer and an edit re-asks nothing. A
+  gone document opens its retained Trash view when identity is known; a purged
+  or never-existing target opens nothing. While scope is `pending` a click waits for the
+  real scope.
 
-A surface supplies three things, and everything between is here:
+- Scope is project, Work, optional lineage, holder base URI, and catalog
+  revision. Editor scope comes from the holder's replica location; chat scope
+  comes from the thread's Work. An unknown Work is `pending`, never a guessed
+  authority, and route/remembered Work never supplies Editor scope.
+- Register a resolver on every scope change. Registration is the sole cache
+  invalidation; creates, moves, and deletes are catalog changes. Local answers
+  paint immediately, while remote answers replace provisional ones.
+- Surfaces call only the single follow procedure and injected `open`; they do
+  not inspect resolution to decide navigation. Aborts stop before opening;
+  newer current follows replace older ones, while new-tab follows are retained.
+- One follower per surface. A follow that needs its own destination or its own
+  answer to "nothing there" passes a `FollowPolicy` (`open`, `missing`) to that
+  follower; it never builds a second one. Chat doors (tool-card names, receipt
+  rows, passage doors) follow through chat's one follower this way, so doors
+  and transcript links share one latest click, one dialog and the chat's
+  lifetime ([link-following decision][link-following]).
+- Reporter ownership is per follow. Dismiss and Retry operate through its
+  verbs, not by branching on outcome state. Pending answers claim nothing.
+- A folder answer opens nothing here: the surface draws the folder menu
+  (`features/project/context/FolderMenu`) instead of following.
+- Missing creatable manuscript/kb/user documents offer Create at the exact
+  canonical address and open locally at once. Uploads, Unfiled, and Scratch
+  never offer link creation (a missing Scratch note reads "can't be found" in any
+  Work state; Scratch notes come from the Work's Files tab or the AI). Failed checks say they failed, not that a link is
+  unresolved. A missing target is a sentence, never a warning: linking ahead of
+  writing is the job. Local answers never wait on the network, and a failed
+  request fails only the questions it carried.
 
-- **Scope** (`LinkResolutionScope`): project, Work, lineage, and the holder's
-  base URI. In the Editor, Work comes from the holder's replica location for
-  Scratch and Uploads, and the No Work row for project documents; a note in a
-  chat's Scratch also names its lineage (`rootThreadId`). It never comes from
-  the Editor route or remembered Work. Chat uses the thread's Work, and its
-  lineage while it is on No Work.
-  Together with the index's revision, it is what an answer is true of. A
-  surface that does not know its Work yet passes `"pending"`; a click waits for
-  the real scope and is never answered from a guessed one.
-- **Destination** (`LinkDestination`): an injected `open` callback. Each
-  surface supplies its own; this module never decides where a document opens.
-- **Host** (`FollowReporter` plus a dialog around `FollowOutcomeContent`): where
-  checking, missing, and failed are said. The Editor's host is
-  `EditorDialog` (`surfaces/link/FollowOutcomeDialog.tsx`), because its outcome
-  can open 250ms late and the chrome kernel must know about it. A surface with
-  no editor kernel uses `LinkFollowDialog`.
+Read [`.context/CONTEXT.md`](.context/CONTEXT.md) for scope, answer, creation,
+and document-index contracts.
 
-Two surfaces use this today: the Editor (`ProjectLinkRuntime`, over its
-per-editor link cache) and chat (`features/chat/useChatLinkFollowing.ts`,
-whose header holds chat's own rules, over a cache the chat owns and its
-transcript draws chips from). Either way, what a link draws and what a click
-finds come from the same cache.
-
-`useLinkFollower` binds the three: it registers `createProjectLinkResolver` on
-the surface's resolution cache once per scope and runs `followProjectLink` for
-each click. `useLinkableDocuments` is the scope's local document index: the
-holder's address (a relative link's base), the local answer that saves a
-request, and which addresses the Editor's `@` link-ahead row may not take.
-
-## Key rules
-
-- **An answer belongs to a scope, not to a href.** Register again whenever
-  project, Work, base URI, or catalog revision changes; registering is the
-  cache's only invalidation. A move or delete is a scope change: the link is
-  spelled the same, and its old answer is now the wrong document or none.
-  The holder's own text is not an input: an answer is keyed by the link's ref
-  and href, and the same key names the same document whatever else the text
-  says, so two links sharing an href never share an answer and an edit
-  re-asks nothing. A gone ref is never followable.
-- **Local answers never wait on the network.** The resolver's `local` half
-  answers what the complete index can say before any request goes out, and a
-  failed request fails only the questions it carried. An ahead ref at an
-  indexed address shows that document at once and still asks; only a server
-  answer naming another document, or `gone`, replaces it.
-- **No component invalidates the link cache.** A create or rename anywhere is a
-  new catalog, and the catalog is what the scope is keyed on. A mutation that
-  also pokes the resolution store is a second owner of the same rule.
-- **One follow procedure.** A surface never calls `resolveDocumentLinks` or
-  reads the resolution cache to decide what a click does; only this module
-  does. Whether a reference is a link at all is `follower.canFollow`, which
-  depends on the target and base URI, never on loading. Destination policy
-  stays out of this module: no `surface` switch, only the injected `open`.
-- **An abort stops a follow before it opens, never during.** The destination
-  takes no signal. A newer `current` follow aborts the previous one; `new-tab`
-  follows are never aborted by a newer one.
-- **A follow clears only what it reported.** Follows share one surface
-  reporter, so the follower tracks which follow owns the shown outcome. Hosts
-  act through `dismiss()` and `retry()` and never branch on the outcome's
-  state.
-- **A pending answer claims nothing.** A follow interrupts only after
-  `CHECKING_DELAY_MS`, so a link already resolved for rendering just opens.
-- **A failed request is not an unresolved link.** It says so on follow, with
-  Try again. An unasked question (a relative link with no base yet) throws in
-  the resolver rather than answering null.
-- **Unresolved is a sentence, never a warning.** Linking ahead of writing is
-  the job: "“Name” doesn't exist yet", with Create “Name” when the address is
-  creatable (manuscript, kb, or user, with a filename; never uploads, Unfiled,
-  or Scratch), and "“Name” can't be found" when it is not. A missing Scratch
-  note is "can't be found" whatever its Work's state: Scratch notes are made
-  from the Work's Files tab or by the AI, never by a link. Every state of the
-  dialog shows where the
-  link points, worded as the `@` menu words a row's location
-  (`documentLocation`); the full address is only a tooltip.
-- **Create makes the document at exactly the link's address**: scheme,
-  folders, name (the codec's stored name: no `.md`). It
-  commits locally and opens the document through the surface's `open` at once;
-  sync failure lands on the document.
-
-→ [`.context/CONTEXT.md`](.context/CONTEXT.md): scope contracts, what a follow
-  does per answer, create-on-miss, and the document index
+[link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-following.md

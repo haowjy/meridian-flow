@@ -90,9 +90,16 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
       originType: "spawn",
       spawnStatus: "running",
     });
-    await db.insert(schema.projectThreadCounters).values({ projectId: ids.project, n: 1 });
+    await db
+      .insert(schema.projectHandleCounters)
+      .values({ projectId: ids.project, kind: "thread", n: 1 });
   } else {
-    await repos.threads.create({ id: ids.caller, userId: ids.user, projectId: ids.project });
+    await repos.threads.create({
+      aiWriteMode: "direct",
+      id: ids.caller,
+      userId: ids.user,
+      projectId: ids.project,
+    });
   }
   if (!db) {
     await repos.turns.create({
@@ -103,6 +110,7 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
       status: "complete",
     });
     await repos.threads.createSubagent({
+      aiWriteMode: "direct",
       id: ids.child,
       userId: ids.user,
       projectId: ids.project,

@@ -19,6 +19,11 @@
  * new follow the owner before it says anything, so a fast answer can clear
  * the failure it replaces.
  *
+ * **One owner per surface, one policy per follow.** A follow may carry its own
+ * destination and its own answer to "nothing there" (`FollowPolicy`), so a door
+ * with placement rules of its own shares this owner's cancellation, checking
+ * and failure states instead of running a second follower beside it.
+ *
  * **What aborts a follow.** A newer `current` follow aborts the previous one:
  * the pane can only go one place. A `new-tab` follow is never aborted by a
  * newer follow and aborts nothing, because each is its own tab. Dismissing a
@@ -38,14 +43,24 @@ import {
   type LinkTarget,
 } from "@/core/editor/links";
 
-import { type FollowReporter, followProjectLink, type LinkDestination } from "./follow-link";
+import {
+  type FollowPolicy,
+  type FollowReporter,
+  followProjectLink,
+  type LinkDestination,
+} from "./follow-link";
 import { createLinkSettlements, useOptionalLinkSettlements } from "./link-settlements";
 import { createProjectLinkResolver, type LinkResolutionScope } from "./project-link-resolver";
 import type { LinkableDocumentIndex } from "./useLinkableDocuments";
 
 export type LinkFollower = {
   /** `ref` is the stored link's ref; a link written as syntax (chat) has none. */
-  follow(target: LinkTarget, gesture?: LinkFollowDisposition, ref?: string | null): void;
+  follow(
+    target: LinkTarget,
+    gesture?: LinkFollowDisposition,
+    ref?: string | null,
+    policy?: FollowPolicy,
+  ): void;
   /** Close what is shown; if its follow is still asking, stop that follow. */
   dismiss(): void;
   /** Follow the shown outcome's link again, as the new owner of the dialog. */
@@ -62,6 +77,7 @@ type Shown = {
   target: LinkTarget;
   ref: string | null;
   gesture: LinkFollowDisposition;
+  policy: FollowPolicy | undefined;
 };
 
 export function useLinkFollower({
@@ -105,6 +121,7 @@ export function useLinkFollower({
   const projectId = ready?.projectId ?? null;
   const workId = ready?.workId ?? null;
   const rootThreadId = ready?.rootThreadId ?? null;
+  const chatId = ready?.chatId ?? null;
   const baseUri = ready?.baseUri ?? null;
   const holderDocumentId = ready?.holderDocumentId ?? null;
 
@@ -119,12 +136,30 @@ export function useLinkFollower({
   /** Follows clicked while the scope was pending, released once it registers. */
   const scopeWaiters = useRef(new Set<() => void>());
 
+  // The catalog finishing its load changes what a question needs from the
+  // server, not what is true, so it must not start a new generation: that
+  // threw away every answer in flight and asked all of them again. The
+  // resolver reads `complete` live; only a different catalog (`revision`)
+  // registers anew.
+  const catalog = useRef(index);
+  useLayoutEffect(() => {
+    catalog.current = index;
+  });
+  const revision = index.revision;
   useEffect(() => {
     if (!resolution || !projectId || !workId) return;
+    const registered: LinkableDocumentIndex = {
+      documents: catalog.current.documents,
+      folders: catalog.current.folders,
+      revision,
+      get complete() {
+        return catalog.current.complete;
+      },
+    };
     const unregister = resolution.registerResolver(
       createProjectLinkResolver(
-        { projectId, workId, rootThreadId, baseUri, holderDocumentId },
-        index,
+        { projectId, workId, rootThreadId, chatId, baseUri, holderDocumentId },
+        registered,
         settlements,
       ),
       { baseUri, projectId },
@@ -137,10 +172,19 @@ export function useLinkFollower({
     // be checked". Deferred, the unregister finds a newer registration and is a
     // no-op (it only takes its own generation); on unmount it still runs.
     return () => queueMicrotask(unregister);
-    // `index` stays the same object while its revision does, so a different one
-    // is a different catalog: registering against it is how an answer about the
-    // old one becomes unreachable.
-  }, [baseUri, holderDocumentId, index, projectId, resolution, rootThreadId, settlements, workId]);
+    // A different revision is a different catalog: registering against it is
+    // how an answer about the old one becomes unreachable.
+  }, [
+    baseUri,
+    holderDocumentId,
+    projectId,
+    resolution,
+    revision,
+    rootThreadId,
+    chatId,
+    settlements,
+    workId,
+  ]);
 
   const inFlight = useRef(new Set<AbortController>());
   const currentFollow = useRef<AbortController | null>(null);
@@ -185,7 +229,7 @@ export function useLinkFollower({
   // the follow waited for.
   const answeredScope = useRef<string | null>(null);
   const scopeKey = ready
-    ? `${ready.projectId}\u0000${ready.workId}\u0000${ready.rootThreadId ?? ""}`
+    ? `${ready.projectId}\u0000${ready.workId}\u0000${ready.rootThreadId ?? ""}\u0000${ready.chatId ?? ""}`
     : pending
       ? null
       : "";
@@ -201,7 +245,13 @@ export function useLinkFollower({
   const start = useCallback(
     // `retrying`: Try again. It owns the shown outcome from the start, so a
     // fast answer can clear the failure it replaces.
-    (target: LinkTarget, ref: string | null, gesture: LinkFollowDisposition, retrying: boolean) => {
+    (
+      target: LinkTarget,
+      ref: string | null,
+      gesture: LinkFollowDisposition,
+      retrying: boolean,
+      policy?: FollowPolicy,
+    ) => {
       // Without a scope no resolver is registered, and asking anyway would
       // report "could not be checked" about a question nobody could ask.
       if (!resolution || !active || (!projectId && !pending)) return;
@@ -211,10 +261,16 @@ export function useLinkFollower({
         currentFollow.current = controller;
       }
       inFlight.current.add(controller);
-      if (retrying) shown.current = { owner: controller, target, ref, gesture };
+      if (retrying) shown.current = { owner: controller, target, ref, gesture, policy };
       const owned: FollowReporter = {
         report(outcome) {
-          shown.current = { owner: controller, target, ref, gesture };
+          if (policy?.missing && outcome.state === "missing") {
+            // The follow's own policy says where nothing-at-the-address goes.
+            if (shown.current?.owner === controller) clearShown();
+            policy.missing();
+            return;
+          }
+          shown.current = { owner: controller, target, ref, gesture, policy };
           latest.current.reporter.report(outcome);
         },
         clear() {
@@ -239,7 +295,7 @@ export function useLinkFollower({
         ref,
         gesture,
         resolution,
-        open: (document, how) => latest.current.open(document, how),
+        open: (document, how) => (policy?.open ?? latest.current.open)(document, how),
         reporter: owned,
         signal: controller.signal,
         scopeReady,
@@ -252,8 +308,12 @@ export function useLinkFollower({
   );
 
   const follow = useCallback(
-    (target: LinkTarget, gesture: LinkFollowDisposition = "current", ref: string | null = null) =>
-      start(target, ref, gesture, false),
+    (
+      target: LinkTarget,
+      gesture: LinkFollowDisposition = "current",
+      ref: string | null = null,
+      policy?: FollowPolicy,
+    ) => start(target, ref, gesture, false, policy),
     [start],
   );
 
@@ -269,7 +329,7 @@ export function useLinkFollower({
 
   const retry = useCallback(() => {
     const again = shown.current;
-    if (again) start(again.target, again.ref, again.gesture, true);
+    if (again) start(again.target, again.ref, again.gesture, true, again.policy);
   }, [start]);
 
   const followable = scope !== null;

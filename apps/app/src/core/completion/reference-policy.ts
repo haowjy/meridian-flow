@@ -2,37 +2,46 @@
 import {
   type CanonicalContextUri,
   type DocumentId,
-  type ProjectId,
+  type FolderId,
   parseContextUri,
-  type UserId,
-  type WorkId,
 } from "@meridian/contracts";
 import type {
   CatalogAuthorityEntry,
   CatalogFileEntry,
+  CatalogFolderEntry,
   CatalogScope,
   DocumentFileType,
   Filetype,
 } from "@meridian/contracts/protocol";
-import type { WorkSlug } from "@meridian/contracts/works";
+import { catalogScopeKey } from "@meridian/contracts/protocol";
+import type { StableReferenceAuthority } from "@meridian/thread-client";
 
 export const REFERENCE_ROW_LIMIT = 20;
 export const MAX_REFERENCE_QUERY_LENGTH = 80;
 
-export type StableReferenceAuthority =
-  | { kind: "project"; projectId: ProjectId }
-  | { kind: "user"; userId: UserId }
-  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null }
-  /** A No Work chat's Scratch: the lineage by its first chat's id, and the handle its URI spells. */
-  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string };
+export type { StableReferenceAuthority };
 
-export type AuthoritativeReference = {
+export type DocumentReference = {
+  kind: "document";
   documentId: DocumentId;
   uri: CanonicalContextUri;
   fileType: Filetype | DocumentFileType;
   authority: StableReferenceAuthority;
   label: string;
+  /** A chat upload's intake identity: the proof a pre-creation pick carries into admission. */
+  intake?: { intakeId: string; locationRevision: string };
 };
+
+/** A folder, named by its catalog entry; its URI is only where it is now. Area roots are never one. */
+export type FolderReference = {
+  kind: "folder";
+  folderId: FolderId;
+  uri: CanonicalContextUri;
+  label: string;
+};
+
+/** What a terminal row names: a document or a folder. Each host inserts by `kind`. */
+export type AuthoritativeReference = DocumentReference | FolderReference;
 
 export type ReferenceNavigationAction = {
   type: "navigate";
@@ -44,9 +53,9 @@ export type ReferenceNavigationAction = {
   acquire: boolean;
 };
 
-export type ReferenceSelectAction = {
+export type ReferenceSelectAction<Reference extends AuthoritativeReference = DocumentReference> = {
   type: "select";
-  reference: AuthoritativeReference;
+  reference: Reference;
 };
 
 type NavigationRowBase = {
@@ -70,7 +79,18 @@ export type ReferenceRow =
       aliases: readonly string[];
       matchedAlias: string | null;
       action: ReferenceSelectAction;
+    }
+  /** The folder being listed, offered first under Back. Its label is the folder's name. */
+  | {
+      kind: "folder-mention";
+      rowId: string;
+      label: string;
+      location: string;
+      action: ReferenceSelectAction<FolderReference>;
     };
+
+/** A row that names a reference rather than opening a level. */
+export type ReferenceTerminalRow = Extract<ReferenceRow, { kind: "file" | "folder-mention" }>;
 
 export type ReferenceAuthorityIndex = ReadonlyMap<string, CatalogAuthorityEntry>;
 
@@ -79,7 +99,8 @@ export type ReferenceRankingPriors = {
   contextualDocumentIds?: ReadonlySet<string>;
 };
 
-export type ReferenceKind = "document" | "asset";
+/** Folders are mentionable only where a host takes them; files are documents or assets. */
+export type ReferenceKind = "document" | "asset" | "folder";
 
 export type ReferencePolicyOptions = ReferenceRankingPriors & {
   kinds?: readonly ReferenceKind[];
@@ -105,18 +126,75 @@ export function referenceAuthorityIndex(
 export function authoritativeReferenceForFile(
   entry: CatalogFileEntry,
   authorities: ReferenceAuthorityIndex,
-): AuthoritativeReference | null {
+): DocumentReference | null {
   const authority = stableAuthority(entry.scope, authorities, entry.uri);
   if (!authority) return null;
   const uri = referenceUriForAuthority(entry.uri, authority);
   if (!uri) return null;
 
   return {
+    kind: "document",
     documentId: entry.entryId,
     uri,
     fileType: entry.editable ? entry.filetype : entry.fileType,
     authority,
     label: entry.name,
+    ...(entry.upload
+      ? {
+          intake: {
+            intakeId: entry.upload.intakeId,
+            locationRevision: entry.upload.locationRevision,
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * A folder a writer can mention: one with a server identity (not device-synthesized
+ * ancestry) whose address carries its stable authority. Area roots are sources, never folders.
+ */
+export function folderReferenceForEntry(
+  entry: CatalogFolderEntry,
+  authorities: ReferenceAuthorityIndex,
+): FolderReference | null {
+  if (entry.navigationOnly || entry.path.length === 0) return null;
+  const uri = canonicalReferenceUri(entry.scope, entry.uri, authorities);
+  return uri ? { kind: "folder", folderId: entry.entryId, uri, label: entry.name } : null;
+}
+
+/** The terminal browser row for a catalog file. */
+export function referenceRowForFile(
+  entry: CatalogFileEntry,
+  authorities: ReferenceAuthorityIndex,
+): Extract<ReferenceRow, { kind: "file" }> | null {
+  const reference = authoritativeReferenceForFile(entry, authorities);
+  if (!reference) return null;
+  return {
+    kind: "file",
+    rowId: `file:${entry.entryId}`,
+    label: entry.name,
+    location: entry.path.slice(0, -1).join("/"),
+    fileKind: entry.editable ? "document" : "asset",
+    aliases: entry.aliases,
+    matchedAlias: null,
+    action: { type: "select", reference },
+  };
+}
+
+/** The terminal browser row that names a folder rather than opening it. */
+export function referenceRowForFolder(
+  entry: CatalogFolderEntry,
+  authorities: ReferenceAuthorityIndex,
+): Extract<ReferenceRow, { kind: "folder-mention" }> | null {
+  const reference = folderReferenceForEntry(entry, authorities);
+  if (!reference) return null;
+  return {
+    kind: "folder-mention",
+    rowId: `folder-mention:${catalogScopeKey(entry.scope)}:${entry.entryId}`,
+    label: entry.name,
+    location: entry.path.slice(0, -1).join("/"),
+    action: { type: "select", reference },
   };
 }
 
@@ -152,7 +230,7 @@ export function rankReferenceRows(
     if (row.kind === "file" && kinds && !kinds.has(row.fileKind)) return;
     const match = bestNameMatch(
       row.label,
-      row.kind === "file" ? row.aliases : row.matchAliases,
+      row.kind === "file" ? row.aliases : row.kind === "folder-mention" ? [] : row.matchAliases,
       needle,
     );
     if (!match) return;
@@ -221,6 +299,19 @@ function stableAuthority(
       return { kind: "project", projectId: scope.projectId };
     case "user":
       return { kind: "user", userId: scope.userId };
+    case "chat": {
+      // The scope already names the chat; its handle only appears once the chat exists.
+      const parsed = parseContextUri(uri);
+      return {
+        kind: "chat",
+        projectId: scope.projectId,
+        chatId: scope.chatId,
+        chatRef:
+          parsed.ok && parsed.value.authority.kind === "chat"
+            ? parsed.value.authority.chatRef
+            : null,
+      };
+    }
     case "work": {
       const entry = authorities.get(`work:${scope.workId}`);
       if (!entry) return null;
@@ -228,7 +319,7 @@ function stableAuthority(
         kind: "work",
         projectId: scope.projectId,
         workId: scope.workId,
-        workSlug: entry.authority.workSlug,
+        workHandle: entry.authority.workHandle,
       };
     }
   }
@@ -246,12 +337,18 @@ export function referenceUriForAuthority(
       parsed.value.authority.rootThreadRef === authority.rootThreadRef
       ? parsed.value.normalized
       : null;
+  if (authority.kind === "chat") {
+    // A New chat's upload has no handle yet, so its URI is whatever the intake issued.
+    if (parsed.value.scheme !== "uploads") return null;
+    return authority.chatRef === null ||
+      (parsed.value.authority.kind === "chat" &&
+        parsed.value.authority.chatRef === authority.chatRef)
+      ? parsed.value.normalized
+      : null;
+  }
   if (authority.kind === "work") {
-    if (authority.workSlug === null) {
-      return parsed.value.authority.kind === "none" ? parsed.value.normalized : null;
-    }
     return parsed.value.authority.kind === "work" &&
-      parsed.value.authority.workSlug === authority.workSlug
+      parsed.value.authority.workHandle === authority.workHandle
       ? parsed.value.normalized
       : null;
   }
@@ -269,6 +366,7 @@ function authorityKey(authority: CatalogAuthorityEntry["authority"]): string {
 
 function canonicalRowIdentity(row: ReferenceRow): string {
   if (row.kind === "file") return `file:${row.action.reference.documentId}`;
+  if (row.kind === "folder-mention") return `mention:${row.action.reference.folderId}`;
   if (row.kind === "authority") return `authority:${JSON.stringify(row.action.scope)}`;
   return `${row.kind}:${row.action.scope.kind}:${row.action.containerId ?? row.action.prefix}`;
 }

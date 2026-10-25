@@ -1,15 +1,20 @@
-import * as Y from "yjs";
-/** PostgreSQL barriers for the production Work projection publication owner. */
+/**
+ * PostgreSQL barriers for the production Works-changed notice owner.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - transactional Work revision aggregation and one project wake per commit (kb/decisions/work/management/work-archive-and-delete.md)
+ */
 
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
+  branches,
   contextAvailabilityHeads,
   contextCatalogCommits,
   contextCatalogEntries,
   contextCatalogScopeHeads,
   contextSources,
-  documentBranches,
+  documentDrafts,
   documents,
   projects,
   threads,
@@ -24,15 +29,8 @@ import {
   runInDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
-import {
-  createDrizzleBranchJournalReadStore,
-  createDrizzlePushCommitStore,
-} from "../collab/adapters/drizzle-branch-push.js";
-import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "../collab/adapters/drizzle-document-activity.js";
-import { stagePendingSettlementWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
-import { createBranchCriticalSections } from "../collab/domain/branch-critical-sections.js";
-import { createFixtureBranchStore } from "../collab/test-support/fixture-branch-store.js";
+import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
@@ -42,9 +40,9 @@ import { createWorkProjectionMutation } from "./adapters/work-projection-mutatio
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("Work projection publication owner (postgres)", () => {});
+  describe.skip("Works-changed notice owner (postgres)", () => {});
 } else {
-  describe("Work projection publication owner (postgres)", () => {
+  describe("Works-changed notice owner (postgres)", () => {
     const USER_ID = "00000000-0000-4000-8000-000000000901";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000902";
     const WORK_ID = "00000000-0000-4000-8000-000000000903";
@@ -55,13 +53,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000908";
     const SECOND_SOURCE_ID = "00000000-0000-4000-8000-000000000912";
     const SECOND_DOCUMENT_ID = "00000000-0000-4000-8000-000000000913";
-    const BRANCH_ID = "branch_work_projection_owner";
-    const SECOND_BRANCH_ID = "branch_work_projection_owner_second";
+    const DRAFT_ID = "draft_work_projection_owner";
+    const SECOND_DRAFT_ID = "draft_work_projection_owner_second";
     const OTHER_PROJECT_ID = "00000000-0000-4000-8000-000000000914";
     const OTHER_WORK_ID = "00000000-0000-4000-8000-000000000915";
     const OTHER_SOURCE_ID = "00000000-0000-4000-8000-000000000916";
     const OTHER_DOCUMENT_ID = "00000000-0000-4000-8000-000000000917";
-    const OTHER_BRANCH_ID = "branch_work_projection_owner_other_project";
+    const OTHER_DRAFT_ID = "draft_work_projection_owner_other_project";
+    const BRANCH_ID = "00000000-0000-4000-8000-000000000918";
+    const SECOND_BRANCH_ID = "00000000-0000-4000-8000-000000000919";
+    const OTHER_BRANCH_ID = "00000000-0000-4000-8000-00000000091a";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
@@ -85,21 +86,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Projection work",
-        slug: "projection-work",
+        handle: "w1",
       });
       await db.insert(works).values({
         id: SECOND_WORK_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Unaffected work",
-        slug: "unaffected-work",
+        handle: "w2",
       });
       await db.insert(works).values({
         id: OTHER_WORK_ID,
         projectId: OTHER_PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Other project work",
-        slug: "other-project-work",
+        handle: "w3",
       });
       await db.insert(contextSources).values({
         id: SOURCE_ID,
@@ -143,29 +144,44 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "",
         fileType: "markdown",
       });
-      await db.insert(documentBranches).values({
-        id: BRANCH_ID,
+      await db.insert(branches).values([
+        { id: BRANCH_ID, projectId: PROJECT_ID, originWorkId: WORK_ID, createdBy: USER_ID },
+        {
+          id: SECOND_BRANCH_ID,
+          projectId: PROJECT_ID,
+          originWorkId: SECOND_WORK_ID,
+          createdBy: USER_ID,
+        },
+        {
+          id: OTHER_BRANCH_ID,
+          projectId: OTHER_PROJECT_ID,
+          originWorkId: OTHER_WORK_ID,
+          createdBy: USER_ID,
+        },
+      ]);
+      await db.insert(documentDrafts).values({
+        id: DRAFT_ID,
         documentId: DOCUMENT_ID,
         kind: "work_draft",
-        workId: WORK_ID,
-        state: Buffer.from(projectionDraft.state),
-        stateVector: Buffer.from(projectionDraft.vector),
+        branchId: BRANCH_ID,
+        state: Buffer.from([0, 0]),
+        stateVector: Buffer.from([0]),
       });
-      await db.insert(documentBranches).values({
-        id: SECOND_BRANCH_ID,
+      await db.insert(documentDrafts).values({
+        id: SECOND_DRAFT_ID,
         documentId: SECOND_DOCUMENT_ID,
         kind: "work_draft",
-        workId: SECOND_WORK_ID,
-        state: Buffer.from(projectionDraft.state),
-        stateVector: Buffer.from(projectionDraft.vector),
+        branchId: SECOND_BRANCH_ID,
+        state: Buffer.from([0, 0]),
+        stateVector: Buffer.from([0]),
       });
-      await db.insert(documentBranches).values({
-        id: OTHER_BRANCH_ID,
+      await db.insert(documentDrafts).values({
+        id: OTHER_DRAFT_ID,
         documentId: OTHER_DOCUMENT_ID,
         kind: "work_draft",
-        workId: OTHER_WORK_ID,
-        state: Buffer.from(projectionDraft.state),
-        stateVector: Buffer.from(projectionDraft.vector),
+        branchId: OTHER_BRANCH_ID,
+        state: Buffer.from([0, 0]),
+        stateVector: Buffer.from([0]),
       });
       await db.insert(threads).values({
         rootThreadId: THREAD_ID,
@@ -186,7 +202,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const catalog = createDrizzleContextCatalog(db, undefined, {
         availabilityMutations: availability,
       });
-      const projection = createWorkProjectionMutation({ db, availability, catalog });
+      const projection = createWorkProjectionMutation({
+        db,
+        pendingCounts: createDrizzleWorkBranchPendingStore(db),
+        availability,
+        catalog,
+      });
       await catalog.refreshProject(PROJECT_ID);
       await catalog.refreshProject(OTHER_PROJECT_ID);
       return { db, projection, catalog };
@@ -253,7 +274,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(projectionState()).resolves.toEqual(before);
       await expect(repos.turns.findById(TURN_ID)).resolves.toBeNull();
     });
-    it("publishes document activity through the same atomic owner", async () => {
+    it("notifies document activity through the same atomic owner", async () => {
       const { projection } = await fixture();
       const effects = createDrizzleDocumentProjectionEffects(database.current, projection);
       const before = await projectionState();
@@ -281,7 +302,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           availabilityMutations: availability,
         },
       );
-      const measured = createWorkProjectionMutation({ db, availability, catalog });
+      const measured = createWorkProjectionMutation({
+        db,
+        pendingCounts: createDrizzleWorkBranchPendingStore(db),
+        availability,
+        catalog,
+      });
       const scopeKey = catalogScopeKey({ kind: "project", projectId: PROJECT_ID });
       const [headBefore] = await db
         .select({ revision: contextCatalogScopeHeads.headRevision })
@@ -304,8 +330,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(contextCatalogCommits)
         .where(eq(contextCatalogCommits.scopeKey, scopeKey));
       await runInDrizzleTransaction(db, async () => {
-        await measured.touchWorks([WORK_ID]);
-        await measured.touchWorks([SECOND_WORK_ID]);
+        await measured.touchWorks([WORK_ID], new Date());
+        await measured.touchWorks([SECOND_WORK_ID], new Date());
         expect(wakes).toHaveLength(0);
       });
       const [headAfter] = await db
@@ -347,7 +373,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect((await projectionState()).entityRevision).toBe(2n);
     });
-    it("discards failed savepoint Work state, merges successful state, and publishes once", async () => {
+    it("discards failed savepoint Work state, merges successful state, and notifies once", async () => {
       const db = database.current;
       const wakes: unknown[] = [];
       await fixture();
@@ -361,22 +387,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         { availabilityMutations: availability },
       );
-      const measured = createWorkProjectionMutation({ db, availability, catalog });
+      const measured = createWorkProjectionMutation({
+        db,
+        pendingCounts: createDrizzleWorkBranchPendingStore(db),
+        availability,
+        catalog,
+      });
       const scopeKey = catalogScopeKey({ kind: "project", projectId: PROJECT_ID });
       const [headBefore] = await db
         .select({ revision: contextCatalogScopeHeads.headRevision })
         .from(contextCatalogScopeHeads)
         .where(eq(contextCatalogScopeHeads.scopeKey, scopeKey));
       await runInDrizzleTransaction(db, async () => {
-        await measured.touchWorks([WORK_ID]);
+        await measured.touchWorks([WORK_ID], new Date());
         await expect(
           runInDrizzleSavepoint(db, async () => {
-            await measured.touchWorks([SECOND_WORK_ID]);
+            await measured.touchWorks([SECOND_WORK_ID], new Date());
             throw new Error("failed child");
           }),
         ).rejects.toThrow("failed child");
-        await measured.touchWorks([SECOND_WORK_ID]);
-        await runInDrizzleSavepoint(db, () => measured.publishWorks([WORK_ID]));
+        await measured.touchWorks([SECOND_WORK_ID], new Date());
+        await runInDrizzleSavepoint(db, () => measured.notifyWorksChanged([WORK_ID]));
         expect(wakes).toHaveLength(0);
       });
       const [headAfter] = await db
@@ -396,129 +427,5 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(headAfter?.revision).toBe((headBefore?.revision ?? 0) + 1);
       expect(wakes).toHaveLength(1);
     });
-    it("coalesces distinct real discard owners into one project publication", async () => {
-      const db = database.current;
-      const wakes: unknown[] = [];
-      await fixture();
-      const availability = createDrizzleProjectContextAvailability(db);
-      const catalog = createDrizzleContextCatalog(
-        db,
-        {
-          publish(hint) {
-            wakes.push(hint);
-          },
-        },
-        { availabilityMutations: availability },
-      );
-      const projection = createWorkProjectionMutation({ db, availability, catalog });
-      const branches = createFixtureBranchStore(
-        db,
-        undefined,
-        createBranchCriticalSections(),
-        projection,
-      );
-      for (const branchId of [BRANCH_ID, OTHER_BRANCH_ID, SECOND_BRANCH_ID]) {
-        await branches.appendJournal?.({
-          branchId,
-          generation: 1,
-          updateData: new Uint8Array([1]),
-          source: "agent",
-          updateMeta: { kind: "edit" },
-        });
-      }
-      wakes.length = 0;
-      const scopeKey = catalogScopeKey({ kind: "project", projectId: PROJECT_ID });
-      const [headBefore] = await db
-        .select({ revision: contextCatalogScopeHeads.headRevision })
-        .from(contextCatalogScopeHeads)
-        .where(eq(contextCatalogScopeHeads.scopeKey, scopeKey));
-      const otherScopeKey = catalogScopeKey({ kind: "project", projectId: OTHER_PROJECT_ID });
-      const [otherHeadBefore] = await db
-        .select({ revision: contextCatalogScopeHeads.headRevision })
-        .from(contextCatalogScopeHeads)
-        .where(eq(contextCatalogScopeHeads.scopeKey, otherScopeKey));
-      const sequenceBefore = await db.execute<{ lastValue: string }>(
-        sql`select last_value::text as "lastValue" from context_availability_generation_seq`,
-      );
-      const journal = createDrizzleBranchJournalReadStore(db);
-      const pushStore = createDrizzlePushCommitStore(
-        db,
-        stagePendingSettlementWithinTx,
-        createDrizzleChangeTrailAggregateWriter(db),
-        undefined,
-        projection,
-      );
-      const branchInputs = [
-        { branchId: BRANCH_ID, documentId: DOCUMENT_ID, workId: WORK_ID },
-        {
-          branchId: OTHER_BRANCH_ID,
-          documentId: OTHER_DOCUMENT_ID,
-          workId: OTHER_WORK_ID,
-        },
-        {
-          branchId: SECOND_BRANCH_ID,
-          documentId: SECOND_DOCUMENT_ID,
-          workId: SECOND_WORK_ID,
-        },
-      ];
-      await runInDrizzleTransaction(db, async () => {
-        for (const value of branchInputs) {
-          await pushStore.commitDiscard({
-            branch: {
-              ...value,
-              documentId: value.documentId as never,
-              workId: value.workId as never,
-              kind: "work_draft",
-              upstreamBranchId: null,
-              threadId: null,
-              generation: 1,
-              status: "active",
-              state: projectionDraft.state,
-              stateVector: projectionDraft.vector,
-              schemaVersion: 1 as never,
-            },
-            journalRows: await journal.listReviewableJournalRows(value.branchId, 1),
-            state: projectionDraft.state,
-            stateVector: projectionDraft.vector,
-          });
-        }
-        expect(wakes).toHaveLength(0);
-      });
-      const [headAfter] = await db
-        .select({ revision: contextCatalogScopeHeads.headRevision })
-        .from(contextCatalogScopeHeads)
-        .where(eq(contextCatalogScopeHeads.scopeKey, scopeKey));
-      const [otherHeadAfter] = await db
-        .select({ revision: contextCatalogScopeHeads.headRevision })
-        .from(contextCatalogScopeHeads)
-        .where(eq(contextCatalogScopeHeads.scopeKey, otherScopeKey));
-      const sequenceAfter = await db.execute<{ lastValue: string }>(
-        sql`select last_value::text as "lastValue" from context_availability_generation_seq`,
-      );
-      expect(headAfter?.revision).toBe((headBefore?.revision ?? 0) + 1);
-      expect(otherHeadAfter?.revision).toBe((otherHeadBefore?.revision ?? 0) + 1);
-      expect(wakes).toHaveLength(2);
-      expect(BigInt(sequenceAfter[0]?.lastValue ?? "0")).toBe(
-        BigInt(sequenceBefore[0]?.lastValue ?? "0") + 1n,
-      );
-      for (const { branchId } of branchInputs) {
-        await expect(journal.listReviewableJournalRows(branchId, 1)).resolves.toEqual([]);
-      }
-    });
   });
 }
-
-// Valid immutable draft bytes; these suites exercise publication ownership, not fake CRDT encodings.
-const projectionDraft = (() => {
-  const doc = new Y.Doc({ gc: false });
-  doc.clientID = 6000;
-  const paragraph = new Y.XmlElement("paragraph"),
-    text = new Y.XmlText();
-  text.insert(0, "Pending.");
-  paragraph.insert(0, [text]);
-  doc.getXmlFragment("prosemirror").insert(0, [paragraph]);
-  const state = Y.encodeStateAsUpdate(doc),
-    vector = Y.encodeStateVector(doc);
-  doc.destroy();
-  return { state, vector };
-})();

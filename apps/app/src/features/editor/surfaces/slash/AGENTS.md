@@ -1,6 +1,6 @@
 # surfaces/slash — the menu `/` opens
 
-The insertion menu from §5.7: two groups while the writer is browsing, a
+The insertion menu: two groups while the writer is browsing, a
 best-match list the moment they type, ~8 rows visible with the rest behind an
 internal scroll. It renders the open menu, and owns the manuscript's own list
 of rows in writer copy (`slash-catalog-copy.ts`, handed to the extension by
@@ -19,15 +19,16 @@ heading opens above one.
 
 ## Key rules
 
-- **A menu with no rows does not exist** (law 5). When the filter matches
-  nothing the store reports closed, so Enter splits the paragraph the way it
-  would with no menu on screen, and backspacing brings the list back.
-- **Every row applies wherever the menu opens** (law 5 with nothing to grey).
+- **A menu with no rows does not exist** ([offer only what applies][offer]).
+  When the filter matches nothing the store reports closed, so Enter splits the
+  paragraph as it would with no menu on screen, and backspacing brings the list
+  back.
+- **Every row applies wherever the menu opens**, so there is nothing to grey.
   Availability is the schema's answer in core, so the menu in a table cell is
   the same menu as in a paragraph — identical rows, identical order. The shared
   surface's greyed-row machinery belongs to other menus.
 - **Group headings only with an empty query.** Filtered matches sort by score,
-  so headings over them would fragment; mockup 07's state B drops them too.
+  so headings over them would fragment.
 - **Icons come from the toolbar's family** (lucide), keyed by catalog id in
   `slash-menu-icons.tsx`. They are not copy and do not belong in the host's
   catalog; every writer-facing string in the menu does.
@@ -41,4 +42,5 @@ heading opens above one.
 
 → [`../../AGENTS.md`](../../AGENTS.md)
 → [`../../chrome/AGENTS.md`](../../chrome/AGENTS.md) for the wrappers and the layer contract
-→ design of record: `editor-toolbar-split/interaction-model.md` §5.7, mockup 07
+
+[offer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/offer-only-what-applies.md

@@ -1,37 +1,19 @@
-# FUTURE — deferred directions (not commitments)
+# agent-edit FUTURE
 
-## Teach the model about mangled merges (deferred 2026-07-14)
+These are deferred directions, not current behavior. Keep the shipped
+report-only merge semantics and preflight boundaries while evaluating them.
 
-Ruled during the amendment-4 (sync-receipt) design session: the echo's
-concurrent-merge marker stays a plain **"concurrent edits"** label — no
-repair invitation, no extra instruction.
+## Model guidance for mangled merges
 
-Context: when a writer and the agent edit the same block concurrently, the
-Yjs character-level merge keeps every word but can interleave them oddly
-("mangled-but-intact", per the reconcile-semantics KB decision — the system
-itself never resolves conflicts). Under sync-receipt semantics the echo
-renders the merged block to the model, so a model-initiated repair would be
-an informed edit and safe by construction.
+The `concurrent edits by <author>:` listing names who changed the document
+but says nothing about how the merge turned out. Consider letting the model repair a visibly mangled merge only if real transcripts show
+that it needs guidance and prompt validation confirms the copy does not invite
+unwanted rewriting. The owner seam is echo/response formatting.
 
-Deferred idea: extend the echo copy to tell the model it MAY repair a
-mangled merged sentence (e.g. "merged with human edit — repair if the
-result reads mangled"). Revisit only if real transcripts show models
-leaving mangled merges unfixed, or over-fixing prose the writer wanted
-left alone. Needs prompt-side validation against live models before
-shipping; the human explicitly chose to say nothing for now.
+## Complete-plan apply preflight
 
-Owner seam: `src/apply/echo.ts` marker rendering +
-`src/tool/response-format.ts` concurrent section copy.
-
-## Complete-plan apply preflight (deferred 2026-07-24)
-
-`applyEdits` still validates and commits groups incrementally. The write façade
-now restores its pre-write runtime snapshot whenever a later group or semantic
-provenance materializer rejects, so unsuccessful writes do not leak speculative
-state. A stronger kernel contract would preflight every adapter-owned operation
-before mutating, or apply the complete plan to a clone and merge only success.
-Revisit when an adapter needs failure-prone execution after preflight; do not add
-a parallel transaction planner without that concrete producer.
-
-Owner seam: `src/apply/apply-edits.ts` planning/apply split and
-`src/tool/write-commands.ts` failure restoration.
+A write that a later group or provenance materializer rejects leaves nothing
+behind: it ran on that call's disposable view and room copy. A stronger all-plan preflight or clone-then-
+merge path is deferred until an adapter has a concrete failure-prone operation
+that the current preflight cannot protect. Do not add a parallel transaction
+planner without that producer.

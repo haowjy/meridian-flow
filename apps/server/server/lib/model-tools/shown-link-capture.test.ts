@@ -18,6 +18,7 @@ import type { SpelledLinkFact } from "@meridian/markup/links";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createInMemoryUnifiedContextPortFactory } from "../../domains/context/index.js";
+import { emptyOwnerLookup } from "../../domains/context/owner-lookup.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
   getInMemoryProjectContextStore,
@@ -47,7 +48,8 @@ const USER = crypto.randomUUID() as UserId;
 const SOURCE = crypto.randomUUID();
 const TARGET = crypto.randomUUID();
 const HIDDEN = crypto.randomUUID();
-const DRAFT: LinkView = { kind: "draft", workId: crypto.randomUUID() };
+const BRANCH_ID = crypto.randomUUID();
+const BRANCH: LinkView = { kind: "branch", branchId: BRANCH_ID };
 const TARGET_URI = "user://target";
 
 const call: { context?: ResolvedModelContextPort } = {};
@@ -164,7 +166,6 @@ async function harness(
   // Each plain read shows a fact of its own, so a retried read is told apart.
   let plainReads = 0;
   const documentSync = {
-    ensureDocument: async () => {},
     readEffectiveHashlines: async ({ documentId }: { documentId: string }) => ({
       ok: true,
       value: {
@@ -175,14 +176,15 @@ async function harness(
       },
     }),
     refreshDocumentProjection: async () => {},
+    branches: { viewForWork: async () => ({ kind: "live" }) },
     agentEdit: () => ({
       // A copy's source read asks for nodes; a plain read shows facts spelled
-      // in a reply's pinned draft, not the live grant it was routed with.
+      // in a reply's pinned branch view, not the live grant it was routed with.
       read: async (_command: unknown, context: { includeNodes?: boolean }) => {
         if (context.includeNodes) return { ...success("read", [fact(90)]), nodes: [] };
         const n = plainReads++;
         await options.read?.();
-        return success("read", [fact(91 + 10 * n)], DRAFT);
+        return success("read", [fact(91 + 10 * n)], BRANCH);
       },
       write: async (
         _command: unknown,
@@ -205,7 +207,7 @@ async function harness(
     [TARGET, "target"],
     [HIDDEN, "hidden"],
   ] as const) {
-    await userStore.createDocument({
+    await userStore.createDocumentRecordIfAbsent({
       id,
       folderId: null,
       name,
@@ -219,6 +221,7 @@ async function harness(
     threads: repos.threads,
     documentSync,
     shownLinks: store,
+    contextPorts: { chatFiles: emptyOwnerLookup },
     fileAccess: {
       // The hidden document's hit is filtered before the model sees it.
       listAccess: async (_principal: unknown, ids: readonly string[]) =>
@@ -228,11 +231,11 @@ async function harness(
   const port = createInMemoryUnifiedContextPortFactory({
     documentSync: documentSync as never,
     storeRegistry: registry,
-  }).forWork({ workId: crypto.randomUUID(), workSlug: null } as never, PROJECT, USER, new Map(), {
+  }).forWork({ workId: crypto.randomUUID(), workHandle: null } as never, PROJECT, USER, new Map(), {
     threadId: crypto.randomUUID(),
-    draftWork: null,
+    branchWork: null,
   });
-  call.context = { port, livePort: () => port, resolution: {} as never };
+  call.context = { port, resolution: { thread: { projectId: PROJECT } } as never };
   const registrations = createModelToolRegistrations(deps).map(
     (registration): ToolRegistration =>
       registration.definition.type === "function" &&
@@ -259,6 +262,7 @@ type Rig = Awaited<ReturnType<typeof runtimeScenario>>;
 /** An `@` reference to one of the harness documents. */
 const reference = (documentId: string, name: string) => ({
   type: "reference" as const,
+  kind: "document" as const,
   text: `@${name}`,
   documentId,
   uri: `user://${name}`,
@@ -382,7 +386,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId,
-        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT.workId}`), [TARGET]: [] },
+        shown: { [SOURCE]: expected([fact(91)], `branch:${BRANCH_ID}`), [TARGET]: [] },
       };
     },
   },
@@ -466,12 +470,12 @@ const rows: Array<{
         write: async (context) => ({
           ...success("insert", [fact(94)], undefined, TARGET_URI),
           phase: "staged",
-          ...(context.responseIdentity?.editScopeId ? { writeId: "w1", settlementId: "s1" } : {}),
+          ...(context.responseIdentity?.editScopeId ? { writeId: "e1", settlementId: "s1" } : {}),
         }),
       });
       const receipt = {
         ...success("insert", [fact(95)], undefined, MOVED),
-        writeId: "w1",
+        writeId: "e1",
         settlementId: "s1",
       };
       const { threadId, results } = await runTurn(
@@ -531,7 +535,10 @@ const rows: Array<{
             input: z.object({}),
             execution: {
               type: "server",
-              handler: async () => ({ ...outcome, shown: showingOf(TARGET, outcome) }),
+              handler: async () => ({
+                ...outcome,
+                evidence: { shown: showingOf(TARGET, outcome) },
+              }),
             },
           },
         ],
@@ -541,7 +548,7 @@ const rows: Array<{
         { threadId: "thread" as ThreadId, turnId: "turn" as TurnId, agentSlug: null },
       );
       check(JSON.stringify(executed.result), "persisted result").not.toMatch(HOST_FACTS);
-      check(executed.shown, "evidence still travels beside it").toHaveLength(1);
+      check(executed.evidence?.shown, "evidence still travels beside it").toHaveLength(1);
       return { store: h.store, threadId: "thread", shown: {} };
     },
   },
@@ -629,7 +636,11 @@ const rows: Array<{
     name: "a result whose persistence fails leaves no evidence",
     async act(check) {
       const h = await harness();
-      const thread = await h.repos.threads.create({ projectId: PROJECT, userId: USER });
+      const thread = await h.repos.threads.create({
+        aiWriteMode: "direct",
+        projectId: PROJECT,
+        userId: USER,
+      });
       const turn = await h.repos.turns.create({
         threadId: thread.id,
         role: "assistant",
@@ -644,14 +655,16 @@ const rows: Array<{
               toolCallId: toolCall.id,
               output: "read",
               result: {},
-              shown: [
-                {
-                  documentId: SOURCE,
-                  holderUri: "user://source",
-                  view: { kind: "live" },
-                  links: [fact(93)],
-                },
-              ],
+              evidence: {
+                shown: [
+                  {
+                    documentId: SOURCE,
+                    holderUri: "user://source",
+                    view: { kind: "live" },
+                    links: [fact(93)],
+                  },
+                ],
+              },
             }),
           },
           eventSink: { emit() {} },
@@ -661,6 +674,12 @@ const rows: Array<{
             eventWriter: {
               async appendEvent(_threadId: string, event: { type: string }) {
                 if (event.type === "tool.result") throw new Error("journal append failed");
+              },
+              async appendEvents(_threadId: string, events: { type: string }[]) {
+                if (events.some((event) => event.type === "tool.result")) {
+                  throw new Error("journal append failed");
+                }
+                return events.length;
               },
             },
           },
@@ -701,7 +720,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId: run.threadId,
-        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT.workId}`) },
+        shown: { [SOURCE]: expected([fact(91)], `branch:${BRANCH_ID}`) },
       };
     },
   },
@@ -792,7 +811,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId: run.threadId,
-        shown: { [TARGET]: expected([fact(101)], `draft:${DRAFT.workId}`) },
+        shown: { [TARGET]: expected([fact(101)], `branch:${BRANCH_ID}`) },
       };
     },
   },

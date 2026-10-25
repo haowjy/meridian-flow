@@ -1,4 +1,9 @@
-/** PostgreSQL coverage: every thread-create path persists an authoritative rootThreadId. */
+/**
+ * PostgreSQL coverage: every thread-create path persists an authoritative rootThreadId.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - denormalized root identity and distinct fork versus handoff lineage provenance (kb/decisions/agents/conversations/fork-and-handoff-derivation.md)
+ */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   resetThreadWorkRaceFixture,
@@ -14,6 +19,7 @@ else
     const schema = await import("@meridian/database/schema");
     const { eq } = await import("drizzle-orm");
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
+    const { createDrizzleTopPrimaryChatResolver } = await import("./top-primary-chat.js");
     const db = createDb(DATABASE_URL, { max: 4 });
     const repos = createDrizzleRepositoriesForTest(db);
     const ids = THREAD_WORK_RACE;
@@ -42,6 +48,7 @@ else
 
     it("roots an organic primary at itself", async () => {
       const created = await repos.threads.create({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         title: "Organic root",
@@ -51,6 +58,7 @@ else
 
     it("persists a fork in the source's lineage and a handoff in its own", async () => {
       const subagent = await repos.threads.createSubagent({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
@@ -66,6 +74,7 @@ else
         status: "complete",
       });
       const { thread: fork } = await repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID() as never,
         userId: ids.userId,
         projectId: ids.projectId,
@@ -78,8 +87,18 @@ else
       expect(fork.spawnDepth).toBe(subagent.spawnDepth);
       expect(await persistedRoot(fork.id)).toBe(ids.threadId);
 
+      // A subagent's chat is its top primary; a fork of it is a chat of its own.
+      await db.update(schema.threads).set({ ref: "c1" }).where(eq(schema.threads.id, ids.threadId));
+      const resolver = createDrizzleTopPrimaryChatResolver(db);
+      expect(await resolver.resolveTopPrimaryChat(subagent.id)).toEqual({
+        chatId: ids.threadId,
+        chatRef: "c1",
+      });
+      expect((await resolver.resolveTopPrimaryChat(fork.id))?.chatId).toBe(fork.id);
+
       // A handoff keeps the sibling provenance but starts its own lineage (and so its own Scratch).
       const { thread: handoff } = await repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID() as never,
         userId: ids.userId,
         projectId: ids.projectId,

@@ -1,16 +1,26 @@
 /** Durable writer-turn admission wire contracts. */
+import { z } from "zod";
 import { type CanonicalContextUri, parseContextUri } from "../context-uri.js";
-import type { DocumentId, UserId } from "../ids.js";
+import type { DocumentId, FolderId, UserId } from "../ids.js";
 import { parseRequestId } from "../request-id.js";
 import type { ThreadId, TurnId } from "../runtime/index.js";
-import type { JsonValue } from "../threads/index.js";
+import type { JsonObject, JsonValue } from "../threads/index.js";
 
-export type ReferenceOccurrence = {
-  type: "reference";
-  text: string;
-  documentId: DocumentId;
-  uri: CanonicalContextUri;
-};
+export type ReferenceOccurrence =
+  | {
+      type: "reference";
+      kind: "document";
+      text: string;
+      documentId: DocumentId;
+      uri: CanonicalContextUri;
+    }
+  | {
+      type: "reference";
+      kind: "folder";
+      text: string;
+      folderId: FolderId;
+      uri: CanonicalContextUri;
+    };
 
 export type SkillOccurrence = {
   type: "skill";
@@ -48,12 +58,15 @@ export function userMessageTurnBlock(block: UserMessageBlock): {
   }
 }
 
-export type SubmittedReference = {
-  documentId: DocumentId;
-  uri: CanonicalContextUri;
-  purpose: "reference" | "draft-upload";
-  intakeId?: string;
-};
+export type SubmittedReference =
+  | {
+      kind: "document";
+      documentId: DocumentId;
+      uri: CanonicalContextUri;
+      purpose: "reference" | "draft-upload";
+      intakeId?: string;
+    }
+  | { kind: "folder"; folderId: FolderId; uri: CanonicalContextUri };
 
 export type AdmissionFingerprint = string;
 
@@ -68,16 +81,38 @@ export type UserTurnAdmissionInput = {
   activatedSkillSlugs?: readonly string[];
 };
 
+/** Fields proving the admission and the read/replay floors that belong to it. */
+export const admissionReceiptShape = {
+  threadId: z.string().min(1),
+  userTurnId: z.string().min(1),
+  runStateVersion: z
+    .string()
+    .regex(/^(0|[1-9]\d*)$/)
+    .nullable(),
+  resumeAfterSeq: z.string().regex(/^(0|[1-9]\d*)$/),
+  snapshotFloorNextSeq: z.string().regex(/^(0|[1-9]\d*)$/),
+};
+export const admissionLookupSchema = z.discriminatedUnion("kind", [
+  z.object({
+    ...admissionReceiptShape,
+    kind: z.enum(["accepted", "already-accepted"]),
+    submissionId: z.string().min(1),
+  }),
+  z.object({ kind: z.enum(["pending", "not-seen"]), submissionId: z.string().min(1) }),
+  z.object({
+    kind: z.enum(["rejected", "retired"]),
+    submissionId: z.string().min(1),
+    code: z.string(),
+  }),
+]) satisfies z.ZodType<AdmissionLookup>;
+
 export type AcceptedAdmission = {
   kind: "accepted" | "already-accepted";
   threadId: ThreadId;
   submissionId: string;
   userTurnId: TurnId;
-  /**
-   * The live run's assistant turn when the send merged into a running run; null
-   * for a fresh run, whose assistant turn the client learns from RUN_STARTED.
-   */
-  assistantTurnId: TurnId | null;
+  /** The stream version of the record the admission's own transaction published; null for older rows. */
+  runStateVersion: string | null;
   resumeAfterSeq: string;
   snapshotFloorNextSeq: string;
 };
@@ -104,10 +139,12 @@ export type AdmissionErrorCode = "idempotency_conflict" | "invalid_message" | "w
 
 export type UserTurnAdmissionResult = Exclude<AdmissionLookup, { kind: "not-seen" }>;
 
-/** Server-generated snapshot; never accepted in a submitted reference. */
-export type ReadReferenceOccurrence = ReferenceOccurrence & {
-  read?: { result: JsonValue; revision: string | null };
-};
+/** Server-generated snapshot; input is validated before execution, then display-only JSON on replay. Never accepted in a submitted reference. */
+export type ReadReferenceOccurrence =
+  | (Extract<ReferenceOccurrence, { kind: "document" }> & {
+      read?: { result: JsonValue; revision: string | null; input?: JsonObject };
+    })
+  | Extract<ReferenceOccurrence, { kind: "folder" }>;
 
 export function referenceOccurrenceContent(block: {
   blockType: unknown;
@@ -125,25 +162,32 @@ export function referenceOccurrenceContent(block: {
   const keys = Object.keys(content)
     .filter((key) => key !== "read")
     .sort();
+  const identityKey = content.kind === "folder" ? "folderId" : "documentId";
   if (
-    keys.length !== 4 ||
-    !["documentId", "text", "type", "uri"].every((key, index) => keys[index] === key) ||
+    keys.length !== 5 ||
+    ![identityKey, "kind", "text", "type", "uri"]
+      .sort()
+      .every((key, index) => keys[index] === key) ||
     content.type !== "reference" ||
+    (content.kind !== "document" && content.kind !== "folder") ||
     typeof content.text !== "string" ||
     content.text.length === 0 ||
-    typeof content.documentId !== "string" ||
-    !parseRequestId(content.documentId) ||
+    typeof content[identityKey] !== "string" ||
+    !parseRequestId(content[identityKey]) ||
     typeof content.uri !== "string"
   ) {
     return null;
   }
   if ("read" in content) {
+    if (content.kind !== "document") return null;
     const read = content.read;
     if (
       !read ||
       typeof read !== "object" ||
       Array.isArray(read) ||
-      Object.keys(read).length !== 2 ||
+      Object.keys(read).filter((key) => key !== "input").length !== 2 ||
+      ("input" in read &&
+        (!read.input || typeof read.input !== "object" || Array.isArray(read.input))) ||
       !("result" in read) ||
       read.result === undefined ||
       !("revision" in read) ||

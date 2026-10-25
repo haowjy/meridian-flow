@@ -2,10 +2,15 @@
  * Spawn selection contracts: named roster targets (including primary mode),
  * the generic omitted/empty-agent subagent inheriting caller config, and the
  * pre-create depth refusal. Runs exercise the unified `runChild` entrypoint.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Spawn depth, inheritance, and publication protocol
  */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type SpawnResult } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryTransactionOwner } from "../../../shared/in-memory-transaction.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
@@ -17,10 +22,11 @@ import {
 } from "../../packages/index.js";
 import {
   createInMemoryRepositories,
-  type EventJournalWriter,
+  type LiveEventWriter,
   readThreadActivity,
   TurnStartConflictError,
 } from "../../threads/index.js";
+import { noFailureRecorder } from "../../threads/ports/event-journal.js";
 import {
   createInMemoryInbox,
   createInMemoryRunClaim,
@@ -49,7 +55,11 @@ function stubOrchestrator(
   let counter = 0;
   return {
     async prepare(input) {
-      const lease = await authority.startExecution(input.threadId, crypto.randomUUID());
+      const lease = await authority.startExecution(
+        input.threadId,
+        crypto.randomUUID(),
+        async () => {},
+      );
       if (!lease) throw new TurnStartConflictError(input.threadId, "already_running");
       counter += 1;
       const assistantTurnId = `assistant-turn-${counter}` as TurnId;
@@ -94,7 +104,7 @@ function stubOrchestrator(
       return {
         userTurnId: userTurn.id,
         executionTurnId: assistantTurnId,
-        runId: assistantTurnId,
+        executionId: assistantTurnId,
         resumeAfterSeq: "0",
         snapshotFloorNextSeq: "1",
         execute: async () => {
@@ -126,9 +136,10 @@ async function fixture(
     orchestrator?:
       | RunTurnPort
       | ((repos: ReturnType<typeof createInMemoryRepositories>) => RunTurnPort);
-    eventWriter?: EventJournalWriter;
+    eventWriter?: LiveEventWriter;
     realRuntime?: boolean;
     gateway?: ReturnType<typeof scriptedGateway>;
+    parentAiWriteMode?: AiWriteMode;
   } = {},
 ) {
   const transactionOwner = new InMemoryTransactionOwner();
@@ -191,7 +202,11 @@ async function fixture(
   const parentRevision = parentInstalled.definitions[0];
   if (!parentRevision) throw new Error("Missing parent revision");
 
-  const parent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+  const parent = await repos.threads.create({
+    aiWriteMode: options.parentAiWriteMode ?? "direct",
+    userId: "user-1",
+    projectId: "project-1",
+  });
   const namedTargets = [
     { name: "critic", definitionRevisionId: critic.id },
     { name: "hidden", definitionRevisionId: hidden.id },
@@ -210,7 +225,13 @@ async function fixture(
   const abortedChildren: string[] = [];
   const turns: RecordedTurn[] = [];
   const runClaim = createInMemoryRunClaim();
-  const eventWriter: EventJournalWriter = options.eventWriter ?? {
+  const eventWriter: LiveEventWriter = options.eventWriter ?? {
+    ...noFailureRecorder,
+    async appendEvents(threadId, events) {
+      let seq = 0n;
+      for (const event of events) seq = await this.appendEvent(threadId, event);
+      return seq;
+    },
     async appendEvent(threadId, event) {
       journal.push({
         threadId,
@@ -346,7 +367,7 @@ const budget = createDefaultTreeBudget();
 
 function transcriptFor(
   threadId: ThreadId,
-  deps: { repos: ReturnType<typeof createInMemoryRepositories>; eventWriter: EventJournalWriter },
+  deps: { repos: ReturnType<typeof createInMemoryRepositories>; eventWriter: LiveEventWriter },
   turnId = "turn-1",
 ): SpawnTranscript & { journal: OrchestratorEvent[] } {
   const journal: OrchestratorEvent[] = [];
@@ -354,6 +375,12 @@ function transcriptFor(
     persistence: {
       repos: deps.repos,
       eventWriter: {
+        ...noFailureRecorder,
+        async appendEvents(threadId, events) {
+          let seq = 0n;
+          for (const event of events) seq = await this.appendEvent(threadId, event);
+          return seq;
+        },
         async appendEvent(id, event) {
           const seq = await deps.eventWriter.appendEvent(id, event);
           journal.push(event);
@@ -401,6 +428,24 @@ describe("ChildRunCoordinator spawn selection", () => {
     expect(allowed.status).toBe("completed");
   });
 
+  it("starts the child in its parent chat's mode", async () => {
+    const { coordinator, parent, journal, repos } = await fixture({ parentAiWriteMode: "draft" });
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    expect(result.status).toBe("completed");
+    const childId = journal.find((event) => event.type === "agent.spawn")?.childThreadId;
+    expect((await repos.threads.findById(childId as ThreadId))?.aiWriteMode).toBe("draft");
+  });
+
   it("refuses a rostered target that is not model-invocable", async () => {
     const { coordinator, parent } = await fixture();
     const result = await coordinator.runChild(
@@ -423,6 +468,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
   it("refuses a named child with a tool its parent lacks until the spawn denies it", async () => {
     const { coordinator, revisions, repos, critic, journal } = await fixture();
     const restrictedParent = await repos.threads.create({
+      aiWriteMode: "direct",
       userId: "user-1",
       projectId: "project-1",
     });
@@ -492,7 +538,11 @@ describe("ChildRunCoordinator invocation overlay", () => {
     expect(loweredBinding?.configuration.permission).toBe("read");
 
     const spawnsBefore = journal.filter((event) => event.type === "agent.spawn").length;
-    const readParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const readParent = await repos.threads.create({
+      aiWriteMode: "direct",
+      userId: "user-1",
+      projectId: "project-1",
+    });
     const parentBinding = await revisions.readThreadBinding(parent.id);
     if (!parentBinding) throw new Error("Missing parent binding");
     await revisions.bindThread(
@@ -777,7 +827,13 @@ describe("ChildRunCoordinator direct-parent activity journal", () => {
   it("keeps a successful foreground run successful when the terminal activity append throws", async () => {
     const appended: Array<{ type: string; outcome?: string }> = [];
     let activityAppends = 0;
-    const eventWriter: EventJournalWriter = {
+    const eventWriter: LiveEventWriter = {
+      ...noFailureRecorder,
+      async appendEvents(threadId, events) {
+        let seq = 0n;
+        for (const event of events) seq = await this.appendEvent(threadId, event);
+        return seq;
+      },
       async appendEvent(_threadId, event) {
         const typed = event as unknown as { type: string; outcome?: string };
         if (typed.type === "subagent.activity") {
@@ -819,7 +875,13 @@ describe("ChildRunCoordinator direct-parent activity journal", () => {
   it("writes no contradictory terminal event when a background run's terminal append throws", async () => {
     const appended: Array<{ type: string; outcome?: string }> = [];
     let activityAppends = 0;
-    const eventWriter: EventJournalWriter = {
+    const eventWriter: LiveEventWriter = {
+      ...noFailureRecorder,
+      async appendEvents(threadId, events) {
+        let seq = 0n;
+        for (const event of events) seq = await this.appendEvent(threadId, event);
+        return seq;
+      },
       async appendEvent(_threadId, event) {
         const typed = event as unknown as { type: string; outcome?: string };
         if (typed.type === "subagent.activity") {

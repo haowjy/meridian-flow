@@ -1,7 +1,7 @@
 /** Shared pinned new-chat composer for the center, dock, and phone. */
 import { t } from "@lingui/core/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useSelectionAvailableSkills } from "@/client/query/useAvailableSkills";
@@ -11,8 +11,12 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
-import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
-import { DeletedChatNotice } from "./DeletedChatNotice";
+import { FolderMenuContext, type FolderMenuHost } from "@/features/project/context/FolderMenu";
+import {
+  useCanOpenChatReference,
+  useOpenChatDocument,
+} from "@/features/project/context/open-chat-document";
+import { DeletedChatCard } from "./DeletedChatCard";
 import { useCreationComposer } from "./useCreationComposer";
 
 export function CreationComposer({
@@ -61,7 +65,6 @@ export function CreationComposer({
   );
   const agent = choices?.agent ?? defaultAgent ?? null;
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
-  const [modePending, setModePending] = useState(false);
   const initialWork = works.works?.find((work) => !isWorkArchived(work)) ?? null;
   const workId = choices?.workId ?? initialWork?.id ?? works.noWork?.id ?? null;
   const selected = workId
@@ -72,9 +75,34 @@ export function CreationComposer({
     : null;
   // An archived Work refuses new chats, so it is never the new chat's Work.
   const work = selected && (selected.isNoWork || !isWorkArchived(selected)) ? selected : null;
-  const references = useReferenceBrowserCatalog(projectId, work?.id, t`Reference a file`);
+  const references = useReferenceBrowserCatalog(
+    projectId,
+    work?.id,
+    t`Reference a file`,
+    null,
+    creation.draft.chatId,
+  );
   const openDocument = useOpenChatDocument(projectId);
-  const context = agent && workId ? { workId, agent } : undefined;
+  const folders = useMemo<FolderMenuHost>(
+    () => ({
+      projectId,
+      openDocument: (documentId) => void openDocument({ documentId, disposition: "current" }),
+    }),
+    [openDocument, projectId],
+  );
+  const canOpenReference = useCanOpenChatReference();
+  // The Work's default shows until the writer picks a mode here, and only a
+  // picked mode is sent: a stale default from another tab never overwrites a newer one.
+  const writeMode = choices?.aiWriteMode ?? work?.defaultAiWriteMode ?? "direct";
+  const context =
+    agent && work
+      ? {
+          workId: work.id,
+          workAiWriteMode: work.defaultAiWriteMode,
+          ...(choices?.aiWriteMode ? { aiWriteMode: choices.aiWriteMode } : {}),
+          agent,
+        }
+      : undefined;
   const unavailableWork =
     (works.status === "ready" || works.status === "empty") && workId !== null && !work;
   const catalogAgent = agents.agents?.find(
@@ -96,12 +124,12 @@ export function CreationComposer({
   const agentsReady = agents.status === "ready" || agents.status === "empty";
   const choicesReady = worksReady && agentsReady && !unavailableChoice;
   return (
-    <>
+    <FolderMenuContext.Provider value={folders}>
       <Composer
-        notices={
+        cards={
           creation.draft.notices.length > 0
             ? creation.draft.notices.map((notice) => (
-                <DeletedChatNotice
+                <DeletedChatCard
                   key={notice.threadId}
                   notice={notice}
                   onDismiss={() => creation.draft.dismissNotice(notice.threadId)}
@@ -121,22 +149,21 @@ export function CreationComposer({
         referenceCatalog={references}
         availableSkills={availableSkills.skills}
         onOpenReference={(reference) => {
+          if (!canOpenReference(reference.uri)) return;
           void openDocument({ documentId: reference.documentId, disposition: "current" });
         }}
         uploadPort={uploadIntakePort}
-        uploadScope={work ? { kind: "work", projectId, workId: work.id } : undefined}
-        submitDisabled={!choicesReady || modePending}
+        uploadScope={{ kind: "chat", projectId, chatId: creation.draft.chatId }}
+        submitDisabled={!choicesReady}
         submitDisabledReason={
           unavailableMessage ??
-          (modePending
-            ? t`Finishing write mode change`
-            : !worksReady
-              ? t`Loading Work`
-              : !agentsReady
-                ? agents.isError
-                  ? t`Couldn't load agents.`
-                  : t`Loading agents…`
-                : undefined)
+          (!worksReady
+            ? t`Loading Work`
+            : !agentsReady
+              ? agents.isError
+                ? t`Couldn't load agents.`
+                : t`Loading agents…`
+              : undefined)
         }
         toolbarLeft={
           <NewThreadComposerToolbar
@@ -147,11 +174,14 @@ export function CreationComposer({
             noWork={works.noWork}
             worksStatus={works.isError ? "error" : worksReady ? "ready" : "loading"}
             agent={agent}
-            disabled={modePending}
+            writeMode={writeMode}
             onAgentChange={(next) => creation.updateChoices({ agent: next })}
-            onWorkChange={(selected) => creation.updateChoices({ workId: selected.id })}
+            // A mode picked for one Work is not carried to another.
+            onWorkChange={(selected) =>
+              creation.updateChoices({ workId: selected.id, aiWriteMode: undefined })
+            }
+            onWriteModeChange={(mode) => creation.updateChoices({ aiWriteMode: mode })}
             onRetryWorks={works.refetch}
-            onModePendingChange={setModePending}
           />
         }
       />
@@ -163,6 +193,6 @@ export function CreationComposer({
           {unavailableMessage}
         </p>
       ) : null}
-    </>
+    </FolderMenuContext.Provider>
   );
 }

@@ -31,7 +31,6 @@ function document(id: string, uri: string, extra: Partial<ExportDocument> = {}):
     name,
     extension: "",
     fileType: "markdown",
-    manifestScoped: true,
     workId: null,
     workName: null,
     rootThreadId: null,
@@ -55,58 +54,51 @@ function fixture() {
       fileType: "image",
       storageUrl: "object://meridian/assets/map.png",
     }),
-    document("scratch1", "scratch://@one/note", {
+    document("scratch1", "scratch://@w1/note", {
       path: "note",
       name: "note",
       workId: "one",
       workName: "Work",
-      manifestScoped: false,
     }),
-    document("scratch2", "scratch://@two/note", {
+    document("scratch2", "scratch://@w2/note", {
       path: "note",
       name: "note",
       workId: "two",
       workName: "work",
-      manifestScoped: false,
     }),
-    document("upload1", "uploads://@one/file.json", {
+    document("upload1", "uploads://@c1/file.json", {
       path: "file.json",
       name: "file",
       extension: "json",
       fileType: "json",
       workId: "one",
       workName: "Work",
-      manifestScoped: false,
     }),
-    document("upload2", "uploads://@two/file.json", {
+    document("upload2", "uploads://@c2/file.json", {
       path: "file.json",
       name: "file",
       extension: "json",
       fileType: "json",
       workId: "two",
       workName: "work",
-      manifestScoped: false,
     }),
-    document("no-upload", "uploads://@/file.json", {
+    document("no-upload", "uploads://@c3/file.json", {
       path: "file.json",
       name: "file",
       extension: "json",
       fileType: "json",
-      manifestScoped: false,
     }),
-    document("chat1", "scratch://@/c1/note", {
+    document("chat1", "scratch://@c1/note", {
       path: "note",
       name: "note",
       rootThreadId: "chat1",
       chatTitle: "Chat",
-      manifestScoped: false,
     }),
-    document("chat2", "scratch://@/c2/note", {
+    document("chat2", "scratch://@c2/note", {
       path: "note",
       name: "note",
       rootThreadId: "chat2",
       chatTitle: "chat",
-      manifestScoped: false,
     }),
   ];
   const blocks = [
@@ -160,9 +152,6 @@ function fixture() {
       },
     },
     documents: {
-      async resolveManifestMembership() {
-        return { members: docs.map((doc) => doc.id) } as never;
-      },
       async readForExport(id, scope) {
         if (unavailable) return { ok: false, error: { code: "not_found", documentId: id } };
         reads.push(id);
@@ -191,6 +180,8 @@ function fixture() {
             settlement: () => null,
             documentAt: () => null,
             documentFor: () => null,
+            folder: () => null,
+            folderAt: () => null,
             assetFor: () => null,
             assetAddress: () => ({ kind: "last", uri: "kb://map.png" }),
           },
@@ -326,7 +317,7 @@ describe("project exports", () => {
         null,
         schema.text("Another", [
           schema.marks.link!.create({
-            href: "scratch://@one/note",
+            href: "scratch://@w1/note",
             ref: documentRef(uuid("scratch1")),
           }),
         ]),
@@ -438,7 +429,7 @@ describe("project exports", () => {
       { scratch: true, uploads: false },
       [
         {
-          uri: "scratch://@empty/",
+          uri: "scratch://@w3/",
           scheme: "scratch",
           workId: "empty",
           workName: "Empty Work",
@@ -447,13 +438,15 @@ describe("project exports", () => {
         },
       ],
     );
-    expect(roots.get("scratch://@empty/")).toBe("Works/Empty Work/Scratch");
+    expect(roots.get("scratch://@w3/")).toBe("Works/Empty Work/Scratch");
     const holder = createHolderLinkScope(
       { uri: "kb://Lore/note", projectId: "project", view: { kind: "live" } },
       {
         document: () => null,
         documentAt: () => null,
         documentFor: () => null,
+        folder: () => null,
+        folderAt: () => null,
         settlement: () => null,
         assetAddress: () => null,
         assetFor: () => null,
@@ -472,7 +465,7 @@ describe("project exports", () => {
       },
     );
     expect(
-      scope.spellLink({ href: "scratch://@empty/Future", ref: `ahead:${uuid("future")}` }).href,
+      scope.spellLink({ href: "scratch://@w3/Future", ref: `ahead:${uuid("future")}` }).href,
     ).toBe("../../Works/Empty%20Work/Scratch/Future.md");
     expect(paths.get(uuid("two"))).toBe("Knowledge Base/lore (2)/note.md");
     expect(paths.get(uuid("bad"))).toBe("Knowledge Base/_CON.md");

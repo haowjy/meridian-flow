@@ -1,4 +1,9 @@
-/** PostgreSQL half of the shared transcript reader behavior contract. */
+/**
+ * PostgreSQL half of the shared transcript reader behavior contract.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - compaction-defined prompt epochs and first-page-only unsettled previews (kb/decisions/chat/turns/linear-turns.md)
+ */
 
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -49,7 +54,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("keeps a refused manual compaction in segment zero and opens segment one only on completion", async () => {
       const { readTranscriptPage } = await import("./transcript-page.js");
       const repos = createDrizzleRepositoriesForTest(db);
-      const thread = await repos.threads.create({ projectId, userId });
+      const thread = await repos.threads.create({ aiWriteMode: "direct", projectId, userId });
       const threadId = thread.id as ThreadId;
       const initial = await repos.threads.bakeInitialPrompt(threadId, {
         composedSystemPrompt: "initial prompt",

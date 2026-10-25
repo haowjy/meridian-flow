@@ -50,6 +50,7 @@ import {
 } from "./extensions/meridian-extensions";
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
+import { ReferenceDropExtension, type ReferenceDropOptions } from "./extensions/reference-drop";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
@@ -71,6 +72,8 @@ export type EditorUser = {
 /** Project whose asset namespace resolves `asset:<documentId>` image sources. */
 export type AssetRenderContext = {
   projectId?: string;
+  /** The Work the viewer is in: a picture still pending in its branch is signed through it. */
+  workId?: string;
 };
 
 export type CreateEditorExtensionsOptions = {
@@ -95,13 +98,15 @@ export type CreateEditorExtensionsOptions = {
    * room. Live editors omit this flag so they never pay the extra plugin cost.
    */
   enableDraftInlineReview?: boolean;
-  /** Live-session sidecar; omitted for branch/draft rooms. */
+  /** Live-session sidecar; omitted for draft rooms. */
   markerStore?: SessionMarkerStore;
   /** Writer-facing thread names for agent-authored session marks. */
   agentNames?: AgentNameStore;
   /** Mounts the slash insertion menu; omitted surfaces never pay for it. */
   slashCommands?: SlashCommandExtensionOptions;
   atReferences?: AtReferenceExtensionOptions;
+  /** Turns project-tree rows into the same references `@` writes. */
+  referenceDrop?: ReferenceDropOptions;
   /** Turns a pasted `[[Name]]` into a link; only the Editor mounts it. */
   wikilinkPaste?: WikilinkPasteOptions;
 };
@@ -284,6 +289,7 @@ export function createEditorExtensions({
   agentNames,
   slashCommands,
   atReferences,
+  referenceDrop,
   wikilinkPaste,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
@@ -299,11 +305,12 @@ export function createEditorExtensions({
       assetRenderContext,
       slashCommands,
       atReferences,
+      referenceDrop,
       wikilinkPaste,
     }),
     ...collaboration,
-    // Undo exists only alongside collaboration's UndoManager, so its owned key
-    // bindings mount with it rather than in the standalone set.
+    // Mounted history depends on collaboration's UndoManager, so its key bindings
+    // mount with collaboration rather than in the standalone set.
     UndoRedoKeymapExtension,
     // A document with no shared room has no "uploading elsewhere", so the
     // ephemeral half of image ingress mounts here rather than beside the door.
@@ -326,10 +333,16 @@ export function createStandaloneEditorExtensions({
   assetRenderContext,
   slashCommands,
   atReferences,
+  referenceDrop,
   wikilinkPaste,
 }: Pick<
   CreateEditorExtensionsOptions,
-  "schemaType" | "assetRenderContext" | "slashCommands" | "atReferences" | "wikilinkPaste"
+  | "schemaType"
+  | "assetRenderContext"
+  | "slashCommands"
+  | "atReferences"
+  | "referenceDrop"
+  | "wikilinkPaste"
 > = {}): Extensions {
   if (schemaType === "code") {
     return [
@@ -362,11 +375,15 @@ export function createStandaloneEditorExtensions({
     MeridianTableHeader,
     MeridianTableCell,
     MeridianCodeBlockLowlight.configure({ lowlight }),
-    MeridianImage.configure({ projectId: assetRenderContext?.projectId }),
+    MeridianImage.configure({
+      projectId: assetRenderContext?.projectId,
+      workId: assetRenderContext?.workId,
+    }),
     MeridianJsxLeaf,
     MeridianJsxContainer,
     MeridianFigure.configure({
       projectId: assetRenderContext?.projectId,
+      workId: assetRenderContext?.workId,
     }),
     ...(slashCommands
       ? [
@@ -399,6 +416,9 @@ export function createStandaloneEditorExtensions({
     // Where dragged content lands, and the dropcursor that promises it:
     // inside a table both resolve into a cell, never a new column.
     DropLandingExtension,
+    // Later extensions receive DOM events first: entry drops own their caret
+    // and insertion before the generic ProseMirror slice door sees them.
+    ...(referenceDrop ? [ReferenceDropExtension.configure(referenceDrop)] : []),
     // Chrome mounts only on the document schema: a code file is one code
     // block with no objects and no surfaces to own.
     ...EDITOR_CHROME_EXTENSIONS,
@@ -417,6 +437,7 @@ export function createEditorConfig({
   agentNames,
   slashCommands,
   atReferences,
+  referenceDrop,
   wikilinkPaste,
   editable = true,
   autofocus = false,
@@ -447,6 +468,7 @@ export function createEditorConfig({
         agentNames,
         slashCommands,
         atReferences,
+        referenceDrop,
         wikilinkPaste,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),

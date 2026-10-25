@@ -4,14 +4,23 @@
  * step back out; there are no flyouts or root heading. A divider separates
  * the tree from the actions.
  *
- * The component takes a tree source and an action list, so the dock's
- * document title and any other tree source can share it (the rail's Scratch
- * section draws the same tree data as rows). It owns only the drill state; picking an entry and running an action belong to the caller.
+ * Document paths and placement menus supply a tree and actions. This component
+ * owns only drill state; picking an entry and running an action belong to the caller.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
-import { type ReactElement, type ReactNode, useCallback, useRef, useState } from "react";
+import {
+  type ComponentPropsWithoutRef,
+  type ForwardedRef,
+  Fragment,
+  type ReactElement,
+  type ReactNode,
+  useCallback,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
 import {
   DropdownMenu,
@@ -37,8 +46,6 @@ export type DrillNode = {
 export type DrillTree = {
   /** Names the tree's source at the top level. */
   heading: string;
-  /** What an empty top level says; a folder with nothing in it keeps the generic line. */
-  empty?: string;
   /** A folder's entries in display order; `null` is the top level. */
   children: (folderId: string | null) => readonly DrillNode[];
 };
@@ -49,6 +56,8 @@ export type DrillAction = {
   icon: LucideIcon;
   onSelect: () => void;
   disabled?: boolean;
+  /** A warning under the label: what the action will also do (rows arriving renamed). */
+  note?: string | null;
 };
 
 export type DrillInMenuProps = {
@@ -68,6 +77,7 @@ export type DrillInMenuProps = {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onCloseAutoFocus?: (event: Event) => void;
+  onEscapeKeyDown?: (event: KeyboardEvent) => void;
   onPick: (node: DrillNode) => void;
   /** The trigger, rendered as the menu's anchor. */
   children: ReactElement;
@@ -79,11 +89,15 @@ export function DrillInMenuRoot({
   body,
   open: controlledOpen,
   onOpenChange,
+  triggerProps,
+  triggerRef,
 }: {
   children: ReactElement;
   body: ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  triggerProps?: Omit<ComponentPropsWithoutRef<typeof DropdownMenuTrigger>, "asChild">;
+  triggerRef?: ForwardedRef<HTMLButtonElement>;
 }) {
   const [localOpen, setOpen] = useState(false);
   const open = controlledOpen ?? localOpen;
@@ -95,7 +109,9 @@ export function DrillInMenuRoot({
         onOpenChange?.(next);
       }}
     >
-      <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+      <DropdownMenuTrigger asChild {...triggerProps} ref={triggerRef}>
+        {children}
+      </DropdownMenuTrigger>
       {open ? body : null}
     </DropdownMenu>
   );
@@ -120,6 +136,7 @@ export function DrillInMenuBody({
   status,
   isDisabled,
   onCloseAutoFocus,
+  onEscapeKeyDown,
 }: Omit<DrillInMenuProps, "children" | "open" | "onOpenChange">) {
   const [trail, setTrail] = useState<readonly DrillNode[]>(openAt);
   const [exitedId, setExitedId] = useState<string | null>(null);
@@ -139,6 +156,7 @@ export function DrillInMenuBody({
   const folder = trail.at(-1) ?? null;
   const entries = tree.children(folder?.id ?? null);
   const currentActions = actions?.(trail) ?? [];
+  const noteId = useId();
 
   return (
     <DropdownMenuContent
@@ -152,6 +170,7 @@ export function DrillInMenuBody({
         }
       }}
       onCloseAutoFocus={onCloseAutoFocus}
+      onEscapeKeyDown={onEscapeKeyDown}
     >
       {caption ? <p className="px-2 py-1.5 text-xs text-muted-foreground">{caption}</p> : null}
       {folder ? (
@@ -168,11 +187,7 @@ export function DrillInMenuBody({
       ) : null}
       {entries.length === 0 ? (
         <p className="px-2 py-1.5 text-sm text-muted-foreground">
-          {folder ? (
-            <Trans>Nothing here yet.</Trans>
-          ) : (
-            (tree.empty ?? <Trans>Nothing here yet.</Trans>)
-          )}
+          <Trans>Nothing here yet.</Trans>
         </p>
       ) : (
         entries.map((node) => (
@@ -201,17 +216,27 @@ export function DrillInMenuBody({
       ) : null}
       {currentActions.length > 0 ? <DropdownMenuSeparator /> : null}
       {currentActions.map((action) => (
-        <DropdownMenuItem
-          key={action.key}
-          disabled={action.disabled}
-          onSelect={(event) => {
-            event.preventDefault();
-            action.onSelect();
-          }}
-        >
-          <action.icon aria-hidden />
-          {action.label}
-        </DropdownMenuItem>
+        <Fragment key={action.key}>
+          <DropdownMenuItem
+            disabled={action.disabled}
+            aria-describedby={action.note ? `${noteId}-${action.key}` : undefined}
+            onSelect={(event) => {
+              event.preventDefault();
+              action.onSelect();
+            }}
+          >
+            <action.icon aria-hidden />
+            {action.label}
+          </DropdownMenuItem>
+          {action.note ? (
+            <p
+              id={`${noteId}-${action.key}`}
+              className="mx-1 mb-1 rounded-sm border border-warning-border bg-warning-bg px-2 py-1 text-xs text-warning-foreground"
+            >
+              {action.note}
+            </p>
+          ) : null}
+        </Fragment>
       ))}
     </DropdownMenuContent>
   );

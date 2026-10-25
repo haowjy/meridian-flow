@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
+/**
+ * Tests codec markdown behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Markdown empty-document and link grammar normalization
+ */
 
+import { describe, expect, it } from "vitest";
 import {
   blocksOf,
   docFrom,
@@ -11,7 +17,7 @@ import {
   schema,
   t,
 } from "./codec-test-support.js";
-import { markdownCodec, UNSCOPED_DOCUMENT_LINKS } from "./index.js";
+import { markdownCodec, mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "./index.js";
 
 describe("markdown codec round-trip corpus", () => {
   const codec = markdownCodec({ schema });
@@ -170,5 +176,55 @@ describe("markdown codec round-trip corpus", () => {
     expect(codec.parse(wire).blocks[0]?.textContent).toBe(prose);
     expect(codec.parse(wire).blocks[0]?.child(0).marks).toEqual([]);
     expectStable(codec, wire);
+  });
+});
+
+describe("explicit links and bare URL round trips", () => {
+  const codecs = [
+    {
+      name: "markdown",
+      codec: markdownCodec({ schema: schema }),
+    },
+    {
+      name: "mdx",
+      codec: mdxCodec({ schema: schema }),
+    },
+  ];
+  const addressLink = paragraph(t("kb://a.md", [m("link", { href: "kb://a.md", title: null })]));
+
+  it.each([
+    {
+      rule: "angle autolink",
+      input: "<kb://a.md>",
+      expected: addressLink,
+      mdxExpected: paragraph(t("<kb://a.md>")),
+    },
+    {
+      rule: "centered address link",
+      input: null,
+      initial: schema.node("paragraph", { align: "center" }, addressLink.content),
+      expected: addressLink,
+      mdxExpected: schema.node("paragraph", { align: "center" }, addressLink.content),
+    },
+    {
+      rule: "matching address with underscores",
+      input: null,
+      expected: paragraph(t("https://x/_a_", [m("link", { href: "https://x/_a_", title: null })])),
+    },
+    {
+      rule: "bare URL in prose",
+      input: "Visit https://x, www.example.com and a@b.c today.",
+      expected: paragraph(t("Visit https://x, www.example.com and a@b.c today.")),
+    },
+  ])("$rule", ({ input, initial, expected, mdxExpected }) => {
+    for (const { name, codec } of codecs) {
+      const target = name === "mdx" ? (mdxExpected ?? expected) : expected;
+      const parsed = codec.parse(
+        input ?? codec.serialize([initial ?? expected], UNSCOPED_DOCUMENT_LINKS),
+      ).blocks;
+      expect(parsed.map((block) => block.toJSON())).toEqual([target.toJSON()]);
+      const wire = codec.serialize(parsed, UNSCOPED_DOCUMENT_LINKS);
+      expect(codec.parse(wire).blocks.map((block) => block.toJSON())).toEqual([target.toJSON()]);
+    }
   });
 });

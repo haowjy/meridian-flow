@@ -34,6 +34,12 @@ export function documentAuthority(doc: Y.Doc): Readonly<CheckpointAuthority> {
   return handle.authority;
 }
 
+/** The authority a live handle (or a copy bound from its journal read) belongs to, if any. */
+export function boundDocumentAuthority(doc: Y.Doc): Readonly<CheckpointAuthority> | null {
+  const handle = handles.get(doc);
+  return handle && !handle.retired ? handle.authority : null;
+}
+
 export function retireDocumentHandle(doc: Y.Doc): void {
   const handle = handles.get(doc);
   if (handle) handle.retired = true;

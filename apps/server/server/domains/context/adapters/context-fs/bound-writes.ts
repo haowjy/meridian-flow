@@ -32,7 +32,7 @@ export interface BoundWritesDeps {
   /** The canonical address a document at `path` has, or will have. */
   holderUri(path: string): string;
   /** The document at `path`, if any, read outside any transaction. */
-  findDocument(path: string): Promise<ContextDocument | null>;
+  findDocument(path: string): Promise<Result<ContextDocument | null, AdapterFault>>;
 }
 
 export class BoundWrites {
@@ -78,8 +78,10 @@ export class BoundWrites {
    */
   async lookup(path: string): Promise<Result<ContextDocument | null, AdapterFault>> {
     const existing = await this.deps.findDocument(path);
-    if (existing && existing.fileType !== null) return Err(binaryTrackedWriteFault(path));
-    return Ok(existing);
+    if (existing.ok && existing.value && existing.value.fileType !== null) {
+      return Err(binaryTrackedWriteFault(path));
+    }
+    return existing;
   }
 
   /**

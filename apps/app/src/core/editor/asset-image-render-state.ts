@@ -113,6 +113,8 @@ function usePictureTarget(
       return { kind: "unavailable", message: t`No image has been uploaded to ${path} yet.` };
     }
     case "gone":
+    // A picture's source is never a folder; a folder answer is nothing to draw.
+    case "folder":
       return { kind: "unavailable", message: goneMessage() };
   }
 }
@@ -194,13 +196,15 @@ export type AssetImageRenderActions = {
 
 export function useAssetImageRenderState(input: {
   projectId?: string;
+  /** The Work the viewer is in, when they are in one. */
+  workId?: string;
   src: string;
   /** The picture's stored `ref`, as the node holds it. */
   ref?: unknown;
   /** The editor's link cache, which answers the ref, and its requester. */
   links?: MountedLinks | null;
 }): [AssetImageRenderState, AssetImageRenderActions] {
-  const { projectId, src } = input;
+  const { projectId, workId, src } = input;
   const resolution = input.links?.resolution ?? null;
   const requester = input.links?.requester ?? null;
   const stored = pictureKeyOfNode({ ref: input.ref, src });
@@ -244,7 +248,7 @@ export function useAssetImageRenderState(input: {
   // revalidates (a catalog change, a signed-URL refresh), and a node view
   // retargeted to another picture (a ref or source edit, undo, a peer's
   // update) never draws the previous one while the new one loads.
-  const picture = `${projectId ?? ""}\u0000${key ? linkCacheKey(key) : src}`;
+  const picture = `${projectId ?? ""}\u0000${workId ?? ""}\u0000${key ? linkCacheKey(key) : src}`;
   const [shown, setShown] = useState<{ picture: string; state: AssetImageRenderState }>(() => ({
     picture,
     state: initialState(target),
@@ -328,6 +332,7 @@ export function useAssetImageRenderState(input: {
         const signed = await getFigureSignedUrl({
           projectId: routeProjectId,
           assetDocumentId: routeAssetDocumentId,
+          ...(workId ? { workId } : {}),
           skipCache,
         });
         if (cancelled) return;
@@ -358,7 +363,7 @@ export function useAssetImageRenderState(input: {
       loadInFlightRef.current = false;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [targetIdentity, picture, projectId, refreshToken]);
+  }, [targetIdentity, picture, projectId, workId, refreshToken]);
 
   return [state, { retry, imageLoadFailed, imageDisplayed }];
 }

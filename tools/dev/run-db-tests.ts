@@ -3,7 +3,12 @@
 import { fork, spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
-import { cloneDatabaseForUrl, ensureDatabaseForUrl, isLocalDevPostgres } from "./lib/dev-db";
+import {
+  cloneDatabaseForUrl,
+  ensureDatabaseForUrl,
+  isCiRunnerPostgres,
+  isLocalDevPostgres,
+} from "./lib/dev-db";
 import { resolveCurrentRepoRoot, resolveMainDatabaseNames } from "./lib/dev-env";
 import { managedTestDatabaseUrl, managedTestDatabaseWorkerUrl } from "./lib/test-db-lifecycle";
 
@@ -57,17 +62,36 @@ async function main(): Promise<void> {
     testArgs.shift();
     if (testArgs[0] === "--") testArgs.shift();
   }
-  const workerCount = Number(process.env.DB_TEST_WORKERS ?? "8");
+  // Local default is 4, not 8. Measured on the shared host with the identical
+  // 912 cases: 8 fork workers peak at 6,038MB in 65s and flaked a settlement
+  // test; 4 workers peak at 3,869MB in 91s and ran all 912 green. Fork workers
+  // are whole processes, so this is the largest per-run memory knob in the repo
+  // — nearly twice the unit suite's 3.1GB. Override with DB_TEST_WORKERS=1..8.
+  //
+  // Each worker needs its own database. Locally they are cloned from the owned,
+  // freshly migrated template. CI clones them from the database its workflow
+  // already migrated, on the runner's own Postgres; 3 rather than 4 because a
+  // 4-core runner also hosts Postgres, and 4 workers peaked near the 4GB
+  // memory ceiling. A clone costs under 0.1s against ~2s for the migration chain.
+  const ci = !local && isCiRunnerPostgres(databaseUrl);
+  const workerCount = Number(process.env.DB_TEST_WORKERS ?? (local ? "4" : ci ? "3" : "1"));
   if (!Number.isInteger(workerCount) || workerCount < 1 || workerCount > 8) {
     throw new Error(
       "DB_TEST_WORKERS must be an integer from 1 to 8 (shared Postgres connection budget).",
     );
   }
-  const workerDatabaseUrls = local
-    ? Array.from({ length: workerCount }, (_, index) =>
-        managedTestDatabaseWorkerUrl(databaseUrl, index + 1),
-      )
-    : [];
+  const workerDatabaseUrls =
+    local || ci
+      ? Array.from({ length: workerCount }, (_, index) =>
+          managedTestDatabaseWorkerUrl(databaseUrl, index + 1),
+        )
+      : [];
+  // Test-bound against real Postgres: a serial run pays the sum of every test
+  // (266-322s on a CI runner before CI had workers). Wall time warns rather than
+  // blocks, and this is the value the warning compares against.
+  // `pnpm test:all` inherits it for the unit half too; that run is not in
+  // `pnpm check`.
+  const durationReferenceSeconds = process.env.TEST_DURATION_REFERENCE_SECONDS ?? "600";
 
   try {
     if (local) {
@@ -86,6 +110,13 @@ async function main(): Promise<void> {
           console.log(`DB tests: cloned worker database ${workerDb}.`);
         }),
       );
+    } else if (ci) {
+      await Promise.all(
+        workerDatabaseUrls.map((workerDatabaseUrl) =>
+          cloneDatabaseForUrl(databaseUrl, workerDatabaseUrl),
+        ),
+      );
+      console.log(`DB tests: cloned ${workerDatabaseUrls.length} CI worker databases.`);
     }
 
     const testExit = await run(
@@ -101,22 +132,26 @@ async function main(): Promise<void> {
         ...(testArgs.some((arg) => arg === "--reporter" || arg.startsWith("--reporter="))
           ? []
           : ["--reporter=default"]),
+        `--reporter=${join(repoRoot, "tools/ci/test-budget-reporter.ts")}`,
         `--reporter=${join(repoRoot, "tools/ci/db-test-reporter.ts")}`,
       ],
       databaseUrl,
-      workerDatabaseUrls.length > 0
-        ? {
-            DB_TEST_DATABASE_URLS: JSON.stringify(
-              workerDatabaseUrls.map((workerUrl) => {
-                const url = new URL(workerUrl);
-                // Postgres.js forwards unknown URL parameters as session startup settings.
-                // Only these owned throwaway connections sacrifice crash durability.
-                url.searchParams.set("synchronous_commit", "off");
-                return url.toString();
-              }),
-            ),
-          }
-        : {},
+      {
+        TEST_DURATION_REFERENCE_SECONDS: durationReferenceSeconds,
+        ...(workerDatabaseUrls.length > 0
+          ? {
+              DB_TEST_DATABASE_URLS: JSON.stringify(
+                workerDatabaseUrls.map((workerUrl) => {
+                  const url = new URL(workerUrl);
+                  // Postgres.js forwards unknown URL parameters as session startup settings.
+                  // Only these owned throwaway connections sacrifice crash durability.
+                  url.searchParams.set("synchronous_commit", "off");
+                  return url.toString();
+                }),
+              ),
+            }
+          : {}),
+      },
     );
     process.exitCode = testExit;
   } finally {

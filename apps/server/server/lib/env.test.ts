@@ -1,4 +1,8 @@
-/** Fail-safe environment gate tests for debug-only server surfaces. */
+/** Fail-safe environment gate tests for debug-only server surfaces.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Explicit non-production APP_DEBUG gating
+ */
 import { describe, expect, it } from "vitest";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 

@@ -36,6 +36,8 @@ function exported(target: ImportLinkCandidate): string {
         document: () => null,
         documentAt: () => null,
         documentFor: () => null,
+        folder: () => null,
+        folderAt: () => null,
         settlement: () => null,
         assetAddress: () => null,
         assetFor: () => null,

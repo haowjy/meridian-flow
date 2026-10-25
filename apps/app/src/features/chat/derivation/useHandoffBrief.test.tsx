@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** Brief Retry and Stop: the card first, the server's seed replaces it by id, failure lands on the card. */
+/** Brief Retry and Stop: the card first, the server's seed replaces it by id, failure lands on the card.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - handoff attempt card lifecycle
+ */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/core/macro", () => ({
@@ -12,9 +16,14 @@ vi.mock("@/client/providers/TransportProvider", () => ({ useThreadTransport: () 
 const invalidateQueries = vi.hoisted(() => vi.fn());
 vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQueries }) }));
 const announcements = vi.hoisted(() => ({ announce: vi.fn(), announceError: vi.fn() }));
-vi.mock("@/client/stores", () => announcements);
+vi.mock("@/client/stores", () => ({
+  ...announcements,
+  useThreadActions: () => ({ dispatchRunState: vi.fn() }),
+  useRunState: () => INITIAL_RUN_STATE_VIEW,
+}));
 
 import type { Turn } from "@meridian/contracts/protocol";
+import { INITIAL_RUN_STATE_VIEW } from "@meridian/thread-client";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { type HandoffBrief, useHandoffBrief } from "./useHandoffBrief";
@@ -79,35 +88,40 @@ afterEach(async () => {
 });
 
 describe("useHandoffBrief Retry", () => {
-  it("marks it failed on a lost request, and its Retry re-sends the same id", async () => {
+  it("holds a lost request as an outcome, not an errored seed, and its Retry re-sends the same id", async () => {
     api.retryHandoffBrief.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     await act(async () => latest.retry(failed));
-    const lost = latest.localSeeds[0] as Turn;
-    expect(lost).toMatchObject({
-      status: "error",
-      error: "Couldn't start a new brief. Try again.",
-    });
-    expect(announcements.announceError).toHaveBeenCalledWith(
-      "Couldn't start a new brief. Try again.",
-    );
-    const again = deferred<Turn>();
-    api.retryHandoffBrief.mockReturnValueOnce(again.promise);
-    await act(async () => latest.retry(lost));
-    expect(api.retryHandoffBrief).toHaveBeenLastCalledWith("dest", { id: lost.id });
+    expect(latest.localSeeds).toEqual([]);
+    const [lost] = latest.outcomes;
+    expect(lost).toMatchObject({ kind: "lost", turnId: "s", attempt: 1 });
+    expect(announcements.announceError).not.toHaveBeenCalled();
+    api.retryHandoffBrief.mockReturnValueOnce(deferred<Turn>().promise);
+    await act(async () => latest.retry(failed));
+    expect(api.retryHandoffBrief).toHaveBeenLastCalledWith("dest", { id: lost?.requestId });
     expect(latest.localSeeds).toHaveLength(1);
-    expect(latest.localSeeds[0]).toMatchObject({ id: lost.id, status: "pending", error: null });
+    expect(latest.localSeeds[0]).toMatchObject({ id: lost?.requestId, status: "pending" });
   });
 });
 
 describe("useHandoffBrief Stop", () => {
-  it("clears Stopping when the cancel fails, and records the failure for the card", async () => {
+  it("clears Stopping when the cancel fails, and holds the failure by attempt for the card", async () => {
     transport.cancel.mockRejectedValueOnce(new Error("offline"));
     await act(async () => latest.stop("s"));
     expect(latest.stopping.has("s")).toBe(false);
-    expect(latest.stopFailed.has("s")).toBe(true);
-    expect(announcements.announceError).toHaveBeenCalledWith("Couldn't stop the brief. Try again.");
+    expect(latest.stopFailures).toEqual([
+      { turnId: "s", requestId: expect.any(String), attempt: 1 },
+    ]);
+    const firstRequest = latest.stopFailures[0]?.requestId;
+    expect(announcements.announceError).not.toHaveBeenCalled();
     transport.cancel.mockReturnValueOnce(new Promise(() => undefined));
     await act(async () => latest.stop("s"));
-    expect(latest.stopFailed.has("s")).toBe(false);
+    expect(latest.stopFailures).toEqual([]);
+    // A second failure is a new occurrence of the same Stop.
+    transport.cancel.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => latest.stop("s"));
+    expect(latest.stopFailures).toEqual([
+      { turnId: "s", requestId: expect.any(String), attempt: 3 },
+    ]);
+    expect(latest.stopFailures[0]?.requestId).not.toBe(firstRequest);
   });
 });

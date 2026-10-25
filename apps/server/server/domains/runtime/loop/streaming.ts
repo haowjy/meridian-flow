@@ -44,7 +44,8 @@ export function toJsonValue(value: unknown): JsonValue {
 }
 
 export function mapStreamEvent(event: StreamEvent) {
-  // Maps gateway StreamEvent → OrchestratorEvent.stream.delta.
+  // Maps gateway StreamEvent → OrchestratorEvent.stream.delta. The run loop
+  // may merge adjacent deltas for one live block before journaling them.
   // NOTE: event.partIndex is intentionally dropped — the stream.delta
   // contract has no position field. The client must reconstruct block
   // ordering from the final block.upserted events, not from deltas.

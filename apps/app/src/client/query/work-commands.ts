@@ -85,9 +85,7 @@ const workCommands = {
       ),
     // Until the server has it, the Work shows only as a `WorkCreation`.
     project: (work) => work,
-    // A new Work has nothing unpushed yet.
-    commit: (work, _, committed) =>
-      work ?? { ...committed, unpushedChangeCount: committed.unpushedChangeCount ?? 0 },
+    commit: (work, _, committed) => work ?? committed,
     reached: (work) => !!work,
     serial: false,
     keepsFailure: true,

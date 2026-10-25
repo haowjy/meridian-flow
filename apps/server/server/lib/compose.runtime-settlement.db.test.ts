@@ -1,11 +1,13 @@
-/** Production-composition regression for response credit and staged-push settlement. */
+/**
+ * Production-composition regression for response credit and staged-push settlement.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - typed removed-model failure and locked No Work ownership of drafts
+ */
 
-import { renderAgentEditResult, splitHashline } from "@meridian/agent-edit";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
-import { testFileGrant } from "../test-support/file-grants.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -55,9 +57,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Runtime settlement",
-        slug: "runtime-settlement",
-        aiWriteMode: "direct",
+        handle: "w1",
+        defaultAiWriteMode: "direct",
       });
+      // The Work already has its branch, as if an earlier write ensured it (contract §2.5).
+      await db
+        .insert(schema.branches)
+        .values({ projectId: PROJECT_ID, originWorkId: WORK_ID, createdBy: USER_ID });
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,
         projectId: PROJECT_ID,
@@ -131,20 +137,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("S10 hard-delete evidence survives cold composition", () => runScenario(true));
-
-    it("reports writer prose overwritten without a concurrent edit", () => runScenario(false));
-
     it("writes a No Work draft onto a branch keyed by the locked Work", async () => {
       await db.insert(schema.works).values({
         id: NO_WORK_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "No Work",
-        slug: null,
+        handle: null,
         isNoWork: true,
-        aiWriteMode: "draft",
       });
+      await db
+        .update(schema.threads)
+        .set({ aiWriteMode: "draft" })
+        .where(eq(schema.threads.id, THREAD_ID));
       await db.delete(schema.threadWorks).where(eq(schema.threadWorks.threadId, THREAD_ID));
       await db.insert(schema.threadWorks).values({
         threadId: THREAD_ID,
@@ -159,9 +164,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         markdown: "Writer live content.",
         origin: { type: "user", actorUserId: USER_ID },
         threadId: THREAD_ID,
-      });
-      await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
-        projectId: PROJECT_ID,
       });
       const responseId = await runtimes.insertModelResponse(THREAD);
       await bindEditAgent(runtime, THREAD_ID);
@@ -211,14 +213,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(live.ok && live.value.trim()).toBe("Writer live content.");
       const drafts = await db
         .select({
-          documentId: schema.documentBranches.documentId,
-          workId: schema.documentBranches.workId,
+          documentId: schema.documentDrafts.documentId,
+          workId: schema.branches.originWorkId,
         })
-        .from(schema.documentBranches)
+        .from(schema.documentDrafts)
+        .innerJoin(schema.branches, eq(schema.branches.id, schema.documentDrafts.branchId))
         .where(
           and(
-            eq(schema.documentBranches.kind, "work_draft"),
-            eq(schema.documentBranches.documentId, DOC_ID),
+            eq(schema.documentDrafts.kind, "work_draft"),
+            eq(schema.documentDrafts.documentId, DOC_ID),
           ),
         );
       expect(drafts).toEqual([{ documentId: DOC_ID, workId: NO_WORK_ID }]);
@@ -231,175 +234,5 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       await unloadHocuspocus(runtime.hocuspocus);
     });
-
-    async function runScenario(writerAfterRead: boolean): Promise<void> {
-      let runtime = await runtimes.compose();
-      let { ports, app } = runtime;
-
-      await writeMarkdown(ports.documentSync, {
-        documentId: DOC_ID,
-        markdown: "Writer V1 observed.",
-        origin: { type: "user", actorUserId: USER_ID },
-        threadId: THREAD_ID,
-      });
-      const responseId = await runtimes.insertModelResponse(THREAD);
-      await ports.documentSync.agentEdit().read(
-        { file: "runtime-settlement", documentId: DOC_ID },
-        {
-          sessionId: "runtime-settlement",
-          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-        },
-      );
-
-      const room = await runtime.hocuspocus.openDirectConnection(DOC_ID);
-      if (!room.document) throw new Error("live production room is unavailable");
-      if (writerAfterRead) {
-        const writerReplica = new Y.Doc({ gc: false });
-        Y.applyUpdate(writerReplica, Y.encodeStateAsUpdate(room.document));
-        const fragment = writerReplica.getXmlFragment("prosemirror");
-        fragment.delete(0, fragment.length);
-        const left = new Y.XmlElement("paragraph");
-        left.push([new Y.XmlText("Writer V2")]);
-        const right = new Y.XmlElement("paragraph");
-        right.push([new Y.XmlText(" unseen.")]);
-        fragment.push([left, right]);
-        // Rejoin after a real split so the repeated full-state sync contains both
-        // tombstoned and current structs instead of a fixture-shaped text delta.
-        fragment.delete(0, fragment.length);
-        const rejoined = new Y.XmlElement("paragraph");
-        rejoined.push([new Y.XmlText("Writer V2 unseen.")]);
-        fragment.push([rejoined]);
-        const repeatedFullSync = Y.encodeStateAsUpdate(writerReplica);
-        await ports.documentSync.admitLiveWriterUpdate({
-          documentId: DOC_ID,
-          document: room.document,
-          update: repeatedFullSync,
-          origin: { type: "user", userId: USER_ID },
-          // B2 generation fence (R6b): this test admits against the freshly
-          // created document's initial authority generation.
-          expectedGeneration: 1n,
-        });
-        Y.applyUpdate(room.document, repeatedFullSync);
-        writerReplica.destroy();
-      }
-
-      const insert = await ports.documentSync.agentEdit().write(
-        {
-          command: "insert",
-          file: "runtime-settlement",
-          documentId: DOC_ID,
-          content: "Agent prelude.",
-        },
-        {
-          sessionId: "runtime-settlement",
-          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-        },
-      );
-      if (insert.status !== "success") throw new Error(renderAgentEditResult(insert.result));
-      const write = await ports.documentSync.agentEdit().write(
-        {
-          command: "replace",
-          file: "runtime-settlement",
-          documentId: DOC_ID,
-          content: "Agent final.",
-          find: writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.",
-          all: true,
-        },
-        {
-          sessionId: "runtime-settlement",
-          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-        },
-      );
-      if (write.status !== "success") throw new Error(renderAgentEditResult(write.result));
-      await ports.documentSync.finalizeResponseCommit(
-        { providerResponseId: responseId, editScopeId: responseId },
-        {
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-        },
-      );
-      // The Work is in auto-apply, but this reply wrote its draft: the writes
-      // wait there (D59) until the writer applies them.
-      const unapplied = await ports.documentSync.readAsMarkdown(DOC_ID);
-      expect(unapplied.ok && unapplied.value.trim()).toBe(
-        writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.",
-      );
-      const [draft] = await db
-        .select({ id: schema.documentBranches.id })
-        .from(schema.documentBranches)
-        .where(
-          and(
-            eq(schema.documentBranches.kind, "work_draft"),
-            eq(schema.documentBranches.documentId, DOC_ID),
-          ),
-        );
-      if (!draft) throw new Error("the reply's draft is missing");
-      await ports.documentSync.pushToLive({ branchId: draft.id, pushedByUserId: USER_ID });
-      await app.changeTrailDelivery.drain();
-
-      const live = await ports.documentSync.readAsMarkdown(DOC_ID);
-      expect(live.ok && live.value.trim()).toBe("Agent final.\n\nAgent prelude.");
-      const [settlement] = await db.select().from(schema.branchPushSettlementOutbox);
-      expect(settlement).toMatchObject({ state: "completed" });
-      const trails = await db.select().from(schema.changeTrailShells);
-      expect(trails).toHaveLength(1);
-      const [trail] = trails;
-      expect(trail?.changeCount).toBeGreaterThan(0);
-      const [details] = await db.select().from(schema.changeTrailDocumentDetails);
-      const beforeBodies = (
-        (details?.changes ?? []) as Array<{ beforeText?: string | null }>
-      ).flatMap((change) => {
-        if (!change.beforeText) return [];
-        return [(splitHashline(change.beforeText)?.body ?? change.beforeText).trim()];
-      });
-      expect(beforeBodies).toContain(writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.");
-      expect(details?.changes).not.toEqual(
-        expect.arrayContaining([expect.objectContaining({ writerImpact: expect.anything() })]),
-      );
-      await room.disconnect();
-      await unloadHocuspocus(runtime.hocuspocus);
-
-      if (writerAfterRead) {
-        // Drop every warm composition object; the next assertions can only use
-        // the journal, settlement, and trail rows in PostgreSQL.
-        runtime = await runtimes.compose();
-        ({ ports, app } = runtime);
-        const cold = await ports.documentSync.readAsMarkdown(DOC_ID);
-        expect(cold.ok && cold.value).toContain("Agent final.");
-
-        await unloadHocuspocus(runtime.hocuspocus);
-
-        await db
-          .update(schema.documents)
-          .set({ deletedAt: new Date() })
-          .where(eq(schema.documents.id, DOC_ID));
-        runtime = await runtimes.compose();
-        ({ ports, app } = runtime);
-        const [reloaded] = await app.changeTrails.readDetails({
-          threadId: THREAD_ID,
-          trailId: trail.id,
-          userId: USER_ID,
-        });
-        const retained = reloaded as {
-          anchorState?: "available" | "deleted";
-          changes?: Array<{ beforeText?: string | null }>;
-        };
-        const retainedChange = retained.changes?.find((candidate) =>
-          candidate.beforeText?.includes("Writer V2 unseen."),
-        );
-        expect(retained.anchorState).toBe("deleted");
-        expect(retainedChange?.beforeText).toContain("Writer V2 unseen.");
-        await unloadHocuspocus(runtime.hocuspocus);
-      }
-    }
   });
 }

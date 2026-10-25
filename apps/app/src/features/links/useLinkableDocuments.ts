@@ -1,6 +1,6 @@
 /**
- * Every document a link in this scope can reach, from the trees the app already
- * has.
+ * Every document and folder a link in this scope can reach, from the trees the
+ * app already has.
  *
  * One index answers the link questions an editor scope asks: what the
  * document holding a link is called (its address, which a relative link
@@ -8,15 +8,17 @@
  * answer costs no request, and whether a link-ahead address is already taken.
  * It walks the project's manuscript, kb, and Unfiled, the writer's user files,
  * and the scope's Scratch (the chat's lineage notes on No Work, else the scope
- * Work's) and the scope Work's Uploads. A URI naming another owner's Scratch is
- * outside it and always asks the server.
+ * Work's) and the chat's uploads. A URI naming another owner's Scratch or
+ * another chat's uploads is outside it and always asks the server.
  *
  * The index also says WHICH catalog it is. A resolved answer is true of the
  * documents the project held when it was asked, so a rename, a create, or a
  * delete makes every cached answer a claim about a project that no longer
  * exists — without the project, the Work, or the base URI having moved. The
  * revision is what tells the resolution scope that, so no mutation site has to
- * remember to poke a cache it does not own.
+ * remember to poke a cache it does not own. Project catalog wake hints also
+ * advance it because a server answer may name a folder or hidden document
+ * outside the catalogs this surface loads.
  *
  * Cached client-side and free: these are the same queries the context tree
  * already pays for, so the index costs no request.
@@ -24,11 +26,11 @@
 
 import { contextOwner } from "@meridian/contracts/protocol";
 import { useMemo, useRef } from "react";
-
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
+import { useLinkResolutionEpoch } from "@/client/query/link-resolution-epoch";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 
-import { LINKABLE_SCHEMES, linkableCatalogScopes } from "./linkable-catalog-scopes";
+import { linkableCatalogScopes, ownedLinkableSchemes } from "./linkable-catalog-scopes";
 
 export type LinkableDocument = {
   /** Persisted identity, stable across reorder, move, and rename. */
@@ -42,8 +44,12 @@ export type LinkableDocument = {
   rootThreadId?: string;
 };
 
+/** A folder a link can name: by entry id, at its current canonical address. */
+export type LinkableFolder = { folderId: string; title: string; uri: string };
+
 export type LinkableDocumentIndex = {
   readonly documents: readonly LinkableDocument[];
+  readonly folders: readonly LinkableFolder[];
   /**
    * Which catalog these rows are. Content, not an object identity and not a
    * counter: a refetch that found the same documents is the same revision and
@@ -59,75 +65,60 @@ export function useLinkableDocuments({
   projectId,
   workId,
   rootThreadId,
+  chatId,
 }: {
   projectId: string | null;
   workId: string | null;
   rootThreadId?: string | null;
+  chatId?: string | null;
 }): LinkableDocumentIndex {
+  const resolutionEpoch = useLinkResolutionEpoch(projectId);
   const prior = useRef<LinkableDocumentIndex | null>(null);
-  const scopes = linkableCatalogScopes({ projectId, workId, rootThreadId });
+  const scopes = linkableCatalogScopes({ projectId, workId, rootThreadId, chatId });
   const catalogWorkId = scopes?.workId ?? null;
   const catalogRootThreadId = scopes?.rootThreadId ?? null;
-  const {
-    manuscript: { catalog: manuscript, isComplete: manuscriptComplete },
-    kb: { catalog: knowledgeBase, isComplete: knowledgeBaseComplete },
-    unfiled: { catalog: unfiled, isComplete: unfiledComplete },
-    user: { catalog: user, isComplete: userComplete },
-    scratch: { catalog: scratch, isComplete: scratchComplete },
-    uploads: { catalog: uploads, isComplete: uploadsComplete },
-  } = useContextCatalogViews(scopes?.projectId ?? "", LINKABLE_SCHEMES, {
+  // A surface owns only some catalogs (an Editor document has no chat, so no uploads):
+  // an unowned scheme is absent here, not a catalog that never finishes loading.
+  const schemes = useMemo(
+    () => ownedLinkableSchemes(scopes),
+    [scopes?.projectId, scopes?.workId, scopes?.rootThreadId, scopes?.chatId],
+  );
+  const views = useContextCatalogViews(scopes?.projectId ?? "", schemes, {
     enabled: scopes !== null,
     ...contextOwner(catalogWorkId, catalogRootThreadId),
-    // A lineage's Scratch and the Work row's Uploads are separate owners of one index.
-    uploadsWorkId: catalogWorkId,
+    chatId: scopes?.chatId ?? null,
   });
 
   return useMemo(() => {
-    const documents = [
-      ...(manuscript ? linkableDocuments(manuscript, null) : []),
-      ...(knowledgeBase ? linkableDocuments(knowledgeBase, null) : []),
-      ...(user ? linkableDocuments(user, null) : []),
-      ...(unfiled ? linkableDocuments(unfiled, null) : []),
-      ...(scratch
-        ? linkableDocuments(
-            scratch,
-            catalogRootThreadId ? null : catalogWorkId,
-            catalogRootThreadId,
-          )
-        : []),
-      ...(uploads ? linkableDocuments(uploads, catalogWorkId) : []),
-    ];
+    const documents: LinkableDocument[] = [];
+    const folders: LinkableFolder[] = [];
+    let complete = scopes !== null;
+    for (const scheme of schemes) {
+      const { catalog, isComplete } = views[scheme];
+      complete &&= isComplete;
+      if (!catalog) continue;
+      documents.push(
+        ...(scheme === "scratch"
+          ? linkableDocuments(
+              catalog,
+              catalogRootThreadId ? null : catalogWorkId,
+              catalogRootThreadId,
+            )
+          : linkableDocuments(catalog, null)),
+      );
+      folders.push(...linkableFolders(catalog));
+    }
     const next = {
       documents,
-      revision: catalogRevision(documents),
-      complete:
-        manuscriptComplete &&
-        knowledgeBaseComplete &&
-        userComplete &&
-        unfiledComplete &&
-        scratchComplete &&
-        uploadsComplete,
+      folders,
+      revision: `${resolutionEpoch}\n${catalogRevision(documents, folders)}`,
+      complete,
     };
     if (prior.current?.revision === next.revision && prior.current.complete === next.complete)
       return prior.current;
     prior.current = next;
     return next;
-  }, [
-    knowledgeBase,
-    knowledgeBaseComplete,
-    manuscript,
-    manuscriptComplete,
-    scratch,
-    scratchComplete,
-    unfiled,
-    unfiledComplete,
-    uploads,
-    uploadsComplete,
-    user,
-    userComplete,
-    catalogWorkId,
-    catalogRootThreadId,
-  ]);
+  }, [schemes, views, scopes, catalogWorkId, catalogRootThreadId, resolutionEpoch]);
 }
 
 /**
@@ -136,8 +127,29 @@ export function useLinkableDocuments({
  * where any link goes, which is the property the resolution scope needs — a
  * link is re-asked when this changes and left alone when it does not.
  */
-function catalogRevision(documents: readonly LinkableDocument[]): string {
-  return documents.map((entry) => `${entry.documentId} ${entry.uri}`).join("\n");
+function catalogRevision(
+  documents: readonly LinkableDocument[],
+  folders: readonly LinkableFolder[],
+): string {
+  return [
+    ...documents.map((entry) => `${entry.documentId} ${entry.uri}`),
+    ...folders.map((entry) => `${entry.folderId} ${entry.uri}/`),
+  ].join("\n");
+}
+
+/** The catalog's folders with a server identity; device-synthesized ancestry names nothing. */
+function linkableFolders(catalog: CatalogContextView): LinkableFolder[] {
+  const folders: LinkableFolder[] = [];
+  const walk = (parentId: string) => {
+    for (const node of catalog.children(parentId)) {
+      if (node.kind !== "dir") continue;
+      if (!node.navigationOnly)
+        folders.push({ folderId: node.entryId, title: node.name, uri: node.uri });
+      walk(node.entryId);
+    }
+  };
+  walk(catalog.root.entryId);
+  return folders;
 }
 
 function linkableDocuments(

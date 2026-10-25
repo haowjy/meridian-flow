@@ -1,14 +1,13 @@
 /**
- * A thread port's manifest membership. Create and writer writes onto an
- * existing document check it inside the namespace-locked command transaction;
- * that check must never wait on a lock its own transaction holds. A thread
- * whose writes go live checks the live manifest and drafts nothing (D20, D40).
- * A person's port, with no thread, always uses the live manifest.
+ * Thread-bound creates and writer overwrites use the selected SQL tree view.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - immediate existing-document settlement without self-deadlock and URI failure mapping
  */
 
 import { randomUUID } from "node:crypto";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -89,12 +88,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     type Fixture = Awaited<ReturnType<typeof createFixture>>;
     const succeeded = { result: { status: "success" } };
 
-    async function threadPort(fixture: Fixture) {
-      const resolution = await resolveThreadContext(fixture.routeDeps, THREAD_ID);
-      if (!resolution) throw new Error("thread did not resolve");
-      return contextPortForThread(fixture.contextPorts, resolution, { responseId: null });
-    }
-
     beforeEach(async () => {
       await deleteDrizzleRows(db, DOCUMENT_RUNTIME_RESET_TABLES);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "thread-existing"));
@@ -121,16 +114,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "Direct",
-          slug: "direct",
-          aiWriteMode: "direct",
+          handle: "w1",
         },
         {
           id: DRAFT_WORK_ID,
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
-          name: "Draft",
-          slug: "draft",
-          aiWriteMode: "draft",
+          name: "Branch",
+          handle: "w2",
         },
       ]);
       await db.insert(schema.threads).values({
@@ -173,11 +164,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.close();
     });
 
+    /** The writer's document: people write live (D20), so it seeds through a live port. */
     async function seedExisting(fixture: Fixture, path: string) {
-      const port = await threadPort(fixture);
+      const resolution = await resolveThreadContext(fixture.routeDeps, THREAD_ID);
+      if (!resolution) throw new Error("thread did not resolve");
+      const port = contextPortForThread(fixture.contextPorts, resolution, { liveWrites: true });
       const created = await settlesWithin(
         `seed ${path}`,
-        port.write(`manuscript://${path}`, `Existing ${path}.\n`),
+        port.createTrackedDocument(`manuscript://${path}`, `Existing ${path}.\n`),
       );
       if (!created.ok || !created.value.documentId) throw new Error(`could not seed ${path}`);
       await fixture.collab.drainHocuspocusPersistence();
@@ -191,10 +185,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.threadWorks.threadId, THREAD_ID));
     }
 
-    // A draft-mode thread pulls the manifest's thread peer inside the command
-    // transaction, the path that deadlocked (both calls hung before the fix).
+    // A writer overwrite stays live even when the thread drafts model writes.
     it("overwrites an existing document from a draft-mode thread at once", async () => {
       await bindThread(DRAFT_WORK_ID);
+      await db
+        .update(schema.threads)
+        .set({ aiWriteMode: "draft" })
+        .where(eq(schema.threads.id, THREAD_ID));
       const fixture = await createFixture();
       const existingId = await seedExisting(fixture, "target.md");
 
@@ -221,47 +218,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ documentId: existingId });
     });
 
-    // No Work and a direct-mode Work share the live path; one row covers both.
-    it("keeps no .manifest thread branch for a direct-mode Work thread", async () => {
-      await bindThread(DIRECT_WORK_ID);
-      const fixture = await createFixture();
-      await seedExisting(fixture, "kept.md");
-
-      const port = await threadPort(fixture);
-      await expect(port.read("manuscript://kept.md")).resolves.toMatchObject({ ok: true });
-      expect(
-        await settlesWithin(
-          "create",
-          fixture.callWrite({
-            command: "create",
-            path: "manuscript://fresh.md",
-            content: "Fresh.",
-          }),
-        ),
-      ).toMatchObject(succeeded);
-
-      const branches = await db
-        .select({ id: schema.documentBranches.id })
-        .from(schema.documentBranches)
-        .innerJoin(schema.documents, eq(schema.documents.id, schema.documentBranches.documentId))
-        .where(
-          and(
-            eq(schema.documents.kind, "manifest"),
-            eq(schema.documentBranches.threadId, THREAD_ID),
-          ),
-        );
-      expect(branches).toEqual([]);
-      const live = await fixture.collab.resolveManifestMembership({
-        projectId: PROJECT_ID as never,
-      });
-      const fresh = await port.stat("manuscript://fresh.md");
-      if (!fresh.ok || !fresh.value.documentId) throw new Error("fresh.md missing");
-      expect(live.members).toContain(fresh.value.documentId);
-    });
-
     it("refuses an unknown Work or scheme in a read as not found", async () => {
       const fixture = await createFixture();
-      for (const path of ["scratch://@ghost-arc/backstory.md", "skill://story-review/x.md"]) {
+      for (const path of ["scratch://@w99/backstory.md", "skill://story-review/x.md"]) {
         const read = await fixture.callTool("read", { path });
         expect(read.result).toMatchObject({ status: "document_not_found" });
       }

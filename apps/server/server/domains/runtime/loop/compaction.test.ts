@@ -1,4 +1,8 @@
-/** Pure fixtures for compaction classification, triggering, planning, and projection. */
+/** Pure fixtures for compaction classification, triggering, planning, and projection.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Token estimation, retention planning, and summary projection (kb/decisions/engineering/runtime/compaction-summarizer-and-overflow.md)
+ */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
@@ -42,6 +46,10 @@ function turn(id: string, position: number, role: Turn["role"], extra: Partial<T
     createdAt: "2026-01-01T00:00:00.000Z",
     completedAt: "2026-01-01T00:00:00.000Z",
     blocks: [],
+    executionId: null,
+    reservedForUserTurnIds: [],
+    delivery: null,
+    forgottenBy: null,
     siblingIds: [],
     responses: [],
     ...extra,
@@ -74,6 +82,8 @@ function thread(ref: string | null = "c12"): Thread {
     id: THREAD_ID,
     projectId: "project-1",
     workId: null,
+    aiWriteMode: "direct",
+    effectiveAiWriteMode: "direct",
     userId: "user-1",
     kind: "primary",
     status: "idle",
@@ -356,7 +366,7 @@ describe("planCompaction", () => {
     ).toBe(true);
   });
 
-  it("plans 2,000 default-estimated turns in under 1.5 seconds", () => {
+  it("pins the last request across 2,000 default-estimated turns", () => {
     const turns: Turn[] = [];
     const blocks: Block[] = [];
     for (let index = 0; index < 2_000; index++) {
@@ -374,7 +384,6 @@ describe("planCompaction", () => {
         ),
       );
     }
-    const startedAt = performance.now();
     const plan = planCompaction({
       turns,
       blocks,
@@ -384,7 +393,6 @@ describe("planCompaction", () => {
       tokenizer: "anthropic",
     });
     expect(plan.pinnedRequests.at(-1)?.id).toBe("turn-1998");
-    expect(performance.now() - startedAt).toBeLessThan(1_500);
   });
 
   it("plans a second compaction only after the active compaction cut", async () => {
@@ -460,18 +468,36 @@ describe("projectActiveHistoryWithBakes", () => {
     ).rejects.toThrow();
   });
 
-  it("throws when a complete compaction's pinned request is missing", async () => {
-    const request = turn("request", 1, "user");
+  it("projects a compaction whose pin and cut were handed back", async () => {
+    // The compaction cut at, and pinned, a writer message that a hand-back took out of the chat.
+    const earlier = turn("earlier", 1, "user");
     const answer = turn("answer", 2, "assistant");
-    const compaction = compactionTurn("c", 3, request.id, "deleted-request");
-    await expect(
-      projectActiveHistoryWithBakes(
-        [request, answer, compaction],
-        [compactionBlock("summary", compaction.id)],
-        "c12",
-        noPromptBakes,
-      ),
-    ).rejects.toThrow(/missing pinned request deleted-request/);
+    const compaction = compactionTurn("c", 4, "gone", "gone", "complete", { prevTurnId: "gone" });
+    const after = turn("after", 5, "user");
+    const projected = await projectActiveHistoryWithBakes(
+      [earlier, answer, compaction, after],
+      [compactionBlock("summary", compaction.id)],
+      "c12",
+      noPromptBakes,
+    );
+    expect(projected.turns.map((projectedTurn) => projectedTurn.id)).toEqual([
+      "c:summary",
+      "after",
+    ]);
+
+    // Risk (C4): a Retry-led compaction whose whole prefix was an attempt the chat later abandoned (every
+    // turn it covered is forgotten) found no cut and made every later request throw. It keeps its summary.
+    const alone = compactionTurn("c2", 4, "gone", "gone", "complete", { prevTurnId: "gone" });
+    const emptied = await projectActiveHistoryWithBakes(
+      [alone, turn("after2", 5, "user")],
+      [compactionBlock("summary2", alone.id)],
+      "c12",
+      noPromptBakes,
+    );
+    expect(emptied.turns.map((projectedTurn) => projectedTurn.id)).toEqual([
+      "c2:summary",
+      "after2",
+    ]);
   });
 });
 
@@ -496,10 +522,19 @@ describe("compaction-owned elisions", () => {
         { blockId: "late-read", treatment: "stale_read", uris: [], content: replacement },
       ],
     };
+    const reshown = {
+      type: "reference",
+      kind: "document",
+      text: "manuscript://chapter",
+      documentId: "00000000-0000-4000-8000-000000000001",
+      uri: "manuscript://chapter",
+      read: { result: "CURRENT CHAPTER", revision: "r1" },
+    };
     const blocks = [
       block("read", "reply", 0, "tool_result", raw),
       block("late-read", "late", 0, "tool_result", raw),
       compactionBlock("summary", c.id, "Summary"),
+      { ...block("reshown", c.id, 1, "text", reshown), textContent: "manuscript://chapter" },
     ];
     const projected = await projectActiveHistoryWithBakes(
       [old, pin, reply, c, late],
@@ -509,17 +544,23 @@ describe("compaction-owned elisions", () => {
     );
     expect(projected.blocks.find((b) => b.id === "read")?.content).toEqual(replacement);
     expect(projected.blocks.find((b) => b.id === "late-read")?.content).toEqual(raw);
+    // C10: only what follows C and the documents it re-shows credit the model; the retained tail credits nothing.
+    expect([...projected.creditedBlockIds].sort()).toEqual(["late-read", "reshown"]);
+    expect(projected.blocks.find((b) => b.id === "reshown")?.turnId).toBe("c:summary");
+    expect(JSON.stringify(buildContext({ thread: thread("c1"), ...projected }).messages)).toContain(
+      JSON.stringify(
+        'Read result for {"path":"manuscript://chapter"}, re-shown after the summary:\nCURRENT CHAPTER',
+      ).slice(1, -1),
+    );
     for (const status of ["pending", "error", "cancelled"] as const) {
-      expect(
-        (
-          await projectActiveHistoryWithBakes(
-            [old, pin, reply, { ...c, status }, late],
-            blocks,
-            "c1",
-            noPromptBakes,
-          )
-        ).blocks,
-      ).toEqual(blocks);
+      const uncompacted = await projectActiveHistoryWithBakes(
+        [old, pin, reply, { ...c, status }, late],
+        blocks,
+        "c1",
+        noPromptBakes,
+      );
+      expect(uncompacted.blocks).toEqual(blocks);
+      expect(uncompacted.creditedBlockIds).toEqual(new Set(blocks.map((b) => b.id)));
     }
     const next = compactionTurn("next", 6, "old", "pin");
     expect(

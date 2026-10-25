@@ -39,6 +39,7 @@ export function DiagramBody({
   render,
   describesSource,
   onEditSource,
+  sourceActionLabel = t`Edit source`,
 }: {
   render: DiagramRender;
   /**
@@ -49,6 +50,8 @@ export function DiagramBody({
   describesSource: boolean;
   /** Opens the source the writer has to fix. The one door on the error card. */
   onEditSource: () => void;
+  /** Transcript previews open read-only source; the Editor opens an editable source pane. */
+  sourceActionLabel?: string;
 }) {
   const face = diagramFace(render);
 
@@ -61,7 +64,13 @@ export function DiagramBody({
   }
 
   if (face === "unrendered") {
-    return <DiagramErrorCard message={render.error} onEditSource={onEditSource} />;
+    return (
+      <DiagramErrorCard
+        message={render.error}
+        onEditSource={onEditSource}
+        sourceActionLabel={sourceActionLabel}
+      />
+    );
   }
 
   return (
@@ -99,9 +108,11 @@ export function DiagramBody({
 function DiagramErrorCard({
   message,
   onEditSource,
+  sourceActionLabel,
 }: {
   message: string | null;
   onEditSource: () => void;
+  sourceActionLabel: string;
 }) {
   return (
     <div className="meridian-diagram-error" role="status">
@@ -116,7 +127,7 @@ function DiagramErrorCard({
           onClick={onEditSource}
         >
           <Code2 aria-hidden />
-          {t`Edit source`}
+          {sourceActionLabel}
         </Button>
       </div>
       {message ? <code className="meridian-diagram-error-message">{message}</code> : null}

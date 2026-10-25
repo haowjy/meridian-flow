@@ -4,22 +4,22 @@
  * decides from; `verbose` adds dates. Ids never reach the text, and
  * `historySummary` reads the typed value.
  */
-import type { ParsedContextUri } from "@meridian/contracts/context-uri";
+
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 
-/** A Work as the handler returns it. Write mode and pending changes use the writer's words. */
+/** A Work as the handler returns it. Pending changes use the writer's words. */
 export interface ModelWork {
-  slug: string | null;
+  handle: string | null;
   name: string;
   goal: string | null;
   status: string | null;
   archivedAt: string | null;
-  writes: "draft mode" | "auto-apply";
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string | null;
-  pendingChangeCount?: number | null;
+  pendingDocumentCount: number;
 }
 
 /** `work show`: the Work, its recent chats and its drafts. */
@@ -28,7 +28,7 @@ export interface WorkShowResult {
   recentThreads: { title: string | null; updatedAt: string | Date; status: string }[];
   drafts: {
     documentName: string | null;
-    contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
+    contextLocation: ThreadDraftListItem["contextLocation"];
     createdDocument?: boolean;
   }[];
 }
@@ -101,9 +101,8 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
 }
 
 /**
- * One Work: slug, name, status, then the goal cut to `goalLength` (0 omits it),
- * write mode only when it's draft mode, pending changes only when there are
- * some, and archived. `verbose` adds a line of dates.
+ * One Work: handle, name, status, then the goal cut to `goalLength` (0 omits it),
+ * how many documents have pending changes only when some do, and archived. `verbose` adds a line of dates.
  */
 function workLines(work: ModelWork, verbose: boolean, goalLength: number): string {
   const name = work.status ? `${work.name} (${work.status})` : work.name;
@@ -111,8 +110,7 @@ function workLines(work: ModelWork, verbose: boolean, goalLength: number): strin
     workRef(work),
     name,
     goalLength > 0 && work.goal ? clip(work.goal, goalLength) : undefined,
-    work.writes === "draft mode" ? "draft mode" : undefined,
-    work.pendingChangeCount ? pending(work.pendingChangeCount) : undefined,
+    work.pendingDocumentCount ? pending(work.pendingDocumentCount) : undefined,
     work.archivedAt ? "(archived)" : undefined,
   ].filter((fact) => fact !== undefined);
   const line = facts.join("  ");
@@ -126,12 +124,15 @@ function workLines(work: ModelWork, verbose: boolean, goalLength: number): strin
   return `${line}\n  ${dates.join(", ")}`;
 }
 
-function workRef(work: Pick<ModelWork, "slug">): string {
-  return work.slug ? `@${work.slug}` : "@/";
+/** The handle the model copies into addresses and `work` arguments. No Work has none and is never listed. */
+function workRef(work: Pick<ModelWork, "handle">): string {
+  return work.handle ?? "none";
 }
 
 function pending(count: number): string {
-  return count === 1 ? "1 pending change" : `${count} pending changes`;
+  return count === 1
+    ? "1 document with pending changes"
+    : `${count} documents with pending changes`;
 }
 
 /** The text cut to `length` at a word boundary, marked with `…`. */

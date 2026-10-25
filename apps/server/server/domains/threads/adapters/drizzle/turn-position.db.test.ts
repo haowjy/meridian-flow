@@ -1,6 +1,13 @@
-/** PostgreSQL contract tests for serialized, write-once turn positions. */
+/**
+ * PostgreSQL turn-repository contracts for positions and legacy delivery markers.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - delivered messages with nullable delivering-turn attribution (kb/decisions/chat/turns/linear-turns.md)
+ */
+
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { noFailureRecorder } from "../../ports/event-journal.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -95,6 +102,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           repos,
           eventWriter: {
+            ...noFailureRecorder,
+            async appendEvents(threadId, events) {
+              let seq = 0n;
+              for (const event of events) seq = await this.appendEvent(threadId, event);
+              return seq;
+            },
             async appendEvent() {
               return 1n;
             },
@@ -116,6 +129,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .set({ position: 4 })
           .where((await import("drizzle-orm")).eq(schema.turns.id, first.id)),
       ).rejects.toThrow();
+    });
+
+    it("keeps a delivered message whose delivering turn is unknown", async () => {
+      const messageId = "00000000-0000-4000-8000-0000000006a8";
+      await db.insert(schema.threadInboxMessages).values({
+        id: messageId,
+        threadId: SOURCE_THREAD_ID,
+        intent: "message",
+        provenance: { kind: "writer", actorId: USER_ID },
+        body: { kind: "text", text: "Delivered before turn attribution" },
+        idempotencyKey: messageId,
+        deliveredAt: new Date(),
+      });
+
+      const deliveries =
+        await createDrizzleRepositoriesForTest(db).turns.listMessageDeliveries(SOURCE_THREAD_ID);
+      expect(deliveries.get(messageId)).toEqual({ byTurnId: null });
     });
 
     it("continues a fork's local positions after the source cutoff", async () => {

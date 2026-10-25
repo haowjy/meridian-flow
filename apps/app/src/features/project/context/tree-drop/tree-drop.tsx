@@ -1,7 +1,8 @@
 /**
- * The one drop dispatcher on the project tree. Payloads from the desktop
- * (`Files`) go to import; internal payloads (`entries`) belong to drag-anywhere,
- * which plugs its route into the same seam. Nothing here moves or copies rows.
+ * The one drop dispatcher on the project tree. Rows dragged inside the app
+ * (`entries`) have a route; the route decides, this file only dispatches,
+ * lights the target and says what the drop will do. Desktop file drops arrive
+ * with import.
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import {
@@ -17,41 +18,75 @@ import {
   useState,
 } from "react";
 import { captureDrop, type DroppedItems } from "@/lib/dropped-items";
+import { clearDragHint, showDragHint } from "./drag-hint";
 import { dragPayloadKind } from "./drag-payload";
 
 export type TreeDropTarget = {
   scheme: ProjectContextTreeScheme;
-  /** The folder row, or null for the area root (the header). */
+  /** The catalog the target belongs to; one list can show several (a chat's Scratch and its earlier notes). */
+  catalogRootId: string;
+  /** The folder row, or null for the catalog's top level (the area header). */
   folder: { entryId: string; path: string; uri: string; name: string } | null;
 };
 
-export type TreeDropRoutes = {
-  files?: {
-    accepts(target: TreeDropTarget): boolean;
-    drop(target: TreeDropTarget, items: DroppedItems): void;
-  };
-  /** Drag-anywhere's route. Not built here. */
-  entries?: {
-    accepts(target: TreeDropTarget, dataTransfer: DataTransfer): boolean;
-    drop(target: TreeDropTarget, dataTransfer: DataTransfer): void;
-  };
+/**
+ * What dropping an internal payload on a target would do. `accept` lights the
+ * target and allows the drop; `refuse` leaves it unlit with the no-drop cursor and says why. A
+ * null verdict leaves the target quiet (the drop would change nothing). An
+ * accept's `warning` says what the drop will also do that the writer may not
+ * expect (rows arriving renamed), while there is still time to let go elsewhere.
+ */
+export type EntriesVerdict =
+  | { kind: "accept"; label: string; warning?: string | null }
+  | { kind: "refuse"; label: string };
+
+export type EntriesRoute = {
+  verdict(target: TreeDropTarget): EntriesVerdict | null;
+  drop(target: TreeDropTarget): void;
 };
+
+export type FilesRoute = {
+  accepts(target: TreeDropTarget): boolean;
+  drop(target: TreeDropTarget, items: DroppedItems): void;
+};
+
+export type TreeDropRoutes = {
+  entries?: EntriesRoute;
+  files?: FilesRoute;
+};
+
+export type TreeDropState = "idle" | "over" | "refused";
 
 const SPRING_MS = 600;
 
+type Over = { key: string; refused: boolean } | null;
+
 type ScopeValue = {
   routes: TreeDropRoutes;
-  over: string | null;
-  setOver(key: string | null, ownerOnly?: string): void;
+  over: Over;
+  /** An element of `key` came under the drag; arms the spring for an accepted target. */
+  enter(key: string, refused: boolean, reveal: (() => void) | undefined): void;
+  /** Re-lights `key` on every `dragover` (its verdict can change while hovering). */
+  relight(key: string, refused: boolean): void;
+  /** An element of `key` left; the target goes dark once none remain. */
+  leave(key: string): void;
+  /** Bumps when a drag ends anywhere; holds from an earlier drag are void. */
+  generation(): number;
 };
 
 const ScopeContext = createContext<ScopeValue | null>(null);
 
-export function targetKey(target: TreeDropTarget): string {
-  return `${target.scheme}:${target.folder?.entryId ?? "root"}`;
+function targetKey(target: TreeDropTarget): string {
+  return `${target.scheme}:${target.folder?.entryId ?? target.catalogRootId}`;
 }
 
-/** Holds the routes and the one highlighted target for an area's header and rows. */
+/**
+ * Holds the route and the one lit target for a list. A folder row and every
+ * row inside it share one target: the next row's `dragenter` arrives before the
+ * last one's `dragleave`, so a per-target count, not any single element,
+ * decides when the target goes dark. Counts, the lit target and spring timers
+ * end together when a drag ends anywhere (Escape, a drop elsewhere).
+ */
 export function TreeDropScope({
   routes,
   children,
@@ -59,11 +94,69 @@ export function TreeDropScope({
   routes: TreeDropRoutes;
   children: ReactNode;
 }) {
-  const [over, setOverState] = useState<string | null>(null);
-  const setOver = useCallback((key: string | null, ownerOnly?: string) => {
-    setOverState((current) => (ownerOnly !== undefined && current !== ownerOnly ? current : key));
+  const [over, setOver] = useState<Over>(null);
+  const counts = useRef(new Map<string, number>());
+  const springs = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const generation = useRef(0);
+
+  const scope = useMemo(() => {
+    const stopSpring = (key: string) => {
+      const timer = springs.current.get(key);
+      if (timer) clearTimeout(timer);
+      springs.current.delete(key);
+    };
+    return {
+      enter(key: string, refused: boolean, reveal: (() => void) | undefined) {
+        counts.current.set(key, (counts.current.get(key) ?? 0) + 1);
+        setOver({ key, refused });
+        if (!refused && reveal && !springs.current.has(key))
+          springs.current.set(
+            key,
+            setTimeout(() => {
+              springs.current.delete(key);
+              reveal();
+            }, SPRING_MS),
+          );
+      },
+      relight(key: string, refused: boolean) {
+        setOver((current) =>
+          current?.key === key && current.refused === refused ? current : { key, refused },
+        );
+        if (refused) stopSpring(key);
+      },
+      leave(key: string) {
+        const next = (counts.current.get(key) ?? 0) - 1;
+        if (next > 0) {
+          counts.current.set(key, next);
+          return;
+        }
+        counts.current.delete(key);
+        stopSpring(key);
+        clearDragHint(key);
+        setOver((current) => (current?.key === key ? null : current));
+      },
+      end() {
+        generation.current += 1;
+        counts.current.clear();
+        for (const timer of springs.current.values()) clearTimeout(timer);
+        springs.current.clear();
+        setOver(null);
+      },
+      generation: () => generation.current,
+    };
   }, []);
-  const value = useMemo(() => ({ routes, over, setOver }), [routes, over, setOver]);
+
+  useEffect(() => {
+    window.addEventListener("dragend", scope.end);
+    window.addEventListener("drop", scope.end);
+    return () => {
+      window.removeEventListener("dragend", scope.end);
+      window.removeEventListener("drop", scope.end);
+      scope.end();
+    };
+  }, [scope]);
+
+  const value = useMemo<ScopeValue>(() => ({ routes, over, ...scope }), [routes, over, scope]);
   return <ScopeContext.Provider value={value}>{children}</ScopeContext.Provider>;
 }
 
@@ -75,87 +168,137 @@ type DropProps = Pick<
 const NO_PROPS: DropProps = {};
 
 /**
- * Drop handlers for one target. `dragenter` and `dragleave` are counted so
- * moving over a child does not flicker the highlight. Hovering an accepted
- * target for 600 ms calls `onSpring` (a collapsed folder opens).
+ * Targets nest (a row inside its group): the innermost one with a route for the
+ * payload claims each event, even when its answer is "nothing", so an outer
+ * target never takes over (or counts down) a drag its rows chose to ignore.
+ */
+const claimed = new WeakSet<Event>();
+
+/**
+ * Drop handlers for one target. A file row passes its folder as the target, so
+ * hovering anywhere in an open folder lights that folder. Each element remembers
+ * whether it lit its target, so it always gives that back on leave, whatever
+ * the verdict is by then. `reveal` shows what the target holds (a collapsed
+ * folder opens): after hovering an accepted target for 600 ms, and on its drop,
+ * so the rows that arrived are in view.
  */
 export function useTreeDropTarget(
   target: TreeDropTarget,
-  options: { onSpring?: () => void } = {},
-): { dropProps: DropProps; dropState: "idle" | "over" } {
+  options: { reveal?: () => void } = {},
+): { dropProps: DropProps; dropState: TreeDropState } {
   const scope = useContext(ScopeContext);
   const key = targetKey(target);
-  const depth = useRef(0);
-  const spring = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const latest = useRef({ target, scope, onSpring: options.onSpring });
-  latest.current = { target, scope, onSpring: options.onSpring };
+  const held = useRef<{ generation: number } | null>(null);
+  const latest = useRef({ target, scope, reveal: options.reveal });
+  latest.current = { target, scope, reveal: options.reveal };
 
-  const stopSpring = useCallback(() => {
-    if (spring.current) clearTimeout(spring.current);
-    spring.current = undefined;
-  }, []);
-  useEffect(() => stopSpring, [stopSpring]);
-
-  const accepted = useCallback((event: DragEvent): "files" | "entries" | null => {
-    const { target: current, scope: currentScope } = latest.current;
-    if (!currentScope) return null;
+  /** Claims the event for this target when the scope owns the payload's route. */
+  const claim = useCallback((event: DragEvent): "entries" | "files" | null => {
+    if (!latest.current.scope || claimed.has(event.nativeEvent)) return null;
     const kind = dragPayloadKind(Array.from(event.dataTransfer?.types ?? []));
-    if (kind === "files" && currentScope.routes.files?.accepts(current)) return "files";
-    if (kind === "entries" && currentScope.routes.entries?.accepts(current, event.dataTransfer))
-      return "entries";
-    return null;
+    if (kind === "none" || !latest.current.scope.routes[kind]) return null;
+    claimed.add(event.nativeEvent);
+    return kind;
   }, []);
+
+  const verdictFor = useCallback((): EntriesVerdict | null => {
+    const { target: current, scope: currentScope } = latest.current;
+    return currentScope?.routes.entries?.verdict(current) ?? null;
+  }, []);
+
+  const holding = useCallback(() => {
+    const currentScope = latest.current.scope;
+    return held.current !== null && held.current.generation === currentScope?.generation();
+  }, []);
+
+  const release = useCallback(() => {
+    if (!holding()) return;
+    held.current = null;
+    latest.current.scope?.leave(key);
+  }, [holding, key]);
+
+  const show = useCallback(
+    (event: DragEvent, verdict: EntriesVerdict) => {
+      const currentScope = latest.current.scope;
+      if (!currentScope) return;
+      const refused = verdict.kind === "refuse";
+      if (!holding()) {
+        held.current = { generation: currentScope.generation() };
+        currentScope.enter(key, refused, latest.current.reveal);
+      } else currentScope.relight(key, refused);
+      showDragHint(key, verdict, event);
+      if (refused) {
+        event.dataTransfer.dropEffect = "none";
+        return;
+      }
+      // Only an accepted target cancels the default; a refused one keeps the no-drop cursor.
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+    },
+    [holding, key],
+  );
+
+  const hover = useCallback(
+    (event: DragEvent) => {
+      const kind = claim(event);
+      if (!kind) return;
+      const verdict =
+        kind === "entries"
+          ? verdictFor()
+          : latest.current.scope?.routes.files?.accepts(latest.current.target)
+            ? ({ kind: "accept", label: "" } satisfies EntriesVerdict)
+            : null;
+      if (verdict) {
+        show(event, verdict);
+        if (kind === "files") event.dataTransfer.dropEffect = "copy";
+      }
+      // The verdict went quiet while hovering: give the target back.
+      else release();
+    },
+    [claim, verdictFor, show, release],
+  );
+
+  useEffect(() => release, [release]);
 
   const dropProps = useMemo<DropProps>(
     () => ({
-      onDragEnter(event) {
-        if (!accepted(event)) return;
-        event.preventDefault();
-        depth.current += 1;
-        latest.current.scope?.setOver(key);
-        if (!spring.current && latest.current.onSpring)
-          spring.current = setTimeout(() => latest.current.onSpring?.(), SPRING_MS);
-      },
-      onDragOver(event) {
-        if (!accepted(event)) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "copy";
-        // A drag that began inside this target never fires `dragenter` here.
-        latest.current.scope?.setOver(key);
-      },
+      onDragEnter: hover,
+      // A drag that began inside this target never fires `dragenter` here.
+      onDragOver: hover,
       onDragLeave(event) {
-        if (!accepted(event)) return;
-        depth.current = Math.max(0, depth.current - 1);
-        if (depth.current === 0) {
-          stopSpring();
-          latest.current.scope?.setOver(null, key);
-        }
+        if (claim(event)) release();
       },
       onDrop(event) {
-        const kind = accepted(event);
-        depth.current = 0;
-        stopSpring();
-        latest.current.scope?.setOver(null);
+        const kind = claim(event);
         if (!kind) return;
+        const verdict =
+          kind === "entries"
+            ? verdictFor()
+            : latest.current.scope?.routes.files?.accepts(latest.current.target)
+              ? ({ kind: "accept", label: "" } satisfies EntriesVerdict)
+              : null;
+        release();
+        if (!verdict || verdict.kind === "refuse") return;
         event.preventDefault();
         event.stopPropagation();
-        const { scope: currentScope, target: current } = latest.current;
-        if (kind === "files")
-          currentScope?.routes.files?.drop(current, captureDrop(event.dataTransfer));
-        else currentScope?.routes.entries?.drop(current, event.dataTransfer);
+        const { scope: currentScope, target: dropped } = latest.current;
+        if (kind === "entries") currentScope?.routes.entries?.drop(dropped);
+        else currentScope?.routes.files?.drop(dropped, captureDrop(event.dataTransfer));
+        latest.current.reveal?.();
       },
     }),
-    [accepted, key, stopSpring],
+    [hover, claim, verdictFor, release],
   );
 
   if (!scope) return { dropProps: NO_PROPS, dropState: "idle" };
-  return { dropProps, dropState: scope.over === key ? "over" : "idle" };
+  const lit = scope.over?.key === key;
+  return {
+    dropProps,
+    dropState: !lit ? "idle" : scope.over?.refused ? "refused" : "over",
+  };
 }
 
-/**
- * Keeps a stray file drop from replacing the app with the file. Acts only when
- * nothing earlier claimed the event, so the editor's picture drops are untouched.
- */
+/** Prevents an unclaimed desktop file drop from navigating the browser away. */
 export function useWindowDropGuard() {
   useEffect(() => {
     const guard = (event: globalThis.DragEvent) => {

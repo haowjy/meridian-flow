@@ -41,16 +41,11 @@ export function createProjectExport(deps: {
 }) {
   async function createScope(projectId: string, accountId: string, options: ProjectExportOptions) {
     const { documents: inventory, sources, settlements } = await deps.snapshot.read(projectId);
-    const membership = new Set(
-      (await deps.documents.resolveManifestMembership({ projectId })).members,
-    );
     const access = await deps.files.listAccess(
       { accountId: accountId as UserId },
       inventory.map((doc) => doc.id as DocumentId),
     );
-    const documents = inventory.filter(
-      (doc) => access.has(doc.id as DocumentId) && (!doc.manifestScoped || membership.has(doc.id)),
-    );
+    const documents = inventory.filter((doc) => access.has(doc.id as DocumentId));
     const { paths, roots } = buildExportLayout(documents, options, sources);
     const addresses = new Map(
       documents.flatMap((doc) => {

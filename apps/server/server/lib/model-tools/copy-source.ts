@@ -26,13 +26,14 @@ import type { FileGrant, Principal } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { documentGrant } from "./file-access.js";
 import { type ReadSelection, readDocument } from "./read-document.js";
+import { removedPathError } from "./removed-path.js";
 import {
   contextErrorMessage,
   isToolError,
   type ResolvedDocumentAddress,
   type ResolvedModelContextPort,
   recordTouchInBackground,
-  resolveContextPort,
+  resolveToolCall,
   type ToolWiringDeps,
   type WriteToolErrorOutput,
   writeToolError,
@@ -79,18 +80,22 @@ export async function resolveCopySource(
   ctx: Pick<ToolHandlerContext, "threadId" | "responseIdentity">,
 ): Promise<{ ref: FileRef; address: ResolvedDocumentAddress } | WriteToolErrorOutput> {
   // A live source resolves its path against live membership, as a live read does.
-  const context = await resolveContextPort(
-    deps,
-    ctx.threadId,
-    ctx.responseIdentity?.editScopeId,
-    source.version,
-  );
-  if (isToolError(context))
-    return writeToolError(command, fromMessage(source, context.output.message));
+  const call = await resolveToolCall(deps, ctx, source.version);
+  if (isToolError(call)) return writeToolError(command, fromMessage(source, call.output.message));
+  const { context } = call;
   const { filePath: basePath, fragment } = splitDocumentFile(source.path);
   const ref = await context.port.stat(basePath);
   if (!ref.ok) {
     if (ref.error.code === "not_found") {
+      const removed = await removedPathError(deps, call, command, source.path, ctx.threadId);
+      if (removed)
+        return {
+          ...removed,
+          output: {
+            ...removed.output,
+            message: fromMessage(source, removed.output.message ?? "File not found."),
+          },
+        };
       return writeToolError(
         command,
         fromMessage(source, documentNotFoundMessage(command)),
@@ -149,7 +154,7 @@ export async function readTrackedCopySource(
   }
   const version = outcome.result.read?.version ?? grant.destination.kind;
   return {
-    nodes: outcome.nodes ?? [],
+    nodes: [...(outcome.nodes ?? [])],
     copiedFrom: { uri: address.uri, version, revision: outcome.revision },
   };
 }
@@ -174,8 +179,8 @@ export function fromMessage(source: CopySource, message: string): string {
 
 /**
  * A binary copy duplicates the stored object at once (D24). It isn't a Yjs
- * write, so it has no write handle, isn't part of the reply's save and is
- * never drafted.
+ * write, so it has no write handle and isn't part of the reply's save. In a
+ * draft-mode chat it lands in the branch as its own hidden row (12b-Q2).
  */
 export async function copyBinary(
   deps: ToolWiringDeps,
@@ -185,27 +190,35 @@ export async function copyBinary(
   sourceGrant: FileGrant<"read">,
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "agentSlug">,
 ) {
+  const destinationUri = splitDocumentFile(input.path).filePath;
   // Binary files have no drafts or revisions, so the copy always reads the live file.
   const copied = await copyBinaryDocument({
     port: context.port,
-    livePort: context.livePort(),
     objectStore: deps.objectStore,
     source,
     sourceGrant,
     origin: { type: "agent", agentSlug: ctx.agentSlug, threadId: ctx.threadId, turnId: ctx.turnId },
-    destinationUri: splitDocumentFile(input.path).filePath,
+    destinationUri,
     copiedFrom: { uri: source.uri, version: "live", revision: null },
   });
   if (!copied.ok) {
     return writeToolError(input.command, contextErrorMessage(copied.error));
   }
   if (copied.value.documentId) recordTouchInBackground(deps, copied.value.documentId, ctx);
+  // The port's placement decided where the copy landed; only the Work's handle is ours to add.
+  const destination = copied.value.placement;
+  const branchWork = context.resolution.primaryBranchWork;
   return {
     output: modelResult({
       command: "copy",
       status: "success",
       phase: "committed",
-      payload: { path: copied.value.uri, destination: "live", copied: { from: source.uri } },
+      payload: {
+        path: copied.value.uri,
+        destination,
+        ...(destination === "draft" ? { draftWork: branchWork?.handle ?? "/" } : {}),
+        copied: { from: source.uri },
+      },
     }),
   };
 }

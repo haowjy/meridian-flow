@@ -35,7 +35,7 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
       .spyOn(threads, "useProjectThreads")
       .mockReturnValue({ threads: [], isError: false, isFetching: false, refetch: () => {} }),
     vi.spyOn(works, "useWorks").mockReturnValue({
-      noWork: { id: "no-work", slug: null, archivedAt: null } as NonNullable<
+      noWork: { id: "no-work", handle: null, archivedAt: null } as NonNullable<
         ReturnType<typeof works.useWorks>["noWork"]
       >,
       works: [],
@@ -59,7 +59,7 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
     }),
     vi
       .spyOn(links, "useLinkableDocuments")
-      .mockReturnValue({ documents: [], revision: "", complete: false }),
+      .mockReturnValue({ documents: [], folders: [], revision: "", complete: false }),
     vi.spyOn(references, "useReferenceBrowserCatalog").mockReturnValue(null),
     vi.spyOn(focus, "useInlineReviewFocus").mockImplementation(() => {}),
     vi.spyOn(status, "SyncStatus").mockImplementation(() => null),
@@ -97,7 +97,7 @@ export function ReviewEditorHost({
       session={session}
       localContentReady={!!session}
       draftOnly={draftOnly}
-      reviewDraftId={review.controller.inlineReview?.draftId}
+      reviewItemKey={review.controller.inlineReview?.itemKey}
     />
   );
 }

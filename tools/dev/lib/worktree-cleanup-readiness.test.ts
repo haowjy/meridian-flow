@@ -1,3 +1,10 @@
+/**
+ * Tests worktree cleanup readiness behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Automatic cleanup liveness and path-attribution policy
+ */
+
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -94,6 +101,51 @@ describe("decideAutoCleanupReadiness", () => {
       });
     } finally {
       fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("force permits shutdown then preserves only known shells without bypassing ownership gates", () => {
+    const input = {
+      worktreePath: "/repo/wt/merged",
+      clean: true,
+      activeWorkItemIds: [],
+      liveDevSessionNames: ["user-session"],
+      liveProcessIds: [123, 456],
+      preservableProcessIds: [123],
+      preservedPaneDescriptions: ["user-session pane %7"],
+      liveProcessCommandLineIds: [],
+      inspectionFailures: [],
+    };
+    expect(decideAutoCleanupReadiness(input, "stop-managed").ready).toBe(true);
+    expect(decideAutoCleanupReadiness(input, "preserve-shells")).toMatchObject({
+      ready: false,
+      reasons: ["live processes have cwd under worktree: 456"],
+    });
+    const afterShutdown = { ...input, liveProcessIds: [123] };
+    expect(decideAutoCleanupReadiness(afterShutdown, "preserve-shells")).toMatchObject({
+      ready: true,
+      evidence: {
+        warnings: [expect.stringContaining("PID 123"), expect.stringContaining("pane %7")],
+      },
+    });
+    for (const policy of ["stop-managed", "preserve-shells"] as const) {
+      expect(decideAutoCleanupReadiness({ ...afterShutdown, clean: false }, policy).ready).toBe(
+        false,
+      );
+      expect(
+        decideAutoCleanupReadiness({ ...afterShutdown, activeWorkItemIds: ["active"] }, policy)
+          .ready,
+      ).toBe(false);
+      expect(
+        decideAutoCleanupReadiness({ ...afterShutdown, liveProcessCommandLineIds: [999] }, policy)
+          .ready,
+      ).toBe(false);
+      expect(
+        decideAutoCleanupReadiness(
+          { ...afterShutdown, inspectionFailures: ["scan failed"] },
+          policy,
+        ).ready,
+      ).toBe(false);
     }
   });
 

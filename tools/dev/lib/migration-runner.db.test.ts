@@ -1,16 +1,19 @@
-/** Real-Postgres contracts for migration refusal, catch-up, and serialization. */
+/**
+ * Real-Postgres contracts for migration refusal, catch-up, and serialization.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - single-snapshot migration bytes recorded before lock acquisition (kb/decisions/platform/stack/drizzle-migration-integrity.md)
+ */
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { MIGRATION_ADVISORY_LOCK_ID, runMigrations } from "./migration-runner";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
-const savedPublic = "migration_runner_test_saved_public";
-const savedDrizzle = "migration_runner_test_saved_drizzle";
 
 interface TestMigration {
   tag: string;
@@ -67,28 +70,35 @@ async function waitForAdvisoryLockWaiters(
 }
 
 describe.skipIf(!enabled)("migration runner (postgres)", () => {
-  const sql = postgres(databaseUrl ?? "", { max: 1 });
+  // The runner's contracts change schemas, so they run on a database of their own, never the worker's.
+  const scratchName = `migration_runner_test_${process.pid}_${Date.now()}`;
+  const adminUrl = new URL(databaseUrl ?? "");
+  adminUrl.pathname = "/postgres";
+  const scratch = new URL(adminUrl);
+  scratch.pathname = `/${scratchName}`;
+  const scratchUrl = scratch.toString();
+  const admin = postgres(adminUrl.toString(), { max: 1 });
+  let sql: postgres.Sql;
   let temporaryRoot: string;
 
   beforeAll(async () => {
     temporaryRoot = await mkdtemp(path.join(tmpdir(), "meridian-migration-runner-"));
-    await sql.begin(async (tx) => {
-      await tx.unsafe(`ALTER SCHEMA public RENAME TO ${savedPublic}`);
-      await tx.unsafe(`ALTER SCHEMA drizzle RENAME TO ${savedDrizzle}`);
-      await tx`CREATE SCHEMA public`;
-    });
+    await admin.unsafe(`CREATE DATABASE ${scratchName}`);
+    sql = postgres(scratchUrl, { max: 1 });
+  });
+
+  beforeEach(async () => {
+    await sql`DROP SCHEMA public CASCADE`;
+    await sql`DROP SCHEMA IF EXISTS drizzle CASCADE`;
+    await sql`CREATE SCHEMA public`;
   });
 
   afterAll(async () => {
     try {
-      await sql.begin(async (tx) => {
-        await tx`DROP SCHEMA IF EXISTS public CASCADE`;
-        await tx`DROP SCHEMA IF EXISTS drizzle CASCADE`;
-        await tx.unsafe(`ALTER SCHEMA ${savedPublic} RENAME TO public`);
-        await tx.unsafe(`ALTER SCHEMA ${savedDrizzle} RENAME TO drizzle`);
-      });
+      await sql?.end();
+      await admin.unsafe(`DROP DATABASE IF EXISTS ${scratchName} WITH (FORCE)`);
     } finally {
-      await sql.end();
+      await admin.end();
       if (temporaryRoot) await rm(temporaryRoot, { recursive: true, force: true });
     }
   });
@@ -102,7 +112,7 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
     await writeMigrations(refusedDirectory, refused);
 
     await expect(
-      runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: refusedDirectory }),
+      runMigrations({ databaseUrl: scratchUrl, migrationsDirectory: refusedDirectory }),
     ).rejects.toThrow("journal when 100 is duplicated");
     expect(await sql`SELECT to_regnamespace('drizzle') IS NOT NULL AS exists`).toEqual([
       { exists: false },
@@ -123,9 +133,9 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
       sql: "INSERT INTO public.migration_events VALUES (2);",
     };
     await writeMigrations(catchUpDirectory, [first]);
-    await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: catchUpDirectory });
+    await runMigrations({ databaseUrl: scratchUrl, migrationsDirectory: catchUpDirectory });
     await writeMigrations(catchUpDirectory, [first, second]);
-    await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: catchUpDirectory });
+    await runMigrations({ databaseUrl: scratchUrl, migrationsDirectory: catchUpDirectory });
     expect(await sql`SELECT position FROM public.migration_events ORDER BY position`).toEqual([
       { position: 1 },
       { position: 2 },
@@ -141,7 +151,7 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
       await sql`SELECT position FROM public.migration_events ORDER BY position`;
     await writeMigrations(catchUpDirectory, [{ ...first, sql: `${first.sql}\nSELECT 1;` }, second]);
     await expect(
-      runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: catchUpDirectory }),
+      runMigrations({ databaseUrl: scratchUrl, migrationsDirectory: catchUpDirectory }),
     ).rejects.toThrow("migration 0000_first was edited after this database applied it");
     expect(
       await sql`SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id`,
@@ -168,8 +178,8 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
     ]);
     await sql`SELECT pg_advisory_lock(${MIGRATION_ADVISORY_LOCK_ID})`;
     const concurrentRuns = [
-      runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: concurrentDirectory }),
-      runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: concurrentDirectory }),
+      runMigrations({ databaseUrl: scratchUrl, migrationsDirectory: concurrentDirectory }),
+      runMigrations({ databaseUrl: scratchUrl, migrationsDirectory: concurrentDirectory }),
     ];
     let waitError: unknown;
     try {
@@ -194,9 +204,6 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
   });
 
   it("executes and records the snapshot read before waiting on the lock", async () => {
-    await sql`DROP SCHEMA public CASCADE`;
-    await sql`DROP SCHEMA IF EXISTS drizzle CASCADE`;
-    await sql`CREATE SCHEMA public`;
     const directory = path.join(temporaryRoot, "snapshot");
     const original = {
       tag: "0000_snapshot",
@@ -205,7 +212,7 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
     };
     await writeMigrations(directory, [original]);
     await sql`SELECT pg_advisory_lock(${MIGRATION_ADVISORY_LOCK_ID})`;
-    const run = runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+    const run = runMigrations({ databaseUrl: scratchUrl, migrationsDirectory: directory });
     let waitError: unknown;
     try {
       await waitForAdvisoryLockWaiters(sql, 1);
@@ -230,9 +237,6 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
   });
 
   it("applies and records a concurrent index migration outside a transaction", async () => {
-    await sql`DROP SCHEMA public CASCADE`;
-    await sql`DROP SCHEMA IF EXISTS drizzle CASCADE`;
-    await sql`CREATE SCHEMA public`;
     const directory = path.join(temporaryRoot, "online-index");
     await writeMigrations(directory, [
       { tag: "0000_table", when: 100, sql: "CREATE TABLE public.online_events (id int);" },
@@ -247,7 +251,7 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
         ].join("\n"),
       },
     ]);
-    await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+    await runMigrations({ databaseUrl: scratchUrl, migrationsDirectory: directory });
     expect(
       await sql`
       SELECT indisvalid FROM pg_index WHERE indexrelid = 'public.online_events_id'::regclass
@@ -282,7 +286,7 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
       };
       await writeMigrations(directory, [first, later]);
       await expect(
-        runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory }),
+        runMigrations({ databaseUrl: scratchUrl, migrationsDirectory: directory }),
       ).rejects.toThrow(`Migration statement failed in ${path.join(directory, "0001_later.sql")}`);
       expect(await sql`SELECT id FROM public.retry_events ORDER BY id`).toEqual(
         noTransaction ? [{ id: 1 }, { id: 2 }] : [{ id: 1 }],
@@ -294,8 +298,8 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
         first,
         { ...later, sql: later.sql.replace("SELECT * FROM public.missing_table;", "SELECT 1;") },
       ]);
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratchUrl, migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratchUrl, migrationsDirectory: directory });
       expect(await sql`SELECT id FROM public.retry_events ORDER BY id`).toEqual([
         { id: 1 },
         { id: 2 },

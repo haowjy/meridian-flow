@@ -333,12 +333,14 @@ const LINK_MARK_REF_ATTRIBUTE = {
  */
 function linkElementAttributes(HTMLAttributes: Record<string, unknown>): Record<string, unknown> {
   const target = classifyLinkTarget(String(HTMLAttributes.href ?? ""));
+  const folder = target && isInternalLinkTarget(target) && target.addressKind === "folder";
   return target
     ? {
         ...HTMLAttributes,
         href: isInternalLinkTarget(target) ? undefined : linkTargetHref(target),
         "data-meridian-link": isInternalLinkTarget(target) ? HTMLAttributes.href : undefined,
-        role: "link",
+        role: folder ? "button" : "link",
+        "aria-haspopup": folder ? "menu" : undefined,
         tabindex: "0",
         "data-link-kind": target.kind,
       }
@@ -507,13 +509,13 @@ export const MeridianOrderedList = OrderedList.extend({
   },
 }).configure({ itemTypeName: "list_item" });
 
-export const MeridianImage = Image.extend<ImageOptions & { projectId?: string }>({
+export const MeridianImage = Image.extend<ImageOptions & { projectId?: string; workId?: string }>({
   marks: "",
 
   addOptions() {
     const parent = this.parent?.();
     if (!parent) throw new Error("MeridianImage requires the base image options");
-    return { ...parent, projectId: undefined };
+    return { ...parent, projectId: undefined, workId: undefined };
   },
 
   addAttributes() {
@@ -642,7 +644,7 @@ export const MeridianJsxContainer = Node.create({
   },
 });
 
-export const MeridianFigure = Node.create<{ projectId?: string }>({
+export const MeridianFigure = Node.create<{ projectId?: string; workId?: string }>({
   name: "figure",
   group: "block",
   atom: true,
@@ -654,6 +656,7 @@ export const MeridianFigure = Node.create<{ projectId?: string }>({
   addOptions() {
     return {
       projectId: undefined,
+      workId: undefined,
     };
   },
 

@@ -1,7 +1,6 @@
 import type { Fragment } from "prosemirror-model";
 import type { Block } from "../codec-types.js";
 import type { BlockRef } from "../handles.js";
-import type { LinkShowing } from "../links/shown.js";
 
 export interface ResolvedSpan {
   start: number;
@@ -72,6 +71,8 @@ export type ApplyErrorCode = EditResolutionErrorCode | "partial_failure" | "inte
 export interface AgentOrigin {
   type: "agent";
   actorTurnId: string;
+  /** Permanent model-facing chat handle, resolved by the host (for example `c15`). */
+  author?: string;
 }
 
 export type ApplyTransactionOrigin = unknown;
@@ -79,47 +80,19 @@ export type ApplyTransactionOrigin = unknown;
 export type ConcurrentUpdateOrigin =
   | AgentOrigin
   | { type: "human"; userId: string }
-  | { type: "system" };
+  | { type: "system" }
+  | { type: "unattributed" };
 
 export interface ConcurrentUpdate {
   update: Uint8Array;
   origin: ConcurrentUpdateOrigin;
-  /**
-   * Final-state block hashes to use as attribution authority when update bytes
-   * are only transport and cannot identify stable origins after re-materialization.
-   */
-  touchedHashes?: {
-    human?: readonly string[];
-    agent?: readonly string[];
-  };
-  /** Baseline block hashes explicitly deleted by the attribution kernel. */
-  deletedHashes?: {
-    human?: readonly string[];
-    agent?: readonly string[];
-  };
+  /** Cross-room projections can name affected target blocks without replaying foreign Yjs ids. */
+  effects?: { changed: readonly string[]; removed: readonly string[] };
 }
 
 export interface ApplyEchoHunk {
   mode: "suppressed" | "truncated" | "full";
   blocks: string[];
-}
-
-export interface ConcurrentEditInfo {
-  human: string[];
-  agent: string[];
-  runs: ConcurrentEditRun[];
-  /** Set by the request assembler when one or more indivisible runs did not fit. */
-  syncOverflow?: boolean;
-}
-
-export interface ConcurrentEditRun {
-  origin: "human" | "agent" | "mixed" | "concurrent edits";
-  /** Full hash-prefixed current prose, anchors and gap blocks included. */
-  blocks: string[];
-  /** Explicit deletion evidence. A tombstone is never emitted without its captured body. */
-  tombstones: Array<{ hash: string; capturedBody: string }>;
-  /** Host-only: what this run's rendered blocks showed the model (never in model text). */
-  showing?: LinkShowing;
 }
 
 export type ApplyResult =

@@ -11,7 +11,8 @@ import {
   type MeridianError,
   meridianErrorFromHttpStatus,
 } from "@meridian/contracts/protocol";
-import { createError } from "nitro/h3";
+import type { JsonValue } from "@meridian/contracts/threads";
+import { createError, HTTPError } from "nitro/h3";
 
 /** Marker key on `createError.data` — consumed only by `interrupt-error-handler.ts`. */
 export const HTTP_INTERRUPT_ENVELOPE_KEY = "__meridianInterruptEnvelope";
@@ -41,4 +42,43 @@ export function throwHttpInterrupt(error: MeridianError, statusCode: number): ne
 
 export function throwHttpInterruptForStatus(statusCode: number, message: string): never {
   throwHttpInterrupt(meridianErrorFromHttpStatus(statusCode, message), statusCode);
+}
+
+function interruptDetails(data: unknown): JsonValue | undefined {
+  if (data === undefined) return undefined;
+  try {
+    return JSON.parse(JSON.stringify(data)) as JsonValue;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Makes route-owned client refusals final. The durable client queue replays every failure that is
+ * not a typed, non-retryable 4xx, so durable-intent routes must classify their own HTTP refusals.
+ */
+export async function withDurableIntentInterruptBoundary<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (!HTTPError.isError(error)) throw error;
+    const status = error.status;
+    const tagged =
+      error.data && typeof error.data === "object" && !Array.isArray(error.data)
+        ? (error.data as Record<string, unknown>)[HTTP_INTERRUPT_ENVELOPE_KEY]
+        : undefined;
+    if (
+      isHttpInterruptEnvelope(tagged) ||
+      status < 400 ||
+      status >= 500 ||
+      status === 401 ||
+      status === 408 ||
+      status === 429
+    ) {
+      throw error;
+    }
+    const details = interruptDetails(error.data);
+    const mapped = meridianErrorFromHttpStatus(status, error.message);
+    throwHttpInterrupt(details === undefined ? mapped : { ...mapped, details }, status);
+  }
 }

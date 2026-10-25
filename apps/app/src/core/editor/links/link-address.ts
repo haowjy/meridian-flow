@@ -19,22 +19,6 @@ import { validateContextEntryName } from "@meridian/contracts/context-entry-vali
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import { classifyFiletype, parseDocumentFilename } from "@meridian/contracts/protocol";
 
-import type { LinkTarget } from "./link-target";
-
-/**
- * The canonical Context URI an internal target addresses, without its
- * fragment or query, or null for an external link, a relative path with no
- * holder to be relative to, or a destination the href grammar refuses.
- */
-export function linkTargetAddress(target: LinkTarget, baseUri: string | null): string | null {
-  if (target.kind === "external") return null;
-  const resolved =
-    target.kind === "scheme"
-      ? resolveDocumentHref(target.uri, null)
-      : resolveDocumentHref(target.path, baseUri);
-  return resolved?.uri ?? null;
-}
-
 /**
  * What a writer calls the document an address names: its stored name
  * (`Chapter 13`, `map.png`). Addresses hold names already decoded, so this

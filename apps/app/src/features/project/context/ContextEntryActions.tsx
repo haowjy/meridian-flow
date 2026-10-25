@@ -1,13 +1,13 @@
 /** ContextEntryActions — right-click context menu and hover kebab button for file/folder rows in the desktop context tree. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ContextOwner } from "@meridian/contracts/protocol";
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import {
   ChevronRight,
   FilePlus,
   Files,
   Folder,
-  FolderOutput,
+  FolderInput,
   FolderPlus,
   ImportIcon,
   type LucideIcon,
@@ -15,18 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
-import { Fragment, useCallback, useRef, useState } from "react";
-import { isMeridianApiError } from "@/client/api/http-client";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Fragment, useCallback, useRef } from "react";
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -43,7 +32,6 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
-import { useAccountResourceReplica } from "./account-feature-context";
 import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 
 // ─── Action types ────────────────────────────────────────────────────────────
@@ -63,7 +51,6 @@ type EntryActionSpec = {
   icon: LucideIcon;
   group: "create" | "manage";
   destructive?: true;
-  /** Shown inside the "Import…" submenu instead of at the menu's top level. */
   inImportMenu?: true;
 };
 
@@ -85,7 +72,7 @@ const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
     inImportMenu: true,
   },
   { action: "rename", label: <Trans>Rename</Trans>, icon: Pencil, group: "manage" },
-  { action: "move", label: <Trans>Move…</Trans>, icon: FolderOutput, group: "manage" },
+  { action: "move", label: <Trans>Move…</Trans>, icon: FolderInput, group: "manage" },
   {
     action: "delete",
     label: <Trans>Delete</Trans>,
@@ -95,7 +82,6 @@ const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
   },
 ];
 
-/** The menu's rows in order: actions, with the import actions gathered into one "Import…" submenu. */
 type MenuRow =
   | { kind: "action"; spec: EntryActionSpec; startsGroup: boolean }
   | { kind: "import"; specs: EntryActionSpec[]; startsGroup: boolean };
@@ -122,7 +108,10 @@ export type EntryActionTarget = {
   path: string;
 } & ({ kind: "file"; documentId: string } | { kind: "dir"; entryId: string });
 
-export type DeleteTarget = EntryActionTarget & { owner: ContextOwner };
+export type DeleteTarget = EntryActionTarget & {
+  owner: ContextOwner;
+  scheme: ProjectContextTreeScheme;
+};
 
 // ─── Right-click context menu (wraps the row) ───────────────────────────────
 
@@ -206,13 +195,6 @@ export function EntryKebabButton({
 
 // ─── Primitive-specific renderers over the shared action specification ─────
 
-function ActionIcon({ spec }: { spec: EntryActionSpec }) {
-  const Icon = spec.icon;
-  return (
-    <Icon className={cn("size-3.5", !spec.destructive && "text-muted-foreground")} aria-hidden />
-  );
-}
-
 function ContextActionItems({
   allowedActions,
   onAction,
@@ -220,17 +202,23 @@ function ContextActionItems({
   allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
 }) {
-  const item = (spec: EntryActionSpec) => (
-    <ContextMenuPrimitive.Item
-      key={spec.action}
-      data-variant={spec.destructive ? "destructive" : "default"}
-      className={cn(dropdownRowVariants(), dropdownMenuItemClass)}
-      onSelect={() => onAction(spec.action)}
-    >
-      <ActionIcon spec={spec} />
-      {spec.label}
-    </ContextMenuPrimitive.Item>
-  );
+  const item = (spec: EntryActionSpec) => {
+    const Icon = spec.icon;
+    return (
+      <ContextMenuPrimitive.Item
+        key={spec.action}
+        data-variant={spec.destructive ? "destructive" : "default"}
+        className={cn(dropdownRowVariants(), dropdownMenuItemClass)}
+        onSelect={() => onAction(spec.action)}
+      >
+        <Icon
+          className={cn("size-3.5", !spec.destructive && "text-muted-foreground")}
+          aria-hidden
+        />
+        {spec.label}
+      </ContextMenuPrimitive.Item>
+    );
+  };
   return (
     <>
       {menuRows(allowedActions).map((row) => (
@@ -279,16 +267,22 @@ function DropdownActionItems({
   allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
 }) {
-  const item = (spec: EntryActionSpec) => (
-    <DropdownMenuItem
-      key={spec.action}
-      variant={spec.destructive ? "destructive" : "default"}
-      onSelect={() => onAction(spec.action)}
-    >
-      <ActionIcon spec={spec} />
-      {spec.label}
-    </DropdownMenuItem>
-  );
+  const item = (spec: EntryActionSpec) => {
+    const Icon = spec.icon;
+    return (
+      <DropdownMenuItem
+        key={spec.action}
+        variant={spec.destructive ? "destructive" : "default"}
+        onSelect={() => onAction(spec.action)}
+      >
+        <Icon
+          className={cn("size-3.5", !spec.destructive && "text-muted-foreground")}
+          aria-hidden
+        />
+        {spec.label}
+      </DropdownMenuItem>
+    );
+  };
   return menuRows(allowedActions).map((row) => (
     <Fragment key={row.kind === "import" ? "import" : row.spec.action}>
       {row.startsGroup ? <DropdownMenuSeparator /> : null}
@@ -305,110 +299,4 @@ function DropdownActionItems({
       )}
     </Fragment>
   ));
-}
-
-// ─── Delete confirmation dialog ─────────────────────────────────────────────
-
-export function useDeleteConfirmation({ projectId }: { projectId: string }) {
-  const [target, setTarget] = useState<DeleteTarget | null>(null);
-  const [error, setError] = useState<Error | null>(null);
-  const resources = useAccountResourceReplica();
-  const [localPending, setLocalPending] = useState(false);
-
-  const requestDelete = useCallback((t: DeleteTarget) => {
-    setError(null);
-    setTarget(t);
-  }, []);
-  const cancel = useCallback(() => {
-    setError(null);
-    setTarget(null);
-  }, []);
-
-  const confirm = useCallback(async () => {
-    if (!target) return;
-    setError(null);
-    try {
-      setLocalPending(true);
-      if (target.kind === "file") {
-        const key = await resources.keyForDocument(projectId, target.documentId);
-        if (!key) throw new Error("Document resource is unavailable");
-        await resources.deleteDocument(projectId, key);
-      } else {
-        await resources.deleteFolder(projectId, target.entryId);
-      }
-      setTarget(null);
-    } catch (cause) {
-      // Keep the target visible so the writer can refresh and retry.
-      setError(cause instanceof Error ? cause : new Error("Context deletion failed"));
-    } finally {
-      setLocalPending(false);
-    }
-  }, [projectId, resources, target]);
-
-  return {
-    target,
-    isPending: localPending,
-    error,
-    requestDelete,
-    cancel,
-    confirm,
-  };
-}
-
-export function DeleteConfirmationDialog({
-  target,
-  isPending,
-  error,
-  onCancel,
-  onConfirm,
-}: {
-  target: EntryActionTarget | null;
-  isPending: boolean;
-  error?: Error | null;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <Dialog open={target !== null} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>
-            {target?.kind === "dir" ? <Trans>Delete folder?</Trans> : <Trans>Delete file?</Trans>}
-          </DialogTitle>
-          <DialogDescription>
-            {target?.kind === "dir" ? (
-              <Trans>
-                <strong className="break-all font-semibold text-foreground">{target.name}</strong>{" "}
-                and all its contents will be permanently deleted.
-              </Trans>
-            ) : (
-              <Trans>
-                <strong className="break-all font-semibold text-foreground">{target?.name}</strong>{" "}
-                will be permanently deleted.
-              </Trans>
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        {error ? (
-          <p className="text-sm text-destructive">
-            {isMeridianApiError(error) && error.code === "stale_target" ? (
-              <Trans>The entry changed. Refresh the tree and try again.</Trans>
-            ) : (
-              <Trans>Couldn't delete this entry. Try again.</Trans>
-            )}
-          </p>
-        ) : null}
-        <DialogFooter className="gap-2 sm:gap-0">
-          <DialogClose asChild>
-            <Button variant="outline" size="sm" disabled={isPending}>
-              <Trans>Cancel</Trans>
-            </Button>
-          </DialogClose>
-          <Button variant="destructive" size="sm" disabled={isPending} onClick={onConfirm}>
-            {isPending ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
 }

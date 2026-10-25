@@ -3,11 +3,16 @@
  * orchestrator event must publish its projected AG-UI frames to subscribers at
  * append time, not only on journal replay. Background lifecycle events remain
  * journal-only; `subagent.activity` projects the recomputed direct-child activity.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Thread hub cache, eviction, gap, and projection policy
  */
+
 import type { ThreadId } from "@meridian/contracts/runtime";
+import { goldenAssistantTurn } from "@meridian/contracts/test-support";
 import type { OrchestratorEvent, ThreadActivity } from "@meridian/contracts/threads";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { goldenAssistantTurn } from "../../../../../packages/contracts/src/threads/golden/turn-fixture.js";
+import { noTransactionOwner } from "../../shared/in-memory-transaction.js";
 import { createNoopEventSink } from "../observability/index.js";
 import {
   createInMemoryEventJournalReader,
@@ -44,6 +49,14 @@ function createCappedReader(
     async readAfter(_threadId, afterSeq, limit = Number.POSITIVE_INFINITY) {
       return entries.filter((entry) => entry.seq > afterSeq).slice(0, limit);
     },
+    async lastSeqBefore(_threadId, beforeSeq, eventTypes) {
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const entry = entries[index];
+        if (entry && entry.seq < beforeSeq && eventTypes.includes(entry.payload.type))
+          return entry.seq;
+      }
+      return 0n;
+    },
     async headSeq() {
       return headSeq;
     },
@@ -73,6 +86,11 @@ function createCappedHub(
 ) {
   return createThreadEventHub({
     journalWriter: {
+      async appendEvents(threadId, events) {
+        let seq = 0n;
+        for (const event of events) seq = await this.appendEvent(threadId, event);
+        return seq;
+      },
       async appendEvent() {
         return 0n;
       },
@@ -83,7 +101,7 @@ function createCappedHub(
 }
 
 function createHub() {
-  const journal = createInMemoryEventJournalWriter();
+  const journal = createInMemoryEventJournalWriter(noTransactionOwner);
   const hub = createThreadEventHub({
     journalWriter: journal,
     journalReader: createInMemoryEventJournalReader(journal),
@@ -141,7 +159,7 @@ describe("thread event hub committed invalidations", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
   it("evicts idle state after a journal read rejects beyond the grace window", async () => {
-    const journal = createInMemoryEventJournalWriter();
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
     let entered!: () => void;
     let rejectRead!: (error: Error) => void;
     const started = new Promise<void>((resolve) => (entered = resolve));
@@ -169,7 +187,7 @@ describe("thread event hub committed invalidations", () => {
   });
 
   it("retains a requested follow-up drain after rejection, then evicts after its failure", async () => {
-    const journal = createInMemoryEventJournalWriter();
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
     let firstEntered!: () => void;
     let secondEntered!: () => void;
     let rejectFirst!: (error: Error) => void;
@@ -210,7 +228,7 @@ describe("thread event hub committed invalidations", () => {
   });
 
   it("keeps one state owner while an unsubscribed thread drain is in flight", async () => {
-    const journal = createInMemoryEventJournalWriter();
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
     const callbacks: Array<() => void | Promise<void>> = [];
     let readStarted!: () => void;
     let releaseRead!: () => void;
@@ -220,9 +238,6 @@ describe("thread event hub committed invalidations", () => {
     let blockRead = false;
     const blockingReader: EventJournalReader = {
       ...reader,
-      async headSeq(threadId) {
-        return reader.headSeq(threadId);
-      },
       async readAfter(threadId, afterSeq, limit) {
         if (blockRead) {
           blockRead = false;
@@ -259,7 +274,7 @@ describe("thread event hub committed invalidations", () => {
   });
 
   it("keeps delayed text and tool projection on one side of the replay boundary", async () => {
-    const journal = createInMemoryEventJournalWriter();
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
     const reader = createInMemoryEventJournalReader(journal);
     await journal.appendEvent(THREAD_ID, {
       type: "turn.created",
@@ -342,7 +357,7 @@ describe("thread event hub committed invalidations", () => {
   });
 
   it("serializes reversed and duplicate invalidations through journal order", async () => {
-    const journal = createInMemoryEventJournalWriter();
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
     const callbacks: Array<() => void | Promise<void>> = [];
     const hub = createThreadEventHub({
       journalWriter: journal,
@@ -374,7 +389,7 @@ describe("thread event hub committed invalidations", () => {
   });
 
   it("keeps a committed append made during cold replay in the live handoff", async () => {
-    const journal = createInMemoryEventJournalWriter();
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
     const reader = createInMemoryEventJournalReader(journal);
     const firstEvent: OrchestratorEvent = {
       type: "subagent.activity",
@@ -393,6 +408,7 @@ describe("thread event hub committed invalidations", () => {
     });
     let blockFirstRead = true;
     const blockingReader: EventJournalReader = {
+      ...reader,
       readAfter: async (threadId, afterSeq, limit) => {
         if (blockFirstRead) {
           blockFirstRead = false;
@@ -401,12 +417,6 @@ describe("thread event hub committed invalidations", () => {
         }
         return reader.readAfter(threadId, afterSeq, limit);
       },
-      headSeq: (threadId) => reader.headSeq(threadId),
-      readModelProjectionWatermark: (threadId) => reader.readModelProjectionWatermark(threadId),
-      listByThread: (threadId, opts) => reader.listByThread(threadId, opts),
-      listByType: (threadId, type) => reader.listByType(threadId, type),
-      listSince: (threadId, id) => reader.listSince(threadId, id),
-      listByTimeRange: (threadId, from, to) => reader.listByTimeRange(threadId, from, to),
     };
     const hub = createThreadEventHub({
       journalWriter: journal,

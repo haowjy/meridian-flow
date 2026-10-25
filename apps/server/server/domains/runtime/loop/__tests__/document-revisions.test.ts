@@ -46,7 +46,7 @@ describe("document revision settlement", () => {
             metadata: {
               stagedWrite: true,
               documentId,
-              writeId: "w1",
+              writeId: "e1",
               settlementId: "settlement-1",
               documentRevisions: [{ documentId, uri, revision: null }],
             },
@@ -66,7 +66,7 @@ describe("document revision settlement", () => {
               {
                 documentId,
                 receipt: {
-                  writeId: "w1",
+                  writeId: "e1",
                   settlementId: "settlement-1",
                   revision: "y2:at-apply",
                   result: modelResult({ command: "create", status: "success", phase: "committed" }),
@@ -139,7 +139,7 @@ describe("document revision settlement", () => {
             metadata: {
               stagedWrite: true,
               documentId,
-              writeId: "w1",
+              writeId: "e1",
               settlementId: "settlement-1",
               documentRevisions: [{ documentId, uri, revision: null }],
             },

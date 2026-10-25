@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** Authorized tab publication and alias admission under delayed navigation. */
+/** Authorized tab publication and alias admission under delayed navigation.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - alias-repair error ownership
+ */
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -202,7 +206,7 @@ it("keeps a draft-only document out of the live view and repairs only its review
         work: { kind: "none" },
       }}
       result={result}
-      draftOnlyId="draft-1"
+      reviewItemKey="draft-1"
       workId={noWorkId}
       noWorkId={noWorkId}
       navigation={navigation}
@@ -214,7 +218,7 @@ it("keeps a draft-only document out of the live view and repairs only its review
       expect(onAdmission).not.toHaveBeenCalled();
       expect(replaceEntry).toHaveBeenCalledOnce();
       // A No Work review address names its Work itself, so a copy opens the same draft.
-      expect(replaceEntry.mock.calls[0]?.[0]).toBe(`${href}?work=&draft=draft-1`);
+      expect(replaceEntry.mock.calls[0]?.[0]).toBe(`${href}?work=&item=draft-1`);
     },
   );
   navigation.dispose();

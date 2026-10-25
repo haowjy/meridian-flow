@@ -1,28 +1,33 @@
-/** PostgreSQL proof for catalog transaction, replay, exclusion, and wake semantics. */
+/**
+ * PostgreSQL proof for catalog transaction, replay, exclusion, and wake semantics.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - lossy post-commit wakes, durable catalog replay, namespace-only revisions, and persisted classification (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ */
 
-import { createDb } from "@meridian/database";
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
-  contextAvailabilityHeads,
   contextCatalogCommits,
-  contextCatalogEntries,
   contextSources,
+  documentMarkdownProjections,
   documents,
   folders,
   projects,
   users,
   works,
 } from "@meridian/database/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../shared/result.js";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-work-branch-pending.js";
 import type { BindMarkdownInput } from "../../collab/index.js";
 import { fakeBoundWrite } from "../../collab/test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
-import { createInMemoryEventSink } from "../../observability/index.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
 import { createDrizzleWorkRepository } from "../../projects/adapters/work-repository/drizzle.js";
 import { createProjectRepositoryForTest as createDrizzleProjectRepository } from "../../projects/test-support/project-repository.js";
@@ -71,189 +76,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const rows = Array.isArray(sources) ? sources : [sources];
       if (rows.length) await db.insert(contextSources).values(rows);
     }
-
-    it("publishes only live manuscript membership while leaving other project sources unchanged", async () => {
-      const db = database.current;
-      const LIVE_DOCUMENT_ID = "00000000-0000-4000-8000-000000000805";
-      const DRAFT_DOCUMENT_ID = "00000000-0000-4000-8000-000000000806";
-      const KB_SOURCE_ID = "00000000-0000-4000-8000-000000000807";
-      const KB_DOCUMENT_ID = "00000000-0000-4000-8000-000000000808";
-      await seedProject(db, "catalog-membership", [
-        { id: SOURCE_ID, projectId: PROJECT_ID, name: "Manuscript", slug: "manuscript" },
-        { id: KB_SOURCE_ID, projectId: PROJECT_ID, name: "Knowledge Base", slug: "kb" },
-      ]);
-      await db.insert(documents).values([
-        {
-          id: LIVE_DOCUMENT_ID,
-          contextSourceId: SOURCE_ID,
-          name: "live",
-          extension: "",
-        },
-        {
-          id: DRAFT_DOCUMENT_ID,
-          contextSourceId: SOURCE_ID,
-          name: "draft-only",
-          extension: "",
-        },
-        {
-          id: KB_DOCUMENT_ID,
-          contextSourceId: KB_SOURCE_ID,
-          name: "notes",
-          extension: "",
-        },
-      ]);
-      const members = new Set([LIVE_DOCUMENT_ID]);
-      let membershipFailure = false;
-      const eventSink = createInMemoryEventSink();
-      const delay = vi.fn(async (_ms: number) => {});
-      const publish = vi.fn();
-      const catalog = createDrizzleContextCatalog(
-        db,
-        { publish },
-        {
-          delay,
-          eventSink,
-          manifestMembership: {
-            async resolveManifestMembership() {
-              if (membershipFailure) throw new Error("membership unavailable");
-              return {
-                documentId: "00000000-0000-4000-8000-000000000809" as never,
-                members: [...members],
-              };
-            },
-          },
-        },
-      );
-      const scope = { kind: "project", projectId: PROJECT_ID } as const;
-      const initial = await catalog.snapshot(scope);
-      const initialFileIds = initial.entries.flatMap((entry) =>
-        entry.kind === "file" ? [entry.entryId] : [],
-      );
-      expect(initialFileIds).toEqual(expect.arrayContaining([LIVE_DOCUMENT_ID, KB_DOCUMENT_ID]));
-      expect(initialFileIds).not.toContain(DRAFT_DOCUMENT_ID);
-
-      members.add(DRAFT_DOCUMENT_ID);
-      await catalog.refreshProject(PROJECT_ID);
-      await expect(catalog.changes(scope, initial.cursor)).resolves.toMatchObject({
-        kind: "delta",
-        commits: [
-          {
-            changes: expect.arrayContaining([
-              expect.objectContaining({
-                operation: "upsert",
-                entry: expect.objectContaining({ entryId: DRAFT_DOCUMENT_ID }),
-              }),
-            ]),
-          },
-        ],
-      });
-      expect(publish).toHaveBeenCalledTimes(1);
-
-      const applied = await catalog.snapshot(scope);
-      members.delete(DRAFT_DOCUMENT_ID);
-      await catalog.refreshProject(PROJECT_ID);
-      await expect(catalog.changes(scope, applied.cursor)).resolves.toMatchObject({
-        kind: "delta",
-        commits: [
-          {
-            changes: expect.arrayContaining([
-              expect.objectContaining({ operation: "delete", entryId: DRAFT_DOCUMENT_ID }),
-            ]),
-          },
-        ],
-      });
-      const discarded = await catalog.snapshot(scope);
-      const discardedFileIds = discarded.entries.flatMap((entry) =>
-        entry.kind === "file" ? [entry.entryId] : [],
-      );
-      expect(discardedFileIds).toEqual(expect.arrayContaining([LIVE_DOCUMENT_ID, KB_DOCUMENT_ID]));
-      expect(discardedFileIds).not.toContain(DRAFT_DOCUMENT_ID);
-      expect(publish).toHaveBeenCalledTimes(2);
-
-      const persistedBeforeFailure = await db
-        .select()
-        .from(contextCatalogEntries)
-        .where(eq(contextCatalogEntries.scopeKey, `project:${PROJECT_ID}`));
-      const availabilityBeforeFailure = await db
-        .select()
-        .from(contextAvailabilityHeads)
-        .where(eq(contextAvailabilityHeads.authorityKey, `project:${PROJECT_ID}`));
-      membershipFailure = true;
-      await expect(catalog.refreshProjectDocuments(PROJECT_ID)).resolves.toBeUndefined();
-      expect(delay.mock.calls.map(([ms]) => ms)).toEqual([10, 50, 250, 1_000]);
-      expect(eventSink.events).toContainEqual(
-        expect.objectContaining({ name: "DeferredRefreshFailure", level: "error" }),
-      );
-      await expect(
-        db
-          .select()
-          .from(contextCatalogEntries)
-          .where(eq(contextCatalogEntries.scopeKey, `project:${PROJECT_ID}`)),
-      ).resolves.toEqual(persistedBeforeFailure);
-      await expect(
-        db
-          .select()
-          .from(contextAvailabilityHeads)
-          .where(eq(contextAvailabilityHeads.authorityKey, `project:${PROJECT_ID}`)),
-      ).resolves.toEqual(availabilityBeforeFailure);
-    });
-
-    it("retries a post-Apply document refresh after the availability lock timeout", async () => {
-      const db = database.current;
-      const NEW_DOCUMENT_ID = "00000000-0000-4000-8000-000000000805";
-      await seedProject(db, "catalog-apply-retry");
-      const members = new Set<string>();
-      const catalog = createDrizzleContextCatalog(db, undefined, {
-        manifestMembership: {
-          async resolveManifestMembership() {
-            return {
-              documentId: "00000000-0000-4000-8000-000000000809" as never,
-              members: [...members],
-            };
-          },
-        },
-      });
-      const scope = { kind: "project", projectId: PROJECT_ID } as const;
-      await catalog.snapshot(scope);
-      await db.insert(documents).values({
-        id: NEW_DOCUMENT_ID,
-        contextSourceId: SOURCE_ID,
-        name: "new-chapter",
-        extension: "",
-      });
-      members.add(NEW_DOCUMENT_ID);
-
-      const lockDb = createDb(DATABASE_URL, { max: 1 });
-      let releaseLock!: () => void;
-      let lockAcquired!: () => void;
-      const acquired = new Promise<void>((resolve) => {
-        lockAcquired = resolve;
-      });
-      const held = new Promise<void>((resolve) => {
-        releaseLock = resolve;
-      });
-      const lockTask = lockDb.transaction(async (tx) => {
-        await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
-        lockAcquired();
-        await held;
-      });
-      await acquired;
-      const releaseTimer = setTimeout(releaseLock, 350);
-      try {
-        await catalog.refreshProjectDocuments(PROJECT_ID);
-      } finally {
-        clearTimeout(releaseTimer);
-        releaseLock();
-        await lockTask;
-        await lockDb.close();
-      }
-
-      const snapshot = await catalog.snapshot(scope);
-      expect(snapshot.entries).toContainEqual(
-        expect.objectContaining({ kind: "file", entryId: NEW_DOCUMENT_ID }),
-      );
-    });
-
     it("publishes atomically, replays whole commits, and keeps failed hints nonthrowing", async () => {
       const db = database.current;
       await seedProject(db, "catalog");
@@ -292,7 +114,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const db = database.current;
       await seedProject(db, "catalog-invalidation");
       const folderId = "00000000-0000-4000-8000-000000000805";
-      await db.insert(folders).values({ id: folderId, contextSourceId: SOURCE_ID, name: "Arc" });
+      await db.insert(folders).values({
+        id: folderId,
+        contextSourceId: SOURCE_ID,
+        name: "Arc",
+        documentAlias: folderDocumentName("Arc"),
+      });
       await db.insert(documents).values({
         id: DOCUMENT_ID,
         contextSourceId: SOURCE_ID,
@@ -325,7 +152,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await db
         .update(documents)
-        .set({ deletedAt: new Date() })
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
         .where(eq(documents.id, DOCUMENT_ID));
       await catalog.refreshSources([SOURCE_ID], [DOCUMENT_ID]);
       const removed = await catalog.changes(scope, replay.nextCursor);
@@ -343,72 +170,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("does not expose a reserved generation when deferred Manuscript repair fails", async () => {
-      const db = database.current;
-      await seedProject(db, "catalog-deferred-failure");
-      await db.insert(documents).values({
-        id: DOCUMENT_ID,
-        contextSourceId: SOURCE_ID,
-        name: "chapter",
-        extension: "",
-      });
-      let failMembership = false;
-      let resolveFailed!: () => void;
-      const failed = new Promise<void>((resolve) => {
-        resolveFailed = resolve;
-      });
-      const delay = vi.fn(async (_ms: number) => {});
-      const eventSink = createInMemoryEventSink();
-      const emit = eventSink.emit.bind(eventSink);
-      eventSink.emit = (event) => {
-        emit(event);
-        if (event.name === "DeferredRefreshFailure") resolveFailed();
-      };
-      const availability = createDrizzleProjectContextAvailability(db, eventSink);
-      const catalog = createDrizzleContextCatalog(db, undefined, {
-        availabilityMutations: availability,
-        eventSink,
-        delay,
-        manifestMembership: {
-          async resolveManifestMembership() {
-            if (failMembership) throw new Error("manifest offline");
-            return {
-              documentId: "00000000-0000-4000-8000-000000000809" as never,
-              members: [DOCUMENT_ID],
-            };
-          },
-        },
-      });
-      await catalog.refreshProjectDocuments(PROJECT_ID);
-      const beforeEntries = await db.select().from(contextCatalogEntries);
-      const beforeHeads = await db.select().from(contextAvailabilityHeads);
-
-      delay.mockClear();
-      failMembership = true;
-      await runInDrizzleTransaction(db, async () => {
-        await currentDrizzleDb(db)
-          .update(documents)
-          .set({ name: "renamed" })
-          .where(eq(documents.id, DOCUMENT_ID));
-        await catalog.refreshSources([SOURCE_ID]);
-      });
-
-      await failed;
-      expect(delay.mock.calls.map(([ms]) => ms)).toEqual([10, 50, 250, 1_000]);
-      await expect(db.select().from(contextCatalogEntries)).resolves.toEqual(beforeEntries);
-      await expect(db.select().from(contextAvailabilityHeads)).resolves.toMatchObject(
-        beforeHeads.map(({ namespaceGeneration: _namespace, ...head }) => head),
-      );
-      expect(eventSink.events).toContainEqual(
-        expect.objectContaining({
-          source: "context-catalog",
-          name: "DeferredRefreshFailure",
-          level: "error",
-        }),
-      );
-    });
-
-    it("rolls catalog state back and excludes manifests and content-only changes", async () => {
+    it("rolls catalog state back and excludes hidden rows and content-only changes", async () => {
       const db = database.current;
       await seedProject(db, "catalog-rollback");
       const catalog = createDrizzleContextCatalog(db);
@@ -419,9 +181,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           await currentDrizzleDb(db).insert(documents).values({
             id: DOCUMENT_ID,
             contextSourceId: SOURCE_ID,
-            name: "manifest",
+            name: "draft-only",
             extension: "json",
-            kind: "manifest",
+            hidden: true,
           });
           await catalog.refreshSources([SOURCE_ID]);
           throw new Error("rollback");
@@ -444,9 +206,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await catalog.refreshSources([SOURCE_ID]);
       const beforeContentWrite = await catalog.snapshot(scope);
       await db
-        .update(documents)
-        .set({ markdownProjection: "new words only" })
-        .where(eq(documents.id, contentDocumentId));
+        .insert(documentMarkdownProjections)
+        .values({ documentId: contentDocumentId, markdown: "new words only" })
+        .onConflictDoUpdate({
+          target: documentMarkdownProjections.documentId,
+          set: { markdown: "new words only" },
+        });
       const afterContentWrite = await catalog.snapshot(scope);
       expect(afterContentWrite.headRevision).toBe(beforeContentWrite.headRevision);
       await expect(catalog.changes(scope, beforeContentWrite.cursor)).resolves.toMatchObject({
@@ -596,13 +361,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalogMutations: failingCatalog,
       });
       const context = new ContextFS({
+        placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,
-        mutationStore: new DrizzleContextTreeMutationStore(db, undefined, failingCatalog),
+        mutationStore: new DrizzleContextTreeMutationStore(db, {
+          removal: createTestDocumentRemoval(db),
+          catalogMutations: failingCatalog,
+        }),
         scheme: "manuscript",
         documentSync: {
-          ensureDocument: async () => {},
           readAsMarkdown: async () => Ok(""),
           bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
           seedFromMarkdown: async () => Ok({ updateSeq: 1 }),
@@ -637,17 +405,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         PROJECT_ID,
         "kb",
         USER_ID,
-        undefined,
         failingCatalog,
       );
       const context = new ContextFS({
+        placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,
-        mutationStore: new DrizzleContextTreeMutationStore(db, undefined, failingCatalog),
+        mutationStore: new DrizzleContextTreeMutationStore(db, {
+          removal: createTestDocumentRemoval(db),
+          catalogMutations: failingCatalog,
+        }),
         scheme: "kb",
         documentSync: {
-          ensureDocument: async () => {},
           readAsMarkdown: async () => Ok(""),
           bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
           seedFromMarkdown: async () => Ok({ updateSeq: 1 }),
@@ -703,10 +473,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const catalog = createDrizzleContextCatalog(db);
       const availability = createDrizzleProjectContextAvailability(db);
       const repository = createDrizzleWorkRepository({
+        removal: createTestDocumentRemoval(db),
         lineageScratch: createDrizzleLineageScratchLifecycle(db),
         db,
         fileAccessChanges: createLocalFileAccessChanges(),
-        projectionMutation: createWorkProjectionMutation({ db, availability, catalog }),
+        projectionMutation: createWorkProjectionMutation({
+          db,
+          pendingCounts: createDrizzleWorkBranchPendingStore(db),
+          availability,
+          catalog,
+        }),
       });
       const workId = "00000000-0000-4000-8000-000000000807" as never;
       const scope = { kind: "project", projectId: PROJECT_ID } as const;
@@ -733,11 +509,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(authority()).resolves.toMatchObject({ available: true, entityRevision: "5" });
 
       const failingRepository = createDrizzleWorkRepository({
+        removal: createTestDocumentRemoval(db),
         lineageScratch: createDrizzleLineageScratchLifecycle(db),
         db,
         fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation: createWorkProjectionMutation({
           db,
+          pendingCounts: createDrizzleWorkBranchPendingStore(db),
           availability,
           catalog: {
             async refreshProject(projectId) {
@@ -783,7 +561,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await catalog.refreshSources([SOURCE_ID, KB_SOURCE_ID]);
       const scope = { kind: "project", projectId: PROJECT_ID } as const;
       const before = await catalog.snapshot(scope);
-      const mutationStore = new DrizzleContextTreeMutationStore(db, undefined, catalog);
+      const mutationStore = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+        catalogMutations: catalog,
+      });
       await expect(
         mutationStore.commitProvisionalGraduation({
           kind: "file",
@@ -848,10 +629,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const db = database.current;
       const NO_WORK = "00000000-0000-4000-8000-000000000808";
       const NAMED = "00000000-0000-4000-8000-000000000809";
-      const UPLOADS = "00000000-0000-4000-8000-00000000080b";
       const NAMED_SCRATCH = "00000000-0000-4000-8000-00000000080c";
-      const FILE = "00000000-0000-4000-8000-00000000080d";
-      const UPLOAD_FILE = "00000000-0000-4000-8000-00000000080e";
       const NAMED_FILE = "00000000-0000-4000-8000-00000000080f";
       await seedProject(db, "catalog-no-work", []);
       await db.insert(works).values([
@@ -860,19 +638,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "No Work",
-          slug: null,
+          handle: null,
           isNoWork: true,
         },
         {
           id: NAMED,
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
-          name: "Draft",
-          slug: "draft",
+          name: "Branch",
+          handle: "w2",
         },
       ]);
       await db.insert(contextSources).values([
-        { id: UPLOADS, workId: NO_WORK, scope: "work", name: "Uploads", slug: "uploads" },
         {
           id: NAMED_SCRATCH,
           workId: NAMED,
@@ -881,36 +658,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           slug: "scratch",
         },
       ]);
-      await db.insert(documents).values([
-        { id: FILE, contextSourceId: UPLOADS, name: "notes", extension: "" },
-        {
-          id: UPLOAD_FILE,
-          contextSourceId: UPLOADS,
-          name: "shot",
-          extension: "png",
-          fileType: "image",
-        },
-        { id: NAMED_FILE, contextSourceId: NAMED_SCRATCH, name: "arc", extension: "" },
-      ]);
+      await db
+        .insert(documents)
+        .values([{ id: NAMED_FILE, contextSourceId: NAMED_SCRATCH, name: "arc", extension: "" }]);
       const catalog = createDrizzleContextCatalog(db);
       const fileUris = async (scope: { kind: "work"; projectId: string; workId: string }) =>
         (await catalog.snapshot(scope)).entries
           .flatMap((entry) => (entry.kind === "file" ? [entry.uri] : []))
           .sort();
-      expect(
-        await fileUris({
-          kind: "work",
-          projectId: PROJECT_ID,
-          workId: NO_WORK,
-        }),
-      ).toEqual(["uploads://@/notes", "uploads://@/shot.png"]);
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
-        "scratch://@draft/arc",
+        "scratch://@w2/arc",
       ]);
 
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, NAMED));
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
-        "scratch://@draft/arc",
+        "scratch://@w2/arc",
       ]);
       const namedAddress = () =>
         createDocumentAddressResolver({
@@ -928,23 +690,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         document: {
           documentId: NAMED_FILE,
           authority: { kind: "work", projectId: PROJECT_ID, workId: NAMED },
-          entry: { uri: "scratch://@draft/arc" },
+          entry: { uri: "scratch://@w2/arc" },
         },
       });
 
       await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, NAMED));
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([]);
       await expect(namedAddress()).resolves.toEqual({ kind: "unavailable" });
-
-      await expect(
-        createDrizzleDocumentAddressStore(db).candidate({
-          projectId: PROJECT_ID as never,
-          userId: USER_ID,
-          scheme: "uploads",
-          workId: NO_WORK,
-          path: "/notes",
-        }),
-      ).resolves.toMatchObject({ kind: "current", documentId: FILE });
     });
   });
 }

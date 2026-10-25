@@ -1,5 +1,8 @@
 # markup — contracts and invariants
 
+This page covers the codec and shared link-scope contracts. The codec owns
+syntax and canonical wire spelling; hosts own identity assignment and storage.
+
 ## Public surface
 
 The root `@meridian/markup` exports:
@@ -33,9 +36,11 @@ loads neither Yjs nor the schema builder):
 - `@meridian/markup/links` (`links.ts`): the rules every host shares
   (`holder-link-scope.ts`, see Shared link rules): `createHolderLinkScope(holder,
   catalog)` over a `HolderCatalog`, `assignFreshLink` (pass 3),
-  `classifyWrittenHref`, `writtenAddresses` and `writtenSourceUri`; and
+  `qualifyWrittenHref`, `writtenAddresses` and `writtenSourceTarget`; and
   `walkLinkOccurrences(blocks)` / `spelledLinks(blocks, links)`
-  (`link-occurrences.ts`), see Link occurrences.
+  (`link-occurrences.ts`), see Link occurrences. Also exports
+  `formatMarkdownLink(label, href)` and `markdownLinkDestination(href)` for
+  non-editor messages and clipboard spelling without loading ProseMirror or Yjs.
 - `@meridian/markup/stored-links` (`stored-links.ts`): `extractStoredLinks(fragment)`
   and `storedLinkKeys(...)`, the Yjs twin of the occurrence walk. It takes the
   fragment name from `@meridian/prosemirror-schema/protocol`, never the schema
@@ -67,11 +72,42 @@ Preset-internal codec lists (`markdownBlockCodecs`, `markdownMarkCodecs`,
 package root. Tests or preset internals that need them import from sibling
 `markdown/index.js` / `mdx/index.js` modules instead.
 
-`MarkupCodec` exposes only `parse`, `parseWithSpans`, `serialize`,
-`serializeBlock`, and `serializeBlocks`. Every serialize call takes the
+`MarkupCodec` exposes `parse`, `parseWithSpans`, `parseWithSourceMap`, `parseStreaming`,
+`serialize`, `serializeBlock`, and `serializeBlocks`. Every serialize call takes the
 `DocumentLinkScope` explicitly; nothing is captured at construction.
 `serializeBlock`/`serializeBlocks` return normalized block bodies without hash
 prefixes. Agent-edit owns any hash-prefixed adapter layer.
+
+`parseStreaming(source, { repair })` performs one canonical whole-source parse and
+reports its blocks plus the exact open fenced-code node from micromark events. It
+retains no prior source, parser checkpoint, definition state, or node identity;
+the presentation host owns transport and identity reuse.
+
+Optional repair runs `remend` from one tail descriptor derived while the prepared
+source, final AST child and parsed block still correspond. The descriptor carries
+only the original-source start of the repairable last prose block. The codec
+reparses the complete candidate and accepts it only when every
+earlier block and every code node is unchanged and the last rendered block
+changes. Inline code, links and HTML are not repair candidates. A repair that only
+adds visible delimiter text is rejected.
+
+## Presentation source map
+
+`parseWithSourceMap` returns the same blocks as `parse`, plus a transient sidecar
+for inline text and maximal link runs. Source ranges are exact original `[from,
+to)` offsets or null when provenance is unavailable (rewritten source, table
+conversion, inline normalization such as multiline container prefixes,
+code spans, or unrecognized conversion). Paths address a top-level
+block and descendant; `count` covers link siblings. Text `offset` addresses a
+subrun within a PM text node: equal marks can coalesce text whose original
+source had intervening delimiters. Those runs retain separate source authority.
+`presentationTextRange` lets a host supply an authorized original subrange and
+receive its PM text range without interpreting Markdown escapes or entities.
+No schema attrs, document mutations or extra parser are involved. Normal parsing
+does not collect provenance. Consumers must decline null or mismatched ranges,
+not infer identity from labels. This map is for static presentation, not writes
+or worker streaming. The result also identifies an open fenced-code node from
+that same parse. Existing enclosing `parseWithSpans` semantics remain separate.
 
 ## Round-trip guarantees
 
@@ -100,7 +136,10 @@ normalize on first parse; canonical wire spelling then stabilizes.
 markdown/mdx plugins via `postParse`, not the builder; non-markdown format
 plugins do not inherit markdown-specific autolink behavior by default.
 Hooks receive the preprocessed source matching AST positions and run on internal
-reparses too. Only bare GFM autolink literals are demoted to prose; links whose
+reparses too. A preprocessor that changes length returns a prepared-source boundary
+map back to the caller's source. GFM table hard-break preparation uses canonical
+micromark code regions instead of recognizing fences itself. Only bare GFM autolink
+literals are demoted to prose; links whose
 source opens with `[` remain links even when their words equal their
 destination. Angle autolinks (`<kb://a.md>`) remain links in Markdown only;
 MDX ingress escapes them to literal text. Links without usable source positions
@@ -137,8 +176,11 @@ explicit registry parameter.
 
 ## Link scope
 
-Stored links, images and figures may carry a `ref` (`doc:<uuid>`, `ahead:<uuid>`,
-see `@meridian/contracts` `document-ref.ts`). The codec never reads or writes
+Stored links may carry a `ref` (`doc:<uuid>`, `folder:<uuid>`, `ahead:<uuid>`);
+images and figures remain document-only. Folder refs spell through their current
+catalog address and directory hrefs bind only when a live folder is there. Folder
+addresses never mint ahead refs (see `@meridian/contracts` `document-ref.ts`).
+The codec never reads or writes
 it: serialization asks the call's `DocumentLinkScope` for every destination
 (`spellLink` for link marks and HTML-table anchors, `spellSource` for `image`
 and `figure` sources) and writes only the spelled `href`. A scope spells a
@@ -169,9 +211,9 @@ implements `HolderCatalog` over its own data (the server's prepared snapshot,
 agent-edit's static catalog, the client's document index plus its settlement
 memo). `undefined` from a catalog lookup is "not held": the server records a
 snapshot miss, the client asks the server. `assignFreshLink` is pass 3 of ref
-assignment for a written href or source: classify, then the document
-`documentFor` finds (exact, then unique extension-omitted) spelled with
-`storedHref`, else a minted ahead ref at `aheadAddress`; agent-edit's
+assignment for a written href or source: classify, then bind a directory href
+through `folderFor`, or a document href through `documentFor` (exact, then unique
+extension-omitted); only a missing document address mints an ahead ref. Agent-edit's
 `assignOccurrences` and the client's `assignWrittenHref` both call it. Only the
 `stored-links` entry reads Yjs (`yjs`, plus the fragment name from the
 side-effect-free `@meridian/prosemirror-schema/protocol`); markup stays a leaf
@@ -233,7 +275,7 @@ parses as anything else. Positive `colspan` and `rowspan` round-trip. Unknown
 table structure is inert raw text, while invalid PM span/alignment attrs and
 malformed `Layout` column widths still throw rather than serialize lossily.
 
-`widths` counts GRID columns, and so does `colwidth` (ruling, 2026-07-29). A
+`widths` counts GRID columns, and so does `colwidth`. A
 cell's index among its row's children stops being its column the moment
 anything spans, so both sides walk the grid: `colwidth` holds one entry per
 column the cell covers, and **zero means that column has no width**. That is

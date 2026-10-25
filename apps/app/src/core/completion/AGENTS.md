@@ -1,105 +1,59 @@
-# core/completion — the headless half of a menu the writer types underneath
+# core/completion — headless suggestion and reference policy
 
-The open-menu store every trigger publishes through, plus the canonical
-reference policy and hierarchical browser over the normalized context catalog.
-Hosts drive it through the editor's lane mechanism
-([`../editor/extensions/suggestion/`](../editor/extensions/suggestion/suggestion-lane.ts))
-and the shared Composer. Neither host is visible from here.
+This directory owns the generation-fenced menu store and the hierarchical
+reference browser over the normalized catalog. Hosts provide trigger envelopes,
+geometry, insertion, and rendering; this package imports none of those UI
+concerns.
 
 ## Mental model
 
-**Nothing here knows what is rendering it.** No ProseMirror, no DOM, no React,
-no writer-facing string. `anchorRect` is the single piece of geometry a menu
-carries and the host supplies it as a callback, so the same store serves a
-ProseMirror rect and a caret-mirror measurement without learning which it got.
-The placement argument, drawn from the real dependency graph, is the module
-header in [`index.ts`](index.ts).
-
-**A trigger owns its envelope; this owns the menu.** Where a trigger may open,
-what a choice writes, and how a row looks all belong to the host. What arrives here is a driver frame: trigger text, query, range, candidates,
-geometry, and the transport's exit request. One `SuggestionDriver` owns the
-session and generation behind the private lifecycle, so stale updates or closes
-are refused rather than published by arrival order.
-Query/context/container updates reset selection by explicit caller policy, while
-a same-session refresh can preserve the active stable row ID. The store's own
-judgment remains narrow — a menu normally opens only while it has rows; a driver
-can retain an empty session for loading or empty feedback without selectable
-rows. The highlight sits on the first row the host will accept, and a row the
-host refuses is stepped over rather than handed a key that does nothing.
-
-**Transitions are serialized events.** An accepted open, update, or close first
-installs its captured snapshot, then calls its lifecycle callback, then notifies
-menu subscribers. A synchronous reentrant transition waits in the lifecycle's
-FIFO until that event is complete, while still returning its reserved identity
-or acceptance immediately. Close consumes the full session/generation ticket;
-session ID alone never proves ownership.
-
-**Interactions describe actions, not host policy.** One `SuggestionHost` lease
-registers ordinary ArrowUp, ArrowDown, Home, End, Enter, and Tab bindings plus
-semantic retreat (`backtrack`, then root `dismiss`). The shared menu owns edge
-movement and Enter-versus-Tab choice intent, while each host places retreat in
-its own Escape precedence. Releasing the lease tears down both halves once.
-
-**The browser projects; the catalog owns metadata.** `ReferenceCatalogPort`
-reads the one F1 `CatalogCacheView` and delegates explicit cold-Work acquisition
-to its owner. The browser never stores a second tree, enumerates availability,
-or turns wake hints into rows. Root merges only project, user, the current Work
-or no-Work warm view, and a No Work chat's lineage Scratch. Other Works remain
-authority rows until activated. Known-empty sources, folders, and acquired
-authorities are omitted; cold metadata cannot prove emptiness. Explicit source and folder URI
-queries retain an empty-state surface, and Back clears that search. No
-placeholder row may become a terminal reference.
-
-**Lexical tiers are inviolable.** Exact, prefix, word-start, contains, and fuzzy
-matches are strict tiers. Open-document and contextual priors break ties only
-inside a tier; normalized F1 tree order is last. Stable document identity is
-deduplicated and the 20-row cap applies only after the merged ordering.
-
-**Terminal identity is already authoritative.** A file row contains one
-`AuthoritativeReference`: document ID, persisted file classification, label,
-stable authority, and full non-contextual URI. Work, no-Work and lineage
-(`scratch://@/c12/`, the `lineage` arm of `StableReferenceAuthority`) URI
-syntax is verified through the contracts parser at this boundary; contextual
-Work syntax is never reconstructed into stable identity on the client.
-
-**Rows say where a document lives**, which is what tells two same-named
-documents apart; a reference is identity-bearing and a link is an address, so
-neither needs a "shared name" state.
-
-**A host may link ahead.** `linkAhead`/`onLinkAhead` let a host that can hold
-a link to a not-yet-written document (the Editor) append one `LinkAheadRow`
-after the catalog rows, for a root search that names no listed document
-exactly. The browser only asks; the host computes the address and writes the
-link. The chat composer passes neither: its references are identity-bearing and
-must name an existing document.
+- A driver owns one menu session and generation. Accepted open, update, and
+  close transitions install their snapshot, run the lifecycle callback, then
+  notify subscribers in FIFO order. Stale tickets and reentrant transitions
+  cannot publish after a newer session.
+- `SuggestionHost` leases ordinary navigation and semantic retreat. The menu
+  owns selection movement and Enter/Tab intent; hosts decide Escape precedence,
+  insertion, and dismissal. A withdrawn catalog closes through `close()`.
+- `anchorRect` is host-supplied geometry. No ProseMirror, DOM, React, or
+  writer-facing copy crosses this boundary.
+- `ReferenceCatalogPort` projects the single catalog cache. It does not build a
+  tree, enumerate availability, or treat wake hints as rows. Cold Work
+  acquisition remains an explicit owner operation; known-empty sources are
+  omitted except for explicit source/folder searches, which retain an empty
+  state until Back.
+- Ranking uses strict exact, prefix, word-start, contains, and fuzzy tiers;
+  contextual priors only break ties within a tier. Stable document identity is
+  deduplicated before the final 20-row cap.
+- Terminal rows already contain an `AuthoritativeReference`, a union on
+  `kind`: a document (validated URI, identity, classification, authority) or a
+  folder (identity and URI). Contextual Work syntax is never reconstructed into
+  stable identity here. Rows expose location so equal names remain
+  distinguishable.
+- Where the host's `kinds` admit folders, a folder's listing (no search) leads
+  with one `folder-mention` row, so a folder is mentioned from inside it and a
+  folder row itself always drills. Area roots are not mentionable. Empty
+  folders stay reachable only where folders are mentionable; file-only hosts
+  keep file-only reachability.
+- An Editor host may append one `LinkAheadRow` for a root query with no exact
+  catalog match. It computes and writes the address; the browser does not create
+  a document. Chat references are identity-bearing and never link ahead.
 
 ## Key rules
 
-- **No import from `editor/`, `features/`, or a rendering library.** A completion
-  that needs the editor belongs in the editor's lane, not here. The reverse
-  direction is fine and expected.
-- **Host callbacks, never host state.** Driver `start`/`update`/`exit`, row
-  `choose`, `dismiss`, segment completion, terminal selection, and `anchorRect`
-  are read live. F2 performs no React rendering or document insertion.
-- **A withdrawn session closes rather than freezes.** Hosts can lose their
-  catalog mid-menu (a schema fence, a read-only surface), and `close()` is the
-  one door for it.
-- **Navigation is semantic.** Enter drills or selects. Tab selects a terminal;
-  on a navigation row it completes one canonical URI segment and drills without
-  closing. Retreat backtracks one level before the host dismisses at root.
-- **No reference create row.** Bare `@` is a trigger, never a reference.
+- Keep this package independent of `editor/`, `features/`, and rendering
+  libraries. Surface-specific state belongs in the host.
+- Read callbacks live: `start`, `update`, `exit`, row choice, dismissal,
+  segment completion, terminal selection, and `anchorRect` are not copied into
+  a second controller.
+- Enter drills or selects; Tab selects a terminal and completes one URI segment
+  on navigation rows. Retreat backtracks before root dismissal.
+- Bare `@` is a trigger, never a reference-create row. No placeholder row may
+  become a terminal reference.
+- One title-matching rule. A second ranking implementation makes two menus
+  disagree about one query, and one of them disagrees with the resolver.
+- Anything only one surface renders goes in `TMeta` or the host's own state,
+  never the shared snapshot.
 
-## Anti-patterns
-
-- Growing the snapshot with something only one surface renders. That is `TMeta`,
-  or it is the host's own state.
-- A second title-matching rule anywhere. Two ranking implementations is two
-  menus that disagree about one query, and one of them disagrees with the
-  resolver.
-- Reading availability lookup or cold wake hints as browse candidates.
-- Fetching recursively or retaining catalog entries in the browser controller.
-
-→ [`../editor/extensions/suggestion/`](../editor/extensions/suggestion/suggestion-lane.ts) —
-  the TipTap adapter that drives this from a lane spec
-→ [`../editor/extensions/at-reference/`](../editor/extensions/at-reference/AtReferenceExtension.ts) —
-  the Editor's `@`, which links ahead
+→ [`../editor/extensions/at-reference/`](../editor/extensions/at-reference/AGENTS.md)
+  — Editor reference insertion and link-ahead adapter
+→ [`.context/CONTEXT.md`](.context/CONTEXT.md) — callback and cold-source details

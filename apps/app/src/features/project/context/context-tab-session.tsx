@@ -4,11 +4,17 @@
  * document both render through it, so a document has exactly one way to reach
  * its `DocumentSession` and no view owns a second Y.Doc, room or capture.
  */
-import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
+import {
+  type ResourceProjectionSnapshot,
+  resourceForDocumentIdentity,
+} from "@meridian/resource-replica";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { ResourceContentHandle } from "@/core/resources/resource-content-access";
 import { useAccountResourceReplica } from "./account-feature-context";
+import type { DocumentPresentation } from "./document-presentation";
+import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
+import type { LiveDocumentBindingState } from "./use-live-document-binding";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
 import { useRefusedEditsReopen } from "./use-refused-edits-reopen";
 
@@ -16,14 +22,17 @@ type ContextTabSessionProps = {
   projectId: string;
   documentId: string;
   resourceHandle?: string;
+  tabInstanceId?: string;
   availabilityRevision: string;
   /** False for a document with no live room yet (draft-only until Apply promotes it). */
   liveRoom?: boolean;
+  bindingOwner?: DocumentPresentation["bindingOwner"];
   children: (
     session: DocumentSession | null,
     failed: boolean,
     localContentReady: boolean,
     retry: () => void,
+    failureReason: Extract<LiveDocumentBindingState, { kind: "failed" }>["reason"] | null,
   ) => ReactNode;
 };
 
@@ -42,12 +51,15 @@ function ContextTabSession({
   projectId,
   documentId,
   resourceHandle,
+  tabInstanceId,
   availabilityRevision,
   liveRoom = true,
+  bindingOwner = "desktop-document-host",
   children,
   onReopen,
 }: ContextTabSessionProps & { onReopen: () => void }) {
   const resources = useAccountResourceReplica();
+  const opener = useProjectDocumentLiveOpener();
   const participant = useRef(`cached-server-tab:${crypto.randomUUID()}`);
   const resourceIdentity = resourceHandle ?? documentId;
   const resourceLookup = useMemo(
@@ -82,6 +94,7 @@ function ContextTabSession({
   useEffect(() => {
     if (!liveRoom) return;
     const abort = new AbortController();
+    const transferToken = tabInstanceId ? opener.transferToken(tabInstanceId, documentId) : null;
     setLocal((prior) => ({
       identity: resourceIdentity,
       documentId,
@@ -108,10 +121,35 @@ function ContextTabSession({
         }
       };
       try {
-        const key =
-          resourceLookup.kind === "handle"
-            ? { handle: resourceLookup.handle }
-            : await resources.keyForDocument(projectId, resourceLookup.documentId);
+        let key: { handle: string } | null;
+        if (resourceLookup.kind === "handle") {
+          key = { handle: resourceLookup.handle };
+        } else {
+          const projection = resources.readProjectionState(projectId);
+          if (projection.kind === "failed") {
+            key = await resources.keyForDocument(projectId, resourceLookup.documentId);
+          } else {
+            let snapshot: ResourceProjectionSnapshot | null = null;
+            if (projection.kind === "ready") {
+              snapshot = projection.snapshot;
+            } else {
+              try {
+                snapshot = await resources.whenProjectionReady(projectId, abort.signal);
+              } catch {
+                if (abort.signal.aborted) return;
+              }
+            }
+            if (snapshot) {
+              const record = resourceForDocumentIdentity(
+                snapshot.records,
+                resourceLookup.documentId,
+              );
+              key = record ? { handle: record.resource.handle } : null;
+            } else {
+              key = await resources.keyForDocument(projectId, resourceLookup.documentId);
+            }
+          }
+        }
         if (abort.signal.aborted) return;
         if (!key) {
           settleUnavailable();
@@ -136,6 +174,7 @@ function ContextTabSession({
           return;
         }
         const previous = installedHandle.current;
+        if (transferToken) opener.disposeTransfer(transferToken);
         installedHandle.current = result.handle;
         setLocal({
           identity: resourceIdentity,
@@ -151,7 +190,25 @@ function ContextTabSession({
     return () => {
       abort.abort();
     };
-  }, [availabilityRevision, liveRoom, projectId, resourceIdentity, resourceLookup, resources]);
+  }, [
+    availabilityRevision,
+    documentId,
+    liveRoom,
+    opener,
+    projectId,
+    resourceIdentity,
+    resourceLookup,
+    resources,
+    tabInstanceId,
+  ]);
+  useEffect(() => {
+    const transferToken = tabInstanceId ? opener.transferToken(tabInstanceId, documentId) : null;
+    return () => {
+      queueMicrotask(() => {
+        if (transferToken) opener.disposeTransfer(transferToken);
+      });
+    };
+  }, [documentId, opener, tabInstanceId]);
   useEffect(
     () => () => {
       installedHandle.current?.release();
@@ -162,7 +219,8 @@ function ContextTabSession({
   const binding = useLiveDocumentBinding({
     projectId,
     documentId: liveRoom && currentLocal.phase === "server" ? documentId : null,
-    owner: "desktop-document-host",
+    owner: bindingOwner,
+    tabInstanceId,
   });
   const automaticRetryRevision = useRef(availabilityRevision);
   useEffect(() => {
@@ -187,7 +245,9 @@ function ContextTabSession({
     session,
     state.kind === "failed" && state.documentId === documentId,
     selectedSession !== null && selectedSession === localSession,
-    binding.retry,
+    // Remounting redoes the local probe as well as the live open.
+    onReopen,
+    state.kind === "failed" && state.documentId === documentId ? state.reason : null,
   );
 }
 

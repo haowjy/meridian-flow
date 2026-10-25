@@ -1,6 +1,8 @@
 /** Thread snapshots aggregate every billed call without borrowing child usage. */
+
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
+import { EMPTY_RUN_STATE } from "../../test-support/run-state.js";
 import { createInMemoryRepositories } from "./adapters/in-memory/repositories.js";
 import type { ThreadEventHub } from "./thread-event-hub.js";
 import { buildThreadSnapshot } from "./thread-snapshot.js";
@@ -20,6 +22,7 @@ describe("buildThreadSnapshot ancestors", () => {
   it("aggregates all billed calls and reflects the next persisted response in a fresh snapshot", async () => {
     const repos = createInMemoryRepositories();
     const thread = await repos.threads.create({
+      aiWriteMode: "direct",
       userId: "user-1",
       projectId: "project-1",
       title: "Muse chat",
@@ -53,7 +56,7 @@ describe("buildThreadSnapshot ancestors", () => {
           read: async () => ({ kind: "asleep" as const }),
           readRunningTurnId: async () => null,
           readMany: async () => new Map(),
-          readPending: async () => ({ items: [] }),
+          readRunState: async () => EMPTY_RUN_STATE,
         },
         thread.id as ThreadId,
       );
@@ -114,6 +117,7 @@ describe("buildThreadSnapshot ancestors", () => {
     });
 
     const child = await repos.threads.createSubagent({
+      aiWriteMode: "direct",
       userId: "user-1",
       projectId: "project-1",
       parentThreadId: thread.id as ThreadId,

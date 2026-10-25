@@ -1,43 +1,34 @@
-# domains/context — deferred / future work
+# domains/context FUTURE
 
-Optional local improvements and future domain scope. Cross-cutting entries link
-to tracking issues. Delete an entry when it ships.
+These are deferred domain improvements. Validate the existing URI, tree, and
+catalog contracts before changing them.
 
-## Manuscript ordering & agent reorder tool
+## Manuscript ordering and agent reorder
 
-[haowjy/meridian-flow#144](https://github.com/haowjy/meridian-flow/issues/144)
+Catalog order is currently derived from the existing name-based projection.
+Design an explicit manuscript binder order, then add its persistence, route,
+ContextPort seam, and agent move/reorder behavior as one coherent change.
 
-Delete + rename shipped (PR #145): `rename.post.ts`, `delete.post.ts` routes,
-client mutation hooks, desktop context menu + kebab, mobile trailing action
-button. All context routes share `_helpers.ts` (resolveContextRoute,
-sanitizePath, contextErrorToHttp). Inline name forms share `useInlineNameForm`.
+## Batch revision availability
 
-Remaining from #144 — **manuscript ordering + drag-reorder:**
+`DocumentRevisions.current` and compaction have batch-capable availability
+ports but may still issue per-document lookups. Measure compaction and multi-
+document revision latency before changing the call shape.
 
-Sibling order is derived by the catalog projection (dirs-first, then
-`name.localeCompare`); `folders.sort_order` exists in schema but is unwired,
-and `documents` has no order column. Manual order decouples order from
-filename → explicit order field on `documents`, serializer sorts by order, a
-reorder port method + route, and an **agent reorder/move tool** (the AI
-co-authors the manuscript, so create/move become order-aware). Resolve the
-design question first — Scrivener-style explicit binder order for manuscript,
-and how the agent participates — via design-lead → tech-lead.
+## Owner-name collision lookup
 
-## Batch revision availability lookups
+`adapters/owner-lookup.ts` bounds returned name candidates, but its normalized-
+name predicate can still scan a project's Works on explicit Scratch receipts.
+Measure query plans at representative Work counts before changing it. If material,
+index one shared normalized-name key; keep corrections and labels in the existing
+owner resolver, without adding address aliases.
 
-`document-revisions.ts` `current` calls `availability.lookup` once per
-document, though the port accepts a `documentIds` batch. Compaction calls it
-twice (before the summary and once per successor-prepare attempt) over every
-document recorded in the history it checks. Unmeasured; batch it if those
-round trips show in compaction latency.
+## Document purge cleanup and sweep cost
 
-## Cache link-scope membership by manifest head
+Object-store deletion runs after a document purge commits. A failed object deletion is logged
+but is not retried, because the document no longer enters a later purge sweep. Add durable retry
+ownership before treating physical object erasure as guaranteed.
 
-`adapters/document-link-scope.ts` reads manifest membership through the same
-resolver ContextFS lists through, which flushes the manifest and replays it
-per snapshot. With real membership a live model read's scope costs about
-21 ms p50 on a 1,000-document project, but a single draft-view operation
-costs about 49 ms, of which about 33 ms is the manifest flush and replays
-(`729-730-scope-benchmark.log` in the model-tool-surface work directory).
-Cache membership per snapshot key by manifest head sequence and draft branch
-state, without weakening the flush that keeps reads fresh; measure first.
+The purge batch bounds completed purges, not inspected candidates. Documents held by pending Work
+changes can make each sweep scan the full overdue backlog. Measure that backlog before changing the
+query or adding a held-candidate cursor.

@@ -6,9 +6,100 @@ import {
   type MdastTableCell,
   parseInlineChildren,
 } from "../../helpers.js";
+import { originalSource, type PreparedSource } from "../../prepared-source.js";
 import type { BlockCodec } from "../../types.js";
-import { GFM_INGRESS_HARD_BREAK } from "../table-ingress.js";
+import { isContainerBlockPrefix, stripIndentedQuotePrefix } from "../container.js";
+import { markdownSyntax } from "../syntax.js";
 import { parseHtmlTable, serializeHtmlTable } from "./table-html.js";
+
+const GFM_INGRESS_HARD_BREAK = "<br/>";
+
+/**
+ * Remark cannot recognize a pipe-table row continued by a Markdown hard break.
+ * Fold that ingress-only spelling before parsing; serialization never emits it.
+ */
+export function normalizeGfmTableHardBreaks(source: string): string {
+  return prepareGfmTableHardBreaks(source).value;
+}
+
+export function prepareGfmTableHardBreaks(source: string): PreparedSource {
+  // No table hard-break spelling can exist without a backslash immediately
+  // before a line ending. Avoid a second tokenization on the ordinary parse path.
+  if (!source.includes("\\\n") && !source.includes("\\\r\n")) return originalSource(source);
+  const lines = source.split("\n");
+  const lineOffsets: number[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    lineOffsets.push(offset);
+    offset += line.length + 1;
+  }
+  const code = markdownSyntax(source).code;
+  const replacements: Replacement[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index] ?? "";
+    const lineFrom = lineOffsets[index] ?? source.length;
+    const lineTo = lineFrom + line.length;
+    if (code.some((region) => region.from <= lineTo && region.to >= lineFrom)) {
+      index++;
+      continue;
+    }
+
+    const header = pipeRowAt(lines, index);
+    const delimiter = header ? pipeRowAt(lines, header.end + 1) : null;
+    if (!header || !delimiter || !isDelimiterRow(delimiter.value)) {
+      index++;
+      continue;
+    }
+
+    replacements.push(...header.replacements, ...delimiter.replacements);
+    index = delimiter.end + 1;
+    while (index < lines.length) {
+      const row = pipeRowAt(lines, index);
+      if (!row || isDelimiterRow(row.value)) break;
+      replacements.push(...row.replacements);
+      index = row.end + 1;
+    }
+  }
+
+  if (replacements.length === 0) return originalSource(source);
+  return applyReplacements(source, replacements, lineOffsets);
+}
+
+interface Replacement {
+  fromLine: number;
+  fromColumn: number;
+  toLine: number;
+  toColumn: number;
+  value: string;
+}
+
+function applyReplacements(
+  source: string,
+  replacements: readonly Replacement[],
+  lineOffsets: readonly number[],
+): PreparedSource {
+  let cursor = 0;
+  let value = "";
+  const originalOffsets = [0];
+  const appendOriginal = (to: number) => {
+    value += source.slice(cursor, to);
+    for (; cursor < to; cursor++) originalOffsets.push(cursor + 1);
+  };
+  for (const replacement of replacements) {
+    const from = (lineOffsets[replacement.fromLine] ?? source.length) + replacement.fromColumn;
+    const to = (lineOffsets[replacement.toLine] ?? source.length) + replacement.toColumn;
+    appendOriginal(from);
+    value += replacement.value;
+    for (let index = 1; index <= replacement.value.length; index++) {
+      originalOffsets.push(index === replacement.value.length ? to : from);
+    }
+    cursor = to;
+  }
+  appendOriginal(source.length);
+  return { value, originalOffsets };
+}
 
 export const tableCodec: BlockCodec<MdastTable> = {
   name: "table",
@@ -77,4 +168,63 @@ function replaceHardBreaks(
       children: replaceHardBreaks(replaced.children as MdastInline[], replace),
     } as MdastInline;
   });
+}
+
+function pipeRowAt(
+  lines: readonly string[],
+  start: number,
+): { value: string; end: number; replacements: Replacement[] } | null {
+  const first = lines[start];
+  const prefix = first === undefined ? null : tableLinePrefix(lines, start);
+  if (first === undefined || prefix === null) return null;
+
+  let value = first;
+  let end = start;
+  const replacements: Replacement[] = [];
+  while (hasOddTrailingBackslash(value)) {
+    const continuation = lines[end + 1];
+    const continuedPrefix = continuationPrefix(prefix);
+    if (continuation === undefined || !continuation.startsWith(continuedPrefix)) return null;
+    value = `${value.slice(0, -1)}${GFM_INGRESS_HARD_BREAK}${continuation.slice(continuedPrefix.length)}`;
+    replacements.push({
+      fromLine: end,
+      fromColumn: (lines[end] ?? "").length - 1,
+      toLine: end + 1,
+      toColumn: continuedPrefix.length,
+      value: GFM_INGRESS_HARD_BREAK,
+    });
+    end++;
+  }
+  return value.trimEnd().endsWith("|") ? { value, end, replacements } : null;
+}
+
+function hasOddTrailingBackslash(value: string): boolean {
+  const match = value.match(/\\+$/);
+  return match !== null && match[0].length % 2 === 1;
+}
+
+function isDelimiterRow(value: string): boolean {
+  const cells = value
+    .slice(value.indexOf("|"))
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|");
+  return cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell.trim()));
+}
+
+function continuationPrefix(prefix: string): string {
+  return prefix.replace(/(^|> )([-+*] |\d+[.)] )$/, (_match, container: string, marker: string) => {
+    return `${container}${" ".repeat(marker.length)}`;
+  });
+}
+
+function tableLinePrefix(lines: readonly string[], index: number): string | null {
+  const line = lines[index];
+  if (line === undefined) return null;
+  const pipe = line.indexOf("|");
+  if (pipe === -1) return null;
+  const prefix = line.slice(0, pipe);
+  const { remainder } = stripIndentedQuotePrefix(lines, index, prefix);
+  return isContainerBlockPrefix(lines, index, remainder) ? prefix : null;
 }

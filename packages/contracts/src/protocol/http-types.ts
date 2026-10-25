@@ -9,8 +9,8 @@ import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
 import {
   CONTEXT_URI_SCHEMES,
   type ContextUriScheme,
-  WORK_SCOPED_CONTEXT_URI_SCHEMES,
-  type WorkScopedContextUriScheme,
+  isWorkScopedScheme,
+  type OwnedContextUriScheme,
 } from "../context-uri.js";
 import type { DocumentId, UserId, WorkId } from "../ids.js";
 import type { ProjectDto } from "../projects/index.js";
@@ -21,10 +21,10 @@ import type {
   ModelRequestDebugRecord,
   ModelRequestDebugRetention,
   ModelResponse,
+  RunState,
   Thread,
   ThreadActivity,
   ThreadListItem,
-  ThreadPendingInbox,
   ThreadStatus,
   Turn,
   TurnContextPreview,
@@ -32,9 +32,13 @@ import type {
   TurnStatus,
   TurnUsage,
 } from "../threads/index.js";
-import type { AiWriteMode, Work, WorkSlug, WorksSnapshot } from "../works/index.js";
-import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
-import type { SubmittedReference } from "./user-turn-admission.js";
+import { threadSchema } from "../threads/thread.js";
+import { type RemovalIdentity, removalIdentitySchema } from "../tree-change.js";
+import type { AiWriteMode, Work, WorkHandle, WorksSnapshot } from "../works/index.js";
+import type { DocumentRemovalRecord } from "./document-removal.js";
+import { type Filetype, filetypeSchema, type YjsTrackedSchemaType } from "./filetype.js";
+import { admissionReceiptShape, type SubmittedReference } from "./user-turn-admission.js";
+import { runStateSchema } from "./ws-protocol.js";
 
 export type { JsonValue } from "../threads/index.js";
 export type {
@@ -54,14 +58,21 @@ export type ThreadLiveState = {
   threadId: string;
   /** Derived from the live lease, not the durable thread row. */
   status: ThreadStatus;
-  runningTurnId: string | null;
   /** Direct subagent activity for this thread; derived, never a turn block. */
   activity: ThreadActivity;
-  /** Undelivered inbox rows for this thread, ordered by `seq`; derived, never a turn block. */
-  pending: ThreadPendingInbox;
+  /** What the chat is doing, read with the journal head in one transaction; `version` is that head. */
+  runState: RunState;
   /** Last event already materialized in snapshot rows; WS replay resumes strictly after it. */
   resumeAfterSeq: string;
 };
+
+export const projectBootstrapResponseSchema = z.object({
+  projectId: z.string().min(1),
+  documentId: z.string().min(1),
+  manuscriptSourceId: z.string().min(1),
+  uri: z.string().min(1),
+});
+export type ProjectBootstrapResponse = z.infer<typeof projectBootstrapResponseSchema>;
 
 export type CreateProjectRequest = {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
@@ -91,13 +102,40 @@ export type { AiWriteMode, Work };
 
 export type ListWorksResponse = WorksSnapshot;
 
+/** Identity projection for callers resolving a named Work, not a complete catalog validator. */
+export const workCatalogIdentitySchema = z.object({
+  projectId: z.string().min(1),
+  works: z.array(z.object({ id: z.string().min(1), handle: z.string().min(1), name: z.string() })),
+});
+
 export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;
 
 export type ProjectContextTreeScheme = ContextUriScheme;
 
+/**
+ * Where the writer's create lands, the same identity-based address a move carries. The
+ * server joins a branch's hidden document waiting there; omitted, the create is nameless
+ * and lands in `folderPath` as `Untitled N`.
+ */
+export type CreateUntitledDestination = {
+  parent: ContextDestinationParent;
+  /** The leaf filename as the writer typed it. */
+  name: string;
+};
+
 export type CreateUntitledContextDocumentRequest = {
   documentId: string;
   folderPath?: string;
+  destination?: CreateUntitledDestination;
+};
+
+/** A document's current canonical address. */
+export type ContextDocumentAddress = {
+  scheme: ProjectContextTreeScheme;
+  path: string;
+  name: string;
+  /** Present only when the canonical location is Work-scoped. */
+  workId?: string | null;
 };
 
 export type CreateUntitledContextDocumentResponse = {
@@ -110,6 +148,24 @@ export type CreateUntitledContextDocumentResponse = {
   workId?: string | null;
 };
 
+/**
+ * The create became an existing document: a branch's hidden one at the destination.
+ * `documentId` is the joined document, not the submitted id, which now forwards to it.
+ */
+export type CreateUntitledContextDocumentJoined = {
+  status: "joined";
+  documentId: string;
+  address: ContextDocumentAddress;
+};
+
+/** File creation success always carries the created identity and its canonical URI. */
+export const createContextFileResponseSchema = z.object({
+  status: z.literal("created"),
+  documentId: z.string().min(1),
+  uri: z.string().min(1),
+});
+export type CreateContextFileResponse = z.infer<typeof createContextFileResponseSchema>;
+
 /** Creation uses the same conflict payload for files and folders, including HTTP 409. */
 export type CreateContextEntryResult =
   | { status: "created"; documentId?: string; uri?: string }
@@ -119,17 +175,77 @@ export type CreateUntitledContextDocumentResult =
   | CreateUntitledContextDocumentResponse
   | { status: "conflict" };
 
+/**
+ * Everything the create endpoint can answer. A client that sends a `destination` must
+ * handle `joined`; one that doesn't never receives it.
+ */
+export type CreateUntitledContextDocumentAnswer =
+  | CreateUntitledContextDocumentResult
+  | CreateUntitledContextDocumentJoined;
+
 /** Exact identities committed by one successful context-tree deletion. */
-export type DeleteContextEntryResult = {
-  status: "deleted";
-  deletedDocumentIds: string[];
-  availabilityGeneration: string;
-};
+export const deleteContextEntryResultSchema = z.object({
+  status: z.literal("deleted"),
+  removed: z.array(z.object({ documentId: z.string().min(1), removal: removalIdentitySchema })),
+  availabilityGeneration: z.string().regex(/^(0|[1-9]\d*)$/),
+});
+export type DeleteContextEntryResult = z.infer<typeof deleteContextEntryResultSchema>;
 
 export type DeleteContextEntryRequest = {
   operationId: string;
   path: string;
   expected: { kind: "file"; documentId: string } | { kind: "folder"; nodeId: string };
+};
+
+export const restoreContextDocumentsRequestSchema = z.object({
+  documents: z
+    .array(
+      z.object({
+        documentId: z.string().uuid(),
+        removal: removalIdentitySchema,
+      }),
+    )
+    .min(1)
+    .refine(
+      (documents) =>
+        new Set(documents.map(({ documentId }) => documentId)).size === documents.length,
+      "Each document may be restored once per request",
+    ),
+});
+export type RestoreContextDocumentsRequest = z.infer<typeof restoreContextDocumentsRequestSchema>;
+
+export type RestoreContextDocumentResult =
+  | { documentId: string; outcome: "restored"; landedAt?: string }
+  | {
+      documentId: string;
+      outcome: "superseded" | "already_living" | "ancestor_taken" | "refused";
+    };
+
+export type RestoreContextDocumentsResponse = {
+  documents: RestoreContextDocumentResult[];
+};
+
+/** One restorable document in a project's trash. */
+export type DocumentTrashEntry = {
+  documentId: string;
+  name: string;
+  scheme: ProjectContextTreeScheme;
+  /** Source-relative path, including the filename, without a leading slash. */
+  formerPath: string;
+  removal: RemovalIdentity;
+  actor: DocumentRemovalRecord["actor"];
+  retention:
+    | { kind: "scheduled"; purgeAt: string }
+    | { kind: "held"; works: Array<{ id: string; name: string }> };
+};
+
+export type ListDocumentTrashResponse = {
+  documents: DocumentTrashEntry[];
+};
+
+/** One trashed document with its last settled Markdown projection. */
+export type GetDocumentTrashResponse = DocumentTrashEntry & {
+  markdown: string;
 };
 
 /** Stable writer-selected parent. URI callers may continue to omit this. */
@@ -143,7 +259,7 @@ export type ContextDestinationParent = {
       scheme: ProjectContextTreeScheme;
       owner: {
         workId: string | null;
-        workSlug?: string | null;
+        workHandle?: string | null;
         rootThreadId?: string | null;
         rootThreadRef?: string | null;
       };
@@ -177,14 +293,14 @@ export type MoveContextEntrySuccess = {
 /** Canonical, server-normalized location used by Open-existing recovery. */
 export type MoveContextEntryLocator =
   | {
-      scheme: Exclude<ProjectContextTreeScheme, WorkAuthorityScheme>;
+      scheme: Exclude<ProjectContextTreeScheme, OwnedContextUriScheme>;
       path: string;
       authority: { kind: "project" };
     }
   | {
-      scheme: WorkAuthorityScheme;
+      scheme: "scratch";
       path: string;
-      authority: { workId: WorkId; workSlug: WorkSlug | null };
+      authority: { workId: WorkId; workHandle: WorkHandle | null };
     }
   | {
       scheme: "scratch";
@@ -210,37 +326,27 @@ export function isProjectContextTreeScheme(value: unknown): value is ProjectCont
   );
 }
 
-/** Context tree schemes supporting contextual, `@slug`, and explicit `@/` authority. */
-export const WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES = new Set<ProjectContextTreeScheme>([
-  ...WORK_SCOPED_CONTEXT_URI_SCHEMES,
-]);
-
-export function isWorkScopedProjectContextScheme(
-  scheme: ProjectContextTreeScheme,
-): scheme is WorkAuthorityScheme {
-  return WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES.has(scheme);
-}
-
-export type WorkAuthorityScheme = WorkScopedContextUriScheme;
-
 /**
- * A recent document and its owner. Scratch and Uploads name a Work; a No Work
- * chat's Scratch names its lineage by the first chat's id (`rootThreadId`).
+ * A recent document and its owner. Scratch names a Work, or for a No Work chat its
+ * lineage by the first chat's id (`rootThreadId`). An upload names the chat it was
+ * attached in (`chatId`).
  */
 export type WorkingSetRoute =
   | {
       documentId: DocumentId;
-      scheme: Exclude<ProjectContextTreeScheme, WorkAuthorityScheme>;
+      scheme: Exclude<ProjectContextTreeScheme, OwnedContextUriScheme>;
       path: string;
       workId?: never;
       rootThreadId?: never;
+      chatId?: never;
     }
   | {
       documentId: DocumentId;
-      scheme: WorkAuthorityScheme;
+      scheme: "scratch";
       path: string;
       workId: WorkId | null;
       rootThreadId?: never;
+      chatId?: never;
     }
   | {
       documentId: DocumentId;
@@ -248,6 +354,15 @@ export type WorkingSetRoute =
       path: string;
       workId?: never;
       rootThreadId: string;
+      chatId?: never;
+    }
+  | {
+      documentId: DocumentId;
+      scheme: "uploads";
+      path: string;
+      workId?: never;
+      rootThreadId?: never;
+      chatId: string;
     };
 
 export type WorkingSetRouteParseResult =
@@ -300,6 +415,22 @@ export function parseWorkingSetRoute(input: unknown): WorkingSetRouteParseResult
     return { ok: false, message: "Working-set route path must contain 1 to 1024 characters" };
   }
 
+  if (route.chatId !== undefined) {
+    const chatId = parseRequestId(route.chatId);
+    if (route.scheme !== "uploads" || route.workId !== undefined || !chatId) {
+      return { ok: false, message: "Only upload routes name a chat, and without a workId" };
+    }
+    return {
+      ok: true,
+      value: {
+        documentId: documentId as DocumentId,
+        scheme: route.scheme,
+        path: route.path,
+        chatId,
+      },
+    };
+  }
+
   if (route.rootThreadId !== undefined) {
     const rootThreadId = parseRequestId(route.rootThreadId);
     if (route.scheme !== "scratch" || route.workId !== undefined || !rootThreadId) {
@@ -316,7 +447,11 @@ export function parseWorkingSetRoute(input: unknown): WorkingSetRouteParseResult
     };
   }
 
-  if (isWorkScopedProjectContextScheme(route.scheme)) {
+  if (route.scheme === "uploads") {
+    return { ok: false, message: "Upload routes require a chatId" };
+  }
+
+  if (isWorkScopedScheme(route.scheme)) {
     if (!("workId" in route) || (route.workId !== null && typeof route.workId !== "string")) {
       return { ok: false, message: "Work-scoped routes require an explicit workId or null" };
     }
@@ -379,6 +514,22 @@ export type ContextReadBinaryResponse = {
   mimeType: string;
 };
 
+export const contextReadResponseSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("tracked"),
+    path: z.string(),
+    schemaType: z.enum(["document", "code"]),
+    filetype: filetypeSchema,
+    content: z.string(),
+  }),
+  z.object({
+    kind: z.literal("binary"),
+    path: z.string(),
+    url: z.string().min(1),
+    fileType: z.enum(["docx", "image", "pdf", "binary"]),
+    mimeType: z.string(),
+  }),
+]) satisfies z.ZodType<ContextReadResponse>;
 export type ContextReadResponse = ContextReadTrackedResponse | ContextReadBinaryResponse;
 
 export type CreateThreadRequest = {
@@ -389,6 +540,11 @@ export type CreateThreadRequest = {
   agentSelection: AgentSelection;
   /** Omission and explicit null both bind the project's locked No Work as primary. */
   workId?: WorkId | null;
+  /**
+   * The writer's explicit mode for the new chat. Omitted, the chat copies its Work's default;
+   * given, it also becomes that Work's default.
+   */
+  aiWriteMode?: AiWriteMode;
 };
 
 export type CreateThreadResponse = Thread;
@@ -415,26 +571,108 @@ export type HandoffBriefRetryRequest = z.infer<typeof handoffBriefRetryRequestSc
 export const replyRetryRequestSchema = z.strictObject({ id: z.uuid() });
 export type ReplyRetryRequest = z.infer<typeof replyRetryRequestSchema>;
 
-export type ForkThreadRequest = z.infer<typeof forkThreadRequestSchema>;
+/** Chat Stop: the press set's watermark and the execution the writer saw. Types: `StopRequest`. */
+export const stopRequestSchema = z.strictObject({
+  requestId: z.uuid(),
+  seenThrough: z.number().int().min(0),
+  seenExecutionId: z.string().min(1).nullable(),
+  mine: z.array(z.uuid()).max(500),
+});
 
-/** What happens to a Work's pending changes when it switches to auto-apply. */
-export type PendingChangesChoice = "apply" | "keep";
+/** The queue's x and Cancel queue: these waiting messages, by user turn id. Types: `HandBackRequest`. */
+export const handBackRequestSchema = z.strictObject({
+  requestId: z.uuid(),
+  ids: z.array(z.uuid()).min(1).max(500),
+});
 
-export type UpdateWorkWriteModeRequest = {
-  aiWriteMode: AiWriteMode;
-  /** Omitted until the writer has chosen; the server then answers `confirmation_required`. */
-  pending?: PendingChangesChoice;
+/** Send now: the record the writer saw, and every writer message it showed waiting. Types: `SendNowRequest`. */
+export const sendNowRequestSchema = z.strictObject({
+  seenThrough: z.number().int().min(0),
+  seenExecutionId: z.string().min(1),
+  waiting: z.array(z.uuid()).min(1).max(500),
+});
+
+const userMessageBlockSchema = z.union([
+  z.object({ type: z.literal("text"), text: z.string() }),
+  z.object({
+    type: z.literal("reference"),
+    kind: z.literal("document"),
+    text: z.string(),
+    documentId: z.string(),
+    uri: z.string(),
+  }),
+  z.object({
+    type: z.literal("reference"),
+    kind: z.literal("folder"),
+    text: z.string(),
+    folderId: z.string(),
+    uri: z.string(),
+  }),
+  z.object({
+    type: z.literal("skill"),
+    text: z.string(),
+    slug: z.string(),
+    name: z.string(),
+    description: z.string(),
+  }),
+  z.object({ type: z.literal("image"), documentId: z.string(), uri: z.string() }),
+]);
+
+const handBackResultShape = {
+  handedBack: z.array(
+    z.object({ userTurnId: z.string(), blocks: z.array(userMessageBlockSchema) }),
+  ),
+  answered: z.array(z.string()),
+  gone: z.array(z.string()),
 };
 
-export type UpdateWorkWriteModeResponse =
-  | { aiWriteMode: AiWriteMode; status: "updated" }
-  | {
-      aiWriteMode: AiWriteMode;
-      status: "confirmation_required";
-      reason: "pending_branch_changes";
-      pendingChangeCount: number;
-      message: string;
-    };
+/**
+ * The command answers, shape-checked in full: the hand-back content (blocks), the id arrays and the whole
+ * canonical run-state record (`runStateSchema`). A client confirms a command only from an answer its schema
+ * accepts. Types: `StopResponse`, `HandBackResponse`, `SendNowResponse`.
+ */
+export const stopResponseSchema = z.object({
+  threadId: z.string(),
+  ...handBackResultShape,
+  cancelledExecutionId: z.string().nullable(),
+  runState: runStateSchema,
+});
+
+export const handBackResponseSchema = z.object({
+  ...handBackResultShape,
+  runState: runStateSchema,
+});
+
+export const sendNowResponseSchema = z.object({
+  threadId: z.string(),
+  cancelledExecutionId: z.string().nullable(),
+  runState: runStateSchema,
+});
+
+/**
+ * An accepted Retry: 201 when this request started it, 200 on a replay. The
+ * execution is what a client follows until the run-state record shows another or none; it may end
+ * on a cancelled compaction without ever reserving the new reply. `turn` is the
+ * new reply when this request id names it, else null (a replay matched by the
+ * request's first reserved turn, `metadata.retryReplyId`, before the reply was
+ * reserved, or a started Retry whose answer couldn't read it). `executionId` is
+ * null only for a reply reserved before run identity.
+ */
+export type ReplyRetryResponse = {
+  executionId: string | null;
+  turn: Turn | null;
+  /** The record after the Retry's reservation (read again on a replay), from `answerRunState`. */
+  runState: RunState;
+};
+
+/**
+ * A Retry replay arrived while the claim was held and nothing it could match was
+ * reserved yet (HTTP 503). Not a refusal: repeat the same request id until it
+ * answers an execution or a definitive refusal.
+ */
+export const REPLY_RETRY_PENDING_CODE = "retry_pending" as const;
+
+export type ForkThreadRequest = z.infer<typeof forkThreadRequestSchema>;
 
 export type SendMessageRequest = {
   submissionId: string;
@@ -451,15 +689,25 @@ export type ThreadAvailableSkill = {
   description: string;
 };
 
-export type ThreadAvailableSkillsResponse = {
-  skills: ThreadAvailableSkill[];
-};
+export const threadAvailableSkillsResponseSchema = z.object({
+  skills: z.array(z.object({ slug: z.string().min(1), name: z.string(), description: z.string() })),
+});
+export type ThreadAvailableSkillsResponse = z.infer<typeof threadAvailableSkillsResponseSchema>;
+
+export const sendMessageResponseSchema = z.object({
+  ...admissionReceiptShape,
+  status: z.literal("accepted"),
+}) satisfies z.ZodType<SendMessageResponse>;
 
 export type SendMessageResponse = {
   threadId: string;
+  /** Owed until the run-state record stops listing it (`runStateVersion` is where that is first read). */
   userTurnId: string;
-  /** The live run's assistant turn on a merged send; null for a fresh run. */
-  assistantTurnId: string | null;
+  /**
+   * The stream version of the run-state record this admission's own transaction published, stored so
+   * a replay answers the same value. Null for an admission recorded before run state existed.
+   */
+  runStateVersion: string | null;
   /** Pre-start event position; the client subscription replays events strictly after it. */
   resumeAfterSeq: string;
   /**
@@ -470,39 +718,14 @@ export type SendMessageResponse = {
   status: "accepted";
 };
 
-export type CancelTurnResponse = {
-  threadId: string;
-  turnId: string;
-  status: "cancelled" | "already_finished" | "not_found";
-};
+export const cancelTurnResponseSchema = z.object({
+  threadId: z.string().min(1),
+  turnId: z.string().min(1),
+  status: z.enum(["cancelled", "already_finished", "not_found"]),
+});
+export type CancelTurnResponse = z.infer<typeof cancelTurnResponseSchema>;
 
-export type ThreadSnapshotAncestor = {
-  id: string;
-  title: string | null;
-  agentName: string | null;
-};
-
-export type ThreadSnapshotResponse = {
-  threadId: string;
-  thread: Thread;
-  turns: Turn[];
-  /** Token totals across every model response billed to this thread, all turn branches included. */
-  threadUsage: {
-    inputTokens: number;
-    cacheReadTokens: number;
-    cacheReportedInputTokens: number;
-    cacheReportedCalls: number;
-    cacheWriteTokens: number;
-    outputTokens: number;
-    cacheResets: number;
-  };
-  liveState: ThreadLiveState;
-  actionRequired: boolean;
-  /** First event position after this snapshot; clients reject it below their stored floor. */
-  nextSeq: string;
-  /** Point-looked-up spawn path, ordered root → direct parent; no ancestor conversations. */
-  ancestors: ThreadSnapshotAncestor[];
-};
+export type { ThreadSnapshotAncestor, ThreadSnapshotResponse } from "./thread-snapshot.js";
 
 /** GET /api/threads/:threadId/transcript: one keyset page of the effective or inherited transcript. */
 export type TranscriptPageResponse = {
@@ -528,9 +751,8 @@ export type ModelRequestDebugListResponse = {
   retention: ModelRequestDebugRetention;
 };
 
-export type ListThreadsResponse = {
-  threads: Thread[];
-};
+export const listThreadsResponseSchema = z.object({ threads: z.array(threadSchema) });
+export type ListThreadsResponse = z.infer<typeof listThreadsResponseSchema>;
 
 export type BinaryDocumentFileType = "docx" | "image" | "pdf";
 

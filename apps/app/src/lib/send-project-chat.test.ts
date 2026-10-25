@@ -1,4 +1,10 @@
 // @vitest-environment jsdom
+/**
+ * Send project chat behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - durable intent precedes Composer departure (kb/decisions/chat/composer/send-lifecycle.md)
+ */
 
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { bindChatSubmissions } from "@/client/chat-submissions";
@@ -46,6 +52,7 @@ function send(overrides: Partial<Omit<SendProjectChatArgs, "threadActions" | "se
     submissionId: "sub-1",
     agent,
     workId: "no-work",
+    workAiWriteMode: "direct",
     ...overrides,
     threadActions,
     selectChat,

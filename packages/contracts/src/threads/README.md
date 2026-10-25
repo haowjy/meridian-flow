@@ -1,12 +1,16 @@
 # Thread inbox controls
 
 `MessageIntent` distinguishes directed `message`, context-only `notice`, and
-runtime `control`. A control is not model-visible chat text. Its body is `{ kind: "compact", instructions?: string }`.
-Commands are writer-only, not tools.
+runtime `control`. A control is not model-visible chat text. Its body is
+`{ kind: "compact", instructions?: string }` or `{ kind: "write_mode", mode }`
+(`control-body.ts`). Commands are writer-only, not tools.
 
-`PendingInboxItem.control` carries that body on control rows. `summary` shows the instructions when present. Snapshot pending state and
-`inbox.changed` share the same schema. A queued control has no transcript
-position until a divider with `metadata.controlMessageId` starts it. Boundaries adopt every pending non-command row regardless of queued commands. At run start, waiting messages and notices run before the oldest command, which runs alone once no message remains. Stop only ends the turn.
+`PendingInboxItem.control` carries that body on control rows. `summary` shows the instructions when present. The snapshot's run-state record
+and `meridian.run_state` frames share the same schema. A queued control has no transcript
+position until a divider with `metadata.controlMessageId` starts it. Boundaries adopt every pending non-command row regardless of queued commands. At run start, waiting messages and notices run before the oldest command, which runs alone once no message remains. Stop gives no command priority. Requests, responses and status codes are in the
+[HTTP control API](../../../../docs/api/thread-controls.md); queue selection, the
+run-start apply and Retry are in the
+[runtime controls context](../../../../apps/server/server/domains/runtime/.context/controls.md).
 
 Manual dividers use role `compaction`, `trigger: "manual"`, and ordinary turn
 statuses: `pending`, `complete`, `error`, `cancelled`. A failed divider of
@@ -18,22 +22,52 @@ values. Its `turn.error` code is `context_too_large`, `context_window_exceeded`,
 `tokensAfter`. `pinnedRequestTurnIds` records every unanswered directed request
 plus the newest writer request; ids may identify user or directed system turns.
 
-See [the HTTP control API](../../../../docs/api/thread-controls.md) for enqueue
-idempotency and withdrawal outcomes (`withdrawn` or `already_started`).
-Frontend commands and divider rendering are separate from these transport
-contracts.
+### Switch clock
+
+A control answer is read in one transaction under the thread lock and carries
+the chat's `runState` record, whose `version` is the thread's journal head in the
+socket's frame space and whose `mode` is the applied write mode. A queued switch
+(which may be another request's row) is an item of that record. Every switch
+transition commits under that lock and appends its frames, so the state the
+answer reports is the server's switch state as of every frame at or below
+`runState.version`. The withdraw answer carries the record likewise, read after
+the acknowledgment, so a quiet chat's record can reach the answer.
+An applied switch also projects `meridian.write_mode.switched`
+(`{ threadId, mode, controlId, turnId, prevTurnId, position }`, the last two being
+where the switch turn sits) at its own journal `seq`, ahead of
+the `meridian.run_state` record that empties the queue; catch-up replay delivers
+it. The snapshot's `thread.aiWriteMode`, `liveState.runState` and `nextSeq` are
+one transaction; label that state `nextSeq - 1`.
+
+### Stop and hand-back
+
+`run-state.ts` holds the shapes. `StopRequest { requestId, seenThrough,
+seenExecutionId, mine }` is decided once under the thread lock and stored by
+request id; a replay with the same body answers the stored decision, and another
+body is a 409. Each message the press covers is in exactly one of
+`StopResponse.handedBack` (with its `UserMessageBlock`s, in send order),
+`answered` or `gone`; a message is never both handed back and answered. `gone`
+lists every message another request handed back at or below `seenThrough`, so
+clients treat it as idempotent. `HandBackRequest { requestId, ids }`
+(`POST .../hand-back`, the queue's x and Cancel queue) is the same decision for
+exactly those messages, without a cancel. `SendNowRequest { seenThrough,
+seenExecutionId, waiting }` (`POST .../send-now`) cancels the seen reply only
+while it has taken on none of the waiting messages; it hands nothing back and has
+no request id. A handed-back message leaves every conversation read
+and is removed live by `meridian.messages.handed_back { userTurnIds }` at its
+journal seq. See the [Stop API](../../../../docs/api/thread-stop.md).
 
 ### Failed reply Retry
 
 A failed assistant acknowledges the messages it adopted and remains failed in
 history. The wake sweep does not retry it. An explicit Retry is a direct run
-start with no new input, not an inbox command. It uses the ordinary history
-projection, including the failed turn, and any pending non-control rows are
-adopted by normal run-start behavior. If run preparation compacts first, the
-compaction gets a fresh ID and the retried reply keeps the client ID. Shutdown
-interruptions end as retryable errors and acknowledge their adopted messages.
-The API uses `replyRetryRequestSchema` and
-`apiThreadTurnRetryPath`; see the [reply Retry API](../../../../docs/api/thread-reply-retry.md).
+start with no new input, not an inbox command; the runtime context owns its
+boundary rules. It uses the ordinary history projection, including the failed
+turn. If run preparation compacts first, the compaction gets a fresh ID and the
+retried reply keeps the client ID. Shutdown interruptions end as retryable
+errors and acknowledge their adopted messages. The API uses
+`replyRetryRequestSchema` and `apiThreadTurnRetryPath`; see the
+[reply Retry API](../../../../docs/api/thread-reply-retry.md).
 
 Handoff seeds are pending `system` placeholders, generated by an independent
 brief service outside the destination inbox and run loop. After a crash, repair
@@ -47,10 +81,10 @@ fields. See
 
 ### Waiting for usage
 
-`ThreadPendingInbox.blocked` optionally carries `{ reason: "credits_exhausted" }`.
+`RunState.blocked` is `{ reason: "credits_exhausted" }` or null.
 This is an accepted message's durable start block, not an admission refusal or
 a failed assistant. The runtime delivery owner sets it on a credit-gated drain
 and clears it when the next turn starts or when no message or control remains
-pending (for example, after the last blocked control is withdrawn). Snapshot pending state, socket
-subscription state (including its validator) and `meridian.inbox.changed`
+pending (for example, after the last blocked control is withdrawn). The snapshot, socket
+subscription state (including its validator) and `meridian.run_state`
 preserve the same fact. Clients must not guess it from account balance.

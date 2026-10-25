@@ -1,0 +1,10 @@
+{
+  "steps": [
+    {
+      "sample": "critique",
+      "delayMs": 300,
+      "chunkSize": 12,
+      "chunkDelayMs": 35
+    }
+  ]
+}

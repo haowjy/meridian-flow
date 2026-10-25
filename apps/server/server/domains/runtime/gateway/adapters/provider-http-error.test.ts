@@ -1,4 +1,8 @@
-/** Provider SDK errors map to one retry policy and keep the provider's status and message as evidence. */
+/** Provider SDK errors map to one retry policy and keep the provider's status and message as evidence.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Provider retry and error taxonomy (kb/decisions/engineering/runtime/model-call-gateway.md)
+ */
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { afterEach, describe, expect, it, vi } from "vitest";

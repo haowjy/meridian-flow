@@ -1,5 +1,7 @@
 /** Drizzle project-final identity lookup and global availability watermarks. */
+
 import { randomUUID } from "node:crypto";
+import type { DocumentId } from "@meridian/contracts";
 import {
   type ContextUriScheme,
   canonicalContextUri,
@@ -12,15 +14,14 @@ import type {
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
 import { PROJECT_CONTEXT_AVAILABILITY_MAX_IDS } from "@meridian/contracts/protocol";
-import { decodeWorkSlug } from "@meridian/contracts/works";
+import { decodeWorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
   contextAvailabilityGeneration,
   contextAvailabilityHeads,
   contextNamespaceObservationVersion,
   contextSources,
-  documents,
-  folders,
+  type folders,
   projects,
   threads,
   works,
@@ -38,7 +39,24 @@ import type {
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,
 } from "../ports/project-context-availability.js";
-import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-mapper.js";
+import { survivingDraftDocuments } from "../tree/living-document.js";
+import { readRemovalRecords } from "../tree/removal.js";
+import {
+  identityDocumentFields,
+  identityDocuments,
+  identityFolderFields,
+  identityFolders,
+  identityFoldersSql,
+  LIVE_TREE,
+  type TreeView,
+  visibleDocuments,
+  visibleFolders,
+} from "../tree/tree-view.js";
+import {
+  type CatalogFileRow,
+  catalogSourceAuthority,
+  mapAuthoritativeFile,
+} from "./catalog-file-mapper.js";
 
 const ADVANCE_STATE = {};
 type AdvanceState = { generation?: bigint; keys: Set<string>; publisherFenceHeld: boolean };
@@ -66,11 +84,11 @@ const advanceParticipant: DrizzleTransactionParticipant<AdvanceState> = {
   },
 };
 type AvailabilityRow = {
-  document: typeof documents.$inferSelect;
+  document: CatalogFileRow & { deletedAt?: Date | null };
   source: typeof contextSources.$inferSelect | null;
   sourceProject: typeof projects.$inferSelect | null;
   work: typeof works.$inferSelect | null;
-  rootThreadRef?: string | null;
+  ownerThreadRef?: string | null;
 };
 type AvailabilityIdentity = {
   scope: CatalogScope;
@@ -86,25 +104,56 @@ type IdentityClassification =
 
 const WORK_SCHEMES = new Set<ContextUriScheme>(["scratch", "uploads"]);
 
+type IdentityFolder = Pick<
+  typeof folders.$inferSelect,
+  "id" | "name" | "parentId" | "contextSourceId"
+> & { deletedAt?: Date | null };
+
+/** Requested parent folders and only the identity-visible ancestors needed to spell them. */
+async function loadIdentityFolderClosure(
+  db: Database,
+  view: TreeView,
+  folderIds: readonly string[],
+): Promise<IdentityFolder[]> {
+  const ids = [...new Set(folderIds)];
+  if (ids.length === 0) return [];
+  return db.execute<IdentityFolder>(sql`
+    WITH RECURSIVE ancestor_folders AS (
+      SELECT f.id, f.name, f.parent_id, f.context_source_id, f.deleted_at
+      FROM ${identityFoldersSql(view)} f
+      WHERE f.id IN (${sql.join(
+        ids.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})
+      UNION
+      SELECT f.id, f.name, f.parent_id, f.context_source_id, f.deleted_at
+      FROM ${identityFoldersSql(view)} f
+      JOIN ancestor_folders child ON child.parent_id = f.id
+    )
+    SELECT id::text, name, parent_id::text AS "parentId",
+      context_source_id::text AS "contextSourceId", deleted_at AS "deletedAt"
+    FROM ancestor_folders
+  `);
+}
+
 export function classifyAuthoritativeIdentity(input: {
   row: AvailabilityRow;
   requestProjectId: string;
   actorUserId: string;
   projectGeneration: string;
   checkedGeneration: string;
-  foldersById: ReadonlyMap<string, typeof folders.$inferSelect>;
+  foldersById: ReadonlyMap<string, IdentityFolder>;
 }): IdentityClassification {
-  const classification = classifySourceIdentity({
+  return classifySourceIdentity({
     ...input,
     row: {
       ...input.row,
-      node: { parentId: input.row.document.folderId, deletedAt: input.row.document.deletedAt },
+      node: {
+        parentId: input.row.document.folderId,
+        deletedAt: input.row.document.deletedAt ?? null,
+      },
     },
   });
-  // Privacy precedes structural diagnostics, including the document's kind.
-  return classification.kind === "not-visible" || input.row.document.kind === "content"
-    ? classification
-    : { kind: "inconsistent" };
 }
 
 function classifySourceIdentity(input: {
@@ -115,7 +164,7 @@ function classifySourceIdentity(input: {
   actorUserId: string;
   projectGeneration: string;
   checkedGeneration: string;
-  foldersById: ReadonlyMap<string, typeof folders.$inferSelect>;
+  foldersById: ReadonlyMap<string, IdentityFolder>;
 }): IdentityClassification {
   const { node, source, sourceProject, work } = input.row;
   const rawProjectIsRequested = source?.projectId === input.requestProjectId;
@@ -138,15 +187,27 @@ function classifySourceIdentity(input: {
     source.projectId !== null &&
     source.workId === null &&
     scheme === "scratch" &&
-    !!input.row.rootThreadRef;
+    !!input.row.ownerThreadRef;
+  const hasChatOwnership =
+    source.scope === "chat" &&
+    source.chatThreadId !== null &&
+    source.projectId !== null &&
+    source.workId === null &&
+    scheme === "uploads";
   const hasWorkOwnership = source.scope === "work" && source.workId !== null;
   const hasProjectOwnership = source.scope === "project" && source.projectId !== null;
+  const ownershipKinds = [
+    hasLineageOwnership,
+    hasChatOwnership,
+    hasWorkOwnership,
+    hasProjectOwnership,
+  ].filter(Boolean).length;
   if (
-    (!hasLineageOwnership && hasWorkOwnership === hasProjectOwnership) ||
+    ownershipKinds !== 1 ||
     (hasWorkOwnership && !isWorkScheme) ||
-    (!hasWorkOwnership && !hasProjectOwnership && !hasLineageOwnership) ||
     (source.workId !== null) !== hasWorkOwnership ||
-    (source.projectId !== null) !== (hasProjectOwnership || hasLineageOwnership) ||
+    (source.projectId !== null) !==
+      (hasProjectOwnership || hasLineageOwnership || hasChatOwnership) ||
     (hasWorkOwnership && (!work || work.id !== source.workId)) ||
     (hasProjectOwnership && (!sourceProject || sourceProject.id !== source.projectId)) ||
     (scheme === "user" &&
@@ -158,20 +219,28 @@ function classifySourceIdentity(input: {
   let scope: CatalogScope;
   let authority: ProjectContextAuthority;
   let generation = input.projectGeneration;
-  if (hasLineageOwnership && source.projectId && source.rootThreadId && input.row.rootThreadRef) {
+  if (hasLineageOwnership && source.projectId && source.rootThreadId && input.row.ownerThreadRef) {
     scope = { kind: "lineage", projectId: source.projectId, rootThreadId: source.rootThreadId };
     authority = {
       kind: "lineage",
       projectId: source.projectId,
       rootThreadId: source.rootThreadId,
-      rootThreadRef: input.row.rootThreadRef,
+      rootThreadRef: input.row.ownerThreadRef,
+    };
+  } else if (hasChatOwnership && source.projectId && source.chatThreadId) {
+    scope = { kind: "chat", projectId: source.projectId, chatId: source.chatThreadId };
+    authority = {
+      kind: "chat",
+      projectId: source.projectId,
+      chatId: source.chatThreadId,
+      chatRef: input.row.ownerThreadRef ?? null,
     };
   } else if (hasWorkOwnership) {
     if (!work || work.projectId !== input.requestProjectId) {
       return { kind: "inconsistent" };
     }
-    const workSlug = work.isNoWork ? null : decodeWorkSlug(work.slug);
-    if (!work.isNoWork && !workSlug) {
+    const workHandle = work.isNoWork ? null : decodeWorkHandle(work.handle);
+    if (!work.isNoWork && !workHandle) {
       return { kind: "inconsistent" };
     }
     scope = { kind: "work", projectId: input.requestProjectId, workId: work.id } as never;
@@ -179,7 +248,7 @@ function classifySourceIdentity(input: {
       kind: "work",
       projectId: input.requestProjectId,
       workId: work.id,
-      workSlug,
+      workHandle,
     } as never;
   } else if (isActorUserSource) {
     scope = { kind: "user", userId: input.actorUserId } as never;
@@ -202,7 +271,7 @@ function classifySourceIdentity(input: {
     if (
       !folder ||
       folder.contextSourceId !== source.id ||
-      (node.deletedAt === null && source.deletedAt === null && folder.deletedAt !== null)
+      (!node.deletedAt && source.deletedAt === null && !!folder.deletedAt)
     ) {
       return { kind: "inconsistent" };
     }
@@ -229,11 +298,22 @@ function userKey(userId: string) {
   return `user:${userId}`;
 }
 
-/** The publisher fence is held by reserve/advance. Each state change needs its
- * own stamp even when availability groups several changes in one transaction. */
-async function publishNamespaceVersion(tx: Database, authorityKeys: readonly string[]) {
+/** One transaction-scoped publisher fence makes sequence allocation order match commit
+ * visibility, even when later calls introduce previously unknown keys. */
+async function holdPublisherFence(tx: Database, state: AdvanceState) {
+  if (state.publisherFenceHeld) return;
+  await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
+  state.publisherFenceHeld = true;
+}
+
+/** The caller holds the publisher fence. Each namespace change needs its own stamp even
+ * when availability groups several changes in one transaction. */
+async function publishNamespaceVersion(
+  tx: Database,
+  authorityKeys: readonly string[],
+): Promise<string | null> {
   const keys = [...new Set(authorityKeys)].sort();
-  if (!keys.length) return;
+  if (!keys.length) return null;
   const [row] = await tx.execute<{ version: string }>(
     sql`select nextval(${sql.raw(`'${contextNamespaceObservationVersion.seqName}'`)})::text as version`,
   );
@@ -252,6 +332,7 @@ async function publishNamespaceVersion(tx: Database, authorityKeys: readonly str
       target: contextAvailabilityHeads.authorityKey,
       set: { namespaceGeneration: version },
     });
+  return String(version);
 }
 
 export function createDrizzleProjectContextAvailability(
@@ -259,56 +340,6 @@ export function createDrizzleProjectContextAvailability(
   eventSink?: EventSink,
 ): ProjectContextAvailabilityPort & ProjectContextAvailabilityMutationPort {
   return {
-    async reserve(input) {
-      return runInDrizzleTransaction(db, async () => {
-        const tx = currentDrizzleDb(db) as Database;
-        const state = enlistDrizzleTransactionParticipant(advanceParticipant);
-        if (!state.publisherFenceHeld) {
-          await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
-          state.publisherFenceHeld = true;
-        }
-        if (state.generation === undefined) {
-          const result = await tx.execute<{ generation: string }>(
-            sql`select nextval(${sql.raw(`'${contextAvailabilityGeneration.seqName}'`)})::text as generation`,
-          );
-          const value = result[0]?.generation;
-          if (!value) throw new Error("Failed to reserve availability generation");
-          state.generation = BigInt(value);
-        }
-        if (input)
-          await publishNamespaceVersion(tx, [
-            ...input.projectIds.map(projectKey),
-            ...input.userIds.map(userKey),
-          ]);
-        return String(state.generation);
-      });
-    },
-
-    async publishReserved(input) {
-      await runInDrizzleTransaction(db, async () => {
-        const tx = currentDrizzleDb(db) as Database;
-        const keys = [...input.projectIds.map(projectKey), ...input.userIds.map(userKey)].sort();
-        if (keys.length === 0) return;
-        await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
-        await tx
-          .insert(contextAvailabilityHeads)
-          .values(keys.map((authorityKey) => ({ authorityKey, generation: 0n })))
-          .onConflictDoNothing({ target: contextAvailabilityHeads.authorityKey });
-        for (const authorityKey of keys) {
-          await tx.execute(
-            sql`select authority_key from context_availability_heads where authority_key = ${authorityKey} for update`,
-          );
-        }
-        await tx
-          .update(contextAvailabilityHeads)
-          .set({
-            generation: sql`greatest(${contextAvailabilityHeads.generation}, ${BigInt(input.generation)})`,
-            updatedAt: new Date(),
-          })
-          .where(inArray(contextAvailabilityHeads.authorityKey, keys));
-      });
-    },
-
     async advance(input) {
       return runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db) as Database;
@@ -318,12 +349,7 @@ export function createDrizzleProjectContextAvailability(
         ]);
         const state = enlistDrizzleTransactionParticipant(advanceParticipant);
         const missing = [...requested].filter((key) => !state.keys.has(key)).sort();
-        if (!state.publisherFenceHeld) {
-          // One transaction-scoped publisher fence makes sequence allocation order match
-          // commit visibility even when later advance calls introduce previously unknown keys.
-          await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
-          state.publisherFenceHeld = true;
-        }
+        await holdPublisherFence(tx, state);
         if (missing.length > 0) {
           await tx
             .insert(contextAvailabilityHeads)
@@ -354,12 +380,27 @@ export function createDrizzleProjectContextAvailability(
             .where(inArray(contextAvailabilityHeads.authorityKey, missing));
           for (const key of missing) state.keys.add(key);
         }
-        await publishNamespaceVersion(tx, [...requested]);
         return String(state.generation);
       });
     },
 
+    async publishNamespace(input) {
+      return runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db) as Database;
+        await holdPublisherFence(tx, enlistDrizzleTransactionParticipant(advanceParticipant));
+        const version = await publishNamespaceVersion(tx, [
+          ...input.projectIds.map(projectKey),
+          ...input.userIds.map(userKey),
+        ]);
+        if (version === null) throw new Error("publishNamespace needs at least one authority");
+        return version;
+      });
+    },
+
     async lookup(input, actor) {
+      const view = input.view ?? LIVE_TREE;
+      const documents = identityDocuments(view);
+      const folders = identityFolders(view);
       const ids = normalizeAvailabilityDocumentIds(input.documentIds);
       const folderIds = normalizeAvailabilityDocumentIds(input.folderIds ?? []);
       if (ids.length + folderIds.length > PROJECT_CONTEXT_AVAILABILITY_MAX_IDS)
@@ -406,48 +447,91 @@ export function createDrizzleProjectContextAvailability(
           }
           const rows = await tx
             .select({
-              document: documents,
+              document: identityDocumentFields(documents),
               source: contextSources,
               sourceProject: projects,
               work: works,
-              rootThreadRef: threads.ref,
+              ownerThreadRef: threads.ref,
             })
             .from(documents)
             .leftJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
             .leftJoin(projects, eq(contextSources.projectId, projects.id))
             .leftJoin(works, eq(contextSources.workId, works.id))
-            .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
+            .leftJoin(
+              threads,
+              eq(
+                threads.id,
+                sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`,
+              ),
+            )
             .where(inArray(documents.id, ids as never));
           const requestedFolders = folderIds.length
             ? await tx
                 .select({
-                  folder: folders,
+                  folder: identityFolderFields(folders),
                   source: contextSources,
                   sourceProject: projects,
                   work: works,
-                  rootThreadRef: threads.ref,
+                  ownerThreadRef: threads.ref,
                 })
                 .from(folders)
                 .leftJoin(contextSources, eq(folders.contextSourceId, contextSources.id))
                 .leftJoin(projects, eq(contextSources.projectId, projects.id))
                 .leftJoin(works, eq(contextSources.workId, works.id))
-                .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
+                .leftJoin(
+                  threads,
+                  eq(
+                    threads.id,
+                    sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`,
+                  ),
+                )
                 .where(inArray(folders.id, folderIds as never))
             : [];
           const byId = new Map(rows.map((row) => [row.document.id, row]));
-          const sourceIds = [
-            ...new Set(
-              [...rows, ...requestedFolders].flatMap((row) => (row.source ? [row.source.id] : [])),
-            ),
-          ];
-          const folderRows = sourceIds.length
-            ? await tx
-                .select()
-                .from(folders)
-                .where(inArray(folders.contextSourceId, sourceIds as never))
-            : [];
+          const folderRows = await loadIdentityFolderClosure(tx, view, [
+            ...rows.flatMap((row) => (row.document.folderId ? [row.document.folderId] : [])),
+            ...requestedFolders.map((row) => row.folder.id),
+          ]);
           const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
 
+          const tombstoned = rows
+            .filter((row) => row.document.deletedAt)
+            .map((row) => row.document.id as DocumentId);
+          const removals = await readRemovalRecords(tx, tombstoned);
+          // A branch's view lists a document deleted live while it has pending changes to it
+          // (D79): there it is available at the location it was deleted at. The view's own
+          // listing decides, so availability and the branch's tree never disagree.
+          const listedInView = new Set<string>();
+          if (view.kind === "branch") {
+            const deletedFolders = requestedFolders
+              .filter((row) => row.folder.deletedAt)
+              .map((row) => row.folder.id);
+            const shownDocuments = visibleDocuments(view);
+            const shownFolders = visibleFolders(view);
+            const shown = await Promise.all([
+              tombstoned.length
+                ? tx
+                    .select({ id: shownDocuments.id })
+                    .from(shownDocuments)
+                    .where(inArray(shownDocuments.id, tombstoned))
+                : [],
+              deletedFolders.length
+                ? tx
+                    .select({ id: shownFolders.id })
+                    .from(shownFolders)
+                    .where(inArray(shownFolders.id, deletedFolders))
+                : [],
+            ]);
+            for (const { id } of shown.flat()) listedInView.add(id);
+            const unlisted = tombstoned.filter((id) => !listedInView.has(id));
+            if (input.admitDrafts && unlisted.length)
+              for (const id of await survivingDraftDocuments(
+                tx,
+                { branchId: view.branchId },
+                unlisted,
+              ))
+                listedInView.add(id);
+          }
           const resolutions: ProjectContextIdentityResolution[] = ids.map((documentId) => {
             const row = byId.get(documentId);
             if (!row) return { kind: "not-visible", documentId, checkedGeneration } as never;
@@ -476,7 +560,14 @@ export function createDrizzleProjectContextAvailability(
               checkedGeneration,
               foldersById,
             });
-            if (classification.kind === "not-visible") {
+            // A discarded creation only answers its removal: one that cannot be placed
+            // (its draft folder went with it) stays not visible, never inconsistent.
+            if (
+              classification.kind === "not-visible" ||
+              (classification.kind === "inconsistent" &&
+                document.deletedAt &&
+                document.deletionReason === "discarded")
+            ) {
               return { kind: "not-visible", documentId, checkedGeneration } as never;
             }
             if (classification.kind === "inconsistent") return indeterminate();
@@ -485,13 +576,15 @@ export function createDrizzleProjectContextAvailability(
             // has to name the one that failed, so it classifies rather than filters.
             // Independent document deletion remains deletion even when its authority hides.
             // Work-cascade tombstones belong to the reversible authority lifecycle.
-            if (document.deletedAt && !document.deletedByWorkId) {
+            const listed = listedInView.has(documentId);
+            if (document.deletedAt && !document.deletedByWorkId && !listed) {
               return {
                 kind: "deleted",
                 documentId,
                 generation,
                 observationVersion: namespaceVersion(scope),
                 lastAuthority: authority,
+                removal: removals.get(documentId as DocumentId),
               };
             }
             if (requestProject.deletedAt || sourceProject?.deletedAt) {
@@ -523,13 +616,24 @@ export function createDrizzleProjectContextAvailability(
                 reason: "lineage_hidden",
               };
             }
-            if (document.deletedAt || source?.deletedAt) {
+            // A trashed chat hides its uploads the same way, and its restore reopens them.
+            if (source?.scope === "chat" && source.deletedAt) {
+              return {
+                kind: "authority-unavailable",
+                documentId,
+                generation,
+                authority,
+                reason: "chat_hidden",
+              };
+            }
+            if ((document.deletedAt && !listed) || source?.deletedAt) {
               return {
                 kind: "deleted",
                 documentId,
                 generation,
                 observationVersion: namespaceVersion(scope),
                 lastAuthority: authority,
+                removal: removals.get(documentId as DocumentId),
               } as never;
             }
             try {
@@ -544,9 +648,10 @@ export function createDrizzleProjectContextAvailability(
                   observationVersion: namespaceVersion(scope),
                   scheme,
                   workId: work?.id ?? null,
-                  workSlug: work && !work.isNoWork ? work.slug : null,
+                  workHandle: work && !work.isNoWork ? work.handle : null,
                   parentPath,
-                  rootThreadRef: row.rootThreadRef,
+                  ownerThreadRef: row.ownerThreadRef,
+                  chatOwned: source?.scope === "chat",
                 }),
               } as never;
             } catch {
@@ -575,8 +680,10 @@ export function createDrizzleProjectContextAvailability(
                 checkedGeneration,
               };
             const { scope, scheme, generation, parentPath } = classification.identity;
-            // Independent tombstones are final; Work/lineage unavailability is not deletion.
-            if (row.folder.deletedAt && !row.folder.deletedByWorkId)
+            // Independent tombstones are final, except one the branch's view still places a
+            // surviving draft under. Work/lineage unavailability is not deletion.
+            const listed = listedInView.has(folderId);
+            if (row.folder.deletedAt && !row.folder.deletedByWorkId && !listed)
               return {
                 folderId,
                 kind: "deleted",
@@ -610,8 +717,9 @@ export function createDrizzleProjectContextAvailability(
                   catalogSourceAuthority(
                     scheme,
                     row.work?.id ?? null,
-                    row.work && !row.work.isNoWork ? row.work.slug : null,
-                    row.rootThreadRef,
+                    row.work && !row.work.isNoWork ? row.work.handle : null,
+                    row.ownerThreadRef,
+                    row.source?.scope === "chat",
                   ),
                 ),
                 hasChildren: true,
@@ -631,7 +739,10 @@ export function createDrizzleProjectContextAvailability(
   };
 }
 
-/** Resolve an active folder inside the caller's namespace transaction, without a new snapshot. */
+/**
+ * Resolve an active live folder inside the caller's namespace transaction, without a new
+ * snapshot. A hidden folder is missing: no live writer could have picked it.
+ */
 export async function resolveActiveFolderUri(
   db: Database,
   projectId: string,
@@ -639,19 +750,23 @@ export async function resolveActiveFolderUri(
   folderId: string,
 ): Promise<string | null> {
   const tx = currentDrizzleDb(db);
+  const folders = identityFolders(LIVE_TREE);
   const [row] = await tx
     .select({
-      folder: folders,
+      folder: identityFolderFields(folders),
       source: contextSources,
       sourceProject: projects,
       work: works,
-      rootThreadRef: threads.ref,
+      ownerThreadRef: threads.ref,
     })
     .from(folders)
     .leftJoin(contextSources, eq(folders.contextSourceId, contextSources.id))
     .leftJoin(projects, eq(contextSources.projectId, projects.id))
     .leftJoin(works, eq(contextSources.workId, works.id))
-    .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
+    .leftJoin(
+      threads,
+      eq(threads.id, sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`),
+    )
     .where(eq(folders.id, folderId));
   if (
     !row?.source ||
@@ -681,8 +796,9 @@ export async function resolveActiveFolderUri(
     catalogSourceAuthority(
       classification.identity.scheme,
       row.work?.id ?? null,
-      row.work && !row.work.isNoWork ? row.work.slug : null,
-      row.rootThreadRef,
+      row.work && !row.work.isNoWork ? row.work.handle : null,
+      row.ownerThreadRef,
+      row.source.scope === "chat",
     ),
   );
 }

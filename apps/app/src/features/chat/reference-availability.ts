@@ -1,10 +1,11 @@
 /**
- * Whether the documents a chat's writer messages reference still exist: what
- * an exact `@` reference chip draws (filled, or dashed and unfollowable once
- * its document is gone).
+ * Whether the documents and folders a chat's writer messages reference still
+ * exist: what an exact `@` reference chip draws (filled, or dashed and
+ * unfollowable once its document or folder is gone).
  *
- * One store per chat. Every user turn watches the document ids it references;
- * the store asks the availability lookup about every newly watched id in one
+ * One store per chat. Every user turn watches the identities it references
+ * (`referenceKey`: a document id or a folder id, never confused); the store
+ * asks the availability lookup about every newly watched one in one
  * request per microtask (chunked to the endpoint's limit), and asks about
  * everything watched again when the chat's document catalog changes
  * (`refresh`), which is the same change that re-registers the chat's link
@@ -27,22 +28,35 @@
 
 import {
   PROJECT_CONTEXT_AVAILABILITY_MAX_IDS,
+  type ProjectContextFolderResolution,
   type ProjectContextIdentityLookupResult,
   type ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
 import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
 
-import type { TranscriptReferenceResolution } from "@/rich-content/TranscriptReference";
+import {
+  referenceKey,
+  type TranscriptReferenceResolution,
+} from "@/rich-content/TranscriptReference";
 
-type Lookup = (documentIds: readonly string[]) => Promise<ProjectContextIdentityLookupResult>;
+type Lookup = (identities: {
+  documentIds: readonly string[];
+  folderIds: readonly string[];
+}) => Promise<ProjectContextIdentityLookupResult>;
 
 export type ReferenceAvailability = {
-  /** Look these ids up while shown; the return stops watching them. */
-  watch(documentIds: readonly string[]): () => void;
+  /** Look these identities up while shown; the return stops watching them. */
+  watch(keys: readonly string[]): () => void;
   /** Ask about everything watched again: the documents changed. */
   refresh(): void;
+  /**
+   * The addresses the chat's own catalogs hold, by document id. An answer drawn at another
+   * address was asked before the catalog respelled it (a New chat's upload gains its handle
+   * once the server names the chat): ask again, once per address the catalog holds.
+   */
+  reconcile(held: ReadonlyMap<string, string>): void;
   subscribe(listener: () => void): () => void;
-  /** Every answer so far, keyed by document id. A new map after each change. */
+  /** Every answer so far, by `referenceKey`. A new map after each change. */
   snapshot(): ReadonlyMap<string, TranscriptReferenceResolution>;
 };
 
@@ -55,13 +69,16 @@ export type ReferenceAvailability = {
  */
 function transcriptReferenceResolutions(
   resolutions: readonly ProjectContextIdentityResolution[],
+  folderResolutions: readonly ProjectContextFolderResolution[],
 ): ReadonlyMap<string, TranscriptReferenceResolution> {
   const projected = new Map<string, TranscriptReferenceResolution>();
   for (const resolution of resolutions) {
+    const key = referenceKey("document", resolution.documentId);
     switch (resolution.kind) {
       case "available":
-        projected.set(resolution.documentId, {
-          documentId: resolution.documentId,
+        projected.set(key, {
+          kind: "document",
+          id: resolution.documentId,
           uri: resolution.entry.uri,
           label: resolution.entry.name,
           available: true,
@@ -70,10 +87,28 @@ function transcriptReferenceResolutions(
       case "deleted":
       case "authority-unavailable":
       case "not-visible":
-        projected.set(resolution.documentId, {
-          documentId: resolution.documentId,
-          available: false,
+        projected.set(key, { kind: "document", id: resolution.documentId, available: false });
+        break;
+      case "indeterminate":
+        break;
+    }
+  }
+  for (const resolution of folderResolutions) {
+    const key = referenceKey("folder", resolution.folderId);
+    switch (resolution.kind) {
+      case "available":
+        projected.set(key, {
+          kind: "folder",
+          id: resolution.folderId,
+          uri: resolution.entry.uri,
+          label: resolution.entry.name,
+          available: true,
         });
+        break;
+      case "deleted":
+      case "authority-unavailable":
+      case "not-visible":
+        projected.set(key, { kind: "folder", id: resolution.folderId, available: false });
         break;
       case "indeterminate":
         break;
@@ -102,6 +137,8 @@ export function createReferenceAvailability(lookup: Lookup): ReferenceAvailabili
   const asked = new Map<string, number>();
   /** Ids whose answer is current or on its way: never asked again on watch. */
   const current = new Set<string>();
+  /** The catalog address each id was last re-asked for, so a disagreeing server cannot loop. */
+  const reconciled = new Map<string, string>();
   let answers: ReadonlyMap<string, TranscriptReferenceResolution> = NOTHING;
   let scheduled = false;
   let sequence = 0;
@@ -117,7 +154,10 @@ export function createReferenceAvailability(lookup: Lookup): ReferenceAvailabili
   ) => {
     const settled = ids.filter((id) => asked.get(id) === question);
     if (settled.length === 0) return;
-    const projected = transcriptReferenceResolutions(result.resolutions);
+    const projected = transcriptReferenceResolutions(
+      result.resolutions,
+      result.folderResolutions ?? [],
+    );
     const next = new Map(answers);
     let changed = false;
     for (const id of settled) {
@@ -156,7 +196,9 @@ export function createReferenceAvailability(lookup: Lookup): ReferenceAvailabili
       }
       // A failed question keeps what was known drawn (not settled is not
       // gone) and is asked again later.
-      void lookup(chunk).then(
+      const of = (kind: "document" | "folder") =>
+        chunk.flatMap((key) => (key.startsWith(`${kind}:`) ? [key.slice(kind.length + 1)] : []));
+      void lookup({ documentIds: of("document"), folderIds: of("folder") }).then(
         (result) => settle(chunk, question, result),
         () => forget(chunk, question),
       );
@@ -171,9 +213,9 @@ export function createReferenceAvailability(lookup: Lookup): ReferenceAvailabili
   };
 
   return {
-    watch(documentIds) {
+    watch(keys) {
       const fresh: string[] = [];
-      for (const id of new Set(documentIds)) {
+      for (const id of new Set(keys)) {
         const count = watched.get(id) ?? 0;
         watched.set(id, count + 1);
         if (count === 0 && !current.has(id)) fresh.push(id);
@@ -183,7 +225,7 @@ export function createReferenceAvailability(lookup: Lookup): ReferenceAvailabili
       return () => {
         if (!watching) return;
         watching = false;
-        for (const id of new Set(documentIds)) {
+        for (const id of new Set(keys)) {
           const left = (watched.get(id) ?? 1) - 1;
           if (left > 0) watched.set(id, left);
           else watched.delete(id);
@@ -196,6 +238,19 @@ export function createReferenceAvailability(lookup: Lookup): ReferenceAvailabili
       current.clear();
       ask(watched.keys());
     },
+    reconcile(held) {
+      const stale: string[] = [];
+      for (const id of watched.keys()) {
+        const answer = answers.get(id);
+        const uri = answer?.kind === "document" ? held.get(answer.id) : undefined;
+        if (!answer?.available || !uri || answer.uri === uri) continue;
+        if (reconciled.get(id) === uri) continue;
+        reconciled.set(id, uri);
+        current.delete(id);
+        stale.push(id);
+      }
+      ask(stale);
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -207,15 +262,15 @@ export function createReferenceAvailability(lookup: Lookup): ReferenceAvailabili
 export const ReferenceAvailabilityContext = createContext<ReferenceAvailability | null>(null);
 
 /**
- * The exact-reference answers a user turn draws, for the ids it references.
- * Outside a chat that provides the store, nothing is known: chips stay filled
- * and do not follow.
+ * The exact-reference answers a user turn draws, for the identities it
+ * references. Outside a chat that provides the store, nothing is known: chips
+ * stay filled and do not follow.
  */
 export function useReferenceAvailability(
-  documentIds: readonly string[],
+  keys: readonly string[],
 ): ReadonlyMap<string, TranscriptReferenceResolution> {
   const store = useContext(ReferenceAvailabilityContext);
-  const key = documentIds.join("\u0000");
+  const key = keys.join("\u0000");
   useEffect(() => {
     if (!store || !key) return;
     return store.watch(key.split("\u0000"));

@@ -1,0 +1,137 @@
+/**
+ * A move or delete in a document's edit history (`document_edits.tree_change`): the exact state
+ * transition it made in its destination, so an inverse restores the prior state rather than
+ * coordinates. A tree entry has no Yjs parts; `seq` places it on the same axis as text parts.
+ */
+import { z } from "zod";
+import type { BranchId } from "./ids.js";
+
+/** A document's placement: its folder (or, at a source's root, that source), name and extension. */
+export type TreePlacement = {
+  folderId: string | null;
+  rootSourceId: string | null;
+  name: string;
+  extension: string;
+};
+
+/** A removal as the row held it right after: its time and the `location_version` it wrote. */
+export const removalIdentitySchema = z.object({
+  time: z.string().datetime({ offset: true }),
+  locationVersion: z.string().regex(/^(0|[1-9]\d*)$/),
+});
+export type RemovalIdentity = z.infer<typeof removalIdentitySchema>;
+export type TreeRemoval = RemovalIdentity;
+
+export function serializeRemovalIdentity(input: {
+  time: Date;
+  locationVersion: bigint;
+}): RemovalIdentity {
+  return { time: input.time.toISOString(), locationVersion: input.locationVersion.toString() };
+}
+
+export function deserializeRemovalIdentity(input: RemovalIdentity): {
+  time: Date;
+  locationVersion: bigint;
+} {
+  return { time: new Date(input.time), locationVersion: BigInt(input.locationVersion) };
+}
+
+/** Live has one state per document: living at a placement, or removed by one removal. */
+export type LiveTreeState =
+  | { living: true; at: TreePlacement }
+  | { living: false; removal: TreeRemoval };
+
+/**
+ * A branch's facts about a document (its `branch_tree_changes` row), not its effective
+ * placement, so "no move, follows live" and "moved to where live happens to be" differ.
+ */
+export type BranchTreeFacts = {
+  row: boolean;
+  created: boolean;
+  moved: TreePlacement | null;
+  deleted: boolean;
+};
+
+export type TreeChangeDestination = { kind: "live" } | { kind: "draft"; branchId: BranchId };
+
+export type TreeChangeTarget = { editId: string; direction: "invert" | "reapply" };
+
+/** A live transition joins two live states; a branch one, two sets of the branch's facts. */
+export type LiveTreeTransition = {
+  destination: { kind: "live" };
+  /** A create starts with no live state; every later transition starts from one. */
+  before: LiveTreeState | null;
+  after: LiveTreeState;
+};
+export type BranchTreeTransition = {
+  destination: { kind: "draft"; branchId: BranchId };
+  before: BranchTreeFacts;
+  after: BranchTreeFacts;
+};
+export type TreeTransition = LiveTreeTransition | BranchTreeTransition;
+
+/** `restore` reverses a delete; `create` makes a document identity visible in its destination. */
+export type TreeChangeOp = "create" | "move" | "delete" | "restore";
+
+type TreeEntryFields = {
+  /** The path the model or writer saw it at, for messages. */
+  shownAt: string | null;
+  /** `nextval` of `document_edit_parts`' id sequence: one chronology with text parts. */
+  seq: number;
+};
+
+/** A row that changed where a document is, or whether it is. */
+export type TreeTransitionChange = TreeTransition &
+  TreeEntryFields & {
+    op: TreeChangeOp;
+    /** Where a model's move left it, for the turn's receipt line; the move's own row sets it. */
+    landedAt?: string;
+    /** What an undo, redo, revert or rollback reverses. */
+    targets: TreeChangeTarget[];
+    /** Drafted tree entry this live transition materialized at Apply. */
+    materializes?: string;
+  };
+
+/**
+ * A row that mutates nothing: it names the drafted entries a writer's Apply or Discard, or a
+ * cleanup, ended.
+ */
+export type TreeSettlement = TreeEntryFields & {
+  op: "settle";
+  destination: TreeChangeDestination;
+  targets: [];
+  settles: { editIds: string[]; as: "applied" | "discarded" };
+};
+
+export type TreeChange = TreeTransitionChange | TreeSettlement;
+
+/** Narrows a transition by its destination: the one place a live or branch shape is told apart. */
+export function isLiveTransition<T extends TreeTransition>(
+  transition: T,
+): transition is Extract<T, LiveTreeTransition> {
+  return transition.destination.kind === "live";
+}
+
+/** Two placements are one: the same folder (or source root), name and extension. */
+export function samePlacement(a: TreePlacement, b: TreePlacement): boolean {
+  return (
+    a.folderId === b.folderId &&
+    a.rootSourceId === b.rootSourceId &&
+    a.name === b.name &&
+    a.extension === b.extension
+  );
+}
+
+/** Two sets of a branch's facts are one state; a missing set is no state. */
+export function sameBranchFacts(
+  a: BranchTreeFacts | null | undefined,
+  b: BranchTreeFacts | null | undefined,
+): boolean {
+  if (!a || !b) return false;
+  return (
+    a.row === b.row &&
+    a.created === b.created &&
+    a.deleted === b.deleted &&
+    (a.moved === null ? b.moved === null : b.moved !== null && samePlacement(a.moved, b.moved))
+  );
+}

@@ -21,6 +21,9 @@ import {
 } from "../domains/billing/index.js";
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
+import { createDrizzleDocumentRemovalCollab } from "../domains/collab/adapters/drizzle-document-removal.js";
+import { createDraftClose } from "../domains/collab/adapters/drizzle-draft-close.js";
+import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
   type CollabDomain,
@@ -38,13 +41,17 @@ import {
   createContextUploadContentPort,
   createDocumentAddressResolver,
   createDocumentLinkResolver,
+  createDocumentRemoval,
   createDocumentRevisions,
+  createDraftUploadVerifier,
+  createDrizzleChatUploadsOwners,
   createDrizzleContextCatalog,
   createDrizzleDocumentAddressStore,
   createDrizzleDocumentArrivals,
   createDrizzleDocumentLinkHistory,
   createDrizzleDocumentLinkScopes,
   createDrizzleDocumentPropertiesReader,
+  createDrizzleDocumentTrash,
   createDrizzleFigureDocumentRepository,
   createDrizzleLineageScratchLifecycle,
   createDrizzleLinkAheadRegistry,
@@ -54,26 +61,31 @@ import {
   createDrizzleUploadIdentityPort,
   createDrizzleUploadIntakeRepository,
   createFigureAssetService,
+  createHiddenNodeRepair,
   createInMemoryUnifiedContextPortFactory,
   createInterruptArtifactFlush,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
+  createRemovalRecords,
+  createRestoreRemovedDocuments,
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentLinkResolver,
   type DocumentPropertiesReader,
+  type DocumentRemovals,
+  type DocumentTrash,
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
-  type LinkScopeMembership,
   type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
-  type ProjectDocumentCatalogRefreshPort,
   type PromotionService,
+  type RestoreRemovedDocuments,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
   type UploadIntake,
 } from "../domains/context/index.js";
+import { createTreeReader, type TreeReader } from "../domains/context/tree/tree-view.js";
 import { createDrizzleExportSnapshotStore } from "../domains/export/adapters/drizzle-export-snapshot.js";
 import {
   createProjectExport,
@@ -104,6 +116,7 @@ import {
   type EventQuery,
   type EventSink,
   emitEvent,
+  unknownToEventPayload,
 } from "../domains/observability/index.js";
 import {
   type AccountSkillInstallStore,
@@ -168,6 +181,7 @@ import {
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
   createDrizzleHandoffStatusReader,
+  createDrizzleObservationFrontiers,
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
   createDrizzleShownLinkStore,
@@ -191,16 +205,18 @@ import {
   createToolRegistry,
   createUserTurnAdmission,
   createWorkContextReader,
+  createWriteModeSwitchPort,
   createWriterTurnProducer,
   type DeliveryProducer,
   type Gateway,
   InvalidAdmissionError,
+  type ObservationFrontiers,
   type RunClaim,
   type RunStarter,
   type RunTurnPort,
   readAgentChain,
   readChainPermission,
-  readPendingInbox,
+  readRunStateAtHead,
   requireWritableThread,
   type ShownLinkStore,
   sweepWakes,
@@ -210,11 +226,13 @@ import {
   type UserTurnAdmission,
   type WorkContextNotices,
   type WorkContextReader,
+  writeModeSwitchNotice,
 } from "../domains/runtime/index.js";
 import {
   resolveThreadUserInvocableSkills,
   unavailableActivatedSkillSlugs,
 } from "../domains/runtime/loop/available-skills.js";
+import { wakeOnContendedRelease } from "../domains/runtime/loop/contended-claim-wake.js";
 import {
   createInterruptRegistry,
   type InterruptRegistry,
@@ -226,7 +244,11 @@ import {
   createModelRequestDebugStore,
 } from "../domains/runtime/model-request-debug/index.js";
 import type { HandoffBriefStopper } from "../domains/runtime/ports/handoff-briefs.js";
-import type { LocalObjectStoreAdapter, ObjectStorePort } from "../domains/storage/index.js";
+import {
+  createObjectRelease,
+  type LocalObjectStoreAdapter,
+  type ObjectStorePort,
+} from "../domains/storage/index.js";
 import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
 import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
 import { createDrizzleRepositories } from "../domains/threads/adapters/drizzle/index.js";
@@ -235,6 +257,7 @@ import { readThreadActivity } from "../domains/threads/domain/thread-activity.js
 import {
   type ActiveDocumentResolver,
   createActiveDocumentResolver,
+  createDrizzleTopPrimaryChatResolver,
   createInMemoryEventJournalWriter,
   requireThreadOwner,
 } from "../domains/threads/index.js";
@@ -260,6 +283,7 @@ import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import {
+  type AgentEditResponseWriteLifecycle,
   createAgentEditResponseWriteLifecycle,
   createModelToolRegistrations,
   createReferenceReader,
@@ -271,18 +295,18 @@ export type AppServices = {
   projectExport: ProjectExport;
   imports(projectId: string, userId: string): ImportService;
   openImports(userId: string): Promise<import("@meridian/contracts").ImportSummary[]>;
+  liveDocuments: Pick<TreeReader, "findById">;
   gateway: Gateway;
   threadRepos: ThreadRepositories;
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
-  repos: ThreadRepositories;
-  hub: ThreadEventHub;
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
-  contextCatalogRefresh: ProjectDocumentCatalogRefreshPort;
+  restoreRemovedDocuments: RestoreRemovedDocuments;
+  documentTrash: DocumentTrash;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -299,6 +323,8 @@ export type AppServices = {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContext: WorkContextReader;
   workContextNotices: WorkContextNotices;
+  /** A reply's write lifecycle: its save, its rollback, and the staged creates they retract. */
+  responseWrites: AgentEditResponseWriteLifecycle;
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
@@ -323,6 +349,7 @@ export type AppServices = {
     repairOrphans(): Promise<number>;
     publishReports(): Promise<number>;
     purgeWorks(): Promise<number>;
+    purgeDocuments(): Promise<number>;
   };
   userTurnAdmission: UserTurnAdmission;
   runClaim: Pick<RunClaim, "withExclusiveThread">;
@@ -373,8 +400,9 @@ export type ProductionAppPorts = {
   contextCatalog: ContextCatalog &
     ContextCatalogMutationPort &
     ContextCatalogFileMutationPort &
-    ProjectCatalogLifecyclePort &
-    ProjectDocumentCatalogRefreshPort;
+    ProjectCatalogLifecyclePort;
+  restoreRemovedDocuments: RestoreRemovedDocuments;
+  documentTrash: DocumentTrash;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -417,36 +445,18 @@ export type ProductionAppPorts = {
   statusReader: ThreadStatusReader;
   /** Links shown to the model per thread and document (contract §7). */
   shownLinks: ShownLinkStore;
+  /** The removal record behind a missing file the model asked for. */
+  documentRemovals: DocumentRemovals;
+  /** What each transcript block showed the model of a document, per room. */
+  observationFrontiers: ObservationFrontiers;
 };
-
-const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
 
 /** Max threads one wake sweep starts; the sweep repeats on its interval. */
 const WAKE_SWEEP_LIMIT = 100;
 
-function concurrentRenderBudgetBytes(request: {
-  model?: string;
-  messages: unknown;
-  tools?: unknown;
-}): number {
-  const modelId = request.model ?? MODEL_REGISTRY.defaultModel;
-  const model = MODEL_REGISTRY.providers
-    .flatMap((provider) => provider.models)
-    .find((candidate) => candidate.id === modelId);
-  if (!model) return 0;
-  const fixedRequestBytes = new TextEncoder().encode(
-    JSON.stringify({ messages: request.messages, tools: request.tools }),
-  ).byteLength;
-  // Three UTF-8 bytes per remaining token deliberately underestimates capacity.
-  const capacityBytes = Math.max(
-    0,
-    (model.contextWindow - model.maxOutputTokens - CONCURRENT_RENDER_SAFETY_TOKENS) * 3,
-  );
-  return Math.max(0, capacityBytes - fixedRequestBytes);
-}
-
 export async function createProductionAppPorts(input: {
   db: Database;
+  backgroundTasks?: DetachedWorkTracker;
   eventSink: EventSink;
   eventQuery?: EventQuery;
   environment?: NodeJS.ProcessEnv;
@@ -492,46 +502,24 @@ export async function createProductionAppPorts(input: {
     }),
   });
   const db = input.db;
-  const backgroundTasks = createDetachedWorkTracker();
+  const backgroundTasks = input.backgroundTasks ?? createDetachedWorkTracker();
   const contextCatalogWakeHub = createContextCatalogWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
-  let boundManifestMembership: CollabDomain | null = null;
   const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub, {
     availabilityMutations: projectContextAvailability,
-    eventSink,
-    backgroundTasks,
-    manifestMembership: {
-      resolveManifestMembership: (input) => {
-        if (!boundManifestMembership) {
-          throw new Error("Manifest membership resolver used before the collab domain was bound");
-        }
-        return boundManifestMembership.resolveManifestMembership(input);
-      },
-    },
   });
   const workProjectionMutation = createWorkProjectionMutation({
     db,
     availability: projectContextAvailability,
     catalog: contextCatalog,
+    pendingCounts: createDrizzleWorkBranchPendingStore(db),
+    eventSink,
   });
   const runClaim = createDrizzleRunClaim(db, {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
   });
   const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
-  // Bound once the collab domain exists; neither runs before composition finishes.
-  const manifestMembership: LinkScopeMembership = (input) => {
-    if (!boundManifestMembership) {
-      throw new Error("Manifest membership resolver used before the collab domain was bound");
-    }
-    return boundManifestMembership.resolveManifestMembership(
-      input as Parameters<CollabDomain["resolveManifestMembership"]>[0],
-    );
-  };
-  const linkAheadRegistry = createDrizzleLinkAheadRegistry(
-    db,
-    async (input) => ({ members: [...(await manifestMembership(input)).members] }),
-    eventSink,
-  );
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, { eventSink });
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals);
   const threadRepos = createDrizzleRepositories(
@@ -552,7 +540,6 @@ export async function createProductionAppPorts(input: {
     ensureNoWork: (projectId) => workRepo.ensureNoWork(projectId),
   });
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
-  let contextPorts: UnifiedContextPortFactory;
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const accountSettings = createDrizzleAccountSettingsRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
@@ -566,19 +553,49 @@ export async function createProductionAppPorts(input: {
   };
   const readChain = (threadId: ThreadId) => readAgentChain(chainDeps, threadId);
   const fileAccess = createFileAccess({
-    facts: createDrizzleFileFacts(db),
+    facts: createDrizzleFileFacts(db, workProjectionMutation),
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
+  });
+  // A discarded or repaired hidden image's bytes go once its tombstone commits (§12.2).
+  const objectRelease = createObjectRelease({
+    objectStore,
+    onFailure(key, error) {
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "context.hidden-node",
+        name: "object_delete.failed",
+        payload: { key, error },
+      });
+    },
+  });
+  // The tree's removal kernel over collab's one draft close. The closer's retirement (rooms,
+  // thread peers) exists only once the collab domain does, which binds it; nothing retires
+  // before a commit, so the late binding is never observed unbound in production.
+  const draftClose = createDraftClose();
+  const documentRemoval = createDocumentRemoval(db, {
+    collab: createDrizzleDocumentRemovalCollab(db, draftClose),
+    workProjection: workProjectionMutation,
+  });
+  // One repair on touch for every production tree reader and create (§12.4).
+  const hiddenNodeRepair = createHiddenNodeRepair({
+    db,
+    removal: documentRemoval,
+    eventSink,
+    objects: objectRelease,
   });
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
-    membership: manifestMembership,
+    availability: projectContextAvailability,
     observer: createLinkScopeObserver(eventSink),
+    repair: hiddenNodeRepair,
   });
   const documentSync = createCollabDomain({
     db,
+    backgroundTasks,
     arrivals,
+    catalogMutations: contextCatalog,
     aheadRegistrations: linkAheadRegistry,
     fileAccess,
     links: documentLinks,
@@ -586,6 +603,9 @@ export async function createProductionAppPorts(input: {
     eventSink,
     notices,
     workProjectionMutation,
+    objects: objectRelease,
+    draftClose,
+    documentRemoval,
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
@@ -597,7 +617,6 @@ export async function createProductionAppPorts(input: {
       },
     },
   });
-  boundManifestMembership = documentSync;
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
     lineages: createDrizzleScratchLineages(db),
@@ -606,22 +625,25 @@ export async function createProductionAppPorts(input: {
     workAuthorityResolver,
     eventSink,
   });
-  contextPorts = createProductionUnifiedContextPortFactory({
+  const contextPorts = createProductionUnifiedContextPortFactory({
     links: documentLinks,
     db,
     documentSync,
-    manifestMembership: documentSync,
     documentDerivations: documentSync.documentDerivations,
     catalogMutations: contextCatalog,
     eventSink,
     arrivals,
-    backgroundTasks,
+    hiddenNodeRepair,
+    removal: documentRemoval,
+    branches: documentSync.branches,
+    pendingBranch: workProjectionMutation,
   });
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db),
     content: createContextUploadContentPort(contextPorts),
     objectStore,
     eventSink,
+    catalog: contextCatalog,
   });
   const uploadIdentity = createDrizzleUploadIdentityPort(db);
   // Upload creates the asset as a context document, so the service needs the
@@ -652,6 +674,7 @@ export async function createProductionAppPorts(input: {
   const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
   workRepo = createDrizzleProjectWorkRepository({
     db,
+    removal: documentRemoval,
     projectionMutation: workProjectionMutation,
     fileAccessChanges,
     lineageScratch,
@@ -698,6 +721,19 @@ export async function createProductionAppPorts(input: {
     linkAheadRegistry,
     contextPorts,
     contextCatalog,
+    restoreRemovedDocuments: createRestoreRemovedDocuments({
+      db,
+      fileAccess,
+      workProjection: workProjectionMutation,
+      arrivals,
+      catalog: contextCatalog,
+    }),
+    documentTrash: createDrizzleDocumentTrash({
+      db,
+      objectStore,
+      eventSink,
+      drafts: documentSync.documentPurgeDraftDisposal,
+    }),
     projectContextAvailability,
     documentAddresses: createDocumentAddressResolver({
       locations: createDrizzleDocumentAddressStore(db),
@@ -709,6 +745,7 @@ export async function createProductionAppPorts(input: {
       workAuthorityResolver,
       history: createDrizzleDocumentLinkHistory(db),
       lineages: createDrizzleScratchLineages(db),
+      chats: createDrizzleChatUploadsOwners(db),
     }),
     exportSnapshot: createDrizzleExportSnapshotStore(db),
     linkScopes: documentLinks,
@@ -742,6 +779,8 @@ export async function createProductionAppPorts(input: {
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
     shownLinks: createDrizzleShownLinkStore(db),
+    documentRemovals: createRemovalRecords(db),
+    observationFrontiers: createDrizzleObservationFrontiers(db),
   };
 }
 
@@ -749,6 +788,21 @@ export async function createProductionAppPorts(input: {
 export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const { backgroundTasks } = ports;
   const shutdown = { started: false };
+  // A short claim that turned a wake away wakes the chat on release.
+  const runClaim = wakeOnContendedRelease(ports.runClaim, (threadId) => {
+    backgroundTasks.track(
+      wakeIfRunnable(threadId).catch((error) =>
+        emitEvent(ports.eventSink, {
+          level: "warn",
+          source: "runtime.wake",
+          name: "contended_release_wake.failed",
+          correlation: { threadId },
+          payload: unknownToEventPayload(error),
+        }),
+      ),
+      "contended claim release wake",
+    );
+  });
   const threadEventHub = createThreadEventHub({
     journalReader: ports.journalReader,
     journalWriter: ports.journalWriter,
@@ -760,13 +814,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     db: ports.db,
     journalWriter: ports.journalWriter,
     eventHub: threadEventHub,
-    recoverPendingLiveSettlements: () => ports.documentSync.recoverPendingLiveSettlements(),
   });
   const interruptRegistry = createInterruptRegistry();
   const workContext = createWorkContextReader({
     threads: ports.threadRepos.threads,
     works: ports.workRepo,
     threadWorks: ports.threadRepos.threadWorks,
+    topPrimaryChats: createDrizzleTopPrimaryChatResolver(ports.db),
     readChainPermission: ports.readChainPermission,
   });
   const toolRegistry = createToolRegistry();
@@ -789,7 +843,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
     | undefined;
   const stopThreadRun = async (threadId: ThreadId) => {
-    const turnId = await ports.runClaim.readRunningTurnId(threadId);
+    const turnId = await runClaim.readRunningTurnId(threadId);
     if (turnId) await runner.cancel(threadId, turnId);
   };
   const delivery = createDrizzleRuntimeDelivery(ports.db, {
@@ -797,11 +851,16 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolRegistry,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
-    runClaim: ports.runClaim,
+    runClaim: runClaim,
     notices: ports.notices,
     runStarter,
     workContext,
     publishStatus: publishThreadStatus,
+    writeModeSwitch: createWriteModeSwitchPort({
+      works: ports.workRepo,
+      threadWorks: ports.threadRepos.threadWorks,
+      readChainPermission: ports.readChainPermission,
+    }),
     async publishFinalizedReports(reports) {
       if (!publishReport) throw new Error("Report publisher is not initialized");
       for (const report of reports)
@@ -821,7 +880,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threadWorks: ports.threadRepos.threadWorks,
     works: ports.workRepo,
     workAuthorityResolver: ports.workAuthorityResolver,
-    drafts: ports.documentSync,
+    branches: ports.documentSync,
     workContextNotices,
     stopThreadRun,
     documentTouches: ports.threadRepos.documentTouches,
@@ -832,6 +891,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     readAgentChain: ports.readAgentChain,
     readChainPermission: ports.readChainPermission,
     shownLinks: ports.shownLinks,
+    documentRemovals: ports.documentRemovals,
+    documentTrash: ports.documentTrash,
   };
   for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
@@ -840,6 +901,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repos: ports.threadRepos,
     statusReader: ports.statusReader,
     registry: toolRegistry,
+    chatFiles: ports.contextPorts.chatFiles,
     async tokenizer(caller) {
       const binding = await ports.agentRevisions.readThreadBinding(caller.id);
       const modelId = binding?.configuration.model ?? ports.gateway.getDefaultModel();
@@ -876,9 +938,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     readActivity,
     eventSink: ports.eventSink,
   });
-  const threadLock = createDrizzleThreadLock(ports.db);
+  const threadLock = createDrizzleThreadLock(ports.db, threadEventHub);
   const inbox = delivery;
-  const readPending = (threadId: ThreadId) => readPendingInbox(delivery, threadId);
   const reportPublisher = createReportPublisher({
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
@@ -890,6 +951,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     db: ports.db,
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
+    branches: ports.documentSync.workBranchDisposal,
   });
   const orphanRepair = createOrphanReportRepair({
     toolRegistry,
@@ -899,7 +961,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     clearOrphanedTurn: delivery.clearOrphanedTurn,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
-    authority: ports.runClaim,
+    authority: runClaim,
     publisher: reportPublisher,
     eventSink: ports.eventSink,
   });
@@ -908,7 +970,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async scanWakes() {
       const page = await sweepWakes({
         delivery,
-        authority: ports.runClaim,
+        authority: runClaim,
         runStarter,
         limit: WAKE_SWEEP_LIMIT,
         afterThreadId: wakeCursor,
@@ -920,6 +982,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repairOrphans: () => orphanRepair.sweep(WAKE_SWEEP_LIMIT),
     publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
     purgeWorks: () => workPurger.sweep(),
+    purgeDocuments: () => ports.documentTrash.purge(),
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
@@ -929,6 +992,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objects: ports.objectStore,
     eventSink: ports.eventSink,
   });
+  const topChats = createDrizzleTopPrimaryChatResolver(ports.db);
   const admissionProducer = createWriterTurnProducer({
     inbox,
     persistence: {
@@ -943,21 +1007,24 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     records: admissionRecords,
     requireWritableThread: (threadId) =>
       requireWritableThread((id) => lockThreadAndWorks(ports.db, id), threadId),
-    consumeUploads: (documentIds) => ports.uploadIntake.consume(documentIds),
+    async consumeUploads(documentIds, threadId) {
+      const chat = await topChats.resolveTopPrimaryChat(threadId as ThreadId);
+      if (chat) await ports.uploadIntake.consume(documentIds, chat.chatId);
+    },
     attachDocument: (threadId, documentId, relationship) =>
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
   });
   const userTurnAdmission = createUserTurnAdmission({
-    runClaim: ports.runClaim,
+    runClaim: runClaim,
     records: admissionRecords,
     availability: ports.projectContextAvailability,
     async threadProject(threadId) {
       return (await ports.threadRepos.threads.findById(threadId as never))?.projectId ?? null;
     },
-    async verifyDraftUpload(reference) {
-      const identity = await ports.uploadIdentity.lookupUpload(reference.documentId);
-      return identity?.intakeId === reference.intakeId && identity.uri === reference.uri;
-    },
+    verifyDraftUpload: createDraftUploadVerifier({
+      identities: ports.uploadIdentity,
+      chats: topChats,
+    }),
     async authorizeActivatedSkills({ threadId, slugs }) {
       const thread = await ports.threadRepos.threads.findById(threadId as never);
       if (!thread) throw new InvalidAdmissionError("thread is unavailable");
@@ -1036,11 +1103,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
     shownLinks: ports.shownLinks,
+    observationFrontiers: ports.observationFrontiers,
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
       threads: ports.threadRepos.threads,
       availability: ports.projectContextAvailability,
       documents: ports.documentSync,
+      branches: ports.documentSync.branches,
       threadWorks: coreToolDeps.threadWorks,
       works: coreToolDeps.works,
     }),
@@ -1051,13 +1120,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     accountSkillInstalls: ports.accountSkillInstalls,
     toolRegistry,
     projectPreferences: ports.preferences,
-    workWriteMode: {
-      async read(workId: string) {
-        const work = await ports.workRepo.findById(workId as import("@meridian/contracts").WorkId);
-        if (!work) throw new Error(`Work not found: ${workId}`);
-        return work.aiWriteMode;
-      },
-    },
     workContext,
     childRunCoordinator,
     interruptRegistry,
@@ -1071,11 +1133,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     modelRequestDebug: ports.modelRequestDebug,
     responseWrites,
     delivery,
-    runClaim: ports.runClaim,
+    runClaim: runClaim,
     handoffBriefs: handoffBriefStopper,
     activeDocuments: ports.activeDocuments,
     imageAssets,
-    concurrentRenderBudgetBytes,
   };
   const orchestrator = createOrchestrator(orchestratorDeps);
   runner = orchestrator;
@@ -1085,7 +1146,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventWriter: threadEventHub,
     eventSink: ports.eventSink,
     threadLock,
-    runClaim: ports.runClaim,
+    runClaim: runClaim,
     shutdown,
     wakeIfRunnable,
     billingUsage: ports.billingUsage,
@@ -1103,11 +1164,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         async count(projectId) {
           const works = await ports.workRepo.listByProject(projectId, { lifecycle: "all" });
           const noWork = await ports.workRepo.findNoWork(projectId);
-          const counts = await ports.documentSync.countPendingByWorkIds([
-            ...works.map((work) => work.id),
-            ...(noWork ? [noWork.id] : []),
-          ]);
-          return [...counts.values()].reduce((sum, count) => sum + count, 0);
+          return [...works, ...(noWork ? [noWork] : [])].reduce(
+            (sum, work) => sum + work.pendingDocumentCount,
+            0,
+          );
         },
       },
       documents: exportDocumentsFrom(ports.documentSync),
@@ -1116,19 +1176,18 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     }),
     gateway: ports.gateway,
     threadRepos: ports.threadRepos,
-    repos: ports.threadRepos,
     journalReader: ports.journalReader,
     journalWriter: ports.journalWriter,
     threadEventHub,
-    hub: threadEventHub,
     threadRuntime: createThreadRuntimeService({
       db: ports.db,
       statusReader: ports.statusReader,
       threads: ports.threadRepos.threads,
       executionReports: ports.threadRepos.executionReports,
-      readPending,
+      readRunState: (threadId) => readRunStateAtHead(ports.db, threadId),
     }),
     documentSync: ports.documentSync,
+    liveDocuments: createTreeReader(ports.db),
     linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
     openImports: (userId) => listOpenImports(ports.db, userId),
@@ -1143,7 +1202,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         userId,
       ),
     contextCatalog: ports.contextCatalog,
-    contextCatalogRefresh: ports.contextCatalog,
+    restoreRemovedDocuments: ports.restoreRemovedDocuments,
+    documentTrash: ports.documentTrash,
     projectContextAvailability: ports.projectContextAvailability,
     documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
@@ -1158,6 +1218,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workAuthorityResolver: ports.workAuthorityResolver,
     workContext,
     workContextNotices,
+    responseWrites,
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
     agentCatalog: createBoundAgentCatalog({
@@ -1182,7 +1243,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     recovery,
     handoffBriefs,
     userTurnAdmission,
-    runClaim: ports.runClaim,
+    runClaim: runClaim,
     toolRegistry,
     toolExecutor,
     modelRequestDebug: ports.modelRequestDebug,
@@ -1250,6 +1311,7 @@ export function createInMemoryAppServices(): AppServices {
   const inbox = createInMemoryInbox();
   const runClaim = createInMemoryRunClaim();
   const runStarter = createInMemoryRunStarter();
+  const journal = createInMemoryEventJournalWriter(transactionOwner);
   const delivery = createInMemoryRuntimeDelivery({
     backgroundTasks,
     workContext: {
@@ -1258,13 +1320,22 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     repos: threadRepos,
-    eventWriter: createInMemoryEventJournalWriter(),
+    eventWriter: journal,
+    headSeq: (id) => journal.headSeq(id),
     notices,
     runClaim,
     inbox,
     threadLock: createInMemoryThreadLock(),
     runStarter,
     async publishFinalizedReports() {},
+    writeModeSwitch: {
+      async renderNotice(_threadId, mode) {
+        return writeModeSwitchNotice({ archivedAt: null, isNoWork: false }, mode, false);
+      },
+      async setWorkDefault() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+    },
     schedulePostCommit: (task) => {
       void task();
     },
@@ -1295,6 +1366,9 @@ export function createInMemoryAppServices(): AppServices {
     async purgeWorks() {
       return 0;
     },
+    async purgeDocuments() {
+      return 0;
+    },
   };
 
   const documentSync: CollabDomain = createInMemoryCollabDomain();
@@ -1305,6 +1379,12 @@ export function createInMemoryAppServices(): AppServices {
   };
   const inMemoryThreadEventHub: ThreadEventHub = {
     invalidateCommittedJournal() {},
+    recordFailure() {},
+    async appendEvents(threadId, events) {
+      let seq = 0n;
+      for (const event of events) seq = await this.appendEvent(threadId, event);
+      return seq;
+    },
     async appendEvent() {
       return 0n;
     },
@@ -1320,9 +1400,6 @@ export function createInMemoryAppServices(): AppServices {
     async headSeq() {
       return 0n;
     },
-    journalSeqForEventSeq(seq: bigint) {
-      return seq / 1000n;
-    },
     async readModelProjectionWatermark() {
       return 0n;
     },
@@ -1336,7 +1413,7 @@ export function createInMemoryAppServices(): AppServices {
     async byId() {
       return null;
     },
-    async bySlug() {
+    async byHandle() {
       return null;
     },
     async noWork() {
@@ -1382,8 +1459,10 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     threadRepos,
-    repos: threadRepos,
     journalReader: {
+      async lastSeqBefore() {
+        return 0n;
+      },
       async readAfter() {
         return [];
       },
@@ -1407,12 +1486,16 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     journalWriter: {
+      async appendEvents(threadId, events) {
+        let seq = 0n;
+        for (const event of events) seq = await this.appendEvent(threadId, event);
+        return seq;
+      },
       async appendEvent() {
         return 1n;
       },
     },
     threadEventHub: inMemoryThreadEventHub,
-    hub: inMemoryThreadEventHub,
     threadRuntime: {
       async requireOwnedThread() {
         throw new Error("in-memory thread runtime is not implemented");
@@ -1429,14 +1512,19 @@ export function createInMemoryAppServices(): AppServices {
       async readRunningTurnId() {
         return null;
       },
-      async readPending() {
-        return { items: [] };
+      async readRunState() {
+        throw new Error("in-memory thread runtime has no run state");
       },
       async journalEvents() {
         return [];
       },
     },
     documentSync,
+    liveDocuments: {
+      async findById() {
+        throw new Error("Live tree reads are unavailable in memory");
+      },
+    },
     linkAheadRegistry,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     openImports: async () => [],
@@ -1444,12 +1532,30 @@ export function createInMemoryAppServices(): AppServices {
       throw new Error("Import requires durable persistence");
     },
     contextCatalog,
-    contextCatalogRefresh: {
-      async refreshProjectDocuments() {
-        throw new Error("Project document catalog refresh is unavailable in memory");
+    async restoreRemovedDocuments() {
+      throw new Error("Document restore is unavailable in memory");
+    },
+    documentTrash: {
+      async retained() {
+        return new Set();
+      },
+      async list() {
+        return [];
+      },
+      async read() {
+        return null;
+      },
+      async wasPurged() {
+        return false;
+      },
+      async purge() {
+        return 0;
       },
     },
     documentAddresses: {
+      async resolveById() {
+        return { kind: "unavailable" };
+      },
       async resolve() {
         return { kind: "unavailable" };
       },
@@ -1513,6 +1619,9 @@ export function createInMemoryAppServices(): AppServices {
       async findById() {
         throw new Error("in-memory work repository is not implemented");
       },
+      async findByHandle() {
+        throw new Error("in-memory work repository is not implemented");
+      },
       async findNoWork() {
         return null;
       },
@@ -1541,6 +1650,9 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async touch() {},
+      async setDefaultAiWriteMode() {
+        throw new Error("in-memory work repository is not implemented");
+      },
     },
     projectRepo: {
       async create() {
@@ -1591,6 +1703,9 @@ export function createInMemoryAppServices(): AppServices {
       async findById() {
         throw new Error("in-memory work repository is not implemented");
       },
+      async findByHandle() {
+        throw new Error("in-memory work repository is not implemented");
+      },
       async findNoWork() {
         return null;
       },
@@ -1619,10 +1734,14 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async touch() {},
+      async setDefaultAiWriteMode() {
+        throw new Error("in-memory work repository is not implemented");
+      },
     },
     workAuthorityResolver,
     workContext: unavailableWorkContext,
     workContextNotices: delivery,
+    responseWrites: createAgentEditResponseWriteLifecycle({ documentSync }),
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog: createBoundAgentCatalog({
@@ -1666,6 +1785,15 @@ export function createInMemoryAppServices(): AppServices {
       beginShutdown() {},
       async startDrain() {
         throw new Error("in-memory turn runner is not implemented");
+      },
+      async stop() {
+        throw new Error("in-memory chat Stop is not implemented");
+      },
+      async handBack() {
+        throw new Error("in-memory hand-back is not implemented");
+      },
+      async sendNow() {
+        throw new Error("in-memory Send now is not implemented");
       },
       async cancel() {
         return "not_found" as const;
@@ -1790,18 +1918,20 @@ function createInMemoryNoticePort(): NoticePort {
         if (consumed.has(rows[index]?.id ?? -1)) rows.splice(index, 1);
       }
     },
+    async retractForPushes(pushIds) {
+      const retracted = new Set(pushIds);
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        if (retracted.has(String(rows[index]?.data.pushId))) rows.splice(index, 1);
+      }
+    },
   };
 }
 
 export type { ThreadRepositories } from "../domains/threads/ports/index.js";
 
 /** Adapts Collab's export read door and live membership to the port Export owns. */
-function exportDocumentsFrom(
-  documents: Pick<CollabDomain, "readForExport" | "resolveManifestMembership">,
-): ExportDocumentReader {
+function exportDocumentsFrom(documents: Pick<CollabDomain, "readForExport">): ExportDocumentReader {
   return {
     readForExport: (documentId, scope) => documents.readForExport(documentId, scope),
-    resolveManifestMembership: ({ projectId }) =>
-      documents.resolveManifestMembership({ projectId: projectId as ProjectId }),
   };
 }

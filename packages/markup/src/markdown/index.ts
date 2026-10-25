@@ -19,6 +19,7 @@ import {
   paragraphCodec,
   tableCodec,
 } from "./blocks/index.js";
+import { prepareGfmTableHardBreaks } from "./blocks/table.js";
 import {
   codeMarkCodec,
   emMarkCodec,
@@ -26,7 +27,6 @@ import {
   strikeMarkCodec,
   strongMarkCodec,
 } from "./marks/index.js";
-import { normalizeGfmTableHardBreaks } from "./table-ingress.js";
 
 export const markdownBlockCodecs: readonly BlockCodec[] = [
   tableCodec,
@@ -58,7 +58,7 @@ export function markdown(): MarkupPlugin {
   return {
     blocks: markdownBlockCodecs,
     marks: markdownMarkCodecs,
-    preprocess: normalizeGfmTableHardBreaks,
+    preprocess: prepareGfmTableHardBreaks,
     postParse: demoteAutolinks,
   };
 }

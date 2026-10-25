@@ -44,7 +44,12 @@ export type Segment = string | { text: string; ref: string | null; href: string;
 
 /** A linked run naming document `id` at `uri`, stored the way producers store it. */
 export function docLink(text: string, id: string, uri: string, title?: string): Segment {
-  return { text, ref: documentRef(id), href: storedHref(uri, ""), ...(title ? { title } : {}) };
+  return {
+    text,
+    ref: documentRef(id),
+    href: storedHref({ kind: "document", uri }, ""),
+    ...(title ? { title } : {}),
+  };
 }
 
 export function paragraph(...segments: Segment[]): PMNode {
@@ -117,8 +122,6 @@ export function linkHarness(input: {
   blocks?: readonly PMNode[];
   /** The holder's live doc itself (a merge-matrix client), instead of `blocks`. */
   doc?: Y.Doc;
-  /** The agent runtime's Yjs client id, so client order is fixed. */
-  runtimeClientID?: number;
   clientID?: number;
   settlements?: ReadonlyMap<string, string>;
   onLinkSpliceFallback?: (event: LinkSpliceFallbackDetail) => void;
@@ -134,15 +137,6 @@ export function linkHarness(input: {
     {
       links,
       ...(input.onLinkSpliceFallback ? { onLinkSpliceFallback: input.onLinkSpliceFallback } : {}),
-      ...(input.runtimeClientID === undefined
-        ? {}
-        : {
-            createRuntimeDoc: () => {
-              const runtime = new Y.Doc({ gc: false });
-              runtime.clientID = input.runtimeClientID as number;
-              return runtime;
-            },
-          }),
     },
   );
   const doc = input.doc ?? docFromBlocks(input.blocks ?? [], input.clientID ?? 7000);

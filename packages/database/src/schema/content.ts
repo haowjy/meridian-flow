@@ -8,9 +8,11 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
-import { WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
+import type { DocumentRemovalCause } from "@meridian/contracts/protocol";
+import { type AiWriteMode, WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -26,18 +28,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
+import { threads } from "./agent-threads";
 import { users } from "./users";
-
-export const DOCUMENT_KINDS = {
-  content: "content",
-  manifest: "manifest",
-} as const;
-
-export type DocumentKind = (typeof DOCUMENT_KINDS)[keyof typeof DOCUMENT_KINDS];
-
-export function isContentDocumentKind(kind: string | null | undefined): boolean {
-  return kind === DOCUMENT_KINDS.content;
-}
 
 export const projects = pgTable(
   "projects",
@@ -82,13 +74,22 @@ export const works = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    slug: text("slug"),
+    // Permanent `w<n>`, minted from project_handle_counters and never reused. Null only on No Work.
+    handle: text("handle"),
     isNoWork: boolean("is_no_work").notNull().default(false),
     goal: text("goal"),
     status: text("status"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
-    aiWriteMode: text("ai_write_mode").notNull().default("direct"),
+    // What a new chat in this Work starts with; each chat owns its own mode afterwards.
+    defaultAiWriteMode: text("default_ai_write_mode")
+      .$type<AiWriteMode>()
+      .notNull()
+      .default("direct"),
     entityRevision: bigint("entity_revision", { mode: "bigint" }).notNull().default(sql`1`),
+    // The Works badge: documents the Work's active branch changes, as the collab pending
+    // membership rule counts them. Projected, not counted at read time: the Works boundary reconciles
+    // every Work it locked at commit and bumps `entity_revision` only when it moved (projects/.context).
+    pendingDocumentCount: integer("pending_document_count").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
@@ -103,28 +104,28 @@ export const works = pgTable(
     uniqueIndex("works_project_name_active")
       .on(table.projectId, sql`lower(${table.name})`)
       .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("works_project_slug")
-      .on(table.projectId, table.slug)
-      .where(sql`${table.slug} IS NOT NULL`),
+    uniqueIndex("works_project_handle")
+      .on(table.projectId, table.handle)
+      .where(sql`${table.handle} IS NOT NULL`),
     uniqueIndex("works_project_no_work_active")
       .on(table.projectId)
       .where(sql`${table.isNoWork} = true AND ${table.deletedAt} IS NULL`),
     check("works_name_nonempty", sql`btrim(${table.name}) <> ''`),
     check(
-      "works_no_work_slug",
-      sql`(${table.isNoWork} AND ${table.slug} IS NULL) OR (NOT ${table.isNoWork} AND ${table.slug} IS NOT NULL)`,
+      "works_no_work_handle",
+      sql`(${table.isNoWork} AND ${table.handle} IS NULL) OR (NOT ${table.isNoWork} AND ${table.handle} IS NOT NULL)`,
     ),
     check("works_no_work_not_archived", sql`NOT ${table.isNoWork} OR ${table.archivedAt} IS NULL`),
-    check(
-      "works_slug_valid",
-      sql`${table.slug} IS NULL OR ${table.slug} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`,
-    ),
+    check("works_handle_valid", sql`${table.handle} IS NULL OR ${table.handle} ~ '^w[1-9][0-9]*$'`),
     // Schema SQL needs a literal: interpolating a number generates an unbound $1 in migrations.
     check(
       "works_status_length",
       sql`${table.status} IS NULL OR char_length(${table.status}) <= ${sql.raw(String(WORK_STATUS_MAX_LENGTH))}`,
     ),
-    check("works_ai_write_mode_valid", sql`${table.aiWriteMode} IN ('direct', 'draft')`),
+    check(
+      "works_default_ai_write_mode_valid",
+      sql`${table.defaultAiWriteMode} IN ('direct', 'draft')`,
+    ),
     unique("works_project_id_unique").on(table.projectId, table.id),
   ],
 );
@@ -142,6 +143,8 @@ export const contextSources = pgTable(
       .references(() => works.id, { onDelete: "cascade" }),
     // Lineage identity is not a thread-row FK: trashing/purging the first chat must not cascade.
     rootThreadId: uuid("root_thread_id").$type<ThreadId>(),
+    // A chat (primary thread) owns its uploads source; same no-FK rule as `root_thread_id`.
+    chatThreadId: uuid("chat_thread_id").$type<ThreadId>(),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     scope: text("scope").notNull().default("project"),
@@ -165,7 +168,7 @@ export const contextSources = pgTable(
     uniqueIndex("context_sources_project_scope_slug")
       .on(table.projectId, table.slug)
       .where(
-        sql`${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.deletedAt} IS NULL`,
+        sql`${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL AND ${table.deletedAt} IS NULL`,
       ),
     uniqueIndex("context_sources_work_slug")
       .on(table.workId, table.slug)
@@ -173,14 +176,25 @@ export const contextSources = pgTable(
     uniqueIndex("context_sources_lineage_slug")
       .on(table.rootThreadId, table.slug)
       .where(sql`${table.rootThreadId} IS NOT NULL`),
+    uniqueIndex("context_sources_chat_slug")
+      .on(table.chatThreadId, table.slug)
+      .where(sql`${table.chatThreadId} IS NOT NULL`),
     index("context_sources_project_sort")
       .on(table.projectId, table.sortOrder)
       .where(sql`${table.deletedAt} IS NULL`),
     check(
       "context_sources_exactly_one_scope",
-      sql`(${table.scope} = 'project' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL) OR (${table.scope} = 'work' AND ${table.projectId} IS NULL AND ${table.workId} IS NOT NULL AND ${table.rootThreadId} IS NULL) OR (${table.scope} = 'lineage' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NOT NULL AND ${table.slug} = 'scratch')`,
+      sql`(${table.scope} = 'project' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL) OR (${table.scope} = 'work' AND ${table.projectId} IS NULL AND ${table.workId} IS NOT NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL) OR (${table.scope} = 'lineage' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NOT NULL AND ${table.chatThreadId} IS NULL AND ${table.slug} = 'scratch') OR (${table.scope} = 'chat' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NOT NULL AND ${table.slug} = 'uploads')`,
     ),
-    check("context_sources_scope_valid", sql`${table.scope} IN ('project', 'work', 'lineage')`),
+    // An uploads source belongs to a chat; the other scopes never carry that slug.
+    check(
+      "context_sources_uploads_chat_only",
+      sql`${table.slug} <> 'uploads' OR ${table.scope} = 'chat'`,
+    ),
+    check(
+      "context_sources_scope_valid",
+      sql`${table.scope} IN ('project', 'work', 'lineage', 'chat')`,
+    ),
     check(
       "context_sources_scope_work_fk",
       sql`${table.scope} <> 'work' OR ${table.workId} IS NOT NULL`,
@@ -206,6 +220,8 @@ export const folders = pgTable(
       .references(() => contextSources.id, { onDelete: "cascade" }),
     parentId: uuid("parent_id").$type<FolderId>(),
     name: text("name").notNull(),
+    /** Canonical document spelling of the folder name, for indexed cross-kind claims. */
+    documentAlias: text("document_alias").notNull(),
     description: text("description"),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: createdAt(),
@@ -214,6 +230,14 @@ export const folders = pgTable(
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "set null" }),
+    /** A branch's new folder: in no live view until placed (read only through the tree view). */
+    hidden: boolean("hidden").notNull().default(false),
+    /**
+     * The live folder that absorbed this hidden one (it is tombstoned): history and branch
+     * facts that name this folder mean that one. No FK: folders are tombstoned.
+     */
+    absorbedInto: uuid("absorbed_into").$type<FolderId>(),
+    locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
   },
   (table) => [
     index("folders_deleted_by_work_idx")
@@ -222,12 +246,24 @@ export const folders = pgTable(
     index("folders_context_parent_active")
       .on(table.contextSourceId, table.parentId)
       .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("folders_context_parent_name_active")
-      .on(table.contextSourceId, table.parentId, table.name)
+    index("folders_context_parent_alias_active")
+      .on(table.contextSourceId, table.parentId, table.documentAlias)
       .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("folders_context_root_name_active")
+    // Hidden folders occupy no live path; nothing makes them unique.
+    uniqueIndex("folders_context_parent_name_live")
+      .on(table.contextSourceId, table.parentId, table.name)
+      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
+    uniqueIndex("folders_context_root_name_live")
       .on(table.contextSourceId, table.name)
-      .where(sql`${table.parentId} IS NULL AND ${table.deletedAt} IS NULL`),
+      .where(sql`${table.parentId} IS NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
+    // Every folder a branch's view may show besides live ones, by path: a hidden one (and
+    // absorb), or a deleted one above a document a draft outlived (D79). One predicate, so
+    // the tree view's one non-live arm and a hidden-only lookup both imply it.
+    index("folders_nonlive_location")
+      .on(table.contextSourceId, table.parentId, table.name)
+      .where(
+        sql`(${table.hidden} AND ${table.deletedAt} IS NULL) OR (NOT ${table.hidden} AND ${table.deletedAt} IS NOT NULL)`,
+      ),
     // Image path lookups walk deleted folders too, so the active-only indexes miss them.
     index("folders_context_root").on(table.contextSourceId).where(sql`${table.parentId} IS NULL`),
     index("folders_parent").on(table.parentId),
@@ -238,7 +274,6 @@ export const documents = pgTable(
   "documents",
   {
     id: idColumn<DocumentId>(),
-    kind: text("kind").$type<DocumentKind>().notNull().default(DOCUMENT_KINDS.content),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
       .notNull()
@@ -256,46 +291,71 @@ export const documents = pgTable(
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
     locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
-    markdownProjection: text("markdown_projection").notNull().default(""),
     provisionalName: boolean("provisional_name").notNull().default(false),
     metadata: jsonbDefault("metadata"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
+    /** Content was permanently released after the trash retention window; the row remains a tombstone. */
+    contentPurgedAt: timestamp("content_purged_at", { withTimezone: true, mode: "date" }),
+    deletionReason: text("deletion_reason").$type<"deleted" | "discarded">(),
+    deletedByUserId: uuid("deleted_by_user_id")
+      .$type<UserId>()
+      .references(() => users.id, { onDelete: "set null" }),
+    deletionCause: text("deletion_cause").$type<DocumentRemovalCause>(),
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "set null" }),
+    /** The chat whose model deleted it; its owner stays in `deleted_by_user_id`. */
+    deletedByThreadId: uuid("deleted_by_thread_id")
+      .$type<ThreadId>()
+      .references((): AnyPgColumn => threads.id, { onDelete: "set null" }),
+    /** A branch's new document: in no live view until placed (read only through the tree view). */
+    hidden: boolean("hidden").notNull().default(false),
   },
   (table) => [
+    check(
+      "documents_removal_presence",
+      sql`(${table.deletedAt} IS NOT NULL) = (${table.deletionReason} IS NOT NULL)`,
+    ),
+    check(
+      "documents_deletion_reason_valid",
+      sql`${table.deletionReason} IN ('deleted', 'discarded')`,
+    ),
+    check(
+      "documents_deletion_cause_valid",
+      sql`${table.deletionCause} IN ('reply_rolled_back', 'create_failed', 'repair')`,
+    ),
+    index("documents_purge_candidates")
+      .on(table.deletedAt, table.id)
+      .where(
+        sql`${table.contentPurgedAt} IS NULL AND ${table.deletedAt} IS NOT NULL AND ${table.deletionReason} = 'deleted' AND NOT ${table.hidden} AND ${table.deletedByWorkId} IS NULL`,
+      ),
     index("documents_deleted_by_work_idx")
       .on(table.deletedByWorkId)
       .where(sql`${table.deletedByWorkId} IS NOT NULL`),
-    index("documents_context_folder_active")
-      .on(table.contextSourceId, table.folderId)
-      .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("documents_context_folder_name_active")
+    index("documents_deleted_by_thread_idx")
+      .on(table.deletedByThreadId)
+      .where(sql`${table.deletedByThreadId} IS NOT NULL`),
+    // Not limited to live rows: hidden-document matching by row location, the review's
+    // tree-state query, and listing by folder.
+    index("documents_context_location").on(
+      table.contextSourceId,
+      table.folderId,
+      table.name,
+      table.extension,
+    ),
+    // Hidden documents occupy no live path; nothing makes them unique.
+    uniqueIndex("documents_context_folder_name_live")
       .on(table.contextSourceId, table.folderId, table.name, table.extension)
-      .where(sql`${table.deletedAt} IS NULL AND ${table.kind} = 'content'`),
-    uniqueIndex("documents_context_root_name_active")
+      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
+    uniqueIndex("documents_context_root_name_live")
       .on(table.contextSourceId, table.name, table.extension)
-      .where(
-        sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL AND ${table.kind} = 'content'`,
-      ),
-    uniqueIndex("documents_manifest_context_active")
-      .on(table.contextSourceId)
-      .where(sql`${table.deletedAt} IS NULL AND ${table.kind} = 'manifest'`),
+      .where(sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
     // Image path lookups, deleted images included.
-    index("documents_context_images")
+    index("documents_context_all_images")
       .on(table.contextSourceId)
-      .where(sql`${table.fileType} = 'image' AND ${table.kind} = 'content'`),
-    index("documents_markdown_projection_fts").using(
-      "gin",
-      sql`to_tsvector('simple', ${table.markdownProjection})`,
-    ),
-    index("documents_markdown_projection_trgm").using(
-      "gin",
-      sql`${table.markdownProjection} gin_trgm_ops`,
-    ),
+      .where(sql`${table.fileType} = 'image'`),
     index("documents_name_fts").using("gin", sql`to_tsvector('simple', ${table.name})`),
     index("documents_name_trgm").using("gin", sql`${table.name} gin_trgm_ops`),
     check(
@@ -306,7 +366,48 @@ export const documents = pgTable(
       "documents_file_type_valid",
       sql`${table.fileType} IN ('markdown', 'python', 'typescript', 'javascript', 'json', 'shell', 'yaml', 'text', 'csv', 'notebook', 'pdf', 'png', 'jpg', 'svg', 'docx', 'image', 'binary')`,
     ),
-    check("documents_kind_valid", sql`${table.kind} IN ('content', 'manifest')`),
+  ],
+);
+
+/**
+ * A device's create that joined a branch's document: `fromDocumentId` is the id the device
+ * minted and never got a `documents` row, now meaning `toDocumentId`. No FK on the
+ * source id, which names no row; deleting the target drops the forward with it.
+ */
+export const documentForwards = pgTable(
+  "document_forwards",
+  {
+    fromDocumentId: uuid("from_document_id").$type<DocumentId>().primaryKey(),
+    toDocumentId: uuid("to_document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (table) => [index("document_forwards_to").on(table.toDocumentId)],
+);
+
+/** Markdown projection kept separate so location writes never rebuild its GIN indexes. */
+export const documentMarkdownProjections = pgTable(
+  "document_markdown_projections",
+  {
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .primaryKey()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    markdown: text("markdown").notNull().default(""),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("document_markdown_projections_fts").using(
+      "gin",
+      sql`to_tsvector('simple', ${t.markdown})`,
+    ),
+    index("document_markdown_projections_trgm").using("gin", sql`${t.markdown} gin_trgm_ops`),
   ],
 );
 
@@ -322,9 +423,9 @@ export const uploadIntakes = pgTable(
       .$type<UserId>()
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    workId: uuid("work_id")
-      .$type<WorkId>()
-      .references(() => works.id, { onDelete: "cascade" }),
+    // The owning chat's thread id. No FK: the chat's row may not exist yet at attach time, and
+    // trashing or purging it must not cascade (the same as lineage Scratch's root id).
+    ownerThreadId: uuid("owner_thread_id").$type<ThreadId>().notNull(),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
       .notNull()
@@ -337,7 +438,6 @@ export const uploadIntakes = pgTable(
     finalPath: text("final_path").notNull(),
     objectKey: text("object_key").notNull(),
     fileType: text("file_type").notNull(),
-    canonicalUri: text("canonical_uri").notNull(),
     locationRevision: uuid("location_revision").notNull(),
     state: text("state").notNull().default("reserved"),
     storageUrl: text("storage_url"),
@@ -355,17 +455,12 @@ export const uploadIntakes = pgTable(
       "upload_intakes_state_valid",
       sql`${table.state} IN ('reserved', 'object_stored', 'finalized', 'deleted')`,
     ),
+    index("upload_intakes_owner_thread")
+      .on(table.ownerThreadId)
+      .where(sql`${table.ownerThreadId} IS NOT NULL`),
     check("upload_intakes_digest_valid", sql`${table.byteDigest} ~ '^[0-9a-f]{64}$'`),
   ],
 );
-
-export function contentDocumentPredicate(table: Pick<typeof documents, "kind"> = documents) {
-  return sql`${table.kind} = ${DOCUMENT_KINDS.content}`;
-}
-
-export function contentDocumentKindSql(alias = "documents") {
-  return sql`${sql.raw(alias)}.kind = ${DOCUMENT_KINDS.content}`;
-}
 
 // folders.parent_id self-FK added in migration SQL
 
@@ -441,7 +536,10 @@ export const linkAheadRefs = pgTable(
     workId: uuid("work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "cascade" }),
+    /** Lineage Scratch's first chat. */
     rootThreadId: uuid("root_thread_id"),
+    /** A chat's uploads' chat. */
+    chatThreadId: uuid("chat_thread_id"),
     path: text("path").notNull(),
     settledDocumentId: uuid("settled_document_id")
       .$type<DocumentId>()
@@ -453,7 +551,14 @@ export const linkAheadRefs = pgTable(
     // A decoded path has no byte bound, so the key carries its md5; lookups recheck the
     // exact path (Postgres B-tree tuples cap near 2.7 kB).
     index("link_ahead_refs_owner_unsettled")
-      .on(table.projectId, table.scheme, table.workId, table.rootThreadId, sql`md5(${table.path})`)
+      .on(
+        table.projectId,
+        table.scheme,
+        table.workId,
+        table.rootThreadId,
+        table.chatThreadId,
+        sql`md5(${table.path})`,
+      )
       .where(sql`${table.settledDocumentId} IS NULL`),
     index("link_ahead_refs_settled_document").on(table.settledDocumentId),
   ],

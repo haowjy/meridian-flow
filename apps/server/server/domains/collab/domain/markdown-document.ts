@@ -1,15 +1,14 @@
 /**
- * Server-side schema-aware Markdown reads, writes, seeds and identity-bound landing.
+ * Server-side full-document markdown SET/read engine for collab documents.
  *
  * This intentionally stays out of `@meridian/agent-edit`: full-document SET is a
  * Meridian server persistence/read-model concern, built only by orchestrating the
  * package codec/model, Yjs fragment helper, journal, and document coordinator.
  */
+
 import type { TransactionOrigin } from "@hocuspocus/server";
 import {
   createAgentEditCodecFactory,
-  type DocumentCoordinator,
-  type DocumentLifecycle,
   fragmentOf,
   isDocumentNotFoundError,
   type MutationActor,
@@ -24,7 +23,7 @@ import {
 import type { LinkView } from "@meridian/contracts";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import type { DocumentLinkScope, MarkupCodec, ParsedContent } from "@meridian/markup";
+import type { DocumentLinkScope, MarkupCodec, ParsedContent, PMNode } from "@meridian/markup";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -32,6 +31,9 @@ import type {
   DocumentSeedOrigin,
   DocumentWriteOrigin,
   DocumentWriteResult,
+  HeldLiveDocument,
+  HeldWriteExpectation,
+  HeldWriteStaged,
   PersistedUpdate,
   SyncError,
   UpdateOrigin,
@@ -50,6 +52,7 @@ import type {
   PreparedSeed,
   SeedAnnouncement,
 } from "./ports/initial-document-seeds.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
 
@@ -87,9 +90,10 @@ type MarkdownDocumentEngineDeps = {
   links: DocumentLinkScopes;
   model: YProsemirrorDocumentModel;
   journal: UpdateJournal;
-  coordinator: DocumentCoordinator;
-  lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
+  coordinator: Pick<LiveDocumentCoordinator, "withDocument" | "deliver">;
   initialDocumentSeeds: InitialDocumentSeeds;
+  /** A stored projection read with its links unbound, in its filetype's shape (repair only). */
+  parseStored(markdown: string, filetype: string | null): { blocks: readonly PMNode[] };
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   afterWrite?: MarkdownWriteHook;
@@ -107,6 +111,12 @@ type MarkdownDocumentEngineDeps = {
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
 };
 
+/**
+ * When a write's projection hook runs: with the write, or once the caller's transaction
+ * commits (see `replaceLiveDocumentMarkdown`).
+ */
+type WriteHook = { kind: "now" } | { kind: "after-commit"; threadId?: ThreadId };
+
 /** Stages a change on a copy of the live document, under its lock. */
 type DraftMutation = (
   draft: Y.Doc,
@@ -114,9 +124,9 @@ type DraftMutation = (
 ) => Result<void, SyncError> | Promise<Result<void, SyncError>>;
 
 export type MarkdownDocumentEngine = {
-  /** `view` is the version `doc` is: a Work draft's links spell in that draft. */
+  /** `view` is the version `doc` is: a Work draft's links spell in its branch's view. */
   serializeDocument(documentId: DocumentId, doc: Y.Doc, view: LinkView): Promise<string>;
-  /** `view` is the version `doc` is: a Work draft's links spell in that draft. */
+  /** `view` is the version `doc` is: a Work draft's links spell in its branch's view. */
   serializeVersionedDocument(
     documentId: DocumentId,
     doc: Y.Doc,
@@ -148,26 +158,26 @@ export type MarkdownDocumentEngine = {
     origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>>;
+  /** The create's own step for an empty create: the document's authority, empty. */
+  initializeEmptyDocument(documentId: DocumentId): Promise<void>;
+  /**
+   * Explicit repair of a living document whose authority is absent (an old anomaly), from its
+   * stored projection. A no-op when any checkpoint or update exists; refuses a removed one.
+   */
+  repairDocumentAuthority(documentId: DocumentId): Promise<void>;
   /** Writes only a document with no state yet; otherwise a no-op. Takes fresh writes only. */
   seedFromMarkdown(
     documentId: string,
     content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
-  /**
-   * Encodes a fresh write as a document's first state, outside any
-   * transaction and without touching a journal or room: the document does not
-   * exist yet. `uri` is the address it will have, which its links spell from.
-   */
   prepareSeed(input: {
     documentId: DocumentId;
-    /** The project it will belong to: its link scope opens there. */
     projectId: string;
     uri: string;
     content: BoundWrite;
     origin: DocumentSeedOrigin;
   }): Promise<PreparedSeed>;
-  /** Runs the write hook (derivations, projections) for seeds installed and committed. */
   announceSeeds(seeds: readonly SeedAnnouncement[]): Promise<void>;
   writeDocument(input: {
     documentId: DocumentId;
@@ -175,9 +185,18 @@ export type MarkdownDocumentEngine = {
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;
+  withLiveDocument<T>(
+    documentId: string,
+    operation: (held: HeldLiveDocument) => Promise<T>,
+  ): Promise<T>;
+  writeDocumentHeld(input: {
+    held: HeldLiveDocument;
+    content: BoundWrite;
+    expected: HeldWriteExpectation;
+    origin: DocumentWriteOrigin | DocumentSeedOrigin;
+    threadId?: ThreadId;
+  }): Promise<Result<HeldWriteStaged, SyncError>>;
 };
-
-export type { PreparedSeed };
 
 export function createMarkdownDocumentEngine(
   deps: MarkdownDocumentEngineDeps,
@@ -268,7 +287,7 @@ export function createMarkdownDocumentEngine(
     documentId: DocumentId,
     content: BoundWrite,
     format: { schemaType: YjsTrackedSchemaType },
-    use: "seed" | "write",
+    use: HolderUse,
   ): Result<BoundWrite, SyncError> {
     assertHolder(documentId, content, use);
     if (content.schemaType !== format.schemaType) {
@@ -316,12 +335,19 @@ export function createMarkdownDocumentEngine(
     return Ok(undefined);
   }
 
+  /**
+   * Stage `mutate` on a copy of the live document, serialize, then admit it to the
+   * journal and apply it to `liveDoc` once the caller's transaction commits (at once outside
+   * one). `hook` says when `afterWrite` runs: `now` (the caller runs it), or `after-commit`
+   * with the apply, for a held write that an abort must leave unprojected.
+   */
   async function replaceLiveDocumentMarkdown(
     documentId: DocumentId,
     liveDoc: Y.Doc,
     mutate: DraftMutation,
     origin: RuntimeOrigin,
     schemaType: YjsTrackedSchemaType,
+    hook: WriteHook = { kind: "now" },
   ): Promise<Result<MarkdownSetResult, SyncError>> {
     // This copy stages the change so serialization and journal admission
     // both complete before the live document is mutated.
@@ -355,8 +381,17 @@ export function createMarkdownDocumentEngine(
             meta,
             documentAuthority(liveDoc),
           );
-          Y.applyUpdate(liveDoc, admittedUpdate, yjsOrigin);
-          return { sequence: BigInt(seq), joined: 0 };
+          // Inside a transaction `liveDoc` takes the row only once the root commits, never
+          // before (LOCK-WS): a door acquired in the transaction handed out a private copy, and
+          // one acquired before it (a held write) handed out the open room itself, whose
+          // holder keeps the mutex through the commit so `deliver` couldn't run here.
+          const apply = async () => {
+            Y.applyUpdate(liveDoc, admittedUpdate, yjsOrigin);
+            if (hook.kind === "after-commit")
+              await deps.afterWrite?.({ documentId, threadId: hook.threadId, markdown });
+          };
+          if (!deps.deferUntilCommit?.(apply)) await apply();
+          return { sequence: BigInt(seq) };
         },
       },
       { source: authorshipSource(origin), update },
@@ -393,9 +428,8 @@ export function createMarkdownDocumentEngine(
     mutate: DraftMutation,
     format: { schemaType: YjsTrackedSchemaType },
   ): Promise<Result<MarkdownSetResult, SyncError>> {
-    await deps.lifecycle.ensureDocument(input.documentId);
-
     try {
+      await repairDocumentAuthority(input.documentId);
       const result = await deps.coordinator.withDocument(input.documentId, (liveDoc) =>
         replaceLiveDocumentMarkdown(
           input.documentId,
@@ -419,6 +453,43 @@ export function createMarkdownDocumentEngine(
       }
       throw cause;
     }
+  }
+
+  /**
+   * The one initializer both materialization callers share: the create's transaction and
+   * explicit repair. Rooms recover after the boundary that makes the state durable.
+   */
+  async function initializeAuthority(
+    documentId: DocumentId,
+    blocks: readonly PMNode[],
+  ): Promise<void> {
+    const doc = createCollabYDoc({ gc: false });
+    try {
+      if (blocks.length > 0)
+        deps.model.insertBlocks(toDocHandle(doc), null, { blocks: [...blocks] });
+      const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
+        documentId,
+        Y.encodeStateAsUpdate(doc),
+      );
+      if (!seeded) return;
+    } finally {
+      doc.destroy();
+    }
+    const deliver = () => deps.coordinator.deliver(documentId);
+    if (!deps.deferUntilCommit?.(deliver)) await deliver();
+  }
+
+  async function repairDocumentAuthority(documentId: DocumentId): Promise<void> {
+    const projection = await deps.initialDocumentSeeds.missingAuthorityProjection(documentId);
+    if (projection === null) return;
+    // An empty projection is an empty document, not the empty paragraph a parse would give.
+    if (projection.length === 0) return initializeAuthority(documentId, []);
+    const format = await documentFormat(documentId);
+    if (!format.ok) throwSyncError(format.error);
+    await initializeAuthority(
+      documentId,
+      deps.parseStored(projection, format.value.filetype).blocks,
+    );
   }
 
   const engine: MarkdownDocumentEngine = {
@@ -462,13 +533,14 @@ export function createMarkdownDocumentEngine(
 
     async readForExport(documentId, scope) {
       try {
-        const format = await documentFormat(documentId as DocumentId);
+        const typedDocumentId = documentId as DocumentId;
+        const format = await documentFormat(typedDocumentId);
         if (!format.ok) return format;
         return Ok(
           await deps.coordinator.withDocument(documentId, async (doc) => {
-            const links = await spelling(documentId as DocumentId, [doc]);
+            const links = await spelling(typedDocumentId, [doc]);
             return serializeForSchema(
-              documentId as DocumentId,
+              typedDocumentId,
               doc,
               format.value.schemaType,
               scope(links),
@@ -506,6 +578,10 @@ export function createMarkdownDocumentEngine(
 
     setMarkdown,
 
+    initializeEmptyDocument: (documentId) => initializeAuthority(documentId, []),
+
+    repairDocumentAuthority,
+
     async seedFromMarkdown(documentId, content, origin) {
       const typedDocumentId = documentId as DocumentId;
       const format = await documentFormat(typedDocumentId);
@@ -529,10 +605,10 @@ export function createMarkdownDocumentEngine(
         typedDocumentId,
         Y.encodeStateAsUpdate(seededDoc),
       );
-      const recover = () => deps.coordinator.recover(typedDocumentId);
+      const deliver = () => deps.coordinator.deliver(typedDocumentId);
       // An enclosing aggregate may still roll back after the checkpoint is
-      // written. Publish only after that durable boundary.
-      if (!deps.deferUntilCommit?.(recover)) await recover();
+      // written. Deliver to the rooms only after that durable boundary.
+      if (!deps.deferUntilCommit?.(deliver)) await deliver();
       if (seeded) {
         await deps.afterWrite?.({ documentId: typedDocumentId, markdown: canonicalMarkdown });
       }
@@ -583,8 +659,49 @@ export function createMarkdownDocumentEngine(
       if (!result.ok) throwSyncError(result.error);
       return documentWriteResult(result.value, input.origin);
     },
+
+    async withLiveDocument(documentId, operation) {
+      await repairDocumentAuthority(documentId as DocumentId);
+      return deps.coordinator.withDocument(documentId, (doc) =>
+        operation({ documentId: documentId as DocumentId, doc }),
+      );
+    },
+
+    writeDocumentHeld,
   };
   return engine;
+
+  /**
+   * A revealed document's first content (§6.3 B3): the ordinary whole-document overwrite,
+   * applied under the caller's held lease, accepting only creation-bound content for the
+   * expected address, journaled in the caller's transaction and delivered to the open room after commit.
+   */
+  async function writeDocumentHeld(input: {
+    held: HeldLiveDocument;
+    content: BoundWrite;
+    expected: HeldWriteExpectation;
+    origin: DocumentWriteOrigin | DocumentSeedOrigin;
+    threadId?: ThreadId;
+  }): Promise<Result<HeldWriteStaged, SyncError>> {
+    const { held } = input;
+    const format = await documentFormat(held.documentId);
+    if (!format.ok) return format;
+    const content = checkBound(held.documentId, input.content, format.value, {
+      reveal: input.expected,
+    });
+    if (!content.ok) return content;
+    const written = await replaceLiveDocumentMarkdown(
+      held.documentId,
+      held.doc,
+      (draft, yjsOrigin) => overwriteDraft(held.documentId, draft, content.value, yjsOrigin),
+      input.origin,
+      format.value.schemaType,
+      { kind: "after-commit", threadId: input.threadId },
+    );
+    return written.ok
+      ? Ok({ markdown: written.value.markdown, updateSeq: written.value.updateSeq })
+      : written;
+  }
 
   async function identityPreservingSet(input: {
     documentId: DocumentId;
@@ -597,6 +714,7 @@ export function createMarkdownDocumentEngine(
     if (input.origin.type === "user" && !input.threadId) return setMarkdown(input);
     const shaped = checkBound(input.documentId, input.content, format.value, "write");
     if (!shaped.ok) return shaped;
+    await repairDocumentAuthority(input.documentId);
     const actor = mutationActor(input.origin, input.threadId);
     const outcome = await deps.identityPreservingWrite({
       documentId: input.documentId,
@@ -604,6 +722,8 @@ export function createMarkdownDocumentEngine(
       actor,
     });
     if (outcome.status !== "success") throw new DocumentMutationRejectedError(outcome);
+    // Inside the caller's transaction the door reads a private copy holding this transaction's
+    // rows, the save's own state; the open room takes them only once the root commits.
     const markdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
       serializeForSchema(
         input.documentId,
@@ -637,16 +757,14 @@ type XmlNodeSpan = ClockRange & {
 
 function xmlNodeSpans(update: Uint8Array): XmlNodeSpan[] {
   return Y.decodeUpdate(update).structs.flatMap((struct) => {
-    const item = struct as typeof struct & {
-      content?: { getContent?(): unknown[] };
-    };
-    const node = item.content?.getContent?.().find((value) => value instanceof Y.XmlElement);
+    if (!(struct instanceof Y.Item) || !(struct.content instanceof Y.ContentType)) return [];
+    const node = struct.content.type;
     if (!(node instanceof Y.XmlElement)) return [];
     return [
       {
-        client: item.id.client,
-        clockFrom: item.id.clock,
-        clockTo: item.id.clock + item.length,
+        client: struct.id.client,
+        clockFrom: struct.id.clock,
+        clockTo: struct.id.clock + struct.length,
         nodeType: node.nodeName,
       },
     ];
@@ -715,13 +833,26 @@ function authorshipSource(origin: RuntimeOrigin): AuthorshipSource {
 }
 
 /**
- * A bound write certifies one holder; applying it to another document is a
- * bug. A write needs the document it was bound for; a seed may also take
- * content bound for the document being created (its creator checks the
- * address) or fixed static content.
+ * How a bound write may be applied: `write` to the document it was bound for; `seed` to
+ * that document, to the document being created (its creator checks the address) or as
+ * fixed static content; `reveal` only creation-bound content for exactly the expected
+ * address, onto exactly the expected (revealed) document (contract §6.3 B3).
  */
-function assertHolder(documentId: DocumentId, content: BoundWrite, use: "seed" | "write"): void {
+type HolderUse = "seed" | "write" | { reveal: HeldWriteExpectation };
+
+/** A bound write certifies one holder; applying it to another document is a bug. */
+function assertHolder(documentId: DocumentId, content: BoundWrite, use: HolderUse): void {
   const { holder } = content;
+  if (typeof use === "object") {
+    if (
+      documentId !== use.reveal.documentId ||
+      holder.kind !== "new" ||
+      holder.uri !== use.reveal.uri
+    ) {
+      throw new Error(`Content bound for another holder cannot become ${use.reveal.uri}`);
+    }
+    return;
+  }
   if (holder.kind === "document" ? holder.documentId !== documentId : use === "write") {
     throw new Error(
       `Content bound for ${holder.kind === "document" ? holder.documentId : holder.kind} cannot be applied to ${documentId}`,

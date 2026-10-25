@@ -1,4 +1,9 @@
-/** Shared effective-action history across card and model selectors. */
+/**
+ * Shared effective-action history across card and model selectors.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - strict newest-first model history alongside user-owned Undo and Redo (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ */
 import { randomUUID } from "node:crypto";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
@@ -16,7 +21,7 @@ import {
   TURN_ID,
   USER_ID,
 } from "./test-support/change-trail-postgres-harness.js";
-
+import { draftContent } from "./test-support/draft-store-seam.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -40,7 +45,7 @@ it.each([
     await core.read(address, initial);
     expect(
       await core.write({ ...address, command: "replace", find: "red", content: "gold" }, initial),
-    ).toMatchObject({ status: "success", writeId: "w1" });
+    ).toMatchObject({ status: "success", writeId: "e1" });
     await harness.commit(responseId);
     const currentTurn = randomUUID() as typeof TURN_ID;
     const currentResponse = randomUUID();
@@ -69,7 +74,7 @@ it.each([
         { ...address, command: "replace", in: [2, 3], content: "green\n\nwhite" },
         current,
       ),
-    ).toMatchObject({ status: "success", writeId: "w2" });
+    ).toMatchObject({ status: "success", writeId: "e2" });
     await view.collab.finalizeResponseCommit(current.responseIdentity, {
       threadId: THREAD_ID,
       turnId: currentTurn,
@@ -78,12 +83,12 @@ it.each([
       destination === "draft"
         ? (
             await db
-              .select({ draftId: schema.documentBranches.id })
-              .from(schema.documentBranches)
+              .select({ draftId: schema.documentDrafts.id })
+              .from(schema.documentDrafts)
               .where(
                 and(
-                  eq(schema.documentBranches.documentId, ALPHA_ID),
-                  eq(schema.documentBranches.kind, "work_draft"),
+                  eq(schema.documentDrafts.documentId, ALPHA_ID),
+                  eq(schema.documentDrafts.kind, "work_draft"),
                 ),
               )
           )[0]
@@ -99,16 +104,15 @@ it.each([
       );
     };
     if (draft) {
-      const [branch] = await db
+      const [documentDraft] = await db
         .select()
-        .from(schema.documentBranches)
-        .where(eq(schema.documentBranches.id, draft.draftId));
+        .from(schema.documentDrafts)
+        .where(eq(schema.documentDrafts.id, draft.draftId));
       const doc = new Y.Doc({ gc: false });
       try {
-        Y.applyUpdate(doc, branch.state);
-        await view.branchCoordinator.commitWriterUpdate({
-          branchId: branch.id,
-          expectedGeneration: branch.generation,
+        Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
+        await view.draftCoordinator.commitWriterUpdate({
+          draftId: documentDraft.id,
           updateData: change(doc),
           actorUserId: USER_ID,
           roomDocument: doc,
@@ -126,6 +130,19 @@ it.each([
     }
     const text = () => (draft ? view.draftMarkdown(draft.draftId) : harness.liveMarkdown(ALPHA_ID));
     expect(await text()).toBe("gold\n\npink\n\nwhite\n");
+    expect(await core.write({ ...address, command: "undo" }, current)).toMatchObject({
+      status: "success",
+      result: {
+        message: expect.stringMatching(
+          /undone: e2 \(1 of 2 parts\)\nnot undone: e2 part 1: edited since/,
+        ),
+      },
+    });
+    expect(await text()).toBe("gold\n\npink\n\nblack\n");
+    expect(await core.write({ ...address, command: "redo" }, current)).toMatchObject({
+      status: "success",
+    });
+    expect(await text()).toBe("gold\n\npink\n\nwhite\n");
     expect(
       await view.collab.reverseTurn({
         threadId: THREAD_ID,
@@ -136,11 +153,11 @@ it.each([
     ).toMatchObject({ status: "partial", acceptedParts: 1 });
     expect(await text()).toBe("gold\n\npink\n\nblack\n");
     const edits = await core.read({ ...address, format: "edits" }, current);
-    expect(edits.result.message).toMatch(/w2 {2}this turn {2}changed.*undo: no \(changed\)/);
+    expect(edits.result.message).toMatch(/e2 {2}this turn {2}changed.*none/);
     expect(edits.result.message).not.toContain("undone by the user");
     expect(await core.write({ ...address, command: "undo" }, current)).toMatchObject({
       status: "cant_undo_changed",
-      result: { message: expect.stringContaining("w2") },
+      result: { message: expect.stringContaining("e2") },
     });
     expect(await text()).toBe("gold\n\npink\n\nblack\n");
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, currentTurn)).toMatchObject({
@@ -149,7 +166,7 @@ it.each([
     });
     expect(await core.write({ ...address, command: "redo" }, current)).toMatchObject({
       status: "cant_redo_users_undo",
-      result: { message: expect.stringContaining("w2") },
+      result: { message: expect.stringContaining("e2") },
     });
   } finally {
     harness.cancelScheduledPulls();
@@ -184,7 +201,7 @@ it.each([
     };
     expect(await core.write({ ...address, command: "undo" }, saved)).toMatchObject({
       status: "success",
-      result: { message: "undone: w2" },
+      result: { message: "undone: e2" },
     });
     const failed = {
       ...initial,
@@ -192,18 +209,18 @@ it.each([
     };
     expect(await core.write({ ...address, command: "undo" }, failed)).toMatchObject({
       status: "success",
-      result: { message: "undone: w1" },
+      result: { message: "undone: e1" },
     });
     const draft =
       destination === "draft"
         ? (
             await db
-              .select({ draftId: schema.documentBranches.id })
-              .from(schema.documentBranches)
+              .select({ draftId: schema.documentDrafts.id })
+              .from(schema.documentDrafts)
               .where(
                 and(
-                  eq(schema.documentBranches.documentId, ALPHA_ID),
-                  eq(schema.documentBranches.kind, "work_draft"),
+                  eq(schema.documentDrafts.documentId, ALPHA_ID),
+                  eq(schema.documentDrafts.kind, "work_draft"),
                 ),
               )
           )[0]
@@ -217,7 +234,7 @@ it.each([
       });
       expect(await text()).toBe("Alpha Gamma.\n\nBlue.\n");
       const edits = await core.read({ ...address, format: "edits" }, saved);
-      expect(edits.result.message).toMatch(/w2 {2}this turn {2}undone.* {2}redo(?:\n|$)/);
+      expect(edits.result.message).toMatch(/e2 {2}this turn {2}undone.* {2}redo(?:\n|$)/);
       expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
         state: "live-reversed",
         control: "redo",

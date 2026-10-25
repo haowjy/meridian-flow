@@ -14,10 +14,12 @@ export type OpenContextOptions = {
   /** Replace only when the route already names this document; otherwise push. */
   replaceIfSameDocument?: boolean;
   tab?: ContextTab;
+  /** The destination is a document the writer just made: its editor takes the caret once live. */
+  focus?: true;
   /** Runs only after successful destination workspace installation. */
-  afterCommit?: () => void;
+  afterCommit?: (installed: ContextTab | undefined) => void;
   /** Persist an inline review in this Editor history entry. Omission opens live. */
-  draftId?: string;
+  itemKey?: string;
   changeId?: string;
   isCurrent?: () => boolean;
   canCommit?: () => boolean;
@@ -36,6 +38,13 @@ const ProjectNavigationContext = createContext<{
   screenCommands?: ScreenCommands;
   isCurrentNavigation?: (ticket: import("./project-navigation").ProjectNavigationTicket) => boolean;
   capture?: () => () => boolean;
+  trash: {
+    destination: true | string | undefined;
+    navigate: (
+      destination: false | true | string,
+      options?: { replace?: boolean },
+    ) => Promise<unknown>;
+  };
   isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
 } | null>(null);
 
@@ -44,6 +53,7 @@ export function ProjectNavigationProvider({
   openContextRoute,
   openWork,
   captureNavigation,
+  trash,
   isCurrentContextRoute,
   screen,
   registerLeaveGuard,
@@ -57,6 +67,13 @@ export function ProjectNavigationProvider({
   screenCommands?: ScreenCommands;
   isCurrentNavigation?: (ticket: import("./project-navigation").ProjectNavigationTicket) => boolean;
   captureNavigation?: () => () => boolean;
+  trash: {
+    destination: true | string | undefined;
+    navigate: (
+      destination: false | true | string,
+      options?: { replace?: boolean },
+    ) => Promise<unknown>;
+  };
   isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
 }) {
@@ -67,6 +84,7 @@ export function ProjectNavigationProvider({
         open: openContextRoute,
         openWork,
         capture: captureNavigation,
+        trash,
         isCurrentContextRoute,
         registerLeaveGuard,
         screenCommands,
@@ -130,4 +148,11 @@ export function useProjectScreen(): ScreenKey {
   const screen = useContext(ProjectNavigationContext)?.screen;
   if (!screen) throw new Error("Project screen navigation is required");
   return screen;
+}
+
+/** The route-owned Trash overlay destination and its one navigation operation. */
+export function useProjectTrashNavigation() {
+  const trash = useContext(ProjectNavigationContext)?.trash;
+  if (!trash) throw new Error("Project Trash navigation is required");
+  return trash;
 }

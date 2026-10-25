@@ -122,16 +122,27 @@ async function assertThrowawayDatabase(db: Database): Promise<void> {
   }
 }
 
+/** A rollback must also wait while its transaction-backed adapters are still usable. */
+export async function drainDetachedWork(context = "reset fixtures"): Promise<void> {
+  if (!(await processDetachedWork.drain(25_000)))
+    throw new Error(
+      `Cannot ${context} before detached runtime work settles: ${processDetachedWork.pendingTasks.join(", ")}`,
+    );
+}
+
+/** Drain runtime work before giving Postgres a bounded window to close its pool. */
+export async function closeTestDatabase(db: Database): Promise<void> {
+  await drainDetachedWork("close the test database");
+  await db.$client.end({ timeout: 1 });
+}
+
 /**
  * Fast reset for focused suites. Supplied tables are scope anchors, not an
  * exhaustive ordering: the live Postgres FK graph recursively adds every
  * dependent table and determines the child-first delete order.
  */
 export async function deleteDrizzleRows(db: Database, tables: readonly unknown[]): Promise<void> {
-  if (!(await processDetachedWork.drain(25_000)))
-    throw new Error(
-      `Cannot reset fixtures before detached runtime work settles: ${processDetachedWork.pendingTasks.join(", ")}`,
-    );
+  await drainDetachedWork();
   await assertThrowawayDatabase(db);
   if (tables.length === 0) throw new Error("deleteDrizzleRows requires at least one table");
   const requestedTables = tables.map(drizzleTableIdentity);
@@ -212,21 +223,19 @@ export async function deleteDrizzleRows(db: Database, tables: readonly unknown[]
 }
 
 /**
- * Anchors for committed suites that write documents, branches, change trails
+ * Anchors for committed suites that write documents, drafts, change trails
  * and threads. `deleteDrizzleRows` adds their dependents.
  */
 export const DOCUMENT_RUNTIME_RESET_TABLES: readonly unknown[] = [
-  schema.branchPushOutboxUpdates,
-  schema.branchPushSettlementOutbox,
   schema.changeTrailDeliveryOutbox,
   schema.changeTrailDocumentDetails,
   schema.changeTrailDocumentOccurrences,
   schema.changeTrailShells,
   schema.pendingNotices,
   schema.agentEditWidCounters,
-  schema.branchWriteJournal,
+  schema.draftWriteJournal,
   schema.pushLineage,
-  schema.documentBranches,
+  schema.documentDrafts,
   schema.documentYjsCheckpoints,
   schema.documentYjsHeads,
   schema.documentYjsUpdates,
@@ -272,7 +281,11 @@ export function useRollbackTestDatabase(
     try {
       await root.transaction(async (transaction) => {
         current = transaction as unknown as Database;
-        await runTest();
+        try {
+          await runTest();
+        } finally {
+          await drainDetachedWork();
+        }
         transaction.rollback();
       });
     } catch (error) {
@@ -283,7 +296,7 @@ export function useRollbackTestDatabase(
   });
 
   afterAll(async () => {
-    await root.close();
+    await closeTestDatabase(root);
   });
 
   return {

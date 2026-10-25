@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** Tab/account isolation, lossless reload and the journal hand-off boundary. */
+/** Tab/account isolation, lossless reload and the journal hand-off boundary.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - storage-denial draft fallback policy
+ */
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -58,6 +62,7 @@ describe("session composer drafts", () => {
       type: "composerReference",
       attrs: {
         reference: {
+          kind: "document",
           documentId: "01900000-0000-7000-8000-000000000001",
           uri: "manuscript://chapter.md",
           authority: { kind: "project", projectId: account },

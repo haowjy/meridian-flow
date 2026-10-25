@@ -1,4 +1,8 @@
-/** Stored link spelling and resolution must name the same document. */
+/** Stored link spelling and resolution must name the same document.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Exact-before-extension document lookup (kb/decisions/documents/identity/link-identity.md)
+ */
 import { expect, it } from "vitest";
 import {
   documentPathKey,
@@ -10,18 +14,18 @@ import {
 it.each([
   ["manuscript://v/scenes/base.md", "manuscript://other/next.md", "../../other/next.md"],
   ["manuscript://x/base.md", "manuscript://x", "../x"],
-  ["scratch://@revision/notes/base.md", "scratch://@revision/Gate.md", "../Gate.md"],
-  ["scratch://@first/base.md", "scratch://@second/Gate.md", "scratch://@second/Gate.md"],
-  ["scratch://@/c12/notes/base.md", "scratch://@/c12/Gate.md", "../Gate.md"],
-  ["scratch://@/c12/one.md", "scratch://@/c40/two.md", "scratch://@/c40/two.md"],
+  ["scratch://@w1/notes/base.md", "scratch://@w1/Gate.md", "../Gate.md"],
+  ["scratch://@w1/base.md", "scratch://@w2/Gate.md", "scratch://@w2/Gate.md"],
+  ["scratch://@c12/notes/base.md", "scratch://@c12/Gate.md", "../Gate.md"],
+  ["scratch://@c12/one.md", "scratch://@c40/two.md", "scratch://@c40/two.md"],
   [
     "manuscript://other/base.md",
     "manuscript://volume 1/100% ready#final?.md",
     "../volume 1/100%25 ready%23final%3F.md",
   ],
 ])("round-trips %s → %s as %s", (holder, target, href) => {
-  expect(spellDocumentHref(holder, target)).toBe(href);
-  expect(resolveDocumentHref(href, holder)).toEqual({ uri: target, suffix: "" });
+  expect(spellDocumentHref(holder, { kind: "document", uri: target })).toBe(href);
+  expect(resolveDocumentHref(href, holder)).toEqual({ kind: "document", uri: target, suffix: "" });
 });
 
 it.each([
@@ -33,17 +37,20 @@ it.each([
   ],
   ["foo/bar://x.md", "manuscript://v/foo/bar:/x.md", ""],
 ])("resolves %s without mistaking authority or encoded path for syntax", (href, uri, suffix) => {
-  expect(resolveDocumentHref(href, "manuscript://v/base.md")).toEqual({ uri, suffix });
+  expect(resolveDocumentHref(href, "manuscript://v/base.md")).toEqual({
+    kind: "document",
+    uri,
+    suffix,
+  });
 });
 
 it.each([
   ["", "manuscript://base.md"],
   ["/chapter.md", "manuscript://base.md"],
-  ["chapter/", "manuscript://base.md"],
   ["https://example.com/chapter.md", "manuscript://base.md"],
   ["chapter.md", null],
   ["../../chapter.md", "manuscript://v/base.md"],
-  ["../c40/plan.md", "scratch://@/c12/one.md"],
+  ["../c40/plan.md", "scratch://@c12/one.md"],
   ["bad%escape.md", "manuscript://base.md"],
   ["chapter%2Fscene.md", "manuscript://base.md"],
 ])("rejects invalid document destination %s", (href, holder) => {
@@ -51,7 +58,7 @@ it.each([
 });
 
 it.each(["manuscript://"])("never spells non-document %s", (target) => {
-  expect(() => spellDocumentHref(null, target)).toThrow(RangeError);
+  expect(() => spellDocumentHref(null, { kind: "document", uri: target })).toThrow(RangeError);
 });
 
 it.each([
@@ -68,4 +75,13 @@ it.each([
 
 it("canonicalizes only the written path's filename", () => {
   expect(documentPathKey("book.md/chapter.TXT")).toBe("book.md/chapter");
+  expect(resolveDocumentHref("kb://World/100%25/%23draft/", null)).toEqual({
+    kind: "folder",
+    uri: "kb://World/100%/#draft",
+    suffix: "",
+  });
+  expect(spellDocumentHref(null, { kind: "folder", uri: "kb://World/100%/#draft" })).toBe(
+    "kb://World/100%25/%23draft/",
+  );
+  expect(resolveDocumentHref("manuscript://", null)).toBeNull();
 });

@@ -21,6 +21,7 @@ import type { AgentNameStore } from "./agent-name-store";
 import { createEditorConfig } from "./config";
 import type { DocumentSession } from "./document-session";
 import type { AtReferenceCatalog } from "./extensions/at-reference";
+import type { ReferenceDropOptions } from "./extensions/reference-drop";
 import type { SlashCommandCatalog } from "./extensions/slash";
 import type { WikilinkPasteCatalog } from "./links";
 import { gateCaretPresence } from "./local-presence";
@@ -32,6 +33,8 @@ type EditorMountBase = {
   bindingKey?: string;
   /** Asset image rendering resolves `asset:` refs against the owning project. */
   projectId?: string;
+  /** The Work the viewer is in; a draft-only picture is signed through it. */
+  viewingWorkId?: string;
   schemaType: YjsTrackedSchemaType;
   /** CollaborationCaret is an extension, so toggling peers needs a new editor. */
   collaborationDecorations: boolean;
@@ -50,9 +53,9 @@ export type EditorMountIdentity =
     })
   | (EditorMountBase & {
       surface: "review";
-      /** Generation-fenced branch review room from the preview DTO. */
+      /** Generation-fenced draft review room from the preview DTO. */
       roomName: string;
-      draftId: string;
+      itemKey: string;
       workId: string;
     });
 
@@ -78,9 +81,9 @@ export function editorRoomKey(identity: EditorMountIdentity): string {
 
 /** React key that owns the editor's lifetime. Equal keys keep the instance. */
 export function editorMountKey(identity: EditorMountIdentity): string {
-  const shared = `${identity.bindingKey ?? identity.documentId}|${identity.projectId ?? ""}|${identity.schemaType}|${identity.collaborationDecorations}`;
+  const shared = `${identity.bindingKey ?? identity.documentId}|${identity.projectId ?? ""}|${identity.viewingWorkId ?? ""}|${identity.schemaType}|${identity.collaborationDecorations}`;
   return identity.surface === "review"
-    ? `review|${identity.roomName}|${identity.draftId}|${shared}`
+    ? `review|${identity.roomName}|${identity.itemKey}|${shared}`
     : `live|${shared}`;
 }
 
@@ -107,6 +110,7 @@ export type MountedEditorInput = {
    * is not.
    */
   atReferenceCatalog?: () => AtReferenceCatalog | null;
+  referenceDrop?: ReferenceDropOptions;
   /** Read at paste time: what a pasted `[[Name]]` may link to. Same reason again. */
   wikilinkPasteCatalog?: () => WikilinkPasteCatalog | null;
   surface: EditorSurfaceOptions;
@@ -121,6 +125,7 @@ export function useMountedEditor({
   placeholder,
   slashCommandCatalog,
   atReferenceCatalog,
+  referenceDrop,
   wikilinkPasteCatalog,
   surface,
   evidenceDegraded = false,
@@ -132,6 +137,8 @@ export function useMountedEditor({
   catalogRef.current = slashCommandCatalog;
   const atReferenceCatalogRef = useRef(atReferenceCatalog);
   atReferenceCatalogRef.current = atReferenceCatalog;
+  const referenceDropRef = useRef(referenceDrop);
+  referenceDropRef.current = referenceDrop;
   const wikilinkPasteCatalogRef = useRef(wikilinkPasteCatalog);
   wikilinkPasteCatalogRef.current = wikilinkPasteCatalog;
   const publishPresenceRef = useRef(surface.publishPresence);
@@ -149,7 +156,7 @@ export function useMountedEditor({
       // this session may be the one in front.
       presence: caretGate.presence,
       schemaType: identity.schemaType,
-      assetRenderContext: { projectId: identity.projectId },
+      assetRenderContext: { projectId: identity.projectId, workId: identity.viewingWorkId },
       showCollaborationDecorations: identity.collaborationDecorations,
       enableDraftInlineReview: identity.surface === "review",
       markerStore: identity.surface === "review" ? undefined : session.markerStore,
@@ -158,6 +165,17 @@ export function useMountedEditor({
       autofocus: false,
       slashCommands: { catalog: () => catalogRef.current?.() ?? null },
       atReferences: { catalog: () => atReferenceCatalogRef.current?.() ?? null },
+      referenceDrop: referenceDrop
+        ? {
+            activeDrag: () => referenceDropRef.current?.activeDrag() ?? null,
+            content: (schema, entries) =>
+              referenceDropRef.current?.content(schema, entries) ?? null,
+            label: (kind) => referenceDropRef.current?.label(kind) ?? referenceDrop.label(kind),
+            showHint: (owner, verdict, point) =>
+              referenceDropRef.current?.showHint(owner, verdict, point),
+            clearHint: (owner) => referenceDropRef.current?.clearHint(owner),
+          }
+        : undefined,
       wikilinkPaste: { catalog: () => wikilinkPasteCatalogRef.current?.() ?? null },
     });
     return {

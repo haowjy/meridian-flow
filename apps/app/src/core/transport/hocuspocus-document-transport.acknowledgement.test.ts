@@ -4,6 +4,9 @@
  * playing the server. The provider's own `unsyncedChanges` counter is exactly
  * what these tests refuse to trust: after a reconnect it can reach zero while
  * messages are still unacknowledged.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - transport acknowledgement ledger
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
@@ -40,11 +43,11 @@ async function settle() {
 
 type Harness = ReturnType<typeof createHarness>;
 
-function createHarness() {
+function createHarness(roomName = ROOM) {
   const document = new Y.Doc();
   const awareness = new Awareness(document);
   const serverDocument = new Y.Doc();
-  const transport = createHocuspocusDocumentTransport({ roomName: ROOM, document, awareness });
+  const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
   const values: boolean[] = [];
   transport.subscribeServerAcknowledgement?.((acknowledged) => values.push(acknowledged));
 
@@ -54,8 +57,8 @@ function createHarness() {
     const socket = latestSocket();
     socket.open();
     await settle();
-    socket.syncStep1(ROOM, serverDocument);
-    socket.syncStep2(ROOM, serverDocument, Y.encodeStateVector(document));
+    socket.syncStep1(roomName, serverDocument);
+    socket.syncStep2(roomName, serverDocument, Y.encodeStateVector(document));
     await settle();
     return socket;
   }
@@ -185,9 +188,17 @@ describe("document transport server acknowledgement", () => {
     expect(harness.acknowledged).toBe(true);
   });
 
-  it("is not saved until every offline-queued update is acknowledged, not just the first", async () => {
+  // A draft room's server sequences each Update on the bytes it already has,
+  // so the handshake upload (SyncStep2) goes first there; a live room keeps the
+  // provider's order, whose SyncStep2 its server marks for collision reconciliation.
+  it.each([
+    [ROOM, ["update", "update", "update", "step2"]],
+    ["draft:draft-1", ["step2", "update", "update", "update"]],
+  ] as const)("is not saved in %s until every offline-queued update is acknowledged", async (roomName, order) => {
+    harness.destroy();
+    harness = createHarness(roomName);
     const first = await harness.connect();
-    acknowledge(first);
+    first.acknowledge(roomName);
     harness.drop(first);
     expect(harness.acknowledged).toBe(false);
 
@@ -197,13 +208,13 @@ describe("document transport server acknowledgement", () => {
     await vi.advanceTimersByTimeAsync(1_000);
     const second = await harness.connect();
 
-    expect(sentSyncKinds(second)).toEqual(["update", "update", "update", "step2"]);
-    acknowledge(second);
+    expect(sentSyncKinds(second)).toEqual(order);
+    second.acknowledge(roomName);
     expect(harness.acknowledged).toBe(false);
-    acknowledge(second);
-    acknowledge(second);
+    second.acknowledge(roomName);
+    second.acknowledge(roomName);
     expect(harness.acknowledged).toBe(false);
-    acknowledge(second);
+    second.acknowledge(roomName);
     expect(harness.acknowledged).toBe(true);
   });
 

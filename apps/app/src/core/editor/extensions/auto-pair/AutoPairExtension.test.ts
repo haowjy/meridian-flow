@@ -12,6 +12,9 @@
  * the test cases from the production registry. Handwritten cases below cover
  * boundary rules around the caret, nesting, and gestures that degrade to plain
  * insertion.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - paired-character editing semantics
  */
 import type { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";

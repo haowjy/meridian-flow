@@ -1,9 +1,16 @@
-/** Document naming laws, including canonical round trips and explicit destination types. */
+/** Document naming laws, including canonical round trips and explicit destination types.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Registered extensions and smallest-free filename allocation
+ */
 import { describe, expect, it } from "vitest";
 import {
+  allocateFilename,
   filenameForBinary,
+  type NamespaceNameClaim,
   parseDocumentFilename,
   renderFilename,
+  sameNamespaceName,
   storedFilename,
 } from "./document-filename.js";
 import {
@@ -173,5 +180,39 @@ describe("storedFilename", () => {
       /^refused: .*data\.json\.md.*would show as .*data\.json/,
     );
     expect(stored(".md")).toMatch(/^refused: /);
+  });
+});
+
+describe("namespace name claims", () => {
+  it("shares document-folder aliases and counts documents and whole folder names", async () => {
+    const claims = [
+      { kind: "folder", filename: "Lore.md" },
+      { kind: "document", filename: "Map" },
+      { kind: "folder", filename: "Map (2)" },
+    ] as const;
+    expect(
+      sameNamespaceName(
+        { kind: "document", filename: "Lore" },
+        { kind: "folder", filename: "Lore.md" },
+      ),
+    ).toBe(true);
+    expect(
+      sameNamespaceName(
+        { kind: "folder", filename: "Lore" },
+        { kind: "document", filename: "Lore.md" },
+      ),
+    ).toBe(false);
+    expect(
+      sameNamespaceName(
+        { kind: "folder", filename: "Lore" },
+        { kind: "folder", filename: "Lore.md" },
+      ),
+    ).toBe(false);
+    const taken = (candidate: NamespaceNameClaim) =>
+      claims.some((claim) => sameNamespaceName(candidate, claim));
+    await expect(
+      allocateFilename({ kind: "document", name: "Map", extension: "" }, taken),
+    ).resolves.toBe("Map (3)");
+    await expect(allocateFilename({ kind: "folder", name: "Map" }, taken)).resolves.toBe("Map (3)");
   });
 });

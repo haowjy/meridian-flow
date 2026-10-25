@@ -1,570 +1,298 @@
+/** Compose one checkout launch plan, start or reuse it, then verify and publish once. */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyModeEnv, type DevMode, parseDevCliOptions } from "./dev-mode";
+import { applyModeEnv, parseDevCliOptions } from "./dev-mode";
 import { printFailure, printSessionInfo } from "./dev-output";
 import { waitForDevReadiness } from "./dev-readiness";
-import {
-  buildMetadata,
-  createDevSessionCommand,
-  type DevSessionMetadata,
-  sharedServiceNamesForMode,
-} from "./dev-session-plan";
+import { createDevSessionPlan, type DevSessionPlan } from "./dev-session-plan";
+import { readDevSessionState, writeDevSessionMetadata } from "./dev-session-state";
 import { applyDevEnvToProcess, resolveCheckoutSessionIdentity, runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
-import { resolveSharedDevServicePorts, type SharedDevServicePorts } from "./lib/dev-share-ports";
 import { releaseFixedPorts } from "./lib/port-lifecycle";
+import { pidBelongsToCheckout, processWorkingDirectory } from "./lib/route-ownership";
 import { TailscaleDevLifecycle } from "./lib/tailscale-lifecycle";
-import { branchToPortlessPrefix } from "./portless-prefix";
+import { resolveCheckoutPortlessPrefix } from "./portless-prefix";
 import {
-  type ExpectedServiceName,
   type ExternalDevRoute,
+  expectedServiceHost,
   formatDevRouteLines,
   getExpectedServicesForMode,
+  parsePortlessListOutput,
   resolveExpectedRouteUrls,
   validateExpectedRoutes,
 } from "./portless-routes";
-import { TmuxSessionStore } from "./tmux-session-store";
+import { type CommandResult, TmuxSessionStore } from "./tmux-session-store";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const repoRootRealpath = fs.realpathSync(repoRoot);
-const metadataPath = path.join(repoRoot, ".meridian", "dev-session.json");
+const repoRoot = fs.realpathSync(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.."),
+);
 const logPath = "logs/portless.log";
 
-interface PortlessState {
-  lines: string[];
-  servicePids: Record<string, number>;
-  serviceOrigins: Partial<Record<ExpectedServiceName, string>>;
-  healthy: boolean;
-  errors: string[];
-}
-
-function isLinkedWorktree(): boolean {
-  const gitDir = runGit(repoRoot, ["rev-parse", "--git-dir"]);
-  const commonDir = runGit(repoRoot, ["rev-parse", "--git-common-dir"]);
-  if (!gitDir || !commonDir) return false;
-
-  const resolvedGitDir = path.resolve(repoRoot, gitDir);
-  const resolvedCommonDir = path.resolve(repoRoot, commonDir);
-  return resolvedGitDir !== resolvedCommonDir;
-}
-
-function detectWorktreePrefix(branchName: string): string | undefined {
-  if (!isLinkedWorktree()) return undefined;
-  return branchToPortlessPrefix(branchName);
-}
-
-function isDevMode(value: string | null | undefined): value is DevMode {
-  return value === "local" || value === "tailscale" || value === "funnel";
-}
-
-function sleep(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+function requireSuccess(result: CommandResult, fallback: string): void {
+  if (result.status !== 0) throw new Error(result.stderr.trim() || fallback);
 }
 
 function readPortlessState(
-  tmuxStore: TmuxSessionStore,
-  mode: DevMode,
-  worktreePrefix?: string,
-  externalRoutes: ReadonlyArray<ExternalDevRoute> = [],
-): PortlessState {
-  const result = tmuxStore.run("pnpm", ["portless:list"]);
-  if (result.status !== 0) {
-    return {
-      lines: [],
-      servicePids: {},
-      serviceOrigins: {},
-      healthy: false,
-      errors: [result.stderr.trim() || "pnpm portless:list failed"],
-    };
-  }
-
-  const validation = validateExpectedRoutes({ output: result.stdout, mode, worktreePrefix });
+  store: TmuxSessionStore,
+  plan: DevSessionPlan,
+  externalRoutes: ExternalDevRoute[] = [],
+) {
+  const result = store.run("pnpm", ["portless:list"]);
+  const { mode, worktreePrefix } = plan.session;
+  const validation = validateExpectedRoutes({
+    output: result.stdout,
+    mode,
+    worktreePrefix,
+    expectedPorts: plan.expectedPorts,
+    ownsPid: (pid) => pidBelongsToCheckout(pid, repoRoot),
+  });
+  if (result.status !== 0)
+    validation.errors.push(result.stderr.trim() || "pnpm portless:list failed");
   return {
-    lines: formatDevRouteLines(result.stdout, mode, worktreePrefix, externalRoutes),
-    servicePids: validation.servicePids,
-    serviceOrigins: resolveExpectedRouteUrls({ output: result.stdout, mode, worktreePrefix }),
-    healthy: validation.ok,
+    healthy: validation.errors.length === 0,
     errors: validation.errors,
+    lines: formatDevRouteLines(result.stdout, mode, worktreePrefix, externalRoutes),
+    origins: resolveExpectedRouteUrls({ output: result.stdout, mode, worktreePrefix }),
   };
 }
 
-function waitForPortlessState(
-  tmuxStore: TmuxSessionStore,
-  mode: DevMode,
-  timeoutMs: number,
-  worktreePrefix?: string,
-  externalRoutes: ReadonlyArray<ExternalDevRoute> = [],
-): PortlessState {
+function waitForPortlessState(store: TmuxSessionStore, plan: DevSessionPlan, timeoutMs: number) {
   const deadline = Date.now() + timeoutMs;
-  let state = readPortlessState(tmuxStore, mode, worktreePrefix, externalRoutes);
-
+  let state = readPortlessState(store, plan);
   while (!state.healthy && Date.now() < deadline) {
-    sleep(500);
-    state = readPortlessState(tmuxStore, mode, worktreePrefix, externalRoutes);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+    state = readPortlessState(store, plan);
   }
-
   return state;
 }
 
-function readJsonMetadata(): DevSessionMetadata | null {
-  try {
-    const data = fs.readFileSync(metadataPath, "utf8");
-    return JSON.parse(data) as DevSessionMetadata;
-  } catch {
-    return null;
-  }
-}
-
-function writeJsonMetadata(metadata: DevSessionMetadata): void {
-  fs.mkdirSync(path.dirname(metadataPath), { recursive: true });
-  fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
-}
-
-function writeMetadataWithoutExternalRoutes({
-  branch,
-  sessionName,
-  mode,
-  displayCommand,
-  createdAt,
-}: {
-  branch: string;
-  sessionName: string;
-  mode: DevMode;
-  displayCommand: string;
-  createdAt?: string;
-}): void {
-  writeJsonMetadata({
-    branch: branch || "detached",
-    sessionName,
-    mode,
-    command: displayCommand,
-    createdAt: createdAt ?? new Date().toISOString(),
-    externalRoutes: [],
-  });
-}
-
-function resolveRequestedMode({
-  explicitMode,
-  requestedMode,
-  restart,
-  preserveModeOnRestart,
-}: {
-  explicitMode: boolean;
-  requestedMode: DevMode;
-  restart: boolean;
-  preserveModeOnRestart: boolean;
-}): DevMode {
-  if (!restart || !preserveModeOnRestart || explicitMode) {
-    return requestedMode;
-  }
-
-  const previous = readJsonMetadata();
-  return isDevMode(previous?.mode) ? previous.mode : requestedMode;
-}
-
-function printDryRun({
-  sessionName,
-  mode,
-  branch,
-  worktreeHash,
-  portlessCommand,
-  sharedPorts,
-}: {
-  sessionName: string;
-  mode: DevMode;
-  branch: string;
-  worktreeHash: string;
-  portlessCommand: string;
-  sharedPorts: ReadonlyArray<SharedDevServicePorts>;
-}): void {
-  console.log("[dry-run] dev session plan");
-  console.log(`session: ${sessionName}`);
-  console.log(`mode: ${mode}`);
-  console.log(`repo root: ${repoRootRealpath}`);
-  console.log(`branch: ${branch || "HEAD"}`);
-  console.log(`worktree hash: ${worktreeHash}`);
-  console.log(`metadata: ${metadataPath}`);
-  console.log(
-    `expected services: ${getExpectedServicesForMode(mode)
-      .map((service) => service.name)
-      .join(", ")}`,
+function checkRouteConflicts(store: TmuxSessionStore, plan: DevSessionPlan, force: boolean): void {
+  const result = store.run("pnpm", ["portless:list"]);
+  requireSuccess(result, "cannot inspect Portless routes");
+  const expected = new Set(
+    getExpectedServicesForMode(plan.session.mode).map((service) =>
+      expectedServiceHost(service.name, plan.session.worktreePrefix),
+    ),
   );
-  if (sharedPorts.length > 0) {
-    console.log(
-      `shared ports: ${sharedPorts
-        .map(
-          (ports) =>
-            `${ports.service}=backend:${ports.appBackendPort},${ports.externalMode}:${ports.externalHttpsPort}`,
-        )
-        .join(", ")}`,
+  const conflicts = parsePortlessListOutput(result.stdout).routes.filter((route) =>
+    expected.has(route.host),
+  );
+  for (const route of conflicts) {
+    const cwd = route.pid ? processWorkingDirectory(route.pid) : undefined;
+    console.warn(
+      `${force ? "taking over" : "route conflict:"} ${route.host} from PID ${route.pid ?? "unknown"} (${cwd ?? "checkout unknown"}, backend ${route.port})`,
     );
   }
-
-  console.log("[dry-run] tmux commands:");
-  console.log(`tmux has-session -t ${sessionName}`);
-  console.log(`tmux new-session -d -s ${sessionName} -c ${repoRoot}`);
-  console.log(`tmux send-keys -t ${sessionName}:0 -- ${portlessCommand} C-m`);
-}
-
-function failAndExit(
-  message: string,
-  remediation: string,
-  sessionName: string,
-  routeLines: string[] = [],
-): never {
-  printFailure({
-    sessionName,
-    message,
-    remediation,
-    logPath,
-    routeLines,
-  });
-  process.exit(1);
-}
-
-async function printExistingSessionInfo({
-  tmuxStore,
-  sessionName,
-  mode,
-  worktreePrefix,
-  tailscale,
-  sharedPorts,
-  nodeDnsName,
-  branch,
-  displayCommand,
-  createdAt,
-}: {
-  tmuxStore: TmuxSessionStore;
-  sessionName: string;
-  mode: DevMode;
-  worktreePrefix?: string;
-  tailscale: TailscaleDevLifecycle;
-  sharedPorts: ReadonlyArray<SharedDevServicePorts>;
-  nodeDnsName?: string;
-  branch: string;
-  displayCommand: string;
-  createdAt?: string;
-}): Promise<void> {
-  const routeState = waitForPortlessState(tmuxStore, mode, 5_000, worktreePrefix);
-  if (!routeState.healthy) {
-    failAndExit(
-      `dev session exists but route checks failed: ${routeState.errors.join("; ")}`,
-      "inspect logs/routes and restart with pnpm dev --restart",
-      sessionName,
-      routeState.lines,
+  if (conflicts.length && !force)
+    throw new Error(
+      "expected routes are already registered; use pnpm dev --restart or pnpm dev --force to take over",
     );
-  }
-
-  const readiness = await waitForDevReadiness({
-    origins: routeState.serviceOrigins,
-    timeoutMs: 5_000,
-  });
-  if (!readiness.ok) {
-    failAndExit(
-      `dev session exists but readiness checks failed: ${readiness.errors.join("; ")}`,
-      "inspect logs/routes and restart with pnpm dev --restart",
-      sessionName,
-      routeState.lines,
-    );
-  }
-
-  let externalRoutes: ExternalDevRoute[];
-  try {
-    externalRoutes = tailscale.ensureExternalRoutes({ sharedPorts, nodeDnsName });
-  } catch (error) {
-    writeMetadataWithoutExternalRoutes({
-      branch,
-      sessionName,
-      mode,
-      displayCommand,
-      createdAt,
-    });
-    failAndExit(
-      `dev session exists but Tailscale route verification failed: ${error instanceof Error ? error.message : String(error)}`,
-      "inspect tailscale serve/funnel status and restart with pnpm dev --restart",
-      sessionName,
-      routeState.lines,
-    );
-  }
-
-  const verifiedRouteState = readPortlessState(tmuxStore, mode, worktreePrefix, externalRoutes);
-
-  writeJsonMetadata({
-    branch: branch || "detached",
-    sessionName,
-    mode,
-    command: displayCommand,
-    createdAt: createdAt ?? new Date().toISOString(),
-    externalRoutes,
-  });
-
-  printSessionInfo({
-    headline: "already running",
-    sessionName,
-    mode,
-    routeLines: verifiedRouteState.lines,
-  });
 }
 
-function killSessionIfPresent(tmuxStore: TmuxSessionStore, sessionName: string): void {
-  if (tmuxStore.sessionExists(sessionName)) {
-    const killResult = tmuxStore.killSession(sessionName);
-    if (killResult.status !== 0) {
-      console.error(killResult.stderr.trim() || `failed to kill tmux session '${sessionName}'`);
-      process.exit(killResult.status ?? 1);
-    }
+function teardownSessions(store: TmuxSessionStore, names: string[]): void {
+  for (const name of new Set(names)) {
+    if (store.sessionExists(name))
+      requireSuccess(store.killSession(name), `failed to kill tmux session '${name}'`);
   }
+  const prune = store.run("pnpm", ["exec", "portless", "prune"]);
+  if (prune.status !== 0 && prune.stderr.trim())
+    console.warn(`portless prune warning: ${prune.stderr.trim()}`);
 }
 
-function teardownExistingSessions(tmuxStore: TmuxSessionStore, sessionNames: string[]): void {
-  for (const sessionName of [...new Set(sessionNames.filter(Boolean))]) {
-    killSessionIfPresent(tmuxStore, sessionName);
-  }
-
-  const pruneResult = tmuxStore.run("pnpm", ["exec", "portless", "prune"]);
-  if (pruneResult.status !== 0) {
-    const stderr = pruneResult.stderr.trim();
-    if (stderr) {
-      console.warn(`portless prune warning: ${stderr}`);
-    }
-  }
-}
-
-async function releaseFixedBackendPorts(
-  sharedPorts: ReadonlyArray<SharedDevServicePorts>,
-): Promise<void> {
-  const ports = sharedPorts.map((entry) => entry.appBackendPort);
-  const result = await releaseFixedPorts(ports, {
-    onKill: ({ port, holder }) => {
-      console.log(`killing port ${port} holder PID ${holder.pid} (${holder.command})`);
+async function releaseBackendPorts(plan: DevSessionPlan): Promise<void> {
+  const result = await releaseFixedPorts(
+    plan.sharedPorts.map((entry) => entry.appBackendPort),
+    {
+      onKill: ({ port, holder }) =>
+        console.log(`killing port ${port} holder PID ${holder.pid} (${holder.command})`),
     },
-  });
-  if (result.status === "released") return;
-  if (result.status === "discoveryError") {
+  );
+  if (result.status === "discoveryError")
     throw new Error(
       result.errors
-        .map(({ port, error }) => `port ${port} is still held but could not be inspected: ${error}`)
+        .map(({ port, error }) => `port ${port} could not be inspected: ${error}`)
         .join("; "),
     );
+  if (result.status === "stillHeld")
+    throw new Error(
+      result.held
+        .map(
+          ({ port, holders }) =>
+            `port ${port} still held after SIGKILL by ${holders.map((holder) => `PID ${holder.pid} (${holder.command})`).join(", ")}`,
+        )
+        .join("; "),
+    );
+}
+
+function printDryRun(plan: DevSessionPlan, launchCommand: string): void {
+  console.log("[dry-run] dev session plan");
+  console.log(`session: ${plan.session.sessionName}`);
+  console.log(`mode: ${plan.session.mode}`);
+  console.log(`client build: ${plan.session.clientBuild}`);
+  console.log(`repo root: ${repoRoot}`);
+  console.log(`branch: ${plan.session.branch}`);
+  console.log(`metadata: ${path.join(repoRoot, ".meridian", "dev-session.json")}`);
+  for (const entry of plan.sharedPorts)
+    console.log(
+      `shared port: ${entry.service}=backend:${entry.appBackendPort},${entry.externalMode}:${entry.externalHttpsPort}`,
+    );
+  console.log(`tmux new-session -d -s ${plan.session.sessionName} -c ${repoRoot}`);
+  console.log(`tmux send-keys -t ${plan.session.sessionName}:0 -- ${launchCommand} C-m`);
+}
+
+async function verifyAndPublish({
+  store,
+  tailscale,
+  plan,
+  alreadyRunning,
+  launchCommand,
+}: {
+  store: TmuxSessionStore;
+  tailscale: TailscaleDevLifecycle;
+  plan: DevSessionPlan;
+  alreadyRunning: boolean;
+  launchCommand: string;
+}): Promise<void> {
+  const fail = (message: string, lines: string[] = []): never => {
+    printFailure({
+      sessionName: plan.session.sessionName,
+      message,
+      remediation: "inspect logs/routes and restart with pnpm dev --restart",
+      logPath,
+      routeLines: lines,
+    });
+    throw new Error("dev session verification failed");
+  };
+  const timeoutMs = alreadyRunning
+    ? 5_000
+    : plan.session.clientBuild === "production"
+      ? 60_000
+      : 20_000;
+  const routes = waitForPortlessState(store, plan, timeoutMs);
+  if (!routes.healthy) fail(`route checks failed: ${routes.errors.join("; ")}`, routes.lines);
+  const readiness = await waitForDevReadiness({ origins: routes.origins, timeoutMs });
+  if (!readiness.ok) fail(`readiness checks failed: ${readiness.errors.join("; ")}`, routes.lines);
+
+  // Clear advertised external URLs before re-verifying their bindings.
+  writeDevSessionMetadata(repoRoot, {
+    ...plan.session,
+    command: launchCommand,
+    externalRoutes: [],
+  });
+  let externalRoutes: ExternalDevRoute[];
+  try {
+    const nodeDnsName = plan.session.mode === "local" ? undefined : tailscale.resolveNodeDnsName();
+    externalRoutes = tailscale.ensureExternalRoutes({ sharedPorts: plan.sharedPorts, nodeDnsName });
+  } catch (error) {
+    return fail(
+      `Tailscale route verification failed: ${error instanceof Error ? error.message : String(error)}`,
+      routes.lines,
+    );
   }
-  throw new Error(
-    result.held
-      .map(
-        ({ port, holders }) =>
-          `port ${port} held by ${holders
-            .map(({ pid, command }) => `PID ${pid} (${command})`)
-            .join(", ")} after SIGKILL`,
-      )
-      .join("; "),
-  );
+  const verified = readPortlessState(store, plan, externalRoutes);
+  if (!verified.healthy)
+    fail(`route ownership changed during readiness: ${verified.errors.join("; ")}`, verified.lines);
+  writeDevSessionMetadata(repoRoot, { ...plan.session, command: launchCommand, externalRoutes });
+  printSessionInfo({
+    headline: alreadyRunning ? "already running" : "started",
+    sessionName: plan.session.sessionName,
+    mode: plan.session.mode,
+    clientBuild: plan.session.clientBuild,
+    routeLines: verified.lines,
+  });
 }
 
 async function main(): Promise<void> {
-  const tmuxStore = new TmuxSessionStore(repoRoot);
+  const store = new TmuxSessionStore(repoRoot);
   const tailscale = new TailscaleDevLifecycle();
-  const cliOptions = parseDevCliOptions({ argv: process.argv.slice(2) });
-
-  const branchName = runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const options = parseDevCliOptions({ argv: process.argv.slice(2) });
   const identity = resolveCheckoutSessionIdentity(repoRoot);
-
-  const mode = resolveRequestedMode({
-    explicitMode: cliOptions.explicitModeFlag,
-    requestedMode: cliOptions.mode,
-    restart: cliOptions.restart,
-    preserveModeOnRestart: cliOptions.preserveModeOnRestart,
-  });
-
+  const state = readDevSessionState(repoRoot);
+  const previous = state.recorded;
+  const active = options.restart ? null : state.active;
+  const requestedClientBuild = options.productionClient ? "production" : "development";
+  if (!options.stop && active && active.clientBuild !== requestedClientBuild) {
+    const restartCommand = options.productionClient
+      ? "pnpm dev:production-client --restart"
+      : "pnpm dev --restart";
+    throw new Error(
+      `the active session uses the ${active.clientBuild} client; run ${restartCommand} to use the ${requestedClientBuild} client`,
+    );
+  }
+  const mode =
+    active?.mode ??
+    (options.restart && options.preserveModeOnRestart && !options.explicitModeFlag && previous
+      ? previous.mode
+      : options.mode);
   applyModeEnv(mode);
-
-  const previous = readJsonMetadata();
-  const worktreePrefix = detectWorktreePrefix(branchName);
-  const previousWorktreePrefix = previous ? detectWorktreePrefix(previous.branch) : undefined;
-  const sharedPorts = resolveSharedDevServicePorts({
-    mode,
-    worktreeKey: repoRootRealpath,
-    services: sharedServiceNamesForMode(mode),
-  });
-
-  if (cliOptions.print) {
-    applyDevEnvToProcess(repoRoot);
-    const devCommand = createDevSessionCommand({
-      mode,
-      sharedPorts,
-      worktreePrefix,
-    });
-    printDryRun({
-      sessionName: identity.sessionName,
-      mode,
-      branch: branchName,
-      worktreeHash: identity.worktreeHash,
-      portlessCommand: devCommand.display,
-      sharedPorts,
-    });
-    process.exit(0);
-  }
-
-  if (!tmuxStore.hasCommandOnPath("tmux")) {
-    console.error("tmux is required but was not found on PATH. Install tmux and retry.");
-    process.exit(1);
-  }
-
-  if (cliOptions.stop) {
-    tailscale.cleanupExternalRoutes({ previousRoutes: previous?.externalRoutes, sharedPorts });
-    teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
-    console.log(`stopped · ${identity.sessionName}`);
-    return;
-  }
-
-  applyDevEnvToProcess(repoRoot);
-  const devCommand = createDevSessionCommand({
-    mode,
-    sharedPorts,
-    worktreePrefix,
-  });
-
-  // Fail fast if the dev database is unset or unreachable: the app servers boot
-  // fine without Postgres (connections are lazy), so a stopped container would
-  // otherwise only surface as a runtime HTTPError on the first DB-touching
-  // request, long after this script reports the session healthy.
-  await assertDevInfraReady();
-
-  const nodeDnsName = mode === "local" ? undefined : tailscale.resolveNodeDnsName();
-
-  if (cliOptions.restart) {
-    tailscale.cleanupExternalRoutes({ previousRoutes: previous?.externalRoutes, sharedPorts });
-    teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
-    await releaseFixedBackendPorts(sharedPorts);
-  } else if (tmuxStore.sessionExists(identity.sessionName)) {
-    const runningMode = isDevMode(previous?.mode) ? previous.mode : mode;
-    const runningSharedPorts = resolveSharedDevServicePorts({
-      mode: runningMode,
-      worktreeKey: repoRootRealpath,
-      services: sharedServiceNamesForMode(runningMode),
-    });
-    const runningDevCommand = createDevSessionCommand({
-      mode: runningMode,
-      sharedPorts: runningSharedPorts,
-      worktreePrefix,
-    });
-    await printExistingSessionInfo({
-      tmuxStore,
-      sessionName: identity.sessionName,
-      mode: runningMode,
-      worktreePrefix,
-      tailscale,
-      sharedPorts: runningSharedPorts,
-      nodeDnsName: runningMode === mode ? nodeDnsName : tailscale.resolveNodeDnsName(),
-      branch: previous?.branch ?? branchName,
-      displayCommand: runningDevCommand.display,
-      createdAt: previous?.createdAt,
-    });
-    return;
-  } else if (previous?.sessionName && tmuxStore.sessionExists(previous.sessionName)) {
-    const runningMode = isDevMode(previous.mode) ? previous.mode : mode;
-    const runningSharedPorts = resolveSharedDevServicePorts({
-      mode: runningMode,
-      worktreeKey: repoRootRealpath,
-      services: sharedServiceNamesForMode(runningMode),
-    });
-    const runningDevCommand = createDevSessionCommand({
-      mode: runningMode,
-      sharedPorts: runningSharedPorts,
-      worktreePrefix: previousWorktreePrefix,
-    });
-    await printExistingSessionInfo({
-      tmuxStore,
-      sessionName: previous.sessionName,
-      mode: runningMode,
-      worktreePrefix: previousWorktreePrefix,
-      tailscale,
-      sharedPorts: runningSharedPorts,
-      nodeDnsName: runningMode === mode ? nodeDnsName : tailscale.resolveNodeDnsName(),
-      branch: previous.branch,
-      displayCommand: runningDevCommand.display,
-      createdAt: previous.createdAt,
-    });
-    return;
-  }
-
-  await tailscale.pruneStaleRoutes();
-
-  const createResult = tmuxStore.createSession(identity.sessionName);
-  if (createResult.status !== 0) {
-    console.error(
-      createResult.stderr.trim() || `failed to create tmux session '${identity.sessionName}'`,
-    );
-    process.exit(createResult.status ?? 1);
-  }
-
-  const runResult = tmuxStore.sendKeys(identity.sessionName, devCommand.executable);
-  if (runResult.status !== 0) {
-    console.error(runResult.stderr.trim() || "failed to start portless in tmux");
-    process.exit(runResult.status ?? 1);
-  }
-
-  const routeState = waitForPortlessState(tmuxStore, mode, 20_000, worktreePrefix);
-  if (!routeState.healthy) {
-    failAndExit(
-      `dev session started but health checks failed: ${routeState.errors.join("; ")}`,
-      "inspect logs/routes and restart with pnpm dev --restart",
-      identity.sessionName,
-      routeState.lines,
-    );
-  }
-
-  const readiness = await waitForDevReadiness({
-    origins: routeState.serviceOrigins,
-    timeoutMs: 20_000,
-  });
-  if (!readiness.ok) {
-    failAndExit(
-      `dev session started but readiness checks failed: ${readiness.errors.join("; ")}`,
-      "inspect logs/routes and restart with pnpm dev --restart",
-      identity.sessionName,
-      routeState.lines,
-    );
-  }
-
-  let externalRoutes: ExternalDevRoute[];
-  try {
-    externalRoutes = tailscale.ensureExternalRoutes({ sharedPorts, nodeDnsName });
-  } catch (error) {
-    writeMetadataWithoutExternalRoutes({
-      branch: branchName,
-      sessionName: identity.sessionName,
-      mode,
-      displayCommand: devCommand.display,
-    });
-    failAndExit(
-      `dev session started but Tailscale route verification failed: ${error instanceof Error ? error.message : String(error)}`,
-      "inspect tailscale serve/funnel status and restart with pnpm dev --restart",
-      identity.sessionName,
-      routeState.lines,
-    );
-  }
-
-  const verifiedRouteState = readPortlessState(tmuxStore, mode, worktreePrefix, externalRoutes);
-
-  writeJsonMetadata(
-    buildMetadata({
-      branch: branchName,
-      sessionName: identity.sessionName,
-      mode,
-      displayCommand: devCommand.display,
-      externalRoutes,
-    }),
-  );
-
-  printSessionInfo({
-    headline: "started",
+  if (!options.stop && !active) applyDevEnvToProcess(repoRoot);
+  const session = active ?? {
     sessionName: identity.sessionName,
+    branch: runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]),
     mode,
-    routeLines: verifiedRouteState.lines,
+    clientBuild:
+      options.restart && options.preserveModeOnRestart && !options.productionClient && previous
+        ? previous.clientBuild
+        : requestedClientBuild,
+    worktreePrefix: resolveCheckoutPortlessPrefix(repoRoot),
+    createdAt: new Date().toISOString(),
+  };
+  const plan = createDevSessionPlan({
+    repoRoot,
+    session,
+    force: options.restart,
+  });
+  if (options.print) return printDryRun(plan, active?.command ?? plan.command.display);
+  if (!store.hasCommandOnPath("tmux"))
+    throw new Error("tmux is required but was not found on PATH. Install tmux and retry.");
+  const sessionNames = [identity.sessionName, ...(previous ? [previous.sessionName] : [])];
+  if (options.stop) {
+    tailscale.cleanupExternalRoutes({
+      previousRoutes: previous?.externalRoutes,
+      sharedPorts: plan.sharedPorts,
+    });
+    teardownSessions(store, sessionNames);
+    console.log(`stopped · ${session.sessionName}`);
+    return;
+  }
+  if (!active) {
+    await assertDevInfraReady();
+    checkRouteConflicts(store, plan, options.restart);
+    if (options.restart) {
+      tailscale.cleanupExternalRoutes({
+        previousRoutes: previous?.externalRoutes,
+        sharedPorts: plan.sharedPorts,
+      });
+      teardownSessions(store, sessionNames);
+      await releaseBackendPorts(plan);
+    }
+    await tailscale.pruneStaleRoutes();
+    requireSuccess(
+      store.createSession(session.sessionName),
+      `failed to create tmux session '${session.sessionName}'`,
+    );
+    // Record launch identity immediately: HEAD may change before readiness finishes.
+    writeDevSessionMetadata(repoRoot, {
+      ...session,
+      command: plan.command.display,
+      externalRoutes: [],
+    });
+    requireSuccess(
+      store.sendKeys(session.sessionName, plan.command.executable),
+      "failed to start portless in tmux",
+    );
+  }
+  await verifyAndPublish({
+    store,
+    tailscale,
+    plan,
+    alreadyRunning: active !== null,
+    launchCommand: active?.command ?? plan.command.display,
   });
 }
 
 main().catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+  process.exitCode = 1;
 });

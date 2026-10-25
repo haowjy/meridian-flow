@@ -20,7 +20,7 @@ const entryFor = (metadata: unknown) =>
     scope: { kind: "project", projectId: "p1" } as never,
     scheme: "manuscript",
     workId: null,
-    workSlug: null,
+    workHandle: null,
     parentPath: [],
   });
 

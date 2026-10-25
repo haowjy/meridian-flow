@@ -7,12 +7,15 @@
  */
 
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
-import { formatParsedContextUri, parseContextUri } from "@meridian/contracts/context-uri";
+import {
+  formatParsedContextUri,
+  isWorkScopedScheme,
+  parseContextUri,
+} from "@meridian/contracts/context-uri";
 import {
   type ContextDestinationParent,
   type DeleteContextEntryResult,
   type Filetype,
-  isWorkScopedProjectContextScheme,
   storedFilename,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -49,7 +52,7 @@ function lifecycleCommandFailure(error: unknown, uri: string): Result<never, Con
       code: "context_unavailable",
       uri,
       reason: `work_${error.state}`,
-      workSlug: error.workSlug ?? null,
+      workHandle: error.workHandle ?? null,
     });
   throw error;
 }
@@ -100,12 +103,13 @@ function joinPath(...parts: string[]): string {
 }
 
 type LocationChangePolicy =
-  | { target: "container"; overwrite: boolean }
+  | { target: "container"; overwrite: boolean; actorUserId?: string }
   | {
       target: "exact";
       overwrite: false;
       graduateProvisionalName: true;
       expected?: ContextLocationOptions["expected"];
+      inTransaction?: ContextLocationOptions["inTransaction"];
       destinationParent?: ContextDestinationParent;
       resolveDestination?: () => Promise<Result<ContextTreeDispatch, ContextError>>;
       authorizeDestination?: (uri: string) => Promise<boolean>;
@@ -137,6 +141,7 @@ export class ContextTreeMover {
     return this.changeLocation(source, destination, {
       target: "container",
       overwrite: options?.overwrite === true,
+      actorUserId: options?.origin?.type === "human" ? options.origin.userId : undefined,
     });
   }
 
@@ -147,8 +152,14 @@ export class ContextTreeMover {
       resolveDestination?: () => Promise<Result<ContextTreeDispatch, ContextError>>;
     } = {},
   ): Promise<Result<ContextMoveResult, ContextError>> {
-    const { expected, operationId, destinationParent, resolveDestination, authorizeDestination } =
-      options;
+    const {
+      expected,
+      operationId,
+      destinationParent,
+      resolveDestination,
+      authorizeDestination,
+      inTransaction,
+    } = options;
     if (operationId) {
       if (!this.receipts || !expected)
         return Err({ code: "invalid_operation", uri: source.canonical });
@@ -173,6 +184,7 @@ export class ContextTreeMover {
       destinationParent,
       resolveDestination,
       authorizeDestination,
+      inTransaction,
     });
   }
 
@@ -186,7 +198,7 @@ export class ContextTreeMover {
     const destinationResolver = policy.target === "exact" ? policy.resolveDestination : undefined;
     const scopeOf = (dispatch: ContextTreeDispatch) => ({
       scheme: dispatch.scheme,
-      workId: isWorkScopedProjectContextScheme(dispatch.scheme) ? dispatch.workScopeId : null,
+      workId: isWorkScopedScheme(dispatch.scheme) ? dispatch.workScopeId : null,
     });
     return this.commandExecutor
       .run(
@@ -248,26 +260,29 @@ export class ContextTreeMover {
             () =>
               destination.adapter.tree?.commitPreparedMove({
                 ...prepared.value,
+                actorUserId: policy.target === "container" ? policy.actorUserId : undefined,
                 linkNoteProjectId: this.moveLinks?.linkNoteProjectId,
               }) ?? Promise.resolve(Err({ code: "permission_denied" } as const)),
           );
           if (!result.ok) return result;
           const parsedDestination = parseContextUri(destination.canonical);
           if (!parsedDestination.ok) throw new Error("Invalid resolved destination URI");
-          return Ok({
+          const moved: ContextMoveResult = {
             movedNodeId: result.value.movedNodeId,
             ...(result.value.linkUpdate ? { linkUpdate: result.value.linkUpdate } : {}),
-            destinationPath: prepared.value.destinationPath,
+            destinationPath: result.value.path,
             ...(policy.target === "exact" && policy.destinationParent
               ? {
                   destinationUri: formatParsedContextUri(
                     destination.scheme,
-                    prepared.value.destinationPath,
+                    result.value.path,
                     parsedDestination.value.authority,
                   ),
                 }
               : {}),
-          });
+          };
+          if (policy.target === "exact") await policy.inTransaction?.(moved);
+          return Ok(moved);
         },
         destinationResolver
           ? async () => {
@@ -321,7 +336,7 @@ export class ContextTreeMover {
         [
           {
             scheme: target.scheme,
-            workId: isWorkScopedProjectContextScheme(target.scheme) ? target.workScopeId : null,
+            workId: isWorkScopedScheme(target.scheme) ? target.workScopeId : null,
           },
         ],
       )
@@ -353,6 +368,9 @@ export class ContextTreeMover {
         target.adapter.tree?.commitRecursiveDelete({
           root: token.value as ContextLocationToken,
           mode: "recursive",
+          actorUserId: options.origin?.type === "human" ? options.origin.userId : undefined,
+          actorThreadId: options.origin?.type === "agent" ? options.origin.threadId : undefined,
+          removal: options.removal,
         }) ?? Promise.resolve(Err({ code: "permission_denied" } as const)),
     );
     if (!result.ok) {
@@ -360,11 +378,13 @@ export class ContextTreeMover {
         ? Err({ code: "stale_target", uri: target.canonical })
         : result;
     }
-    return Ok({
+    const deleted: DeleteContextEntryResult = {
       status: "deleted",
-      deletedDocumentIds: result.value.deletedDocumentIds,
+      removed: result.value.removed,
       availabilityGeneration: result.value.availabilityGeneration,
-    });
+    };
+    await options.inTransaction?.(deleted);
+    return Ok(deleted);
   }
 
   private async prepareMove(
@@ -526,10 +546,10 @@ export class ContextTreeMover {
   ): Result<void, ContextError> {
     if (source.nodeId === existingTarget.nodeId && source.sourceId === existingTarget.sourceId)
       return Ok(undefined);
-    if (source.kind !== existingTarget.kind) {
-      return Err({ code: "conflict", uri: destinationUri });
-    }
-    if (!options?.overwrite || source.kind === "directory") {
+    if (
+      options?.overwrite &&
+      (source.kind !== existingTarget.kind || source.kind === "directory")
+    ) {
       return Err({ code: "conflict", uri: destinationUri });
     }
     return Ok(undefined);

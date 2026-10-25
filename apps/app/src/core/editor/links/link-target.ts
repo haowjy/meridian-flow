@@ -20,16 +20,19 @@
 import { CONTEXT_URI_SCHEMES, splitDocumentHrefSuffix } from "@meridian/contracts";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 
-export type LinkTarget =
-  /** `manuscript://appendix/vault-charter.md`, `scratch://@revision-pass/notes.md`. */
-  | { kind: "scheme"; uri: string }
+export type InternalLinkTarget =
+  /** `manuscript://appendix/vault-charter.md`, `scratch://@w3/notes.md`. */
+  | { kind: "scheme"; addressKind: "document" | "folder"; uri: string }
   /** `chapter-213.md`, `../notes/kael.md` — resolved against the holder's URI. */
-  | { kind: "relative"; path: string }
+  | { kind: "relative"; addressKind: "document" | "folder"; path: string };
+
+export type LinkTarget =
+  | InternalLinkTarget
   /** Everything that leaves the app. Never crosses the resolution port. */
   | { kind: "external"; url: string };
 
 /** True for both spellings of the one internal family. */
-export function isInternalLinkTarget(target: LinkTarget): boolean {
+export function isInternalLinkTarget(target: LinkTarget): target is InternalLinkTarget {
   return target.kind !== "external";
 }
 
@@ -95,8 +98,9 @@ export function classifyLinkTarget(href: string): LinkTarget | null {
   if (value.startsWith("//")) return externalTarget(`https:${value}`);
 
   const scheme = EXPLICIT_SCHEME.exec(value)?.[1]?.toLowerCase();
-  if (!scheme) return { kind: "relative", path: value };
-  if (internalScheme(value, scheme)) return { kind: "scheme", uri: value };
+  const addressKind = splitDocumentHrefSuffix(value).path.endsWith("/") ? "folder" : "document";
+  if (!scheme) return { kind: "relative", addressKind, path: value };
+  if (internalScheme(value, scheme)) return { kind: "scheme", addressKind, uri: value };
   if (INTERNAL_SCHEMES.has(scheme)) return null;
   return externalTarget(value);
 }

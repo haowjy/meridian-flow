@@ -46,11 +46,11 @@ import {
   type YjsRoomName,
 } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import type { ConnectionState } from "@meridian/thread-client";
 import type { Editor } from "@tiptap/core";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import type * as Y from "yjs";
-import type { ConnectionState } from "@/core/transport/ThreadTransport";
 import {
   commitContentInitialization,
   readContentInitialization,
@@ -89,9 +89,9 @@ export type DocumentSessionStatus =
   | "destroyed";
 
 export type DocumentSessionSnapshot = {
-  /** Live document id for live rooms; draft/branch sessions expose the room-scoped id here. */
+  /** Live document id for live rooms; draft sessions expose the room-scoped id here. */
   documentId: string;
-  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>:gen:<generation>` for a branch room. */
+  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>` for a draft room. */
   roomKey: string;
   room: YjsRoomName;
   status: DocumentSessionStatus;
@@ -116,13 +116,25 @@ export type DocumentSessionAccess = "edit" | "read";
 export type DocumentSessionResetReason =
   /** The room's access changed while local edits were pending; the server refused them. */
   | typeof WS_CLOSE.ACCESS_CHANGED.reason
-  | typeof WS_CLOSE.BRANCH_STALE.reason
+  | typeof WS_CLOSE.DRAFT_CLOSED.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
-  | typeof WS_CLOSE.BRANCH_GENERATION_STALE.reason;
+  /** The document was deleted or discarded; its rooms never reopen. */
+  | typeof WS_CLOSE.DOCUMENT_DELETED.reason;
 
-/** How a terminal room reset treats its unacknowledged writer updates. */
-export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema";
+/**
+ * How a terminal room reset treats its unacknowledged writer updates.
+ * `removed`: the server says the document is gone, so nothing reconnects,
+ * rebuilds or replays on its own; the session stays read-only until its owner
+ * closes it, or an exact open proves the document present and restarts it.
+ */
+export type ResetDisposition =
+  | "superseded"
+  | "rebuild"
+  | "refused"
+  | "schema"
+  | "removed"
+  | "closed";
 
 export type DocumentSessionConnectionState =
   | Exclude<ConnectionState, { kind: "reset" }>
@@ -132,6 +144,17 @@ export type DocumentSessionConnectionState =
       disposition: ResetDisposition;
       code?: number;
     };
+
+/**
+ * Client-side terminal reason: the server refused this draft room's updates on
+ * several reconnects in a row. The session stays open and read-only so its owner
+ * can show the unsent text and reopen the draft; nothing retries it.
+ */
+export const DRAFT_UPDATES_REFUSED = "draft-updates-refused";
+
+export function updatesRefused(state: DocumentSessionConnectionState | null | undefined): boolean {
+  return state?.kind === "terminal" && state.reason === DRAFT_UPDATES_REFUSED;
+}
 
 /**
  * Surface `DocumentSession` consumes from its transport.
@@ -145,6 +168,7 @@ export type DocumentSessionConnectionState =
 export type DocumentSessionTransportProvider = {
   /** Local updates not acknowledged on this connection, merged; null when none. */
   unacknowledgedUpdates(): Uint8Array | null;
+  whenCurrentChangesAcknowledged?: () => Promise<void>;
   synced?: boolean;
   whenSynced?: Promise<void>;
   /**
@@ -180,7 +204,7 @@ export type DocumentSessionTransportFactory = (opts: {
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>:gen:<generation>` for a branch room. */
+  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>` for a draft room. */
   roomKey: string;
   /** Exact cache identity. Only the owner that just reserved it may declare it fresh. */
   persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };
@@ -226,6 +250,9 @@ export class DocumentSession {
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
   private observedOutboxPresence = false;
+  // Distinct connection states can share a status (`disconnected` and
+  // `terminal` are both `offline`); subscribers still need the new one.
+  private emittedTransportState: DocumentSessionConnectionState | null = null;
   /**
    * Latest live connection-state from the transport. When the transport is
    * pre-`whenSynced` we treat the session as syncing; this field lets us
@@ -255,7 +282,7 @@ export class DocumentSession {
     if (!room) throw new Error(`Invalid Yjs room key: ${roomKey}`);
     this.roomKey = roomKey;
     this.room = room;
-    this.documentId = room.kind === "live" ? room.documentId : room.branchId;
+    this.documentId = room.kind === "live" ? room.documentId : room.draftId;
     this.document = createCollabYDoc();
     this.persistSchemaFence = persistSchemaFence;
     this.markerStore = new SessionMarkerStore(ownUserId);
@@ -387,6 +414,38 @@ export class DocumentSession {
 
   unacknowledgedUpdates(): Uint8Array | null {
     return this.transportProvider?.unacknowledgedUpdates() ?? null;
+  }
+
+  /** Captured synchronously with an Apply snapshot; later typing does not move this barrier. */
+  whenCurrentChangesAcknowledged(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      let stop = () => {};
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        stop();
+        if (error) reject(error);
+        else resolve();
+      };
+      const prefix = this.transportProvider?.whenCurrentChangesAcknowledged?.();
+      stop = this.subscribe((snapshot) => {
+        const connection = snapshot.connectionState;
+        if (
+          snapshot.status === "destroyed" ||
+          connection?.kind === "reset" ||
+          connection?.kind === "terminal" ||
+          connection?.kind === "unauthorized"
+        )
+          finish(new Error("Document session can no longer acknowledge this cut"));
+        else if (!prefix && snapshot.serverHasLocalChanges) finish();
+      });
+      if (settled) stop();
+      void prefix?.then(
+        () => finish(),
+        (error: Error) => finish(error),
+      );
+    });
   }
 
   hasUnacknowledgedEdits(): boolean {
@@ -629,6 +688,10 @@ export class DocumentSession {
    */
   destroy(options: { clearPersistence?: boolean } = {}): Promise<void> {
     if (this.destroyPromise) return this.destroyPromise;
+    const closed =
+      this.transportState?.kind === "reset" &&
+      (this.transportState.disposition === "closed" ||
+        this.transportState.disposition === "removed");
     if (!this.destroyStages) {
       this.destroyed = true;
       this.localPeers?.stop();
@@ -664,7 +727,9 @@ export class DocumentSession {
         {
           settled: false,
           run: () =>
-            options.clearPersistence ? this.persistence?.clearData() : this.persistence?.destroy(),
+            options.clearPersistence || closed
+              ? this.persistence?.clearData()
+              : this.persistence?.destroy(),
         },
         { settled: false, run: () => this.schemaRepairWitness?.destroy() },
         { settled: false, run: () => this.awareness.destroy() },
@@ -751,10 +816,12 @@ export class DocumentSession {
     if (
       next === this.status &&
       acknowledged === this.serverHasLocalChanges &&
-      outboxPresent === this.observedOutboxPresence
+      outboxPresent === this.observedOutboxPresence &&
+      this.transportState === this.emittedTransportState
     )
       return;
     this.observedOutboxPresence = outboxPresent;
+    this.emittedTransportState = this.transportState;
     this.status = next;
     this.serverHasLocalChanges = acknowledged;
     this.emit();

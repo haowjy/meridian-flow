@@ -1,4 +1,8 @@
-/** Exact local content access proves cache provenance before exposing an editable Y.Doc. */
+/** Exact local content access proves cache provenance before exposing an editable Y.Doc.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - resource handoff and local initialization policy
+ */
 import "fake-indexeddb/auto";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import type { ResourceKey, ResourceRecord } from "@meridian/resource-replica";
@@ -225,6 +229,30 @@ it("never exposes a blank database without initialization proof", async () => {
   });
   expect(created).toHaveLength(1);
   expect(created[0]?.getSnapshot().status).toBe("destroyed");
+});
+
+it("lets a waiter reopen content its sibling released while both awaited one open", async () => {
+  const metadata = openMetadata();
+  const record = resource("lost-race");
+  await initialize(record, "kept");
+  const key = await install(metadata, record);
+  const created: DocumentSession[] = [];
+  const { access } = openAccess(metadata, createFactory(created));
+  const aborted = new AbortController();
+
+  const first = access.open("project", key, "aborted-tab", aborted.signal);
+  const second = access.open("project", key, "surviving-tab");
+  aborted.abort();
+
+  await expect(first).resolves.toEqual({ kind: "cancelled" });
+  const opened = await second;
+  if (opened.kind !== "opened") throw new Error(`Expected a reopen, got ${JSON.stringify(opened)}`);
+  // The cancelled opener's session was retired, and a fresh one was handed out.
+  expect(created).toHaveLength(2);
+  expect(created[0]?.getSnapshot().status).toBe("destroyed");
+  expect(opened.handle.session).toBe(created[1]);
+  expect(opened.handle.session.document.getText("probe").toString()).toBe("kept");
+  opened.handle.release();
 });
 
 it("lets server acquisition replace a local construction that has not opened", async () => {

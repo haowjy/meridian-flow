@@ -3,11 +3,14 @@
  * as, the grants it asks the file policy for, and a refusal as the tool's
  * error. Refusal copy lives in `file-access-denial-copy.ts`.
  */
-import type { DocumentCommandName } from "@meridian/agent-edit/integration";
-import { documentNotFoundMessage, modelResult } from "@meridian/agent-edit/integration";
+import {
+  type DocumentCommandName,
+  documentNotFoundMessage,
+  modelResult,
+} from "@meridian/agent-edit/integration";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadExecutionContext } from "@meridian/contracts/works";
-import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
 import {
   type FileAccessDenied,
   type FileEditRefusedError,
@@ -20,9 +23,9 @@ import {
   type WorkRef,
 } from "../../domains/file-policy/index.js";
 import {
-  deletedFileMessage,
   isPermissionDenial,
   permissionDeniedMessage,
+  removedFileResult,
 } from "../file-access-denial-copy.js";
 import { threadContainerTarget } from "../file-targets.js";
 import type {
@@ -32,16 +35,16 @@ import type {
   WriteToolErrorOutput,
 } from "./tool-context.js";
 
-/** The principal with its drafted writes routed to `work`'s draft, or live for null. */
-export function withDraftWork(principal: Principal, work: WorkRef | null): Principal {
+/** The principal with its drafted writes routed to `work`'s drafts, or live for null. */
+export function withBranchWork(principal: Principal, work: WorkRef | null): Principal {
   return principal.agent
-    ? { ...principal, agent: { ...principal.agent, draftWork: work } }
+    ? { ...principal, agent: { ...principal.agent, branchWork: work } }
     : principal;
 }
 
 /**
  * The agent a tool call acts as (file-access §8): the thread's person, its
- * delegation chain read fresh, and the Work whose draft its drafted writes
+ * delegation chain read fresh, and the Work whose drafts its drafted writes
  * land in.
  */
 export async function agentPrincipal(
@@ -54,8 +57,8 @@ export async function agentPrincipal(
     accountId: thread.userId as Principal["accountId"],
     agent: {
       chain: await deps.readAgentChain(thread.id as ThreadId),
-      draftWork: execution.draftOwner
-        ? { id: execution.draftOwner.workId, slug: execution.scope.workSlug }
+      branchWork: execution.branchOwner
+        ? { id: execution.branchOwner.workId, handle: execution.scope.workHandle }
         : null,
     },
   };
@@ -63,25 +66,26 @@ export async function agentPrincipal(
 
 /**
  * An explicit `version: "draft"` outside draft mode reads the draft the Work
- * kept when it switched to auto-apply (D40), so the result says `draft`. With
+ * kept (a chat switched to auto-apply, or another chat writes drafts there; D62),
+ * so the result says `draft`. With
  * no kept draft of this document it reads live, as `draft` always did there.
  */
 export async function keptDraftReader(
-  deps: Pick<ToolWiringDeps, "drafts">,
+  deps: Pick<ToolWiringDeps, "branches">,
   principal: Principal,
   execution: ThreadExecutionContext,
   documentId: string,
 ): Promise<Principal> {
-  if (!principal.agent || principal.agent.draftWork || execution.draftOwner) return principal;
-  const { workId, workSlug } = execution.scope;
-  const drafts = await deps.drafts.draftReview.list({ workId });
+  if (!principal.agent || principal.agent.branchWork || execution.branchOwner) return principal;
+  const { workId, workHandle } = execution.scope;
+  const drafts = await deps.branches.draftReview.list({ workId });
   if (!drafts.some((draft) => draft.documentId === documentId)) return principal;
-  return withDraftWork(principal, { id: workId, slug: workSlug });
+  return withBranchWork(principal, { id: workId, handle: workHandle });
 }
 
 /** The file policy's grant on a document; a denial comes back as the tool's error. */
 export async function documentGrant<N extends FileNeed>(
-  deps: Pick<ToolWiringDeps, "fileAccess">,
+  deps: Pick<ToolWiringDeps, "fileAccess" | "documentRemovals">,
   principal: Principal,
   command: DocumentCommandName,
   address: Pick<ResolvedDocumentAddress, "documentId" | "filePath">,
@@ -93,8 +97,44 @@ export async function documentGrant<N extends FileNeed>(
     need,
   );
   return isFileAccessDenied(grant)
-    ? fileAccessDeniedError(command, grant, address.filePath)
+    ? fileAccessDeniedError(
+        command,
+        grant,
+        address.filePath,
+        await removalBehind(deps, principal, grant),
+      )
     : grant;
+}
+
+/**
+ * The removal record behind a `not_found` the principal could have read: a document id the
+ * model already holds, whose file was removed. A reader without access learns nothing more.
+ */
+export async function removalBehind(
+  deps: Pick<ToolWiringDeps, "fileAccess" | "documentRemovals">,
+  principal: Principal,
+  denial: FileAccessDenied,
+): Promise<DocumentRemovalRecord | undefined> {
+  if (isPermissionDenial(denial) || denial.target.kind !== "document") return undefined;
+  const { documentId } = denial.target;
+  if ((await deps.fileAccess.historyAccess(principal, documentId)) !== "deleted") return undefined;
+  return (await deps.documentRemovals.lookup([documentId])).get(documentId);
+}
+
+/** A missing file as the tool's error. */
+export function documentNotFoundError(
+  command: DocumentCommandName,
+  path?: string,
+): WriteToolErrorOutput {
+  const message = documentNotFoundMessage(command);
+  return {
+    isError: true,
+    output: modelResult({
+      command,
+      status: "document_not_found",
+      payload: { ...(path ? { path } : {}), message },
+    }),
+  };
 }
 
 /** A refused grant as the tool's error: `permission_denied` with its reason (§9). */
@@ -102,18 +142,13 @@ export function fileAccessDeniedError(
   command: DocumentCommandName,
   denial: FileAccessDenied,
   path?: string,
+  removal?: DocumentRemovalRecord,
 ): WriteToolErrorOutput {
+  if (!isPermissionDenial(denial))
+    return removal
+      ? removedFileResult(command, removal, path)
+      : documentNotFoundError(command, path);
   const at = path ? { path } : {};
-  if (!isPermissionDenial(denial)) {
-    return {
-      isError: true,
-      output: modelResult({
-        command,
-        status: "document_not_found",
-        payload: { ...at, message: documentNotFoundMessage(command) },
-      }),
-    };
-  }
   return {
     isError: true,
     output: modelResult({
@@ -160,27 +195,4 @@ export async function containerReadonly(
   const target = await threadContainerTarget(deps.works, context.resolution, path);
   if (!target) return undefined;
   return isFileAccessDenied(await deps.fileAccess.authorize(principal, target, "edit"));
-}
-
-/** A partial undo or redo says which writes stayed, and why, after what it reversed. */
-export function withRefusedWrites(outcome: RoutedWriteOutcome) {
-  const { refusedWrites, ...written } = outcome;
-  if (!refusedWrites?.length) return written;
-  const verb = written.command === "redo" ? "redone" : "undone";
-  const notes = refusedWrites.map(({ writeIds, denial }) => {
-    const why = isPermissionDenial(denial)
-      ? permissionDeniedMessage(denial)
-      : deletedFileMessage("reversal");
-    if (writeIds.length === 0) return why;
-    return `${writeIds.join(", ")} ${writeIds.length === 1 ? "wasn't" : "weren't"} ${verb}. ${why}`;
-  });
-  const [first] = refusedWrites;
-  return {
-    ...written,
-    result: {
-      ...written.result,
-      ...(first && isPermissionDenial(first.denial) ? { reason: first.denial.reason } : {}),
-      message: [written.result.message, ...notes].filter(Boolean).join("\n\n"),
-    },
-  };
 }

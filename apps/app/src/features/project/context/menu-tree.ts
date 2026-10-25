@@ -1,14 +1,4 @@
-/**
- * The pure part of a document menu's tree: project areas as folders that hold
- * their catalogs' files, an "Earlier notes" folder in a rebound chat's Scratch,
- * and the lookups that turn a picked row back into a tab. `DrillInMenu` and the
- * rail's Scratch section both draw trees built here, so a note lists the same
- * way wherever it is browsed.
- *
- * `rooted` puts the areas themselves at the top (the dock document's menu
- * climbs to them); unrooted, the single area's own entries are the top level
- * (the rail's Scratch section).
- */
+/** Catalog-backed project areas and opening trails for path and placement menus. */
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Folder, type LucideIcon } from "lucide-react";
@@ -70,23 +60,15 @@ function areaTop(area: MenuArea): DrillNode[] {
 
 export function buildMenuTree({
   heading,
-  empty,
   areas,
-  rooted,
 }: {
   heading: string;
-  empty?: string;
   areas: readonly MenuArea[];
-  rooted: boolean;
 }): DrillTree {
   return {
     heading,
-    empty,
     children: (folderId) => {
-      if (folderId === null) {
-        if (rooted) return areas.filter((area) => area.listed).map(areaNode);
-        return areas[0] ? areaTop(areas[0]) : [];
-      }
+      if (folderId === null) return areas.filter((area) => area.listed).map(areaNode);
       const area = areas.find((candidate) => candidate.id === folderId);
       if (area) return areaTop(area);
       for (const candidate of areas) {
@@ -114,17 +96,27 @@ export function menuTabFor(areas: readonly MenuArea[], rowId: string): ServerCon
   return null;
 }
 
-/** The folders, outermost first, that hold the file at `path` in an area's own catalog. */
-export function foldersIn(area: MenuArea, path: string): DrillNode[] {
+/**
+ * The trail that walks an area's own catalog down through `folders` (names from
+ * the area root): the area, then each folder, outermost first. Every menu that
+ * opens along a path builds its trail here; callers choose how far down.
+ */
+export function trailAlong(area: MenuArea, folders: readonly string[]): DrillNode[] {
   const { catalog } = area;
-  if (!catalog) return [];
-  const folders = path.split("/").filter(Boolean).slice(0, -1);
-  return folders.flatMap((_, index) => {
-    const folder = catalog.findPath(`/${folders.slice(0, index + 1).join("/")}`);
-    return folder?.kind === "dir"
-      ? [{ id: folder.entryId, name: folder.name, folder: true, icon: Folder }]
-      : [];
-  });
+  const nodes = catalog
+    ? folders.flatMap((_, index) => {
+        const folder = catalog.findPath(`/${folders.slice(0, index + 1).join("/")}`);
+        return folder?.kind === "dir"
+          ? [{ id: folder.entryId, name: folder.name, folder: true, icon: Folder }]
+          : [];
+      })
+    : [];
+  return [areaNode(area), ...nodes];
+}
+
+/** The segments of a catalog path, from the area root. */
+export function pathSegments(path: string): string[] {
+  return path.split("/").filter(Boolean);
 }
 
 /** Catalog snapshots span multiple areas; an ID must belong to this projected source. */
@@ -139,11 +131,6 @@ export function menuEntryFor(catalog: CatalogContextView, rowId: string): Catalo
   return catalog.findPath(`/${entry.path.join("/")}`);
 }
 
-/** Segment-aware containment for forbidding a folder's own subtree as a destination. */
-export function isFolderWithin(path: string, ancestor: string): boolean {
-  return path === ancestor || path.startsWith(`${ancestor}/`);
-}
-
 /** A crumb opens the list it sits in; an area absent from the root opens inside itself. */
 export function crumbTrailFor(
   area: MenuArea | null | undefined,
@@ -151,6 +138,6 @@ export function crumbTrailFor(
   depth: number,
 ): DrillNode[] {
   if (!area) return [];
-  const trail = [areaNode(area), ...foldersIn(area, path)];
+  const trail = trailAlong(area, pathSegments(path).slice(0, -1));
   return trail.slice(0, depth === 0 && !area.listed ? 1 : depth);
 }

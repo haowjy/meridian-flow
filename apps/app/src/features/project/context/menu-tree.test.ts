@@ -1,13 +1,18 @@
+/**
+ * Menu tree behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - project menu drill-in algorithm
+ */
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import {
-  areaNode,
   buildMenuTree,
   crumbTrailFor,
-  foldersIn,
-  isFolderWithin,
   type MenuArea,
   menuEntryFor,
+  pathSegments,
+  trailAlong,
 } from "./menu-tree";
 
 type Entry = { entryId: string; kind: "dir" | "file"; name: string; path: string; parent: string };
@@ -68,7 +73,6 @@ describe("a document menu's tree", () => {
     const tree = buildMenuTree({
       heading: "My Serial",
       areas: [manuscript, uploads],
-      rooted: true,
     });
     expect(tree.children(null).map((node) => node.name)).toEqual(["Manuscript"]);
     // The open document's own area is held but not offered: it lists its files when asked.
@@ -76,18 +80,13 @@ describe("a document menu's tree", () => {
   });
 
   it("climbs: the open document's trail is its area then its folders, and each step lists in place", () => {
-    const tree = buildMenuTree({ heading: "My Serial", areas: [manuscript], rooted: true });
-    const trail = [areaNode(manuscript), ...foldersIn(manuscript, "/Act/ch.md")];
+    const tree = buildMenuTree({ heading: "My Serial", areas: [manuscript] });
+    const trail = trailAlong(manuscript, pathSegments("/Act/ch.md").slice(0, -1));
     expect(trail.map((node) => node.id)).toEqual(["area:manuscript", "act"]);
     // Back rows pop the trail one level at a time; each level lists what is under it.
     expect(tree.children("act").map((node) => node.name)).toEqual(["ch.md"]);
     expect(tree.children("area:manuscript").map((node) => node.name)).toEqual(["Act"]);
     expect(tree.children(null).map((node) => node.id)).toEqual(["area:manuscript"]);
-  });
-
-  it("lists a single area's entries directly when not rooted", () => {
-    const tree = buildMenuTree({ heading: "Scratch", areas: [manuscript], rooted: false });
-    expect(tree.children(null).map((node) => node.name)).toEqual(["Act"]);
   });
 
   it("puts a rebound chat's earlier notes in one folder above the area's own", () => {
@@ -101,8 +100,8 @@ describe("a document menu's tree", () => {
         ]),
       },
     });
-    const tree = buildMenuTree({ heading: "Scratch", areas: [withEarlier], rooted: false });
-    expect(tree.children(null).map((node) => node.name)).toEqual(["Earlier notes"]);
+    const tree = buildMenuTree({ heading: "Scratch", areas: [withEarlier] });
+    expect(tree.children("area:scratch").map((node) => node.name)).toEqual(["Earlier notes"]);
     expect(tree.children("earlier:area:scratch").map((node) => node.name)).toEqual(["n.md"]);
   });
 });
@@ -125,18 +124,10 @@ describe("folder picker boundaries", () => {
         area("m", "Manuscript", { catalog: m }),
         area("k", "Knowledge Base", { scheme: "kb", catalog: k }),
       ],
-      rooted: true,
     });
     expect(menuEntryFor(m, "k-act")).toBeNull();
     expect(menuEntryFor(k, "k-act")?.entryId).toBe("k-act");
     expect(tree.children("k-act").map((node) => node.name)).toEqual(["note.md"]);
-  });
-
-  it("rejects self and descendants without rejecting similarly prefixed siblings or parents", () => {
-    expect(isFolderWithin("/Act", "/Act")).toBe(true);
-    expect(isFolderWithin("/Act/Scene", "/Act")).toBe(true);
-    expect(isFolderWithin("/Act Two", "/Act")).toBe(false);
-    expect(isFolderWithin("/", "/Act")).toBe(false);
   });
 });
 

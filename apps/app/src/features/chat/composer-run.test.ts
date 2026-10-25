@@ -1,3 +1,9 @@
+/**
+ * Composer run behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - run-state and pending-seed ownership split
+ */
 import type { Turn } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { composerRun } from "./composer-run";
@@ -16,14 +22,6 @@ function seed(id: string, status: Turn["status"]): Turn {
 const writer = turn("u", "user", "complete");
 
 describe("composerRun: what the composer's Stop acts on", () => {
-  it("is the compaction while C runs mid-response, after the reply before it settled", () => {
-    const compaction = turn("c", "compaction", "pending");
-    expect(composerRun([writer, turn("a", "assistant", "complete"), compaction])).toEqual({
-      kind: "placeholder",
-      turn: compaction,
-    });
-  });
-
   it("is the brief a Retry appended, with a message sent during it queued after", () => {
     const retry = seed("s2", "pending");
     expect(composerRun([seed("s", "error"), retry, turn("u", "user", "complete")])).toEqual({
@@ -32,9 +30,13 @@ describe("composerRun: what the composer's Stop acts on", () => {
     });
   });
 
+  it("leaves a compaction to the record: the chat Stop handles it", () => {
+    expect(composerRun([writer, turn("c", "compaction", "pending")])).toBeNull();
+  });
+
   it("ignores a placeholder older than the latest settled reply", () => {
     expect(
-      composerRun([turn("c", "compaction", "pending"), writer, turn("a", "assistant", "complete")]),
+      composerRun([seed("s", "pending"), writer, turn("a", "assistant", "complete")]),
     ).toBeNull();
   });
 });

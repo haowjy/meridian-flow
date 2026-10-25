@@ -1,19 +1,27 @@
-/** Resolve and spell standard Markdown document hrefs against Context URIs. */
+/** Resolve and spell standard Markdown link hrefs against Context URIs. */
 
-import { type ParsedContextUri, parseContextUri, splitDocumentHrefSuffix } from "./context-uri.js";
+import {
+  formatParsedContextUri,
+  type ParsedContextUri,
+  parseContextUri,
+  splitDocumentHrefSuffix,
+} from "./context-uri.js";
 import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
 
 export { splitDocumentHrefSuffix } from "./context-uri.js";
 
-export type ResolvedDocumentHref = { uri: string; suffix: string };
+export type LinkAddressKind = "document" | "folder";
+export type LinkAddress = { kind: LinkAddressKind; uri: string };
+export type ResolvedDocumentHref = LinkAddress & { suffix: string };
 
 export function resolveDocumentHref(
   href: string,
   baseUri: string | null,
 ): ResolvedDocumentHref | null {
   const { path: rawPath, suffix } = splitDocumentHrefSuffix(href);
-  if (!rawPath || rawPath.startsWith("/") || rawPath.endsWith("/")) return null;
-  const path = decodePath(rawPath);
+  if (!rawPath || rawPath.startsWith("/")) return null;
+  const kind = rawPath.endsWith("/") ? "folder" : "document";
+  const path = decodePath(kind === "folder" ? rawPath.slice(0, -1) : rawPath);
   if (path === null || !path) return null;
   // A full URI is only one that starts with `scheme://`; the scheme is
   // case-insensitive, as in any URI. Anything else is a path relative to the
@@ -21,7 +29,7 @@ export function resolveDocumentHref(
   const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(path)?.[1];
   if (scheme) {
     const full = parseContextUri(scheme.toLowerCase() + path.slice(scheme.length));
-    return full.ok && full.value.path ? { uri: full.value.normalized, suffix } : null;
+    return full.ok && full.value.path ? { kind, uri: full.value.normalized, suffix } : null;
   }
   if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return null;
   if (!baseUri) return null;
@@ -37,33 +45,45 @@ export function resolveDocumentHref(
     } else segments.push(part);
   }
   if (!segments.length) return null;
-  return { uri: format(base.value, segments.join("/")), suffix };
+  return {
+    kind,
+    uri: formatParsedContextUri(base.value.scheme, segments.join("/"), base.value.authority),
+    suffix,
+  };
 }
 
-export function spellDocumentHref(holderUri: string | null, targetUri: string): string {
-  const target = parseContextUri(targetUri);
-  if (!target.ok || !target.value.path)
-    throw new RangeError(`Invalid target Context URI: ${targetUri}`);
+export function spellDocumentHref(holderUri: string | null, target: LinkAddress): string {
+  const parsedTarget = parseContextUri(target.uri);
+  if (!parsedTarget.ok || !parsedTarget.value.path)
+    throw new RangeError(`Invalid target Context URI: ${target.uri}`);
   if (holderUri) {
     const holder = parseContextUri(holderUri);
     if (
       holder.ok &&
       holder.value.path &&
-      holder.value.scheme === target.value.scheme &&
-      sameAuthority(holder.value, target.value)
+      holder.value.scheme === parsedTarget.value.scheme &&
+      sameAuthority(holder.value, parsedTarget.value)
     ) {
       const from = holder.value.path.split("/");
       from.pop();
-      const to = target.value.path.split("/");
+      const to = parsedTarget.value.path.split("/");
       // The target's last segment is its filename, never a shared folder.
       while (from.length && to.length > 1 && from[0] === to[0]) {
         from.shift();
         to.shift();
       }
-      return encodePath([...from.map(() => ".."), ...to].join("/"));
+      return (
+        encodePath([...from.map(() => ".."), ...to].join("/")) +
+        (target.kind === "folder" ? "/" : "")
+      );
     }
   }
-  return format(target.value, encodePath(target.value.path));
+  const href = formatParsedContextUri(
+    parsedTarget.value.scheme,
+    encodePath(parsedTarget.value.path),
+    parsedTarget.value.authority,
+  );
+  return href + (target.kind === "folder" ? "/" : "");
 }
 
 /** Canonicalize only the filename: folder segments are literal names. */
@@ -117,18 +137,6 @@ function decodePath(path: string): string | null {
   } catch {
     return null;
   }
-}
-
-function format(base: ParsedContextUri, path: string): string {
-  const qualifier =
-    base.authority.kind === "lineage"
-      ? `@/${base.authority.rootThreadRef}`
-      : base.authority.kind === "work"
-        ? `@${base.authority.workSlug}`
-        : base.authority.kind === "none"
-          ? "@"
-          : "";
-  return qualifier ? `${base.scheme}://${qualifier}/${path}` : `${base.scheme}://${path}`;
 }
 
 function sameAuthority(a: ParsedContextUri, b: ParsedContextUri): boolean {

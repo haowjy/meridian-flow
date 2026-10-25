@@ -4,7 +4,11 @@
  * may change document activity timestamps without invalidating a prepared tree
  * mutation.
  */
-import type { Filetype } from "@meridian/contracts/protocol";
+import type {
+  DeleteContextEntryResult,
+  Filetype,
+  RetractionCause,
+} from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 
 export const CONTEXT_ROOT_DIRECTORY_ID = "__context_root__";
@@ -36,6 +40,7 @@ export type ContextTargetExpectation =
   | { state: "occupied"; token: ContextLocationToken };
 
 interface PreparedContextMoveBase {
+  actorUserId?: string;
   /** Source location inspected by ContextTreeMover; commit must prove it still resolves. */
   source: ContextLocationToken;
   /** Project whose holders the move note counts (contract §10); absent, the move counts nothing. */
@@ -90,16 +95,22 @@ export type ContextTreeMutationError =
 export interface ContextTreeMutationResult {
   /** Moved document id for files, or moved root folder id for directory moves. */
   movedNodeId: string;
+  /** Actual free path claimed by the move. */
+  destinationPath: string;
   linkUpdate?: { links: number; documents: number };
 }
 
 export interface ContextTreeDeleteResult {
   /** Exact deleted content identities. Empty-folder deletion has none. */
-  deletedDocumentIds: string[];
+  removed: DeleteContextEntryResult["removed"];
   availabilityGeneration: string;
 }
 
 export type ContextTreeDeleteCommand = {
+  actorUserId?: string;
+  /** The chat whose model deleted it: the removal names "the AI in ‹chat›". */
+  actorThreadId?: string;
+  removal?: { reason: "discarded"; cause: RetractionCause };
   root: ContextLocationToken;
   mode: "recursive";
 };

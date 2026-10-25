@@ -1,5 +1,5 @@
-/** Activity effects of durable writes; document derivation owns projection publication. */
-import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+/** Activity effects of durable writes; document derivation owns projection writes. */
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 
 export type DocumentProjectionEffects = {
   touchDocumentActivity(input: {
@@ -7,5 +7,4 @@ export type DocumentProjectionEffects = {
     threadId?: ThreadId;
     at: Date;
   }): Promise<void>;
-  applyPushCompletion(input: { documentId: DocumentId; workId?: WorkId; at: Date }): Promise<void>;
 };

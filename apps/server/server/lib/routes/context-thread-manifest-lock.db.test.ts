@@ -1,9 +1,8 @@
 /**
- * A thread's list checks manifest membership inside the namespace-locked
- * command transaction; that check must never wait on a lock its own
- * transaction holds. Releasing a live room must never wait on a document lock
- * a caller holds. The model's create onto an existing document is covered by
- * context-thread-existing-document.db.test.ts.
+ * A thread's list checks manifest membership inside the namespace-locked command transaction; that check must never wait on a lock its own transaction holds.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - post-commit room release outside the namespace-lock transaction
  */
 
 import { afterAll, afterEach, beforeEach, describe, it } from "vitest";
@@ -12,11 +11,16 @@ import {
   createTestDocumentLinkScopes,
   testLinkDeps,
 } from "../../domains/collab/test-support/document-link-scopes.js";
+import { createDrizzleContextCatalog } from "../../domains/context/adapters/context-catalog.js";
 import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
 import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
 } from "../../domains/file-policy/index.js";
+import {
+  createTestDocumentRemoval,
+  createTestRemovalDeps,
+} from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -74,7 +78,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
+        ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
+        catalogMutations: createDrizzleContextCatalog(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -88,10 +94,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       collab.bindHocuspocus(hocuspocus);
       fixtures.push({ collab, hocuspocus });
       const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
+        removal: createTestDocumentRemoval(db),
         documentSync: collab,
-        manifestMembership: collab,
+        branches: collab.branches,
       });
       const routeDeps = {
         contextPorts,
@@ -106,6 +114,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadId === THREAD_ID ? ({ threadId, workId: NO_WORK_ID } as never) : null,
         },
         works: createDrizzleProjectWorkRepository({
+          removal: createTestDocumentRemoval(db),
           lineageScratch: createDrizzleLineageScratchLifecycle(db),
           db,
           fileAccessChanges: createLocalFileAccessChanges(),
@@ -124,17 +133,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       await deleteDrizzleRows(db, [
-        schema.branchPushOutboxUpdates,
-        schema.branchPushSettlementOutbox,
         schema.changeTrailDeliveryOutbox,
         schema.changeTrailDocumentDetails,
         schema.changeTrailDocumentOccurrences,
         schema.changeTrailShells,
         schema.pendingNotices,
         schema.agentEditWidCounters,
-        schema.branchWriteJournal,
+        schema.draftWriteJournal,
         schema.pushLineage,
-        schema.documentBranches,
+        schema.documentDrafts,
         schema.documentYjsCheckpoints,
         schema.documentYjsHeads,
         schema.documentYjsUpdates,
@@ -219,7 +226,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const port = await threadPort(fixture);
       const created = await settlesWithin(
         `seed ${path}`,
-        port.write(`manuscript://${path}`, `Existing ${path}.\n`),
+        port.createTrackedDocument(`manuscript://${path}`, `Existing ${path}.\n`),
       );
       if (!created.ok || !created.value.documentId) throw new Error(`could not seed ${path}`);
       await fixture.collab.drainHocuspocusPersistence();

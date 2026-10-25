@@ -1,11 +1,15 @@
-/** One lifecycle owner for lineage provisioning and trash reconciliation. */
+/**
+ * One lifecycle owner for lineage Scratch provisioning and for trash reconciliation of the
+ * sources a thread owns: its lineage's Scratch and its own chat's uploads.
+ */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { contextSources, documents, threads } from "@meridian/database/schema";
-import { and, eq, inArray, isNotNull, type SQLWrapper, sql } from "drizzle-orm";
+import { contextSources, threads } from "@meridian/database/schema";
+import { and, eq, inArray, isNotNull, type SQL, type SQLWrapper, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
+import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import { lockContextNamespaces } from "./context-fs/document-locations.js";
 
 export class LineageScratchUnavailableError extends Error {
@@ -23,12 +27,7 @@ export function lineageHasLiveMember(rootThreadId: string | SQLWrapper) {
 export interface LineageScratchLifecycle {
   requireLive(projectId: string, rootThreadId: string): Promise<void>;
   ensureSource(projectId: string, rootThreadId: string): Promise<string>;
-  /**
-   * Hides or restores the lineages of these threads. Restored content is settled once, after
-   * every namespace key, unless the caller passes `arrived`: then the ids are appended there
-   * and the caller settles the transaction's whole set in one call (stripe order).
-   */
-  reconcile(threadIds: readonly string[], arrived?: DocumentId[]): Promise<void>;
+  reconcile(threadIds: readonly string[]): Promise<void>;
 }
 
 export function createDrizzleLineageScratchLifecycle(
@@ -88,63 +87,67 @@ export function createDrizzleLineageScratchLifecycle(
         if (!existing) throw new LineageScratchUnavailableError();
         return existing.id;
       }),
-    reconcile: (threadIds, arrived) =>
+    reconcile: (threadIds) =>
       runInDrizzleTransaction(db, async () => {
         if (!threadIds.length) return;
-        const restoredContent: DocumentId[] = [];
         const roots = await currentDrizzleDb(db)
           .select({ id: threads.rootThreadId, projectId: threads.projectId })
           .from(threads)
           .where(inArray(threads.id, [...threadIds]));
         for (const projectId of [...new Set(roots.map((root) => root.projectId))].sort())
-          await lock(projectId);
+          await lockContextNamespaces(db, { projectId, userId: "" }, [
+            { scheme: "scratch", workId: null },
+            { scheme: "uploads", workId: null },
+          ]);
         for (const rootThreadId of [...new Set(roots.map((root) => root.id))].sort()) {
-          const hidden = await currentDrizzleDb(db)
-            .select({ id: contextSources.id })
-            .from(contextSources)
-            .where(
-              and(
-                eq(contextSources.scope, "lineage"),
-                eq(contextSources.rootThreadId, rootThreadId),
-                isNotNull(contextSources.deletedAt),
-              ),
-            );
-          const sources = await currentDrizzleDb(db)
-            .update(contextSources)
-            .set({
-              deletedAt: sql`CASE WHEN ${lineageHasLiveMember(rootThreadId)} THEN NULL ELSE coalesce(${contextSources.deletedAt}, now()) END`,
-            })
-            .where(
-              and(
-                eq(contextSources.scope, "lineage"),
-                eq(contextSources.rootThreadId, rootThreadId),
-              ),
-            )
-            .returning({ id: contextSources.id, deletedAt: contextSources.deletedAt });
-          const restored = sources.filter(
-            (source) => source.deletedAt === null && hidden.some((row) => row.id === source.id),
+          await reconcileSources(
+            and(eq(contextSources.scope, "lineage"), eq(contextSources.rootThreadId, rootThreadId)),
+            lineageHasLiveMember(rootThreadId),
           );
-          if ((arrived || arrivals) && restored.length) {
-            const content = await currentDrizzleDb(db)
-              .select({ id: documents.id })
-              .from(documents)
-              .where(
-                and(
-                  inArray(
-                    documents.contextSourceId,
-                    restored.map((source) => source.id),
-                  ),
-                  eq(documents.kind, "content"),
-                ),
-              );
-            restoredContent.push(...content.map((document) => document.id as DocumentId));
-          }
-          await catalog?.refreshSources(sources.map((source) => source.id));
         }
-        // The registry filters deleted documents/ancestors and only settles once. Every
-        // root's Scratch namespace is held by now; one call keeps the stripes sorted.
-        if (arrived) arrived.push(...restoredContent);
-        else if (arrivals && restoredContent.length) await arrivals.settle(restoredContent);
+        // A chat's uploads follow that chat's own trash state, not its lineage's.
+        await reconcileSources(
+          and(
+            eq(contextSources.scope, "chat"),
+            inArray(contextSources.chatThreadId, [...new Set(threadIds)]),
+          ),
+          sql`NOT EXISTS (SELECT 1 FROM threads chat WHERE chat.id = ${contextSources.chatThreadId} AND chat.deleted_at IS NOT NULL)`,
+        );
       }),
   };
+
+  /** Hide the owner's sources while it is not live and reopen them on restore. */
+  async function reconcileSources(owned: SQL | undefined, live: SQLWrapper) {
+    const hidden = await currentDrizzleDb(db)
+      .select({ id: contextSources.id })
+      .from(contextSources)
+      .where(and(owned, isNotNull(contextSources.deletedAt)));
+    const sources = await currentDrizzleDb(db)
+      .update(contextSources)
+      .set({
+        deletedAt: sql`CASE WHEN ${live} THEN NULL ELSE coalesce(${contextSources.deletedAt}, now()) END`,
+      })
+      .where(owned)
+      .returning({ id: contextSources.id, deletedAt: contextSources.deletedAt });
+    const restored = sources.filter(
+      (source) => source.deletedAt === null && hidden.some((row) => row.id === source.id),
+    );
+    if (arrivals && restored.length) {
+      // Arrivals are live: a branch's hidden documents in a restored source settle nothing.
+      const liveTree = visibleDocuments(LIVE_TREE);
+      const content = await currentDrizzleDb(db)
+        .select({ id: liveTree.id })
+        .from(liveTree)
+        .where(
+          inArray(
+            liveTree.contextSourceId,
+            restored.map((source) => source.id),
+          ),
+        );
+      // The registry filters deleted ancestors and only settles once.
+      // Reconciliation already holds the namespaces in this transaction.
+      await arrivals.settle(content.map((document) => document.id as DocumentId));
+    }
+    await catalog?.refreshSources(sources.map((source) => source.id));
+  }
 }

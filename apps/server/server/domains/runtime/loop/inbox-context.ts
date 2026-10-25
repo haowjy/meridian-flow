@@ -22,6 +22,7 @@
  * The shared context assembler owns all rendering, including image projection
  * across the complete request's occurrence budget.
  */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, BlockUpsertedRow, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
@@ -32,12 +33,18 @@ import {
   workUpdateMetadata,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
-import type { ShownLinkShowing } from "../ports/shown-links.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { formatNotices } from "./context-builder.js";
 import { createLocalTurn } from "./local-turn.js";
 import type { PersistenceDeps } from "./persistence.js";
 import type { InboxMessage } from "./ports.js";
+import {
+  hasReferenceEvidence,
+  mergeReferenceEvidence,
+  NO_REFERENCE_EVIDENCE,
+  type ReferenceEvidence,
+} from "./reference-context.js";
 import type { RenderedWorkContext } from "./work-context.js";
 
 /** The rich blocks (and any hidden sibling turns) an adopted turn's preparation resolved. */
@@ -52,8 +59,8 @@ export interface AdoptedTurnPreparation {
    * model-only content must live on its own turn.
    */
   extraTurns?: readonly { turn: Turn; blocks: readonly Block[] }[];
-  /** Host-only reference-read candidates, recorded only by the commit that persists `events`. */
-  shown?: readonly ShownLinkShowing[];
+  /** Host-only reference-read evidence, recorded only by the commit that persists `events`. */
+  evidence?: ReferenceEvidence;
 }
 
 /** The loop's view of one drained batch: durable turns/blocks for the loop's in-memory accumulator. */
@@ -65,8 +72,8 @@ export interface InboxDrain {
   events: OrchestratorEvent[];
   /** Ids of the whole claimed batch, acked with the response that carries it. */
   ackIds: string[];
-  /** Host-only candidates from adopted turns' reference reads, recorded with `events`. */
-  shown?: ShownLinkShowing[];
+  /** Host-only evidence from adopted turns' reference reads, recorded with `events`. */
+  evidence?: ReferenceEvidence;
 }
 
 /**
@@ -104,7 +111,7 @@ export async function drainInbox(input: {
   const adoptedTurnsByMessageId = new Map<string, Turn[]>();
   const adoptedBlocks: Block[] = [];
   const adoptedEventsByMessageId = new Map<string, OrchestratorEvent[]>();
-  const shown: ShownLinkShowing[] = [];
+  let evidence: ReferenceEvidence = NO_REFERENCE_EVIDENCE;
   for (const message of batch) {
     if (message.intent !== "message" && message.body.kind !== "work_context_refresh") {
       fresh.push(message);
@@ -117,7 +124,7 @@ export async function drainInbox(input: {
     // second append, and carries the turn into the run's accumulator. The
     // adopted blocks render the request, not the plain inbox body: rich content
     // (images, reference reads, skill anchors) lives on the persisted turn.
-    const existing = await input.persistence.repos.turns.findById(message.id as TurnId);
+    const existing = await turnGraph(input.persistence.repos.turns).findById(message.id as TurnId);
     if (existing) {
       let blocks = await input.persistence.repos.blocks.listByTurn(existing.id);
       const extraTurns: Turn[] = [];
@@ -125,7 +132,7 @@ export async function drainInbox(input: {
         const prepared = await input.prepareAdoptedTurn(existing, blocks);
         blocks = prepared.blocks;
         adoptedEventsByMessageId.set(message.id, [...(prepared.events ?? [])]);
-        shown.push(...(prepared.shown ?? []));
+        evidence = mergeReferenceEvidence(evidence, prepared.evidence);
         for (const extra of prepared.extraTurns ?? []) {
           extraTurns.push(extra.turn);
           adoptedBlocks.push(...extra.blocks);
@@ -164,7 +171,7 @@ export async function drainInbox(input: {
     ? ((await input.persistence.repos.threads.findById(input.threadId))?.activeLeafTurnId ?? null)
     : input.expectedLeafTurnId;
   const activeLeafTurn = activeLeaf
-    ? await input.persistence.repos.turns.findById(activeLeaf)
+    ? await turnGraph(input.persistence.repos.turns).findById(activeLeaf)
     : null;
   if (activeLeaf && !activeLeafTurn) throw new Error(`Missing causal turn: ${activeLeaf}`);
   const plan = planMessageTurns({
@@ -220,7 +227,7 @@ export async function drainInbox(input: {
     blocks: [...adoptedBlocks, ...plannedBlocks],
     events,
     ackIds: batch.map((message) => message.id),
-    ...(shown.length > 0 ? { shown } : {}),
+    ...(hasReferenceEvidence(evidence) ? { evidence } : {}),
   };
 }
 
@@ -277,7 +284,7 @@ export function planMessageTurns(input: {
         turnId: turn.id,
         threadId: message.threadId,
         projectId: current.projectId,
-        scope: { workId: scope.workId, workSlug: scope.workSlug },
+        scope: { workId: scope.workId, workHandle: scope.workHandle },
       });
     }
     leafTurnId = turn.id;
@@ -406,6 +413,10 @@ export function inboxMessageText(message: InboxMessage): string {
       return message.body.instructions
         ? `/compact ${message.body.instructions}`
         : "Compact conversation";
+    case "write_mode":
+      return message.body.mode === "direct"
+        ? "Switch this chat to auto-apply"
+        : "Switch this chat to draft mode";
     case "work_context_refresh":
       return "";
     case "text":

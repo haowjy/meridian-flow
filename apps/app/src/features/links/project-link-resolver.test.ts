@@ -1,9 +1,12 @@
 /**
  * Where each internal link's answer comes from: the scope's local index at
  * once, or the server, and which of the two wins when both speak.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - draft-only link review destination policy
  */
 
-import type { DocumentLinkAnswer } from "@meridian/contracts";
+import { type DocumentLinkAnswer, parseLinkRef } from "@meridian/contracts";
 import { expect, it, vi } from "vitest";
 
 import { resolveDocumentLinks } from "@/client/api/document-links-api";
@@ -54,7 +57,7 @@ const found = (
     uri: `manuscript://${name}.md`,
     workId: null,
   },
-  inDraft: false,
+  inBranch: false,
 });
 
 type Row = {
@@ -239,15 +242,16 @@ const ROWS: Row[] = [
     asked: ["Ten.md"],
   },
   {
-    rule: "a holder whose address has not arrived asks the server nothing",
+    rule: "a holder id lets the server pin an absolute link while its address is pending",
     links: [
       { ref: AHEAD, href: "manuscript://Ten.md" },
       { ref: null, href: "Ten.md" },
     ],
     scope: { baseUri: null, holderDocumentId: "00000000-0000-4000-8000-0000000000bb" },
-    before: [null, null],
-    after: [null, null],
-    asked: [],
+    server: { [AHEAD]: { state: "missing", uri: "manuscript://Ten.md" } },
+    before: ["pending", null],
+    after: ["missing", null],
+    asked: [AHEAD],
   },
 ];
 
@@ -279,7 +283,7 @@ it("routes each link to the local index or the server", async () => {
     resolution.registerResolver(
       createProjectLinkResolver(
         scope,
-        { documents: DOCUMENTS, revision: "r", complete: row.complete ?? true },
+        { documents: DOCUMENTS, folders: [], revision: "r", complete: row.complete ?? true },
         settlements,
       ),
       { baseUri: scope.baseUri },
@@ -305,10 +309,18 @@ it("routes each link to the local index or the server", async () => {
       )
       .toEqual(row.after);
     expect.soft(asked, row.rule).toEqual(row.asked);
+    if (row.scope?.holderDocumentId && row.asked.length > 0) {
+      expect
+        .soft(server, row.rule)
+        .toHaveBeenCalledWith(
+          "p",
+          expect.objectContaining({ holderDocumentId: row.scope.holderDocumentId }),
+        );
+    }
     if (row.heard) expect.soft(heard, row.rule).toBe(true);
     if (click) expect.soft(show(await click), row.rule).toBe(row.clicked);
 
-    // A gone link is not followed: nothing opens, and nothing is said.
+    // A gone stable document ref reaches navigation, which confirms whether it is in Trash.
     const [link] = row.links;
     const target = link && classifyLinkTarget(link.href);
     if (row.after[0] === "gone" && link && target) {
@@ -327,7 +339,10 @@ it("routes each link to the local index or the server", async () => {
         },
         signal: new AbortController().signal,
       });
-      expect.soft(events, row.rule).toEqual(["clear"]);
+      const parsed = parseLinkRef(link.ref);
+      expect
+        .soft(events, row.rule)
+        .toEqual(["clear", ...(parsed?.kind === "doc" ? [`open:${parsed.documentId}`] : [])]);
     }
 
     // Later catalogs: the documents move, and the server answers again or cannot be reached.
@@ -337,7 +352,7 @@ it("routes each link to the local index or the server", async () => {
       resolution.registerResolver(
         createProjectLinkResolver(
           scope,
-          { documents: later.documents, revision: `r${at + 2}`, complete: true },
+          { documents: later.documents, folders: [], revision: `r${at + 2}`, complete: true },
           settlements,
         ),
         { baseUri: scope.baseUri },
@@ -350,4 +365,51 @@ it("routes each link to the local index or the server", async () => {
       expect.soft(read(), label).toEqual(later.after);
     }
   }
+});
+
+it("a link to a document that exists only in a draft is followed to that Work's review", async () => {
+  const BRANCH = "00000000-0000-4000-8000-0000000000d1";
+  const ref = AHEAD;
+  server.mockReset();
+  server.mockResolvedValue({
+    answers: [
+      { ...found(KAEL, "Kael"), inBranch: true, branch: { branchId: BRANCH, workId: "w2" } },
+    ],
+  });
+  const resolution = createLinkAnswerCache();
+  resolution.registerResolver(
+    createProjectLinkResolver(
+      { projectId: "p", workId: "w", baseUri: HOLDER },
+      { documents: [], folders: [], revision: "r", complete: true },
+      createLinkSettlements(),
+    ),
+    { baseUri: HOLDER },
+  );
+  const href = "manuscript://Kael.md";
+  const target = classifyLinkTarget(href);
+  if (!target) throw new Error("unclassified");
+  const opened: unknown[] = [];
+  await followProjectLink({
+    target,
+    ref,
+    gesture: "current",
+    resolution,
+    open: async (document) => void opened.push(document),
+    reporter: { report: () => {}, clear: () => {} },
+    signal: new AbortController().signal,
+  });
+  expect(resolution.read({ ref, href })).toMatchObject({
+    branch: { branchId: BRANCH, workId: "w2" },
+  });
+  expect(opened).toEqual([
+    {
+      documentId: KAEL,
+      review: {
+        workId: "w2",
+        itemKey: `${BRANCH}:${KAEL}`,
+        contextLocation: { scheme: "manuscript", path: "/Kael.md" },
+        documentName: "Kael",
+      },
+    },
+  ]);
 });

@@ -1,0 +1,15 @@
+{
+  "steps": [
+    {
+      "error": {
+        "status": 503,
+        "message": "Mock provider temporarily unavailable"
+      },
+      "times": 1
+    },
+    {
+      "sample": "outline",
+      "chunkDelayMs": 10
+    }
+  ]
+}

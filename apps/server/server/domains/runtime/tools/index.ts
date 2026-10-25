@@ -53,6 +53,7 @@ export { createToolRegistry } from "./tool-registry.js";
 export type {
   InterruptResponse,
   InterruptToolHandlerContext,
+  ResultEvidence,
   ToolCallInput,
   ToolExecutionContext,
   ToolExecutionResult,

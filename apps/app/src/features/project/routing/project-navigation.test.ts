@@ -1,3 +1,9 @@
+/**
+ * Project navigation behavior.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - intent and native-history coordination
+ */
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -205,7 +211,7 @@ it("address replacement neither prompts nor supersedes a pending writer navigati
   expect(
     await navigation.replaceIfCurrent(
       navigation.capture(),
-      address("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a?draft=draft-a"),
+      address("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a?item=draft-a"),
     ),
   ).toEqual({ kind: "superseded" });
   expect(request).toHaveBeenCalledOnce();

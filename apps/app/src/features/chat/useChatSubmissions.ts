@@ -1,10 +1,13 @@
-/** Mount binding: cancellation, external wakes, and keyed accessibility presentation. */
-import { t } from "@lingui/core/macro";
+/** Mount binding: cancellation and external wakes. A failed send is a card (`chatCards`), never announced here. */
+import type { AiWriteMode } from "@meridian/contracts/works";
+import type { JournalSwitch } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useLayoutEffect, useReducer, useRef } from "react";
 import {
+  CHAT_SUBMISSIONS_STORAGE_PREFIX,
   getChatSubmissionAccountId,
   getChatSubmissionEpoch,
+  submissionReplayChanged,
   subscribeChatSubmissions,
 } from "@/client/chat-submissions";
 import {
@@ -16,9 +19,12 @@ import { threadAvailability } from "@/client/chat-submissions/thread-availabilit
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { announceError, clearAnnouncement, type ThreadStoreActions } from "@/client/stores";
+import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
+
+const NO_SWITCHES: readonly JournalSwitch[] = [];
+
 export function useChatSubmissions(
   threadId: string,
   projectId: string,
@@ -35,7 +41,9 @@ export function useChatSubmissions(
   const driver = useRef<ChatSubmissionOwner | null>(null);
   const [, render] = useReducer((value: number) => value + 1, 0);
   const latest = useRef({ actions, focusComposer, dissolveChat, deletion });
-  latest.current = { actions, focusComposer, dissolveChat, deletion };
+  useLayoutEffect(() => {
+    latest.current = { actions, focusComposer, dissolveChat, deletion };
+  }, [actions, deletion, dissolveChat, focusComposer]);
 
   useEffect(() => {
     const lifetime = new AbortController();
@@ -47,12 +55,6 @@ export function useChatSubmissions(
       !signal.aborted &&
       getChatSubmissionAccountId() === accountId &&
       getChatSubmissionEpoch() === epoch;
-    const announcementKeys = new Set<string>();
-    const clearRowAnnouncement = (recordId: string) => {
-      const key = `${accountId}:${recordId}`;
-      clearAnnouncement(key);
-      announcementKeys.delete(key);
-    };
     const owner = new ChatSubmissionOwner({
       accountId,
       threadId,
@@ -63,12 +65,6 @@ export function useChatSubmissions(
       queryClient,
       actions: latest.current.actions,
       changed: render,
-      failed: (recordId) => {
-        const key = `${accountId}:${recordId}`;
-        announcementKeys.add(key);
-        announceError(t`Couldn't send your message.`, { key });
-      },
-      clear: clearRowAnnouncement,
       focusComposer: () => latest.current.focusComposer(),
       dissolveChat: () => latest.current.dissolveChat(),
     });
@@ -91,9 +87,15 @@ export function useChatSubmissions(
     };
     wake();
     const unsubscribe = subscribeChatSubmissions(owner.rebuild);
-    const storage = () => {
+    const storage = (event: StorageEvent) => {
+      if (event.storageArea !== window.localStorage) return;
+      if (
+        event.key !== null &&
+        !event.key.startsWith(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}${accountId}:`)
+      )
+        return;
       owner.rebuild();
-      wake();
+      if (event.key === null || submissionReplayChanged(event.oldValue, event.newValue)) wake();
     };
     window.addEventListener("storage", storage);
     window.addEventListener("online", wake);
@@ -121,7 +123,6 @@ export function useChatSubmissions(
     return () => {
       unregisterDeletion();
       lifetime.abort();
-      for (const key of announcementKeys) clearAnnouncement(key);
       owner.dispose();
       if (driver.current === owner) driver.current = null;
       unsubscribe();
@@ -136,5 +137,12 @@ export function useChatSubmissions(
     presentation: driver.current?.presentation,
     submit: (envelope: ComposerSubmitEnvelope) =>
       driver.current?.submit(envelope) ?? Promise.resolve(false),
+    /** Write-mode switches ride the same journal, so they are posted in order with the messages. */
+    switches: {
+      pending: driver.current?.switches ?? NO_SWITCHES,
+      submit: (id: string, mode: AiWriteMode) => driver.current?.submitSwitch(id, mode) ?? false,
+      retry: (id: string) => driver.current?.retrySwitch(id),
+      withdraw: (id: string) => driver.current?.withdrawSwitch(id) ?? Promise.resolve("admitted"),
+    },
   };
 }

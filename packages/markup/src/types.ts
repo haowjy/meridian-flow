@@ -6,6 +6,7 @@ import type { PluggableList } from "unified";
 
 import type { MdastRoot } from "./ast.js";
 import type { CodecParseErrorLocation } from "./error.js";
+import type { PreparedSource } from "./prepared-source.js";
 
 export type { CodecParseErrorLocation, PMNode, SpelledHref };
 
@@ -88,7 +89,7 @@ export interface MarkupPlugin {
   blocks?: readonly BlockCodec[];
   marks?: readonly MarkCodec[];
   remarkPlugins?: PluggableList;
-  preprocess?: (text: string) => string;
+  preprocess?: (text: string) => string | PreparedSource;
   /** Receives the preprocessed source matching AST positions, including internal reparses. */
   postParse?: (root: MdastRoot, source: string) => MdastRoot;
   /** Format-specific wrapping applied after a block's ordinary codec. */
@@ -112,7 +113,36 @@ export interface MarkupCodec {
   /** Pure syntax: every link `ref` is null and every href is as written. */
   parse(content: string): ParsedContent;
   parseWithSpans(content: string): ParsedContentWithSpans;
+  parseWithSourceMap(content: string): ParsedContentWithSourceMap;
   serialize(blocks: PMNode[], links: DocumentLinkScope): string;
   serializeBlock(block: PMNode, links: DocumentLinkScope): string;
   serializeBlocks(blocks: readonly PMNode[], links: DocumentLinkScope): string[];
+  /** One canonical whole-source parse for presentation while Markdown is arriving. */
+  parseStreaming(content: string, options?: MarkdownStreamOptions): MarkdownStreamResult;
+}
+
+export interface MarkdownStreamOptions {
+  repair?: boolean;
+}
+
+export interface MarkdownStreamResult {
+  readonly blocks: readonly PMNode[];
+  /** The exact code node whose fenced construct is awaiting more input. */
+  readonly openCode: PMNode | null;
+}
+
+/** Original source offsets, never stored on document nodes. */
+export interface SourceRange {
+  from: number;
+  to: number;
+}
+export interface PresentationSourceRun {
+  kind: "text" | "link";
+  /** Text offset is within the addressed PM text node; links count sibling nodes. */
+  at: { block: number; path: number[]; count: number; offset?: number };
+  source: SourceRange | null;
+}
+export interface ParsedContentWithSourceMap extends ParsedContent {
+  sourceMap: PresentationSourceRun[];
+  openCode: PMNode | null;
 }

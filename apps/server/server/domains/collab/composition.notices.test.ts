@@ -42,5 +42,6 @@ function noticePort(record: NoticePort["record"]): NoticePort {
       return [];
     },
     async consume() {},
+    async retractForPushes() {},
   };
 }

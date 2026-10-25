@@ -10,15 +10,24 @@ Chat Work. Unresolved Editor Work cannot bootstrap Context or register a
 removal host. The selected-tab map is keyed by Work row id; project-scoped
 files retain the Editor's Work context.
 
-`ProjectDocumentNavigationAdapter` opens both tracked editors and existing
-read-only Context viewers through the one stable-ID opener. Its lower-level
-`not-editable` result means no live Yjs admission, not a failed navigation:
-Editor-eligible project binary/custom metadata still opens a viewer tab and route.
+`ProjectDocumentNavigationAdapter` turns a known file identity into an Editor,
+dock, or background destination before content opens. An ID absent from the
+in-memory resource projection waits for one availability lookup; its available
+answer is consumed once by the installed tab instance. The destination alone
+opens local content, admits the live room, and presents Retry. Read-only Context
+files still open viewer tabs without live Yjs admission. Background tabs do not
+carry lookup answers because they acquire content only when shown. Closing or
+replacing a destination discards its unconsumed answer.
 Scratch documents open Editor tabs owned by their resolved Work, or by their lineage
 (`rootThreadId` and the handle its URI spells) when they are a No Work chat's notes.
 Uploads route to the deferred-viewing notice without opening a tab. The resolved file's
-Work/no-Work authority overrides the invoking surface's Work; only project-scoped
+Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
+
+The resource projection has explicit pending, ready, and failed states. A host
+without a resource handle waits for the first ready snapshot; pending is never
+treated as missing local content. A failed projection falls back to the
+transactional identity lookup.
 
 Availability command admission rejects while removal is suspended or disposed;
 an empty successful receipt would let the availability owner falsely acknowledge
@@ -76,12 +85,25 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
        ├─ useCreateEntryForm ────────────────┤
        ├─ useEntryInteraction ───────────────┤
        │     └─ rename forms + move picker   │
-       ├─ useDeleteConfirmation ─────────────┤
+       ├─ useDeleteContextEntry ─────────────┤
        └─ ContextEntryActions (menus) ───────┘
                      │
       useInlineEdit (components/ui, shared core)
                      │
           validateContextEntryName (pure)
+
+Delete and move notices share one notice place per surface (sidebar, Work
+Files, phone browser, chat Files menu), drawn with `SurfaceNotice`: a newer
+notice of either kind replaces the older (`useNoticeSlot`). Each kind has one
+owner per project, mounted together by `ProjectNoticesProvider`:
+`DocumentDeleteUndoProvider` for deletes, `MoveNoticesProvider`
+(`entry-drag/move-notice.tsx`) for moves. Each owner keeps its notice's Undo
+and decides from the replica when Undo still applies, so a notice outlives the
+list that published it. A Trash restore reports its removal to the delete
+owner (`useReportRestoredRemovals`), which closes a delete's notice once every
+removal in that delete's receipt came back. `SurfaceNotices` renders a surface's place: in the
+rail between the tree and User; at the foot of Work Files, the phone browser
+and the chat Files menu.
 
 ContextPaneController
        ├─ route ↔ server-tab reconciliation
@@ -100,6 +122,19 @@ ContextPaneController
               ├─ ContextViewerHost (active read-only viewer)
               └─ RecentDocumentsLanding (empty workspace only)
 ```
+
+Document trash is a server snapshot separate from the live catalog projection.
+The tree doesn't read it: the Trash row is a fixed navigation row below Scratch
+(`WorkspaceNavBody`), always shown. The routed `DocumentTrashDialog` owns the
+newest-first list and the selected read-only record in one popup. Desktop keeps
+the list and record side by side; phone shows the list or record, with Back to
+return to the list. The detail reads the server's last Markdown projection and composes
+`ReadOnlyViewerFrame` with `TextViewer`; it never uses the live path-based read.
+Stable-ID navigation confirms a deleted document through that endpoint before
+opening the detail. List and detail restore through one command using the exact
+serialized removal identity. Committed catalog wake hints invalidate the
+snapshot after deletes and restores, while the catalog stream remains the owner
+of a restored document's return to the live tree.
 
 `ContextViewerHost` selects one read-only surface through `previewKind`. A
 tracked-classified viewer read renders as text in every host; collaborative
@@ -145,14 +180,31 @@ Resting crumbs are passive: project-menu acquisition mounts only when a crumb
 opens. The source owns `own.crumbTrail(path, depth)`, including the exception for
 an area not offered at the root; `own.openAt(path)` remains the full folder trail
 used by placement. The first menu mounts with its final trail and highlight IDs.
-`DocumentIdentityBar` measures one shared collapse priority list against its actual
-row width: parent crumbs, icon labels, stepper count, then Apply label. The
-filename keeps 64px and every command remains in the row. A link-update note is a direct sibling of the
-path, so an absent note occupies neither a flex item nor a gap.
-Identity-row touch targets extend vertically to 44px without changing row height.
-Their horizontal hit area is exactly their visible box; gaps, including the full
-gap beside Discard draft, stay unclaimed. The fit ladder measures the real 24px
-minimum control widths on phone/coarse pointers.
+Both trails come from `trailAlong(area, folders)` in `menu-tree.ts`; a folder
+chip's menu uses `trailInside(folderId)`, the trail that ends inside that folder.
+
+### Folder chip menu
+
+`FolderMenu` is the menu every folder chip opens (composer, transcript, Editor):
+the crumbs' drill-in menu, opened inside the folder. It is opened by identity:
+a folder already in a held catalog opens at once; otherwise
+`lookupProjectFolderAvailability` (the `folderIds` availability lookup, never
+cached past the open) says which area holds it now, and the menu source acquires
+that area. Nothing is acquired until a chip is pressed. A surface provides
+`FolderMenuContext` (project and how it opens a document); the Editor builds its
+host from the editor scope and link destination. Deleted, not visible or
+unreachable folders say "This folder is no longer available."
+`DocumentIdentityBar` wraps first: the path and chip stay on line one, and the
+review controls drop to a second line when they don't fit beside them (flex-wrap,
+no breakpoint). The dock's trailing Collapse is pinned to line one and precedes
+the controls in DOM order, so Tab goes line one, then line two. Only a line too
+narrow for the controls even alone gives up labels, in order (stepper count, then
+Apply label), and the path drops its parent crumbs only when the leaf would be
+cut. A link-update note is a direct sibling of the path, so an absent note
+occupies neither a flex item nor a gap. Under a coarse pointer every control
+owns a 44px box (the row grows to 44px; the paired collapse/expand toggles share
+one size), except the filename, whose width yields so line one fits the 280px
+dock. Horizontal hit areas are exactly the visible box; gaps stay unclaimed.
 
 
 Link-update feedback derives its destination from the matched move receipt, not
@@ -160,3 +212,9 @@ from a picker-provided label. The remount registry retains only operation
 selection until settlement plus the receipt note TTL; admission age never
 expires a pending/offline move. Same-folder renames without changed links do
 not claim a placement.
+
+## External-file drops and pending imports
+
+A context tree mounts one drop scope for both catalog-entry moves and external files. The entry route keeps the canonical folder target and move verdicts; the file route captures that same target for import admission. Window-level drop prevention remains active while either route can accept the drag.
+
+Imports add only a temporary root row until reveal. Pending roots have no catalog identity or URI and reserve no namespace names; every revealed node comes from the catalog.

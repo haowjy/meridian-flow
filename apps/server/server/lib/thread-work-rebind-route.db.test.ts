@@ -1,17 +1,23 @@
-import { createDrizzleLineageScratchLifecycle } from "../domains/context/adapters/lineage-scratch-lifecycle.js";
-import { createTestDrizzleDelivery } from "../domains/runtime/loop/__tests__/test-drizzle-delivery.js";
+/**
+ * PostgreSQL coverage for the writer Work-rebind HTTP boundary.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - writer enqueue/rebind lock ordering, busy-thread refusal, and commit-time lifecycle recheck
+ */
 
-/** PostgreSQL coverage for the writer Work-rebind HTTP boundary. */
-
-import { setTimeout as delay } from "node:timers/promises";
 import { createApp, toWebHandler } from "nitro/h3";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createDrizzleLineageScratchLifecycle } from "../domains/context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../domains/file-policy/index.js";
+import { createTestDrizzleDelivery } from "../domains/runtime/loop/__tests__/test-drizzle-delivery.js";
 import {
   resetThreadWorkRaceFixture,
   THREAD_WORK_RACE,
 } from "../domains/threads/test-support/thread-work-postgres-harness.js";
+import { createTestDocumentRemoval } from "../test-support/document-removal.js";
+import { createQuietDrizzleJournalWriter } from "../test-support/journal-writer.js";
+import { waitForPostgresLock } from "../test-support/lock-interleave.js";
 import { createTestWorkProjectionMutation } from "../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -47,6 +53,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 4 });
     const threads = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
+      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),
@@ -67,10 +74,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "writer",
       "rebind",
     ] as const)("commits concurrent writer enqueue and Work rebind with %s first", async (first) => {
-      const { createDrizzleEventJournalWriter, createDrizzleEventJournalReader } = await import(
-        "../domains/threads/index.js"
-      );
+      const { createDrizzleEventJournalReader } = await import("../domains/threads/index.js");
       const { persistWriterEnqueue } = await import("../domains/runtime/loop/writer-enqueue.js");
+      const { createDrizzleTopPrimaryChatResolver } = await import(
+        "../domains/threads/adapters/drizzle/top-primary-chat.js"
+      );
       const { createWorkContextReader } = await import("../domains/runtime/loop/work-context.js");
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
       const untouchedAt = new Date("2000-01-01T00:00:00.000Z");
@@ -81,6 +89,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threads: threads.threads,
           threadWorks: threads.threadWorks,
           works,
+          topPrimaryChats: createDrizzleTopPrimaryChatResolver(db),
           readChainPermission: async () => "edit" as const,
         }),
       });
@@ -96,26 +105,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         `);
       await control`SELECT pg_advisory_lock(${key})`;
       async function waitForLock(wait: string) {
-        for (let attempt = 0; attempt < 200; attempt++) {
+        await waitForPostgresLock(`PostgreSQL ${wait} lock`, async () => {
           const rows = await control`
               SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
               AND wait_event = ${wait} AND pid <> pg_backend_pid()
             `;
-          if (rows.length) return;
-          await delay(10);
-        }
-        throw new Error(`Timed out waiting for ${wait}`);
+          return rows.length ? true : undefined;
+        });
       }
       const turnId = crypto.randomUUID();
       const writer = () =>
         persistWriterEnqueue({
-          persistence: { repos: threads, eventWriter: createDrizzleEventJournalWriter(db) },
+          persistence: { repos: threads, eventWriter: createQuietDrizzleJournalWriter(db) },
           hub: createDrizzleEventJournalReader(db),
           threadId: THREAD_ID,
           userTurnId: turnId,
           userBlocks: [{ type: "text", text: "Keep writing" }],
           delivery,
-          inbox: delivery,
           draft: {
             id: turnId,
             threadId: THREAD_ID,
@@ -190,7 +196,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
       const modelInstance = createDrizzleRunClaim(db);
       const writerInstance = createDrizzleRunClaim(db);
-      const modelClaim = await modelInstance.startExecution(THREAD_ID, "model-run");
+      const modelClaim = await modelInstance.startExecution(THREAD_ID, "model-run", async () => {});
       expect(modelClaim).not.toBeNull();
 
       try {

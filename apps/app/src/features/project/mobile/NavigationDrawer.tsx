@@ -4,17 +4,17 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { RailScratchSection } from "../chat/ChatScratch";
-import { ContextTreePanel } from "../context/ContextTreePanel";
+import { ContextTreePanel, UserRailSection } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
+import { SurfaceNotices } from "../context/project-notices";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
+import { useProjectTrashNavigation } from "../routing/ProjectNavigationContext";
 import { InlineProjectTitle, type ProjectTitleEdit } from "../shell/InlineProjectTitle";
-import { ProjectMenu } from "../shell/ProjectMenu";
 import type { ScreenKey } from "../shell/screens";
-import type { TitleEditHandle } from "../shell/TitleEditSlot";
 import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
 
 export type NavigationDrawerProps = {
@@ -49,19 +49,26 @@ export function NavigationDrawer({
   onSelectContextPath,
   chatThreadId,
 }: NavigationDrawerProps) {
-  const titleEditor = useRef<TitleEditHandle>(null);
+  const trashNavigation = useProjectTrashNavigation();
   const openDocument = useOpenProjectDocument(projectId);
-  const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) => {
+  const handleSelectFile = (
+    scheme: ProjectContextTreeScheme,
+    file: ContextFile,
+    options?: { focus?: true },
+  ) => {
     if (!file.editable) {
       onSelectContextPath(file.path, scheme);
       onOpenChange(false);
       return;
     }
-    void openDocument({ documentId: file.documentId, workId: editorWorkId ?? undefined }).then(
-      (result) => {
-        if (result.kind === "opened") onOpenChange(false);
-      },
-    );
+    void openDocument({
+      documentId: file.documentId,
+      known: { scheme, file, workId: editorWorkId },
+      workId: editorWorkId ?? undefined,
+      ...options,
+    }).then((result) => {
+      if (result.kind === "committed") onOpenChange(false);
+    });
   };
   // The drawer owns its own inline-create state: the desktop shell's shared
   // creation seam (empty state → sidebar) has no phone counterpart — phone
@@ -119,18 +126,11 @@ export function NavigationDrawer({
           <nav aria-label={t`Workspace navigation`} className="flex h-full min-h-0 flex-col">
             <div className="flex h-12 shrink-0 items-center border-b border-border-subtle px-3">
               <InlineProjectTitle
-                editRef={titleEditor}
                 title={projectTitle}
                 {...titleEdit}
                 showRenameHint
                 className="focus-ring flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-semibold hover:bg-sidebar-accent"
                 inputClassName="min-h-11 px-2 text-sm font-semibold"
-              />
-              <ProjectMenu
-                key={projectId}
-                projectId={projectId}
-                project={projectTitle}
-                onRename={() => titleEditor.current?.start(projectTitle)}
               />
             </div>
 
@@ -143,6 +143,25 @@ export function NavigationDrawer({
                 onOpenChange(false);
               }}
               presentation="phone"
+              notice={<SurfaceNotices surface="sidebar" className="mx-3 my-1 shrink-0" />}
+              onOpenTrash={() => {
+                void trashNavigation.navigate(true);
+                onOpenChange(false);
+              }}
+              user={
+                contextLive ? (
+                  <UserRailSection
+                    projectId={projectId}
+                    editorWorkId={editorWorkId}
+                    activeScheme={activeContextScheme}
+                    activePath={activeContextPath}
+                    onSelectFile={handleSelectFile}
+                    creating={creating}
+                    onRequestCreate={setCreating}
+                    onCreateDone={() => setCreating(null)}
+                  />
+                ) : null
+              }
               scratch={
                 <RailScratchSection
                   projectId={projectId}

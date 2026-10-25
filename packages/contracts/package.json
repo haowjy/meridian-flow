@@ -6,10 +6,13 @@
   "exports": {
     ".": "./src/index.ts",
     "./context-uri": "./src/context-uri.ts",
+    "./retention": "./src/deletion-retention.ts",
+    "./handles": "./src/handles.ts",
     "./request-id": "./src/request-id.ts",
     "./context-entry-validation": "./src/context-entry-validation.ts",
     "./components": "./src/components/index.ts",
     "./threads": "./src/threads/index.ts",
+    "./test-support": "./src/threads/golden/index.ts",
     "./projects": "./src/projects/index.ts",
     "./works": "./src/works/index.ts",
     "./interrupt": "./src/interrupt/index.ts",
@@ -19,7 +22,8 @@
     "./runtime": "./src/runtime/index.ts",
     "./agents": "./src/agents/index.ts",
     "./preferences": "./src/preferences/index.ts",
-    "./drafts": "./src/drafts/index.ts"
+    "./branches": "./src/branches/index.ts",
+    "./failures": "./src/failures/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

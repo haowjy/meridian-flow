@@ -19,9 +19,17 @@
  * - A link with no ref resolves by its address: the complete index first
  *   (`matchDocumentPath`, through the catalog's `documentFor`), then the
  *   server.
+ * - A folder (a `folder:` ref, or a directory address) resolves from the local
+ *   index when it can. Otherwise the server answers it in the same request as
+ *   documents, so another Work's Scratch folder still becomes filled or gone.
  */
 
-import { type DocumentLinkAnswer, parseLinkRef, resolveStoredLink } from "@meridian/contracts";
+import {
+  type DocumentLinkAnswer,
+  parseLinkRef,
+  resolveStoredLink,
+  resolveStoredLinkAddress,
+} from "@meridian/contracts";
 import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/context-uri";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
@@ -31,7 +39,6 @@ import {
   type InternalLinkResolver,
   type LinkAnswer,
   type LocalLinkAnswer,
-  linkTargetAddress,
   linkTargetHref,
 } from "@/core/editor/links";
 
@@ -49,22 +56,25 @@ export type LinkResolutionScope = {
   workId: string;
   /**
    * The lineage a bare `scratch://` means, in a No Work chat or in a note of a
-   * lineage. The server takes it in place of the Work; bare `uploads://` stays
-   * the No Work row's.
+   * lineage. The server takes it in place of the Work.
    */
   rootThreadId?: string | null;
+  /** The chat a bare `uploads://` means: the chat itself, or a subagent's top chat. */
+  chatId?: string | null;
   /** The URI of the document holding the link; what a relative link is relative to. */
   baseUri: string | null;
   /**
-   * The document holding the links, when the scope is one document's text.
-   * Its server questions are asked from its address, so until that address
-   * arrives (a new registration) they are not asked at all: a question with
-   * no holder address is chat's, which may fall back to previous locations.
+   * The document holding the links, when the scope is one document's text. The
+   * server pins this identity and its current address; only a relative target
+   * without a base URI remains unasked on the client.
    */
   holderDocumentId?: string | null;
 };
 
-const GONE: LinkAnswer = Object.freeze({ state: "gone", document: null });
+const GONE: Extract<LinkAnswer, { state: "gone" }> = Object.freeze({
+  state: "gone",
+  document: null,
+});
 const MISSING: LinkAnswer = Object.freeze({ state: "missing", document: null });
 const UNASKED: LocalLinkAnswer = Object.freeze({ kind: "unasked" });
 
@@ -75,7 +85,7 @@ export function createProjectLinkResolver(
   index: LinkableDocumentIndex,
   settlements: LinkSettlements,
 ): InternalLinkResolver {
-  const { projectId, workId, rootThreadId, baseUri, holderDocumentId } = scope;
+  const { projectId, workId, rootThreadId, chatId, baseUri, holderDocumentId } = scope;
   const memo = settlements.forProject(projectId);
   const catalog = createProjectLinkCatalog(projectId, index, memo);
   const indexedAnswer = (documentId: string) => {
@@ -88,12 +98,23 @@ export function createProjectLinkResolver(
       // A relative path with no base cannot be asked; the base arriving is a
       // new registration, which asks it again.
       if (target.kind === "external" || (target.kind === "relative" && !baseUri)) return UNASKED;
-      const resolution = resolveStoredLink({ ref, href: linkTargetHref(target) }, catalog);
+      const link = { ref, href: linkTargetHref(target) };
+      const address = resolveStoredLinkAddress(link, baseUri);
+      const resolution = resolveStoredLink(link, address, catalog);
       let provisional: DocumentAnswer | null = null;
       if (resolution.kind === "gone") return answered(GONE);
+      if (resolution.kind === "folder") {
+        const folder = catalog.indexedFolder(resolution.folder.folderId);
+        return folder
+          ? answered({
+              state: "folder",
+              document: null,
+              folder: { folderId: folder.folderId, title: folder.title, uri: folder.uri },
+            })
+          : UNASKED;
+      }
       if (resolution.kind === "address") {
-        const uri = linkTargetAddress(target, baseUri);
-        const document = uri ? catalog.documentFor(uri) : null;
+        const document = address?.kind === "document" ? catalog.documentFor(address.uri) : null;
         const answer = document ? indexedAnswer(document.documentId) : null;
         if (answer) return answered(answer);
       }
@@ -105,24 +126,23 @@ export function createProjectLinkResolver(
         if (answer && confirmed) return answered(answer);
         provisional = answer;
       }
-      // A holder whose own address has not arrived asks the server nothing: a
-      // question with no holder address is chat's, which may fall back to
-      // previous locations.
-      if (holderDocumentId && !baseUri) return provisional ? answered(provisional) : UNASKED;
       return { kind: "ask", provisional };
     },
 
     async remote(questions) {
       const response = await resolveDocumentLinks(projectId, {
         ...(rootThreadId ? { rootThreadId } : { workId }),
+        ...(chatId ? { chatId } : {}),
         baseUri,
+        ...(holderDocumentId ? { holderDocumentId } : {}),
         links: questions.map(({ ref, target }) => ({ ref, href: linkTargetHref(target) })),
       });
       if (response.answers.length !== questions.length)
         throw new Error("link resolution answered out of shape");
       return response.answers.map((answer, at) => {
         if (!answer) return null;
-        const ahead = parseLinkRef(questions[at]?.ref);
+        const question = questions[at];
+        const ahead = parseLinkRef(question?.ref);
         const settledOn = settlementOf(answer);
         if (ahead?.kind === "ahead" && settledOn !== undefined)
           memo.learn(ahead.aheadId, settledOn);
@@ -141,16 +161,32 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
   switch (answer.state) {
     case "document": {
       const { document } = answer;
-      return documentAnswer({
+      const found = documentAnswer({
         documentId: document.id,
         title: document.title,
         uri: document.uri,
         workId: document.workId,
         rootThreadId: document.rootThreadId ?? undefined,
       });
+      // A hidden document is "in a draft": keep the destination the server named.
+      return found && answer.inBranch && answer.branch
+        ? { ...found, branch: answer.branch }
+        : found;
     }
+    case "folder":
+      return {
+        state: "folder",
+        document: null,
+        folder: {
+          folderId: answer.folder.id,
+          title: answer.folder.name,
+          uri: answer.folder.uri,
+        },
+      };
     case "gone":
-      return GONE;
+      return answer.trashedDocumentId
+        ? { ...GONE, trashedDocumentId: answer.trashedDocumentId }
+        : GONE;
     case "missing":
       return MISSING;
     case "unresolvable":

@@ -1,5 +1,6 @@
 // Semantic Yjs update helpers for distinguishing real document changes from wire bytes.
 import * as Y from "yjs";
+import { copyBlockOrigins } from "./model/block-hash.js";
 
 export function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   if (left.byteLength !== right.byteLength) return false;
@@ -12,6 +13,7 @@ export function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
 export function cloneYDoc(doc: Y.Doc): Y.Doc {
   const clone = new Y.Doc({ gc: false });
   Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+  copyBlockOrigins(doc, clone);
   return clone;
 }
 

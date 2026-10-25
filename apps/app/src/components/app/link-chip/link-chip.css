@@ -25,10 +25,12 @@
  */
 
 [data-link-chip] {
+  appearance: none;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background-color: var(--link-chip-fill, var(--color-muted));
   color: inherit;
+  font: inherit;
   padding: 0.0625em 0.375em;
   text-decoration: none;
   /* A long name wraps as prose does, and every line fragment is a chip. */
@@ -67,23 +69,34 @@
   color: var(--color-muted-foreground);
 }
 
+/* A document that exists only in a draft: reachable, but not live text yet.
+   A dotted outline at reading contrast sets it apart from a published target
+   (filled) and from nothing (dashed, muted). */
+[data-link-chip="draft"] {
+  border-color: var(--color-muted-foreground);
+  border-style: dotted;
+}
+
 /* Prose gives bold its own ink; inside a quiet chip it stays quiet. */
 [data-link-chip="dashed"] strong {
   color: inherit;
 }
 
 /* Only a chip that goes somewhere answers the pointer. A transcript or
-   composer chip says so with an enabled `role="link"`; an Editor chip is its
-   link mark's `<a>`, which goes somewhere unless its document is gone (a plain
-   click follows it), so it answers without needing a role, and a gone one is
-   `aria-disabled` and, like chat's unavailable reference, does not answer. */
-:is([data-link-chip][role="link"], a[data-link-chip]):not([aria-disabled="true"]):hover {
+   composer document chip is an enabled link; a folder chip is a menu button.
+   An Editor chip is its link mark's `<a>`, which goes somewhere unless its
+   document is gone, so it answers without needing a role. */
+:is([data-link-chip][role="link"], [data-link-chip][aria-haspopup="menu"], a[data-link-chip]):not(
+  [aria-disabled="true"]
+):hover {
   background-color: var(--link-chip-fill-hover, var(--color-sidebar-accent));
 }
 
-:is([data-link-chip="dashed"][role="link"], a[data-link-chip="dashed"]):not(
-  [aria-disabled="true"]
-):hover {
+:is(
+  [data-link-chip="dashed"][role="link"],
+  [data-link-chip="dashed"][aria-haspopup="menu"],
+  a[data-link-chip="dashed"]
+):not([aria-disabled="true"]):hover {
   background-color: var(--link-chip-fill, var(--color-muted));
 }
 
@@ -94,11 +107,8 @@
   box-shadow: none;
 }
 
-/* The outbound arrow: the Editor's external mark (`data-link-kind`) and the
-   transcript's (Streamdown's link control). A link still streaming in has no
-   destination yet and wears none. */
-a[data-link-kind="external"]::after,
-[data-streamdown="link"]:not([data-incomplete="true"])::after {
+/* The shared outbound arrow follows explicit external link marks. */
+a[data-link-kind="external"]::after {
   display: inline-block;
   width: 0.625em;
   height: 0.625em;

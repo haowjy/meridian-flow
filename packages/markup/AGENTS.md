@@ -1,20 +1,19 @@
 # @meridian/markup
 
-Composable text ↔ ProseMirror codec package, and the one home of the link
-rules server and client share (holder scope, pass 3, stored-link walks). The
-link rules ship at `@meridian/markup/links` and the Yjs walks at
-`@meridian/markup/stored-links`; keep both out of the root barrel so neither
-pulls in codecs, Yjs or the schema builder. Wiki-style Markdown syntax (wikilinks, embeds, `%%` and HTML comments) lives at `@meridian/markup/wikilinks`; import and app
-paste share its scanner. Browser manifests can load the raw-text frontmatter
-splitter alone at `@meridian/markup/frontmatter`. MDX
-is the canonical Meridian wire format; pure markdown is the supported subset. This is a leaf package: it must
-not import from `@meridian/agent-edit` or any app/server shell.
+The text ↔ ProseMirror codecs, and the one home of the link rules the server
+and client share: holder scope, fresh-link resolution (`assignFreshLink`, the
+third pass of ref assignment) and stored-link walks. MDX is the canonical wire
+format; plain Markdown is a supported subset. This is a leaf package: it never
+imports `@meridian/agent-edit` or an app or server shell. The link rules ship at
+`@meridian/markup/links` and the Yjs walks at `@meridian/markup/stored-links`;
+keep both out of the root barrel so neither pulls in codecs, Yjs or the schema
+builder.
 
 ## Mental model
 
-Consumers use `markdownCodec` and `mdxCodec`. Codec/plugin composition stays
-internal to this package; hash-prefixed agent-edit echo/view formatting lives
-outside it.
+Consumers use `markdownCodec` and `mdxCodec`. Codec and plugin composition
+stays internal; agent-edit's hash-prefixed echo and view formatting lives
+outside this package.
 
 ## Invariants
 
@@ -39,4 +38,9 @@ outside it.
   `asset:<id>` must decline anything it cannot resolve to exactly one asset,
   because a wrong guess writes a reference that can never render.
 
-See [`.context/CONTEXT.md`](.context/CONTEXT.md) for the public API contract.
+Public API contract: [`.context/CONTEXT.md`](.context/CONTEXT.md). Image wire
+format: [`.context/image-wire-format.md`](.context/image-wire-format.md).
+
+## Import/export text seams
+
+Wiki-style link parsing uses the shared scanner for editor ingress, import conversion, and export spelling; do not add a second grammar in an adapter. Frontmatter splitting preserves the raw body and property text so an import/export round trip does not normalize writer-authored YAML.

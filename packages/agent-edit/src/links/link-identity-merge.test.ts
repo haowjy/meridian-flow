@@ -41,13 +41,13 @@ type Stored = Array<[text: string, ref: string | null]>;
 const dLink = (text: string, title?: string): Segment => ({
   text,
   ref: documentRef(D),
-  href: storedHref(ch("old"), ""),
+  href: storedHref({ kind: "document", uri: ch("old") }, ""),
   ...(title ? { title } : {}),
 });
 const rLink = (text: string): Segment => ({
   text,
   ref: documentRef(R),
-  href: storedHref(ch("retarget"), ""),
+  href: storedHref({ kind: "document", uri: ch("retarget") }, ""),
 });
 
 function base(first: Segment[] = [dLink("Target"), " waits."]): Y.Doc {
@@ -109,12 +109,11 @@ const editor: Producer = {
 /** The agent writes after the move lands in the catalog, with the path it was last shown. */
 const agent: Producer = {
   name: "agent",
-  async edit({ writer, writerId, agentContent, shown, moved }) {
+  async edit({ writer, agentContent, shown, moved }) {
     const ctx = linkHarness({
       holder: { id: HOLDER_ID, uri: HOLDER },
       documents: catalogNow(),
       doc: writer,
-      runtimeClientID: writerId,
     });
     moved();
     ctx.catalog.documents = [catalogDocument(HOLDER_ID, HOLDER), ...catalogNow()];

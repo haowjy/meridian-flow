@@ -1,12 +1,9 @@
 /** React Query acquisition and flat selectors over one normalized ID cache. */
-import { parseContextUri } from "@meridian/contracts/context-uri";
 import {
-  type CatalogFileEntry,
   type CatalogScope,
   type CatalogWakeHint,
   catalogScopeKey,
   contextOwner,
-  isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import {
@@ -18,11 +15,8 @@ import {
   indexCatalogView,
   projectFolderNeedsRepair,
   projectResourceNeedsRepair,
-  type ResourceLocation,
   type ResourcePlacement,
   type ResourceRecord,
-  resourceContextAuthority,
-  resourceUriQualifier,
   sameCatalogProjectionScope,
 } from "@meridian/resource-replica";
 import {
@@ -44,20 +38,28 @@ import {
   type CatalogNode,
   refusedMoveDestination,
 } from "@/client/query/context-catalog-projection";
+import { useIsThreadPendingCreation } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import {
   useAccountResourceProjection,
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
 import type { ContextOwner } from "./context-request-options";
+import { bumpLinkResolutionEpoch } from "./link-resolution-epoch";
 import { projectQueryKeys } from "./project-query-keys";
 import { useIsProjectPendingCreation } from "./useProjectCreation";
 
-/** The catalog listing a scheme's documents for this owner; null when a Work-scoped scheme has none. */
+/** Who a catalog request is for: a Work or lineage holds Scratch, and a chat holds its uploads. */
+export type CatalogOwner = {
+  workId?: string | null;
+  rootThreadId?: string;
+  chatId?: string | null;
+};
+
 /**
  * The catalog an aggregate view (the link index) reads a scheme from. Scratch
- * reads with the lineage when there is one; Uploads always reads with the Work
- * row, so a lineage scope still has a scope, and a catalog, for every scheme.
+ * reads with the lineage when there is one, else the Work; Uploads read with the
+ * chat, and have no catalog where there is none.
  */
 export function aggregateCatalogScope(
   projectId: string,
@@ -65,30 +67,49 @@ export function aggregateCatalogScope(
   owners: {
     workId?: string | null;
     rootThreadId?: string | null;
-    uploadsWorkId?: string | null;
+    chatId?: string | null;
   },
 ): CatalogScope | null {
-  return contextCatalogScope(
-    projectId,
-    scheme,
-    scheme === "uploads" && owners.uploadsWorkId
-      ? { workId: owners.uploadsWorkId }
-      : contextOwner(owners.workId, owners.rootThreadId),
-  );
+  return contextCatalogScope(projectId, scheme, {
+    ...contextOwner(owners.workId, owners.rootThreadId),
+    chatId: owners.chatId,
+  });
 }
 
+/** The catalog listing a scheme's documents for this owner; null when its owner is not known. */
 export function contextCatalogScope(
   projectId: string,
   scheme: ProjectContextTreeScheme,
-  owner: ContextOwner,
+  owner: CatalogOwner,
 ): CatalogScope | null {
   if (scheme === "user") return { kind: "user", userId: "self" };
+  if (scheme === "uploads")
+    return owner.chatId ? { kind: "chat", projectId, chatId: owner.chatId } : null;
   if (scheme === "scratch" && owner.rootThreadId)
     return { kind: "lineage", projectId, rootThreadId: owner.rootThreadId };
-  if (scheme === "scratch" || scheme === "uploads") {
+  if (scheme === "scratch") {
     return owner.workId ? { kind: "work", projectId, workId: owner.workId } : null;
   }
   return { kind: "project", projectId };
+}
+
+/**
+ * The one creation gate for a chat's catalog scopes. Only a lineage or chat scope
+ * waits on its chat's creation; other scopes already exist on the server.
+ *
+ * Hidden constraint: `prefetchQuery` and `fetchQuery` ignore `enabled`, so a
+ * gate must remove the scope from the list a reader builds, not just disable
+ * its query. Every reader that lists a chat's scopes applies this.
+ */
+export function catalogScopeReady(
+  scope: CatalogScope,
+  enabled: boolean,
+  pending: { lineage: boolean; chat: boolean },
+): boolean {
+  return (
+    enabled &&
+    !((scope.kind === "lineage" && pending.lineage) || (scope.kind === "chat" && pending.chat))
+  );
 }
 
 export function contextCatalogQueryOptions(
@@ -114,125 +135,15 @@ const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   uploads: "Uploads",
 };
 
-function locationBelongsToScope(location: ResourceLocation, scope: CatalogScope): boolean {
-  if (scope.kind === "project")
-    return !isWorkScopedProjectContextScheme(location.scheme) && location.scheme !== "user";
-  if (scope.kind === "user") return location.scheme === "user";
-  if (!isWorkScopedProjectContextScheme(location.scheme)) return false;
-  if (scope.kind === "lineage") return location.rootThreadId === scope.rootThreadId;
-  return scope.kind === "work" && location.workId === scope.workId;
-}
-
-function catalogUri(location: ResourceLocation, path: string): string {
-  const prefix = resourceUriQualifier(resourceContextAuthority(location.scheme, location));
-  const parsed = parseContextUri(`${location.scheme}://${prefix}${path}`);
-  if (!parsed.ok) throw new Error("Invalid local catalog URI");
-  return parsed.value.normalized;
-}
-
-/** One normalized catalog read model: durable local intentions overlay the server checkpoint. */
-function overlayResourceCatalogView(
-  projectId: string,
-  scope: CatalogScope,
-  view: CatalogCacheView,
-  records: readonly ResourceRecord[],
-  isKnownVisible: (record: ResourceRecord) => boolean,
-  placement: ResourcePlacement,
-): CatalogCacheView {
-  const entries = new Map(view.entries);
-  for (const record of records) {
-    const documentId = record.resource.identity.documentId;
-    const location = placement.resourceLocation(record);
-    const visible =
-      isKnownVisible(record) ||
-      record.intents.some(
-        (intent) => intent.projectId === projectId && intent.state !== "cancelled",
-      ) ||
-      location?.scheme === "user" ||
-      entries.has(documentId);
-    if (!visible) continue;
-    const installed = entries.get(documentId);
-    const installedMatches =
-      installed?.kind === "file" &&
-      installed.uri.startsWith(`${location?.scheme}://`) &&
-      `/${installed.path.join("/")}` === location?.path &&
-      installed.provisionalName === location?.provisional;
-    if (installed && !installedMatches) entries.delete(documentId);
-    if (!location || !locationBelongsToScope(location, scope) || installedMatches) continue;
-
-    const sourceId =
-      [...entries.values()].find(
-        (entry) => entry.kind === "source" && entry.scheme === location.scheme,
-      )?.entryId ?? `local-source:${location.scheme}:${JSON.stringify(scope)}`;
-    if (!entries.has(sourceId)) {
-      entries.set(sourceId, {
-        kind: "source",
-        entryId: sourceId,
-        scope,
-        scheme: location.scheme,
-        name: ROOT_NAMES[location.scheme],
-        uri: catalogUri(location, ""),
-      });
-    }
-    const path = location.path.split("/").filter(Boolean);
-    let parentId = sourceId;
-    for (let depth = 1; depth < path.length; depth += 1) {
-      const folderPath = path.slice(0, depth);
-      const existing = [...entries.values()].find(
-        (entry) =>
-          entry.kind === "folder" &&
-          entry.sourceId === sourceId &&
-          entry.path.join("/") === folderPath.join("/"),
-      );
-      if (existing?.kind === "folder") {
-        parentId = existing.entryId;
-        continue;
-      }
-      const folderId = `local-folder:${sourceId}:${folderPath.join("/")}`;
-      entries.set(folderId, {
-        kind: "folder",
-        observationVersion: "0",
-        entryId: folderId,
-        scope,
-        sourceId,
-        parentId,
-        name: folderPath.at(-1) ?? "",
-        path: folderPath,
-        uri: catalogUri(location, folderPath.join("/")),
-        hasChildren: true,
-        navigationOnly: true,
-      });
-      parentId = folderId;
-    }
-    const uri = catalogUri(location, path.join("/"));
-    entries.set(documentId, {
-      kind: "file",
-      observationVersion: record.resource.observationVersion ?? "0",
-      entryId: documentId,
-      scope,
-      sourceId,
-      parentId,
-      aliases: [],
-      name: location.name,
-      path,
-      uri,
-      provisionalName: location.provisional,
-      hasProperties: installed?.kind === "file" ? installed.hasProperties : false,
-      ...record.resource.classification,
-    } satisfies CatalogFileEntry);
-  }
-  return indexCatalogView({ ...view, entries });
-}
-
-/** Overlay recoverable resource state without treating unrelated account records as project files. */
+/** Project recoverable resource state without treating unrelated account records as project files. */
 export function projectResourceCatalogView(
-  projectId: string,
+  _projectId: string,
   scope: CatalogScope,
   view: CatalogCacheView,
   records: readonly ResourceRecord[],
   placement: ResourcePlacement,
 ): CatalogCacheView {
-  const placed = indexCatalogView({
+  return indexCatalogView({
     ...view,
     entries: new Map(
       placement
@@ -241,25 +152,25 @@ export function projectResourceCatalogView(
         .map((entry) => [entry.entryId, entry]),
     ),
   });
-  // Insert local-only rows against final folder identities, never stale paths.
-  return overlayResourceCatalogView(projectId, scope, placed, records, () => false, placement);
 }
 
 /** Project one record whose replica lookup already proved this project's access. */
 export function accessibleResourceCatalogView(
-  projectId: string,
+  _projectId: string,
   scope: CatalogScope,
   record: ResourceRecord,
   placement: ResourcePlacement,
 ): CatalogCacheView {
-  return overlayResourceCatalogView(
-    projectId,
-    scope,
-    emptyCatalogView(scope),
-    [record],
-    () => true,
-    placement,
-  );
+  const view = emptyCatalogView(scope);
+  return indexCatalogView({
+    ...view,
+    entries: new Map(
+      placement
+        .accessibleResourceCatalog(record)
+        .filter((entry) => sameCatalogProjectionScope(entry.scope, scope))
+        .map((entry) => [entry.entryId, entry]),
+    ),
+  });
 }
 
 export function projectCatalogFile(
@@ -275,7 +186,7 @@ export function projectCatalogFile(
     path: `/${entry.path.join("/")}`,
     uri: entry.uri,
     provisionalName: entry.provisionalName,
-    hasProperties: entry.hasProperties,
+    hasProperties: entry.hasProperties ?? false,
   };
   if (entry.editable) {
     return {
@@ -453,7 +364,7 @@ export function projectCatalogView(
 export async function lookupContextCatalogFile(
   projectId: string,
   scheme: ProjectContextTreeScheme,
-  owner: ContextOwner,
+  owner: CatalogOwner,
   lookup: { entryId: string } | { uri: string },
 ) {
   const scope = contextCatalogScope(projectId, scheme, owner);
@@ -488,21 +399,20 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   schemes: readonly S[],
   options: {
     enabled?: boolean;
-    /**
-     * An aggregate scope (the link index) can hold a lineage's Scratch and a
-     * Work's Uploads together. Each document and request still has one owner;
-     * Uploads reads with this Work where `owner` names a lineage.
-     */
-    uploadsWorkId?: string | null;
-  } & ContextOwner,
+  } & CatalogOwner,
 ): Record<S, CatalogViewResult> {
   const projectPending = useIsProjectPendingCreation(projectId);
+  const { workId, rootThreadId, chatId } = options;
+  // A first send's chat is not on the server yet; its lineage and chat scopes would answer 404.
+  const pending = {
+    lineage: useIsThreadPendingCreation(rootThreadId),
+    chat: useIsThreadPendingCreation(chatId),
+  };
   const enabled = (options.enabled ?? true) && !projectPending;
-  const { workId, rootThreadId, uploadsWorkId } = options;
   const scopeFor = useCallback(
     (scheme: ProjectContextTreeScheme) =>
-      aggregateCatalogScope(projectId, scheme, { workId, rootThreadId, uploadsWorkId }),
-    [projectId, workId, rootThreadId, uploadsWorkId],
+      aggregateCatalogScope(projectId, scheme, { workId, rootThreadId, chatId }),
+    [projectId, workId, rootThreadId, chatId],
   );
   const scopes = useMemo(() => {
     const result: CatalogScope[] = [];
@@ -566,7 +476,7 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   return useQueries({
     queries: scopes.map((scope) => ({
       ...contextCatalogQueryOptions(resources, projectId, scope),
-      enabled,
+      enabled: catalogScopeReady(scope, enabled, pending),
     })),
     combine,
   });
@@ -574,11 +484,16 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
 
 export function useContextCatalogScope(projectId: string, scope: CatalogScope, enabled = true) {
   const projectPending = useIsProjectPendingCreation(projectId);
+  const pending = {
+    lineage: useIsThreadPendingCreation(scope.kind === "lineage" ? scope.rootThreadId : null),
+    chat: useIsThreadPendingCreation(scope.kind === "chat" ? scope.chatId : null),
+  };
   const scopeKind = scope.kind;
   const scopeProjectId = scope.kind === "user" ? undefined : scope.projectId;
   const scopeUserId = scope.kind === "user" ? scope.userId : undefined;
   const scopeWorkId = scope.kind === "work" ? scope.workId : undefined;
   const scopeRootThreadId = scope.kind === "lineage" ? scope.rootThreadId : undefined;
+  const scopeChatId = scope.kind === "chat" ? scope.chatId : undefined;
   const stableScope = useMemo<CatalogScope>(
     () =>
       scopeKind === "user"
@@ -595,14 +510,20 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
                 projectId: scopeProjectId as string,
                 rootThreadId: scopeRootThreadId as string,
               }
-            : { kind: "project", projectId: scopeProjectId as string },
-    [scopeKind, scopeProjectId, scopeUserId, scopeWorkId, scopeRootThreadId],
+            : scopeKind === "chat"
+              ? {
+                  kind: "chat",
+                  projectId: scopeProjectId as string,
+                  chatId: scopeChatId as string,
+                }
+              : { kind: "project", projectId: scopeProjectId as string },
+    [scopeKind, scopeProjectId, scopeUserId, scopeWorkId, scopeRootThreadId, scopeChatId],
   );
   const resources = useOptionalAccountResourceReplica();
   const projection = useAccountResourceProjection(projectId);
   const query = useQuery({
     ...contextCatalogQueryOptions(resources, projectId, stableScope),
-    enabled: enabled && !projectPending,
+    enabled: catalogScopeReady(stableScope, enabled && !projectPending, pending),
   });
   const data = useMemo(() => {
     const checkpoint = projection.snapshot?.catalogs.find(
@@ -649,10 +570,25 @@ export function useContextCatalogWake(
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
   const transport = useOptionalThreadTransport();
+  // A create that joined a branch's new document now is that document, so its draft list is
+  // stale: the writer sees the draft's review at once, not at the next reload or hint.
+  useEffect(
+    () =>
+      projectId
+        ? resources?.onIdentityChanged((change) => {
+            if (change.projectId === projectId) invalidateDraftReads(queryClient, projectId);
+          })
+        : undefined,
+    [projectId, queryClient, resources],
+  );
   useEffect(
     () =>
       projectId
         ? transport?.subscribeCatalog(projectId, (hint) => {
+            bumpLinkResolutionEpoch(projectId);
+            void queryClient.invalidateQueries({
+              queryKey: projectQueryKeys.documentTrash(projectId),
+            });
             const requestedScope: CatalogScope =
               hint.scope.kind === "user" ? { kind: "user", userId: "self" } : hint.scope;
             const mounted =
@@ -671,6 +607,25 @@ export function useContextCatalogWake(
         : undefined,
     [onColdWorkHint, projectId, queryClient, resources, transport],
   );
+}
+
+/** Every draft read of the project: each Work's list and each document's hints. */
+function invalidateDraftReads(queryClient: QueryClient, projectId: string): void {
+  void queryClient.invalidateQueries(allWorkDraftListsOf(projectId));
+  void queryClient.invalidateQueries({
+    queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
+  });
+}
+
+/** Every mounted draft list of the project, whatever Work it belongs to. */
+function allWorkDraftListsOf(projectId: string) {
+  return {
+    predicate: ({ queryKey }: { queryKey: readonly unknown[] }) =>
+      queryKey[0] === "projects" &&
+      queryKey[1] === projectId &&
+      queryKey[2] === "works" &&
+      queryKey[4] === "branches",
+  };
 }
 
 /** The newest installed catalog revision each scope's hints have already re-read draft lists for. */
@@ -702,7 +657,7 @@ function advancesDraftRefresh(
  * draft-only tab whose draft was disposed elsewhere. A Work-scoped hint names its Work, so only
  * that Work's list re-reads; a project-wide hint cannot, so every list of the project does. A hint
  * that installs no revision newer than the last one handled re-reads nothing, and a user-scoped
- * catalog holds no project drafts.
+ * catalog holds no project branches.
  */
 export function pullContextCatalogOnHint(
   queryClient: QueryClient,
@@ -720,15 +675,12 @@ export function pullContextCatalogOnHint(
       if (!advancesDraftRefresh(queryClient, requestedScope, next.appliedRevision)) return;
       void queryClient.invalidateQueries(
         requestedScope.kind === "work"
-          ? { queryKey: projectQueryKeys.workDrafts(projectId, requestedScope.workId) }
-          : {
-              predicate: ({ queryKey }) =>
-                queryKey[0] === "projects" &&
-                queryKey[1] === projectId &&
-                queryKey[2] === "works" &&
-                queryKey[4] === "drafts",
-            },
+          ? { queryKey: projectQueryKeys.workBranchDrafts(projectId, requestedScope.workId) }
+          : allWorkDraftListsOf(projectId),
       );
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
+      });
     })
     .catch(() => undefined);
 }

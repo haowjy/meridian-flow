@@ -17,13 +17,15 @@ import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { createDrizzleContextCatalog } from "../context/index.js";
 import { createAllowAllFileAccess } from "../file-policy/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
-import { createStaticDocumentLinkScopes } from "./adapters/in-memory/static-document-link-scopes.js";
 import { createCollabDomain } from "./composition.js";
+import { testLinkDeps } from "./test-support/document-link-scopes.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (postgres)", () => {
@@ -58,10 +60,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
   it("a document seeded in a batch reads, opens and edits like one seeded singly", async () => {
     const collab = createCollabDomain({
       db,
-      links: createStaticDocumentLinkScopes(),
-      aheadRefs: { register: async () => {} },
+      ...testLinkDeps(db),
+      ...createTestRemovalDeps(db),
       fileAccess: createAllowAllFileAccess(),
       workProjectionMutation: createTestWorkProjectionMutation(db),
+      catalogMutations: createDrizzleContextCatalog(db),
     });
     domains.push(collab);
     const persistence = createDrizzleCollabPersistence(db);

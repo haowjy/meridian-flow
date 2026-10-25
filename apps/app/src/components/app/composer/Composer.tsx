@@ -3,6 +3,8 @@
 import { t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts";
 import type { UploadIntakeResult } from "@meridian/contracts/protocol";
+import { imageCapable } from "@meridian/thread-client";
+import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ArrowUp, Paperclip } from "lucide-react";
@@ -17,14 +19,21 @@ import {
   useRef,
   useState,
 } from "react";
-import { NoticeCard } from "@/components/app/NoticeCard";
+import { FailureCard } from "@/components/app/FailureCard";
 import { Button } from "@/components/ui/button";
-import type { AuthoritativeReference, StableReferenceAuthority } from "@/core/completion";
+import type {
+  DocumentReference,
+  ReferenceTerminalRow,
+  StableReferenceAuthority,
+} from "@/core/completion";
 import { ChromeKernelExtension, getEditorChrome } from "@/core/editor/chrome";
-import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
+import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import { AtReferenceExtension } from "@/core/editor/extensions/at-reference";
+import { ReferenceDropExtension } from "@/core/editor/extensions/reference-drop";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
 import { AtReferenceMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
+import { activeEntryDrag } from "@/features/project/context/entry-drag/drag-session";
+import { clearDragHint, showDragHint } from "@/features/project/context/tree-drop/drag-hint";
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
 import { ComposerSkillAtom } from "./ComposerSkillAtom";
@@ -41,12 +50,14 @@ import {
   type ComposerDraftChange,
   type ComposerDraftSnapshot,
   type ComposerPendingUploadAttrs,
+  type ComposerReferenceAttrs,
   ComposerReferenceNode,
   ComposerSkillNode,
   type ComposerSubmitEnvelope,
   ComposerUploadNode,
   composerReferenceContent,
   composerSelection,
+  pickedReferenceAttrs,
   plainComposerDoc,
   restoreComposerSelection,
   serializeComposerDraft,
@@ -64,7 +75,8 @@ export type {
 } from "./composer-document";
 export { serializeComposerDraft } from "./composer-document";
 
-export type ComposerUploadScope = { kind: "work"; projectId: string; workId: string };
+/** Uploads belong to the chat; a New chat's id is minted before its row exists. */
+export type ComposerUploadScope = { kind: "chat"; projectId: string; chatId: string };
 
 function authorityForUpload(
   scope: ComposerUploadScope,
@@ -72,12 +84,28 @@ function authorityForUpload(
 ): StableReferenceAuthority {
   const parsed = parseContextUri(uri);
   return {
-    kind: "work",
+    kind: "chat",
     projectId: scope.projectId,
-    workId: scope.workId,
-    workSlug:
-      parsed.ok && parsed.value.authority.kind === "work" ? parsed.value.authority.workSlug : null,
+    chatId: scope.chatId,
+    chatRef:
+      parsed.ok && parsed.value.authority.kind === "chat" ? parsed.value.authority.chatRef : null,
   };
+}
+
+function composerReferenceNode(schema: Schema, row: ReferenceTerminalRow): PMNode {
+  return schema.nodeFromJSON(
+    composerReferenceContent(
+      pickedReferenceAttrs(row.action.reference, row.kind === "file" ? row.fileKind : null),
+    ),
+  );
+}
+
+/** Intake may allocate a free leaf name; the chip must spell the authoritative URI it received. */
+function uploadLabel(uri: UploadIntakeResult["uri"], fallback: string): string {
+  const parsed = parseContextUri(uri);
+  if (!parsed.ok) return fallback;
+  const name = parsed.value.path.split("/").at(-1);
+  return name || fallback;
 }
 export type ComposerUploadPort = Readonly<{
   intake: (input: {
@@ -91,15 +119,21 @@ export type ComposerProps = {
   /** Hydrated before mounting; later prop changes never replace writer input. */
   initialDraft?: ComposerDraftSnapshot | null;
   onSubmit: (envelope: ComposerSubmitEnvelope) => Promise<boolean>;
-  onOpenReference?: (reference: AuthoritativeReference) => void;
+  onOpenReference?: (reference: DocumentReference) => void;
   onDraftChange?: (change: ComposerDraftChange) => void;
   onStop?: () => void;
   /**
    * A run is active on this thread (a reply streaming, a compaction, a brief).
-   * Stop replaces an empty Send, Escape in the empty composer presses it, and a
-   * send queues behind the run.
+   * With the box empty the one button is Stop, and Escape presses it. With text it is Send
+   * (spinning ring), and a send queues behind the run.
    */
   running?: boolean;
+  /**
+   * This tab's Stop request. Pending and stopping read Stopping and do nothing on a press;
+   * failed says so beside the control and keeps it, even after the chat goes idle, so the
+   * retry stays reachable. All of it shows only while the box is empty; text shows Send.
+   */
+  stopStatus?: "idle" | "pending" | "stopping" | "failed";
   placeholder?: string;
   autoFocus?: boolean;
   variant?: "hero" | "pinned";
@@ -109,17 +143,21 @@ export type ComposerProps = {
   submitDisabledReason?: string;
   uploadScope?: ComposerUploadScope;
   uploadPort?: ComposerUploadPort;
-  referenceCatalog?: AtReferenceCatalog | null;
+  referenceCatalog?: ReferenceBrowserCatalog | null;
   availableSkills?: readonly ComposerAvailableSkill[] | null;
   /** Chat verbs (`/compact`) the owning surface can run on its thread. */
   commands?: readonly ComposerChatCommand[] | null;
-  /** The host's own notes (`NoticeCard`s), stacked above the box with the Composer's failure. */
-  notices?: ReactNode;
+  /** The host's own cards (`FailureCard`s), the card stack, stacked above the box with the Composer's failure. */
+  cards?: ReactNode;
   /** Strips joined to the box's top edge (the draft dock); the notes sit above them. */
   attached?: ReactNode;
 };
 export type ComposerHandle = {
   focus: () => void;
+  /** Adds a file the writer picked outside the `@` menu (the chat's uploads list) at the caret. */
+  insertReference: (reference: DocumentReference, fileKind: "document" | "asset") => void;
+  /** Drops every chip that references the document (a file the writer deleted elsewhere). */
+  removeReferences: (documentId: string) => void;
   getDraft: () => string;
   /**
    * Whether the composer holds anything the writer authored, including a
@@ -137,6 +175,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onDraftChange,
     onStop,
     running = false,
+    stopStatus = "idle",
     placeholder,
     autoFocus,
     variant = "hero",
@@ -149,7 +188,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     referenceCatalog = null,
     availableSkills = null,
     commands = null,
-    notices,
+    cards,
     attached,
   } = props;
   const rotatingPlaceholder = useComposerPlaceholder(running);
@@ -211,24 +250,30 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           if (!catalog) return null;
           return {
             ...catalog,
-            insertReference: (current, range, row) => {
-              const reference = row.action.reference;
-              return current
-                .chain()
-                .focus()
-                .insertContentAt(
-                  range,
-                  composerReferenceContent({
-                    ...reference,
-                    imageCapable: row.fileKind === "asset" && reference.fileType === "image",
-                    upload: null,
-                  }),
-                )
-                .run();
-            },
+            referenceNode: composerReferenceNode,
           };
         },
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),
+      }),
+      ReferenceDropExtension.configure({
+        activeDrag: activeEntryDrag,
+        content: (schema, entries) => {
+          const catalog = referenceCatalogRef.current;
+          if (!catalog) return null;
+          const nodes = entries.map((entry) => {
+            const row = catalog.resolveReference(entry.ref);
+            return row ? composerReferenceNode(schema, row) : null;
+          });
+          return nodes.every((node) => node !== null) ? nodes : null;
+        },
+        label: (kind) =>
+          kind === "accept"
+            ? t`Mention`
+            : kind === "unavailable"
+              ? t`Not available in this chat`
+              : t`This part of the message can’t hold mentions`,
+        showHint: (owner, verdict, point) => showDragHint(owner, verdict, point),
+        clearHint: clearDragHint,
       }),
       ComposerCommandExtension.configure({
         catalog: () => {
@@ -360,6 +405,31 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         if (!editor || editor.isDestroyed) return;
         editor.commands.focus(undefined, { scrollIntoView: false });
       },
+      insertReference: (reference, fileKind) => {
+        if (!editor || editor.isDestroyed) return;
+        editor
+          .chain()
+          .focus()
+          .insertContent(composerReferenceContent(pickedReferenceAttrs(reference, fileKind)))
+          .run();
+      },
+      removeReferences: (documentId) => {
+        if (!editor || editor.isDestroyed) return;
+        const ranges: { from: number; to: number }[] = [];
+        editor.state.doc.descendants((node, pos) => {
+          const reference = node.attrs.reference as ComposerReferenceAttrs;
+          if (
+            node.type.name === "composerReference" &&
+            reference.kind === "document" &&
+            reference.documentId === documentId
+          )
+            ranges.push({ from: pos, to: pos + node.nodeSize });
+        });
+        if (ranges.length === 0) return;
+        const tr = editor.state.tr;
+        for (const { from, to } of ranges.reverse()) tr.delete(from, to);
+        editor.view.dispatch(tr);
+      },
       getDraft: () =>
         editor && !editor.isDestroyed ? serializeComposerDraft(editor.getJSON()).text : "",
       hasContent: () => hasContent,
@@ -446,10 +516,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           .setNodeSelection(position)
           .insertContent(
             composerReferenceContent({
+              kind: "document",
               ...ready,
               authority: authorityForUpload(scope, ready.uri),
-              label: file.name,
-              imageCapable: ready.fileType === "image",
+              label: uploadLabel(ready.uri, file.name),
+              imageCapable: imageCapable(ready.fileType),
               upload: {
                 intakeId,
                 documentId: ready.documentId,
@@ -500,9 +571,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     });
   }, [editor]);
 
-  // Escape is the Stop button: it stops only while Stop shows. With a draft it
-  // leaves the run and the draft alone for other Escape owners.
-  const showStop = running && !hasContent;
+  // One button, as on main: Stop while the box is empty and a reply runs or this tab's Stop is
+  // pending, stopping or failed; Send (with the running ring while a reply runs) once there is text.
+  // Escape is the Stop button: it stops only while Stop shows, so a draft is never a side effect.
+  const showStop = (running || stopStatus !== "idle") && !hasContent;
+  const stopInProgress = stopStatus === "pending" || stopStatus === "stopping";
   const keyDown = (event: React.KeyboardEvent) => {
     if (
       event.target instanceof Element &&
@@ -511,13 +584,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       )
     )
       return;
-    if (event.key === "Escape" && showStop) {
+    if (event.key === "Escape" && showStop && !stopInProgress) {
       event.preventDefault();
       onStop?.();
     }
   };
   const failureCard = submitFailure ? (
-    <NoticeCard
+    <FailureCard
       tone="error"
       onDismiss={() => {
         setSubmitFailure(false);
@@ -525,15 +598,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       }}
     >
       <p className="min-w-0 flex-1">{t`Couldn't send.`}</p>
-    </NoticeCard>
+    </FailureCard>
   ) : null;
   return (
     <>
-      {notices || failureCard ? (
+      {cards || failureCard ? (
         // Above the box and its strips, as wide as the box: every note above the box is the
         // same card in the same place, whoever raised it. Send is the failure's retry.
         <div className="mb-[var(--chat-space-inline)] flex flex-col gap-[var(--chat-space-inline)]">
-          {notices}
+          {cards}
           {failureCard}
         </div>
       ) : null}
@@ -579,27 +652,50 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             </>
           ) : null}
 
-          <Button
-            type="button"
-            size="icon-sm"
-            onClick={() => (showStop ? onStop?.() : void submit())}
-            disabled={!showStop && (!hasContent || submitDisabled || pending > 0)}
-            aria-label={showStop ? t`Stop` : t`Send message`}
-            aria-describedby={!showStop && submitDisabledReason ? disabledReasonId : undefined}
-            className={running ? "relative rounded-full" : "rounded-field"}
-          >
-            {showStop ? (
+          {showStop ? (
+            <Button
+              type="button"
+              size="icon-sm"
+              data-composer-stop=""
+              onClick={() => onStop?.()}
+              disabled={stopInProgress}
+              aria-label={
+                stopInProgress
+                  ? t`Stopping`
+                  : stopStatus === "failed"
+                    ? t`Couldn't stop. Try again.`
+                    : t`Stop`
+              }
+              className="relative rounded-full"
+            >
               <span className="size-2.5 rounded-[3px] bg-primary-foreground" />
-            ) : (
+              {stopInProgress ? (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
+                />
+              ) : null}
+            </Button>
+          ) : null}
+          {!showStop ? (
+            <Button
+              type="button"
+              size="icon-sm"
+              onClick={() => void submit()}
+              disabled={!hasContent || submitDisabled || pending > 0}
+              aria-label={t`Send message`}
+              aria-describedby={submitDisabledReason ? disabledReasonId : undefined}
+              className={running ? "relative rounded-full" : "rounded-field"}
+            >
               <ArrowUp className="size-4" />
-            )}
-            {running && hasContent ? (
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
-              />
-            ) : null}
-          </Button>
+              {running ? (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
+                />
+              ) : null}
+            </Button>
+          ) : null}
           {submitDisabledReason ? (
             <span id={disabledReasonId} className="sr-only">
               {submitDisabledReason}

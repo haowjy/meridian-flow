@@ -1,9 +1,16 @@
-/** PostgreSQL coverage for thread Work membership and lifecycle serialization. */
+/**
+ * PostgreSQL coverage for thread Work membership and lifecycle serialization.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Work-first lifecycle locking across attachment, rebind, append, and deletion races (kb/decisions/work/model/thread-work-rebind-parity.md)
+ */
 
-import { setTimeout as delay } from "node:timers/promises";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../../../test-support/document-removal.js";
+import { waitForPostgresLock } from "../../../../test-support/lock-interleave.js";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
+import { createDraftClose } from "../../../collab/adapters/drizzle-draft-close.js";
 import { createDrizzleLineageScratchLifecycle } from "../../../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../../../file-policy/index.js";
 import {
@@ -18,7 +25,7 @@ const {
   threadId: THREAD_ID,
   workId: WORK_ID,
   targetWorkId: TARGET_WORK_ID,
-  branchId: BRANCH_ID,
+  draftId: DRAFT_ID,
 } = THREAD_WORK_RACE;
 const ADVISORY_KEY = 748_210_471;
 
@@ -35,27 +42,31 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleProjectWorkRepository, deleteWorkTransition } = await import(
       "../../../projects/index.js"
     );
-    const { createFixtureBranchStore } = await import(
-      "../../../collab/test-support/fixture-branch-store.js"
+    const { createDrizzleDraftStore } = await import("../../../collab/adapters/drizzle-drafts.js");
+    const { createDrizzleBranchStore } = await import(
+      "../../../collab/adapters/drizzle-branches.js"
     );
-    const { createDrizzleWorkDraftPendingStore } = await import(
-      "../../../collab/adapters/drizzle-branch-push.js"
+    const { appendDraftRows, proseDraftUpdate } = await import(
+      "../../../collab/test-support/draft-store-seam.js"
     );
-    const { createWorkDraftPending } = await import("../../../collab/domain/work-draft-pending.js");
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
     const control = postgres(DATABASE_URL, { max: 1 });
     const threads = createDrizzleRepositoriesForTest(db);
-    const draftPending = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
     const works = createDrizzleProjectWorkRepository({
+      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     });
-    const branches = createFixtureBranchStore(db, undefined);
+    const drafts = createDrizzleDraftStore(db, {
+      close: createDraftClose(),
+      workProjection: createTestWorkProjectionMutation(db),
+      branches: createDrizzleBranchStore(db),
+    });
 
     beforeEach(async () => {
       await resetThreadWorkRaceFixture(db);
@@ -71,17 +82,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     async function waitForLock(waitEvent: string): Promise<void> {
-      for (let attempt = 0; attempt < 200; attempt += 1) {
+      await waitForPostgresLock(`PostgreSQL ${waitEvent} lock`, async () => {
         const [row] = await control<{ count: string }[]>`
           SELECT count(*)::text AS count
           FROM pg_stat_activity
           WHERE datname = current_database()
             AND wait_event = ${waitEvent}
         `;
-        if (Number(row?.count ?? 0) > 0) return;
-        await delay(10);
-      }
-      throw new Error(`Timed out waiting for PostgreSQL ${waitEvent} lock`);
+        return Number(row?.count ?? 0) > 0 ? true : undefined;
+      });
     }
 
     it("serializes attachment before deletion and hides the newly bound thread", async () => {
@@ -181,53 +190,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("deletes after a draft transition takes the lifecycle lock first", async () => {
-      await control.unsafe(`
-        CREATE FUNCTION test_block_draft_insert() RETURNS trigger
-        LANGUAGE plpgsql AS $$
-        BEGIN
-          PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
-          RETURN NEW;
-        END;
-        $$;
-        CREATE TRIGGER test_block_draft_insert
-        BEFORE INSERT ON branch_write_journal
-        FOR EACH ROW EXECUTE FUNCTION test_block_draft_insert();
-      `);
-      await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
-      let advisoryLockHeld = true;
-      try {
-        const draft = branches.appendJournal?.({
-          branchId: BRANCH_ID,
-          generation: 1,
-          updateData: new Uint8Array([1]),
-          source: "agent",
-        });
-        if (!draft) throw new Error("Branch journal append is unavailable");
-        await waitForLock("advisory");
-        const deletion = works.softDelete(WORK_ID).then(
-          () => ({ status: "fulfilled" as const }),
-          (reason: unknown) => ({ status: "rejected" as const, reason }),
-        );
-        await waitForLock("transactionid");
-        await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
-        advisoryLockHeld = false;
-        await draft;
-        const result = await deletion;
-        expect(result.status).toBe("fulfilled");
-        await expect(works.findById(WORK_ID)).resolves.toMatchObject({
-          deletedAt: expect.any(String),
-        });
-      } finally {
-        if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
-        await control.unsafe(`
-          DROP TRIGGER IF EXISTS test_block_draft_insert ON branch_write_journal;
-          DROP FUNCTION IF EXISTS test_block_draft_insert();
-        `);
-      }
-    });
-
-    it("deletes first and then refuses a draft transition under that Work", async () => {
+    it("an append is not held behind a Work deletion, and the next one is refused after it", async () => {
       await control.unsafe(`
         CREATE FUNCTION test_block_work_delete() RETURNS trigger
         LANGUAGE plpgsql AS $$
@@ -246,28 +209,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       try {
         const deletion = works.softDelete(WORK_ID);
         await waitForLock("advisory");
-        const draft = branches.appendJournal?.({
-          branchId: BRANCH_ID,
-          generation: 1,
-          updateData: new Uint8Array([1]),
-          source: "agent",
-        });
-        if (!draft) throw new Error("Branch journal append is unavailable");
-        // The append can reject while `deletion` is still being awaited, before
-        // the assertion below attaches; mark it handled so load can't surface it
-        // as an unhandled rejection.
-        draft.catch(() => {});
-        await waitForLock("transactionid");
+        // An append locks no Work (phase 4): it is not held behind the deletion, and one that
+        // started before the deletion committed lands (the archive window, design §5).
+        await expect(
+          appendDraftRows(drafts, DRAFT_ID, [{ updateData: proseDraftUpdate(), source: "agent" }]),
+        ).resolves.toHaveLength(1);
         await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         advisoryLockHeld = false;
         await deletion;
-        await expect(draft).rejects.toMatchObject({
-          name: "WorkLifecycleUnavailableError",
-          state: "deleted",
-        });
+        // Once the deletion committed, the append's Work-is-active predicate refuses the next.
         await expect(
-          draftPending.countPendingByWorkIds([WORK_ID]).then((counts) => counts.get(WORK_ID) ?? 0),
-        ).resolves.toBe(0);
+          appendDraftRows(drafts, DRAFT_ID, [
+            { updateData: proseDraftUpdate("after"), source: "agent" },
+          ]),
+        ).rejects.toThrow(/append was refused/);
       } finally {
         if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         await control.unsafe(`

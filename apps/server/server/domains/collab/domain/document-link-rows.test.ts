@@ -1,4 +1,8 @@
-/** Link-index keys for every stored occurrence kind (contract §11, L5). */
+/** Link-index keys for every stored occurrence kind (contract §11, L5).
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Link-index row keying and occurrence aggregation
+ */
 import { expect, it } from "vitest";
 import { deriveDocumentLinkRows } from "./document-link-rows.js";
 
@@ -13,8 +17,8 @@ it("keys doc, ahead, asset and contextual occurrences, counting repeats once per
       occurrences: [
         { kind: "link", ref: `doc:${DOC}`, href: "manuscript://ch%201.md#top" },
         { kind: "link", ref: `doc:${DOC}`, href: "manuscript://ch%201.md" },
-        { kind: "link", ref: `ahead:${AHEAD}`, href: "scratch://@arc/next.md" },
-        { kind: "image", ref: `ahead:${AHEAD}`, href: "scratch://@arc/next.md" },
+        { kind: "link", ref: `ahead:${AHEAD}`, href: "scratch://@w1/next.md" },
+        { kind: "image", ref: `ahead:${AHEAD}`, href: "scratch://@w1/next.md" },
         { kind: "image", ref: null, href: `asset:${ASSET}` },
         { kind: "figure", ref: null, href: `asset:${ASSET}` },
         { kind: "link", ref: null, href: "scratch://notes.md" },
@@ -32,7 +36,7 @@ it("keys doc, ahead, asset and contextual occurrences, counting repeats once per
       linkKey: `ahead:${AHEAD}`,
       targetDocumentId: null,
       aheadId: AHEAD,
-      address: "scratch://@arc/next.md",
+      address: "scratch://@w1/next.md",
       occurrences: 2,
     },
     {

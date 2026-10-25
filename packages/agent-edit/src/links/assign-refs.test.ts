@@ -1,4 +1,9 @@
-// Ref assignment on the real write path: reviewer cases are assigned as the model means them, and no door loses or churns refs.
+/**
+ * Ref assignment on the real write path: reviewer cases are assigned as the model means them, and no door loses or churns refs.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - Ranked three-pass link correspondence (kb/decisions/documents/identity/link-identity.md)
+ */
 import { documentRef, storedHref } from "@meridian/contracts";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
@@ -118,11 +123,14 @@ const doors: DoorCase[] = [
         blocks: [paragraph("Intro.")],
       });
       await ctx.write({ command: "insert", content: "See [Target](target)." });
-      expect
-        .soft(storedLinks(ctx.live()), this.name)
-        .toEqual([
-          { label: "Target", ref: documentRef(D), href: storedHref(target, ""), title: null },
-        ]);
+      expect.soft(storedLinks(ctx.live()), this.name).toEqual([
+        {
+          label: "Target",
+          ref: documentRef(D),
+          href: storedHref({ kind: "document", uri: target }, ""),
+          title: null,
+        },
+      ]);
     },
   },
   {
@@ -162,7 +170,7 @@ const doors: DoorCase[] = [
         {
           label: "Target",
           ref: documentRef(D),
-          href: storedHref(target, ""),
+          href: storedHref({ kind: "document", uri: target }, ""),
           title: "Chapter one",
         },
       ]);
@@ -209,9 +217,22 @@ const doors: DoorCase[] = [
   {
     name: "an HTML table cell edit keeps the anchor's ref with no format items",
     async run() {
+      const folderId = uuid(6);
       const links = createStaticDocumentLinks({
         projectId: PROJECT,
-        documents: [catalogDocument(H, HOLDER), catalogDocument(D, target)],
+        documents: [
+          catalogDocument(H, HOLDER),
+          catalogDocument(D, target),
+          catalogDocument(G, ch("Act")),
+        ],
+        folders: [
+          {
+            folderId,
+            uri: ch("Act"),
+            readable: true,
+            nameable: true,
+          },
+        ],
       });
       const written = codecFactory.parse("| a | b |\n| - | - |\n| [A](target) | x |").blocks;
       await links.prepare({ documentId: H, docs: [], written });
@@ -239,6 +260,54 @@ const doors: DoorCase[] = [
       expect.soft(storedLinks(ctx.live()), this.name).toEqual(before);
       expect.soft(await ctx.markdown(), this.name).toContain("<p>y</p>");
       expect.soft(formatItemCount(ctx.live()) - formats, this.name).toBe(0);
+
+      const folderWritten = codecFactory.parse("[Act](Act/)").blocks;
+      await links.prepare({ documentId: H, docs: [], written: folderWritten });
+      const folderBound = assignLinkRefs({
+        old: [],
+        written: folderWritten,
+        scope: links.scopeFor(H, undefined),
+        shown: [],
+      }).nodes;
+      const rewritten = codecFactory.parse("[Renamed](Act/)").blocks;
+      const folderKept = assignLinkRefs({
+        old: walkLinkOccurrences(folderBound),
+        written: rewritten,
+        scope: links.scopeFor(H, undefined),
+        shown: [],
+      }).nodes;
+      expect.soft(walkLinkOccurrences(folderKept)[0]?.attrs, this.name).toMatchObject({
+        ref: `folder:${folderId}`,
+        href: storedHref({ kind: "folder", uri: ch("Act") }, ""),
+      });
+
+      // A path shared by a folder and a document cannot carry identity across kinds.
+      const documentWritten = codecFactory.parse("[Act document](Act)").blocks;
+      await links.prepare({ documentId: H, docs: [], written: documentWritten });
+      const documentSwap = assignLinkRefs({
+        old: walkLinkOccurrences(folderBound),
+        written: documentWritten,
+        scope: links.scopeFor(H, undefined),
+        shown: [],
+      }).nodes;
+      expect.soft(walkLinkOccurrences(documentSwap)[0]?.attrs, this.name).toMatchObject({
+        ref: documentRef(G),
+        href: storedHref({ kind: "document", uri: ch("Act") }, ""),
+      });
+
+      // Folder showings are not eligible correspondence evidence for image sources.
+      const imageWritten = codecFactory.parse("![Act](chapters/Act)").blocks;
+      await links.prepare({ documentId: H, docs: [], written: imageWritten });
+      const image = assignLinkRefs({
+        old: [],
+        written: imageWritten,
+        scope: links.scopeFor(H, undefined),
+        shown: [{ ref: `folder:${folderId}`, address: ch("Act"), holderUri: HOLDER, at: 1 }],
+      }).nodes;
+      expect.soft(walkLinkOccurrences(image)[0]?.attrs, this.name).toMatchObject({
+        ref: documentRef(G),
+        href: storedHref({ kind: "document", uri: ch("Act") }, ""),
+      });
     },
   },
   {
@@ -252,9 +321,11 @@ const doors: DoorCase[] = [
       await ctx.write({ command: "insert", content: "![Map](maps/world.png) and [Next](ch9.md)" });
       const [image, next] = storedLinks(ctx.live());
       expect.soft(image?.ref, this.name).toMatch(/^ahead:/);
-      expect.soft(image?.href, this.name).toBe(storedHref("manuscript://maps/world.png", ""));
+      expect
+        .soft(image?.href, this.name)
+        .toBe(storedHref({ kind: "document", uri: "manuscript://maps/world.png" }, ""));
       expect.soft(next?.ref, this.name).toMatch(/^ahead:/);
-      expect.soft(next?.href, this.name).toBe(storedHref(ch("ch9"), ""));
+      expect.soft(next?.href, this.name).toBe(storedHref({ kind: "document", uri: ch("ch9") }, ""));
       expect.soft([...ctx.links.minted].sort(), this.name).toEqual([image?.ref, next?.ref].sort());
       expect.soft(await ctx.markdown(), this.name).toContain("[Next](ch9)");
       // Registration may settle a ref at once; the echo spells both from a loaded scope.
@@ -303,7 +374,7 @@ const doors: DoorCase[] = [
   {
     name: "a contextual link stays contextual when its block is rewritten",
     async run() {
-      const contextual = { text: "Draft", ref: null, href: "manuscript://b" };
+      const contextual = { text: "Branch", ref: null, href: "manuscript://b" };
       const ctx = linkHarness({
         holder: { id: H, uri: "user://notes/holder" },
         documents: [catalogDocument(D, "manuscript://b")],
@@ -312,11 +383,11 @@ const doors: DoorCase[] = [
       await ctx.write({
         command: "replace",
         in: [1, 1],
-        content: "[Draft](manuscript://b) note, revised.",
+        content: "[Branch](manuscript://b) note, revised.",
       });
       expect
         .soft(storedLinks(ctx.live()), this.name)
-        .toEqual([{ label: "Draft", ref: null, href: "manuscript://b", title: null }]);
+        .toEqual([{ label: "Branch", ref: null, href: "manuscript://b", title: null }]);
     },
   },
   {
@@ -362,7 +433,10 @@ const doors: DoorCase[] = [
         },
         {
           name: "a settled ahead ref after its document moved",
-          old: [{ text: "Target", ref: A, href: storedHref(ch("ch12"), "") }, " waits."],
+          old: [
+            { text: "Target", ref: A, href: storedHref({ kind: "document", uri: ch("ch12") }, "") },
+            " waits.",
+          ],
           shown: shownAt(A, ch("ch12")),
           settlements: new Map([[A.slice("ahead:".length), D]]),
           command: { command: "replace", in: [1, 1], content: "[Renamed](ch12) waits." },
@@ -370,7 +444,10 @@ const doors: DoorCase[] = [
         },
         {
           name: "an unsettled ahead ref keeps its own address",
-          old: [{ text: "Later", ref: A, href: storedHref(ch("later"), "") }, " waits."],
+          old: [
+            { text: "Later", ref: A, href: storedHref({ kind: "document", uri: ch("later") }, "") },
+            " waits.",
+          ],
           shown: shownAt(A, ch("later")),
           command: { command: "replace", in: [1, 1], content: "[Soon](later) waits." },
           expected: { ref: A, markdown: "[Soon](later) waits." },
@@ -437,7 +514,7 @@ const doors: DoorCase[] = [
               catalogDocument(D, "manuscript://moved.png", { image: true }),
               ...(occupied ? [catalogDocument(B, map, { image: true })] : []),
             ],
-            blocks: [picture.old({ src: storedHref(map, ""), ref: A })],
+            blocks: [picture.old({ src: storedHref({ kind: "document", uri: map }, ""), ref: A })],
             settlements: new Map([[A.slice("ahead:".length), D]]),
           });
           const outcome = await ctx.write(
@@ -447,7 +524,12 @@ const doors: DoorCase[] = [
           expect.soft(outcome.status, label).toBe("success");
           expect.soft(storedLinks(ctx.live()), label).toEqual([
             // Pass 1 keeps the stored attrs verbatim; the ref spells the moved path.
-            { label: "New label", ref: A, href: storedHref(map, ""), title: null },
+            {
+              label: "New label",
+              ref: A,
+              href: storedHref({ kind: "document", uri: map }, ""),
+              title: null,
+            },
           ]);
           expect.soft(ctx.links.minted, label).toEqual([]);
           expect.soft(await ctx.markdown(), label).toBe(picture.content.replace("map", "moved"));
@@ -642,7 +724,7 @@ const doors: DoorCase[] = [
           expected: (at: string) => ({
             label: "View the map",
             ref: documentRef(D),
-            href: storedHref(at, "#region"),
+            href: storedHref({ kind: "document", uri: at }, "#region"),
             title: null,
           }),
           echo: (at: string) => `[View the map](${at.slice("manuscript://".length)}#region)`,
@@ -781,9 +863,13 @@ const doors: DoorCase[] = [
         ],
         blocks: [
           paragraph(
-            { text: "Target", ref: documentRef(G), href: storedHref(target, "") },
+            {
+              text: "Target",
+              ref: documentRef(G),
+              href: storedHref({ kind: "document", uri: target }, ""),
+            },
             " and ",
-            { text: "Target", ref: A, href: storedHref(target, "") },
+            { text: "Target", ref: A, href: storedHref({ kind: "document", uri: target }, "") },
           ),
         ],
       });
@@ -804,11 +890,15 @@ const doors: DoorCase[] = [
       const titled = {
         text: "Titled",
         ref: documentRef(D),
-        href: storedHref(target, ""),
+        href: storedHref({ kind: "document", uri: target }, ""),
         title: "T",
       };
       const linkMark = (ref: string | null) =>
-        schema.marks.link.create({ href: storedHref(target, ""), title: null, ref });
+        schema.marks.link.create({
+          href: storedHref({ kind: "document", uri: target }, ""),
+          title: null,
+          ref,
+        });
       const ctx = linkHarness({
         holder: { id: H, uri: HOLDER },
         documents: [
@@ -872,7 +962,9 @@ const doors: DoorCase[] = [
       const [found, later] = storedLinks(ctx.live());
       expect.soft(found?.ref, this.name).toBe(documentRef(D));
       expect.soft(later?.ref, this.name).toMatch(/^ahead:/);
-      expect.soft(later?.href, this.name).toBe(storedHref(ch("later"), ""));
+      expect
+        .soft(later?.href, this.name)
+        .toBe(storedHref({ kind: "document", uri: ch("later") }, ""));
       expect.soft(ctx.links.misses, this.name).toEqual([]);
     },
   },
@@ -880,4 +972,52 @@ const doors: DoorCase[] = [
 
 it("A1-5: no write door loses or churns refs", async () => {
   for (const door of doors) await door.run();
+});
+
+it("binds a freshly written bare uploads link or picture to the writing chat's existing file and leaves code and prose alone", async () => {
+  const MAP = uuid(40);
+  const EXACT = uuid(41);
+  const PIC = uuid(42);
+  const NOTE = uuid(43);
+  const at = (name: string) => `uploads://@c3/${name}`;
+  const ctx = linkHarness({
+    holder: { id: H, uri: HOLDER },
+    documents: [
+      catalogDocument(MAP, at("map.png")),
+      catalogDocument(EXACT, at("exact.png")),
+      catalogDocument(PIC, at("my pic.png")),
+      catalogDocument(NOTE, at("name.md")),
+    ],
+    blocks: [paragraph("Plain prose.")],
+  });
+  const content = [
+    "Use `uploads://name` for this chat.",
+    "",
+    "```text",
+    "uploads://sample.png",
+    "```",
+    "",
+    "[bare](uploads://map) [qualified](<uploads://@c3/map>) [exact](uploads://exact.png)",
+    "",
+    "![](uploads://my%20pic.png) and [file](uploads://name.md#top)",
+  ].join("\n");
+  const outcome = await ctx.core.write(
+    { file: "holder", documentId: H, command: "replace", in: [1, 1], content } as never,
+    { sessionId: "session-a", threadId: "thread-a", uploadsChat: "c3" },
+  );
+  expect(outcome.status).toBe("success");
+  const stored = await ctx.markdown();
+  expect(stored).toContain("`uploads://name`");
+  expect(stored).toContain("uploads://sample.png\n```");
+  const bound = extractStoredLinks(ctx.live().getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)).map(
+    ({ ref, href }) => [ref, href],
+  );
+  expect(bound).toEqual([
+    [`doc:${MAP}`, at("map.png")],
+    [`doc:${MAP}`, at("map.png")],
+    [`doc:${EXACT}`, at("exact.png")],
+    [`doc:${PIC}`, at("my pic.png")],
+    [`doc:${NOTE}`, `${at("name.md")}#top`],
+  ]);
+  expect(ctx.links.minted).toEqual([]);
 });
