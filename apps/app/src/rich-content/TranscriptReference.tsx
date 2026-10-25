@@ -2,17 +2,19 @@
  * Readable transcript references, drawn as link chips; exact identity enables
  * navigation, never syntax alone.
  *
- * An exact `@` reference knows its document: its chip's family is its URI's,
- * and it is dashed once the document is gone. A syntax link (a Markdown link
- * to a Context URI) learns its state from the surface's own resolution cache,
- * the one its follows go through, so what it draws and what a click finds
- * agree. `[[name]]` is text, never a link.
+ * An exact `@` reference knows its document or folder: its chip's family is
+ * its URI's (or a folder's), and it is dashed once that is gone. A syntax link
+ * (a Markdown link to a Context URI) learns its state from the surface's own
+ * resolution cache, the one its follows go through, so what it draws and what
+ * a click finds agree. Any chip that names a folder opens the menu inside the
+ * folder, wherever the folder is now. `[[name]]` is text, never a link.
  */
 import { t } from "@lingui/core/macro";
 import { qualifyWrittenHref } from "@meridian/markup/links";
 import {
   createContext,
   type ReactNode,
+  type Ref,
   useCallback,
   useContext,
   useEffect,
@@ -38,6 +40,7 @@ import {
   linkTargetHref,
   referenceChip,
 } from "@/core/editor/links";
+import { FolderMenu, useFolderMenuHost } from "@/features/project/context/FolderMenu";
 
 /**
  * How the hosting surface follows a link written as syntax (a Context URI or
@@ -59,13 +62,19 @@ export const TranscriptLinkNavigationContext = createContext<TranscriptLinkNavig
 );
 
 /**
- * What the host knows about an exact reference's document. Available carries
- * where it lives now; a gone document has nowhere, so it matches on identity
- * alone and draws dashed.
+ * What the host knows about an exact reference's document or folder, keyed by
+ * `referenceKey`. Available carries where it lives now; a gone one has
+ * nowhere, so it matches on identity alone and draws dashed.
  */
-export type TranscriptReferenceResolution =
-  | { documentId: string; available: true; uri: string; label: string }
-  | { documentId: string; available: false };
+export type TranscriptReferenceResolution = { kind: "document" | "folder"; id: string } & (
+  | { available: true; uri: string; label: string }
+  | { available: false }
+);
+
+/** An exact reference's identity as resolutions are keyed: kind and id, never confused. */
+export function referenceKey(kind: "document" | "folder", id: string): string {
+  return `${kind}:${id}`;
+}
 export const TranscriptReferenceContext = createContext<{
   resolutions?: ReadonlyMap<string, TranscriptReferenceResolution>;
   onOpen?: (documentId: string) => void;
@@ -81,58 +90,79 @@ export const TranscriptReferenceContext = createContext<{
 export function TranscriptReference({
   children,
   "data-document-id": documentId,
+  "data-folder-id": folderId,
   "data-uri": uri,
   "data-target-href": targetHref,
   "data-authored-label": authoredLabel,
 }: {
   children?: ReactNode;
   "data-document-id"?: string;
+  "data-folder-id"?: string;
   "data-uri"?: string;
   "data-target-href"?: string;
   "data-authored-label"?: string;
 }) {
   const { resolutions, onOpen, canOpen, uploadsChat } = useContext(TranscriptReferenceContext);
   const navigation = useContext(TranscriptLinkNavigationContext);
+  const folderHost = useFolderMenuHost();
   const target = targetHref ? classifyLinkTarget(targetHref) : null;
-  const trigger = useRef<HTMLSpanElement>(null);
-  const candidate = documentId ? resolutions?.get(documentId) : null;
-  // An available answer counts only at the URI the writer referenced: a
-  // document that has moved since is not settled for this occurrence, so it
-  // stays filled and does not follow from here.
+  const trigger = useRef<HTMLElement>(null);
+  const exact = documentId
+    ? { kind: "document" as const, id: documentId }
+    : folderId
+      ? { kind: "folder" as const, id: folderId }
+      : null;
+  const candidate = exact ? resolutions?.get(referenceKey(exact.kind, exact.id)) : null;
+  // A document's available answer counts only at the URI the writer referenced:
+  // one that has moved since is not settled for this occurrence, so it stays
+  // filled and does not follow from here. A folder follows its identity: its
+  // menu opens wherever the folder is now, while the sent text stays as sent.
   const resolution =
     candidate &&
-    candidate.documentId === documentId &&
-    (!candidate.available || candidate.uri === (uri && qualifyWrittenHref(uri, uploadsChat)))
+    exact &&
+    candidate.kind === exact.kind &&
+    candidate.id === exact.id &&
+    (exact.kind === "folder" ||
+      !candidate.available ||
+      candidate.uri === (uri && qualifyWrittenHref(uri, uploadsChat)))
       ? candidate
       : null;
-  const syntax = !documentId && target ? target : null;
+  const syntax = !exact && target ? target : null;
   const syntaxFollowable = Boolean(syntax && navigation?.canFollow(syntax));
-  const follow = documentId
-    ? resolution?.available && onOpen && (canOpen?.(resolution.uri) ?? true)
-      ? () => onOpen(resolution.documentId)
-      : undefined
-    : navigation && syntax && syntaxFollowable
-      ? () => navigation.follow(syntax)
-      : undefined;
-  const label = authoredLabel !== "true" && resolution?.available ? resolution.label : children;
   const unfollowable = Boolean(navigation && syntax && !syntaxFollowable);
   const answer = useLinkAnswer(
     syntax && !unfollowable ? navigation : undefined,
     syntax ? linkTargetHref(syntax) : null,
   );
+  // The dashed outline says "nothing reachable" to the eye; `missing` says
+  // which to a screen reader, in the words the Editor's hint and the follow
+  // use: a reference whose document or folder is gone is no longer available,
+  // and a link to an address nothing is at yet does not exist yet. A syntax
+  // link has no ref, so it is never gone.
+  const gone = Boolean(exact) && resolution?.available === false;
+  const menuFolderId =
+    exact?.kind === "folder"
+      ? exact.id
+      : answer?.state === "folder"
+        ? answer.folder.folderId
+        : null;
+  const folderMenu = menuFolderId && folderHost && !gone ? menuFolderId : null;
+  const follow =
+    exact?.kind === "document"
+      ? resolution?.available && onOpen && (canOpen?.(resolution.uri) ?? true)
+        ? () => onOpen(resolution.id)
+        : undefined
+      : navigation && syntax && syntaxFollowable && !folderMenu
+        ? () => navigation.follow(syntax)
+        : undefined;
+  const label = authoredLabel !== "true" && resolution?.available ? resolution.label : children;
   // A syntax link this surface can never follow (a relative path with nothing
   // to be relative to) is text. A link control that can never work is a dead
   // control; the href stays reachable as a tooltip.
   if (unfollowable) return <span title={targetHref}>{label}</span>;
-  const chip = documentId
-    ? referenceChip(uri ?? "", resolution?.available ?? true)
+  const chip = exact
+    ? referenceChip({ kind: exact.kind, uri: uri ?? "" }, resolution?.available ?? true)
     : syntax && linkChip(syntax, answer);
-  // The dashed outline says "nothing reachable" to the eye; this says which to
-  // a screen reader, in the words the Editor's hint and the follow use: a
-  // reference whose document is gone is no longer available, and a link to
-  // an address nothing is at yet does not exist yet. A syntax link has no
-  // ref, so it is never gone.
-  const gone = Boolean(documentId) && resolution?.available === false;
   const missing =
     chip?.state === "draft"
       ? t`In a draft`
@@ -141,28 +171,46 @@ export function TranscriptReference({
         : gone
           ? t`No longer available`
           : t`Doesn't exist yet`;
+  const element = folderMenu ? (
+    <button
+      ref={trigger as Ref<HTMLButtonElement>}
+      type="button"
+      aria-haspopup="menu"
+      {...(chip ? linkChipAttributes(chip) : {})}
+    >
+      {label}
+    </button>
+  ) : (
+    // biome-ignore lint/a11y/useSemanticElements: Internal document references have no browser URL.
+    <span
+      ref={trigger as Ref<HTMLSpanElement>}
+      role="link"
+      tabIndex={0}
+      aria-disabled={!follow && !folderMenu}
+      aria-description={missing}
+      title={chip?.state === "draft" ? missing : undefined}
+      {...(chip ? linkChipAttributes(chip) : {})}
+      onClick={follow}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          follow?.();
+        }
+      }}
+    >
+      {label}
+    </span>
+  );
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        {/* biome-ignore lint/a11y/useSemanticElements: Internal references have no browser URL; unavailable links still expose keyboard context actions. */}
-        <span
-          ref={trigger}
-          role="link"
-          tabIndex={0}
-          aria-disabled={!follow}
-          aria-description={missing}
-          title={chip?.state === "draft" ? missing : undefined}
-          {...(chip ? linkChipAttributes(chip) : {})}
-          onClick={follow}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              follow?.();
-            }
-          }}
-        >
-          {label}
-        </span>
+        {folderMenu && folderHost ? (
+          <FolderMenu host={folderHost} folderId={folderMenu}>
+            {element}
+          </FolderMenu>
+        ) : (
+          element
+        )}
       </ContextMenuTrigger>
       <ContextMenuContent
         onCloseAutoFocus={(event) => {

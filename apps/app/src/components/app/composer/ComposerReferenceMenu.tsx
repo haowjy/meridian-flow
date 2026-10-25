@@ -1,14 +1,14 @@
 /**
  * One atomic occurrence owns its context actions; TipTap supplies its live
  * position. It draws as the shared link chip: a composer reference is exact,
- * so its family is its URI's.
+ * so its family is its URI's, or a folder's. Pressing a document chip opens
+ * the document; pressing a folder chip opens the menu inside the folder.
  */
 
 import { t } from "@lingui/core/macro";
-import { imageCapable } from "@meridian/thread-client";
 import { closeHistory } from "@tiptap/pm/history";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { type Ref, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -20,18 +20,23 @@ import {
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import {
-  type AuthoritativeReference,
   createDomInputSuggestionTransport,
   createReferenceBrowserController,
+  type DocumentReference,
 } from "@/core/completion";
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
 import { linkChipAttributes, referenceChip } from "@/core/editor/links";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
 import { ReferenceSuggestionMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
-import { type ComposerReferenceAttrs, composerReferenceContent } from "./composer-document";
+import { FolderMenu, useFolderMenuHost } from "@/features/project/context/FolderMenu";
+import {
+  type ComposerReferenceAttrs,
+  composerReferenceContent,
+  pickedReferenceAttrs,
+} from "./composer-document";
 
 export type ComposerReferenceRuntime = {
-  onOpen?: (reference: AuthoritativeReference) => void;
+  onOpen?: (reference: DocumentReference) => void;
   catalog: AtReferenceCatalog | null;
 };
 
@@ -44,13 +49,17 @@ export function ComposerReferenceMenu({
   readRuntime: () => ComposerReferenceRuntime;
 }) {
   const reference = node.attrs.reference as ComposerReferenceAttrs;
-  const trigger = useRef<HTMLSpanElement>(null);
+  const trigger = useRef<HTMLElement>(null);
   const [editing, setEditing] = useState<"destination" | "label" | null>(null);
   // Opening before the menu releases its focus scope immediately dismisses the picker.
   const changeAfterClose = useRef<"destination" | "label" | null>(null);
   const label = reference.displayText ?? reference.label;
   const runtime = readRuntime();
-  const follow = runtime.onOpen ? () => readRuntime().onOpen?.(reference) : undefined;
+  const follow =
+    reference.kind === "document" && runtime.onOpen
+      ? () => readRuntime().onOpen?.(reference)
+      : undefined;
+  const folderHost = useFolderMenuHost();
   const focus = () => trigger.current?.focus();
   const replace = (next: ComposerReferenceAttrs | null) => {
     const position = getPos();
@@ -60,7 +69,12 @@ export function ComposerReferenceMenu({
       !editor.state.doc.nodeAt(position)?.eq(node)
     )
       return;
-    if (next && next.documentId === reference.documentId && next.uri === reference.uri)
+    if (
+      next?.kind === "document" &&
+      reference.kind === "document" &&
+      next.documentId === reference.documentId &&
+      next.uri === reference.uri
+    )
       next = { ...next, upload: reference.upload };
     const tr = closeHistory(editor.state.tr);
     if (next)
@@ -75,6 +89,43 @@ export function ComposerReferenceMenu({
     setEditing(null);
     editor.commands.focus();
   };
+  const chipElement =
+    reference.kind === "folder" ? (
+      <button
+        ref={trigger as Ref<HTMLButtonElement>}
+        type="button"
+        data-composer-reference=""
+        {...linkChipAttributes(referenceChip(reference))}
+        aria-haspopup="menu"
+        aria-disabled={!folderHost}
+        aria-label={label}
+      >
+        {label}
+      </button>
+    ) : (
+      // biome-ignore lint/a11y/useSemanticElements: Internal document references have no browser URL.
+      <span
+        ref={trigger as Ref<HTMLSpanElement>}
+        data-composer-reference=""
+        {...linkChipAttributes(referenceChip(reference))}
+        tabIndex={0}
+        role="link"
+        aria-disabled={!follow}
+        aria-label={label}
+        onClick={(event) => {
+          event.preventDefault();
+          follow?.();
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.stopPropagation();
+          event.preventDefault();
+          follow?.();
+        }}
+      >
+        {label}
+      </span>
+    );
   return (
     <NodeViewWrapper as="span" className="inline" contentEditable={false}>
       <Popover
@@ -86,29 +137,13 @@ export function ComposerReferenceMenu({
         <ContextMenu>
           <PopoverAnchor asChild>
             <ContextMenuTrigger asChild>
-              {/* biome-ignore lint/a11y/useSemanticElements: Internal references have no browser URL; unavailable links still expose keyboard context actions. */}
-              <span
-                ref={trigger}
-                data-composer-reference=""
-                {...linkChipAttributes(referenceChip(reference.uri))}
-                tabIndex={0}
-                role="link"
-                aria-disabled={!follow}
-                aria-label={label}
-                onClick={(event) => {
-                  event.preventDefault();
-                  follow?.();
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    follow?.();
-                  }
-                }}
-              >
-                {label}
-              </span>
+              {reference.kind === "folder" && folderHost ? (
+                <FolderMenu host={folderHost} folderId={reference.folderId}>
+                  {chipElement}
+                </FolderMenu>
+              ) : (
+                chipElement
+              )}
             </ContextMenuTrigger>
           </PopoverAnchor>
           <ContextMenuContent
@@ -185,11 +220,9 @@ function ReferenceReplacement({
         label: () => catalog.label,
         onCompleteSegment: ({ prefix }) => setQuery(prefix),
         onSelect: ({ row }) =>
-          selectRef.current({
-            ...row.action.reference,
-            imageCapable: row.fileKind === "asset" && imageCapable(row.action.reference.fileType),
-            upload: null,
-          }),
+          selectRef.current(
+            pickedReferenceAttrs(row.action.reference, row.kind === "file" ? row.fileKind : null),
+          ),
       }),
     [catalog],
   );

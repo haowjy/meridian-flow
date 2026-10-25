@@ -14,7 +14,7 @@ export {
   UNSPELLED_UPLOAD,
   type WrittenGrammar,
   writtenAddresses,
-  writtenSourceUri,
+  writtenSourceTarget,
 } from "./holder-link-scope.js";
 export {
   type LinkOccurrence,

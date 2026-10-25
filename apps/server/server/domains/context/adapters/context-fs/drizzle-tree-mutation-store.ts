@@ -92,6 +92,7 @@ export async function inspectTreeLocation(
   sourceId: string,
   path: string,
   view: TreeView = LIVE_TREE,
+  expectedKind?: ContextLocationToken["kind"],
 ): Promise<ContextLocationToken | null> {
   const normalized = normalizeTreePath(path);
   if (!normalized) {
@@ -102,8 +103,25 @@ export async function inspectTreeLocation(
       path: "",
     };
   }
-  // A document answers at its canonical name (`ch1.md` is `ch1`); a folder at its literal one.
   const tree = createTreeReader(db);
+  if (expectedKind === "directory") {
+    const found = await tree.resolvePath(view, {
+      contextSourceId: sourceId as ContextSourceId,
+      path: normalized,
+    });
+    const folderIds =
+      found.kind === "found"
+        ? found.node.kind === "folder"
+          ? [found.node.folder.id]
+          : []
+        : found.kind === "ambiguous"
+          ? found.nodes.flatMap((node) => (node.kind === "folder" ? [node.id] : []))
+          : [];
+    return folderIds.length === 1
+      ? { kind: "directory", nodeId: folderIds[0] as FolderId, sourceId, path: normalized }
+      : null;
+  }
+  // A document answers at its canonical name (`ch1.md` is `ch1`); a folder at its literal one.
   const documentPath = canonicalDocumentPath(normalized);
   const asDocument =
     documentPath === null

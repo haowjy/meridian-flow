@@ -119,7 +119,8 @@ function children(
       <Fragment key={key}>
         {reference ? (
           <TranscriptReference
-            data-document-id={reference.documentId}
+            data-document-id={reference.kind === "document" ? reference.documentId : undefined}
+            data-folder-id={reference.kind === "folder" ? reference.folderId : undefined}
             data-uri={reference.uri}
             data-authored-label="true"
           >

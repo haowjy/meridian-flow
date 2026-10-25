@@ -6,7 +6,7 @@
  */
 import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
-import { type AuthoritativeReference, authoritativeReferenceForFile } from "@/core/completion";
+import { authoritativeReferenceForFile, type DocumentReference } from "@/core/completion";
 import { useContextCatalogScope } from "./useContextCatalog";
 
 export type ChatUpload = {
@@ -23,7 +23,7 @@ export type ChatUpload = {
    */
   deletion: { intakeId: string; locationRevision: string } | null;
   /** The `@` reference the composer inserts for it; null when its address is not stable yet. */
-  reference: AuthoritativeReference | null;
+  reference: DocumentReference | null;
   /** Whether the composer inserts it as an image (an asset) or a document reference. */
   fileKind: "document" | "asset";
 };

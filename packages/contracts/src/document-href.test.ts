@@ -24,8 +24,8 @@ it.each([
     "../volume 1/100%25 ready%23final%3F.md",
   ],
 ])("round-trips %s → %s as %s", (holder, target, href) => {
-  expect(spellDocumentHref(holder, target)).toBe(href);
-  expect(resolveDocumentHref(href, holder)).toEqual({ uri: target, suffix: "" });
+  expect(spellDocumentHref(holder, { kind: "document", uri: target })).toBe(href);
+  expect(resolveDocumentHref(href, holder)).toEqual({ kind: "document", uri: target, suffix: "" });
 });
 
 it.each([
@@ -37,13 +37,16 @@ it.each([
   ],
   ["foo/bar://x.md", "manuscript://v/foo/bar:/x.md", ""],
 ])("resolves %s without mistaking authority or encoded path for syntax", (href, uri, suffix) => {
-  expect(resolveDocumentHref(href, "manuscript://v/base.md")).toEqual({ uri, suffix });
+  expect(resolveDocumentHref(href, "manuscript://v/base.md")).toEqual({
+    kind: "document",
+    uri,
+    suffix,
+  });
 });
 
 it.each([
   ["", "manuscript://base.md"],
   ["/chapter.md", "manuscript://base.md"],
-  ["chapter/", "manuscript://base.md"],
   ["https://example.com/chapter.md", "manuscript://base.md"],
   ["chapter.md", null],
   ["../../chapter.md", "manuscript://v/base.md"],
@@ -55,7 +58,7 @@ it.each([
 });
 
 it.each(["manuscript://"])("never spells non-document %s", (target) => {
-  expect(() => spellDocumentHref(null, target)).toThrow(RangeError);
+  expect(() => spellDocumentHref(null, { kind: "document", uri: target })).toThrow(RangeError);
 });
 
 it.each([
@@ -72,4 +75,13 @@ it.each([
 
 it("canonicalizes only the written path's filename", () => {
   expect(documentPathKey("book.md/chapter.TXT")).toBe("book.md/chapter");
+  expect(resolveDocumentHref("kb://World/100%25/%23draft/", null)).toEqual({
+    kind: "folder",
+    uri: "kb://World/100%/#draft",
+    suffix: "",
+  });
+  expect(spellDocumentHref(null, { kind: "folder", uri: "kb://World/100%/#draft" })).toBe(
+    "kb://World/100%25/%23draft/",
+  );
+  expect(resolveDocumentHref("manuscript://", null)).toBeNull();
 });

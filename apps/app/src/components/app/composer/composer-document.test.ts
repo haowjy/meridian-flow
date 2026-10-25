@@ -44,6 +44,7 @@ it("projects unique owned uploads in occurrence order without changing the submi
     locationRevision: "rev-1",
   };
   const reference = {
+    kind: "document",
     documentId: upload.documentId,
     uri: upload.uri,
     label: "notes",
@@ -69,6 +70,7 @@ it("projects unique owned uploads in occurrence order without changing the submi
   );
   expect(message.references).toEqual([
     {
+      kind: "document",
       documentId: upload.documentId,
       uri: upload.uri,
       purpose: "draft-upload",

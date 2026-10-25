@@ -103,8 +103,18 @@ describe("thread send", () => {
         text: "/reviseCompare\nthese[Notes](kb://notes)[Cover](kb://cover.png)",
         activatedSkillSlugs: ["revise"],
         references: [
-          { documentId: "notes-id", uri: "kb://notes", purpose: "reference" },
-          { documentId: "image-id", uri: "kb://cover.png", purpose: "reference" },
+          {
+            kind: "document",
+            documentId: "notes-id",
+            uri: "kb://notes",
+            purpose: "reference",
+          },
+          {
+            kind: "document",
+            documentId: "image-id",
+            uri: "kb://cover.png",
+            purpose: "reference",
+          },
         ],
         blocks: [
           {
@@ -117,12 +127,14 @@ describe("thread send", () => {
           { type: "text", text: "Compare\nthese" },
           {
             type: "reference",
+            kind: "document",
             text: "[Notes](kb://notes)",
             documentId: "notes-id",
             uri: "kb://notes",
           },
           {
             type: "reference",
+            kind: "document",
             text: "[Cover](kb://cover.png)",
             documentId: "image-id",
             uri: "kb://cover.png",

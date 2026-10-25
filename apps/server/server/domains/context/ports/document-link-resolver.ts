@@ -1,14 +1,14 @@
 /**
  * Port for resolving every internal-link spelling to one project document.
  *
- * The target and resolved shapes are the wire contract the editor also speaks
- * (`@meridian/contracts/protocol`), so a new spelling is added once rather
- * than on both sides of the endpoint.
+ * Stored href parsing belongs to the shared contracts boundary. This port
+ * receives its decoded canonical address and only resolves project ownership
+ * and catalog identity.
  */
 
-import type { DocumentLinkTarget, ResolvedDocumentLink } from "@meridian/contracts/protocol";
+import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
-export type { DocumentLinkTarget, ResolvedDocumentLink };
+export type { ResolvedDocumentLink };
 
 export interface ResolveDocumentLinkInput {
   projectId: string;
@@ -17,7 +17,7 @@ export interface ResolveDocumentLinkInput {
   rootThreadId?: string | null;
   /** The chat holding the link, when it is a chat's own; a document holder has none. */
   chatId?: string | null;
-  target: DocumentLinkTarget;
+  uri: string;
   /** Chat only: a link with no holder may follow a vacated path to the document that left it. */
   previousLocations?: boolean;
 }

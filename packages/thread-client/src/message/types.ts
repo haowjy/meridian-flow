@@ -18,25 +18,36 @@ export type StableReferenceAuthority =
   | { kind: "chat"; projectId: ProjectId; chatId: string; chatRef: string | null };
 
 /** Only the fields message serialization consumes; hosts may carry more metadata. */
-export type MessageReference = {
-  documentId: ReferenceOccurrence["documentId"];
-  uri: string;
-  label: string;
-  displayText?: string;
-  imageCapable: boolean;
-  upload?: { intakeId: string } | null;
-};
+export type MessageReference =
+  | {
+      kind: "document";
+      documentId: Extract<ReferenceOccurrence, { kind: "document" }>["documentId"];
+      uri: string;
+      label: string;
+      displayText?: string;
+      imageCapable: boolean;
+      upload?: { intakeId: string } | null;
+    }
+  | {
+      kind: "folder";
+      folderId: Extract<ReferenceOccurrence, { kind: "folder" }>["folderId"];
+      uri: string;
+      label: string;
+      displayText?: string;
+    };
 
 /**
  * A reference chip as the composer stores and restores it: what serialization consumes plus the
  * file type and owner. The app's draft parser requires every field, so a chip built anywhere
  * (the app, a hand-back) restores the same way.
  */
-export type RestorableReference = MessageReference & {
-  uri: CanonicalContextUri;
-  fileType: string;
-  authority: StableReferenceAuthority;
-};
+export type RestorableReference =
+  | (Extract<MessageReference, { kind: "document" }> & {
+      uri: CanonicalContextUri;
+      fileType: string;
+      authority: StableReferenceAuthority;
+    })
+  | (Extract<MessageReference, { kind: "folder" }> & { uri: CanonicalContextUri });
 
 export type MessageSkill = { slug: string; name: string; description: string };
 

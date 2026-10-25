@@ -35,7 +35,7 @@ import { useState } from "react";
 
 import {
   canFollowLink,
-  followLink,
+  followLinkFrom,
   goneLinkDocumentId,
   type LinkMenuRequest,
   type LinkSurface,
@@ -77,9 +77,11 @@ export function LinkMenu({
   const label =
     resolution?.state === "document"
       ? resolution.document.title
-      : menu.target
-        ? linkTargetLabel(menu.target)
-        : menu.href;
+      : resolution?.state === "folder"
+        ? resolution.folder.title
+        : menu.target
+          ? linkTargetLabel(menu.target)
+          : menu.href;
   // A gone link goes nowhere, so the menu has no Open verb for it (law 5).
   const followable =
     canFollowLink(menu.target, surface.navigator) &&
@@ -119,10 +121,7 @@ export function LinkMenu({
       {followable ? (
         <EditorMenuItem
           onSelect={() => {
-            followLink(
-              { target: menu.target, ref: menu.ref, disposition: "current" },
-              surface.navigator,
-            );
+            followLinkFrom(editor, { ref: menu.ref, href: menu.href }, "current", menu.at);
             close();
           }}
         >

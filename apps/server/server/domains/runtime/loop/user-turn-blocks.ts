@@ -57,8 +57,9 @@ export function userMessageBlocksFromTurn(
     if (typeof block.content === "string") return [{ type: "text", text: block.content }];
     const reference = referenceOccurrenceContent(block);
     if (reference) {
-      const { read: _read, ...occurrence } = reference;
-      return [occurrence];
+      if (reference.kind === "folder") return [reference];
+      const { read: _read, ...document } = reference;
+      return [document];
     }
     const skill = skillOccurrenceContent(block);
     return skill ? [skill] : [];

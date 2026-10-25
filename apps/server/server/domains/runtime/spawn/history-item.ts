@@ -216,9 +216,10 @@ export function describeBlock(input: {
   let text: string;
   if (modelText) text = modelText;
   else if (reference) {
-    const elidedRead = reference.read
-      ? ((elideReferenceRead(reference, "history") as JsonObject).read as JsonObject)
-      : null;
+    const elidedRead =
+      reference.kind === "document" && reference.read
+        ? ((elideReferenceRead(reference, "history") as JsonObject).read as JsonObject)
+        : null;
     text = `${reference.text}${elidedRead ? `\n${stringify({ result: elidedRead.result })}` : ""}`;
   } else if (block.blockType === "image")
     text = `[image: ${(block.content as JsonObject)?.name ?? (block.content as JsonObject)?.uri ?? "attachment"}]`;

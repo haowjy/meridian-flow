@@ -107,7 +107,6 @@ export type { DocumentAddressResolver } from "./ports/document-address.js";
 export type { DocumentArrivals } from "./ports/document-arrivals.js";
 export type {
   DocumentLinkResolver,
-  DocumentLinkTarget,
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";

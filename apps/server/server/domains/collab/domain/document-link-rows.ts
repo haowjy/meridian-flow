@@ -57,6 +57,7 @@ function rowFor(occurrence: StoredLinkOccurrence, holderUri: string): DocumentLi
   }
   const ref = parseLinkRef(occurrence.ref);
   if (!ref || written.kind !== "internal") return null;
+  if (ref.kind === "folder") return null;
   return ref.kind === "doc"
     ? row(`doc:${ref.documentId}`, ref.documentId as DocumentId, null, written.uri)
     : row(`ahead:${ref.aheadId}`, null, ref.aheadId, written.uri);

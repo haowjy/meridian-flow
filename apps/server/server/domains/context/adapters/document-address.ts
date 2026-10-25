@@ -96,12 +96,28 @@ export async function resolveCanonicalAddress(
   db: Database,
   input: { holderProjectId: ProjectId; address: string },
 ): Promise<DocumentCoordinates> {
+  return resolveAddressCoordinates(db, input, "document");
+}
+
+/** A decoded canonical folder address resolved to the same storage coordinates as a document. */
+export async function resolveCanonicalFolderAddress(
+  db: Database,
+  input: { holderProjectId: ProjectId; address: string },
+): Promise<DocumentCoordinates> {
+  return resolveAddressCoordinates(db, input, "folder");
+}
+
+async function resolveAddressCoordinates(
+  db: Database,
+  input: { holderProjectId: ProjectId; address: string },
+  kind: "document" | "folder",
+): Promise<DocumentCoordinates> {
   const parsed = parseContextUri(input.address);
   if (!parsed.ok || parsed.value.normalized !== input.address) {
     throw new UnresolvableAddressError(input.address, `Address is not canonical: ${input.address}`);
   }
   const { scheme, authority, path } = parsed.value;
-  if (!isAheadFilename(path.split("/").at(-1) ?? "")) {
+  if (kind === "document" && !isAheadFilename(path.split("/").at(-1) ?? "")) {
     throw new UnresolvableAddressError(
       input.address,
       `Address needs a canonical document name: ${input.address}`,
