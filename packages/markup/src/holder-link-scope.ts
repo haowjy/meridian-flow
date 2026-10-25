@@ -174,10 +174,12 @@ export type FreshAssignment =
 
 /**
  * Pass 3 of ref assignment, the same on server and client: classify; an
- * internal address names the document `documentFor` finds there (exact, then
- * unique extension-omitted) and is spelled as its canonical address; else it
- * gets a fresh ahead ref at `aheadAddress`. External and contextual hrefs,
- * and a scheme root (no address to mint for), stay literal.
+ * internal document address names the document `documentFor` finds there
+ * (exact, then unique extension-omitted), while a directory address names the
+ * folder `folderFor` finds there. Each is spelled with its target kind; a
+ * missing document gets a fresh ahead ref at `aheadAddress`, while a missing
+ * folder keeps its directory address. External and contextual hrefs, and a
+ * scheme root (no address to mint for), stay literal.
  */
 export function assignFreshLink(input: {
   href: string;
@@ -258,18 +260,16 @@ export function writtenAddresses(
   for (const { kind, attrs } of walkLinkOccurrences(blocks)) {
     const href = qualifyWrittenHref(attrs.href, uploadsChat);
     const target =
-      kind === "link" ? internalTarget(classifyWrittenLink(href, holderUri)) : sourceTarget(href);
+      kind === "link"
+        ? internalTarget(classifyWrittenLink(href, holderUri))
+        : writtenSourceTarget(href);
     if (target) out.set(`${target.kind}:${target.uri}`, target);
   }
   return [...out.values()];
 }
 
-/** A written image/figure source as a decoded internal address, or null. */
-export function writtenSourceUri(src: string): string | null {
-  return internalUri(classifyWrittenSource(src));
-}
-
-function sourceTarget(src: string): ResolvedDocumentHref | null {
+/** A written image/figure source as a decoded document address, or null. */
+export function writtenSourceTarget(src: string): ResolvedDocumentHref | null {
   const written = classifyWrittenSource(src);
   return written.kind === "internal" && written.target === "document"
     ? { kind: "document", uri: written.uri, suffix: written.suffix }
@@ -280,8 +280,4 @@ function internalTarget(written: WrittenLinkClass): ResolvedDocumentHref | null 
   return written.kind === "internal"
     ? { kind: written.target, uri: written.uri, suffix: written.suffix }
     : null;
-}
-
-function internalUri(written: WrittenLinkClass): string | null {
-  return written.kind === "internal" ? written.uri : null;
 }

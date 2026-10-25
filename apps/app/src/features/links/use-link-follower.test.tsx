@@ -83,7 +83,11 @@ function render({
   act(() => root.render(<Probe scope={rendered} index={index} />));
 }
 
-const address = (name: string): LinkTarget => ({ kind: "scheme", uri: `manuscript://${name}.md` });
+const address = (name: string): LinkTarget => ({
+  kind: "scheme",
+  addressKind: "document",
+  uri: `manuscript://${name}.md`,
+});
 
 async function answer(name: string, document: ResolvedDocumentLink | null) {
   await act(async () => {

@@ -23,6 +23,7 @@ import {
 } from "@meridian/contracts";
 import {
   contextOwner,
+  PROJECT_CONTEXT_AVAILABILITY_MAX_IDS,
   parseDocumentFilename,
   type ResolvedContextOwner,
 } from "@meridian/contracts/protocol";
@@ -290,18 +291,27 @@ export function createDrizzleDocumentLinkScopes(deps: {
         ...[...addressIds.values()].filter((id): id is string => id !== null && !byId.has(id)),
       ]);
       if (ids.size > 0) {
-        const resolved = await availability.lookup(
-          {
-            projectId: snapshot.projectId as ProjectId,
-            documentIds: [],
-            folderIds: [...ids],
-            view: treeViewOf(view),
-          },
-          { userId: snapshot.viewer },
-        );
-        const answers = new Map(
-          (resolved.folderResolutions ?? []).map((item) => [item.folderId, item]),
-        );
+        const answers = new Map<
+          string,
+          NonNullable<Awaited<ReturnType<typeof availability.lookup>>["folderResolutions"]>[number]
+        >();
+        const requested = [...ids];
+        for (
+          let start = 0;
+          start < requested.length;
+          start += PROJECT_CONTEXT_AVAILABILITY_MAX_IDS
+        ) {
+          const resolved = await availability.lookup(
+            {
+              projectId: snapshot.projectId as ProjectId,
+              documentIds: [],
+              folderIds: requested.slice(start, start + PROJECT_CONTEXT_AVAILABILITY_MAX_IDS),
+              view: treeViewOf(view),
+            },
+            { userId: snapshot.viewer },
+          );
+          for (const item of resolved.folderResolutions ?? []) answers.set(item.folderId, item);
+        }
         for (const id of ids) {
           const answer = answers.get(id);
           byId.set(

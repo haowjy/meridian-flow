@@ -17,6 +17,7 @@ import {
   documentRef,
   mintAheadRef,
   parseLinkRef,
+  type ResolvedDocumentHref,
   resolveDocumentHref,
   type SpelledHref,
   splitDocumentHrefSuffix,
@@ -31,7 +32,7 @@ import {
   qualifyWrittenHref,
   type WrittenGrammar,
   walkLinkOccurrences,
-  writtenSourceUri,
+  writtenSourceTarget,
 } from "@meridian/markup/links";
 import type { AheadMint } from "../ports/document-links.js";
 import { correspondLinks, type LinkMatch, type ShownLink } from "./correspondence.js";
@@ -115,14 +116,15 @@ export function assignOccurrences(input: AssignOccurrencesInput): {
 }
 
 interface Grammar {
-  /** Written href → decoded canonical address, ignoring classification; null if none. */
-  address(href: string, holderUri: string | null): { uri: string; suffix: string } | null;
+  /** Written href → decoded canonical target, or null if this grammar cannot name it. */
+  address(href: string, holderUri: string | null): ResolvedDocumentHref | null;
   /**
    * The address passes 1 and 2 compare a written href by: the codec name
    * ahead minting stores, so any prose spelling still continues a link after
    * that document moved. Pass 3 keeps its exact-then-unique-extension resolve.
    */
   correspondenceKey(href: string, holderUri: string | null): string | null;
+  acceptsRef(ref: string): boolean;
   spell(scope: HolderLinkScope, attrs: OccurrenceAttrs): SpelledHref;
   kind: WrittenGrammar;
 }
@@ -133,20 +135,25 @@ const GRAMMARS: Record<"link" | "source", Grammar> = {
     correspondenceKey(href, holderUri) {
       const target = resolveDocumentHref(href, holderUri);
       if (!target) return null;
-      return target.kind === "folder"
-        ? target.uri
-        : (aheadAddress(target.uri, "link") ?? target.uri);
+      const uri =
+        target.kind === "folder" ? target.uri : (aheadAddress(target.uri, "link") ?? target.uri);
+      return targetKey(target.kind, uri);
     },
+    acceptsRef: () => true,
     spell: (scope, attrs) => scope.spellLink({ href: attrs.href, ref: attrs.ref }),
     kind: "link",
   },
   source: {
     address(href) {
-      const uri = writtenSourceUri(href);
-      return uri ? { uri, suffix: splitDocumentHrefSuffix(href).suffix } : null;
+      return writtenSourceTarget(href);
     },
     // An empty source keys as the empty address a picture shown without one was shown at.
-    correspondenceKey: (href) => (href === "" ? "" : writtenSourceUri(href)),
+    correspondenceKey(href) {
+      if (href === "") return "";
+      const target = writtenSourceTarget(href);
+      return target ? targetKey(target.kind, target.uri) : null;
+    },
+    acceptsRef: (ref) => parseLinkRef(ref)?.kind !== "folder",
     spell: (scope, attrs) => scope.spellSource({ src: attrs.href, ref: attrs.ref }),
     kind: "source",
   },
@@ -182,13 +189,18 @@ function assignKind(input: {
   // except a literal empty picture: it occupies its place among the empty sources an
   // upload shown as `![alt]()` also matches, so that upload cannot take its slot.
   const corresponding = old.filter(
-    ({ identity, occurrence }) => identity !== null || occurrence.attrs.href === "",
+    ({ identity, occurrence }) =>
+      (identity !== null && grammar.acceptsRef(identity)) || occurrence.attrs.href === "",
   );
+  const shown = input.shown.filter(({ ref }) => grammar.acceptsRef(ref));
   const matches: LinkMatch[] = correspondLinks({
     old: corresponding.map(({ occurrence, identity, spelled }) => ({
       label: occurrence.label,
       ref: identity,
-      current: spelled.address ?? "",
+      current:
+        identity && spelled.address
+          ? correspondenceKeyForRef(identity, spelled.address, grammar.kind)
+          : "",
       live:
         identity !== null &&
         liveForGrammar(grammar, scope, { ref: identity, href: occurrence.attrs.href }),
@@ -197,9 +209,10 @@ function assignKind(input: {
       label: occurrence.label,
       href: occurrence.attrs.href,
     })),
-    shown: input.shown,
+    shown,
     holderUri,
     normalize: (href, base) => grammar.correspondenceKey(href, base),
+    showingKey: (ref, address) => correspondenceKeyForRef(ref, address, grammar.kind),
     isLive: (ref, address) => liveForGrammar(grammar, scope, { ref, href: address }),
   });
   // Old occurrences no address names: contextual ones, and an upload this reader is
@@ -232,7 +245,7 @@ function assignKind(input: {
     }
     if (match.pass === 2) {
       // The match came from a showing, so a latest showing always exists.
-      const shownAddress = latestShownAddress(input.shown, match.ref);
+      const shownAddress = latestShownAddress(shown, match.ref);
       return shownAttrs(grammar, scope, match.ref, shownAddress, {
         title: occurrence.attrs.title,
         suffix: writtenSuffix,
@@ -374,6 +387,20 @@ function liveForGrammar(
     : false;
 }
 
+function correspondenceKeyForRef(ref: string, address: string, grammar: WrittenGrammar): string {
+  if (address === "") return "";
+  const kind = parseLinkRef(ref)?.kind === "folder" ? "folder" : "document";
+  const uri =
+    kind === "document" && grammar === "link"
+      ? (aheadAddress(address, "link") ?? address)
+      : address;
+  return targetKey(kind, uri);
+}
+
+function targetKey(kind: "document" | "folder", uri: string): string {
+  return `${kind}\u0000${uri}`;
+}
+
 function latestShownAddress(shown: readonly ShownLink[], ref: string): string {
   let latest: ShownLink | undefined;
   for (const entry of shown)
@@ -399,8 +426,8 @@ function isAssetSrc(src: string): boolean {
  * link; guessing an id would store a reference that can never render.
  */
 function assetFor(scope: HolderLinkScope, src: string): string | null {
-  const uri = writtenSourceUri(src);
-  return uri ? scope.assetFor(uri) : null;
+  const target = writtenSourceTarget(src);
+  return target ? scope.assetFor(target.uri) : null;
 }
 
 /** The write path's ref assigner: one per command, over one prepared scope and one set of showings. */

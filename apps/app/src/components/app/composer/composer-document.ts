@@ -1,5 +1,6 @@
 /** TipTap Composer schema, clipboard, draft ownership, and exact selection snapshots. */
 
+import { storedHref } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   SubmittedReference,
@@ -64,7 +65,7 @@ export type ComposerSubmitEnvelope = Readonly<{
   activatedSkillSlugs: readonly string[];
 }>;
 
-export type ComposerDocumentReferenceAttrs = DocumentReference &
+type ComposerDocumentReferenceAttrs = DocumentReference &
   Extract<RestorableReference, { kind: "document" }> & {
     upload: ComposerOwnedUpload | null;
   };
@@ -257,8 +258,8 @@ export const ComposerReferenceNode = Node.create({
                 continue;
               // Manuscript marks carry a target, not admitted attachment identity.
               // Preserve their Markdown rather than inventing a Composer attachment.
-              // Chat has no folder, so a recorded address (the full Context URI
-              // the link named where it was copied) wins over a relative href.
+              // A recorded address (the full Context URI the link named where it
+              // was copied) wins over a relative href.
               const target =
                 clipboardLinkAddress(element.getAttribute(LINK_ADDRESS_ATTRIBUTE)) ??
                 internalClipboardTarget(element.getAttribute("data-meridian-link"));
@@ -282,7 +283,7 @@ export const ComposerReferenceNode = Node.create({
         "data-composer-reference": JSON.stringify(
           value.kind === "document" ? { ...value, upload: null } : value,
         ),
-        "data-meridian-link": value.uri,
+        "data-meridian-link": storedHref({ kind: value.kind, uri: value.uri }, ""),
         role: "link",
         tabindex: "0",
         "aria-label": value.displayText ?? value.label,

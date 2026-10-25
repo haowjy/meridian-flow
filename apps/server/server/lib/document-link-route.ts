@@ -19,6 +19,7 @@ import {
   ResolveDocumentLinksRequestSchema,
   type ResolveDocumentLinksResponse,
   resolveDocumentHref,
+  storedHref,
 } from "@meridian/contracts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
@@ -122,7 +123,12 @@ export async function handleDocumentLinkResolveRequest(
         ? deps.linkScopes.holder({ documentId: holder.documentId, view })
         : deps.linkScopes.reader({ uri: request.baseUri, view });
       for (const { link, index } of refLinks) {
-        const resolution = reader.resolve(link);
+        const resolved = resolveDocumentHref(link.href, baseUri);
+        const resolution = reader.resolve(
+          resolved?.kind === "folder"
+            ? { ...link, href: storedHref(resolved, resolved.suffix) }
+            : link,
+        );
         const parsed = parseLinkRef(link.ref);
         const candidateId =
           resolution.kind === "gone"

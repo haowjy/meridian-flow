@@ -30,7 +30,7 @@ loads neither Yjs nor the schema builder):
 - `@meridian/markup/links` (`links.ts`): the rules every host shares
   (`holder-link-scope.ts`, see Shared link rules): `createHolderLinkScope(holder,
   catalog)` over a `HolderCatalog`, `assignFreshLink` (pass 3),
-  `classifyWrittenHref`, `writtenAddresses` and `writtenSourceUri`; and
+  `qualifyWrittenHref`, `writtenAddresses` and `writtenSourceTarget`; and
   `walkLinkOccurrences(blocks)` / `spelledLinks(blocks, links)`
   (`link-occurrences.ts`), see Link occurrences. Also exports
   `formatMarkdownLink(label, href)` and `markdownLinkDestination(href)` for
