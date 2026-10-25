@@ -1,8 +1,8 @@
 /**
  * DB-suite hooks that pin run-state publication. `openAuditedDatabase` clones a disposable database
  * from the run's migrated template and installs a test-only trigger audit in it (never a migration,
- * never in the worker's shared database); `close` drops it. After each scenario `assertPublicationHooks`
- * checks that
+ * never in the worker's shared database); `close` releases it for inline or managed cleanup. After
+ * each scenario `assertPublicationHooks` checks that
  *
  * - every transaction that changed an input of a chat's record also appended a `run_state.changed`
  *   row for that chat (a write a later publish masks can't pass parity alone), and
@@ -16,6 +16,7 @@ import { createDb, type Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
 import { sql } from "drizzle-orm";
 import postgres from "postgres";
+import { disposableTestDatabaseTarget } from "../../../../tools/dev/lib/test-db-lifecycle.js";
 import { readRunState } from "../domains/runtime/adapters/drizzle-run-state.js";
 
 // A suite that drains detached work (up to 8 s) and then closes must fit the 30 s hook timeout:
@@ -52,22 +53,22 @@ export type AuditedDatabase = { db: Database; close: () => Promise<void> };
 
 /**
  * A disposable database owned by one suite: cloned from the managed run's template (which no session
- * connects to, so the clone cannot be blocked), audited, and dropped by `close`. The name keeps the
- * managed `<template>-worker-<n>` shape (`n` far above any worker index), so the run's managed cleanup
- * collects a clone that a crash or a failed drop left, by the `<template>-worker-` prefix.
+ * connects to, so the clone cannot be blocked), audited, and released by `close`. The name keeps the
+ * managed `<template>-worker-<n>` shape (`n` far above any worker index), so the run's collector finds
+ * it by the `<template>-worker-` prefix.
  */
 export async function openAuditedDatabase(
   workerUrl: string,
   options: { max: number },
 ): Promise<AuditedDatabase> {
   const workerName = decodeURIComponent(new URL(workerUrl).pathname.slice(1));
-  const managed = /_test-run-\d+-\d+-worker-\d+$/.test(workerName);
-  const templateName = managed ? workerName.replace(/-worker-\d+$/, "") : workerName;
-  const cloneName = managed
-    ? `${templateName}-worker-${randomInt(1000, 1_000_000)}`
-    : `${workerName}_audit_${process.pid}_${Date.now()}`;
-  if (Buffer.byteLength(cloneName) > 63)
-    throw new Error(`Audit database name is longer than 63 bytes: ${cloneName}`);
+  const target = disposableTestDatabaseTarget(
+    workerUrl,
+    `${workerName}_audit_${process.pid}_${Date.now()}`,
+    randomInt(1000, 1_000_000),
+  );
+  const cloneName = target.databaseName;
+  const templateName = target.dropInline ? workerName : workerName.replace(/-worker-\d+$/, "");
   const urlFor = (name: string) => {
     const url = new URL(workerUrl);
     url.pathname = `/${name}`;
@@ -81,7 +82,7 @@ export async function openAuditedDatabase(
   // clone after closing the pool. FORCE still ends a query whose bounded pool close timed out.
   const close = async () => {
     await within(POOL_CLOSE_TIMEOUT_MS, `closing the pool of ${cloneName}`, db?.close());
-    if (!managed)
+    if (target.dropInline)
       await within(
         DROP_TIMEOUT_MS,
         `dropping ${cloneName}`,

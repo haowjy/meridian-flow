@@ -3,6 +3,40 @@ import { validateDbName } from "./dev-db";
 
 const MANAGED_TEST_SLUG_PREFIX = "test-run-";
 const MANUAL_TEST_SLUG_PREFIX = "test-manual-";
+const MANAGED_WORKER_PATTERN = /^(.*_test-run-\d+-\d+)-worker-\d+$/;
+
+export interface DisposableTestDatabaseTarget {
+  databaseName: string;
+  databaseUrl: string;
+  dropInline: boolean;
+}
+
+/**
+ * Places suite-owned databases under the managed run's worker prefix so its detached collector owns
+ * cleanup. Unmanaged runs have no collector and must use the caller's standalone name and drop it.
+ */
+export function disposableTestDatabaseTarget(
+  ownerDatabaseUrl: string,
+  unmanagedDatabaseName: string,
+  managedWorkerIndex: number,
+): DisposableTestDatabaseTarget {
+  if (!Number.isInteger(managedWorkerIndex) || managedWorkerIndex < 1) {
+    throw new Error(`Disposable DB worker index must be a positive integer: ${managedWorkerIndex}`);
+  }
+  const url = new URL(ownerDatabaseUrl);
+  const ownerName = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  const managedTemplate = ownerName.match(MANAGED_WORKER_PATTERN)?.[1];
+  const databaseName = managedTemplate
+    ? `${managedTemplate}-worker-${managedWorkerIndex}`
+    : unmanagedDatabaseName;
+  validateDbName(databaseName);
+  url.pathname = `/${databaseName}`;
+  return {
+    databaseName,
+    databaseUrl: url.toString(),
+    dropInline: managedTemplate === undefined,
+  };
+}
 
 export function managedTestDatabaseUrl(
   sourceDatabaseUrl: string,

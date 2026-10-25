@@ -18,6 +18,7 @@ import {
 } from "./dev-env";
 import {
   classifyTestDatabaseCleanup,
+  disposableTestDatabaseTarget,
   isManualTestDatabase,
   isProcessAncestor,
   managedTestDatabaseOwnerPid,
@@ -143,6 +144,20 @@ describe("managed DB test lifecycle", () => {
     expect(managedTestDatabaseOwnerPid("meridian_test-run-1234-5678-worker-2", ["meridian"])).toBe(
       1234,
     );
+
+    expect(disposableTestDatabaseTarget(workerUrl, "migration_runner_test_1_2", 9001)).toEqual({
+      databaseName: "meridian_test-run-1234-5678-worker-9001",
+      databaseUrl:
+        "postgresql://postgres:secret@127.0.0.1:54422/meridian_test-run-1234-5678-worker-9001",
+      dropInline: false,
+    });
+    expect(
+      disposableTestDatabaseTarget(BASE_DATABASE_URL, "migration_runner_test_1_2", 9001),
+    ).toEqual({
+      databaseName: "migration_runner_test_1_2",
+      databaseUrl: "postgresql://postgres@127.0.0.1:54422/migration_runner_test_1_2",
+      dropInline: true,
+    });
   });
 
   it("recognizes only reserved managed and manual test namespaces", () => {

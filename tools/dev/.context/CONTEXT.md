@@ -28,7 +28,11 @@ lock session. Domain-specific conversion stays beside its migration, not in tool
 
 Managed DB tests provision owned databases and route each worker to its own
 clone. Cleanup hands only this invocation's databases to the detached cleanup
-child, verifies owner liveness, and leaves failures for GC. CI clones 3 worker
+child, verifies owner liveness, and leaves failures for GC. Suite-owned
+databases use the managed template's `-worker-` prefix and never drop inline on
+managed runs: PostgreSQL makes each drop wait for an immediate checkpoint, so
+the detached collector removes them after Vitest exits. Unmanaged runs have no
+collector and drop their suite-owned databases inline. CI clones 3 worker
 databases from the one its workflow migrated, on the runner's own loopback
 Postgres (`isCiRunnerPostgres`), and leaves them to die with the runner. Any
 other shared or deployed Postgres stays serial. Fixtures isolate state with rollback or the catalog-
