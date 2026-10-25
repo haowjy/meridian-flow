@@ -63,3 +63,11 @@ lose thread/turn correlation, not the authenticated failure record. Owned
 deleted targets retain correlation. No message, prompt, response body or exception text enters that route.
 The non-chat `useFailure` hook owns the same lifetime for Work goal editing;
 this is not a migration of every error surface.
+
+Queued compactions keep one owner entry for admission evidence, enqueue and
+withdrawal attempts, and snapshot removal proof. The owner reconciles raw
+server items and transcript answers before projecting rows. Optimistic hiding
+never deletes pending-attempt evidence; hidden targets still request a fresh
+snapshot when the server drops them. A snapshot older than admission cannot
+retire an unadmitted enqueue. Write-mode switches retain their submission-journal
+owner; the queued list does not take over that durable lifetime.

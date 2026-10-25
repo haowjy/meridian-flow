@@ -18,7 +18,7 @@
  */
 import type { PendingInboxItem } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import { type CommandFailure, logCommandFailure, occurrenceKey } from "@meridian/thread-client";
+import { logCommandFailure, occurrenceKey } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
@@ -31,13 +31,12 @@ import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from
 import {
   type CompactControl,
   type ControlAction,
+  type ControlFacts,
+  controlFailures,
   controlsReducer,
-  type HeldControls,
-  type LocalControls,
-  mergeQueuedControls,
   NO_LOCAL_CONTROLS,
   type QueuedControl,
-  reconcileControls,
+  queuedControls,
 } from "./thread-controls";
 import type { SwitchView } from "./useSwitchView";
 
@@ -52,15 +51,6 @@ export type ThreadControls = {
   withdraw: (control: QueuedControl) => void;
 };
 
-function failuresOf(local: LocalControls): CommandFailure[] {
-  return [
-    ...local.sends.flatMap((e) => (e.request === "failed" && e.failure ? [e.failure] : [])),
-    ...[...local.withdrawals.values()].flatMap((e) =>
-      e.status === "failed" && e.failure ? [e.failure] : [],
-    ),
-  ];
-}
-
 export function useThreadControls(input: {
   threadId: string;
   /** The run-state record's items. */
@@ -73,11 +63,13 @@ export function useThreadControls(input: {
   switches: SwitchView;
 }): ThreadControls {
   const { threadId, items, version, history, answeredControlIds, switches } = input;
-  const held = useRef<{ threadId: string; controls: HeldControls }>({
-    threadId,
-    controls: new Map(),
+  const facts = useRef<ControlFacts>({
+    items,
+    switches: switches.rows,
+    answered: answeredControlIds,
+    version,
+    history,
   });
-  if (held.current.threadId !== threadId) held.current = { threadId, controls: new Map() };
   const { dispatchRunState } = useThreadActions();
   const log = useFailureLog();
   const [local, renderLocal] = useState(NO_LOCAL_CONTROLS);
@@ -85,9 +77,13 @@ export function useThreadControls(input: {
   const mounted = useRef(false);
   const dispatch = useCallback(
     (action: ControlAction) => {
-      const before = failuresOf(localRef.current);
-      const next = controlsReducer(localRef.current, action);
-      const after = failuresOf(next);
+      const before = controlFailures(localRef.current);
+      const changed = controlsReducer(localRef.current, action);
+      const next =
+        action.type === "reconcile" || action.type === "hide_switch"
+          ? changed
+          : controlsReducer(changed, { type: "reconcile", facts: facts.current });
+      const after = controlFailures(next);
       for (const f of before)
         if (!after.some((n) => occurrenceKey(n) === occurrenceKey(f)))
           logCommandFailure(
@@ -96,7 +92,7 @@ export function useThreadControls(input: {
             { threadId },
             action.type === "retry" || action.type === "withdraw"
               ? "retried"
-              : action.type === "retire"
+              : action.type === "reconcile"
                 ? "moot"
                 : "resolved",
           );
@@ -108,17 +104,24 @@ export function useThreadControls(input: {
     },
     [log, threadId],
   );
-  useEffect(() => {
+  useLayoutEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      for (const f of failuresOf(localRef.current)) logCommandFailure(log, f, { threadId }, "moot");
+      for (const f of controlFailures(localRef.current))
+        logCommandFailure(log, f, { threadId }, "moot");
     };
   }, [log, threadId]);
-  useEffect(
-    () => dispatch({ type: "retire", ids: answeredControlIds }),
-    [answeredControlIds, dispatch],
-  );
+  useLayoutEffect(() => {
+    facts.current = {
+      items,
+      switches: switches.rows,
+      answered: answeredControlIds,
+      version,
+      history,
+    };
+    dispatch({ type: "reconcile", facts: facts.current });
+  }, [items, switches.rows, answeredControlIds, version, history, dispatch]);
   /** In-flight enqueues; a withdrawal waits for its enqueue to settle first. */
   const inflight = useRef(new Map<string, Promise<void>>());
   const queryClient = useQueryClient();
@@ -127,15 +130,11 @@ export function useThreadControls(input: {
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
   }, [queryClient, threadId]);
 
-  useEffect(() => {
-    dispatch({ type: "listed", pendingIds: new Set(items.map((item) => item.id)) });
-  }, [items, dispatch]);
-
   const send = useCallback(
     (id: string, control: CompactControl) => {
       const occurrence = {
         requestId: id,
-        attempt: localRef.current.sends.find((e) => e.id === id)?.attempt ?? 1,
+        attempt: localRef.current.get(id)?.send?.attempt ?? 1,
       };
       const request = enqueueThreadControl(threadId, { id, control }).then(
         (response) => {
@@ -145,6 +144,7 @@ export function useThreadControls(input: {
             type: "enqueued",
             id,
             sent: response.runState.items.some((item) => item.id === id),
+            version: response.runState.version,
           });
           revalidate();
         },
@@ -157,8 +157,8 @@ export function useThreadControls(input: {
           logCommandFailure(log, failure, { threadId });
           if (
             !mounted.current ||
-            !localRef.current.sends.some((e) => e.id === id) ||
-            localRef.current.withdrawals.has(id)
+            !localRef.current.get(id)?.send ||
+            localRef.current.get(id)?.withdrawal
           ) {
             logCommandFailure(log, failure, { threadId }, "moot");
             return;
@@ -189,30 +189,33 @@ export function useThreadControls(input: {
   const { retry: retrySwitch, withdraw: withdrawSwitch } = switches;
   const retry = useCallback(
     (controlId: string) => {
-      const entry = localRef.current.sends.find((candidate) => candidate.id === controlId);
+      const entry = localRef.current.get(controlId)?.send;
       if (!entry) return retrySwitch(controlId);
       if (entry.request !== "failed") return;
       dispatch({ type: "retry", id: controlId });
-      announce(controlStatusCopy(entry.control, "queued"));
+      const control = localRef.current.get(controlId)?.row.control;
+      if (control) announce(controlStatusCopy(control, "queued"));
       // Same id: the server treats a repeat as the original request.
-      send(controlId, entry.control);
+      const row = localRef.current.get(controlId)?.row;
+      if (row?.control.kind === "compact") send(controlId, row.control);
     },
     [retrySwitch, send, dispatch],
   );
 
   const withdraw = useCallback(
     (queued: QueuedControl) => {
-      // The writer's own Stop is the server being told it won't run: the row goes at once.
-      held.current.controls.delete(queued.id);
-      if (queued.control.kind === "write_mode") return withdrawSwitch(queued);
-      dispatch({ type: "withdraw", id: queued.id, requestId: crypto.randomUUID() });
-      const occurrence = localRef.current.withdrawals.get(queued.id);
+      if (queued.control.kind === "write_mode") {
+        dispatch({ type: "hide_switch", id: queued.id });
+        return withdrawSwitch(queued);
+      }
+      dispatch({ type: "withdraw", row: queued, requestId: crypto.randomUUID() });
+      const occurrence = localRef.current.get(queued.id)?.withdrawal;
       announce(controlStoppedCopy(queued.control));
       const withdrawOnServer = async () => {
         try {
           const { outcome, runState } = await withdrawThreadControl(threadId, queued.id);
           dispatchRunState(threadId, { type: "snapshot", runState });
-          dispatch({ type: "withdrawn", id: queued.id });
+          dispatch({ type: "withdrawn", id: queued.id, version: runState.version });
           // The row goes either way; the divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(queued.control));
           revalidate();
@@ -229,7 +232,7 @@ export function useThreadControls(input: {
             ...commandFailureInput(error),
           };
           logCommandFailure(log, failure, { threadId });
-          if (!mounted.current || !localRef.current.withdrawals.has(queued.id)) {
+          if (!mounted.current || !localRef.current.get(queued.id)?.withdrawal) {
             logCommandFailure(log, failure, { threadId }, "moot");
             return;
           }
@@ -241,25 +244,12 @@ export function useThreadControls(input: {
     [dispatchRunState, revalidate, threadId, withdrawSwitch, dispatch, log],
   );
 
-  const compactRows = useMemo(() => mergeQueuedControls({ local, items }), [local, items]);
-  const reconciled = useMemo(
-    () =>
-      reconcileControls(held.current.controls, {
-        rows: [...compactRows, ...switches.rows],
-        answered: answeredControlIds,
-        version,
-        history,
-      }),
-    [compactRows, switches.rows, answeredControlIds, version, history],
-  );
-  useLayoutEffect(() => {
-    held.current.controls = reconciled.held;
-    dispatch({ type: "retire", ids: reconciled.retired });
-  }, [reconciled, dispatch]);
-  const queued = reconciled.rows;
-  // A row the record dropped waits for its turn or for proof it won't run: ask for that proof.
-  const droppedRows = queued.filter((row) => reconciled.held.get(row.id)?.droppedAt != null);
-  const droppedKey = droppedRows.map((row) => row.id).join(",");
+  const queued = useMemo(() => queuedControls(local), [local]);
+  // Hidden pending attempts still need authoritative removal proof.
+  const droppedKey = [...local]
+    .filter(([, entry]) => entry.droppedAt !== null)
+    .map(([id, entry]) => `${id}:${entry.droppedAt}`)
+    .join(",");
   useEffect(() => {
     if (droppedKey) revalidate();
   }, [droppedKey, revalidate]);
