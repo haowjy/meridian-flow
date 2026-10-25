@@ -1,26 +1,6 @@
-/**
- * Optimistic writer commands: the local half of `/compact`, merged with the
- * record's waiting items. (A write-mode switch is the switch ledger's.)
- *
- * Local state, each piece small:
- * - `sends`: commands this tab asked for that the server inbox has not listed
- *   yet. The writer sees one the moment they ask; a failed enqueue stays on
- *   the item with Retry (same id, so the server treats a retry as a no-op).
- *   Once the inbox lists the id the server owns it, and the send is dropped.
- * - `withdrawals`: Withdraw hides a row at once, whichever side owns it, and
- *   always asks the server. A withdrawal the server confirmed (withdrawn, or
- *   already started, whose divider carries the state) keeps the id
- *   hidden against stale inbox frames. A 404 only drops the local send: the
- *   enqueue may still have been committing, and if the inbox lists the id
- *   later the row shows again, queued, so it never runs unseen. A failed
- *   withdrawal brings the row back.
- *
- * A command runs only when no message waits, so every queued command renders
- * after every queued message, at the end of the queue, oldest first.
- */
+/** Queued-control owner: reconcile authoritative lifetime before projecting optimistic rows. */
 import { compareSeq } from "@meridian/contracts/protocol";
 import type { ControlBody, PendingInboxItem } from "@meridian/contracts/threads";
-
 import {
   type CardControl,
   type CommandFailure,
@@ -30,27 +10,25 @@ import {
 } from "@meridian/thread-client";
 
 export type CompactControl = Extract<ControlBody, { kind: "compact" }>;
-
-export type LocalSend = {
-  id: string;
-  control: CompactControl;
-  request: "sending" | "sent" | "failed" | "finished";
-  attempt: number;
-  failure?: CommandFailure;
+type Send = { attempt: number } & (
+  | { request: "sending" | "sent" | "finished"; failure?: undefined }
+  | { request: "failed"; failure: CommandFailure }
+);
+type Withdrawal = Occurrence &
+  (
+    | { status: "withdrawing" | "settled"; failure?: undefined }
+    | { status: "failed"; failure: CommandFailure }
+  );
+type ControlEntry = {
+  row: QueuedControl;
+  send?: Send;
+  withdrawal?: Withdrawal;
+  admitted: boolean;
+  /** First authoritative absence, retained even while the writer hides the row. */
+  droppedAt: string | null;
 };
-
-/** `settled`: the server confirmed it, either withdrawn or already started. */
-export type Withdrawal = Occurrence & {
-  status: "withdrawing" | "failed" | "settled";
-  failure?: CommandFailure;
-};
-
-export type LocalControls = {
-  sends: readonly LocalSend[];
-  withdrawals: ReadonlyMap<string, Withdrawal>;
-};
-
-export const NO_LOCAL_CONTROLS: LocalControls = { sends: [], withdrawals: new Map() };
+export type LocalControls = ReadonlyMap<string, ControlEntry>;
+export const NO_LOCAL_CONTROLS: LocalControls = new Map();
 
 /** `sending`: the writer asked and the server has not answered. */
 export type QueuedControlStatus = "sending" | "queued" | "failed" | "withdraw_failed";
@@ -68,248 +46,149 @@ export type QueuedControl = CardControl & {
   waiting?: boolean;
 };
 
+export type ControlFacts = {
+  items: readonly PendingInboxItem[];
+  switches: readonly QueuedControl[];
+  answered: ReadonlySet<string>;
+  version: string | null;
+  history: string | null;
+};
 export type ControlAction =
   | { type: "enqueue"; id: string; control: CompactControl }
   | { type: "retry"; id: string }
-  /** The server took the command; `sent` when the record lists it, else it already ran or was withdrawn. */
-  | { type: "enqueued"; id: string; sent: boolean }
-  | { type: "enqueue_failed"; id: string; failure?: CommandFailure }
-  | { type: "withdraw"; id: string; requestId: string }
-  | { type: "withdrawn"; id: string }
-  /** The server had no such command (404) when the withdrawal reached it. */
+  | { type: "enqueued"; id: string; sent: boolean; version: string }
+  | { type: "enqueue_failed"; id: string; failure: CommandFailure }
+  | { type: "withdraw"; row: QueuedControl; requestId: string }
+  | { type: "withdrawn"; id: string; version: string }
   | { type: "withdraw_not_found"; id: string }
-  | { type: "withdraw_failed"; id: string; failure?: CommandFailure }
-  | { type: "retire"; ids: ReadonlySet<string> }
-  /** The server inbox lists these ids: it owns them from now on. */
-  | { type: "listed"; pendingIds: ReadonlySet<string> };
+  | { type: "withdraw_failed"; id: string; failure: CommandFailure }
+  | { type: "hide_switch"; id: string }
+  | { type: "reconcile"; facts: ControlFacts };
 
 export function controlsReducer(state: LocalControls, action: ControlAction): LocalControls {
-  const patchSend = (id: string, request: LocalSend["request"]) => ({
-    ...state,
-    sends: state.sends.map((entry) => (entry.id === id ? { ...entry, request } : entry)),
-  });
-  const withdrawal = (id: string, status: Withdrawal["status"], next?: Occurrence) => {
-    const occurrence = next ?? state.withdrawals.get(id);
-    if (!occurrence) return state;
-    return {
-      ...state,
-      withdrawals: new Map(state.withdrawals).set(id, {
-        ...occurrence,
-        status,
-        failure: undefined,
-      }),
-    };
-  };
+  if (action.type === "reconcile") return reconcile(state, action.facts);
+  const id = action.type === "withdraw" ? action.row.id : action.id;
+  const entry = state.get(id);
+  const next = new Map(state);
+  if (action.type === "enqueue") {
+    if (entry) return state;
+    next.set(id, {
+      row: { id, control: action.control, status: "queued" },
+      send: { request: "sending", attempt: 1 },
+      admitted: false,
+      droppedAt: null,
+    });
+    return next;
+  }
+  if (action.type === "withdraw") {
+    next.set(id, {
+      ...(entry ?? { row: action.row, admitted: true, droppedAt: null }),
+      withdrawal: {
+        ...nextOccurrence(entry?.withdrawal?.attempt ?? 0, action.requestId),
+        status: "withdrawing",
+      },
+    });
+    return next;
+  }
+  if (!entry) return state;
   switch (action.type) {
-    case "retire":
-      if (
-        !state.sends.some((entry) => action.ids.has(entry.id)) &&
-        ![...state.withdrawals.keys()].some((id) => action.ids.has(id))
-      )
-        return state;
-      return {
-        sends: state.sends.filter((e) => !action.ids.has(e.id)),
-        withdrawals: new Map([...state.withdrawals].filter(([id]) => !action.ids.has(id))),
-      };
-    case "enqueue":
-      if (state.sends.some((entry) => entry.id === action.id)) return state;
-      return {
-        ...state,
-        sends: [
-          ...state.sends,
-          { id: action.id, control: action.control, request: "sending", attempt: 1 },
-        ],
-      };
     case "retry":
-      return {
-        ...state,
-        sends: state.sends.map((entry) =>
-          entry.id === action.id
-            ? { ...entry, request: "sending", attempt: entry.attempt + 1, failure: undefined }
-            : entry,
-        ),
-      };
+      if (!entry.send) return state;
+      next.set(id, { ...entry, send: { request: "sending", attempt: entry.send.attempt + 1 } });
+      break;
     case "enqueued":
-      // Not in the record: it already ran or was withdrawn earlier.
-      return patchSend(action.id, action.sent ? "sent" : "finished");
+      if (!entry.send) return state;
+      next.set(id, {
+        ...entry,
+        admitted: true,
+        droppedAt: action.version,
+        send: { request: action.sent ? "sent" : "finished", attempt: entry.send.attempt },
+      });
+      break;
     case "enqueue_failed":
-      return {
-        ...state,
-        sends: state.sends.map((entry) =>
-          entry.id === action.id
-            ? {
-                ...entry,
-                request: "failed",
-                failure: action.failure ?? {
-                  requestId: entry.id,
-                  attempt: entry.attempt,
-                  kind: "lost",
-                },
-              }
-            : entry,
-        ),
-      };
-    case "withdraw":
-      return withdrawal(
-        action.id,
-        "withdrawing",
-        nextOccurrence(state.withdrawals.get(action.id)?.attempt ?? 0, action.requestId),
-      );
+      if (!entry.send) return state;
+      next.set(id, {
+        ...entry,
+        send: { ...entry.send, request: "failed", failure: action.failure },
+      });
+      break;
     case "withdrawn":
-      return {
-        ...withdrawal(action.id, "settled"),
-        sends: state.sends.filter((entry) => entry.id !== action.id),
-      };
-    case "withdraw_failed": {
-      const next = withdrawal(action.id, "failed");
-      const entry = next.withdrawals.get(action.id);
-      return entry
-        ? {
-            ...next,
-            withdrawals: new Map(next.withdrawals).set(action.id, {
-              ...entry,
-              failure: action.failure ?? {
-                requestId: entry.requestId,
-                attempt: entry.attempt,
-                kind: "lost",
-              },
-            }),
-          }
-        : next;
-    }
-    case "withdraw_not_found": {
-      const withdrawals = new Map(state.withdrawals);
-      withdrawals.delete(action.id);
-      return { sends: state.sends.filter((entry) => entry.id !== action.id), withdrawals };
-    }
-    case "listed": {
-      const sends = state.sends.filter((entry) => !action.pendingIds.has(entry.id));
-      return sends.length === state.sends.length ? state : { ...state, sends };
-    }
+      if (!entry.withdrawal) return state;
+      next.set(id, {
+        ...entry,
+        send: undefined,
+        admitted: true,
+        droppedAt: action.version,
+        withdrawal: { ...entry.withdrawal, status: "settled", failure: undefined },
+      });
+      break;
+    case "withdraw_failed":
+      if (!entry.withdrawal) return state;
+      next.set(id, {
+        ...entry,
+        withdrawal: { ...entry.withdrawal, status: "failed", failure: action.failure },
+      });
+      break;
+    case "withdraw_not_found":
+    case "hide_switch":
+      next.delete(id);
+      break;
   }
+  return next;
 }
 
-export type MergeInput = {
-  local: LocalControls;
-  /** The run-state record's items, in inbox order. */
-  items: readonly PendingInboxItem[];
-};
-
-/**
- * The commands the writer should see: server rows first (in inbox order),
- * then local ones the server has not listed yet.
- */
-export function mergeQueuedControls(input: MergeInput): QueuedControl[] {
-  const { local, items } = input;
-  const result: QueuedControl[] = [];
-  const listed = new Set<string>();
-  for (const item of durableControls(items)) {
-    if (item.control.kind !== "compact") continue;
-    listed.add(item.id);
-    // A withdrawal response is fresher than the inbox frame that follows it.
-    const withdrawal = local.withdrawals.get(item.id);
-    if (!withdrawal) {
-      result.push({ id: item.id, control: item.control, status: "queued" });
-    } else if (withdrawal.status === "failed") {
-      result.push({
-        id: item.id,
-        control: item.control,
-        status: "withdraw_failed",
-        failure: withdrawal.failure ?? {
-          requestId: withdrawal.requestId,
-          attempt: withdrawal.attempt,
-          kind: "lost",
-        },
-      });
-    }
-  }
-  for (const entry of local.sends) {
-    const withdrawal = local.withdrawals.get(entry.id);
-    if (listed.has(entry.id) || (withdrawal && withdrawal.status !== "failed")) continue;
-    const status = requestStatus(entry);
-    if (!status) continue;
-    const row = { id: entry.id, control: entry.control };
-    if (withdrawal) {
-      result.push({
-        ...row,
-        status: "withdraw_failed",
-        failure: withdrawal.failure ?? {
-          requestId: withdrawal.requestId,
-          attempt: withdrawal.attempt,
-          kind: "lost",
-        },
-      });
-    } else if (status === "failed") {
-      result.push({
-        ...row,
-        status,
-        failure: entry.failure ?? { requestId: entry.id, attempt: entry.attempt, kind: "lost" },
-      });
-    } else {
-      result.push({ ...row, status });
-    }
-  }
-  return result;
-}
-
-function requestStatus(entry: LocalSend): Exclude<QueuedControlStatus, "withdraw_failed"> | null {
-  if (entry.request === "sending") return "sending";
-  if (entry.request === "failed") return "failed";
-  if (entry.request === "finished") return null;
-  // Accepted, and the inbox echo has not arrived yet.
-  return "queued";
-}
-
-/** A row last seen, and the record version at which its sources first stopped showing it. */
-export type HeldControls = Map<string, { row: QueuedControl; droppedAt: string | null }>;
-
-/**
- * The one retirement rule for a queued command's row, switch or compaction, whichever source
- * showed it. A row stays until a transcript turn carries its control id (`answered`). A source
- * dropping it is not that: the record drops an item as the command starts, before its turn
- * reaches the transcript. The one other way out is proof it won't run: an accepted snapshot at
- * or after the dropping record (`history`) whose turns lack it, as after a Withdraw from another
- * tab. This device's own Withdraw releases the row at once (`held.delete`). Keyed by control
- * id; the owner commits the returned retention state and retires local commands
- * from the same proof. Rendering never mutates the held state.
- */
-export function reconcileControls(
-  previous: HeldControls,
-  input: {
-    rows: readonly QueuedControl[];
-    answered: ReadonlySet<string>;
-    /** The newest record's version. */
-    version: string | null;
-    history: string | null;
-  },
-): { held: HeldControls; rows: QueuedControl[]; retired: ReadonlySet<string> } {
-  const held: HeldControls = new Map([...previous].map(([id, entry]) => [id, { ...entry }]));
-  const retired = new Set<string>();
-  const { rows, answered, version, history } = input;
-  const shown = new Set<string>();
-  for (const row of rows) {
-    shown.add(row.id);
-    held.set(row.id, { row, droppedAt: null });
-  }
-  const result: QueuedControl[] = [];
-  for (const [id, entry] of held) {
-    if (answered.has(id)) {
-      held.delete(id);
-      retired.add(id);
+function reconcile(state: LocalControls, facts: ControlFacts): LocalControls {
+  const next = new Map(state);
+  const present = new Set<string>();
+  const accept = (row: QueuedControl) => {
+    present.add(row.id);
+    next.set(row.id, {
+      ...next.get(row.id),
+      row,
+      send: undefined,
+      admitted: true,
+      droppedAt: null,
+    });
+  };
+  for (const item of durableControls(facts.items))
+    if (item.control.kind === "compact")
+      accept({ id: item.id, control: item.control, status: "queued" });
+  for (const row of facts.switches) accept(row);
+  for (const [id, entry] of next) {
+    if (facts.answered.has(id)) {
+      next.delete(id);
       continue;
     }
-    if (!shown.has(id)) {
-      entry.droppedAt ??= version;
-      if (
-        entry.droppedAt === null ||
-        (history !== null && compareSeq(history, entry.droppedAt) >= 0)
-      ) {
-        held.delete(id);
-        retired.add(id);
-        continue;
-      }
-    }
-    result.push(entry.row);
+    // A snapshot predating admission cannot disprove a local request still in flight.
+    if (present.has(id) || !entry.admitted) continue;
+    const droppedAt = entry.droppedAt ?? facts.version;
+    if (droppedAt !== null && facts.history !== null && compareSeq(facts.history, droppedAt) >= 0)
+      next.delete(id);
+    else if (droppedAt !== entry.droppedAt) next.set(id, { ...entry, droppedAt });
   }
-  return { held, rows: result, retired };
+  return next;
+}
+
+/** Visibility has no authority: hiding a pending withdrawal preserves its target evidence. */
+export function queuedControls(state: LocalControls): QueuedControl[] {
+  const rows: QueuedControl[] = [];
+  for (const entry of state.values()) {
+    const { row, send, withdrawal } = entry;
+    if (withdrawal) {
+      if (withdrawal.status === "failed")
+        rows.push({ ...row, status: "withdraw_failed", failure: withdrawal.failure });
+    } else if (send?.request === "failed")
+      rows.push({ ...row, status: "failed", failure: send.failure });
+    else if (send?.request === "sending")
+      rows.push({ ...row, status: "sending", failure: undefined });
+    else rows.push(row);
+  }
+  return rows;
+}
+
+export function controlFailures(state: LocalControls): CommandFailure[] {
+  return [...state.values()].flatMap(({ send, withdrawal }) => [
+    ...(send?.request === "failed" && send.failure ? [send.failure] : []),
+    ...(withdrawal?.status === "failed" && withdrawal.failure ? [withdrawal.failure] : []),
+  ]);
 }
