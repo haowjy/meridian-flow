@@ -26,7 +26,9 @@ chat resources rather than ordinary Editor tabs.
   identity-based refusal (`moveRefusal` in `move-plan.ts`: inside itself;
   already there is a quiet no-op), and arrive at the next free name that
   `execute-move.ts` predicts. The hover hint and Move… warn with that same
-  prediction before a row arrives renamed. Don't place entries anywhere else.
+  prediction before a row arrives renamed. Order goes the same way: a row-edge
+  drop and Move…'s "Change position" send a sibling position (before/after a
+  sibling, start, end), never a rank. Don't place entries anywhere else.
 - Selection and dragging (`entry-drag/`): one desktop list is one selection,
   one drop route and one drop scope (`useEntryList`/`EntryList`). They carry
   identities, never placement; plans read placement from the replica at hover,

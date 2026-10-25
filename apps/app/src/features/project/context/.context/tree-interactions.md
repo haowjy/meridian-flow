@@ -176,7 +176,11 @@ Move… follows Rename in the shared action specification, including phone actio
 the current parent for a new move. A retry opens at the refused destination
 when it still resolves (matching owner and full path), otherwise at the
 current parent with the refusal message. It disables files and the moved folder's subtree, and offers no
-commit at the area list. The current parent reads "Already in <folder>".
+commit at the area list. In the current parent the action is "Change position in <folder>", which
+opens the places among its siblings in place of the tree (`DrillAction.choices`): the top, after each
+sibling, the bottom, read from the replica's complete sibling order (`childrenAt`, not what a search
+shows), without the place it already holds. It reads "Already in <folder>" only when the entry has no
+siblings. The phone uses the same picker; it has no drag.
 A taken name never refuses: the row arrives at the next free name (predicted
 from the destination's rows, decided by the server) through `setLocation` for
 files and `setFolderLocation` for folders. Before the click, the destination's
@@ -325,7 +329,23 @@ never change.
 
 Targets: a folder row is its folder; a file row hands its drop to its folder (or
 the area); an area header, and in Work Files the whole Scratch group, is the
-catalog's top level. Every target names its catalog root, so a list showing
+catalog's top level. A row's top and bottom bands are sibling edges, before or
+after that row in its actual parent (`RowEdges` in `tree-drop.tsx`): a third of a
+file row, a quarter of a folder row, whose centre keeps moving rows into it. An
+open folder has no bottom edge, because its bottom borders its own first child;
+"after" it is the next sibling's top edge, drawn below its subtree. Each event
+resolves to one target, and an edge claims its event even when it would change
+nothing, so the folder region under it never takes over. One element holds one
+target at a time; crossing from one edge or the centre to another releases the
+first, and its spring, at once. The target key and the route's cached verdict
+key (`treeDropTargetKey`) include the edge and its anchor. An accepted edge draws
+an `InsertionLine` at the row's indentation instead of the folder fill, and the
+hint names the neighbour ("Move before Chapter 3"). `planMove` reads neighbours
+from the parent's complete sibling sequence, so a row a search hides still
+counts: an edge is quiet when every carried row would end where it is, or when
+the anchor is itself carried. Several rows land together in screen order (the
+first takes the edge, each next one goes after the one before). Edges don't
+spring. Every target names its catalog root, so a list showing
 several catalogs (Scratch and its earlier notes) resolves the right one. The
 scope counts hovered elements per target and the innermost target claims each
 event; `DropRegion` lights the folder row and everything open under it as one

@@ -100,6 +100,8 @@ type MovePlan =
   | {
       kind: "ready";
       destinationName: string;
+      /** The sibling an edge drop lands beside, by name, for the hint. */
+      beside?: { kind: "before" | "after"; name: string };
       moves: readonly MoveRow[];
     };
 
@@ -237,6 +239,7 @@ export function planMove(
 
   const refusals = sources.map((source) => refusalFor(view, source, into, target.position));
   if (refusals.includes("inside-itself")) return { kind: "inside-itself" };
+  if (target.position) return planPositioned(view, sources, into, destinationName, target.position);
   // Rows already there stay put; a taken name never refuses (the row arrives at the next free name).
   const moves = sources.flatMap((source, index) =>
     refusals[index] === null
@@ -252,6 +255,55 @@ export function planMove(
       : [],
   );
   return moves.length === 0 ? NONE : { kind: "ready", destinationName, moves };
+}
+
+/**
+ * An edge drop: the carried rows land together, in screen order, beside the
+ * anchor in `into`. The first takes the edge's position and each next one
+ * follows the row before it, so "after" keeps their order. Neighbours come from
+ * the parent's complete sibling sequence, not the rows a search leaves on
+ * screen. Nothing happens when the anchor is itself carried or when every row
+ * would end where it already is.
+ */
+function planPositioned(
+  view: MoveView,
+  sources: readonly PlacedEntry[],
+  into: ParentRef,
+  destinationName: string,
+  position: ContextSiblingPosition,
+): MovePlan {
+  if (!("siblingId" in position)) return NONE;
+  const carried = new Set(sources.map((source) => source.ref.id));
+  const siblings = view.placement.childrenAt(into, view.records);
+  const anchor = siblings.find((entry) => entry.entryId === position.siblingId);
+  if (!anchor || carried.has(anchor.entryId)) return NONE;
+  if (sources.every((source) => sameParent(source.parent, into))) {
+    const current = siblings.map((entry) => entry.entryId);
+    const rest = current.filter((id) => !carried.has(id));
+    const at = rest.indexOf(anchor.entryId) + (position.kind === "after" ? 1 : 0);
+    const next = [
+      ...rest.slice(0, at),
+      ...sources.map((source) => source.ref.id),
+      ...rest.slice(at),
+    ];
+    if (next.every((id, index) => id === current[index])) return NONE;
+  }
+  const moves = sources.map((source, index) => {
+    const previous = sources[index - 1];
+    return {
+      entry: source.ref,
+      name: source.name,
+      before: source.parent,
+      after: into,
+      position: previous ? ({ kind: "after", siblingId: previous.ref.id } as const) : position,
+    };
+  });
+  return {
+    kind: "ready",
+    destinationName,
+    beside: { kind: position.kind, name: anchor.name },
+    moves,
+  };
 }
 
 /**

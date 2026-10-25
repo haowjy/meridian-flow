@@ -15,7 +15,12 @@ import {
   useAccountResourceProjection,
   useAccountResourceReplica,
 } from "../account-feature-context";
-import { type EntriesRoute, type EntriesVerdict, TreeDropScope } from "../tree-drop/tree-drop";
+import {
+  type EntriesRoute,
+  type EntriesVerdict,
+  TreeDropScope,
+  treeDropTargetKey,
+} from "../tree-drop/tree-drop";
 import { activeEntryDrag } from "./drag-session";
 import { entryKey } from "./entry";
 import { type MoveResult, moveRows, renamesOnArrival } from "./execute-move";
@@ -86,12 +91,17 @@ export function useEntryList({
       if (planned?.kind === "inside-itself")
         return { kind: "refuse", label: t`Can't go inside itself` };
       if (planned?.kind !== "ready") return null;
-      const { destinationName } = planned;
+      const { destinationName, beside } = planned;
       const { projection } = latest.current;
       const renamed = renamesOnArrival(planned.moves, projection);
+      const sibling = beside?.name ?? "";
       return {
         kind: "accept",
-        label: t`Move to ${destinationName}`,
+        label: !beside
+          ? t`Move to ${destinationName}`
+          : beside.kind === "before"
+            ? t`Move before ${sibling}`
+            : t`Move after ${sibling}`,
         warning: describeRenames(renamed),
       };
     };
@@ -102,7 +112,7 @@ export function useEntryList({
     return {
       verdict(target) {
         const { areas, projection, works, noWork } = latest.current;
-        const key = `${target.catalogRootId}:${target.folder?.entryId ?? ""}`;
+        const key = treeDropTargetKey(target);
         const inputs = [activeEntryDrag(), areas, projection, works, noWork];
         if (last?.key === key && last.inputs.every((input, index) => input === inputs[index]))
           return last.verdict;
