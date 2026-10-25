@@ -347,6 +347,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               .where(eq(schema.works.id, WORK_ID))
           )[0]?.mode,
         ).toBe("draft");
+        const writerControlId = crypto.randomUUID();
+        await runtime.app.delivery.enqueueControl({
+          threadId: THREAD.threadId,
+          id: writerControlId,
+          provenance: { kind: "writer", actorId: USER_ID },
+          control: { kind: "write_mode", mode: "direct" },
+        });
+        expect(
+          (
+            await db
+              .select({ mode: schema.works.defaultAiWriteMode })
+              .from(schema.works)
+              .where(eq(schema.works.id, WORK_ID))
+          )[0]?.mode,
+        ).toBe("direct");
+        expect(
+          await runtime.app.delivery.enqueueControl({
+            threadId: THREAD.threadId,
+            id: writerControlId,
+            provenance: { kind: "writer", actorId: USER_ID },
+            control: { kind: "write_mode", mode: "direct" },
+          }),
+        ).toMatchObject({ created: false });
         expect((await create(reply.call, "after")).result).toMatchObject({
           destination: "draft",
         });
