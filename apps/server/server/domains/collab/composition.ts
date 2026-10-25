@@ -264,7 +264,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     coordinator: liveCoordinator,
   });
   const runtime = createAgentEditRuntime({
-    landingJournal: persistence.journal,
     documentEdits: modelDocumentEdits,
     journal: persistence.journal,
     coordinator: liveCoordinator,
@@ -565,8 +564,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       },
       discardStagedStates: persistence.lifecycle.discardStagedStates,
       writeDocument: runtime.markdownDocuments.writeDocument,
-      fillEmptyDocument: runtime.markdownDocuments.fillEmptyDocument,
-      prependBlocks: runtime.markdownDocuments.prependBlocks,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
       bindStatic: runtime.linkBinder.bindStatic,
     },

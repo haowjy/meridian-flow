@@ -20,19 +20,8 @@ export interface CopiedFrom {
 /** Metadata a document is created with. */
 export interface DocumentCreationMetadata {
   copiedFrom?: CopiedFrom;
-  importPending?: boolean;
   properties?: StoredDocumentProperties;
   aliases?: string[];
-}
-
-/** Only an explicit metadata boolean marks an arriving import. */
-export function documentImportPending(metadata: unknown): boolean {
-  return (
-    !!metadata &&
-    typeof metadata === "object" &&
-    !Array.isArray(metadata) &&
-    (metadata as { importPending?: unknown }).importPending === true
-  );
 }
 
 /** What a copy inherits from its source: imported properties and aliases, when it has them. */

@@ -1,20 +1,24 @@
-/** Pure identity graph, folder-note relocation and exact-case name allocation. */
+/** Pure receipt-driven identity graph and folder-note relocation. */
 import {
   EXPORT_WORKS_FOLDER,
   IMPORT_ADMISSION,
   type ImportEntryReason,
-  type ImportManifest,
+  type ImportSelection,
   type ImportUnreadableReason,
   importNodeId,
   importPathDisposition,
 } from "@meridian/contracts";
 import type { Filetype } from "@meridian/contracts/protocol";
-import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
-import { frontmatterAliases } from "../../context/index.js";
-import { classify } from "./classify.js";
+import { renderFilename } from "@meridian/contracts/protocol";
 import { type ImportArea, readExportMarker } from "./export-marker.js";
 import { type ImportRootSettings, rootSettings } from "./link-index.js";
+import type { FileReceipt } from "./receipt.js";
 
+/** Organize supplies only files with receipts, plus folders and unreadable selection items. */
+export type ReceiptSelection = Omit<ImportSelection, "entries"> & {
+  entries: (ImportSelection["entries"][number] &
+    Pick<FileReceipt, "sha256" | "aliases" | "facts">)[];
+};
 export interface PlannedNode {
   id: string;
   area?: ImportArea;
@@ -33,8 +37,7 @@ export interface PlannedNode {
   state: "planned" | "skipped";
   reason: ImportEntryReason | null;
   reasonParams?: { readReason: ImportUnreadableReason };
-  /** Admission facts landing needs: the leading bytes checked against the arrival, and `aliases:` from frontmatter. */
-  sniff?: string;
+  /** Aliases read from the received Markdown frontmatter. */
   aliases?: string[];
 }
 /** What the plan header keeps of each selected root. */
@@ -44,7 +47,7 @@ export interface PlannedRoot {
   name: string;
   settings: ImportRootSettings;
 }
-export function plannedRoots(manifest: ImportManifest): PlannedRoot[] {
+export function plannedRoots(manifest: ImportSelection): PlannedRoot[] {
   return manifest.roots.map(({ rootId, kind, name, appJson }) => ({
     rootId,
     kind,
@@ -60,24 +63,6 @@ export function codePointOrder(a: string, b: string): number {
   }
   return left.length - right.length;
 }
-export function allocateName(
-  node: Pick<PlannedNode, "kind" | "name" | "extension">,
-  used: readonly { kind: "folder" | "file"; name: string; extension: string }[],
-) {
-  const taken = (name: string) =>
-    used.some((item) =>
-      node.kind === "folder"
-        ? item.kind === "folder"
-          ? item.name === name
-          : renderFilename(item.name, item.extension) === folderDocumentName(name)
-        : item.kind === "folder"
-          ? folderDocumentName(item.name) === renderFilename(name, node.extension)
-          : renderFilename(item.name, item.extension) === renderFilename(name, node.extension),
-    );
-  let name = node.name;
-  for (let count = 2; taken(name); count++) name = `${node.name} (${count})`;
-  return name;
-}
 export type MintId = (
   kind: "folder" | "entry" | "unreadable",
   rootId: number,
@@ -85,7 +70,7 @@ export type MintId = (
 ) => string;
 
 export async function planSelection(
-  manifest: ImportManifest,
+  manifest: ReceiptSelection,
   mintId: MintId,
   destinationId: string | null,
 ): Promise<PlannedNode[]> {
@@ -160,7 +145,7 @@ export async function planSelection(
             ? "export_works"
             : importPathDisposition(entry.path || filename);
       if (skip === "omit") continue;
-      const typed = await classify(filename, Buffer.from(entry.sniff ?? "", "base64"));
+      const typed = entry.facts;
       let parentPath = entry.path.includes("/")
         ? entry.path.slice(0, entry.path.lastIndexOf("/"))
         : "";
@@ -185,8 +170,7 @@ export async function planSelection(
         ...typed,
         size: entry.size,
         sha256: entry.sha256,
-        ...(entry.sniff !== undefined ? { sniff: entry.sniff } : {}),
-        aliases: entry.frontmatter ? frontmatterAliases(entry.frontmatter) : [],
+        aliases: entry.aliases,
         state: skip ? "skipped" : "planned",
         reason: skip,
       });
@@ -215,7 +199,7 @@ export async function planSelection(
     });
   }
   // Parents precede children; the already-spelled canonical name wins among siblings.
-  // Names are allocated against the live listing only when a chunk locks the parent.
+  // Context allocates final names under its source locks.
   const depths = new Map<string, number>();
   for (const node of nodes) depths.set(node.id, (depths.get(node.parentId ?? "") ?? -1) + 1);
   const depth = (node: PlannedNode) => depths.get(node.id) ?? 0;
@@ -231,7 +215,7 @@ export async function planSelection(
 
 /** Plans with every node id derived by `importNodeId`. */
 export async function planWithDerivedIds(
-  manifest: ImportManifest,
+  manifest: ReceiptSelection,
   scope: { projectId: string },
   destinationId: string | null,
 ): Promise<PlannedNode[]> {

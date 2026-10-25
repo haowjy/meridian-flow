@@ -93,7 +93,7 @@ it.each([
     accountId: "account",
     readProjection: async () => structuredClone(state),
     commitCatalog: async (input: Parameters<ResourceMetadataStore["commitCatalog"]>[0]) => {
-      expect(state.catalogs[0]!.revision).toBe(input.expectedRevision);
+      expect(state.catalogs[0]?.revision).toBe(input.expectedRevision);
       const byId = new Map(state.folders.map((f) => [f.handle, f]));
       for (const w of input.folders) byId.set(w.next.handle, w.next);
       state = { records: [], folders: [...byId.values()], catalogs: [input.next] };
@@ -139,7 +139,7 @@ it.each([
     if (interrupted)
       await expect(acquisition.acquire(projectId, scope)).rejects.toThrow("Lost next page");
     else await acquisition.acquire(projectId, scope);
-    expect(state.catalogs[0]!.appliedRevision).toBe(interrupted ? "2" : "3");
+    expect(state.catalogs[0]?.appliedRevision).toBe(interrupted ? "2" : "3");
     expect(state.folders.find((f) => f.folderId === "F")).toMatchObject({
       canonical: { path: "/Q/Newest" },
       canonicalParent: { kind: "folder", folderId: "Q" },
@@ -220,7 +220,7 @@ it.each([
     uri: "manuscript://P/Historical.bin",
     observationVersion: version,
     aliases: [],
-    importPending: false,
+
     hasProperties: false,
     provisionalName: false,
     editable: false,

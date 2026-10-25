@@ -2,12 +2,11 @@
 import { createHash } from "node:crypto";
 import {
   IMPORT_ADMISSION,
-  type ImportManifest,
   type ImportRefusalCode,
+  type ImportSelection,
   overFileBudget,
 } from "@meridian/contracts";
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
-import { filetypeForKnownPath } from "@meridian/contracts/protocol";
 import { z } from "zod";
 
 export const IMPORT_LIMITS = {
@@ -18,13 +17,9 @@ export const IMPORT_LIMITS = {
   manifestBytes: 32 * 1024 * 1024,
   /** Multipart framing allowance on top of the file bytes a request may carry. */
   multipartOverheadBytes: 1024 * 1024,
-  landingConcurrency: 4,
   receivesPerImport: 4,
-  chunkSize: 200,
-  leaseMs: 120_000,
-  /** How long after a lease a hung put may still land its object before cleanup retires. */
-  latePutGraceMs: 60 * 60 * 1000,
-  sweepBatch: 500,
+  openPerUser: 3,
+  receiptAgeMs: 60 * 60 * 1000,
 } as const;
 /** A coded refusal; diagnostics stay server-side, the writer-facing app maps the code. */
 export class ImportError extends Error {
@@ -116,21 +111,15 @@ const schema = z
             entryId: z.number().int().nonnegative(),
             rootId: z.number().int().nonnegative(),
             path,
-            size: z.number().int().nonnegative().max(IMPORT_ADMISSION.totalBytes),
-            sha256: z.string().regex(/^[a-f0-9]{64}$/),
-            sniff: z
-              .string()
-              .max(684)
-              .regex(/^[A-Za-z0-9+/]*={0,2}$/)
-              .optional(),
-            frontmatter: z.string().max(IMPORT_ADMISSION.fileBytes).optional(),
+            size: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+            modifiedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
           })
           .strict(),
       )
       .max(IMPORT_ADMISSION.files),
   })
   .strict();
-export function validateManifest(raw: unknown): ImportManifest {
+export function validateSelection(raw: unknown): ImportSelection {
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
     for (const issue of parsed.error.issues) {
@@ -172,19 +161,6 @@ export function validateManifest(raw: unknown): ImportManifest {
     )
       refuse("unreadable_root_has_entries");
   }
-  for (const entry of value.entries) {
-    const selectedRoot = roots.get(entry.rootId);
-    const filename = selectedRoot?.kind === "file" ? selectedRoot.name : entry.path;
-    const type = filetypeForKnownPath(filename);
-    if (entry.size > 0 && (type === null || type === "markdown") && entry.sniff === undefined)
-      refuse("sniff_required");
-    if (
-      entry.sniff !== undefined &&
-      Buffer.from(entry.sniff, "base64").length !==
-        Math.min(IMPORT_ADMISSION.sniffBytes, entry.size)
-    )
-      refuse("sniff_length");
-  }
   for (const folder of value.folders)
     if (roots.get(folder.rootId)?.kind !== "folder") refuse("invalid_file_root");
   for (const root of value.roots) {
@@ -198,12 +174,17 @@ export function validateManifest(raw: unknown): ImportManifest {
     )
       refuse("invalid_file_root");
   }
-  if (value.entries.reduce((sum, entry) => sum + entry.size, 0) > IMPORT_ADMISSION.totalBytes)
+  if (
+    value.entries.reduce(
+      (sum, entry) => sum + (entry.size <= IMPORT_ADMISSION.fileBytes ? entry.size : 0),
+      0,
+    ) > IMPORT_ADMISSION.totalBytes
+  )
     refuse("import_too_large", { limit: IMPORT_ADMISSION.totalBytes });
   return value;
 }
 /** Roots, entries, unreadable paths and every distinct folder their paths imply. */
-function plannedNodeCount(manifest: ImportManifest) {
+function plannedNodeCount(manifest: ImportSelection) {
   const folders = new Set<string>();
   for (const root of manifest.roots) if (root.kind === "folder") folders.add(`${root.rootId}:`);
   for (const item of [...manifest.folders, ...manifest.entries]) {
@@ -219,7 +200,7 @@ function plannedNodeCount(manifest: ImportManifest) {
  * the same POST replays and any other command under that import id (a different destination,
  * root or entry id, file or order) is a mismatch.
  */
-export function manifestFingerprint(manifest: ImportManifest): string {
+export function selectionFingerprint(manifest: ImportSelection): string {
   const canonical = (value: unknown): unknown =>
     Array.isArray(value)
       ? value.map(canonical)

@@ -74,29 +74,6 @@ describe("planned link binding", () => {
     expect(subject.registered).toEqual([refs[2]]);
   });
 
-  it("a pending target mints an ahead ref at its written address, never binding the occupant there", async () => {
-    const subject = setup();
-    const PLANNED = "00000000-0000-4000-8000-000000000a04" as DocumentId;
-    const result = await subject.planned.bindMarkdown({
-      holder: { documentId: HOLDER },
-      markdown: "![map](kb://A.png) [x](kb://A) [y](kb://elsewhere)",
-      targets: new Map([
-        [0, PLANNED],
-        [1, PLANNED],
-        [2, B],
-      ]),
-      pending: new Set([PLANNED, B]),
-    });
-    const occurrences = walkLinkOccurrences(result.blocks);
-    const refs = occurrences.map(({ attrs }) => attrs.ref);
-    expect(refs[0]).toMatch(/^ahead:/);
-    expect(refs[1]).toMatch(/^ahead:/);
-    expect(refs[1]).not.toBe(`doc:${A}`);
-    // A pending identity that is already live binds to itself.
-    expect(refs[2]).toBe(`doc:${B}`);
-    expect(subject.registered).toEqual([refs[0], refs[1]]);
-  });
-
   it("a planned target binds doc:<id> without resolution while other unresolved addresses still mint ahead refs", async () => {
     const subject = setup();
     const NEW_HOLDER = "00000000-0000-4000-8000-000000000a05" as DocumentId;
@@ -120,36 +97,6 @@ describe("planned link binding", () => {
     expect(refs[2]).toMatch(/^ahead:/);
     expect(subject.registered).toEqual([]);
     expect(result.aheadMints.map((mint) => mint.ref)).toEqual([refs[2]]);
-  });
-
-  it("adjacent occurrences sharing a written href keep their own identities", async () => {
-    const subject = setup();
-    const PLANNED = "00000000-0000-4000-8000-000000000a04" as DocumentId;
-    const result = await subject.planned.bindMarkdown({
-      holder: { documentId: HOLDER },
-      markdown: "[a](p0)[b](p1)[c](p2) [web](https://example.com)",
-      hrefs: new Map([
-        [0, "kb://A"],
-        [1, "kb://A"],
-        [2, "kb://A"],
-      ]),
-      targets: new Map([
-        [0, A],
-        [1, PLANNED],
-        [2, B],
-      ]),
-      pending: new Set([PLANNED]),
-    });
-    const occurrences = walkLinkOccurrences(result.blocks);
-    expect(occurrences.map(({ label, attrs }) => [label, attrs.href])).toEqual([
-      ["a", "kb://A"],
-      ["b", "kb://A"],
-      ["c", "kb://A"],
-      ["web", "https://example.com"],
-    ]);
-    expect(occurrences[0]?.attrs.ref).toBe(`doc:${A}`);
-    expect(occurrences[1]?.attrs.ref).toMatch(/^ahead:/);
-    expect(occurrences[2]?.attrs.ref).toBe(`doc:${B}`);
   });
 
   it("an invalid id binds nothing rather than falling back to the written occupant", async () => {

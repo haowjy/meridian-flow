@@ -93,7 +93,11 @@ import {
   type FileAccessChanges,
   type PgFileAccessChanges,
 } from "../domains/file-policy/index.js";
-import { createProductionImportService, type ImportService } from "../domains/import/index.js";
+import {
+  createProductionImportService,
+  type ImportService,
+  listOpenImports,
+} from "../domains/import/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
 import {
   createNoopEventSink,
@@ -266,6 +270,7 @@ import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 export type AppServices = {
   projectExport: ProjectExport;
   imports(projectId: string, userId: string): ImportService;
+  openImports(userId: string): Promise<import("@meridian/contracts").ImportSummary[]>;
   gateway: Gateway;
   threadRepos: ThreadRepositories;
   journalReader: EventJournalReader;
@@ -1126,15 +1131,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentSync: ports.documentSync,
     linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
+    openImports: (userId) => listOpenImports(ports.db, userId),
     imports: (projectId, userId) =>
       createProductionImportService(
         {
           db: ports.db,
-          collab: ports.documentSync,
-          contextPorts: ports.contextPorts,
-          catalog: ports.contextCatalog,
-          links: ports.linkScopes,
-          ahead: ports.linkAheadRegistry,
           objects: ports.objectStore,
           eventSink: ports.eventSink,
         },
@@ -1356,7 +1357,6 @@ export function createInMemoryAppServices(): AppServices {
     },
     register: async () => unsupported(),
     settleArrivals: async () => unsupported(),
-    releaseAwaiting: async () => unsupported(),
     registerUnregistered: async () => unsupported(),
   };
 
@@ -1439,6 +1439,7 @@ export function createInMemoryAppServices(): AppServices {
     documentSync,
     linkAheadRegistry,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
+    openImports: async () => [],
     imports: () => {
       throw new Error("Import requires durable persistence");
     },

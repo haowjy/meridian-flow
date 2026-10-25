@@ -313,30 +313,24 @@
     {
       "idx": 44,
       "version": "7",
-      "when": 1791961352499,
+      "when": 1791994441547,
       "tag": "0044_import_schema",
       "breakpoints": true
     },
     {
       "idx": 45,
       "version": "7",
-      "when": 1791961354332,
+      "when": 1791994444515,
       "tag": "0045_import_indexes",
       "breakpoints": true
     },
     {
       "idx": 46,
       "version": "7",
-      "when": 1791993944391,
-      "tag": "0046_good_lady_mastermind",
-      "breakpoints": true
-    },
-    {
-      "idx": 47,
-      "version": "7",
-      "when": 1791994720070,
-      "tag": "0047_perpetual_manta",
+      "when": 1792954684258,
+      "tag": "0046_daily_joshua_kane",
       "breakpoints": true
     }
   ]
 }
+

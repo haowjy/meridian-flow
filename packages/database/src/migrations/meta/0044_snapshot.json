@@ -1,5 +1,5 @@
 {
-  "id": "174c099b-9728-4b5e-a89f-e5379644e941",
+  "id": "8c571e35-3a83-4c40-be1b-70ef38728d6f",
   "prevId": "df05f70b-b924-4992-9153-16c9aba4c987",
   "version": "7",
   "dialect": "postgresql",
@@ -5169,12 +5169,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "awaited_document_id": {
-          "name": "awaited_document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "registered_at": {
           "name": "registered_at",
           "type": "timestamp with time zone",
@@ -5241,22 +5235,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "link_ahead_refs_awaited_document": {
-          "name": "link_ahead_refs_awaited_document",
-          "columns": [
-            {
-              "expression": "awaited_document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"link_ahead_refs\".\"awaited_document_id\" IS NOT NULL AND \"link_ahead_refs\".\"settled_document_id\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -6746,47 +6724,15 @@
           "primaryKey": false,
           "notNull": false
         },
-        "parent_id": {
-          "name": "parent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "area": {
-          "name": "area",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "prepared": {
-          "name": "prepared",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "state": {
           "name": "state",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "created": {
-          "name": "created",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "attempt_id": {
-          "name": "attempt_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_until": {
-          "name": "lease_until",
-          "type": "timestamp with time zone",
+        "reason": {
+          "name": "reason",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -6796,24 +6742,29 @@
           "primaryKey": false,
           "notNull": false
         },
-        "uri": {
-          "name": "uri",
+        "object_key": {
+          "name": "object_key",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "object_swept_at": {
-          "name": "object_swept_at",
-          "type": "timestamp with time zone",
+        "converted_key": {
+          "name": "converted_key",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "version": {
-          "name": "version",
+        "received_size": {
+          "name": "received_size",
           "type": "bigint",
           "primaryKey": false,
-          "notNull": true,
-          "default": "0"
+          "notNull": false
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -6838,8 +6789,8 @@
           "method": "btree",
           "with": {}
         },
-        "import_entries_import_version": {
-          "name": "import_entries_import_version",
+        "import_entries_import_state": {
+          "name": "import_entries_import_state",
           "columns": [
             {
               "expression": "import_id",
@@ -6848,29 +6799,13 @@
               "nulls": "last"
             },
             {
-              "expression": "version",
+              "expression": "state",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "import_entries_object_sweep": {
-          "name": "import_entries_object_sweep",
-          "columns": [
-            {
-              "expression": "lease_until",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"import_entries\".\"attempt_id\" IS NOT NULL AND \"import_entries\".\"state\" IN ('deleted','not_imported') AND \"import_entries\".\"kind\" = 'binary'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -6880,53 +6815,6 @@
         "import_entries_import_id_imports_id_fk": {
           "name": "import_entries_import_id_imports_id_fk",
           "tableFrom": "import_entries",
-          "tableTo": "imports",
-          "columnsFrom": [
-            "import_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.import_progress": {
-      "name": "import_progress",
-      "schema": "",
-      "columns": {
-        "import_id": {
-          "name": "import_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "0"
-        },
-        "last_activity_at": {
-          "name": "last_activity_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "import_progress_import_id_imports_id_fk": {
-          "name": "import_progress_import_id_imports_id_fk",
-          "tableFrom": "import_progress",
           "tableTo": "imports",
           "columnsFrom": [
             "import_id"
@@ -6958,7 +6846,7 @@
           "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "user_id": {
           "name": "user_id",
@@ -6972,17 +6860,30 @@
           "primaryKey": false,
           "notNull": true
         },
+        "folder_id": {
+          "name": "folder_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "roots": {
           "name": "roots",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         },
-        "existing_links": {
-          "name": "existing_links",
+        "placement": {
+          "name": "placement",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "placement_generation": {
+          "name": "placement_generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "fingerprint": {
           "name": "fingerprint",
@@ -6990,21 +6891,15 @@
           "primaryKey": false,
           "notNull": true
         },
-        "source_id": {
-          "name": "source_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "folder_id": {
-          "name": "folder_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "state": {
           "name": "state",
           "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "counts": {
+          "name": "counts",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         },
@@ -7014,6 +6909,75 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "last_activity_at": {
+          "name": "last_activity_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "lease_token": {
+          "name": "lease_token",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_until": {
+          "name": "lease_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claims_without_progress": {
+          "name": "claims_without_progress",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "fell_back": {
+          "name": "fell_back",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revealed_at": {
+          "name": "revealed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "acknowledged_at": {
+          "name": "acknowledged_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "objects_swept_at": {
+          "name": "objects_swept_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "final_sweep_at": {
+          "name": "final_sweep_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -7037,6 +7001,60 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "imports_user_open": {
+          "name": "imports_user_open",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"imports\".\"acknowledged_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "imports_organize_claim": {
+          "name": "imports_organize_claim",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lease_until",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"imports\".\"state\" = 'organizing'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "imports_upload_expiry": {
+          "name": "imports_upload_expiry",
+          "columns": [
+            {
+              "expression": "last_activity_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"imports\".\"state\" = 'uploading'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -7050,7 +7068,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

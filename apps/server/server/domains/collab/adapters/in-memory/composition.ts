@@ -94,7 +94,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const links = createStaticDocumentLinkScopes();
   const initialDocumentSeeds = createInMemoryInitialDocumentSeeds(journal);
   const runtime = createAgentEditRuntime({
-    landingJournal: journal,
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
     inTransaction: () => false,
@@ -197,8 +196,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
       },
       discardStagedStates: initialDocumentSeeds.discardStagedStates,
       writeDocument: runtime.markdownDocuments.writeDocument,
-      fillEmptyDocument: runtime.markdownDocuments.fillEmptyDocument,
-      prependBlocks: runtime.markdownDocuments.prependBlocks,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
       bindStatic: runtime.linkBinder.bindStatic,
     },

@@ -224,7 +224,7 @@ router resolves to exact project-scoped Work authority before dispatch.
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant document ID; deleting an empty folder returns none. |
 | `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, previousLocations? })` returns one canonical Context document or `null` for a ref-less address. A target is a discriminated `scheme` or `relative` value. Only chat (`previousLocations`) falls back to previous locations, and only after a current miss. |
-| `LinkAheadRegistry` | `register` (independent root transaction, namespace keys then awaited-id stripes), `registerWithinTransaction` (ordinary mints, caller transaction with all canonical namespace keys already held), `settleArrivals` (inside the arrival's locked transaction; takes the awaited-id stripes, once per transaction), `releaseAwaiting` (joins the caller: address namespace keys, then stripes, then rows), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
+| `LinkAheadRegistry` | `register` (independent root transaction under sorted namespace keys), `registerWithinTransaction` (caller transaction with all canonical namespace keys already held), `settleArrivals` (inside the arrival transaction under those same keys), `registerUnregistered` (paged anti-join recovery of client mints). |
 | `DocumentArrivals` | Arrival hooks over the registry: `lockNamespaces` (namespace-only keys of documents' sources) and `settle`. |
 | `LiveMembership` | What a move needs of the live manifest: `members` (the note counts only live holders) and `transfer` (a cross-project move carries live membership to the destination project). |
 
@@ -299,22 +299,11 @@ and waits for the restore.
 
 An ahead ref settles on the first live document at its exact address, by
 compare-and-set on `settled_document_id IS NULL`; a later occupant never captures
-it. A row with `awaited_document_id` (an import's unlanded file) settles only to
-that document until `releaseAwaiting` clears it; registration and arrivals skip
-it for every other document, and that document settles it wherever it lands
-(an import's target may count up or move before landing), or at registration
-when it is already live in the ref's project. Registration and arrival of an
-awaited id have no common address, so they meet on a fixed set of advisory
-stripes keyed by the awaited id: registration takes them after its namespace
-keys, `settleArrivals` takes them first, once the arrival holds every key it
-will take, so neither order can miss the other. One lock order per transaction:
-namespace keys, then stripes (one sorted phase: a transaction calls
-`settleArrivals` once with every arrival, so lineage `reconcile` can hand its
-restored ids to Work restore, and a later call below a held stripe throws),
-then registry rows. `releaseAwaiting` takes the released refs' address keys
-before its stripes and row updates, so an uncommitted foreign arrival at the
-address finishes first. An import's binding can register after Finish
-released; it releases its own pending ids when the terminal fence rejects it. Arrival hooks, each once against the operation's final tree:
+it. Registration and arrivals meet under the same namespace keys, before registry
+rows, so neither order misses the other. Selected import targets bind directly by
+document id; the registry owns only ordinary unresolved addresses.
+
+Arrival hooks run once against the operation's final tree:
 
 | Arrival | Where | Locks already held |
 |---|---|---|
@@ -609,8 +598,7 @@ refreshes the catalog once. It joins an ambient transaction; a collision rolls b
 whole chunk. It neither reallocates nor replays ids: the caller owns allocation and
 planning receipts, and resolves a moved parent's current source before invoking this
 source-scoped door.
-Catalog file entries expose strict boolean `importPending`, true only for
-`metadata.importPending === true`, and strict boolean `hasProperties`, true only for stored
+Catalog file entries expose strict boolean `hasProperties`, true only for stored
 properties (`metadata.properties`, `{format:"yaml", text}`) with non-blank text. The properties
 themselves never ride in the catalog: `GET /api/projects/:projectId/documents/:documentId/properties`
 (same read grant as the document) parses the stored YAML in source order into `DocumentProperties`
