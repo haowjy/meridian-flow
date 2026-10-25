@@ -21,7 +21,7 @@ resolution.registerResolver(
 //   no ref, address the complete index has -> that document (matchDocumentPath)
 //   folder:<id> or a folder address (href ends in /) the index holds
 //                                          -> that folder (current name and URI)
-//   any other folder question              -> not asked (no folder answer on the wire)
+//   any other folder question              -> ask
 //   relative with no base                    -> not asked
 //   ahead ref the memo knows settled on D  -> exactly a doc ref to D
 //   ahead ref settled, identity unknown    -> ask, never the address
@@ -31,16 +31,18 @@ resolution.registerResolver(
 // remote, per batch of asked questions (at most 200):
 //   one POST of { workId, baseUri, holderDocumentId, links: [{ ref, href }] };
 //     answers in request order:
-//   document -> document;  gone -> gone;  missing -> missing;  unresolvable -> no answer
+//   document -> document; folder -> folder; gone -> gone; missing -> missing;
+//   unresolvable -> no answer
 //   `settled: true` (rule 3) on an ahead ref's document or gone -> the memo learns it
 //   a provisional local answer stands unless the server says gone or another document
 ```
 
-**Folder links are answered locally only.** `DocumentLinkAnswer` has no
-folder state, so a folder the complete index does not hold (another Work's
-Scratch, not yet loaded) stays unasked and draws filled, not dashed. Pressing
-it still works: the folder menu finds the folder by identity
-(`lookupProjectFolderAvailability`), not through this resolver.
+**Folder links use the same local-first path as document links.** A folder in
+the complete index answers synchronously. Any folder the index does not hold,
+including another Work's Scratch, goes to the resolve endpoint; its `folder`
+or `gone` answer makes the chip filled or dashed. Opening still finds the
+folder by identity through `lookupProjectFolderAvailability`, so a move or
+rename after the link was written opens its current location.
 
 The address answers apply one rule (`matchDocumentPath` from
 `@meridian/contracts`, beside `resolveDocumentHref`, through
