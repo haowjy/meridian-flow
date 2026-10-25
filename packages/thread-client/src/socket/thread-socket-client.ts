@@ -23,6 +23,8 @@ import {
 import { dispatchWsServerMessage } from "./dispatch-ws-server-message";
 import { SocketLifecycleController, type SocketLifecycleOptions } from "./socket-lifecycle";
 import type {
+  AskAnswerInput,
+  AskAnswerOutcome,
   ConnectionState,
   ThreadTransport,
   ThreadTransportHandlers,
@@ -52,6 +54,8 @@ export class ThreadSocketClient implements ThreadTransport {
     string,
     Set<(hint: Extract<WsServerMessage, { type: "context-catalog-hint" }>) => void>
   >();
+  /** Unanswered `ask.answer` frames by request id; a close settles every one as unconfirmed. */
+  private readonly askAnswers = new Map<string, (outcome: AskAnswerOutcome) => void>();
   private wantsConnection = false;
   private requestCounter = 0;
 
@@ -66,6 +70,7 @@ export class ThreadSocketClient implements ThreadTransport {
           // (it only advances on the next `startSocket`/`teardown`), so a send
           // tagged with it can be recognized as unconfirmed.
           this.subscriptions.connectionLost();
+          this.settleAskAnswers();
           for (const handler of this.subscriptions.handlers()) handler.onClose?.(event);
         },
         onSocketError: () => this.publishError(new Error("WebSocket error")),
@@ -85,6 +90,7 @@ export class ThreadSocketClient implements ThreadTransport {
     this.wantsConnection = false;
     this.socket.teardown();
     this.subscriptions.connectionLost();
+    this.settleAskAnswers();
     this.subscriptions.clearAvailability();
     this.endConnectionFailure("moot");
   }
@@ -137,6 +143,26 @@ export class ThreadSocketClient implements ThreadTransport {
     };
   }
 
+  answerAsk(input: AskAnswerInput): Promise<AskAnswerOutcome> {
+    const requestId = this.nextRequestId();
+    if (!this.socket.isServerConnected() || !this.send({ type: "ask.answer", requestId, ...input }))
+      return Promise.resolve({ type: "unconfirmed" });
+    return new Promise((resolve) => this.askAnswers.set(requestId, resolve));
+  }
+
+  private settleAskAnswer(requestId: string, outcome: AskAnswerOutcome): boolean {
+    const resolve = this.askAnswers.get(requestId);
+    if (!resolve) return false;
+    this.askAnswers.delete(requestId);
+    resolve(outcome);
+    return true;
+  }
+
+  private settleAskAnswers(): void {
+    for (const requestId of [...this.askAnswers.keys()])
+      this.settleAskAnswer(requestId, { type: "unconfirmed" });
+  }
+
   cancel(threadId: string, turnId: string) {
     return this.options.cancelTurn(threadId, turnId);
   }
@@ -183,8 +209,11 @@ export class ThreadSocketClient implements ThreadTransport {
           this.send({ type: "catalog.subscribe", requestId: this.nextRequestId(), projectId });
         }
       },
-      onRequestError: (requestId, error, retryable) =>
-        this.subscriptions.handleRequestError(requestId, error, retryable),
+      onAskAnswerReply: (reply) => this.settleAskAnswer(reply.requestId, reply),
+      onRequestError: (requestId, error, retryable) => {
+        if (this.settleAskAnswer(requestId, { type: "unconfirmed" })) return;
+        this.subscriptions.handleRequestError(requestId, error, retryable);
+      },
       onThreadError: (threadId, error) => {
         for (const handler of this.subscriptions.handlers(threadId)) {
           handler.onError?.(error);
