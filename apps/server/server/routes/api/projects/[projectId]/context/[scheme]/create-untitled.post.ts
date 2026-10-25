@@ -28,7 +28,7 @@ import {
   parseContextMutationName,
   parseContextMutationPath,
 } from "../../../../../../lib/context-mutation-validation.js";
-import { containerTarget } from "../../../../../../lib/file-access-http.js";
+import { withDurableIntentInterruptBoundary } from "../../../../../../shared/interrupt-boundary.js";
 import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
 interface CreateUntitledBody {
@@ -186,34 +186,36 @@ export async function createUntitledContextDocument(input: {
   return value;
 }
 
-export default defineEventHandler(async (event) => {
-  const { app, userId, projectId, scheme, workId, authority, port, container, edit } =
-    await resolveContextRoute(event, { recoverAcrossProject: true });
-  const body = parseCreateUntitledBody(await readBody(event));
-  const parent = body.destination?.parent;
-  const rootUri =
-    parent?.kind === "root" ? await destinationRootUri(app, projectId, parent) : undefined;
-  const rootContainer =
-    rootUri !== undefined ? await containerOfUri(app, projectId, rootUri) : null;
-  const authorizeDestination = async (uri: string) => {
-    const target = await containerOfUri(app, projectId, uri);
-    if (!target) return false;
-    const grant = await app.fileAccess.authorize({ accountId: userId as UserId }, target, "edit");
-    return !isFileAccessDenied(grant) && (await app.fileAccess.confirmEdit([grant])).length === 0;
-  };
-  // The client minted the id, so this is a create into the route's folder, or the destination.
-  const result = await edit([container, ...(rootContainer ? [rootContainer] : [])], () =>
-    createUntitledContextDocument({
-      port,
-      userId,
-      scheme,
-      workId,
-      authority,
-      body,
-      ...(rootUri !== undefined ? { destinationRootUri: rootUri } : {}),
-      ...(body.destination ? { authorizeDestination } : {}),
-    }),
-  );
-  if (result.status === "conflict") setResponseStatus(event, 409);
-  return result;
-});
+export default defineEventHandler((event) =>
+  withDurableIntentInterruptBoundary(async () => {
+    const { app, userId, projectId, scheme, workId, authority, port, container, edit } =
+      await resolveContextRoute(event, { recoverAcrossProject: true });
+    const body = parseCreateUntitledBody(await readBody(event));
+    const parent = body.destination?.parent;
+    const rootUri =
+      parent?.kind === "root" ? await destinationRootUri(app, projectId, parent) : undefined;
+    const rootContainer =
+      rootUri !== undefined ? await containerOfUri(app, projectId, rootUri) : null;
+    const authorizeDestination = async (uri: string) => {
+      const target = await containerOfUri(app, projectId, uri);
+      if (!target) return false;
+      const grant = await app.fileAccess.authorize({ accountId: userId as UserId }, target, "edit");
+      return !isFileAccessDenied(grant) && (await app.fileAccess.confirmEdit([grant])).length === 0;
+    };
+    // The client minted the id, so this is a create into the route's folder, or the destination.
+    const result = await edit([container, ...(rootContainer ? [rootContainer] : [])], () =>
+      createUntitledContextDocument({
+        port,
+        userId,
+        scheme,
+        workId,
+        authority,
+        body,
+        ...(rootUri !== undefined ? { destinationRootUri: rootUri } : {}),
+        ...(body.destination ? { authorizeDestination } : {}),
+      }),
+    );
+    if (result.status === "conflict") setResponseStatus(event, 409);
+    return result;
+  }),
+);
