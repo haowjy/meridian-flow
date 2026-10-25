@@ -38,6 +38,13 @@ other connections.
 Composed runtimes must unload rooms, shut down background app work, and drain
 `documentSync.drainHocuspocusPersistence()` before the next fixture reset. Room
 unload schedules checkpoint stores; it does not await their persistence.
+Collab producers are the exception to the shared tracker: each stops and joins
+its own work through `collab.lifecycle.dispose`, which a harness awaits before
+resetting rows, so work still running cannot deadlock against the reset's
+locks. Give a collab producer that escapes it a shutdown of its own rather than
+also routing it through `processDetachedWork`, which would leave two owners for
+one shutdown; see "Producer shutdown" in
+[collab's CONTEXT.md](../domains/collab/.context/CONTEXT.md).
 
 Hoist immutable large fixtures to `beforeAll` only when each case restores its
 mutations. Keep query-plan fixtures large enough for their stated plan contract.

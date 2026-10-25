@@ -37,10 +37,23 @@ databases from the one its workflow migrated, on the runner's own loopback
 Postgres (`isCiRunnerPostgres`), and leaves them to die with the runner. Any
 other shared or deployed Postgres stays serial. Fixtures isolate state with rollback or the catalog-
 derived FK delete policy, not per-case truncation. Only managed worker URLs get
-`synchronous_commit=off` (a session startup setting); never change shared server
-settings or dev database durability. Do not scale workers with CPU count against
-the shared connection limit, and do not run `pnpm check` and `pnpm test:db` at
-once in one worktree. `pnpm test:all` runs unit and DB projects together; its DB
+`synchronous_commit=off` (a session startup setting); never change the shared
+server's durability settings or dev database durability. Do not scale workers
+with CPU count against the shared connection limit, and do not run `pnpm check`
+and `pnpm test:db` at once in one worktree.
+
+Concurrent managed runs from different checkouts share the dev server with no
+cross-run queue, and they all pass as long as no test waits on a drop inline.
+Under four concurrent full runs a single empty-database drop took 3–44 s
+(0.1 s idle), enough to time out a 30 s hook. Serialising runs with an advisory
+lock only hides that wait: with two concurrent full runs, both finished in a
+median 119 s with the lock against 68 s without, and neither failed. Capacity
+comes from `max_connections=300` in `docker-compose.yml` (a full run peaks near
+20 connections), so host memory limits concurrent runs before connections do.
+Raise that limit rather than shrinking fixture pools, which would change what
+the tests exercise. Local runs use 4 workers (`DB_TEST_WORKERS` overrides);
+don't size them per run from `vitest list`, whose 0.5–1.1 s discovery costs
+more than the clones it would save (about 0.1 s each, created in parallel). `pnpm test:all` runs unit and DB projects together; its DB
 reporter rejects a run with no passed or failed DB test, so a unit-only result
 is not combined-run evidence.
 
