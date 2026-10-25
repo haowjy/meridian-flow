@@ -126,7 +126,7 @@ then a folder with one document and an empty subfolder:
    }))
    PY
    ./mf api POST "/api/projects/$project_id/links/resolve" \
-     --data @/tmp/folder-links-129.json --json | jq '.answers | {length, states: group_by(.state) | map({state: .[0].state, count: length})}'
+     --data @/tmp/folder-links-129.json --json | jq -c '{length: (.answers | length), states: (.answers | group_by(.state) | map({state: .[0].state, count: length}))}'
    ```
 
    It returns 129 `gone` answers rather than exceeding the availability
