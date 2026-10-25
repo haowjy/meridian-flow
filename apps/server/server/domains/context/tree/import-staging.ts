@@ -14,12 +14,18 @@ import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizz
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { MarkdownDocumentStore } from "../../collab/index.js";
 import { lockNamespaceKeys } from "../adapters/context-fs/document-locations.js";
-import { loadFolderAddresses, resolveCanonicalAddresses } from "../adapters/document-address.js";
+import { resolveCanonicalAddresses } from "../adapters/document-address.js";
 import { allocateFilename } from "../context/paths.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { ContextStagedCreation } from "../ports/context-staged-creation.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
 import type { AheadRegistration, LinkAheadRegistry } from "../ports/link-ahead-registry.js";
+import {
+  createTreeReader,
+  LIVE_TREE,
+  visibleDocumentsSql,
+  visibleFoldersSql,
+} from "./tree-view.js";
 
 export function createDrizzleContextStagedCreation(deps: {
   db: Database;
@@ -125,14 +131,7 @@ export function createDrizzleContextStagedCreation(deps: {
            or d.id is null or (d.storage_url is null and s.document_id is null))
           and (d.storage_url is null or s.document_id is not null) limit 1`);
       if (invalidSeed) return { kind: "changed" };
-      const folderAddresses = new Map(
-        (
-          await loadFolderAddresses(
-            db,
-            expected.destinations.flatMap((row) => (row.folderId ? [row.folderId] : [])),
-          )
-        ).map((row) => [row.folderId, row]),
-      );
+      const tree = createTreeReader(db);
       const destinations: {
         area: string;
         folderId: string | null;
@@ -154,13 +153,11 @@ export function createDrizzleContextStagedCreation(deps: {
         )
           return { kind: "changed" };
         if (destination.folderId) {
-          const live = folderAddresses.get(destination.folderId);
+          const live = await tree.findFolderById(LIVE_TREE, destination.folderId as never);
           if (
             !live ||
-            live.deleted ||
-            live.projectId !== projectId ||
-            live.scheme !== destination.area ||
-            live.uri !== `${parsed.value.normalized}/`
+            live.contextSourceId !== sourceOf.get(destination.area) ||
+            live.path !== parsed.value.path
           )
             return { kind: "changed" };
         } else if (parsed.value.path !== "") return { kind: "changed" };
@@ -209,10 +206,10 @@ export function createDrizzleContextStagedCreation(deps: {
       }>(sql`
         with destinations as (select * from jsonb_to_recordset(${JSON.stringify(destinations)}::jsonb) as x(area text, "folderId" uuid, "sourceId" uuid))
         select x.area, f.parent_id as "parentId", 'folder' as kind, f.name, '' as extension
-        from destinations x join folders f on f.context_source_id = x."sourceId" and f.parent_id is not distinct from x."folderId" where f.deleted_at is null
+        from destinations x join ${visibleFoldersSql(LIVE_TREE)} f on f.context_source_id = x."sourceId" and f.parent_id is not distinct from x."folderId"
         union all
-        select x.area, d.folder_id, 'file', d.name, d.extension from destinations x join documents d
-          on d.context_source_id = x."sourceId" and d.folder_id is not distinct from x."folderId" where d.deleted_at is null and d.kind = 'content'`);
+        select x.area, d.folder_id, 'file', d.name, d.extension from destinations x join ${visibleDocumentsSql(LIVE_TREE)} d
+          on d.context_source_id = x."sourceId" and d.folder_id is not distinct from x."folderId"`);
       const occupied = new Map(
         destinations.map((row) => [
           parentKey(row.area, row.folderId),
