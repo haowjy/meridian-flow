@@ -284,7 +284,13 @@ export function createDrizzleDocumentLinkScopes(deps: {
             project: { id: coordinates.projectId },
           });
           const location = sourceId
-            ? await inspectTreeLocation(db, sourceId, coordinates.path, treeViewOf(view))
+            ? await inspectTreeLocation(
+                db,
+                sourceId,
+                coordinates.path,
+                treeViewOf(view),
+                "directory",
+              )
             : null;
           folderId = location?.kind === "directory" ? location.nodeId : null;
         } catch (cause) {
