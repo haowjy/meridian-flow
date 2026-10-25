@@ -26,11 +26,17 @@ export type AskAnswerAttempt = {
 
 export type ChatAsks = {
   byId: ReadonlyMap<string, ThreadAsk>;
+  /** Each asking turn's newest ask id, so a turn's receipt is one lookup. */
+  byTurn: ReadonlyMap<string, string>;
   /** Keyed by ask id: one answer per ask at a time. */
   attempts: ReadonlyMap<string, AskAnswerAttempt>;
 };
 
-export const EMPTY_CHAT_ASKS: ChatAsks = { byId: new Map(), attempts: new Map() };
+export const EMPTY_CHAT_ASKS: ChatAsks = {
+  byId: new Map(),
+  byTurn: new Map(),
+  attempts: new Map(),
+};
 
 const STATUS_RANK: Record<AskStatus, number> = {
   pending: 0,
@@ -45,6 +51,7 @@ const isResolved = (ask: ThreadAsk) => STATUS_RANK[ask.status] === 2;
 /** Take server asks (a read's, a frame's or a reply's). Resolved asks retire this device's attempt. */
 export function receiveAsks(asks: ChatAsks, incoming: readonly ThreadAsk[]): ChatAsks {
   let byId: Map<string, ThreadAsk> | null = null;
+  let byTurn: Map<string, string> | null = null;
   let attempts: Map<string, AskAnswerAttempt> | null = null;
   for (const ask of incoming) {
     const held = (byId ?? asks.byId).get(ask.id);
@@ -52,13 +59,19 @@ export function receiveAsks(asks: ChatAsks, incoming: readonly ThreadAsk[]): Cha
     if (held && isResolved(held)) continue;
     byId ??= new Map(asks.byId);
     byId.set(ask.id, ask);
+    const newest = (byTurn ?? asks.byTurn).get(ask.turnId);
+    const newestAsk = newest === undefined ? undefined : byId.get(newest);
+    if (!newestAsk || newestAsk.id === ask.id || ask.createdAt > newestAsk.createdAt) {
+      byTurn ??= new Map(asks.byTurn);
+      byTurn.set(ask.turnId, ask.id);
+    }
     if (isResolved(ask) && (attempts ?? asks.attempts).has(ask.id)) {
       attempts ??= new Map(asks.attempts);
       attempts.delete(ask.id);
     }
   }
   if (!byId) return asks;
-  return { byId, attempts: attempts ?? asks.attempts };
+  return { byId, byTurn: byTurn ?? asks.byTurn, attempts: attempts ?? asks.attempts };
 }
 
 /**
@@ -121,14 +134,16 @@ export type OpenAsk = {
  */
 export function openAsk(asks: ChatAsks, turns: readonly Turn[]): OpenAsk | null {
   const turnId = nearestAssistantTurnId(turns);
-  if (!turnId) return null;
-  for (const ask of asks.byId.values()) {
-    if (ask.turnId !== turnId || ask.status !== "open") continue;
-    const attempt = asks.attempts.get(ask.id) ?? null;
-    if (attempt?.state === "sending") return null;
-    return { ask, failed: attempt };
-  }
-  return null;
+  const ask = turnId === null ? undefined : askOfTurn(asks, turnId);
+  if (ask?.status !== "open") return null;
+  const attempt = asks.attempts.get(ask.id) ?? null;
+  if (attempt?.state === "sending") return null;
+  return { ask, failed: attempt };
+}
+
+function askOfTurn(asks: ChatAsks, turnId: string): ThreadAsk | undefined {
+  const askId = asks.byTurn.get(turnId);
+  return askId === undefined ? undefined : asks.byId.get(askId);
 }
 
 export type AskReceipt = {
@@ -144,17 +159,11 @@ function resolutionOfAnswer(answer: AskAnswer): AskResolution {
 
 /** The receipt line for an asking turn, or null while its ask is unresolved and unanswered here. */
 export function askReceipt(asks: ChatAsks, turnId: string): AskReceipt | null {
-  let found: AskReceipt | null = null;
-  for (const ask of asks.byId.values()) {
-    if (ask.turnId !== turnId) continue;
-    let receipt: AskReceipt | null = null;
-    if (ask.resolution) receipt = { ask, resolution: ask.resolution, pending: false };
-    else {
-      const attempt = asks.attempts.get(ask.id);
-      if (attempt?.state === "sending")
-        receipt = { ask, resolution: resolutionOfAnswer(attempt.answer), pending: true };
-    }
-    if (receipt && (!found || receipt.ask.createdAt > found.ask.createdAt)) found = receipt;
-  }
-  return found;
+  const ask = askOfTurn(asks, turnId);
+  if (!ask) return null;
+  if (ask.resolution) return { ask, resolution: ask.resolution, pending: false };
+  const attempt = asks.attempts.get(ask.id);
+  return attempt?.state === "sending"
+    ? { ask, resolution: resolutionOfAnswer(attempt.answer), pending: true }
+    : null;
 }
