@@ -299,7 +299,7 @@ export const threadInboxMessages = pgTable(
     ),
     check(
       "thread_inbox_messages_body_valid",
-      sql`(CASE WHEN ${table.intent} = 'control' THEN (${table.body}->>'kind' = 'compact' OR (${table.body}->>'kind' = 'write_mode' AND ${table.body}->>'mode' IN ('direct','draft'))) ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
+      sql`(CASE WHEN ${table.intent} = 'control' THEN (${table.body}->>'kind' IN ('compact','ask_resolved') OR (${table.body}->>'kind' = 'write_mode' AND ${table.body}->>'mode' IN ('direct','draft'))) ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
     ),
   ],
 );
