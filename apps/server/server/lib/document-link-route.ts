@@ -99,19 +99,23 @@ export async function handleDocumentLinkResolveRequest(
         baseUri = holder.uri;
         if (holder.uri !== request.baseUri) holderUri = holder.uri;
       }
-      const refLinks = request.links.flatMap((link, index) =>
-        link.ref === null ? [] : [{ link, index }],
-      );
+      const refLinks = request.links.flatMap((link, index) => {
+        const resolved = resolveDocumentHref(link.href, baseUri);
+        return link.ref !== null || resolved?.kind === "folder" ? [{ link, index, resolved }] : [];
+      });
       if (refLinks.length === 0) return;
       await deps.linkScopes.prepare({
         holders: holder ? [{ documentId: holder.documentId, view }] : [],
         views: [view],
-        refs: refLinks.map(({ link }) => link.ref as string),
+        refs: refLinks.flatMap(({ link }) => (link.ref === null ? [] : [link.ref])),
         // An unsettled ahead ref resolves by its exact stored address.
         addresses: refLinks.flatMap(({ link }) =>
           parseLinkRef(link.ref)?.kind === "ahead"
             ? (resolveDocumentHref(link.href, null)?.uri ?? [])
             : [],
+        ),
+        folderAddresses: refLinks.flatMap(({ resolved }) =>
+          resolved?.kind === "folder" ? [resolved.uri] : [],
         ),
       });
       const reader = holder
@@ -148,7 +152,7 @@ export async function handleDocumentLinkResolveRequest(
   const unanswered: Array<{ index: number; uri: string }> = [];
   const byHref = new Map<string, ReturnType<DocumentLinkResolver["resolve"]>>();
   for (const [index, link] of request.links.entries()) {
-    if (link.ref !== null) continue;
+    if (link.ref !== null || answers[index] !== undefined) continue;
     const target = addressTarget(link.href, baseUri);
     if (!target) {
       answers[index] = { state: "unresolvable" };
@@ -254,6 +258,18 @@ function answerOf(resolution: LinkResolution, trashedDocumentId?: string): Docum
         }
       : { state: "gone", ...marks };
   }
+  if (resolution.kind === "folder") {
+    const parsed = parseContextUri(resolution.folder.uri);
+    if (!parsed.ok) return { state: "gone" };
+    return {
+      state: "folder",
+      folder: {
+        id: resolution.folder.folderId,
+        name: parsed.value.path.split("/").at(-1) ?? parsed.value.path,
+        uri: resolution.folder.uri,
+      },
+    };
+  }
   if (resolution.kind === "ahead") return { state: "missing", uri: resolution.uri, ...marks };
   // gone, and a snapshot miss: never a location the reader was not shown.
   return { state: "gone", ...(trashedDocumentId ? { trashedDocumentId } : {}), ...marks };
@@ -268,7 +284,7 @@ function addressTarget(
   baseUri: string | null,
 ): { target: DocumentLinkTarget; uri: string } | null {
   const resolved = resolveDocumentHref(href, baseUri);
-  if (!resolved) return null;
+  if (resolved?.kind !== "document") return null;
   const absolute = /^[a-z][a-z0-9+.-]*:\/\//i.test(href);
   return {
     uri: resolved.uri,
