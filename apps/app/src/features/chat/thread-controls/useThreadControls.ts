@@ -20,7 +20,7 @@ import type { PendingInboxItem } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { type CommandFailure, logCommandFailure, occurrenceKey } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { enqueueThreadControl, withdrawThreadControl } from "@/client/api/threads-api";
 import { commandFailureInput } from "@/client/failures/command-failure";
@@ -37,7 +37,7 @@ import {
   mergeQueuedControls,
   NO_LOCAL_CONTROLS,
   type QueuedControl,
-  retainControls,
+  reconcileControls,
 } from "./thread-controls";
 import type { SwitchView } from "./useSwitchView";
 
@@ -242,9 +242,9 @@ export function useThreadControls(input: {
   );
 
   const compactRows = useMemo(() => mergeQueuedControls({ local, items }), [local, items]);
-  const queued = useMemo(
+  const reconciled = useMemo(
     () =>
-      retainControls(held.current.controls, {
+      reconcileControls(held.current.controls, {
         rows: [...compactRows, ...switches.rows],
         answered: answeredControlIds,
         version,
@@ -252,8 +252,13 @@ export function useThreadControls(input: {
       }),
     [compactRows, switches.rows, answeredControlIds, version, history],
   );
+  useLayoutEffect(() => {
+    held.current.controls = reconciled.held;
+    dispatch({ type: "retire", ids: reconciled.retired });
+  }, [reconciled, dispatch]);
+  const queued = reconciled.rows;
   // A row the record dropped waits for its turn or for proof it won't run: ask for that proof.
-  const droppedRows = queued.filter((row) => held.current.controls.get(row.id)?.droppedAt != null);
+  const droppedRows = queued.filter((row) => reconciled.held.get(row.id)?.droppedAt != null);
   const droppedKey = droppedRows.map((row) => row.id).join(",");
   useEffect(() => {
     if (droppedKey) revalidate();

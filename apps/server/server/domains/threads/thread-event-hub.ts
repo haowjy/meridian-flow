@@ -1,7 +1,7 @@
 /**
  * Thread event hub: the live fan-out + replay surface for a thread's AG-UI
  * events. Maintains a bounded hot cache, replays from the journal on
- * subscribe/cursor, and projects orchestrator events into AG-UI events for
+ * `catchupAndSubscribe` or cursor reads, and projects orchestrator events into AG-UI events for
  * subscribers. Owns the realtime delivery layer over the event journal.
  */
 import type { FailureRecord } from "@meridian/contracts/failures";

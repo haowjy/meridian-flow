@@ -301,6 +301,13 @@ export function createHandBackOperation(options: {
       return { kind: "refused", command, status: verdict.status };
     }
     if (verdict.kind === "ambiguous") {
+      // A remounted owner may replay while this owner is still posting. Its confirmed
+      // receipt retires the durable command even if our response arrives later and is lost.
+      if (!store.pending().some((pending) => pending.requestId === requestId)) {
+        runState.dropIntent(requestId);
+        retire(requestId, "resolved");
+        return { kind: "ambiguous", command, request };
+      }
       runState.failIntent(requestId);
       fail(held, "ambiguous");
       return { kind: "ambiguous", command, request };
