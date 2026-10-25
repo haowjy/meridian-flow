@@ -5,7 +5,7 @@
  * losing the rows that did move, and Undo still covers those.
  */
 import type { CatalogEntry } from "@meridian/contracts/protocol";
-import type { ParentRef } from "@meridian/resource-replica";
+import type { ParentRef, ResourceRecord } from "@meridian/resource-replica";
 import { expect, it } from "vitest";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { moveRows, type NamingView } from "./execute-move";
@@ -33,15 +33,40 @@ it("returns only rows still where and as the drop left them", () => {
     b: { name: "b", parent: folder("elsewhere") },
     c: { name: "renamed", parent: folder("act") },
   };
+  const reminted = {
+    resource: {
+      handle: "created-handle",
+      identity: { documentId: "server-id" },
+      aliases: { "local-id": { introducedAtIdentityRevision: 1 } },
+    },
+  } as unknown as ResourceRecord;
+  const remintedEffect: MoveEffect = {
+    entry: { kind: "file", id: "local-id" },
+    name: "created",
+    previousName: "created-before",
+    before: folder("book"),
+    after: folder("act"),
+  };
   const view = {
-    records: [],
+    records: [reminted],
     placement: {
       folderLocation: (id: string) => (now[id] ? { name: now[id].name } : null),
       parentForFolder: (id: string) => now[id]?.parent ?? null,
+      resourceLocation: (record: ResourceRecord) =>
+        record === reminted ? { name: "created" } : null,
+      parentForResource: (record: ResourceRecord) => (record === reminted ? folder("act") : null),
     },
   } as unknown as PlacementView;
-  expect(planUndo(view, [effect("a"), effect("b"), effect("c"), effect("gone")])).toEqual([
+  expect(
+    planUndo(view, [effect("a"), effect("b"), effect("c"), effect("gone"), remintedEffect]),
+  ).toEqual([
     { entry: effect("a").entry, name: "a-before", before: folder("act"), after: folder("book") },
+    {
+      entry: remintedEffect.entry,
+      name: "created-before",
+      before: folder("act"),
+      after: folder("book"),
+    },
   ]);
 });
 

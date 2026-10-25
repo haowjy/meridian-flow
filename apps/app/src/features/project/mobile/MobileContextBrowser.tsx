@@ -10,7 +10,7 @@ import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
 import { useDeleteContextEntry } from "../context/document-delete-undo";
-import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
+import { MoveFeedbackProvider } from "../context/entry-drag/move-notice";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { SurfaceNotices } from "../context/project-notices";
 import { treeFolderIds } from "../context/tree-expansion-state";
@@ -73,12 +73,6 @@ function MobileFolderTree({
   });
   const deletion = useDeleteContextEntry("mobile");
   const openDocument = useOpenProjectDocument(projectId);
-  // One list, so Move… here ends as everywhere else: the row selected and the note with Undo.
-  const list = useEntryList({
-    projectId,
-    surface: "mobile",
-    areas: catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, movable: true }] : [],
-  });
   const [localCreate, setLocalCreate] = useState<{
     kind: ContextCreateKind;
     parentPath: string;
@@ -169,13 +163,13 @@ function MobileFolderTree({
             },
           }}
         >
-          <EntryList list={list}>
+          <MoveFeedbackProvider feedback={{ surface: "mobile" }}>
             <TreeChildren
               parentId={dir.entryId}
               parentPath={dir.entryId === catalog.root.entryId ? "" : dir.path}
               depth={0}
             />
-          </EntryList>
+          </MoveFeedbackProvider>
           {!pending && catalog.children(dir.entryId).length === 0 ? (
             <p className="p-4 text-sm text-muted-foreground">
               <Trans>This folder is empty.</Trans>

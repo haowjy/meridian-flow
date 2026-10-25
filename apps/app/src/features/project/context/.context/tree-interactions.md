@@ -187,10 +187,12 @@ entry identity; equal paths in different areas remain distinct destinations.
 
 Move… and dragging share every step. Refusal is judged by identity from the
 replica's placement graph (`moveRefusal` in `entry-drag/move-plan.ts`), so the
-picker and a hover agree even while a peer moves rows. `moveRows`
-(`entry-drag/execute-move.ts`) places, remembers each operation for its row's
-link-update note and returns the move result both report through the list's
-notice. Destination resolution lives in `move-entry.ts`; arrival naming is
+picker and a hover agree even while a peer moves rows. A ready drag plan already
+contains rows with their authoritative `ParentRef`; hover prediction and
+`moveRows` consume those rows without resolving the destination again.
+`moveRows` (`entry-drag/execute-move.ts`) places, remembers each operation for
+its row's link-update note and returns the result to the project-owned notice
+surface. Root authority resolution lives in `move-entry.ts`; arrival naming is
 `arrivals` in `execute-move.ts`, over `context-entry-name.ts`.
 
 The chat's Scratch renders one owner-bound `TreeEnvProvider` and `TreeChildren`
@@ -265,13 +267,12 @@ every moved row was renamed, moved again or deleted (only after the move has
 shown in the replica, which can trail the placement by a moment); the message
 stays until dismissed.
 
-Move… inside a list ends the same way: `EntryMovePicker` places through
-`move-entry.ts`, then reports to its list (`useReportMove`), which selects the
-moved row and publishes the same notice and Undo. Move… does not reveal a
+Move… publishes through the required surface supplied around its rows, whether
+or not a list is mounted. A desktop list optionally selects the moved row and
+restores focus after its notice closes; the phone browser needs neither list
+behavior nor a drop scope. Move… does not reveal a
 collapsed destination (expansion belongs to each section); moving the open
-document reveals it through the active-document reveal. Every surface with a
-Move… mounts its rows in a list, so none reports less than this; a Move…
-outside a list would report nothing beyond the row.
+document reveals it through the active-document reveal.
 
 Placement is optimistic, exactly as for Move…: each placement's operation is
 remembered, so the row's link-update note follows its receipt and a later server

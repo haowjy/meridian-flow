@@ -36,8 +36,8 @@ type MoveWindow = {
   /** Something is still where the move put it. */
   undoable: boolean;
   undoing: boolean;
-  /** Puts focus back in the list the move came from, when the notice leaves under it. */
-  refocus: () => void;
+  /** Puts focus back in a mounted list when the notice leaves under it. */
+  refocus?: () => void;
 };
 
 type MoveNotices = {
@@ -46,7 +46,7 @@ type MoveNotices = {
     surface: NoticeSurface,
     result: MoveResult,
     destinationName: string,
-    refocus: () => void,
+    refocus?: () => void,
   ) => void;
   /** Resolves true once every row went back and the notice closed. */
   undo: (surface: NoticeSurface, id: number) => Promise<boolean>;
@@ -54,6 +54,14 @@ type MoveNotices = {
 };
 
 const MoveNoticesContext = createContext<MoveNotices | null>(null);
+
+type MoveFeedback = {
+  surface: NoticeSurface;
+  select?: (result: MoveResult) => void;
+  refocus?: () => void;
+};
+
+const MoveFeedbackContext = createContext<MoveFeedback | null>(null);
 
 let nextNoticeId = 1;
 
@@ -158,11 +166,36 @@ export function MoveNoticesProvider({
   return <MoveNoticesContext.Provider value={value}>{children}</MoveNoticesContext.Provider>;
 }
 
-/** Where a list publishes its moves. */
+/** Project-owned move notices, partitioned by their visible surface. */
 export function useMoveNotices(): MoveNotices {
   const notices = useContext(MoveNoticesContext);
   if (!notices) throw new Error("MoveNoticesProvider is required");
   return notices;
+}
+
+/** Required surface ownership for Move…, with optional behavior from a mounted list. */
+export function MoveFeedbackProvider({
+  feedback,
+  children,
+}: {
+  feedback: MoveFeedback;
+  children: ReactNode;
+}) {
+  return <MoveFeedbackContext.Provider value={feedback}>{children}</MoveFeedbackContext.Provider>;
+}
+
+/** Publishes Move… feedback even when no selectable or focusable list is mounted. */
+export function usePublishMove() {
+  const feedback = useContext(MoveFeedbackContext);
+  const notices = useMoveNotices();
+  if (!feedback) throw new Error("MoveFeedbackProvider is required");
+  return useCallback(
+    (result: MoveResult, destinationName: string) => {
+      feedback.select?.(result);
+      notices.publish(feedback.surface, result, destinationName, feedback.refocus);
+    },
+    [feedback, notices],
+  );
 }
 
 export function MoveNotice({ surface, className }: { surface: NoticeSurface; className?: string }) {
@@ -183,14 +216,14 @@ export function MoveNotice({ surface, className }: { surface: NoticeSurface; cla
             ? () => {
                 const focused = holdsFocus();
                 void undo(surface, window.id).then((closed) => {
-                  if (closed && focused) window.refocus();
+                  if (closed && focused) window.refocus?.();
                 });
               }
             : null,
           dismiss: () => {
             const focused = holdsFocus();
             dismiss(surface, window.id);
-            if (focused) window.refocus();
+            if (focused) window.refocus?.();
           },
         }}
       />
