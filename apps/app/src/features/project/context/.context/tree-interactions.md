@@ -270,12 +270,26 @@ and the notice stops saying it moved: "Couldn't move chapter-3." without Undo,
 or "Moved 2 items to Act 2. Couldn't move chapter-3." when the rest landed.
 Refused means the replica settled that move's own operation (`MoveEffect.operationId`)
 as needs-repair (`moveSettlement`); a row the writer changed since supersedes that
-intent, so it only loses Undo. Undo closes the notice as soon as the replica takes
-the rows back, but the surface keeps a hidden window on the reverse moves until
-the server settles them. If it refuses one, the notice comes back as "Couldn't
-move chapter-3 back." with Dismiss only. The hidden window goes once every reverse
-move is accepted or superseded by the writer's next change, or when a newer
-notice takes the surface or the project changes.
+intent, so it only loses Undo.
+
+Each surface's window is in one phase, and the phase decides what shows:
+
+| Phase | Shows | Watches |
+|---|---|---|
+| `moved` | "Moved …", Undo while `undoable` | forward moves the server hasn't settled (`unsettled`) |
+| `undoing` | the same notice, Undo disabled | nothing; the replica is admitting the reverse moves |
+| `reversing` | nothing | reverse moves the server hasn't settled |
+| `undo-failed` | "Couldn't move chapter-3 back.", Dismiss only | the rest of the reverse moves, which can only add to the count |
+
+Undo goes to `reversing` when the replica took every row back, or to `undo-failed`
+when it refused some (or threw). A server refusal in `reversing` brings the notice
+back as `undo-failed`. `reversing` ends once every reverse move is accepted or
+superseded by the writer's next change; a newer notice on the surface or the project
+changing ends any phase. Only a settled state retires a tracked operation:
+the replica admits a move before its projection shows the intent, so an intent
+`moveSettlement` can't find yet counts as pending. Journals keep their intents, so
+"not found" is never a pruned intent. A row whose record left the projection stays
+pending; its window ends with the next notice or the project.
 
 Move… publishes through the required surface supplied around its rows, whether
 or not a list is mounted. A desktop list optionally selects the moved row and

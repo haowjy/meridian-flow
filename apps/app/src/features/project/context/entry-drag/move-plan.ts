@@ -255,14 +255,16 @@ export function planUndo(view: PlacementView, effects: readonly MoveEffect[]) {
   });
 }
 
-const PENDING_INTENT = new Set(["pending", "submitted", "received"]);
+const UNANSWERED = new Set(["pending", "submitted", "received"]);
 
 /**
  * Where the server stands on each move. Refused: the row's intent for that
  * operation settled as needs-repair, so the row went back to where it came
- * from carrying the failure mark. Pending: the server has not answered yet. A
- * move the server accepted, or one the writer superseded by moving, renaming
- * or deleting the row since, is neither.
+ * from carrying the failure mark. Pending: unanswered, or not in this
+ * projection yet (the replica admits a move before its projection shows the
+ * intent). Journals keep their intents, so a missing intent is never one that
+ * was pruned. Every other state (accepted, superseded by the writer's next
+ * change, cancelled) settled it for good, and it is in neither list.
  */
 export function moveSettlement(
   view: { records: readonly ResourceRecord[]; folders: readonly FolderNamespaceRecord[] },
@@ -278,7 +280,7 @@ export function moveSettlement(
         : recordFor(view.records, effect.entry.id)?.intents;
     const state = intents?.find((intent) => intent.operationId === effect.operationId)?.state;
     if (state === "needs-repair") refused.push(effect);
-    else if (state && PENDING_INTENT.has(state)) pending.push(effect);
+    else if (!state || UNANSWERED.has(state)) pending.push(effect);
   }
   return { refused, pending };
 }
