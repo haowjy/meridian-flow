@@ -4,7 +4,7 @@
  * transactional ThreadRepositories aggregate. The boundary both adapter sets implement.
  */
 
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
+import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import type { Project } from "@meridian/contracts/projects";
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type {

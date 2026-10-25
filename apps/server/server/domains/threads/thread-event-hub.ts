@@ -4,8 +4,9 @@
  * `catchupAndSubscribe` or cursor reads, and projects orchestrator events into AG-UI events for
  * subscribers. Owns the realtime delivery layer over the event journal.
  */
+
+import type { MeridianError } from "@meridian/contracts/errors";
 import type { FailureRecord } from "@meridian/contracts/failures";
-import type { MeridianError } from "@meridian/contracts/interrupt";
 import {
   type AGUIEvent,
   EventType,

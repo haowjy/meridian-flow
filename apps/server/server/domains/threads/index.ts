@@ -1,6 +1,7 @@
 /** Barrel: re-exports the threads domain's public surface — drizzle + in-memory repositories and event journals, the thread event hub, snapshot builder, access gate, and port types. */
 
 export type { DrizzleDatabase } from "../../shared/drizzle-transaction.js";
+export { createDrizzleAskRepository } from "./adapters/drizzle/ask-repository.js";
 export { createDrizzleEventJournalReader } from "./adapters/drizzle/event-reader.js";
 export { createDrizzleEventJournalWriter } from "./adapters/drizzle/event-writer.js";
 export { createDrizzleTopPrimaryChatResolver } from "./adapters/drizzle/top-primary-chat.js";
@@ -158,6 +159,7 @@ export {
   TurnStartConflictError,
   type TurnStartConflictReason,
 } from "./domain/turn-start-transition.js";
+export type { AskRepository, CreateAskInput, StoredAsk } from "./ports/ask-repository.js";
 export type { HandoffBriefHold, HandoffBriefLauncher } from "./ports/handoff-brief-launcher.js";
 export * from "./ports/index.js";
 export { createThreadRuntimeService, type ThreadRuntimeService } from "./runtime-service.js";

@@ -1,5 +1,5 @@
 /** Pure execution-report identity, capture, terminal immutability and publication policy. */
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
+import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import type {
   ExecutionReportDelivery,
   ReturnResultCapture,

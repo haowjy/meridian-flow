@@ -10,7 +10,6 @@ import type { TurnId } from "@meridian/contracts/runtime";
 import {
   type BlockUpsertedRow,
   blockPlainText,
-  isTerminalTurnStatus,
   type ModelResponseReceivedRow,
   type OrchestratorEvent,
   type Turn,

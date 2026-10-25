@@ -133,6 +133,7 @@ export async function buildThreadSnapshot(
       threadUsage: await repos.modelResponses.sumUsageByThread(threadId),
       ancestors,
       turns: threadTurns,
+      asks: [],
       liveState: {
         threadId,
         status: await statusReader.read(threadId),
