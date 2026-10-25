@@ -53,7 +53,9 @@ comes from `max_connections=300` in `docker-compose.yml` (a full run peaks near
 Raise that limit rather than shrinking fixture pools, which would change what
 the tests exercise. Local runs use 4 workers (`DB_TEST_WORKERS` overrides);
 don't size them per run from `vitest list`, whose 0.5–1.1 s discovery costs
-more than the clones it would save (about 0.1 s each, created in parallel). `pnpm test:all` runs unit and DB projects together; its DB
+more than the clones it would save (about 0.1 s each, created in parallel).
+
+`pnpm test:all` runs unit and DB projects together; its DB
 reporter rejects a run with no passed or failed DB test, so a unit-only result
 is not combined-run evidence.
 
