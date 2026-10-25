@@ -34,8 +34,8 @@ export type DraftProjection = {
    * that must see the projection caught up, such as a test asserting review membership.
    */
   flush(): Promise<void>;
-  /** Clears every timer; runs in flight finish and re-arm nothing. */
-  dispose(): void;
+  /** Stop scheduling and join in-flight judgements and a sweep before closing their store. */
+  dispose(): Promise<void>;
 };
 
 export type DraftProjectionDiagnostics = {
@@ -68,8 +68,8 @@ export function createDraftProjection(input: {
   const entries = new Map<string, Entry>();
   const queue: string[] = [];
   const schema = buildDocumentSchema();
-  let running = 0;
-  let sweeping = false;
+  const running = new Set<Promise<void>>();
+  let sweep: Promise<number> | null = null;
   let disposed = false;
 
   function entryOf(draftId: string): Entry {
@@ -109,7 +109,7 @@ export function createDraftProjection(input: {
 
   function enqueue(draftId: string, entry: Entry): void {
     if (disposed || entry.running || entry.queued) return;
-    if (running < maxRuns) start(draftId, entry);
+    if (running.size < maxRuns) start(draftId, entry);
     else {
       entry.queued = true;
       queue.push(draftId);
@@ -117,11 +117,10 @@ export function createDraftProjection(input: {
   }
 
   function start(draftId: string, entry: Entry): void {
-    running += 1;
     entry.running = true;
     entry.again = false;
     entry.firstDirtyAt = undefined;
-    void input
+    const task = input
       .outsideTransaction(() => judge(draftId))
       .catch((cause: unknown): "failed" => {
         input.diagnostics?.projectionFailed({ draftId, cause });
@@ -129,13 +128,14 @@ export function createDraftProjection(input: {
       })
       .then((outcome) => settle(draftId, entry, outcome))
       .finally(() => {
-        running -= 1;
+        running.delete(task);
         next();
       });
+    running.add(task);
   }
 
   function next(): void {
-    while (running < maxRuns && queue.length) {
+    while (running.size < maxRuns && queue.length) {
       const draftId = queue.shift() as string;
       const entry = entries.get(draftId);
       if (!entry) continue;
@@ -206,35 +206,38 @@ export function createDraftProjection(input: {
   return {
     markDirty,
 
-    async sweep() {
-      if (sweeping || disposed) return 0;
-      sweeping = true;
-      let tracked = 0;
-      try {
-        let after: StaleEffectCursor | undefined;
-        for (;;) {
-          const page = await input.store.staleEffectDrafts({
-            ...(after ? { after } : {}),
-            limit: SWEEP_PAGE,
-          });
-          for (const { draftId } of page) {
-            // Already dirty, running, backing off or queued: left to its own entry.
-            if (entries.has(draftId)) continue;
-            markDirty(draftId);
-            tracked += 1;
+    sweep() {
+      if (disposed) return Promise.resolve(0);
+      if (sweep) return sweep;
+      sweep = (async () => {
+        let tracked = 0;
+        try {
+          let after: StaleEffectCursor | undefined;
+          while (!disposed) {
+            const page = await input.store.staleEffectDrafts({
+              ...(after ? { after } : {}),
+              limit: SWEEP_PAGE,
+            });
+            for (const { draftId } of page) {
+              // Already dirty, running, backing off or queued: left to its own entry.
+              if (entries.has(draftId)) continue;
+              markDirty(draftId);
+              tracked += 1;
+            }
+            after = page.at(-1);
+            if (page.length < SWEEP_PAGE) break;
           }
-          after = page.at(-1);
-          if (page.length < SWEEP_PAGE) break;
+        } finally {
+          sweep = null;
         }
-      } finally {
-        sweeping = false;
-      }
-      return tracked;
+        return tracked;
+      })();
+      return sweep;
     },
 
     async flush() {
       for (let round = 0; round < 1_000; round += 1) {
-        let pending = running > 0 || queue.length > 0;
+        let pending = running.size > 0 || queue.length > 0;
         for (const [draftId, entry] of entries) {
           pending = true;
           if (entry.timer) {
@@ -249,10 +252,12 @@ export function createDraftProjection(input: {
       throw new Error("The draft effect projection did not settle");
     },
 
-    dispose() {
+    async dispose() {
       disposed = true;
       for (const entry of entries.values()) if (entry.timer) clearTimeout(entry.timer);
       queue.length = 0;
+      await Promise.all([...running, ...(sweep ? [sweep] : [])]);
+      entries.clear();
     },
   };
 }

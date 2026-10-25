@@ -26,9 +26,13 @@
  * The handoff brief's Retry (`useHandoffBrief`) and a failed reply's Retry
  * (`useReplyRetry`) supply what to post and how the stand-in looks.
  */
+
+import type { FailureEnd } from "@meridian/contracts/failures";
 import { REPLY_RETRY_PENDING_CODE, type Turn } from "@meridian/contracts/protocol";
 import type { RunState } from "@meridian/contracts/threads";
 import {
+  type CommandFailure,
+  logCommandFailure,
   placeStandIns,
   type RetryEntry,
   type RetryOutcome,
@@ -39,9 +43,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { HttpResponseError, httpErrorStatus, retryAfterMs } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
+import { commandFailureInput } from "@/client/failures/command-failure";
+import { useFailureLog } from "@/client/failures/failure-log";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useRunState, useThreadActions } from "@/client/stores";
-import { reportRetryRefused } from "./error-telemetry";
 
 export type StandInRequest = "sending" | "sent" | "failed";
 
@@ -51,6 +56,7 @@ type StandIn = RetryEntry & {
   request: StandInRequest;
   /** Writer presses of this request: the card's occurrence (`${id}:${attempt}`). */
   attempt: number;
+  failure?: CommandFailure;
 };
 
 /**
@@ -87,7 +93,13 @@ export type RetryStandIns = {
   retry: (from: Turn, build: (input: { id: string; leaf: Turn | null }) => Turn | null) => void;
 };
 
-type Refusal = { before: ReadonlySet<string>; cause: RetryRefusal; id: string; attempt: number };
+type Refusal = {
+  failure: CommandFailure;
+  before: ReadonlySet<string>;
+  cause: RetryRefusal;
+  id: string;
+  attempt: number;
+};
 
 const NO_REFUSALS: ReadonlyMap<string, Refusal> = new Map();
 
@@ -137,26 +149,61 @@ export function useRetryStandIns(input: {
 }): RetryStandIns {
   const { supersedes = false } = input;
   const { threadId, storedTurns } = input;
-  const [local, setLocal] = useState<readonly StandIn[]>([]);
+  const log = useFailureLog();
+  const [local, renderLocal] = useState<readonly StandIn[]>([]);
+  const localRef = useRef(local);
+  const setLocal = useCallback((change: (current: readonly StandIn[]) => readonly StandIn[]) => {
+    localRef.current = change(localRef.current);
+    renderLocal(localRef.current);
+  }, []);
   // Refused turn → the replies complete when it was refused. The refusal is temporary: it ends
   // when a reply completes that is not in that set (durable turn status, not timers).
-  const [refusals, setRefusals] = useState(NO_REFUSALS);
-  const refused = useMemo<readonly RetryOutcome[]>(() => {
-    const open: RetryOutcome[] = [];
-    for (const [turnId, { before, cause, id, attempt }] of refusals) {
+  const [refusals, renderRefusals] = useState(NO_REFUSALS);
+  const refusalsRef = useRef(refusals);
+  const setRefusals = useCallback(
+    (change: (current: ReadonlyMap<string, Refusal>) => ReadonlyMap<string, Refusal>) => {
+      refusalsRef.current = change(refusalsRef.current);
+      renderRefusals(refusalsRef.current);
+    },
+    [],
+  );
+  const retireRefusals = useCallback(
+    (end: FailureEnd) => {
+      for (const [turnId, refusal] of refusalsRef.current)
+        logCommandFailure(log, refusal.failure, { threadId, turnId }, end);
+      setRefusals(() => NO_REFUSALS);
+    },
+    [log, threadId, setRefusals],
+  );
+  const refused = useMemo<readonly RetryOutcome[]>(
+    () =>
+      [...refusals].map(([turnId, { cause, id, attempt }]) => ({
+        kind: "refused",
+        turnId,
+        requestId: id,
+        attempt,
+        cause,
+      })),
+    [refusals],
+  );
+  useEffect(() => {
+    const next = new Map(refusalsRef.current);
+    for (const [turnId, r] of next) {
+      const removed = !storedTurns.some((t) => t.id === turnId);
       const answered = storedTurns.some(
-        (turn) => turn.role === "assistant" && turn.status === "complete" && !before.has(turn.id),
+        (t) => t.role === "assistant" && t.status === "complete" && !r.before.has(t.id),
       );
-      if (!answered) open.push({ kind: "refused", turnId, requestId: id, attempt, cause });
+      if (removed || answered) {
+        logCommandFailure(log, r.failure, { threadId, turnId }, removed ? "moot" : "moved_on");
+        next.delete(turnId);
+      }
     }
-    return open;
-  }, [refusals, storedTurns]);
-  const localRef = useRef(local);
+    if (next.size !== refusalsRef.current.size) setRefusals(() => next);
+  }, [storedTurns, log, threadId, setRefusals]);
   const storedRef = useRef(storedTurns);
   // Read at call time: callers pass fresh closures and copy each render.
   const optionsRef = useRef(input);
   useLayoutEffect(() => {
-    localRef.current = local;
     storedRef.current = storedTurns;
     optionsRef.current = input;
   }, [input, local, storedTurns]);
@@ -167,8 +214,12 @@ export function useRetryStandIns(input: {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      for (const e of localRef.current)
+        if (e.failure) logCommandFailure(log, e.failure, { threadId, turnId: e.from }, "moot");
+      for (const [turnId, r] of refusalsRef.current)
+        logCommandFailure(log, r.failure, { threadId, turnId }, "moot");
     };
-  }, []);
+  }, [log, threadId]);
 
   const runState = useRunState(threadId);
   // A lost request is no stand-in: it hides nothing and draws nothing, and waits for Try again.
@@ -181,26 +232,39 @@ export function useRetryStandIns(input: {
   useEffect(() => {
     // A lost request the store now has by id did land: it is a stored turn's story, not a failure.
     const stored = new Set(storedTurns.map((turn) => turn.id));
-    const landed = lost.some((entry) => stored.has(entry.id));
+    const landed = lost.some((entry) => stored.has(entry.id) || !stored.has(entry.from));
+    for (const entry of lost)
+      if (entry.failure && (stored.has(entry.id) || !stored.has(entry.from)))
+        logCommandFailure(
+          log,
+          entry.failure,
+          { threadId, turnId: entry.from },
+          stored.has(entry.id) ? "resolved" : "moot",
+        );
     if (reconciled.remaining === sending && !landed) return;
     const keep = new Set(reconciled.remaining.map((entry) => entry.id));
     setLocal((current) =>
       current.filter((entry) =>
-        entry.request === "failed" ? !stored.has(entry.id) : keep.has(entry.id),
+        entry.request === "failed"
+          ? !stored.has(entry.id) && stored.has(entry.from)
+          : keep.has(entry.id),
       ),
     );
-  }, [lost, reconciled.remaining, sending, storedTurns]);
+  }, [lost, reconciled.remaining, sending, storedTurns, log, threadId, setLocal]);
 
-  const patch = useCallback((id: string, change: (entry: StandIn) => StandIn) => {
-    setLocal((current) => current.map((entry) => (entry.turn.id === id ? change(entry) : entry)));
-  }, []);
+  const patch = useCallback(
+    (id: string, change: (entry: StandIn) => StandIn) => {
+      setLocal((current) => current.map((entry) => (entry.turn.id === id ? change(entry) : entry)));
+    },
+    [setLocal],
+  );
 
   const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
   }, [queryClient, threadId]);
 
   const send = useCallback(
-    (id: string, from: string, attempt = 1) => {
+    (id: string, from: string, pressAttempt = 1, attempt = 1) => {
       optionsRef.current.post(id, from).then(
         (answer) => {
           // The answer's record is a fact like any other.
@@ -218,22 +282,36 @@ export function useRetryStandIns(input: {
         (error: unknown) => {
           // Still undecided: the same id again after the server's wait, while
           // the budget lasts. Past it the request stays unresolved, never refused.
-          if (isRetryPending(error) && attempt < RETRY_PENDING_ATTEMPTS) {
+          if (mounted.current && isRetryPending(error) && attempt < RETRY_PENDING_ATTEMPTS) {
             setTimeout(() => {
               if (mounted.current && localRef.current.some((entry) => entry.turn.id === id))
-                sendRef.current(id, from, attempt + 1);
+                sendRef.current(id, from, pressAttempt, attempt + 1);
             }, retryAfterMs(error) ?? RETRY_PENDING_DELAY_MS);
+            return;
+          }
+          const failure: CommandFailure = {
+            requestId: id,
+            attempt: pressAttempt,
+            ...commandFailureInput(error),
+          };
+          logCommandFailure(log, failure, { threadId, turnId: from });
+          if (!mounted.current || !storedRef.current.some((t) => t.id === from)) {
+            logCommandFailure(log, failure, { threadId, turnId: from }, "moot");
+            return;
+          }
+          if (storedRef.current.some((t) => t.id === id)) {
+            logCommandFailure(log, failure, { threadId, turnId: from }, "resolved");
             return;
           }
           // A refusal (409: the chat moved on first; or the server is shutting
           // down) wrote nothing. The writer sees one generic line; the cause
           // goes to diagnostics.
           if (isRetryRefusal(error)) {
-            reportRetryRefused({ threadId, from, status: httpErrorStatus(error), error });
-            const attempt = localRef.current.find((entry) => entry.turn.id === id)?.attempt ?? 1;
+            const attempt = pressAttempt;
             setLocal((current) => current.filter((entry) => entry.turn.id !== id));
             setRefusals((current) =>
               new Map(current).set(from, {
+                failure,
                 before: completedReplies(storedRef.current),
                 cause: httpErrorStatus(error) === 409 ? "another-reply" : "other",
                 id,
@@ -244,11 +322,11 @@ export function useRetryStandIns(input: {
             return;
           }
           // Lost: the failure is a fact `chatCards` turns into a card on the pressed turn.
-          patch(id, (entry) => ({ ...entry, request: "failed" }));
+          patch(id, (entry) => ({ ...entry, request: "failed", failure }));
         },
       );
     },
-    [dispatchRunState, patch, refresh, threadId],
+    [dispatchRunState, patch, refresh, threadId, log, setLocal, setRefusals],
   );
   const sendRef = useRef(send);
   useLayoutEffect(() => {
@@ -258,18 +336,21 @@ export function useRetryStandIns(input: {
   const retry = useCallback<RetryStandIns["retry"]>(
     (from, build) => {
       // One clearing rule: any next action of the writer drops every "Couldn't retry." card.
-      setRefusals(NO_REFUSALS);
+      retireRefusals("retried");
       const lostEntry = localRef.current.find(
         (entry) => entry.from === from.id && entry.request === "failed",
       );
       if (lostEntry) {
+        if (lostEntry.failure)
+          logCommandFailure(log, lostEntry.failure, { threadId, turnId: from.id }, "retried");
         // Same id: if the lost request did reach the server, this replays it.
         patch(lostEntry.turn.id, (entry) => ({
           ...entry,
           request: "sending",
           attempt: entry.attempt + 1,
+          failure: undefined,
         }));
-        send(lostEntry.turn.id, lostEntry.from);
+        send(lostEntry.turn.id, lostEntry.from, lostEntry.attempt + 1);
         return;
       }
       const id = crypto.randomUUID();
@@ -294,10 +375,10 @@ export function useRetryStandIns(input: {
       ]);
       send(id, from.id);
     },
-    [patch, send],
+    [patch, send, log, threadId, retireRefusals, setLocal],
   );
 
-  const clearRefused = useCallback(() => setRefusals(NO_REFUSALS), []);
+  const clearRefused = useCallback(() => retireRefusals("moved_on"), [retireRefusals]);
 
   const standIns = useMemo(
     () => reconciled.standIns.map((entry) => entry.turn),

@@ -1,6 +1,7 @@
 export { type AiWriteMode, aiWriteModeSchema, effectiveAiWriteMode } from "./ai-write-mode.js";
 
-import type { WorkHandle } from "../handles.js";
+import { z } from "zod";
+import { decodeWorkHandle, type WorkHandle } from "../handles.js";
 import type { ProjectId, ThreadId, UserId, WorkId } from "../ids.js";
 import type { AiWriteMode } from "./ai-write-mode.js";
 import type { WorkReceiptState } from "./receipts.js";
@@ -59,6 +60,40 @@ export type WorksSnapshot = {
   works: readonly NamedWorkCatalogEntry[];
   noWork: NoWorkCatalogEntry;
 };
+
+const workHandleSchema = z
+  .string()
+  .refine((value) => decodeWorkHandle(value) !== null)
+  .transform((value) => value as WorkHandle);
+
+/** Complete Work/catalog responses, shared by browser state and CLI identity resolution. */
+export const workSchema = z.object({
+  id: z.string().min(1),
+  projectId: z.string().min(1),
+  createdByUserId: z.string().min(1),
+  name: z.string(),
+  handle: workHandleSchema.nullable(),
+  isNoWork: z.boolean(),
+  goal: z.string().nullable(),
+  status: z.string().nullable(),
+  archivedAt: z.string().nullable(),
+  defaultAiWriteMode: z.enum(["draft", "direct"]),
+  entityRevision: z.string().regex(/^(0|[1-9]\d*)$/),
+  pendingDocumentCount: z.number().int().nonnegative(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  lastActivityAt: z.string(),
+  deletedAt: z.string().nullable(),
+}) satisfies z.ZodType<Work>;
+
+export const worksSnapshotSchema = z.object({
+  projectId: z.string().min(1),
+  catalogGeneration: z.uuid(),
+  authorityRevision: z.string().regex(/^(0|[1-9]\d*)$/),
+  requestId: z.string().min(1),
+  works: z.array(workSchema.extend({ isNoWork: z.literal(false), handle: workHandleSchema })),
+  noWork: workSchema.extend({ isNoWork: z.literal(true), handle: z.null() }),
+}) satisfies z.ZodType<WorksSnapshot>;
 
 export interface CreateWorkRequest {
   id?: WorkId;

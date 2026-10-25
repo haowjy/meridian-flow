@@ -1,5 +1,7 @@
 /** Typed CLI failures and the exit-code contract agents branch on. */
 
+import { classifyCommandFailure, type FailureOccurrence } from "@meridian/contracts/failures";
+
 export const EXIT = {
   ok: 0,
   failed: 1,
@@ -40,6 +42,7 @@ const EXIT_BY_CODE: Record<CliErrorCode, ExitCode> = {
 };
 
 export class CliError extends Error {
+  readonly occurrence: FailureOccurrence;
   readonly code: CliErrorCode;
   readonly hint: string | undefined;
   readonly details: unknown;
@@ -48,7 +51,13 @@ export class CliError extends Error {
   constructor(
     code: CliErrorCode,
     message: string,
-    options?: { hint?: string; details?: unknown; httpStatus?: number },
+    options?: {
+      hint?: string;
+      details?: unknown;
+      httpStatus?: number;
+      occurrence?: FailureOccurrence;
+      malformedResponse?: boolean;
+    },
   ) {
     super(message);
     this.name = "CliError";
@@ -56,6 +65,27 @@ export class CliError extends Error {
     this.hint = options?.hint;
     this.details = options?.details;
     this.httpStatus = options?.httpStatus;
+    this.occurrence = options?.occurrence ?? {
+      occurrenceId: crypto.randomUUID(),
+      failure:
+        code === "usage"
+          ? {
+              category: "command",
+              source: "validation",
+              actionable: true,
+              cause: { code: "validation" },
+            }
+          : classifyCommandFailure({
+              kind:
+                options?.httpStatus && options.httpStatus >= 400 && options.httpStatus < 500
+                  ? "refused"
+                  : "lost",
+              status: options?.httpStatus,
+              ...(options?.malformedResponse || code === "protocol"
+                ? { code: "malformed_response" }
+                : {}),
+            }),
+    };
   }
 
   get exitCode(): ExitCode {

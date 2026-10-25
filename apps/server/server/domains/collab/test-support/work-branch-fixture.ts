@@ -41,7 +41,7 @@ export const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workHandle: "
 
 export function createWorkBranchFixture(db: Database) {
   const hocuspocus = fakeHocuspocus();
-  const collabs: Array<{ dispose(): void }> = [];
+  const collabs: Array<{ dispose(): Promise<void> }> = [];
   /** Without custom links, use the real tree-backed scope, as production does. */
   const createTestCollab = (links?: ReturnType<typeof createTestDocumentLinkScopes>) => {
     const collab = convergedReview(
@@ -59,8 +59,8 @@ export function createWorkBranchFixture(db: Database) {
     return collab;
   };
 
-  const dispose = () => {
-    for (const collab of collabs.splice(0)) collab.dispose();
+  const dispose = async () => {
+    for (const collab of collabs.splice(0)) await collab.dispose();
   };
 
   async function reset() {

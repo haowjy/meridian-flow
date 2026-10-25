@@ -1,11 +1,14 @@
 /** Tab submission model: durable handoff, row projection, and writer commands. */
 
+import { type FailureEnd, type FailureLog, noFailureLog } from "@meridian/contracts/failures";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import {
   type CommandFailure,
   type JournalSwitch,
+  logCommandFailure,
   nextOccurrence,
   type Occurrence,
+  occurrenceKey,
 } from "@meridian/thread-client";
 import type { QueryClient } from "@tanstack/react-query";
 import { HttpResponseError } from "@/client/api/http-client";
@@ -140,6 +143,7 @@ export function recordAndProjectSubmission(
 }
 
 type OwnerOptions = {
+  failureLog?: FailureLog;
   accountId: string;
   threadId: string;
   projectId: string;
@@ -176,6 +180,16 @@ export class ChatSubmissionOwner {
       ]),
     );
     this.options.changed();
+  }
+
+  private log(failure: CommandFailure | undefined, end?: FailureEnd, turnId?: string) {
+    if (failure)
+      logCommandFailure(
+        this.options.failureLog ?? noFailureLog,
+        failure,
+        { threadId: this.options.threadId, ...(turnId ? { turnId } : {}) },
+        end,
+      );
   }
 
   private retry(turnId: string) {
@@ -275,12 +289,19 @@ export class ChatSubmissionOwner {
             : undefined;
         if (entry.control) {
           // A switch has no writer row: only its queued row (`switches`) shows the state.
+          const previous = this.model.failedSwitches.get(entry.recordId);
+          if (previous && (!failure || occurrenceKey(previous) !== occurrenceKey(failure)))
+            this.log(previous, "retried");
+          if (failure) this.log(failure);
           if (failure) this.model.failedSwitches.set(entry.recordId, failure);
           else this.model.failedSwitches.delete(entry.recordId);
           this.rebuild();
           return;
         }
         const row = projectRow(accountId, entry, actions);
+        if (row.failure && (!failure || occurrenceKey(row.failure) !== occurrenceKey(failure)))
+          this.log(row.failure, "retried", row.turnId);
+        if (failure) this.log(failure, undefined, row.turnId);
         row.status = status === "error" ? status : undefined;
         row.failure = failure;
         row.attempt =
@@ -324,6 +345,11 @@ export class ChatSubmissionOwner {
             : target.prependSnapshots(snapshots, recordIds))
         )
           return false;
+        for (const record of cohort) {
+          const row = rows.get(key(accountId, record.recordId));
+          this.log(row?.failure, "dismissed", row?.turnId);
+          this.log(this.model.failedSwitches.get(record.recordId), "dismissed");
+        }
         if (entry.creation) {
           this.destination = "editing";
           source.handoff();
@@ -362,6 +388,7 @@ export class ChatSubmissionOwner {
     const { accountId, threadId, projectId, current } = this.options;
     if (!current()) return false;
     const previous = this.model.unsavedSwitches.get(id);
+    if (previous) this.log({ ...previous.occurrence, kind: "unsaved" }, "retried");
     const occurrence = nextOccurrence(previous?.occurrence.attempt ?? 0, crypto.randomUUID());
     const entry: NewChatSubmission = {
       occurrence,
@@ -381,6 +408,7 @@ export class ChatSubmissionOwner {
       const seq =
         this.model.unsavedSwitches.get(id)?.seq ??
         Math.max(0, ...this.model.switches.map((row) => row.seq)) + 1;
+      this.log({ ...occurrence, kind: "unsaved" });
       this.model.unsavedSwitches.set(id, { mode, seq, occurrence });
       this.publishSwitches();
       return false;
@@ -399,10 +427,13 @@ export class ChatSubmissionOwner {
   };
 
   withdrawSwitch = (id: string) => {
-    if (this.options.current() && this.model.unsavedSwitches.delete(id)) {
+    const unsaved = this.model.unsavedSwitches.get(id);
+    if (this.options.current() && unsaved && this.model.unsavedSwitches.delete(id)) {
+      this.log({ ...unsaved.occurrence, kind: "unsaved" }, "dismissed");
       this.publishSwitches();
       return Promise.resolve("removed" as const);
     }
+    this.log(this.model.failedSwitches.get(id), "dismissed");
     return this.driver.withdrawControl(id, this.options.threadId);
   };
 
@@ -425,7 +456,10 @@ export class ChatSubmissionOwner {
 
   rebuild = () => {
     const { current, accountId, threadId, actions } = this.options;
-    if (!current()) return;
+    if (!current()) {
+      if (this.epoch !== getChatSubmissionEpoch()) this.endAccountFailures();
+      return;
+    }
     const snapshot = readChatSubmissionSnapshot(accountId);
     if (!snapshot) return;
     const records = snapshot.filter((entry) => entry.threadId === threadId);
@@ -444,6 +478,7 @@ export class ChatSubmissionOwner {
     for (const [id, row] of rows) {
       if (!id.startsWith(`${accountId}:`) || row.threadId !== threadId || ids.has(id)) continue;
       actions.removeOptimisticUserTurn(threadId, row.turnId);
+      this.log(row.failure, "resolved", row.turnId);
       rows.delete(id);
       retired = true;
     }
@@ -460,6 +495,12 @@ export class ChatSubmissionOwner {
       const failure = moving || (!pending && (row.status === "error" || row.failed || entry.state));
       actions.patchTurnStatus(threadId, row.turnId, failure ? "error" : "pending");
       if (!failure) continue;
+      const nextFailure = latestFailure(entry, row.failure);
+      if (row.failure && occurrenceKey(row.failure) !== occurrenceKey(nextFailure))
+        this.log(row.failure, "retried", row.turnId);
+      row.failure = nextFailure;
+      this.log(nextFailure, undefined, row.turnId);
+      if (moving) this.log(nextFailure, "dismissed", row.turnId);
       this.model.presentation.set(row.turnId, {
         recordId: entry.recordId,
         submissionId: entry.submissionId,
@@ -481,8 +522,18 @@ export class ChatSubmissionOwner {
     for (const id of failed.keys()) {
       if (found.some((entry) => entry.recordId === id && !entry.answer)) continue;
       // Withdrawn, answered by another tab, or retired: its "Couldn't switch" card ends.
+      this.log(failed.get(id), "resolved");
       failed.delete(id);
     }
+    for (const entry of found)
+      if (!entry.answer && entry.state === "rejected") {
+        const previous = failed.get(entry.recordId);
+        const next = latestFailure(entry, previous);
+        if (previous && occurrenceKey(previous) !== occurrenceKey(next))
+          this.log(previous, "retried");
+        failed.set(entry.recordId, next);
+        this.log(next);
+      }
     const next: JournalSwitch[] = found.map((entry) => ({
       id: entry.recordId,
       mode: entry.control?.mode ?? "direct",
@@ -499,6 +550,7 @@ export class ChatSubmissionOwner {
     }));
     for (const [id, { mode, seq, occurrence }] of this.model.unsavedSwitches) {
       if (found.some((record) => record.recordId === id)) {
+        this.log({ ...occurrence, kind: "unsaved" }, "resolved");
         this.model.unsavedSwitches.delete(id);
         continue;
       }
@@ -613,7 +665,15 @@ export class ChatSubmissionOwner {
     return true;
   };
 
+  private endAccountFailures() {
+    for (const row of this.model.rows.values()) this.log(row.failure, "moot", row.turnId);
+    for (const failure of this.model.failedSwitches.values()) this.log(failure, "moot");
+    for (const { occurrence } of this.model.unsavedSwitches.values())
+      this.log({ ...occurrence, kind: "unsaved" }, "moot");
+  }
+
   dispose() {
+    if (this.epoch !== getChatSubmissionEpoch()) this.endAccountFailures();
     this.options.controller.endRecoverySession(this.session);
     this.model.bindings.delete(this);
     for (const row of this.model.rows.values())

@@ -12,6 +12,7 @@
  * delivery that confirmed. The operation also owns the facts a Stop control needs (`stopFacts`),
  * so they read the same on every route into it.
  */
+import { type FailureEnd, type FailureLog, noFailureLog } from "@meridian/contracts/failures";
 import {
   apiThreadHandBackPath,
   apiThreadStopPath,
@@ -19,7 +20,12 @@ import {
   stopResponseSchema,
 } from "@meridian/contracts/protocol";
 import type { HandBackResult, RunState, StopRequest } from "@meridian/contracts/threads";
-import { nextOccurrence, type Occurrence } from "../commands";
+import {
+  type CommandFailure,
+  logCommandFailure,
+  nextOccurrence,
+  type Occurrence,
+} from "../commands";
 import {
   type FailedStop,
   failedStopIsMoot,
@@ -80,6 +86,7 @@ export type HandBackStore = {
 };
 
 export type HandBackPorts = {
+  failureLog?: FailureLog;
   http: HttpPort;
   runState: RunStatePort;
   /** Remove turns another request took, at the record's version (the turn store's tombstone fence). */
@@ -146,7 +153,10 @@ export type HandBackOperation = {
    * Called by the host when the store may have changed under the operation (another tab, a
    * reload): entries whose command left the store stop owing a card.
    */
-  reconcile(): void;
+  reconcile(view?: RunStateView): void;
+  /** Detach a view; pending commands remain in durable storage for resume. */
+  close(): void;
+  open(): void;
   unresolved(): readonly UnresolvedHandBack[];
   stopFacts(): StopFacts;
   /**
@@ -157,7 +167,7 @@ export type HandBackOperation = {
 };
 
 type Held = { command: HandBackCommand; candidates: readonly string[] };
-type Entry = Held & { status: UnresolvedStatus };
+type Entry = Held & { status: UnresolvedStatus; failure: CommandFailure };
 
 const failedStopOf = (e: Held): FailedStop => ({
   targetExecutionId: e.command.kind === "stop" ? e.command.body.seenExecutionId : null,
@@ -224,18 +234,43 @@ export function createHandBackOperation(options: {
     for (const listener of [...listeners]) listener();
   };
 
-  const fail = (held: Held, status: UnresolvedStatus): void => {
-    entries.set(held.command.requestId, { ...held, status });
+  const log = ports.failureLog ?? noFailureLog;
+  let closed = false;
+  let view: RunStateView | undefined;
+  const retire = (id: string, end: FailureEnd) => {
+    const entry = entries.get(id);
+    if (entry) logCommandFailure(log, entry.failure, { threadId }, end);
+    entries.delete(id);
+  };
+  const fail = (held: Held, status: UnresolvedStatus, httpStatus?: number): void => {
+    const failure: CommandFailure = {
+      ...held.command.occurrence,
+      kind: status === "refused" ? "refused" : status === "unsaved" ? "unsaved" : "lost",
+      ...(httpStatus === undefined ? {} : { status: httpStatus }),
+    };
+    logCommandFailure(log, failure, { threadId });
+    if (
+      closed ||
+      (view && held.command.kind === "stop" && failedStopIsMoot(view, failedStopOf(held)))
+    ) {
+      logCommandFailure(log, failure, { threadId }, "moot");
+      return;
+    }
+    entries.set(held.command.requestId, { ...held, status, failure });
   };
 
   /** Run `held`'s attempt, or join the one already running for its request. */
-  function attempt(held: Held, save = true): Promise<HandBackOutcome> {
+  function attempt(
+    held: Held,
+    save = true,
+    previousStatus?: UnresolvedStatus,
+  ): Promise<HandBackOutcome> {
     const requestId = held.command.requestId;
     const joined = running.get(requestId);
     if (joined) return joined.done;
     if (save && !store.record(held.command)) {
       // An occurrence update cannot turn an already durable, unresolved command into page memory.
-      fail(held, entries.get(requestId)?.status ?? "unsaved");
+      fail(held, previousStatus ?? entries.get(requestId)?.status ?? "unsaved");
       changed();
       return Promise.resolve({ kind: "unsaved", command: held.command });
     }
@@ -262,10 +297,17 @@ export function createHandBackOperation(options: {
     if (verdict.kind === "refused") {
       store.drop(requestId);
       runState.dropIntent(requestId);
-      fail(held, "refused");
+      fail(held, "refused", verdict.status);
       return { kind: "refused", command, status: verdict.status };
     }
     if (verdict.kind === "ambiguous") {
+      // A remounted owner may replay while this owner is still posting. Its confirmed
+      // receipt retires the durable command even if our response arrives later and is lost.
+      if (!store.pending().some((pending) => pending.requestId === requestId)) {
+        runState.dropIntent(requestId);
+        retire(requestId, "resolved");
+        return { kind: "ambiguous", command, request };
+      }
       runState.failIntent(requestId);
       fail(held, "ambiguous");
       return { kind: "ambiguous", command, request };
@@ -286,7 +328,7 @@ export function createHandBackOperation(options: {
       return { kind: "unwritten", command };
     }
     runState.answerIntent(requestId, record.version);
-    entries.delete(requestId);
+    retire(requestId, "resolved");
     if (command.kind === "stop") cancelledByStop = cancelledExecutionId;
     return { kind: "confirmed", command, result, cancelledExecutionId };
   }
@@ -296,13 +338,18 @@ export function createHandBackOperation(options: {
     const requestId = entry.command.requestId;
     const joined = running.get(requestId);
     if (joined) return joined.done;
-    return attempt({
-      ...entry,
-      command: {
-        ...entry.command,
-        occurrence: nextOccurrence(entry.command.occurrence.attempt, mint()),
+    retire(requestId, "retried");
+    return attempt(
+      {
+        ...entry,
+        command: {
+          ...entry.command,
+          occurrence: nextOccurrence(entry.command.occurrence.attempt, mint()),
+        },
       },
-    });
+      true,
+      entry.status,
+    );
   }
 
   return {
@@ -314,7 +361,7 @@ export function createHandBackOperation(options: {
         // A moot Stop (refused included) targeted a reply that ended and owes nothing: forget it.
         for (const [id, e] of entries)
           if (e.command.kind === "stop" && failedStopIsMoot(input.view, failedStopOf(e))) {
-            entries.delete(id);
+            retire(id, "moot");
             store.drop(id);
           }
         const owed = [...entries.values()].find(
@@ -344,7 +391,7 @@ export function createHandBackOperation(options: {
           entry.command.kind === command.kind &&
           (entry.status === "refused" || entry.status === "unsaved")
         )
-          entries.delete(id);
+          retire(id, "moved_on");
       return attempt(held);
     },
 
@@ -367,17 +414,31 @@ export function createHandBackOperation(options: {
 
     dismiss(requestId) {
       if (entries.get(requestId)?.status !== "refused") return;
-      entries.delete(requestId);
+      retire(requestId, "dismissed");
       changed();
     },
 
-    reconcile() {
+    open() {
+      closed = false;
+    },
+    close() {
+      closed = true;
+      for (const id of entries.keys()) retire(id, "moot");
+    },
+    reconcile(nextView) {
+      if (nextView) view = nextView;
       const stored = new Set(store.pending().map((c) => c.requestId));
       let moved = false;
       for (const [id, entry] of entries) {
+        if (view && entry.command.kind === "stop" && failedStopIsMoot(view, failedStopOf(entry))) {
+          retire(id, "moot");
+          store.drop(id);
+          moved = true;
+          continue;
+        }
         if (entry.status !== "ambiguous" && entry.status !== "unwritten") continue;
         if (!stored.has(id)) {
-          entries.delete(id);
+          retire(id, "resolved");
           moved = true;
         }
       }

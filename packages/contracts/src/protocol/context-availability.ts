@@ -1,9 +1,10 @@
 /** Project-final stable-document availability protocol. */
 import { z } from "zod";
-import type { WorkHandle } from "../handles.js";
+import { decodeWorkHandle, type WorkHandle } from "../handles.js";
 import type { DocumentId, ProjectId, UserId, WorkId } from "../ids.js";
 import type { CatalogFileEntry } from "./context-catalog.js";
 import type { DocumentRemovalRecord } from "./document-removal.js";
+import { filetypeSchema } from "./filetype.js";
 
 export type AvailabilityGeneration = string;
 
@@ -136,28 +137,102 @@ export type ProjectContextIdentityLookupResult = {
 
 export const PROJECT_CONTEXT_AVAILABILITY_MAX_IDS = 128;
 
-/** Owner-scoped browser address lookup; aliases never redirect through another alias. */
-/** Address identity and presentation inputs for reference admission; not an authority grant. */
-export const documentAddressReferenceSchema = z.discriminatedUnion("kind", [
+const identity = z.string().min(1);
+const version = z.string().regex(/^(0|[1-9]\d*)$/);
+const projectAuthority = z.object({ kind: z.literal("project"), projectId: identity });
+const userAuthority = z.object({ kind: z.literal("user"), userId: identity });
+const workScope = z.object({ kind: z.literal("work"), projectId: identity, workId: identity });
+const lineageAuthority = z.object({
+  kind: z.literal("lineage"),
+  projectId: identity,
+  rootThreadId: identity,
+  rootThreadRef: identity,
+});
+const chatAuthority = z.object({
+  kind: z.literal("chat"),
+  projectId: identity,
+  chatId: identity,
+  chatRef: identity.nullable(),
+});
+const authority = z.discriminatedUnion("kind", [
+  projectAuthority,
+  userAuthority,
+  workScope.extend({
+    workHandle: z
+      .string()
+      .refine((value) => decodeWorkHandle(value) !== null)
+      .transform((value) => value as WorkHandle)
+      .nullable(),
+  }),
+  lineageAuthority,
+  chatAuthority,
+]);
+const scope = z.discriminatedUnion("kind", [
+  projectAuthority,
+  userAuthority,
+  workScope,
+  lineageAuthority.omit({ rootThreadRef: true }),
+  chatAuthority.omit({ chatRef: true }),
+]);
+const fileClassification = z.union([
+  z.object({
+    editable: z.literal(true),
+    filetype: filetypeSchema,
+    schemaType: z.enum(["document", "code"]),
+  }),
+  z.object({
+    editable: z.literal(false),
+    disposition: z.literal("binary"),
+    fileType: z.enum(["docx", "image", "pdf", "binary"]),
+    mimeType: z.string().nullable(),
+  }),
+  z.object({
+    editable: z.literal(false),
+    disposition: z.literal("custom"),
+    fileType: z.enum(["docx", "image", "pdf", "binary"]),
+    mimeType: z.string().nullable(),
+    filetype: filetypeSchema,
+  }),
+]);
+const fileEntry = z
+  .object({
+    kind: z.literal("file"),
+    observationVersion: version,
+    entryId: identity,
+    scope,
+    sourceId: identity,
+    parentId: identity,
+    name: z.string(),
+    aliases: z.array(z.string()),
+    path: z.array(z.string()),
+    uri: identity,
+    provisionalName: z.boolean(),
+    joinedFrom: z.array(identity).optional(),
+    upload: z
+      .object({
+        attachedAt: z.string(),
+        used: z.boolean(),
+        intakeId: identity,
+        locationRevision: version,
+      })
+      .optional(),
+  })
+  .and(fileClassification);
+
+/** Full address result: reference admission and browser navigation validate the same evidence. */
+export const documentAddressSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.enum(["current", "alias"]),
     document: z.object({
       kind: z.literal("available"),
-      documentId: z.string().min(1),
-      entry: z
-        .object({
-          name: z.string(),
-          editable: z.boolean(),
-          fileType: z.enum(["docx", "image", "pdf", "binary"]).optional(),
-        })
-        .refine(
-          (entry) => entry.editable || entry.fileType !== undefined,
-          "Non-editable references require a fileType",
-        ),
+      documentId: identity,
+      generation: version,
+      authority,
+      entry: fileEntry,
     }),
   }),
   z.object({ kind: z.literal("unavailable") }),
-]);
+]) satisfies z.ZodType<DocumentAddressResult>;
 
 export type DocumentAddressResult =
   | {

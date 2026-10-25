@@ -37,7 +37,7 @@ export function useHandoffBrief(input: {
   storedTurns: readonly Turn[];
 }): HandoffBrief {
   const { threadId, storedTurns } = input;
-  const turnStop = useTurnStop(threadId);
+  const turnStop = useTurnStop(threadId, storedTurns);
   const standIns = useRetryStandIns({
     threadId,
     storedTurns,
@@ -76,7 +76,12 @@ export function useHandoffBrief(input: {
   );
 
   const stopFailures = useMemo(
-    () => [...turnStop.failed].map(([turnId, occurrence]) => ({ turnId, ...occurrence })),
+    () =>
+      [...turnStop.failed].map(([turnId, { requestId, attempt }]) => ({
+        turnId,
+        requestId,
+        attempt,
+      })),
     [turnStop.failed],
   );
 

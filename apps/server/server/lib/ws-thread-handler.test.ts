@@ -27,7 +27,6 @@ const LIVE_STATE: ThreadLiveState = {
   status: { kind: "asleep" as const },
   activity: { children: [] },
   runState: EMPTY_RUN_STATE,
-  resumeAfterSeq: "0",
 };
 
 function createDelayedDeliveryHarness(

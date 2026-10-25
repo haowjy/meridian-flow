@@ -105,6 +105,7 @@ describe("useHandoffBrief Retry", () => {
 
 describe("useHandoffBrief Stop", () => {
   it("clears Stopping when the cancel fails, and holds the failure by attempt for the card", async () => {
+    await act(async () => root.render(<Probe turns={[seed("s", "pending", 1), reply]} />));
     transport.cancel.mockRejectedValueOnce(new Error("offline"));
     await act(async () => latest.stop("s"));
     expect(latest.stopping.has("s")).toBe(false);
@@ -117,6 +118,7 @@ describe("useHandoffBrief Stop", () => {
     await act(async () => latest.stop("s"));
     expect(latest.stopFailures).toEqual([]);
     // A second failure is a new occurrence of the same Stop.
+    await act(async () => root.render(<Probe turns={[seed("s", "pending", 1), reply]} />));
     transport.cancel.mockRejectedValueOnce(new Error("offline"));
     await act(async () => latest.stop("s"));
     expect(latest.stopFailures).toEqual([
