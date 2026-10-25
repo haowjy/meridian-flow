@@ -266,7 +266,11 @@ function ActiveSessionEditorView({
   const atReferenceCatalog = useCallback(() => {
     if (identity.schemaType !== "document" || !effectiveEditable || !sharedReferenceCatalog)
       return null;
-    return { ...sharedReferenceCatalog, linkAhead: (name: string) => linkAhead(name) };
+    return {
+      ...sharedReferenceCatalog,
+      referenceNode: editorReferenceNode,
+      linkAhead: (name: string) => linkAhead(name),
+    };
   }, [effectiveEditable, identity.schemaType, linkAhead, sharedReferenceCatalog]);
   const referenceDrop = useMemo<ReferenceDropOptions>(
     () => ({
