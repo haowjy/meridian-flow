@@ -10,7 +10,6 @@
  *   rows, or a chat with input rows and no record, fails).
  */
 
-import { randomInt } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { createDb, type Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
@@ -65,10 +64,9 @@ export async function openAuditedDatabase(
   const target = disposableTestDatabaseTarget(
     workerUrl,
     `${workerName}_audit_${process.pid}_${Date.now()}`,
-    randomInt(1000, 1_000_000),
   );
   const cloneName = target.databaseName;
-  const templateName = target.dropInline ? workerName : workerName.replace(/-worker-\d+$/, "");
+  const templateName = target.managedTemplate ?? workerName;
   const urlFor = (name: string) => {
     const url = new URL(workerUrl);
     url.pathname = `/${name}`;
@@ -82,7 +80,7 @@ export async function openAuditedDatabase(
   // clone after closing the pool. FORCE still ends a query whose bounded pool close timed out.
   const close = async () => {
     await within(POOL_CLOSE_TIMEOUT_MS, `closing the pool of ${cloneName}`, db?.close());
-    if (target.dropInline)
+    if (!target.managedTemplate)
       await within(
         DROP_TIMEOUT_MS,
         `dropping ${cloneName}`,
