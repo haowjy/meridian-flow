@@ -30,7 +30,7 @@ type ReferenceRead = { result: JsonValue; revision: string | null };
 
 export interface ReferenceReader {
   read(
-    reference: ReferenceOccurrence,
+    reference: Extract<ReferenceOccurrence, { kind: "document" }>,
     context: {
       threadId: string;
       turnId: string;
@@ -117,7 +117,8 @@ export async function loadReferenceReads(input: {
   for (const block of input.blocks) {
     if (block.turnId !== input.userTurnId) continue;
     const reference = referenceOccurrenceContent(block);
-    if (!reference || reference.read || images.has(reference.documentId)) continue;
+    if (reference?.kind !== "document" || reference.read || images.has(reference.documentId))
+      continue;
     input.signal?.throwIfAborted();
     const key = `${reference.documentId}\0${reference.uri}`;
     let result = reads.get(key);
@@ -158,7 +159,7 @@ export function referenceReadText(result: JsonValue): string {
 
 /** Only the materialized document read changes; writer wording and the mention remain intact. */
 export function elideReferenceRead(
-  reference: ReadReferenceOccurrence,
+  reference: Extract<ReadReferenceOccurrence, { kind: "document" }>,
   treatment: DocumentTextTreatment,
 ): JsonValue {
   const stub =

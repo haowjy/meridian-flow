@@ -160,11 +160,14 @@ export function createWriterTurnProducer(deps: {
                 winnerProjection(accepted.record, input.fingerprint, input.admission.submissionId),
               );
             }
+            const documentReferences = input.references.filter(
+              (reference) => reference.kind === "document",
+            );
             await deps.consumeUploads(
-              input.references.map((reference) => reference.documentId),
+              documentReferences.map((reference) => reference.documentId),
               threadId,
             );
-            for (const reference of input.references) {
+            for (const reference of documentReferences) {
               await deps.attachDocument(threadId, reference.documentId, reference.relationship);
             }
             return accepted.response;

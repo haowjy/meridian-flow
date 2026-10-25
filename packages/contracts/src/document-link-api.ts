@@ -49,6 +49,14 @@ export type DocumentLinkAnswer =
       /** An ahead ref answered through its settlement: it never answers by address again. */
       settled?: true;
     }
+  | {
+      state: "folder";
+      folder: {
+        id: string;
+        name: string;
+        uri: string;
+      };
+    }
   /** A ref the reader cannot reach: no uri, no title. `settled` as on `document`. */
   | { state: "gone"; settled?: true; trashedDocumentId?: string }
   /** An unsettled ahead ref, or a no-ref address with nothing there: Create. */

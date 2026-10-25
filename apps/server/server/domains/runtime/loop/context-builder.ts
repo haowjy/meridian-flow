@@ -254,7 +254,7 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
       }
     }
     const reference = referenceOccurrenceContent(block);
-    if (!reference?.read) continue;
+    if (reference?.kind !== "document" || !reference.read) continue;
     const key = `${reference.documentId}\0${reference.uri}`;
     if (included.has(key)) continue;
     included.add(key);

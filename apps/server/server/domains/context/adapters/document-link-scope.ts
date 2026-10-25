@@ -10,7 +10,7 @@
  * Readability comes from the file policy's list path.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { BranchId } from "@meridian/contracts";
+import type { BranchId, CatalogFolder } from "@meridian/contracts";
 import {
   type CatalogDocument,
   type ContextUriScheme,
@@ -44,11 +44,13 @@ import type {
   ScopePrepareRequest,
 } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
+import type { ProjectContextAvailabilityPort } from "../ports/project-context-availability.js";
 import type { HiddenNodeRepair } from "../tree/hidden-node-repair.js";
 import {
   type DocumentAddressSelection,
   type DocumentCoordinates,
   loadDocumentAddresses,
+  presentSourceId,
 } from "../tree/tree-addresses.js";
 import {
   createTreeReader,
@@ -56,7 +58,13 @@ import {
   LIVE_TREE,
   type TreeView,
 } from "../tree/tree-view.js";
-import { resolveCanonicalAddress, UnresolvableAddressError } from "./document-address.js";
+import { inspectTreeLocation } from "./context-fs/drizzle-tree-mutation-store.js";
+import {
+  resolveCanonicalAddress,
+  resolveCanonicalFolderAddress,
+  UnresolvableAddressError,
+} from "./document-address.js";
+import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
 type Row = {
   id: string;
@@ -101,6 +109,10 @@ type Snapshot = {
   rows: Map<string, Row | null>;
   /** Row URIs: the image rules' last-address lookups. */
   byUri: Map<string, Row[]>;
+  folderIds: Set<string>;
+  folderAddresses: Set<string>;
+  foldersByView: Map<string, Map<string, CatalogFolder | null>>;
+  foldersAtByView: Map<string, Map<string, CatalogFolder | null>>;
   /** Decoded addresses whose exact and extension-omitted rows are all loaded. */
   addresses: Set<string>;
   /** The live settlement by ahead id; null = unsettled or unregistered. */
@@ -131,11 +143,13 @@ const treeViewOf = (view: LinkView): TreeView =>
 export function createDrizzleDocumentLinkScopes(deps: {
   db: Database;
   fileAccess: Pick<FileAccess, "listAccess">;
+  availability?: ProjectContextAvailabilityPort;
   observer: LinkScopeObserver;
   /** Repair on touch (§12.4): an inconsistent hidden node a resolve meets is tombstoned after it. */
   repair?: Pick<HiddenNodeRepair, "schedule">;
 }): DocumentLinkScopes {
   const { db, observer } = deps;
+  const availability = deps.availability ?? createDrizzleProjectContextAvailability(db);
   const tree = createTreeReader(db, deps.repair ? { repair: deps.repair } : {});
   const storage = new AsyncLocalStorage<Snapshot>();
 
@@ -183,10 +197,16 @@ export function createDrizzleDocumentLinkScopes(deps: {
       ...stored.assetIds,
     ]);
     const addresses = new Set([...(request.addresses ?? []), ...stored.aheadAddresses]);
+    const folderIds = new Set<string>();
+    const folderAddresses = new Set([
+      ...stored.folderAddresses,
+      ...(request.folderAddresses ?? []),
+    ]);
     const aheadIds = new Set<string>();
     for (const ref of stored.refs) {
       const parsed = parseLinkRef(ref);
       if (parsed?.kind === "doc") ids.add(parsed.documentId);
+      else if (parsed?.kind === "folder") folderIds.add(parsed.folderId);
       else if (parsed?.kind === "ahead") aheadIds.add(parsed.aheadId);
     }
     const views: LinkView[] = [
@@ -206,8 +226,9 @@ export function createDrizzleDocumentLinkScopes(deps: {
     const holder = request.holders[0];
     if (holder && request.written?.length) {
       const holderUri = await holderAddress(snapshot, holder);
-      for (const uri of writtenAddresses(request.written, holderUri, request.uploadsChat))
-        addresses.add(uri);
+      for (const target of writtenAddresses(request.written, holderUri, request.uploadsChat)) {
+        (target.kind === "folder" ? folderAddresses : addresses).add(target.uri);
+      }
     }
     // A deleted picture keeps its path only while no other image holds it. Loading by the
     // row's own deleted flag is a superset of the view's rule: presence is still decided
@@ -224,6 +245,85 @@ export function createDrizzleDocumentLinkScopes(deps: {
 
     await loadViews(snapshot, views);
     await loadReadability(snapshot);
+    await loadFolders(snapshot, views, folderIds, folderAddresses);
+  }
+
+  async function loadFolders(
+    snapshot: Snapshot,
+    views: readonly LinkView[],
+    requestedIds: ReadonlySet<string>,
+    requestedAddresses: ReadonlySet<string>,
+  ) {
+    if (!snapshot.projectId || !snapshot.viewer) return;
+    for (const id of requestedIds) snapshot.folderIds.add(id);
+    for (const uri of requestedAddresses) snapshot.folderAddresses.add(uri);
+    for (const view of new Map(views.map((item) => [viewKey(item), item])).values()) {
+      const byId = snapshot.foldersByView.get(viewKey(view)) ?? new Map();
+      const atAddress = snapshot.foldersAtByView.get(viewKey(view)) ?? new Map();
+      const addressIds = new Map<string, string | null>();
+      for (const uri of snapshot.folderAddresses) {
+        if (atAddress.has(uri)) continue;
+        let folderId: string | null = null;
+        try {
+          const coordinates = await resolveCanonicalFolderAddress(db, {
+            holderProjectId: snapshot.projectId as ProjectId,
+            address: uri,
+          });
+          const sourceId = await presentSourceId(db, {
+            scheme: coordinates.scheme,
+            workId: coordinates.workId,
+            rootThreadId: coordinates.rootThreadId,
+            chatThreadId: coordinates.chatThreadId,
+            project: { id: coordinates.projectId },
+          });
+          const location = sourceId
+            ? await inspectTreeLocation(db, sourceId, coordinates.path, treeViewOf(view))
+            : null;
+          folderId = location?.kind === "directory" ? location.nodeId : null;
+        } catch (cause) {
+          if (!(cause instanceof UnresolvableAddressError)) throw cause;
+        }
+        addressIds.set(uri, folderId);
+      }
+      const ids = new Set([
+        ...[...snapshot.folderIds].filter((id) => !byId.has(id)),
+        ...[...addressIds.values()].filter((id): id is string => id !== null && !byId.has(id)),
+      ]);
+      if (ids.size > 0) {
+        const resolved = await availability.lookup(
+          {
+            projectId: snapshot.projectId as ProjectId,
+            documentIds: [],
+            folderIds: [...ids],
+            view: treeViewOf(view),
+          },
+          { userId: snapshot.viewer },
+        );
+        const answers = new Map(
+          (resolved.folderResolutions ?? []).map((item) => [item.folderId, item]),
+        );
+        for (const id of ids) {
+          const answer = answers.get(id);
+          byId.set(
+            id,
+            answer?.kind === "available"
+              ? {
+                  folderId: id,
+                  uri: answer.entry.uri,
+                  readable: true,
+                  nameable: true,
+                }
+              : null,
+          );
+        }
+      }
+      for (const [uri, id] of addressIds) {
+        const folder = id ? (byId.get(id) ?? null) : null;
+        atAddress.set(uri, folder?.uri === uri ? folder : null);
+      }
+      snapshot.foldersByView.set(viewKey(view), byId);
+      snapshot.foldersAtByView.set(viewKey(view), atAddress);
+    }
   }
 
   /** Loads the joined document for each id that names no document but was forwarded to one. */
@@ -434,6 +534,10 @@ export function createDrizzleDocumentLinkScopes(deps: {
         prepared: false,
         rows: new Map(),
         byUri: new Map(),
+        folderIds: new Set(),
+        folderAddresses: new Set(),
+        foldersByView: new Map(),
+        foldersAtByView: new Map(),
         addresses: new Set(),
         settlements: new Map(),
         forwards: new Map(),
@@ -554,6 +658,8 @@ function uuidList(ids: readonly string[]): SQL {
 
 const EMPTY_CATALOG: HolderCatalog = {
   document: () => null,
+  folder: () => null,
+  folderAt: () => null,
   settlement: () => null,
   documentAt: () => null,
   documentFor: () => null,
@@ -672,6 +778,14 @@ function snapshotCatalog(
       if (row === null) return null;
       const document = toDocument(row);
       return document === UNLOADED ? undefined : document;
+    },
+    folder(id) {
+      if (!snapshot.folderIds.has(id)) return undefined;
+      return snapshot.foldersByView.get(key)?.get(id) ?? null;
+    },
+    folderAt(uri) {
+      if (!snapshot.folderAddresses.has(uri)) return undefined;
+      return snapshot.foldersAtByView.get(key)?.get(uri) ?? null;
     },
     // An ahead ref binds once, globally, on a live arrival; until then it reads by address.
     settlement: (aheadId) => snapshot.settlements.get(aheadId),
