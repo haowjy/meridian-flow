@@ -1,114 +1,28 @@
-/** Derive immediate sibling order from durable placement intentions; ranks remain server-owned. */
+/**
+ * The displayed sibling order while placements are unresolved: one fold of the placement journal
+ * over canonical state. Ranks stay server-owned; the synthetic ones made here never leave the
+ * projection.
+ */
 import type { CatalogEntry, ContextSiblingPosition } from "@meridian/contracts/protocol";
-import { indexCatalogView } from "./catalog";
-import { owningLocationIntent } from "./resource-intent-policy";
-import type { FolderNamespaceRecord, ResourceRecord } from "./resource-records";
+import { placementOps, placementShapesList } from "./placement-journal";
+import type { FolderNamespaceRecord, ParentRef, ResourceRecord } from "./resource-records";
+import { ownerListedInScope } from "./resource-work-authority";
+import { compareCatalogSiblings, compareDefaultSiblings, isManualParent } from "./sibling-order";
 
-type Action = {
-  entryId: string;
-  parentId: string;
-  position?: ContextSiblingPosition;
-  movedParent: boolean;
-  promote: boolean;
-  admissionOrder: number;
-};
+type Child = Extract<CatalogEntry, { kind: "file" | "folder" }>;
+type Source = Extract<CatalogEntry, { kind: "source" }>;
 
-function activeActions(
-  projectId: string,
-  projected: readonly CatalogEntry[],
-  canonical: ReadonlyMap<string, CatalogEntry>,
-  records: readonly ResourceRecord[],
-  folders: readonly FolderNamespaceRecord[],
-): Action[] {
-  const rows = new Map(
-    projected.flatMap((entry) =>
-      entry.kind === "file" || entry.kind === "folder" ? [[entry.entryId, entry] as const] : [],
-    ),
-  );
-  const actions: Action[] = [];
-  const add = (
-    entryId: string,
-    intent:
-      | {
-          admission?: { order: number };
-          desired: { destination: { position?: ContextSiblingPosition } };
-        }
-      | undefined,
-  ) => {
-    const desired = intent?.desired;
-    const row = rows.get(entryId);
-    if (!row || !desired) return;
-    const canonicalRow = canonical.get(entryId);
-    const movedParent =
-      !canonicalRow ||
-      (canonicalRow.kind !== "file" && canonicalRow.kind !== "folder") ||
-      canonicalRow.parentId !== row.parentId;
-    if (!desired.destination.position && !movedParent) return;
-    actions.push({
-      entryId,
-      parentId: row.parentId,
-      ...(desired.destination.position ? { position: desired.destination.position } : {}),
-      movedParent,
-      promote: Boolean(desired.destination.position),
-      admissionOrder: intent?.admission?.order ?? 0,
-    });
-  };
+const isChild = (entry: CatalogEntry | undefined): entry is Child =>
+  entry?.kind === "file" || entry?.kind === "folder";
 
-  for (const record of records) {
-    const intent = owningLocationIntent(
-      projectId,
-      record.intents,
-      Boolean(record.resource.obligations.canonicalRefresh),
-    );
-    const create = !record.resource.canonical
-      ? [...record.intents]
-          .reverse()
-          .find(
-            (candidate) =>
-              candidate.projectId === projectId &&
-              candidate.desired.kind === "create" &&
-              candidate.desired.destination &&
-              (candidate.state === "pending" ||
-                candidate.state === "submitted" ||
-                candidate.state === "received"),
-          )
-      : undefined;
-    add(
-      record.resource.identity.documentId,
-      intent?.desired.kind === "set-location"
-        ? { admission: intent.admission, desired: intent.desired }
-        : create?.desired.kind === "create" && create.desired.destination
-          ? {
-              admission: create.admission,
-              desired: { destination: create.desired.destination },
-            }
-          : undefined,
-    );
-  }
-  for (const folder of folders) {
-    const intent = owningLocationIntent(
-      folder.projectId,
-      folder.intents,
-      Boolean(folder.canonicalRefresh),
-    );
-    add(
-      folder.folderId,
-      intent?.desired.kind === "set-folder-location"
-        ? { admission: intent.admission, desired: intent.desired }
-        : undefined,
-    );
-  }
-  return actions.sort((left, right) => left.admissionOrder - right.admissionOrder);
-}
-
+/** Put `entryId` where `position` says, or back where it was when the position cannot be honoured. */
 function insertAtPosition(
   siblings: string[],
   entryId: string,
-  position: ContextSiblingPosition | undefined,
+  position: ContextSiblingPosition,
+  previousIndex: number,
 ): void {
-  const previous = siblings.indexOf(entryId);
-  if (previous >= 0) siblings.splice(previous, 1);
-  if (!position || position.kind === "end") {
+  if (position.kind === "end") {
     siblings.push(entryId);
     return;
   }
@@ -116,22 +30,26 @@ function insertAtPosition(
     siblings.unshift(entryId);
     return;
   }
-  if (!("siblingId" in position)) return;
-  if (position.siblingId === entryId) {
-    if (previous >= 0) siblings.splice(previous, 0, entryId);
-    return;
-  }
-  const anchor = siblings.indexOf(position.siblingId);
+  const anchor = "siblingId" in position ? siblings.indexOf(position.siblingId) : -1;
   if (anchor < 0) {
-    if (previous >= 0) siblings.splice(Math.min(previous, siblings.length), 0, entryId);
+    // The anchor is gone from this list; the server will refuse, so the row keeps its place.
+    siblings.splice(
+      previousIndex >= 0 ? Math.min(previousIndex, siblings.length) : siblings.length,
+      0,
+      entryId,
+    );
     return;
   }
   siblings.splice(position.kind === "before" ? anchor : anchor + 1, 0, entryId);
 }
 
 /**
- * A positional command promotes its destination in the projection and derives a complete local
- * order from the journaled intent. Synthetic ranks never leave this projection or enter a request.
+ * Fold every unresolved placement, in admission order, over the canonical sibling lists:
+ * membership, parent-policy promotion and position change together, step by step. A move
+ * into a default parent that carries a position promotes it first; an arrival without one lands
+ * last in a manual parent and in name order in a default one. The projected rows say where each
+ * subject finally stands (its last placement); earlier steps resolve their destination from the
+ * placement itself.
  */
 export function projectOptimisticSiblingOrder(input: {
   projectId: string;
@@ -140,50 +58,107 @@ export function projectOptimisticSiblingOrder(input: {
   records: readonly ResourceRecord[];
   folders: readonly FolderNamespaceRecord[];
 }): readonly CatalogEntry[] {
-  const canonical = new Map(input.canonical.map((entry) => [entry.entryId, entry]));
-  const actions = activeActions(
-    input.projectId,
-    input.projected,
-    canonical,
-    input.records,
-    input.folders,
-  );
-  if (actions.length === 0) return input.projected;
-
+  const { projectId } = input;
   const entries = new Map(input.projected.map((entry) => [entry.entryId, entry]));
-  const indexed = indexCatalogView({
-    scope: { kind: "project", projectId: input.projectId },
-    generation: "",
-    appliedRevision: "0",
-    observedHeadRevision: "0",
-    cursor: "",
-    entries,
-  });
-  const byParent = new Map(
-    [...indexed.childIdsByParentId].map(([parentId, ids]) => [parentId, [...ids]]),
+  const ops = placementOps(input).filter(
+    (op) =>
+      op.intent.projectId === projectId &&
+      placementShapesList(op) &&
+      entries.has(op.subject) &&
+      (op.intent.desired.kind === "set-location" ||
+        op.intent.desired.kind === "set-folder-location" ||
+        (op.intent.desired.kind === "create" && op.intent.desired.destination)),
   );
-  const affected = new Set<string>();
-  for (const action of actions) {
-    const parent = entries.get(action.parentId);
-    const manual =
-      (parent?.kind === "source" || parent?.kind === "folder") && parent.orderPolicy === "manual";
-    if (!action.position && !(action.movedParent && manual)) continue;
-    const siblings = byParent.get(action.parentId) ?? [];
-    insertAtPosition(siblings, action.entryId, action.position);
-    byParent.set(action.parentId, siblings);
-    affected.add(action.parentId);
-    if (action.promote) {
-      const parent = entries.get(action.parentId);
-      if (parent?.kind === "source" || parent?.kind === "folder")
-        entries.set(action.parentId, { ...parent, orderPolicy: "manual" });
-    }
+  if (ops.length === 0) return input.projected;
+
+  const canonical = new Map(input.canonical.map((entry) => [entry.entryId, entry]));
+  const touched = new Set(ops.map((op) => op.subject));
+  const lastOp = new Map(ops.map((op) => [op.subject, op.intent.intentId]));
+  const sources = input.projected.filter((entry): entry is Source => entry.kind === "source");
+  const destinationId = (parent: ParentRef): string | undefined =>
+    parent.kind === "folder"
+      ? parent.folderId
+      : sources.find(
+          (source) =>
+            source.scheme === parent.scheme &&
+            ownerListedInScope(parent.owner, parent.scheme, source.scope, projectId),
+        )?.entryId;
+
+  // Baseline: where each row stood before any unresolved placement touched it.
+  const seq = new Map<string, string[]>();
+  const parentOf = new Map<string, string>();
+  for (const entry of entries.values()) {
+    if (!isChild(entry)) continue;
+    const base = touched.has(entry.entryId) ? canonical.get(entry.entryId) : entry;
+    if (!isChild(base)) continue;
+    parentOf.set(entry.entryId, base.parentId);
+    const siblings = seq.get(base.parentId);
+    if (siblings) siblings.push(entry.entryId);
+    else seq.set(base.parentId, [entry.entryId]);
   }
+  const manual = new Set<string>();
+  for (const [parentId, ids] of seq) {
+    if (isManualParent(entries.get(parentId))) manual.add(parentId);
+    const useRank = manual.has(parentId);
+    ids.sort((leftId, rightId) => {
+      const left = entries.get(leftId);
+      const right = entries.get(rightId);
+      return isChild(left) && isChild(right) ? compareCatalogSiblings(useRank, left, right) : 0;
+    });
+  }
+  const byName = (leftId: string, rightId: string) => {
+    const left = entries.get(leftId);
+    const right = entries.get(rightId);
+    return isChild(left) && isChild(right)
+      ? compareDefaultSiblings(
+          { kind: left.kind, name: left.name, identity: left.entryId },
+          { kind: right.kind, name: right.name, identity: right.entryId },
+        )
+      : 0;
+  };
+
+  const affected = new Set<string>();
+  for (const op of ops) {
+    const subject = entries.get(op.subject);
+    if (!isChild(subject)) continue;
+    const { destination } = op.intent.desired as {
+      destination: { parent: ParentRef; position?: ContextSiblingPosition };
+    };
+    const target =
+      lastOp.get(op.subject) === op.intent.intentId
+        ? subject.parentId
+        : (destinationId(destination.parent) ?? subject.parentId);
+    const from = parentOf.get(op.subject);
+    const position = destination.position;
+    if (!position && from === target) continue;
+    const previousIndex = from ? (seq.get(from)?.indexOf(op.subject) ?? -1) : -1;
+    if (from) {
+      const siblings = seq.get(from);
+      if (siblings && previousIndex >= 0) siblings.splice(previousIndex, 1);
+      affected.add(from);
+    }
+    const siblings = seq.get(target) ?? [];
+    seq.set(target, siblings);
+    if (position) {
+      manual.add(target);
+      insertAtPosition(siblings, op.subject, position, from === target ? previousIndex : -1);
+    } else {
+      siblings.push(op.subject);
+      if (!manual.has(target)) siblings.sort(byName);
+    }
+    parentOf.set(op.subject, target);
+    affected.add(target);
+  }
+
   for (const parentId of affected) {
-    const siblings = byParent.get(parentId) ?? [];
-    siblings.forEach((entryId, index) => {
+    if (!manual.has(parentId)) continue;
+    const parent = entries.get(parentId);
+    if (parent?.kind === "source" || parent?.kind === "folder")
+      entries.set(parentId, { ...parent, orderPolicy: "manual" });
+    seq.get(parentId)?.forEach((entryId, index) => {
       const entry = entries.get(entryId);
-      if (entry?.kind !== "file" && entry?.kind !== "folder") return;
-      entries.set(entryId, { ...entry, rank: `local:${String(index).padStart(12, "0")}` });
+      if (isChild(entry))
+        entries.set(entryId, { ...entry, rank: `local:${String(index).padStart(12, "0")}` });
     });
   }
   return [...entries.values()];
