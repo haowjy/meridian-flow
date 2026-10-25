@@ -922,6 +922,9 @@ export class ContextFS implements ContextSchemeAdapter {
       return Ok({
         movedNodeId: committed.value.movedNodeId,
         ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
+        ...(committed.value.locationVersion
+          ? { locationVersion: committed.value.locationVersion }
+          : {}),
         path: committed.value.destinationPath,
       });
     }
@@ -942,6 +945,9 @@ export class ContextFS implements ContextSchemeAdapter {
     return Ok({
       movedNodeId: committed.value.movedNodeId,
       ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
+      ...(committed.value.locationVersion
+        ? { locationVersion: committed.value.locationVersion }
+        : {}),
       path: committed.value.destinationPath,
     });
   }

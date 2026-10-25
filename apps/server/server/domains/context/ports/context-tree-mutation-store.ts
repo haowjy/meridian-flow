@@ -99,6 +99,7 @@ export interface ContextTreeMutationResult {
   movedNodeId: string;
   /** Actual free path claimed by the move. */
   destinationPath: string;
+  locationVersion?: string;
   linkUpdate?: { links: number; documents: number };
 }
 

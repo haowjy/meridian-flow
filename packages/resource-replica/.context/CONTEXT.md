@@ -151,7 +151,9 @@ identity. The destination parent remains explicit: an anchor that moves cannot r
 The server resolves this intent and mints the stored rank under the namespace lock. A parent owns an
 explicit default/manual order policy; ranks affect display only for manual parents.
 The local projection derives the same parent promotion and visible position from the durable journal
-intent. Its synthetic ranks are projection-only: transport sends the relative position, and a newer
+intent. Placement intents carry one account-local admission order across file and folder journals,
+so reload replays multiple offline changes in writer order. Synthetic ranks are projection-only:
+transport sends the relative position, and a newer
 catalog observation replaces the prediction. Canonical ranks and folder child-order policy are
 retained with canonical identity metadata as checkpoints reload or temporarily disappear.
 

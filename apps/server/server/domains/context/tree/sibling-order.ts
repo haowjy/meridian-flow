@@ -18,11 +18,21 @@ type Sibling = {
 export async function liveSiblingPlacement(
   db: Database,
   node: { kind: "document" | "folder"; id: string },
-): Promise<{ sourceId: ContextSourceId; parentId: FolderId | null; rank: string | null } | null> {
+): Promise<{
+  sourceId: ContextSourceId;
+  parentId: FolderId | null;
+  rank: string | null;
+  locationVersion: bigint;
+} | null> {
   const tx = currentDrizzleDb(db);
   if (node.kind === "folder") {
     const [row] = await tx
-      .select({ sourceId: folders.contextSourceId, parentId: folders.parentId, rank: folders.rank })
+      .select({
+        sourceId: folders.contextSourceId,
+        parentId: folders.parentId,
+        rank: folders.rank,
+        locationVersion: folders.locationVersion,
+      })
       .from(folders)
       .where(eq(folders.id, node.id as FolderId));
     return row ?? null;
@@ -32,6 +42,7 @@ export async function liveSiblingPlacement(
       sourceId: documents.contextSourceId,
       parentId: documents.folderId,
       rank: documents.rank,
+      locationVersion: documents.locationVersion,
     })
     .from(documents)
     .where(eq(documents.id, node.id as DocumentId));

@@ -13,7 +13,7 @@ import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import { moveRows, renamesOnArrival } from "./entry-drag/execute-move";
 import { describeRenames, usePublishMove } from "./entry-drag/move-notice";
-import { moveRefusal, parentOf } from "./entry-drag/move-plan";
+import { moveRefusal, parentOf, sameParent } from "./entry-drag/move-plan";
 import { destinationParent, type MoveDestination } from "./move-entry";
 import { moveRepairTrail } from "./move-repair-trail";
 import { useProjectMenuSource } from "./use-project-menu-source";
@@ -80,7 +80,9 @@ function OpenMovePicker({
   const ref = { kind: entry.kind, id: entry.id };
   const refusalAt = (destination: MoveDestination) => {
     const into = destinationParent(destination, works, noWork);
-    return into ? moveRefusal(view, ref, into) : null;
+    const position =
+      into && repairMove && sameParent(repairMove.parent, into) ? repairMove.position : undefined;
+    return into ? moveRefusal(view, ref, into, position) : null;
   };
 
   async function move(trail: readonly DrillNode[]) {
@@ -93,8 +95,19 @@ function OpenMovePicker({
       const after = destinationParent(destination, works, noWork);
       const before = parentOf(view, ref);
       if (!after || !before) throw new Error(unavailable);
+      const position =
+        repairMove && sameParent(repairMove.parent, after) ? repairMove.position : undefined;
       const result = await moveRows(
-        [{ entry: ref, name: entry.name, typed: name, before, after }],
+        [
+          {
+            entry: ref,
+            name: entry.name,
+            typed: name,
+            before,
+            after,
+            ...(position ? { position } : {}),
+          },
+        ],
         { resources, projectId },
       );
       if (result.failed.length > 0) throw new Error(unavailable);

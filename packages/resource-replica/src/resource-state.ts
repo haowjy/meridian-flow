@@ -25,6 +25,7 @@ export function reserveResourceDocument(input: {
   provisionalName?: string;
   /** A named create is dispatchable at once: the writer chose where it goes. */
   destination?: { value: ResourceDestination; eligibleAt: number };
+  admissionOrder?: number;
 }): ResourceWrite {
   const resource: ResourceDescriptor = {
     handle: input.handle,
@@ -47,6 +48,7 @@ export function reserveResourceDocument(input: {
     handle: input.handle,
     intentId: input.intentId,
     sequence: 1,
+    ...(input.admissionOrder !== undefined ? { admissionOrder: input.admissionOrder } : {}),
     identityRevision: 1,
     desired: {
       kind: "create",
@@ -90,6 +92,7 @@ export function planResourceLocation(input: {
   projectId: string;
   intentId: string;
   eligibleAt: number;
+  admissionOrder?: number;
   operationId?: string;
   destination: ResourceDestination;
   typedName?: string;
@@ -123,6 +126,7 @@ export function planResourceLocation(input: {
     handle: record.resource.handle,
     intentId: input.intentId,
     sequence: nextSequence(record),
+    ...(input.admissionOrder !== undefined ? { admissionOrder: input.admissionOrder } : {}),
     identityRevision: record.resource.identity.revision,
     desired: {
       kind: "set-location",

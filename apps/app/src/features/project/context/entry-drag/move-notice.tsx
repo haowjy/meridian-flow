@@ -363,7 +363,15 @@ export function describeMove(result: MoveResult, destinationName: string): strin
   const { moved, failed } = result;
   const parts: string[] = [];
   const [first] = moved;
-  if (moved.length === 1 && first && first.previousName !== first.name)
+  if (moved.length === 1 && first?.action === "reorder") parts.push(t`Reordered ${first.name}.`);
+  else if (moved.length > 1 && moved.every((effect) => effect.action === "reorder"))
+    parts.push(
+      plural(moved.length, {
+        one: "Reordered # item.",
+        other: "Reordered # items.",
+      }),
+    );
+  else if (moved.length === 1 && first && first.previousName !== first.name)
     parts.push(t`Moved ${first.previousName} to ${destinationName} as ${first.name}.`);
   else if (moved.length === 1 && first) parts.push(t`Moved ${first.name} to ${destinationName}.`);
   else if (moved.length > 1)
@@ -374,7 +382,9 @@ export function describeMove(result: MoveResult, destinationName: string): strin
       }),
     );
   const [lost] = failed;
-  if (failed.length === 1 && lost) parts.push(t`Couldn't move ${lost.name}.`);
+  if (failed.length === 1 && lost?.action === "reorder")
+    parts.push(t`Couldn't reorder ${lost.name}.`);
+  else if (failed.length === 1 && lost) parts.push(t`Couldn't move ${lost.name}.`);
   else if (failed.length > 1)
     parts.push(
       plural(failed.length, { one: "Couldn't move # item.", other: "Couldn't move # items." }),
@@ -395,13 +405,19 @@ export function describeRenames(renamed: readonly { name: string; as: string }[]
 
 /** A refused row went back where it came from, under its name there. */
 function wentBack(effects: readonly MoveEffect[]) {
-  return effects.map((effect) => ({ entry: effect.entry, name: effect.previousName }));
+  return effects.map((effect) => ({
+    entry: effect.entry,
+    name: effect.previousName,
+    action: effect.action,
+  }));
 }
 
 /** Null when every row went back. */
 export function describeUndoFailure(failed: readonly Failure[]): string | null {
   if (failed.length === 0) return null;
   const [lost] = failed;
+  if (failed.length === 1 && lost?.action === "reorder")
+    return t`Couldn't restore ${lost.name}'s position.`;
   if (failed.length === 1 && lost) return t`Couldn't move ${lost.name} back.`;
   return plural(failed.length, {
     one: "Couldn't move # item back.",

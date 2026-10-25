@@ -250,6 +250,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
             description: vf.description,
             sortOrder: vf.sortOrder,
             rank: vf.rank,
+            locationVersion: vf.locationVersion,
             orderPolicy: vf.orderPolicy,
             createdAt: vf.createdAt,
             updatedAt: vf.updatedAt,
@@ -272,6 +273,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
             metadata: vd.metadata,
             provisionalName: vd.provisionalName,
             rank: vd.rank,
+            locationVersion: vd.locationVersion,
           })
           .from(vd)
           .where(inArray(vd.contextSourceId, sourceIds));
@@ -362,6 +364,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       entries.push({
         kind: "folder",
         observationVersion,
+        locationVersion: folder.locationVersion.toString(),
         entryId: folder.id,
         scope,
         sourceId: source.id,

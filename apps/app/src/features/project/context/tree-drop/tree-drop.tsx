@@ -4,7 +4,10 @@
  * lights the target and says what the drop will do. Desktop file drops arrive
  * with import.
  */
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type {
+  ContextSiblingPosition,
+  ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import {
   createContext,
   type DragEvent,
@@ -26,6 +29,8 @@ export type TreeDropTarget = {
   catalogRootId: string;
   /** The folder row, or null for the catalog's top level (the area header). */
   folder: { entryId: string; path: string; name: string } | null;
+  /** A sibling edge; absent while the folder/container region owns the target. */
+  position?: ContextSiblingPosition;
 };
 
 /**
@@ -66,7 +71,7 @@ type ScopeValue = {
 const ScopeContext = createContext<ScopeValue | null>(null);
 
 function targetKey(target: TreeDropTarget): string {
-  return `${target.scheme}:${target.folder?.entryId ?? target.catalogRootId}`;
+  return `${target.scheme}:${target.folder?.entryId ?? target.catalogRootId}:${JSON.stringify(target.position)}`;
 }
 
 /**

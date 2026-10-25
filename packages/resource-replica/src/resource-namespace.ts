@@ -308,6 +308,7 @@ export function namespaceOutcomeMatches(
         receipt.command.destinationParent,
         attempt.request.body.destinationParent,
       ) &&
+      JSON.stringify(receipt.command.position) === JSON.stringify(attempt.request.body.position) &&
       (attempt.request.body.destinationParent?.kind === "folder"
         ? true
         : destination.value.scheme === attempt.request.body.destinationScheme &&
@@ -561,6 +562,7 @@ export function installCanonicalRefresh(input: {
   location: ResourceLocation;
   parent: import("./resource-records").ParentRef;
   rank?: string | null;
+  locationVersion?: string;
   observationVersion: string;
 }): ResourceWrite | null {
   const obligation = input.record.resource.obligations.canonicalRefresh;
@@ -602,6 +604,7 @@ export function installCanonicalRefresh(input: {
               canonical: input.location,
               canonicalParent: input.parent,
               canonicalRank: input.rank,
+              canonicalLocationVersion: input.locationVersion,
               observationVersion: input.observationVersion,
             }
           : {}),
@@ -626,6 +629,7 @@ export function installNamespaceAvailability(
       location: availability.location,
       parent: availability.parent,
       rank: availability.rank,
+      locationVersion: availability.locationVersion,
       observationVersion: availability.observationVersion,
     });
   const { canonicalRefresh: _completed, ...obligations } = record.resource.obligations;

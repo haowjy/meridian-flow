@@ -300,7 +300,13 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             [beforePlacement.sourceId],
             [input.source.nodeId],
           );
-          return Ok({ movedNodeId: input.source.nodeId, destinationPath });
+          const settledPlacement = await liveSiblingPlacement(this.db, movedRef);
+          if (!settledPlacement) rollback("stale_source");
+          return Ok({
+            movedNodeId: input.source.nodeId,
+            destinationPath,
+            locationVersion: settledPlacement.locationVersion.toString(),
+          });
         }
         if (
           input.overwrite &&
@@ -394,6 +400,8 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         [...new Set([input.source.sourceId, input.destinationSourceId])],
         [input.source.nodeId],
       );
+      const settledPlacement = await liveSiblingPlacement(this.db, movedRef);
+      if (!settledPlacement) rollback("stale_source");
       return Ok({
         movedNodeId: input.source.nodeId,
         destinationPath: [
@@ -402,6 +410,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             ? renderDocumentFilename(moved.value.target.name, moved.value.target.extension)
             : moved.value.target.name,
         ].join("/"),
+        locationVersion: settledPlacement.locationVersion.toString(),
         linkUpdate,
       });
     });

@@ -177,6 +177,7 @@ export function planFolderLocation(input: {
   sourceObservationVersion?: string;
   intentId: string;
   operationId: string;
+  admissionOrder?: number;
   destination: ResourceDestination;
   typedName?: string;
 }): FolderNamespaceWrite | null {
@@ -221,6 +222,7 @@ export function planFolderLocation(input: {
     destination.scheme === record.canonical.scheme &&
     sameOwner(destination, record.canonical) &&
     destination.path === record.canonical.path &&
+    !input.destination.position &&
     !superseded.repaired
   )
     return null;
@@ -230,6 +232,7 @@ export function planFolderLocation(input: {
     intentId: input.intentId,
     operationId: input.operationId,
     sequence: Math.max(0, ...record.intents.map((item) => item.sequence)) + 1,
+    ...(input.admissionOrder !== undefined ? { admissionOrder: input.admissionOrder } : {}),
     identityRevision: 1,
     desired: {
       kind: "set-folder-location",
@@ -403,6 +406,7 @@ export function prepareFolderNamespaceAttempt(
       ),
       ...owners.body,
       ...(intent.desired.typedName !== source.name ? { newName: intent.desired.typedName } : {}),
+      ...(destination.position ? { position: destination.position } : {}),
     },
   };
   return replaceIntent(record, intent.intentId, (current) => ({
@@ -540,6 +544,7 @@ export function installFolderCanonicalRefresh(
   observationVersion: string,
   rank?: string | null,
   orderPolicy?: ContextParentOrderPolicy,
+  locationVersion?: string,
 ): FolderNamespaceWrite | null {
   if (record.canonicalRefresh?.operationId !== operationId) return null;
   const { newer, completes } = canonicalRefreshObservation(
@@ -563,6 +568,7 @@ export function installFolderCanonicalRefresh(
             canonical: location,
             canonicalParent: parent,
             canonicalRank: rank,
+            canonicalLocationVersion: locationVersion,
             canonicalOrderPolicy: orderPolicy,
             observationVersion,
           }
@@ -587,6 +593,7 @@ export function installFolderNamespaceAvailability(
       availability.observationVersion,
       availability.rank,
       availability.orderPolicy,
+      availability.locationVersion,
     );
   const { canonicalRefresh: _completed, ...rest } = record;
   if (
