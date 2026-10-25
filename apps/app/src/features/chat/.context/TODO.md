@@ -62,3 +62,14 @@ most three clauses ("Read and edited loop-test.md, 1 edit failed"). A failure
 shows in the label without opening the fold; a live fold names the current
 action. Deferred out of the subagent UI change because it rewrites the digest
 contract in `turn-composition.md`.
+
+## Queued compaction admission/removal evidence — blocks chat-followups
+
+`thread-controls/thread-controls.ts` stores an enqueue response's version in
+`droppedAt` even when the response still lists the command. If record 3000
+already lacks it, accepted history 2500 still lists it, and delayed admission
+2000 arrives, reconciliation can retire the row before history covers removal
+at 3000. Keep admission evidence distinct from authoritative disappearance;
+a pre-admission record cannot establish disappearance either. The single owner
+map remains appropriate. Resolve this evidence model and verify both carrier
+orderings before merging chat-followups / closing [#909](https://github.com/haowjy/meridian-flow/issues/909).
