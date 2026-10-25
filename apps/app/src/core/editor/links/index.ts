@@ -22,7 +22,6 @@ export {
   indexedDocumentAt,
   indexedFolderAt,
   type LinkAssignmentDocument,
-  type LinkAssignmentFolder,
   type LinkAssignmentIndex,
   type LinkAssignmentScope,
 } from "./link-assignment";
@@ -76,7 +75,6 @@ export {
   linkFolderId,
   linkKeyOfMark,
   pictureKeyOfNode,
-  type ResolvedFolderLink,
 } from "./link-resolution";
 export {
   getLinkAnswerCache,

@@ -33,7 +33,7 @@ import { Fragment, type Mark, type Node as PMNode, Slice } from "@tiptap/pm/mode
 export type LinkAssignmentDocument = { documentId: string; uri: string };
 
 /** One folder the editor's local index knows, by id and current address. */
-export type LinkAssignmentFolder = { folderId: string; uri: string };
+type LinkAssignmentFolder = { folderId: string; uri: string };
 
 /** The editor's local document and folder index, as assignment reads it. */
 export type LinkAssignmentIndex = {

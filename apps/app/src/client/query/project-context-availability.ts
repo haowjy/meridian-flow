@@ -151,13 +151,3 @@ export async function lookupProjectContextAvailability(
     folders,
   );
 }
-
-/** Folder refreshes share the stable-ID availability endpoint, not catalog membership guesses. */
-export async function lookupProjectFolderAvailability(
-  projectId: string,
-  folderId: string,
-  signal?: AbortSignal,
-): Promise<ProjectContextFolderResolution> {
-  const result = await lookupProjectContextAvailability(projectId, [], signal, [folderId]);
-  return result.folderResolutions?.[0] ?? malformed();
-}

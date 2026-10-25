@@ -15,10 +15,7 @@ import {
   moveContextEntry,
 } from "@/client/api/projects-api";
 import { contextRequestOptionsForScheme } from "@/client/query/context-request-options";
-import {
-  lookupProjectContextAvailability,
-  lookupProjectFolderAvailability,
-} from "@/client/query/project-context-availability";
+import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 
 export function createResourceNamespaceTransport(
   accountId: string,
@@ -48,10 +45,12 @@ export function createResourceNamespaceTransport(
       requireOpen();
       const resolution =
         identity.kind === "folder"
-          ? await lookupProjectFolderAvailability(projectId, identity.id, epoch)
+          ? (await lookupProjectContextAvailability(projectId, [], epoch, [identity.id]))
+              .folderResolutions?.[0]
           : (await lookupProjectContextAvailability(projectId, [identity.id], epoch))
               .resolutions[0];
       requireOpen();
+      if (!resolution) throw new TypeError("Availability response omitted requested identity");
       if (resolution.kind === "deleted")
         return {
           kind: "deleted",

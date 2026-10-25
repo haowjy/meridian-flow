@@ -100,7 +100,7 @@ export function linkCacheKey(key: LinkKey): string {
 }
 
 /** A folder a link names, where it is now. */
-export type ResolvedFolderLink = { folderId: string; title: string; uri: string };
+type ResolvedFolderLink = { folderId: string; title: string; uri: string };
 
 /**
  * The folder a link names, or null: its ref's identity, else the folder its

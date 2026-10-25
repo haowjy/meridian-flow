@@ -1,7 +1,8 @@
 # FUTURE: nice-to-have follow-ups (`@meridian/thread-client`)
 
-- Hand-back chips are inferred, not exact. The stored message keeps only a
-  reference's document and URI, so `chatReferenceResolver`
+- Document hand-back chips are inferred, not exact. A stored document
+  occurrence keeps its kind, document ID and URI, while a folder occurrence
+  already restores directly by folder ID. `chatReferenceResolver`
   (`src/message/hand-back.ts`) rebuilds a chip only when the URI proves the
   owner, and returns link text otherwise: a reference to another named Work
   comes back as text, and an extension-less document of a non-markdown type
