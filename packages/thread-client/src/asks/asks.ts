@@ -13,6 +13,7 @@ import type {
   AskStatus,
   ThreadAsk,
   Turn,
+  TurnStatus,
 } from "@meridian/contracts/threads";
 
 /** This device's answer to an open ask, until the server's resolution replaces it. */
@@ -119,6 +120,28 @@ export function markAskAnswer(
   const attempts = new Map(asks.attempts);
   attempts.set(askId, { ...held, state });
   return { ...asks, attempts };
+}
+
+/**
+ * The asking turn's status while its ask is in this lifecycle state, and which held status it
+ * replaces. The server settles the turn and the ask in one transaction, but its stream marks the
+ * settling turn with a bare run finish and the resolving one with no frame at all; the ask frame
+ * that follows each is the fact that tells them apart.
+ */
+export function askingTurnStatus(
+  ask: ThreadAsk,
+): { status: TurnStatus; from: readonly TurnStatus[] } | null {
+  switch (ask.status) {
+    case "pending":
+      return null;
+    case "open":
+      return { status: "awaiting_answer", from: ["pending", "streaming", "complete"] };
+    case "answered":
+    case "expired":
+      return { status: "complete", from: ["awaiting_answer"] };
+    case "cancelled":
+      return { status: "cancelled", from: ["awaiting_answer"] };
+  }
 }
 
 function sameAnswer(a: AskAnswer, b: AskAnswer): boolean {

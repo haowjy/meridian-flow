@@ -489,6 +489,11 @@ resolved ask retires this device's attempt.
 - `openAsk(asks, turns)` is the ask that takes over the composer: open, on the
   chat's nearest assistant turn, and not being answered from this device. A
   failed attempt rides along so the takeover can offer Retry.
+- A `meridian.ask` frame also sets its asking turn's status (`askingTurnStatus`):
+  open makes it `awaiting_answer`, a resolution `complete` or `cancelled`. The
+  server's stream ends the asking run with a bare `RUN_FINISHED` and sends no
+  run frame for the resolution, so the ask frame is the live fact that agrees
+  with the snapshot.
 - `askReceipt(asks, turnId)` is the asking turn's receipt: the server's
   resolution, or this device's sending answer marked `pending`.
 - `answerAsk(ports, …)` is the one answer command. A Retry of the same answer

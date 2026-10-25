@@ -19,6 +19,7 @@ import {
   threadAskSchema,
 } from "@meridian/contracts/threads";
 import { WORK_CONTEXT_PROJECTION_EVENT } from "@meridian/contracts/works";
+import { askingTurnStatus } from "../asks/asks";
 import {
   eventH,
   nextBlockSequence,
@@ -941,8 +942,19 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
         }
         if (event.name === ASK_UPDATED_EVENT) {
           const parsed = threadAskSchema.safeParse(event.value);
-          if (parsed.success) store.receiveAsk(threadId, parsed.data);
-          else console.warn(`[live-turn] dropping malformed ${ASK_UPDATED_EVENT}`);
+          if (!parsed.success) {
+            console.warn(`[live-turn] dropping malformed ${ASK_UPDATED_EVENT}`);
+            return;
+          }
+          const ask = parsed.data;
+          store.receiveAsk(threadId, ask);
+          // The asking turn's status follows its ask, as the snapshot's does.
+          const next = askingTurnStatus(ask);
+          const turn = turnById(store, threadId, ask.turnId);
+          if (next && turn && turn.status !== next.status && next.from.includes(turn.status))
+            store.patchTurnStatus(threadId, turn.id, next.status, {
+              completedAt: turn.completedAt ?? now(),
+            });
           return;
         }
         // Failed turns the chat left behind: stamped, never removed, so the graph still chains through them.
