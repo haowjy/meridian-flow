@@ -9,6 +9,7 @@ import {
   createDrizzleContextStagedCreation,
   createMammothDocumentConverter,
   type DocumentArrivals,
+  discardDrizzleContextStage,
   type LinkAheadRegistry,
 } from "../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
@@ -121,10 +122,19 @@ export async function listOpenImports(db: Database, userId: string) {
   const repository = createDrizzleImportRepository(db);
   return queryOpenImports(repository, userId);
 }
-export function createImportObjectSweeper(db: Database, objects: ObjectStorePort) {
+export function createImportObjectSweeper(
+  db: Database,
+  objects: ObjectStorePort,
+  documents: CollabDomain,
+) {
   const repository = createDrizzleImportRepository(db);
   return async () => {
-    const result = await sweepImportObjects(repository, objects);
+    const result = await sweepImportObjects(repository, objects, {
+      staged: {
+        discardStaged: (stagingId, limit) =>
+          discardDrizzleContextStage(db, documents, stagingId, limit),
+      },
+    });
     if (result.failed.length)
       throw new AggregateError(
         result.failed.map((f) => f.cause),

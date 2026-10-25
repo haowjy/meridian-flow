@@ -50,7 +50,7 @@ async function createAppServices(): Promise<AppServices> {
       {
         name: "import-object-sweep",
         delayMs: WAKE_SWEEP_INTERVAL_MS,
-        run: createImportObjectSweeper(db, ports.objectStore),
+        run: createImportObjectSweeper(db, ports.objectStore, ports.documentSync),
       },
       {
         name: "import-organize",

@@ -305,34 +305,43 @@ export function createDrizzleContextStagedCreation(deps: {
     },
 
     async discardStaged(stagingId, limit) {
-      return runInDrizzleTransaction(db, async () => {
-        const tx = currentDrizzleDb(db);
-        for (const table of [contextStagedDocuments, contextStagedFolders]) {
-          await tx
-            .delete(table)
-            .where(
-              and(
-                eq(table.stagingId, stagingId),
-                limit === undefined
-                  ? undefined
-                  : inArray(
-                      table.id,
-                      tx
-                        .select({ id: table.id })
-                        .from(table)
-                        .where(eq(table.stagingId, stagingId))
-                        .orderBy(table.id)
-                        .limit(limit),
-                    ),
-              ),
-            );
-        }
-        const collab = await deps.documents.discardStagedStates(stagingId, limit);
-        const [remaining] =
-          await tx.execute(sql`select 1 from context_staged_folders where staging_id = ${stagingId}
-          union all select 1 from context_staged_documents where staging_id = ${stagingId} limit 1`);
-        return { remaining: collab.remaining || !!remaining };
-      });
+      return discardDrizzleContextStage(db, deps.documents, stagingId, limit);
     },
   };
+}
+
+export function discardDrizzleContextStage(
+  db: Database,
+  documents: Pick<MarkdownDocumentStore, "discardStagedStates">,
+  stagingId: string,
+  limit?: number,
+): Promise<{ remaining: boolean }> {
+  return runInDrizzleTransaction(db, async () => {
+    const tx = currentDrizzleDb(db);
+    for (const table of [contextStagedDocuments, contextStagedFolders]) {
+      await tx
+        .delete(table)
+        .where(
+          and(
+            eq(table.stagingId, stagingId),
+            limit === undefined
+              ? undefined
+              : inArray(
+                  table.id,
+                  tx
+                    .select({ id: table.id })
+                    .from(table)
+                    .where(eq(table.stagingId, stagingId))
+                    .orderBy(table.id)
+                    .limit(limit),
+                ),
+          ),
+        );
+    }
+    const collab = await documents.discardStagedStates(stagingId, limit);
+    const [remaining] =
+      await tx.execute(sql`select 1 from context_staged_folders where staging_id = ${stagingId}
+        union all select 1 from context_staged_documents where staging_id = ${stagingId} limit 1`);
+    return { remaining: collab.remaining || !!remaining };
+  });
 }

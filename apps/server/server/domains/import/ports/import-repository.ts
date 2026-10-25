@@ -86,7 +86,7 @@ export interface ImportRepository {
   transitionEntries(
     importId: string,
     from: ImportEntryState[],
-    patch: Pick<ImportEntryPatch, "state" | "reason">,
+    patch: Pick<ImportEntryPatch, "state"> & Partial<Pick<ImportEntryPatch, "reason">>,
     ids?: string[],
   ): Promise<void>;
   refreshCounts(id: string): Promise<ImportCounts>;

@@ -10,7 +10,10 @@ export interface ImportSweepResult {
 export async function sweepImportObjects(
   repository: ImportRepository,
   objects: ObjectStorePort,
-  input: { importId?: string } = {},
+  input: {
+    importId?: string;
+    staged?: { discardStaged(stagingId: string, limit?: number): Promise<{ remaining: boolean }> };
+  } = {},
 ): Promise<ImportSweepResult> {
   const now = await repository.now();
   const cutoffs = maintenanceCutoffs(now);
@@ -65,7 +68,9 @@ export async function sweepImportObjects(
           return [entry.receipt?.objectKey ?? null, entry.convertedKey].filter(
             (key) => key !== null,
           );
-        return entry.receipt && entry.state === "organized" && entry.receipt.facts.kind === "binary"
+        return entry.receipt &&
+          entry.state === "organized" &&
+          (entry.receipt.facts.kind === "binary" || entry.reason === "kept_as_file")
           ? [entry.receipt.objectKey]
           : [];
       }),
@@ -100,6 +105,10 @@ export async function sweepImportObjects(
       }
     }
     if (failed) continue;
+    if (record.state === "cancelled" && input.staged) {
+      const staged = await input.staged.discardStaged(record.id, 500);
+      if (staged.remaining) continue;
+    }
     await repository.transaction(async () => {
       const current = await repository.lock(record.id);
       if (!current || current.state !== record.state) return;

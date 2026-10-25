@@ -181,7 +181,10 @@ export { createDrizzleDocumentTrash } from "./tree/drizzle-document-trash.js";
 export { createHiddenNodeRepair, type HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 export { createDrizzleContextParentLocations } from "./tree/import-parent-locations.js";
 export { createDrizzleContextImportRead } from "./tree/import-read.js";
-export { createDrizzleContextStagedCreation } from "./tree/import-staging.js";
+export {
+  createDrizzleContextStagedCreation,
+  discardDrizzleContextStage,
+} from "./tree/import-staging.js";
 export {
   createDocumentRemoval,
   createRemovalRecords,

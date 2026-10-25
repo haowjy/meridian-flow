@@ -118,7 +118,6 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       });
       await deps.repository.transitionEntries(locked.id, ["prepared"], {
         state: "received",
-        reason: null,
       });
       return "reset" as const;
     });
@@ -278,7 +277,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         await deps.repository.transitionEntries(
           locked.id,
           ["received"],
-          { state: "prepared", reason: null },
+          { state: "prepared" },
           batch.map((node) => node.id),
         );
         const counts = await deps.repository.refreshCounts(locked.id);
@@ -345,7 +344,6 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         const now = await deps.repository.now();
         await deps.repository.transitionEntries(locked.id, ["prepared"], {
           state: "organized",
-          reason: null,
         });
         const counts = await deps.repository.refreshCounts(locked.id);
         await deps.repository.update(locked.id, {
