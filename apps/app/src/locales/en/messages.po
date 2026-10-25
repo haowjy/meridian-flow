@@ -926,6 +926,7 @@ msgstr "auto-selected"
 msgid "Back"
 msgstr "Back"
 
+#. placeholder {0}: choosing.label
 #. placeholder {0}: folder.title ?? folder.name
 #: src/components/app/DrillInMenu.tsx
 msgid "Back from {0}"
@@ -1143,6 +1144,11 @@ msgstr "Centered"
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Change"
 msgstr "Change"
+
+#. placeholder {0}: folder.name
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Change position in {0}"
+msgstr "Change position in {0}"
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
 msgid "Change reference"
@@ -3058,6 +3064,15 @@ msgstr "More composer controls"
 msgid "Move {name}"
 msgstr "Move {name}"
 
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move after {sibling}"
+msgstr "Move after {sibling}"
+
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+msgid "Move before {sibling}"
+msgstr "Move before {sibling}"
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Move column left"
 msgstr "Move column left"
@@ -3091,9 +3106,17 @@ msgstr "Move to {0}"
 msgid "Move to {destinationName}"
 msgstr "Move to {destinationName}"
 
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move to the bottom of {folderName}"
+msgstr "Move to the bottom of {folderName}"
+
 #: src/features/chat/UserTurn.tsx
 msgid "Move to the message box"
 msgstr "Move to the message box"
+
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move to the top of {folderName}"
+msgstr "Move to the top of {folderName}"
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move up"
@@ -3137,11 +3160,6 @@ msgstr "Moved or deleted after this change"
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Moved since"
 msgstr "Moved since"
-
-#. placeholder {0}: folder ?? ""
-#: src/features/project/context/LinkUpdateNote.tsx
-#~ msgid "Moved to {0}"
-#~ msgstr "Moved to {0}"
 
 #. placeholder {0}: documentLocationName(landing.landedAt, names)
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -3927,10 +3945,6 @@ msgstr "Resize {0}"
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize right rail"
 msgstr "Resize right rail"
-
-#: src/features/project/chat/ChatScratch.tsx
-#~ msgid "Resize Scratch"
-#~ msgstr "Resize Scratch"
 
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize sidebar"

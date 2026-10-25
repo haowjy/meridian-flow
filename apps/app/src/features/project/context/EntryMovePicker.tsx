@@ -1,8 +1,18 @@
 /** Row-anchored folder placement using the same project tree as document paths. */
 import { t } from "@lingui/core/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type {
+  ContextSiblingPosition,
+  ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import type { ResourceDestination } from "@meridian/resource-replica";
-import { FolderInput } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowDownUp,
+  ArrowUpToLine,
+  CornerDownRight,
+  FolderInput,
+  type LucideIcon,
+} from "lucide-react";
 import { type ReactNode, type RefObject, useMemo, useRef, useState } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import type { TabOwner } from "@/client/stores";
@@ -85,10 +95,58 @@ function OpenMovePicker({
     return into ? moveRefusal(view, ref, into, position) : null;
   };
 
-  async function move(trail: readonly DrillNode[]) {
+  /**
+   * Every other place among its own siblings, in the parent's complete order
+   * (not what a search shows): the top, after each sibling, the bottom. The
+   * place it already holds is not offered.
+   */
+  function positionChoices(folderName: string) {
+    const parent = parentOf(view, ref);
+    if (!parent) return [];
+    const siblings = view.placement.childrenAt(parent, view.records);
+    const at = siblings.findIndex((sibling) => sibling.entryId === entry.id);
+    if (at < 0) return [];
+    const others = siblings.filter((sibling) => sibling.entryId !== entry.id);
+    const choices: {
+      key: string;
+      icon: LucideIcon;
+      label: string;
+      position: ContextSiblingPosition;
+    }[] = [];
+    if (at > 0)
+      choices.push({
+        key: "start",
+        icon: ArrowUpToLine,
+        label: t`Move to the top of ${folderName}`,
+        position: { kind: "start" },
+      });
+    others.forEach((other, index) => {
+      // After the row just above it is where it already is.
+      if (index === at - 1) return;
+      const sibling = other.name;
+      choices.push(
+        index === others.length - 1
+          ? {
+              key: "end",
+              icon: ArrowDownToLine,
+              label: t`Move to the bottom of ${folderName}`,
+              position: { kind: "end" },
+            }
+          : {
+              key: `after:${other.entryId}`,
+              icon: CornerDownRight,
+              label: t`Move after ${sibling}`,
+              position: { kind: "after", siblingId: other.entryId },
+            },
+      );
+    });
+    return choices;
+  }
+
+  async function move(trail: readonly DrillNode[], chosen?: ContextSiblingPosition) {
     const folder = trail.at(-1);
     const destination = folder && source.folderFor(folder.id);
-    if (!destination || pending || refusalAt(destination)) return;
+    if (!destination || pending || (!chosen && refusalAt(destination))) return;
     setPending(true);
     setError(null);
     try {
@@ -96,7 +154,8 @@ function OpenMovePicker({
       const before = parentOf(view, ref);
       if (!after || !before) throw new Error(unavailable);
       const position =
-        repairMove && sameParent(repairMove.parent, after) ? repairMove.position : undefined;
+        chosen ??
+        (repairMove && sameParent(repairMove.parent, after) ? repairMove.position : undefined);
       const result = await moveRows(
         [
           {
@@ -153,6 +212,24 @@ function OpenMovePicker({
         const blocked = destination ? refusalAt(destination) : "inside-itself";
         if (blocked === "inside-itself") return [];
         const already = blocked === "already-there";
+        const positions = already ? positionChoices(folder.name) : [];
+        if (positions.length > 0)
+          return [
+            {
+              key: "position",
+              icon: ArrowDownUp,
+              label: t`Change position in ${folder.name}`,
+              disabled: pending,
+              onSelect: () => undefined,
+              choices: positions.map((choice) => ({
+                ...choice,
+                disabled: pending,
+                onSelect: () => {
+                  void move(trail, choice.position);
+                },
+              })),
+            },
+          ];
         const after = destination && !already && destinationParent(destination, works, noWork);
         const renamed = after
           ? renamesOnArrival([{ entry: ref, name: entry.name, typed: name, after }], view)
