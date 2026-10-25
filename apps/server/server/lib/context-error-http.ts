@@ -1,37 +1,50 @@
 /** Canonical translation from context-domain failures to HTTP errors. */
 
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
-import { createError } from "nitro/h3";
 import type { ContextError } from "../domains/context/index.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 
 export function contextErrorToHttp(error: ContextError): never {
   switch (error.code) {
     case "operation_mismatch":
-      throw createError({
-        statusCode: 409,
-        message: "Operation ID already names a different command",
-      });
+      return throwHttpInterrupt(
+        meridianErrorFromSystem(
+          "operation_mismatch",
+          "Operation ID already names a different command",
+          false,
+        ),
+        409,
+      );
     case "invalid_uri":
-      throw createError({ statusCode: 400, message: error.reason });
+      return throwHttpInterrupt(meridianErrorFromSystem("invalid_uri", error.reason, false), 400);
     case "permission_denied":
-      throw createError({ statusCode: 403, message: "Context access denied" });
+      return throwHttpInterrupt(
+        meridianErrorFromSystem("permission_denied", "Context access denied", false),
+        403,
+      );
     case "conflict":
-      throw createError({
-        statusCode: 409,
-        message: "Context path conflict",
-        data: { occupantKind: error.occupantKind },
-      });
+      return throwHttpInterrupt(
+        {
+          ...meridianErrorFromSystem("conflict", "Context path conflict", false),
+          details: error.occupantKind ? { occupantKind: error.occupantKind } : {},
+        },
+        409,
+      );
     case "stale_source":
-      throw createError({
-        statusCode: 409,
-        message: "Context location changed; retry the operation",
-      });
+      return throwHttpInterrupt(
+        meridianErrorFromSystem(
+          "stale_source",
+          "Context location changed; retry the operation",
+          true,
+        ),
+        409,
+      );
     case "destination_missing":
       return throwHttpInterrupt(
         meridianErrorFromSystem(
           "destination_missing",
           "The destination folder is no longer available.",
+          false,
         ),
         409,
       );
@@ -46,13 +59,19 @@ export function contextErrorToHttp(error: ContextError): never {
       );
     case "invalid_name":
     case "invalid_operation":
-      throw createError({ statusCode: 400, message: error.message ?? "Invalid context operation" });
+      return throwHttpInterrupt(
+        meridianErrorFromSystem(error.code, error.message ?? "Invalid context operation", false),
+        400,
+      );
     case "not_found":
-      throw createError({ statusCode: 404, message: "Context path not found" });
+      return throwHttpInterrupt(
+        meridianErrorFromSystem("not_found", "Context path not found", false),
+        404,
+      );
     case "context_unavailable":
       return throwContextWorkUnavailableHttpError(error.reason);
     case "io_error":
-      throw createError({ statusCode: 502, message: error.message });
+      return throwHttpInterrupt(meridianErrorFromSystem("io_error", error.message, true), 502);
   }
 }
 
@@ -64,6 +83,7 @@ export function throwContextWorkUnavailableHttpError(
     meridianErrorFromSystem(
       reason,
       reason === "work_archived" ? "This Work is archived and read-only." : "Work not found.",
+      false,
     ),
     reason === "work_archived" ? 403 : 404,
   );

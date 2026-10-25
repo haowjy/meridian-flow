@@ -1,8 +1,9 @@
 # Row selection and drag
 
 Named risks: a drop moves rows into the wrong catalog or folder, a folder lands
-inside its own subtree, Undo leaves rows stranded, or a drop target stays lit
-after the drag ends. This recipe is not a current pass claim.
+inside its own subtree, Undo leaves rows stranded, a drop target stays lit
+after the drag ends, or a refused move or delete retries every 30s with the row
+stuck at the destination and no error. This recipe is not a current pass claim.
 
 ## Setup
 
@@ -63,6 +64,78 @@ browser reports no fine pointer, so rows render at touch height.
    inserted (mention drops aren't built yet; no stray names as text).
 9. After every drag, check that no region stays lit
    (`document.querySelectorAll('div[aria-hidden].-z-10').length === 0`).
+
+## Refused moves and deletes
+
+Named risk: a deterministic 400 from move or delete used to stay `submitted` and
+POST again every 30s. The row sat at the destination with "Moved …" and no mark.
+
+The app no longer sends a payload the server refuses, so rewrite the first
+matching request in the page (`window.fetch`). Leave later POSTs unrewritten so
+a resend would show as a second request.
+
+- **Move:** on the first `POST …/context/manuscript/move`, parse the JSON body
+  and set `destinationWorkId` to any UUID. The server answers 400
+  "`destinationWorkId` is not valid for manuscript" as
+  `{kind:"error", error:{code:"bad_request", retryable:false, …}}`.
+- **Delete:** on the first `POST …/context/<scheme>/delete`, drop `expected`.
+  The server answers 400 "expected target is required" with the same envelope.
+
+One-shot move rewrite (swap the `if` for delete and `delete body.expected`):
+
+```js
+(() => {
+  const o = window.fetch;
+  let used = false;
+  window.fetch = async function (u, i) {
+    const url = String((u && u.url) || u);
+    if (
+      !used &&
+      url.includes("/context/manuscript/move") &&
+      i &&
+      i.method === "POST" &&
+      typeof i.body === "string"
+    ) {
+      used = true;
+      const body = JSON.parse(i.body);
+      body.destinationWorkId = "11111111-1111-4111-8111-111111111111";
+      return o.call(this, u, { ...i, body: JSON.stringify(body) });
+    }
+    return o.apply(this, arguments);
+  };
+})();
+```
+
+1. Drag a Manuscript row into another folder with the move rewrite on. The row
+   first shows at the destination, then returns to its source with the warning
+   mark ("Couldn't move this entry. Try again."). The rail reads "Couldn't
+   move <name>." with Dismiss and no Undo. Exactly one POST. After 35s and
+   after a reload, still one POST. In IndexedDB
+   (`meridian:resource-metadata:v4:<accountId>`, store `intents`) that intent is
+   `needs-repair` with a refusal outcome, not `submitted`.
+2. The same from the row's `…` menu, Move….
+3. Multi-row drag with only the first request rewritten: the rail reads
+   "Moved a to X. Couldn't move b." with Undo. Undo puts the moved row back.
+   The refused row stays at its source with the mark.
+4. Refused delete: the row comes back with "Couldn't delete this document.
+   Try again." (folder: "Couldn't delete this folder. Try again."). Exactly one
+   POST; no resend.
+5. Control: an un-rewritten move and delete still succeed. Move shows
+   "Moved …" with Undo; Undo works. Delete shows "Deleted …" with Undo and no
+   mark.
+6. Hover or focus the mark: `title` and `aria-label` are the mark copy above.
+   No console errors beyond the expected 400s.
+7. Successful move, then install the rewrite so it catches the reverse POST,
+   then Undo: the notice hides at once. The row returns to the destination with
+   the mark. The rail reads "Couldn't move <name> back." with Dismiss and no
+   Undo. Exactly one POST; after 35s still one.
+8. Undo without a rewrite: the notice stays gone after 40s.
+9. After Undo, another move or delete on that surface before the reverse
+   settles (hold the reverse response, then refuse it): the newer notice stays;
+   "Couldn't move <name> back." does not replace it.
+10. Two-row move, Undo with only the first reverse rewritten: "Couldn't move
+    <name> back." The accepted reverse goes home; the refused row stays at the
+    destination with the mark.
 
 ## Scratch and Work Files
 
