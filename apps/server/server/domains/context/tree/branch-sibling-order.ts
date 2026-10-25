@@ -553,11 +553,22 @@ export async function syncBranchSiblingFacts(
         )[0]?.sourceId
       : sourceId;
     if (resolvedSource) {
-      affected.push(parentOf(resolvedSource, folderId));
+      const parent = parentOf(resolvedSource, folderId);
+      affected.push(parent);
+      const policy = await parentPolicy(db, input.branchId, parent);
+      if (policy.policy === "default") {
+        await materializeOrder(
+          db,
+          input.branchId,
+          parent,
+          await siblings(db, input.branchId, parent),
+          "default",
+        );
+      }
       await setRank(
         db,
         input.branchId,
-        parentOf(resolvedSource, folderId),
+        parent,
         { kind: "document", id: input.documentId },
         moved.rank,
       );
