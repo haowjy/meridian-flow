@@ -18,13 +18,15 @@ export type ReferenceDropEntry = Readonly<{
 
 export type ReferenceDropVerdict =
   | { kind: "accept"; label: string }
-  | { kind: "refuse"; label: string };
+  | { kind: "refuse"; reason: ReferenceDropRefusalReason; label: string };
+
+export type ReferenceDropRefusalReason = "unavailable" | "invalid-landing";
 
 export type ReferenceDropOptions = {
   activeDrag: () => readonly ReferenceDropEntry[] | null;
   /** Resolves identities through the host's live `@` catalog and builds its exact node shape. */
   content: (schema: Schema, entries: readonly ReferenceDropEntry[]) => readonly PMNode[] | null;
-  label: (kind: "accept" | "unavailable" | "invalid-landing") => string;
+  label: (kind: "accept" | ReferenceDropRefusalReason) => string;
   showHint: (
     owner: string,
     verdict: ReferenceDropVerdict,
@@ -45,7 +47,9 @@ export function draggingMeridianEntries(event: Pick<DragEvent, "dataTransfer">):
 }
 
 type AcceptedPlan = { kind: "accept"; label: string; pos: number; content: Fragment };
-type PreparedPlan = AcceptedPlan | { kind: "refuse"; label: string };
+type PreparedPlan =
+  | AcceptedPlan
+  | { kind: "refuse"; reason: ReferenceDropRefusalReason; label: string };
 
 function basicWordCharacter(value: string): boolean {
   return /[\p{L}\p{M}\p{N}_]/u.test(value);
@@ -65,6 +69,67 @@ function wordCharacterAt(view: EditorView, pos: number, start: number, end: numb
     basicWordCharacter(characterAt(view, pos - 1)) &&
     basicWordCharacter(characterAt(view, pos + 1))
   );
+}
+
+function identityLink(node: PMNode) {
+  return node.marks.find((mark) => mark.type.name === "link" && mark.attrs.ref !== null);
+}
+
+function snapOutsideIdentityLink(view: EditorView, pos: number): number {
+  const $pos = view.state.doc.resolve(pos);
+  if (!$pos.parent.isTextblock) return pos;
+  const start = pos - $pos.parentOffset;
+  let runStart = 0;
+  let runEnd = 0;
+  let runLink: ReturnType<typeof identityLink>;
+  let landingSpan: { start: number; end: number } | null = null;
+  $pos.parent.forEach((node, offset) => {
+    const link = identityLink(node);
+    if (link && runLink?.eq(link) && offset === runEnd) {
+      runEnd += node.nodeSize;
+      return;
+    }
+    if (runLink && $pos.parentOffset > runStart && $pos.parentOffset < runEnd)
+      landingSpan = { start: runStart, end: runEnd };
+    runLink = link;
+    runStart = offset;
+    runEnd = offset + node.nodeSize;
+  });
+  if (runLink && $pos.parentOffset > runStart && $pos.parentOffset < runEnd)
+    landingSpan = { start: runStart, end: runEnd };
+  return landingSpan
+    ? pos - (start + landingSpan.start) <= start + landingSpan.end - pos
+      ? start + landingSpan.start
+      : start + landingSpan.end
+    : pos;
+}
+
+function snapOutsideAtom(
+  view: EditorView,
+  pos: number,
+  point: { clientX: number; clientY: number },
+): number {
+  const $pos = view.state.doc.resolve(pos);
+  if (!$pos.parent.isTextblock) return pos;
+  const candidates = [
+    { node: $pos.nodeAfter, start: pos },
+    { node: $pos.nodeBefore, start: pos - ($pos.nodeBefore?.nodeSize ?? 0) },
+  ];
+  for (const { node, start } of candidates) {
+    if (!node?.isInline || !node.isAtom || node.isText) continue;
+    const dom = view.nodeDOM(start);
+    if (!(dom instanceof Element)) continue;
+    const bounds = dom.getBoundingClientRect();
+    if (
+      point.clientX < bounds.left ||
+      point.clientX > bounds.right ||
+      point.clientY < bounds.top ||
+      point.clientY > bounds.bottom
+    )
+      continue;
+    return point.clientX <= (bounds.left + bounds.right) / 2 ? start : start + node.nodeSize;
+  }
+  return pos;
 }
 
 /** A pointer inside a word chooses the nearer edge; punctuation and whitespace keep their position. */
@@ -95,7 +160,8 @@ function landingAt(view: EditorView, event: DragEvent): number | null {
       ? decision.pos
       : view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
   if (raw === undefined) return null;
-  const pos = snapToWordEdge(view, raw);
+  const outsideReference = snapOutsideIdentityLink(view, snapOutsideAtom(view, raw, event));
+  const pos = snapToWordEdge(view, outsideReference);
   const $pos = view.state.doc.resolve(pos);
   return $pos.parent.isTextblock && !$pos.parent.type.spec.code ? pos : null;
 }
@@ -120,17 +186,21 @@ function spacedContent(view: EditorView, pos: number, nodes: readonly PMNode[]):
 }
 
 function prepare(view: EditorView, event: DragEvent, options: ReferenceDropOptions): PreparedPlan {
+  const refuse = (reason: ReferenceDropRefusalReason): PreparedPlan => ({
+    kind: "refuse",
+    reason,
+    label: options.label(reason),
+  });
   const entries = options.activeDrag();
-  if (!entries?.length) return { kind: "refuse", label: options.label("unavailable") };
+  if (!entries?.length) return refuse("unavailable");
   const nodes = options.content(view.state.schema, entries);
-  if (!nodes || nodes.length !== entries.length)
-    return { kind: "refuse", label: options.label("unavailable") };
+  if (!nodes || nodes.length !== entries.length) return refuse("unavailable");
   const pos = landingAt(view, event);
-  if (pos === null) return { kind: "refuse", label: options.label("invalid-landing") };
+  if (pos === null) return refuse("invalid-landing");
   const content = spacedContent(view, pos, nodes);
   return content
     ? { kind: "accept", label: options.label("accept"), pos, content }
-    : { kind: "refuse", label: options.label("invalid-landing") };
+    : refuse("invalid-landing");
 }
 
 function referenceDropPlugin(options: ReferenceDropOptions): Plugin {
@@ -144,7 +214,7 @@ function referenceDropPlugin(options: ReferenceDropOptions): Plugin {
       return null;
     }
     const plan = prepare(view, event, options);
-    options.showHint(owner, { kind: plan.kind, label: plan.label }, event);
+    options.showHint(owner, plan, event);
     preparedEvents.set(event, plan);
     return plan;
   };
@@ -171,6 +241,7 @@ function referenceDropPlugin(options: ReferenceDropOptions): Plugin {
         transaction.setMeta("uiEvent", "drop");
         view.dispatch(transaction.scrollIntoView());
         yUndoPluginKey.getState(view.state)?.undoManager.stopCapturing();
+        view.dispatch(closeHistory(view.state.tr));
         view.focus();
         return true;
       },
