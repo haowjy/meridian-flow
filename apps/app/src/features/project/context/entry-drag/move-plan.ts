@@ -314,49 +314,96 @@ function planPositioned(
  * that left and came back from one that never left; both return.)
  */
 export function planUndo(view: PlacementView, effects: readonly MoveEffect[]) {
-  const planned = new Set<string>();
-  return effects.flatMap((effect) => {
+  const eligible = effects.filter((effect) => {
     const now = placeEntryRef(view, effect.entry);
-    if (
-      !now ||
-      now.name !== effect.name ||
-      !sameParent(now.parent, effect.after) ||
-      !placementIsFresh(view, effect)
-    )
-      return [];
-    const row = {
+    if (!now) return false;
+    return (
+      now.name === effect.name &&
+      sameParent(now.parent, effect.after) &&
+      placementIsFresh(view, effect)
+    );
+  });
+  const groups: MoveEffect[][] = [];
+  for (const effect of eligible) {
+    const group = groups.find((candidate) => {
+      const first = candidate[0];
+      return first ? sameParent(first.before, effect.before) : false;
+    });
+    if (group) group.push(effect);
+    else groups.push([effect]);
+  }
+  return groups.flatMap((group) => planUndoGroup(view, group));
+}
+
+function planUndoGroup(view: PlacementView, effects: readonly MoveEffect[]): MoveRow[] {
+  const first = effects[0];
+  if (!first) return [];
+  const pending = [...effects];
+  const moving = new Set(pending.map((effect) => effect.entry.id));
+  const working = view.placement
+    .childrenAt(first.before, view.records)
+    .map((entry) => entry.entryId)
+    .filter((entryId) => !moving.has(entryId));
+  const rows: MoveRow[] = [];
+  while (pending.length > 0) {
+    const index = restorationCandidate(pending, working);
+    const [effect] = pending.splice(index, 1);
+    if (!effect) break;
+    const position = restorationPosition(effect, working);
+    insertWorking(working, effect.entry.id, position);
+    rows.push({
       entry: effect.entry,
       name: effect.previousName,
       before: effect.after,
       after: effect.before,
-      position: restorePosition(view, effect, planned),
-    };
-    planned.add(effect.entry.id);
-    return [row];
-  });
+      position,
+    });
+  }
+  return rows;
 }
 
-function restorePosition(
-  view: PlacementView,
+function restorationCandidate(effects: readonly MoveEffect[], working: readonly string[]): number {
+  const anchoredAfter = effects.findIndex(
+    (effect) =>
+      effect.previousPosition.afterId && working.includes(effect.previousPosition.afterId),
+  );
+  if (anchoredAfter >= 0) return anchoredAfter;
+  const anchoredBefore = effects.findIndex(
+    (effect) =>
+      effect.previousPosition.beforeId && working.includes(effect.previousPosition.beforeId),
+  );
+  if (anchoredBefore >= 0) return anchoredBefore;
+  const start = effects.findIndex(
+    (effect) => !effect.previousPosition.afterId && Boolean(effect.previousPosition.beforeId),
+  );
+  if (start >= 0) return start;
+  const end = effects.findIndex((effect) => !effect.previousPosition.beforeId);
+  return end >= 0 ? end : 0;
+}
+
+function restorationPosition(
   effect: MoveEffect,
-  planned: ReadonlySet<string>,
+  working: readonly string[],
 ): ContextSiblingPosition {
-  const siblings = view.placement
-    .childrenAt(effect.before, view.records)
-    .filter((entry) => entry.entryId !== effect.entry.id);
-  if (
-    effect.previousPosition.beforeId &&
-    (planned.has(effect.previousPosition.beforeId) ||
-      siblings.some((entry) => entry.entryId === effect.previousPosition.beforeId))
-  )
-    return { kind: "before", siblingId: effect.previousPosition.beforeId };
-  if (
-    effect.previousPosition.afterId &&
-    (planned.has(effect.previousPosition.afterId) ||
-      siblings.some((entry) => entry.entryId === effect.previousPosition.afterId))
-  )
-    return { kind: "after", siblingId: effect.previousPosition.afterId };
-  return effect.previousPosition.beforeId ? { kind: "start" } : { kind: "end" };
+  const { beforeId, afterId } = effect.previousPosition;
+  if (afterId && working.includes(afterId)) return { kind: "after", siblingId: afterId };
+  if (beforeId && working.includes(beforeId)) return { kind: "before", siblingId: beforeId };
+  if (!afterId && beforeId) return { kind: "start" };
+  return { kind: "end" };
+}
+
+function insertWorking(working: string[], entryId: string, position: ContextSiblingPosition): void {
+  if (position.kind === "start") {
+    working.unshift(entryId);
+    return;
+  }
+  if (position.kind === "end") {
+    working.push(entryId);
+    return;
+  }
+  if (!("siblingId" in position)) return;
+  const anchor = working.indexOf(position.siblingId);
+  working.splice(position.kind === "before" ? anchor : anchor + 1, 0, entryId);
 }
 
 function placementIsFresh(view: PlacementView, effect: MoveEffect): boolean {
