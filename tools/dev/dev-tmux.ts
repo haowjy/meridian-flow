@@ -12,8 +12,8 @@ import { assertDevInfraReady } from "./lib/dev-infra";
 import { releaseFixedPorts } from "./lib/port-lifecycle";
 import { prunePortlessRoutes } from "./lib/portless-maintenance";
 import { pidBelongsToCheckout, processWorkingDirectory } from "./lib/route-ownership";
-import { collectOrphanDevSessions, stopOrphanDevSessions } from "./lib/worktree-cleanup-orphans";
 import { TailscaleDevLifecycle } from "./lib/tailscale-lifecycle";
+import { collectOrphanDevSessions, stopOrphanDevSessions } from "./lib/worktree-cleanup-orphans";
 import { resolveCheckoutPortlessPrefix } from "./portless-prefix";
 import {
   type ExternalDevRoute,
