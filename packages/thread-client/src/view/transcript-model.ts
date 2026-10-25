@@ -27,6 +27,7 @@ export type DeliveryEvent = {
   childThreadId?: string;
   agentName?: string;
   title?: string;
+  sender?: { threadId: string; ref: string | null; title: string | null };
   subagentUpdate: CompletionFact["update"] | null;
 };
 
@@ -40,6 +41,7 @@ function internDeliveryEvent(event: DeliveryEvent): DeliveryEvent {
     childThreadId: "value",
     agentName: "value",
     title: "value",
+    sender: "json",
     subagentUpdate: "json",
   } satisfies Record<keyof DeliveryEvent, "reference" | "value" | "json">;
   const equal =
@@ -81,6 +83,7 @@ export type InheritedMark = {
  */
 export type TranscriptRow =
   | { kind: "turn"; turn: Turn; inherited: InheritedMark | null }
+  | { kind: "delivery"; turn: Turn; event: DeliveryEvent; inherited: InheritedMark | null }
   | { kind: "compaction"; turn: Turn; inherited: InheritedMark | null }
   /** A write-mode switch: the line where the chat's mode changed. It ends a reply. */
   | { kind: "write-mode"; turn: Turn; inherited: InheritedMark | null }
@@ -114,6 +117,20 @@ export function classifyTurn(turn: Turn): TurnClass {
     return "context";
   if (turn.role === "user") return "bubble";
   return turn.blocks.some((block) => block.blockType === "custom") ? "bubble" : "plumbing";
+}
+
+function inboxMessageSender(
+  turn: Turn,
+): { threadId: string; ref: string | null; title: string | null } | null {
+  const metadata = turn.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const sender = metadata.sender;
+  if (!sender || typeof sender !== "object" || Array.isArray(sender)) return null;
+  return typeof sender.threadId === "string" &&
+    (typeof sender.ref === "string" || sender.ref === null) &&
+    (typeof sender.title === "string" || sender.title === null)
+    ? { threadId: sender.threadId, ref: sender.ref, title: sender.title }
+    : null;
 }
 
 /**
@@ -155,7 +172,7 @@ export function deliveriesUnder(
     seen.add(next.id);
     onVisit(next);
     if (rowOf(next, nextByPrev.get(next.id))) break;
-    if (classifyTurn(next) === "delivery" && next.role === "system") delivered.push(next);
+    if (classifyTurn(next) === "delivery") delivered.push(next);
     next = nextByPrev.get(next.id);
   }
   return delivered;
@@ -181,33 +198,6 @@ export function buildTranscriptModel(
   const turns = inherited?.turns.length ? [...inherited.turns, ...localTurns] : localTurns;
   const nextByPrev = new Map<string, Turn>();
   for (const turn of turns) if (turn.prevTurnId) nextByPrev.set(turn.prevTurnId, turn);
-  const rows: TranscriptRow[] = [];
-  const movedPast = chatMovedPast(turns);
-  let latestSeedIndex = -1;
-  turns.forEach((turn, index) => {
-    const shape = rowOf(turn, nextByPrev.get(turn.id) ?? turns[index + 1]);
-    if (!shape) return;
-    const owner = inherited?.ownerByTurnId.get(turn.id) ?? null;
-    const mark: InheritedMark | null = owner
-      ? { ownerThreadId: owner, startsOwner: false, endsInherited: false }
-      : null;
-    if (shape.kind === "thread-reference") {
-      rows.push({ kind: "thread-reference", turn, references: shape.references, inherited: mark });
-    } else if (shape.kind === "handoff-seed") {
-      if (!mark) latestSeedIndex = rows.length;
-      rows.push({ kind: "handoff-seed", turn, latest: false, inherited: mark });
-    } else {
-      rows.push({ kind: shape.kind, turn, inherited: mark });
-    }
-  });
-  // A seed is `latest` while it is the newest local seed and the chat has not moved past it: once it has,
-  // its failure and Retry end.
-  const latestSeed = rows[latestSeedIndex];
-  if (latestSeed?.kind === "handoff-seed" && !movedPast(latestSeed.turn))
-    rows[latestSeedIndex] = { ...latestSeed, latest: true };
-  markInheritedRuns(rows);
-  // Index-aligned with `rows`: response grouping and reveal landing read turns.
-  const visibleTurns = rows.map((row) => row.turn);
   const subagentUpdateByTurnId = new Map<string, CompletionFact["update"]>();
   const invocationByExecution = new Map<
     string,
@@ -225,6 +215,69 @@ export function buildTranscriptModel(
           ...(card.title ? { title: card.title } : {}),
         });
   }
+  const deliveryEventFor = (turn: Turn): DeliveryEvent => {
+    const update = subagentUpdateByTurnId.get(turn.id) ?? null;
+    const invocation = update?.execution ? invocationByExecution.get(update.execution) : undefined;
+    const childThreadId = update?.childThreadId ?? invocation?.threadId;
+    const sender = inboxMessageSender(turn);
+    return internDeliveryEvent({
+      turn,
+      message: turn.blocks
+        .filter((block) => block.blockType === "text")
+        .map((block) => block.textContent ?? "")
+        .join(""),
+      subagentUpdate: update,
+      ...(childThreadId ? { childThreadId } : {}),
+      ...(update?.agentName || invocation?.agentName
+        ? { agentName: update?.agentName ?? invocation?.agentName }
+        : {}),
+      ...(invocation?.title ? { title: invocation.title } : {}),
+      ...(sender ? { sender } : {}),
+    });
+  };
+  const groupedDeliveryIds = new Set(
+    turns.flatMap((turn) =>
+      turn.role === "assistant"
+        ? deliveriesUnder(turn, nextByPrev).map((delivery) => delivery.id)
+        : [],
+    ),
+  );
+  const rows: TranscriptRow[] = [];
+  const movedPast = chatMovedPast(turns);
+  let latestSeedIndex = -1;
+  turns.forEach((turn, index) => {
+    const shape = rowOf(turn, nextByPrev.get(turn.id) ?? turns[index + 1]);
+    const owner = inherited?.ownerByTurnId.get(turn.id) ?? null;
+    const mark: InheritedMark | null = owner
+      ? { ownerThreadId: owner, startsOwner: false, endsInherited: false }
+      : null;
+    if (!shape) {
+      if (
+        turn.role === "user" &&
+        classifyTurn(turn) === "delivery" &&
+        inboxMessageSender(turn) !== null &&
+        !groupedDeliveryIds.has(turn.id)
+      )
+        rows.push({ kind: "delivery", turn, event: deliveryEventFor(turn), inherited: mark });
+      return;
+    }
+    if (shape.kind === "thread-reference") {
+      rows.push({ kind: "thread-reference", turn, references: shape.references, inherited: mark });
+    } else if (shape.kind === "handoff-seed") {
+      if (!mark) latestSeedIndex = rows.length;
+      rows.push({ kind: "handoff-seed", turn, latest: false, inherited: mark });
+    } else {
+      rows.push({ kind: shape.kind, turn, inherited: mark });
+    }
+  });
+  // A seed is `latest` while it is the newest local seed and the chat has not moved past it: once it has,
+  // its failure and Retry end.
+  const latestSeed = rows[latestSeedIndex];
+  if (latestSeed?.kind === "handoff-seed" && !movedPast(latestSeed.turn))
+    rows[latestSeedIndex] = { ...latestSeed, latest: true };
+  markInheritedRuns(rows);
+  // Index-aligned with `rows`: response grouping and reveal landing read turns.
+  const visibleTurns = rows.map((row) => row.turn);
 
   const deliveryEventsByAssistantTurnId = new Map<string, DeliveryEvent[]>();
   const latestRevealTurnByChildThreadId = new Map<string, string>();
@@ -232,26 +285,9 @@ export function buildTranscriptModel(
     if (turn.role !== "assistant") continue;
     const events: DeliveryEvent[] = [];
     for (const next of deliveriesUnder(turn, nextByPrev)) {
-      const update = subagentUpdateByTurnId.get(next.id) ?? null;
-      const invocation = update?.execution
-        ? invocationByExecution.get(update.execution)
-        : undefined;
-      const childThreadId = update?.childThreadId ?? invocation?.threadId;
-      events.push(
-        internDeliveryEvent({
-          turn: next,
-          message: next.blocks
-            .filter((block) => block.blockType === "text")
-            .map((block) => block.textContent ?? "")
-            .join(""),
-          subagentUpdate: update,
-          ...(childThreadId ? { childThreadId } : {}),
-          ...(update?.agentName || invocation?.agentName
-            ? { agentName: update?.agentName ?? invocation?.agentName }
-            : {}),
-          ...(invocation?.title ? { title: invocation.title } : {}),
-        }),
-      );
+      const event = deliveryEventFor(next);
+      events.push(event);
+      const childThreadId = event.childThreadId;
       if (childThreadId) latestRevealTurnByChildThreadId.set(childThreadId, turn.id);
     }
     if (events.length) deliveryEventsByAssistantTurnId.set(turn.id, events);
@@ -312,9 +348,9 @@ function responseGroups(rows: readonly TranscriptRow[], awaitingSubagents: boole
       // A divider inside a reply (autocompaction mid-task) does not end it.
       case "compaction":
         continue;
-      // A switch ends the reply before it, even when the message between the two
-      // was stamped a steer: the next reply answers in the new mode.
+      // A divider or standalone directed message ends the reply before it.
       case "handoff-seed":
+      case "delivery":
       case "thread-reference":
       case "write-mode":
         // The divider ends continuation too: the reply before it is finished.

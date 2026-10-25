@@ -49,7 +49,9 @@ finished; direct cards retain launch, live edge, and expandable result.
 one surface for that run. Child completion is a structured
 `subagent_update` transcript event correlated by execution ID; render it as a
 quiet row at its causal position and never infer it from notice text. Machine
-deliveries (`inbox_message`) use the same row chrome with the message text;
+deliveries (`inbox_message`) use the same row chrome with the sending chat's
+title/handle and message text. They group under the preceding assistant row;
+when none exists, the delivery has its own row so it never disappears;
 writer sends never become delivery rows and stay bubbles. A mid-run adopted
 writer turn is stamped `metadata.delivery: "steer"`, and response grouping reads
 that fact rather than comparing client and server times. Only the

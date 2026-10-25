@@ -387,6 +387,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       provenance: {
         kind: "agent",
         threadId: request.parentThread.id as ThreadId,
+        sender: { ref: request.parentThread.ref, title: request.parentThread.title },
         ...(notifiesCaller
           ? { notify: { turnId: request.parentTurnId, toolCallId: request.toolCallId } }
           : {}),
@@ -403,6 +404,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       handle: target.ref ?? "",
       threadId: target.id,
       agentSlug,
+      ...(target.title ? { name: target.title } : {}),
       notifiesCaller,
     };
   }

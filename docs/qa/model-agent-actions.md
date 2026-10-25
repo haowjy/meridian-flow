@@ -47,11 +47,12 @@ the result.
    refs from `./mf thread view <id> --json`.
 2. In the first chat, script `thread_message` with the second chat's ref,
    `mode: "background"`, and distinctive text. The first chat shows **Sent a
-   message to …** with that text in the expanded row.
+   message to …** naming the destination by title and handle, with that text in
+   the expanded row.
 3. The second chat wakes. Its transcript shows the distinctive message as sent
-   by the first chat, and its reply remains in the second chat. Confirm both
-   sides after reload with `./mf thread view <id> --full --json` and in the
-   browser.
+   by the first chat's title and handle, even when it had no earlier assistant
+   row to hold the delivery. Its reply remains in the second chat. Confirm both
+   sides after reload with `./mf thread view <id> --full --json` and in the browser.
 4. A foreground call to the same unrelated chat is still refused. A background
    call to another user's chat or another project's ref is not found.
 

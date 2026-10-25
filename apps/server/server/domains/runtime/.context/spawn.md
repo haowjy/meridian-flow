@@ -25,8 +25,9 @@ persist on the child binding; the Agent definition is not mutated. An additive
 ## `thread_message`
 
 Background delivery resolves the project/user ref and may address any live chat
-owned by that user in the project. It enqueues one agent-provenance message
-through `RuntimeDelivery`; it does not drive the target. Foreground delivery
+owned by that user in the project. It enqueues one agent-provenance message,
+including the sender chat's title and handle, through `RuntimeDelivery`; it does
+not drive the target. Foreground delivery
 requires the target to be in the caller's subtree and returns its terminal
 report, preventing waits on ancestors or unrelated chats. It loads the target's
 frozen binding without re-resolving configuration, so a message cannot escalate

@@ -2509,6 +2509,10 @@ msgstr ""
 msgid "Form payload is malformed."
 msgstr ""
 
+#: src/features/chat/subagent/DeliveryEventRows.tsx
+msgid "From {senderName}: "
+msgstr ""
+
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
 msgstr "说吧"
