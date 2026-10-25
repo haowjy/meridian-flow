@@ -19,6 +19,7 @@ import {
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { SpelledLinkFact } from "@meridian/markup/links";
+import { compareDefaultSiblings } from "@meridian/resource-replica";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
@@ -660,11 +661,27 @@ export class ContextFS implements ContextSchemeAdapter {
           documents.filter((doc) => doc.fileType === null).map((doc) => doc.id),
         )
       : new Map<string, string>();
-    const entries: AdapterFileEntry[] = folders.map((folder) => ({
-      path: joinPath(path, folder.name),
-      kind: "directory" as const,
-    }));
-    for (const doc of documents) {
+    const siblings = [
+      ...folders.map((folder) => ({
+        order: { kind: "folder" as const, name: folder.name, identity: folder.id },
+        folder,
+      })),
+      ...documents.map((document) => ({
+        order: {
+          kind: "file" as const,
+          name: renderFilename(document.name, document.extension),
+          identity: document.id,
+        },
+        document,
+      })),
+    ].sort((left, right) => compareDefaultSiblings(left.order, right.order));
+    const entries: AdapterFileEntry[] = [];
+    for (const sibling of siblings) {
+      if ("folder" in sibling) {
+        entries.push({ path: joinPath(path, sibling.folder.name), kind: "directory" });
+        continue;
+      }
+      const doc = sibling.document;
       const trackedSchema =
         doc.fileType === null
           ? trackedSchemaForPersistedFiletype(doc.filetype ?? DEFAULT_EDITABLE_FILETYPE)
