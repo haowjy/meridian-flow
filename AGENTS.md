@@ -175,7 +175,8 @@ code it refers to, so a newcomer catches up quickly. The
 **Clean up as soon as you're done with something.** Idle dev stacks, databases and
 checkouts waste the machine's memory, CPU and disk. When a worktree, dev stack, probe,
 review checkout or temporary branch has done its job (a worktree as soon as its
-branch merges, into `main`, `staging`, or an integration branch):
+branch merges, into `main`, `staging`, or an integration branch), clean it up, even
+while a human's shell or browser is still in it:
 
 1. Stop its dev stack with `pnpm dev --stop`.
 2. End anything still running from it (the Nx daemon, `agent-browser` sessions, watchers).
