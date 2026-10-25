@@ -434,7 +434,7 @@ export function createDrizzleTurnRepository(
           and(
             eq(schema.turns.threadId, threadId),
             eq(schema.turns.role, "assistant"),
-            inArray(schema.turns.status, ["pending", "streaming", "waiting_interrupt"]),
+            inArray(schema.turns.status, ["pending", "streaming"]),
             ...(options?.createdAfter ? [gte(schema.turns.createdAt, options.createdAfter)] : []),
           ),
         )
