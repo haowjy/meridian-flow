@@ -11,6 +11,7 @@
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import {
   type ParentRef,
+  type ResourceDestination,
   type ResourcePlacement,
   type ResourceRecord,
   resourcePlacementForSnapshot,
@@ -21,10 +22,9 @@ import {
   type NameOccupancy,
   nameOccupancy,
 } from "../context-entry-name";
-import { placeEntry } from "../move-entry";
 import { renameOperationLifecycle } from "../rename-operation-lifecycle";
 import type { EntryRef } from "./entry";
-import { type MoveEffect, planUndo, type ReadyMovePlan } from "./move-plan";
+import { type MoveEffect, type MoveRow, planUndo } from "./move-plan";
 
 export type MoveContext = {
   resources: AccountResourceReplica;
@@ -51,7 +51,23 @@ type Arrival = {
   after: ParentRef;
 };
 
-type MoveRow = Arrival & { before: ParentRef };
+/** Places one row under the name predicted by this module. */
+async function placeEntry(
+  resources: AccountResourceReplica,
+  projectId: string,
+  subject: EntryRef,
+  location: ResourceDestination,
+  typed: string,
+): Promise<string | null> {
+  if (subject.kind === "folder") {
+    const result = await resources.setFolderLocation(projectId, subject.id, location, typed);
+    return result.operationId ?? null;
+  }
+  const key = await resources.keyForDocument(projectId, subject.id);
+  if (!key) throw new Error("Document is not in the replica");
+  const result = await resources.setLocation(projectId, key, location, typed);
+  return result.operationId ?? null;
+}
 
 /**
  * Free names for the rows of one move. Each destination's names are indexed
@@ -158,21 +174,6 @@ export async function moveRows(
     }
   }
   return { moved, failed };
-}
-
-/** `after` is the destination's parent, null when its authority is unavailable (every row then fails). */
-export function executeMove(
-  plan: ReadyMovePlan,
-  after: ParentRef | null,
-  context: MoveContext,
-): Promise<MoveResult> {
-  const rows = plan.moves.map(({ ref, name, parent }) => ({ entry: ref, name, before: parent }));
-  return after
-    ? moveRows(
-        rows.map((row) => ({ ...row, after })),
-        context,
-      )
-    : Promise.resolve({ moved: [], failed: rows.map(({ entry, name }) => ({ entry, name })) });
 }
 
 /**

@@ -35,7 +35,16 @@ const placed = {
   },
 } as Record<string, { at: ResourceLocation; parent: ParentRef }>;
 const keyOf = (ref: EntryRef) => `${ref.kind}:${ref.id}`;
-const record = (id: string) => ({ resource: { identity: { documentId: id } } }) as ResourceRecord;
+const record = (id: string, aliases: string[] = []) =>
+  ({
+    resource: {
+      handle: `handle-${id}`,
+      identity: { documentId: id },
+      aliases: Object.fromEntries(
+        aliases.map((alias) => [alias, { introducedAtIdentityRevision: 1 }]),
+      ),
+    },
+  }) as ResourceRecord;
 
 function catalog(rootId: string, folders: Record<string, string>): CatalogContextView {
   const dir = (id: string) => ({
@@ -45,7 +54,7 @@ function catalog(rootId: string, folders: Record<string, string>): CatalogContex
     path: `/${folders[id]}`,
   });
   return {
-    root: { entryId: rootId },
+    root: { entryId: rootId, uri: "manuscript://" },
     children: () => [],
     normalized: {
       entries: new Map(
@@ -74,7 +83,9 @@ const area = (
 });
 
 const view = (areas: MoveArea[]): MoveView => ({
-  records: [record("ch1"), record("note")],
+  records: [record("ch1", ["local-ch1"]), record("note")],
+  works: [],
+  noWork: null,
   placement: {
     resourceLocation: (r: ResourceRecord) =>
       placed[`file:${r.resource.identity.documentId}`]?.at ?? null,
@@ -99,12 +110,19 @@ const into = (rootId: string, scheme: "manuscript" | "kb", entryId: string, name
 it("finds a dragged row by identity in a catalog the destination list doesn't show", () => {
   const plan = planMove(
     view([area("kb", "kb-root", { characters: "characters" })]),
-    drag(file("ch1")),
+    drag(file("local-ch1")),
     into("kb-root", "kb", "characters", "characters"),
   );
   expect(plan).toMatchObject({
     kind: "ready",
-    moves: [{ ref: file("ch1"), name: "ch1", parent: { kind: "folder", folderId: "part" } }],
+    moves: [
+      {
+        entry: file("local-ch1"),
+        name: "ch1",
+        before: { kind: "folder", folderId: "part" },
+        after: { kind: "folder", folderId: "characters" },
+      },
+    ],
   });
 });
 

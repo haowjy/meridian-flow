@@ -12,9 +12,8 @@ import { useAccountResourceProjection, useAccountResourceReplica } from "./accou
 import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import { moveRows, renamesOnArrival } from "./entry-drag/execute-move";
-import { describeRenames } from "./entry-drag/move-notice";
+import { describeRenames, usePublishMove } from "./entry-drag/move-notice";
 import { moveRefusal, parentOf } from "./entry-drag/move-plan";
-import { useReportMove } from "./entry-drag/use-entry-list";
 import { destinationParent, type MoveDestination } from "./move-entry";
 import { moveRepairTrail } from "./move-repair-trail";
 import { useProjectMenuSource } from "./use-project-menu-source";
@@ -54,7 +53,7 @@ function OpenMovePicker({
   rowRef,
 }: Omit<EntryMovePickerProps, "children"> & { rowRef: RefObject<HTMLDivElement | null> }) {
   const resources = useAccountResourceReplica();
-  const reportMove = useReportMove();
+  const publishMove = usePublishMove();
   const view = useAccountResourceProjection(projectId);
   const { works, noWork } = useWorks(projectId);
   const [error, setError] = useState<string | null>(null);
@@ -102,8 +101,7 @@ function OpenMovePicker({
         { resources, projectId },
       );
       if (result.failed.length > 0) throw new Error(unavailable);
-      // In a list, Move… ends like a drop: the row selected and the notice with Undo.
-      reportMove?.(result, folder.name);
+      publishMove(result, folder.name);
       onOpenChange(false);
     } catch {
       setError(unavailable);

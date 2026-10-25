@@ -13,25 +13,25 @@ chat resources rather than ordinary Editor tabs.
 - Every placement consumer uses the shared `ResourcePlacement` snapshot,
   including other Works. Recovery keeps real journal identities reachable;
   synthetic ancestors are navigation-only and have no mutations.
-- Context entries use one interaction boundary and one `ContextOwner` per
-  list. It owns action dispatch, operation/refusal state, and move-picker
-  wiring; shells own geometry, creation entry points, and navigation.
+- Context entries use one interaction boundary. It owns action dispatch and
+  operation/refusal state; shells own geometry, creation entry points,
+  navigation, and the notice surface where Move… reports.
 - Deletion and move persist optimistically through the replica. Pending folder
   deletion hides descendants; refusal restores rows with passive failure
   evidence. File targets retain `documentId`; folder targets retain catalog
   `entryId`.
-- A row changes folders only through `moveRows` (`entry-drag/execute-move.ts`,
-  over `move-entry.ts`): Move…, a drop and a drop's Undo resolve the destination
-  by folder ID (or an area root with its authority), share one identity-based
-  refusal (`moveRefusal` in `move-plan.ts`: inside itself; already there is a
-  quiet no-op), and arrive at the next free name that `execute-move.ts` predicts.
-  The hover hint and Move… warn with that same prediction before a row arrives
-  renamed. Don't place entries anywhere else.
-- Selection and dragging (`entry-drag/`): one list is one selection, one drop
-  route and one drop scope (`useEntryList`/`EntryList`). They carry identities,
-  never placement; plans read placement from the replica at hover, drop and
-  Undo. Rows move within one system only. Desktop only; phones use Move…, and
-  every drop also has that menu path.
+- A row changes folders only through `moveRows` (`entry-drag/execute-move.ts`):
+  Move…, a drop and a drop's Undo resolve one `ParentRef` by folder ID (or an
+  area root with its authority) before the move is ready, share one
+  identity-based refusal (`moveRefusal` in `move-plan.ts`: inside itself;
+  already there is a quiet no-op), and arrive at the next free name that
+  `execute-move.ts` predicts. The hover hint and Move… warn with that same
+  prediction before a row arrives renamed. Don't place entries anywhere else.
+- Selection and dragging (`entry-drag/`): one desktop list is one selection,
+  one drop route and one drop scope (`useEntryList`/`EntryList`). They carry
+  identities, never placement; plans read placement from the replica at hover,
+  drop and Undo. Rows move within one system only. Desktop only; phones publish
+  Move… directly to their notice surface, and every drop also has that menu path.
 - Drop dispatch (`tree-drop/`) is the one scope that row moves and desktop
   import (#798) share; add a route, not a second scope. A refused drop is not
   an error: no fill, no red, the pointer hint names the reason.

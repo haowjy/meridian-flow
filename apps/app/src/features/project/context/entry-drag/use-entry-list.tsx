@@ -4,51 +4,35 @@
  * one, a chat's Scratch one over the current and Earlier notes, and a Work's
  * Files one over its Scratch.
  * Shells declare the catalogs they show; this owns the rest: what a hovered
- * target would do, what a drop does, and what any move from the list (a drop
- * or Move…) leaves behind: the moved rows selected and a notice with Undo on
- * the list's surface, whose owner then keeps it (`move-notice.tsx`).
+ * target would do and what a drop does. It also offers optional selection and
+ * focus effects to Move…; the project-owned notice does not depend on a list.
  */
 import { t } from "@lingui/core/macro";
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-} from "react";
+import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import type { NoticeSurface } from "../../shell/SurfaceNotice";
 import {
   useAccountResourceProjection,
   useAccountResourceReplica,
 } from "../account-feature-context";
-import { destinationParent } from "../move-entry";
 import { type EntriesRoute, type EntriesVerdict, TreeDropScope } from "../tree-drop/tree-drop";
 import { activeEntryDrag } from "./drag-session";
 import { type DragEntry, entryKey } from "./entry";
-import { executeMove, type MoveResult, renamesOnArrival } from "./execute-move";
-import { describeRenames, useMoveNotices } from "./move-notice";
+import { type MoveResult, moveRows, renamesOnArrival } from "./execute-move";
+import { describeRenames, MoveFeedbackProvider, useMoveNotices } from "./move-notice";
 import { type MoveArea, planMove, withoutNested } from "./move-plan";
 import { type EntrySelection, EntrySelectionProvider, useEntrySelection } from "./selection";
 
-/** Reports a finished move: selects what moved and leaves the notice. */
-type ReportMove = (result: MoveResult, destinationName: string) => void;
+type ListMoveEffects = {
+  select: (result: MoveResult) => void;
+  refocus: () => void;
+};
 
 type EntryListController = {
   selection: EntrySelection;
   route: EntriesRoute;
-  moved: ReportMove;
+  feedback: ListMoveEffects & { surface: NoticeSurface };
 };
-
-const MovedContext = createContext<ReportMove | null>(null);
-
-/** The list a row sits in, for Move… to report like a drop; null outside a list. */
-export function useReportMove(): ReportMove | null {
-  return useContext(MovedContext);
-}
 
 export function useEntryList({
   projectId,
@@ -71,26 +55,36 @@ export function useEntryList({
     [],
   );
   const selection = useEntrySelection(prune);
-  const latest = useRef({ areas, projection, works, noWork, notices, selection });
+  const latest = useRef({ areas, projection, works, noWork, selection });
   useLayoutEffect(() => {
-    latest.current = { areas, projection, works, noWork, notices, selection };
+    latest.current = { areas, projection, works, noWork, selection };
   });
 
-  const moved = useCallback<ReportMove>(
-    (result, destinationName) => {
-      const { notices, selection } = latest.current;
-      if (result.moved.length > 0)
-        selection.replace(result.moved.map((effect) => entryKey(effect.entry)));
-      notices.publish(surface, result, destinationName, () => latest.current.selection.focus());
+  const moveEffects = useMemo<ListMoveEffects>(
+    () => ({
+      select(result) {
+        const { selection } = latest.current;
+        if (result.moved.length > 0)
+          selection.replace(result.moved.map((effect) => entryKey(effect.entry)));
+      },
+      refocus: () => latest.current.selection.focus(),
+    }),
+    [],
+  );
+
+  const reportDrop = useCallback(
+    (result: MoveResult, destinationName: string) => {
+      moveEffects.select(result);
+      notices.publish(surface, result, destinationName, moveEffects.refocus);
     },
-    [surface],
+    [notices, surface, moveEffects],
   );
 
   const route = useMemo<EntriesRoute>(() => {
     const plan = (target: Parameters<EntriesRoute["verdict"]>[0]) => {
       const entries = activeEntryDrag();
-      const { areas, projection } = latest.current;
-      return entries ? planMove({ ...projection, areas }, entries, target) : null;
+      const { areas, projection, works, noWork } = latest.current;
+      return entries ? planMove({ ...projection, areas, works, noWork }, entries, target) : null;
     };
     const judge = (target: Parameters<EntriesRoute["verdict"]>[0]): EntriesVerdict | null => {
       const planned = plan(target);
@@ -98,14 +92,8 @@ export function useEntryList({
         return { kind: "refuse", label: t`Can't go inside itself` };
       if (planned?.kind !== "ready") return null;
       const { destinationName } = planned;
-      const { works, noWork, projection } = latest.current;
-      const after = destinationParent(planned.destination, works, noWork);
-      const renamed = after
-        ? renamesOnArrival(
-            planned.moves.map(({ ref, name }) => ({ entry: ref, name, after })),
-            projection,
-          )
-        : [];
+      const { projection } = latest.current;
+      const renamed = renamesOnArrival(planned.moves, projection);
       return {
         kind: "accept",
         label: t`Move to ${destinationName}`,
@@ -130,16 +118,15 @@ export function useEntryList({
       drop(target) {
         const planned = plan(target);
         if (planned?.kind !== "ready") return;
-        const { works, noWork } = latest.current;
-        const after = destinationParent(planned.destination, works, noWork);
-        void executeMove(planned, after, { resources, projectId }).then((result) =>
-          moved(result, planned.destinationName),
+        void moveRows(planned.moves, { resources, projectId }).then((result) =>
+          reportDrop(result, planned.destinationName),
         );
       },
     };
-  }, [resources, projectId, moved]);
+  }, [resources, projectId, reportDrop]);
 
-  return useMemo(() => ({ selection, route, moved }), [selection, route, moved]);
+  const feedback = useMemo(() => ({ ...moveEffects, surface }), [moveEffects, surface]);
+  return useMemo(() => ({ selection, route, feedback }), [selection, route, feedback]);
 }
 
 /** Gives a list's rows and targets its selection and drop scope. */
@@ -147,7 +134,7 @@ export function EntryList({ list, children }: { list: EntryListController; child
   return (
     <TreeDropScope route={list.route}>
       <EntrySelectionProvider selection={list.selection}>
-        <MovedContext.Provider value={list.moved}>{children}</MovedContext.Provider>
+        <MoveFeedbackProvider feedback={list.feedback}>{children}</MoveFeedbackProvider>
       </EntrySelectionProvider>
     </TreeDropScope>
   );
