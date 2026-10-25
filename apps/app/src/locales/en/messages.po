@@ -239,6 +239,11 @@ msgstr "{0} tok/s"
 msgid "{0} will be renamed {1}"
 msgstr "{0} will be renamed {1}"
 
+#. placeholder {0}: ask.payload.summary
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "{agentName} wants to {0}?"
+msgstr "{agentName} wants to {0}?"
+
 #: src/features/chat/ask/AskTakeover.tsx
 msgid "{agentName} wants to {summary}?"
 msgstr "{agentName} wants to {summary}?"
@@ -1588,9 +1593,17 @@ msgstr "Could not load files."
 msgid "Couldn't apply this draft."
 msgstr "Couldn't apply this draft."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Couldn't ask a question"
+msgstr "Couldn't ask a question"
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Couldn't be reversed"
 msgstr "Couldn't be reversed"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Couldn't check how this question ended."
+msgstr "Couldn't check how this question ended."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
@@ -3861,6 +3874,7 @@ msgstr "Redoing…"
 msgid "Reference a file"
 msgstr "Reference a file"
 
+#: src/features/chat/ask/AskTakeover.tsx
 #: src/features/editor/SchemaNotices.tsx
 msgid "Refresh"
 msgstr "Refresh"
