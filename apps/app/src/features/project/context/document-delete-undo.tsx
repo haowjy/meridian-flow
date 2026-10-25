@@ -149,7 +149,8 @@ export function DocumentDeleteUndoProvider({
   );
   const restores = useRef(new Set<string>());
   const folderChecks = useRef(new Set<string>());
-  const restoredRemovals = useRef(new Set<string>());
+  // Removals brought back outside Undo (from Trash), kept while any notice could hold them.
+  const [restored, setRestored] = useState<ReadonlySet<string>>(() => new Set());
   const lifetime = useRef<ProviderLifetime | null>(null);
   const windowsRef = useRef(windows);
   windowsRef.current = windows;
@@ -189,7 +190,6 @@ export function DocumentDeleteUndoProvider({
       owner.controller.abort();
       restores.current.clear();
       folderChecks.current.clear();
-      restoredRemovals.current.clear();
       void queryClient.cancelQueries({ queryKey: deleteOperationProjectKey(projectId) });
       if (lifetime.current === owner) lifetime.current = null;
     };
@@ -333,8 +333,10 @@ export function DocumentDeleteUndoProvider({
   );
 
   // Delete progress is read from the replica, never copied: a refused or local-only delete
-  // closes its notice, a landed empty folder has nothing to restore, and a requested Undo
-  // restores once its delete has landed.
+  // closes its notice, a requested Undo restores once its delete has landed, and a landed
+  // delete whose removals are all back (an empty folder, or restored from Trash) has
+  // nothing left for Undo. That check reruns on every replica change, so a receipt that
+  // failed to load is read again rather than leaving Undo offered.
   useEffect(() => {
     const owner = lifetime.current;
     if (!owner) return;
@@ -348,44 +350,34 @@ export function DocumentDeleteUndoProvider({
       if (state !== "landed") continue;
       if (window.feedback?.kind === "restoring") {
         if (!restores.current.has(operationId)) runRestore(window, owner);
-      } else if (window.kind === "folder" && !folderChecks.current.has(operationId)) {
+      } else if (
+        restored.size > 0 ||
+        (window.kind === "folder" && !folderChecks.current.has(operationId))
+      ) {
         folderChecks.current.add(operationId);
-        // A failed check leaves Undo offered; Undo reads the receipt again and closes an empty one.
         resolveDeleteReceipt(queryClient, projectId, operationId).then(
           (documents) => {
-            if (isActive(owner) && documents.length === 0) dismiss(operationId);
-          },
-          () => undefined,
-        );
-      }
-    }
-  }, [deleteIntents, dismiss, windows, projectId, queryClient, runRestore]);
-
-  // Documents restored outside Undo (from Trash) close the notice whose delete removed them
-  // once nothing of that delete is left for Undo to restore.
-  const deleteIntentsRef = useRef(deleteIntents);
-  deleteIntentsRef.current = deleteIntents;
-  const restoredElsewhere = useCallback(
-    (documents: readonly RemovedDocument[]) => {
-      const owner = lifetime.current;
-      if (!owner) return;
-      for (const document of documents) restoredRemovals.current.add(removalKey(document));
-      for (const window of windowsRef.current.values()) {
-        const { operationId } = window;
-        if (window.feedback?.kind === "restoring") continue;
-        if (deleteOperationState(deleteIntentsRef.current, operationId) !== "landed") continue;
-        resolveDeleteReceipt(queryClient, projectId, operationId).then(
-          (removed) => {
             if (!isActive(owner)) return;
-            if (removed.every((document) => restoredRemovals.current.has(removalKey(document))))
+            if (documents.every((document) => restored.has(removalKey(document))))
               dismiss(operationId);
           },
           () => undefined,
         );
       }
-    },
-    [dismiss, projectId, queryClient],
-  );
+    }
+  }, [deleteIntents, dismiss, windows, restored, projectId, queryClient, runRestore]);
+
+  useEffect(() => {
+    if (windows.size === 0 && restored.size > 0) setRestored(new Set());
+  }, [windows, restored]);
+
+  const restoredElsewhere = useCallback((documents: readonly RemovedDocument[]) => {
+    setRestored((current) => {
+      const next = new Set(current);
+      for (const document of documents) next.add(removalKey(document));
+      return next;
+    });
+  }, []);
 
   const value = useMemo<DeleteUndoContextValue>(
     () => ({
