@@ -174,6 +174,10 @@ export async function moveInBranch(
     branchId: input.branchId,
     documentId: input.documentId,
     facts: after,
+    previousParent: {
+      sourceId: current.document.contextSourceId,
+      folderId: current.document.folderId,
+    },
   });
   return Ok({ before, after });
 }
