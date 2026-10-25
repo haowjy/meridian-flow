@@ -7,8 +7,9 @@ registry. The lifecycle owns handshake readiness and reconnect; the registry own
 replay requests, outcomes, timers and sequenced delivery. The client routes wire
 messages, connection notifications, catalog subscriptions and `ask.answer`
 requests. `answerAsk` resolves once and never rejects: the server's reply, or
-`unconfirmed` when the frame never left, the socket closed first, or the server
-failed the request. A close settles every outstanding answer as `unconfirmed`.
+`unconfirmed` when the frame never left, the socket closed first, the server
+failed the request, or `DEFAULT_WS_ASK_ANSWER_DEADLINE_MS` (20 s) passed without a
+reply. One settlement clears the deadline whichever comes first.
 Socket generations fence stale product callbacks; close observation precedes
 that fence so controlled closes remain visible. Gap consumers recover truncated
 history through snapshots. Cancellation uses the injected HTTP operation.

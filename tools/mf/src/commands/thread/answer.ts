@@ -18,7 +18,6 @@ import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { createThreadClient } from "./transport";
 
 const CONNECT_TIMEOUT_MS = 10_000;
-const REPLY_TIMEOUT_MS = 30_000;
 
 export const threadAnswerCommand: CommandSpec = {
   path: ["thread", "answer"],
@@ -84,7 +83,7 @@ export const threadAnswerCommand: CommandSpec = {
         });
         transport.connect();
       });
-      const answering = answerAsk(
+      const result = await answerAsk(
         {
           transport,
           update: (change) => {
@@ -97,16 +96,6 @@ export const threadAnswerCommand: CommandSpec = {
         askId,
         answer,
       );
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const result = await Promise.race([
-        answering,
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new CliError("timeout", "No reply to the answer; it may have landed")),
-            REPLY_TIMEOUT_MS,
-          );
-        }),
-      ]).finally(() => clearTimeout(timer));
       const ask = asks.byId.get(askId) ?? null;
       ctx.out.result(
         {
