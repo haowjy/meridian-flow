@@ -16,6 +16,7 @@ import { tombstoneUnused } from "../../context/tree/end-use.js";
 import { moveToPlacement } from "../../context/tree/live-tree-state.js";
 import { place } from "../../context/tree/placement.js";
 import { restoreDocument } from "../../context/tree/removal.js";
+import { applyLiveRank } from "../../context/tree/sibling-order.js";
 import type { TreeStateNode } from "../../context/tree/tree-view.js";
 import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
 import type { AgentTreeHistory } from "../contracts.js";
@@ -86,6 +87,12 @@ export function createApplyTreeOperations(input: {
       placed.value.placed.map((ref) => ref.id),
     );
     if (!placed.value.landed[0]) throw new ApplyClickRefused("not_found");
+    await applyLiveRank(input.db, {
+      documentId: node.nodeId,
+      sourceId: placed.value.landed[0].at.contextSourceId,
+      parentId: placed.value.landed[0].at.parentFolderId,
+      rank: node.target.rank,
+    });
   };
 
   const apply = async (
@@ -106,6 +113,7 @@ export function createApplyTreeOperations(input: {
           rootSourceId: identity.folderId ? null : identity.contextSourceId,
           name: identity.name,
           extension: identity.extension,
+          rank: identity.rank,
         },
       };
       let removed = false;
@@ -181,12 +189,14 @@ export function createApplyTreeOperations(input: {
             rootSourceId: identity.folderId ? null : identity.contextSourceId,
             name: identity.name,
             extension: identity.extension,
+            rank: identity.rank,
           },
           to: {
             folderId: node.target.parentFolderId,
             rootSourceId: node.target.parentFolderId ? null : node.target.contextSourceId,
             name: node.target.name,
             extension: node.target.extension,
+            rank: node.target.rank,
           },
         },
         { arrivals: input.arrivals, catalog: input.catalog },
@@ -214,5 +224,6 @@ export function liveLocation(node: TreeStateNode) {
     parentFolderId: node.target.parentFolderId,
     name: node.target.name,
     extension: node.target.extension,
+    rank: node.target.rank,
   };
 }

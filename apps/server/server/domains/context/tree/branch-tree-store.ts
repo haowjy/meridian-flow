@@ -20,6 +20,7 @@ import type { Database } from "@meridian/database";
 import {
   branchTreeChanges,
   branchTreeFolders,
+  branchTreeRanks,
   branchTreeUnsettled,
   documentEdits,
   folders,
@@ -138,6 +139,15 @@ export async function dropDocumentRows(
         eq(branchTreeChanges.branchId, input.branchId),
         eq(branchTreeChanges.nodeKind, "document"),
         inArray(branchTreeChanges.nodeId, [...input.documentIds]),
+      ),
+    );
+  await currentDrizzleDb(db)
+    .delete(branchTreeRanks)
+    .where(
+      and(
+        eq(branchTreeRanks.branchId, input.branchId),
+        eq(branchTreeRanks.nodeKind, "document"),
+        inArray(branchTreeRanks.nodeId, [...input.documentIds]),
       ),
     );
   return settled;
@@ -373,6 +383,7 @@ export async function readBranchTreeFacts(
       rootSourceId: branchTreeChanges.movedRootSourceId,
       name: branchTreeChanges.movedName,
       extension: branchTreeChanges.movedExtension,
+      rank: branchTreeChanges.movedRank,
     })
     .from(branchTreeChanges)
     .where(
@@ -393,6 +404,7 @@ export async function readBranchTreeFacts(
               rootSourceId: row.rootSourceId,
               name: row.name,
               extension: row.extension,
+              rank: row.rank,
             }
           : null,
       deleted: row.deleted,
@@ -453,6 +465,7 @@ export async function writeBranchTreeFacts(
     movedRootSourceId: moved?.folderId ? null : (moved?.rootSourceId ?? null),
     movedName: moved?.name ?? null,
     movedExtension: moved?.extension ?? null,
+    movedRank: moved?.rank ?? null,
     deleted: facts.deleted,
     changedThreadId: changed ? (input.changedBy?.threadId ?? null) : null,
     changedTurnId: changed ? (input.changedBy?.turnId ?? null) : null,
@@ -477,6 +490,19 @@ export async function writeBranchTreeFacts(
         updatedAt: new Date(),
       },
     });
+  if (moved?.rank)
+    await tx
+      .insert(branchTreeRanks)
+      .values({
+        branchId: input.branchId,
+        nodeKind: "document",
+        nodeId: input.documentId,
+        rank: moved.rank,
+      })
+      .onConflictDoUpdate({
+        target: [branchTreeRanks.branchId, branchTreeRanks.nodeKind, branchTreeRanks.nodeId],
+        set: { rank: moved.rank, updatedAt: new Date() },
+      });
   // Held until the branch's entries on the document settle, wherever its row goes since.
   if (moved?.folderId)
     await tx

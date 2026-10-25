@@ -21,6 +21,7 @@ import { resolveAbsorbedFolders } from "./folder-normalization.js";
 import { bumpLocationVersions, recordLocationHistory } from "./node-locations.js";
 import { moveNode } from "./node-moves.js";
 import { type PlaceTarget, placeLiveCycle } from "./placement.js";
+import { applyLiveRank } from "./sibling-order.js";
 import { loadFolderChains } from "./tree-addresses.js";
 
 /**
@@ -43,6 +44,7 @@ export async function readLiveTreeStates(
       extension: documents.extension,
       deletedAt: documents.deletedAt,
       locationVersion: documents.locationVersion,
+      rank: documents.rank,
     })
     .from(documents)
     .where(inArray(documents.id, [...ids]));
@@ -66,6 +68,7 @@ export async function readLiveTreeStates(
                 rootSourceId: row.folderId ? null : row.sourceId,
                 name: row.name,
                 extension: row.extension,
+                rank: row.rank,
               },
             },
     );
@@ -262,6 +265,17 @@ export async function moveToPlacement(
   });
   if (!moved.ok)
     return moved.error.code === "conflict" ? { kind: "ancestor_taken" } : { kind: "refused" };
+  const [placed] = await tx
+    .select({ sourceId: documents.contextSourceId, folderId: documents.folderId })
+    .from(documents)
+    .where(inArray(documents.id, [input.documentId]));
+  if (!placed) return { kind: "refused" };
+  await applyLiveRank(db, {
+    documentId: input.documentId,
+    sourceId: placed.sourceId,
+    parentId: placed.folderId,
+    rank: input.to.rank,
+  });
   await deps.arrivals?.settle(moved.value.documentIds);
   await deps.catalog.refreshSources(
     [...new Set([sourceId, ...(fromSource ? [fromSource] : [])])],
@@ -273,6 +287,7 @@ export async function moveToPlacement(
       folderId: documents.folderId,
       name: documents.name,
       extension: documents.extension,
+      rank: documents.rank,
     })
     .from(documents)
     .where(inArray(documents.id, [input.documentId]));
@@ -284,6 +299,7 @@ export async function moveToPlacement(
       rootSourceId: landed.folderId ? null : landed.sourceId,
       name: landed.name,
       extension: landed.extension,
+      rank: landed.rank,
     },
   };
 }

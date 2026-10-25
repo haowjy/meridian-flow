@@ -195,6 +195,26 @@ export const branchTreeParentOrders = pgTable(
   ],
 );
 
+/** Branch-local ranks established together when a parent first becomes manual in the branch. */
+export const branchTreeRanks = pgTable(
+  "branch_tree_ranks",
+  {
+    branchId: uuid("branch_id")
+      .$type<BranchId>()
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+    nodeKind: text("node_kind").$type<BranchTreeNodeKind>().notNull(),
+    nodeId: uuid("node_id").notNull(),
+    rank: text("rank").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.branchId, table.nodeKind, table.nodeId] }),
+    check("branch_tree_ranks_kind_valid", sql`${table.nodeKind} IN ('document', 'folder')`),
+  ],
+);
+
 /**
  * The documents a branch recorded drafted tree entries on that no settlement ended yet,
  * whatever its row says now (an undo may have removed it): what terminal cleanup must find

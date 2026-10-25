@@ -149,7 +149,8 @@ function treeFactOf(b: SQL): SQL {
 const movedElsewhere = sql.raw(
   "NOT (c.moved_folder_id IS NOT DISTINCT FROM d.folder_id " +
     "AND (c.moved_folder_id IS NOT NULL OR c.moved_root_source_id = d.context_source_id) " +
-    "AND c.moved_name = d.name AND c.moved_extension = d.extension)",
+    "AND c.moved_name = d.name AND c.moved_extension = d.extension " +
+    "AND c.moved_rank IS NOT DISTINCT FROM d.rank)",
 );
 
 /**
@@ -415,6 +416,7 @@ export type DocumentIdentityRow = {
   extension: string;
   fileType: string;
   storageUrl: string | null;
+  rank: string | null;
   locationVersion: bigint;
 };
 
@@ -428,6 +430,7 @@ type RawIdentityRow = {
   extension: string;
   file_type: string;
   storage_url: string | null;
+  rank: string | null;
   location_version: string;
 };
 
@@ -442,6 +445,7 @@ function identityRow(row: RawIdentityRow): DocumentIdentityRow {
     extension: row.extension,
     fileType: row.file_type,
     storageUrl: row.storage_url,
+    rank: row.rank,
     locationVersion: BigInt(row.location_version),
   };
 }
@@ -449,7 +453,7 @@ function identityRow(row: RawIdentityRow): DocumentIdentityRow {
 const identityColumns = sql.raw(
   "d.id::text AS id, d.hidden, d.deleted_at IS NOT NULL AS deleted, " +
     "d.context_source_id::text AS context_source_id, d.folder_id::text AS folder_id, d.name, " +
-    "d.extension, d.file_type, d.storage_url, d.location_version::text AS location_version",
+    "d.extension, d.file_type, d.storage_url, d.rank, d.location_version::text AS location_version",
 );
 
 export async function loadDocumentIdentityRows(
@@ -506,6 +510,7 @@ export type BranchTreeFactsRow = {
     rootSourceId: ContextSourceId | null;
     name: string;
     extension: string;
+    rank: string | null;
   } | null;
   deleted: boolean;
   /** Null only on a created row written before PR 3. */
@@ -524,6 +529,7 @@ export type BranchTreeRow = DocumentIdentityRow & {
     folderId: FolderId | null;
     name: string;
     extension: string;
+    rank: string | null;
   };
 };
 
@@ -544,6 +550,7 @@ export async function loadBranchTreeRows(
       moved_source_id: string | null;
       moved_name: string | null;
       moved_extension: string | null;
+      moved_rank: string | null;
       revision: string | null;
       base_version: string | null;
     }
@@ -553,7 +560,7 @@ export async function loadBranchTreeRows(
       c.moved_folder_id::text AS moved_folder_id,
       c.moved_root_source_id::text AS moved_root_source_id,
       coalesce(mf.context_source_id, c.moved_root_source_id)::text AS moved_source_id,
-      c.moved_name, c.moved_extension, c.revision::text AS revision,
+      c.moved_name, c.moved_extension, c.moved_rank, c.revision::text AS revision,
       c.base_version::text AS base_version
     FROM branch_tree_changes c
     CROSS JOIN LATERAL (
@@ -572,6 +579,7 @@ export async function loadBranchTreeRows(
             rootSourceId: row.moved_root_source_id as ContextSourceId | null,
             name: row.moved_name,
             extension: row.moved_extension,
+            rank: row.moved_rank,
           }
         : null;
     return {
@@ -590,12 +598,14 @@ export async function loadBranchTreeRows(
               folderId: moved.folderId,
               name: moved.name,
               extension: moved.extension,
+              rank: moved.rank,
             }
           : {
               contextSourceId: identity.contextSourceId,
               folderId: identity.folderId,
               name: identity.name,
               extension: identity.extension,
+              rank: identity.rank,
             },
     };
   });
