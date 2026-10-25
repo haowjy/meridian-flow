@@ -27,7 +27,9 @@ export type CreateAskInput = Omit<StoredAsk, "id" | "createdAt" | "resolvedAt"> 
 export interface AskRepository {
   create(input: CreateAskInput): Promise<StoredAsk>;
   findById(id: string): Promise<StoredAsk | null>;
+  findLiveByTurnForUpdate(turnId: TurnId): Promise<StoredAsk | null>;
   findOpenByThread(threadId: ThreadId): Promise<StoredAsk | null>;
+  findLiveByThread(threadId: ThreadId): Promise<StoredAsk | null>;
   listByThread(threadId: ThreadId): Promise<StoredAsk[]>;
   listOpenDueBy(deadline: Date, limit: number): Promise<StoredAsk[]>;
   listByTurnIds(turnIds: readonly TurnId[]): Promise<StoredAsk[]>;
@@ -38,6 +40,12 @@ export interface AskRepository {
     status: Extract<AskStatus, "answered" | "expired" | "cancelled">;
     resolution: AskResolution;
     submissionId?: string | null;
+    resolvedAt: Date;
+  }): Promise<StoredAsk | null>;
+  resolveLive(input: {
+    id: string;
+    status: Extract<AskStatus, "cancelled">;
+    resolution: AskResolution;
     resolvedAt: Date;
   }): Promise<StoredAsk | null>;
 }

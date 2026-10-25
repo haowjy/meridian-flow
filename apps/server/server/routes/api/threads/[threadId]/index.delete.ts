@@ -9,9 +9,7 @@ export default defineEventHandler(async (event) => {
   const { userId } = user;
   const threadId = getRouterParam(event, "threadId") ?? "";
 
-  const owned = await requireThreadOwner({ threads: threadRepos.threads }, threadId, userId);
-  const openAsk = await threadRepos.asks.findOpenByThread(owned.id);
-  if (openAsk) await app.asks.cancelOpen(openAsk.threadId, openAsk.id);
+  await requireThreadOwner({ threads: threadRepos.threads }, threadId, userId);
 
   await deleteOwnedThreadToTrash(
     {
@@ -20,6 +18,7 @@ export default defineEventHandler(async (event) => {
       workContextNotices,
       workAuthorityResolver: app.workAuthorityResolver,
       works: app.workRepo,
+      cancelAsks: (id) => app.asks.cancelForThreadLifecycle(id),
     },
     threadId,
     userId,

@@ -34,12 +34,29 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
       const [row] = await currentDrizzleDb(db).select().from(asks).where(eq(asks.id, id)).limit(1);
       return row ? storedAsk(row) : null;
     },
+    async findLiveByTurnForUpdate(turnId) {
+      const [row] = await currentDrizzleDb(db)
+        .select()
+        .from(asks)
+        .where(and(eq(asks.askingTurnId, turnId), inArray(asks.status, ["pending", "open"])))
+        .limit(1)
+        .for("update");
+      return row ? storedAsk(row) : null;
+    },
     async findOpenByThread(threadId: ThreadId) {
       const [row] = await currentDrizzleDb(db)
         .select()
         .from(asks)
         .where(and(eq(asks.threadId, threadId), eq(asks.status, "open")))
         .orderBy(asc(asks.createdAt))
+        .limit(1);
+      return row ? storedAsk(row) : null;
+    },
+    async findLiveByThread(threadId) {
+      const [row] = await currentDrizzleDb(db)
+        .select()
+        .from(asks)
+        .where(and(eq(asks.threadId, threadId), inArray(asks.status, ["pending", "open"])))
         .limit(1);
       return row ? storedAsk(row) : null;
     },
@@ -98,6 +115,18 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
           resolvedAt: input.resolvedAt,
         })
         .where(and(eq(asks.id, input.id), eq(asks.status, "open")))
+        .returning();
+      return row ? storedAsk(row) : null;
+    },
+    async resolveLive(input) {
+      const [row] = await currentDrizzleDb(db)
+        .update(asks)
+        .set({
+          status: input.status,
+          resolution: input.resolution,
+          resolvedAt: input.resolvedAt,
+        })
+        .where(and(eq(asks.id, input.id), inArray(asks.status, ["pending", "open"])))
         .returning();
       return row ? storedAsk(row) : null;
     },

@@ -28,6 +28,8 @@ export interface AskService {
   }): Promise<AskAnswerResult>;
   expireDue(now?: Date, limit?: number): Promise<number>;
   cancelOpen(threadId: ThreadId, askId: string): Promise<AskAnswerResult>;
+  /** Joins a thread lifecycle transaction; claims the ask before its thread lock. */
+  cancelForThreadLifecycle(threadId: ThreadId): Promise<void>;
 }
 
 function questionResolution(
@@ -56,6 +58,7 @@ export function createAskService(deps: {
     resolution: AskResolution;
     submissionId?: string;
     continueRun: boolean;
+    claimLive?: boolean;
   }): Promise<AskAnswerResult> {
     return deps.repos.transaction(async () => {
       const existing = await deps.repos.asks.findById(input.askId);
@@ -68,13 +71,20 @@ export function createAskService(deps: {
       )
         return { ok: true, ask: threadAsk(existing) };
 
-      const claimed = await deps.repos.asks.resolveOpen({
-        id: input.askId,
-        status: input.status,
-        resolution: input.resolution,
-        submissionId: input.submissionId,
-        resolvedAt: new Date(),
-      });
+      const claimed = input.claimLive
+        ? await deps.repos.asks.resolveLive({
+            id: input.askId,
+            status: "cancelled",
+            resolution: input.resolution,
+            resolvedAt: new Date(),
+          })
+        : await deps.repos.asks.resolveOpen({
+            id: input.askId,
+            status: input.status,
+            resolution: input.resolution,
+            submissionId: input.submissionId,
+            resolvedAt: new Date(),
+          });
       if (!claimed) {
         const current = await deps.repos.asks.findById(input.askId);
         if (
@@ -93,8 +103,12 @@ export function createAskService(deps: {
       // this order, so answer, expiry, and cancellation cannot deadlock.
       return deps.delivery.withThreadLock(input.threadId, async (producer) => {
         const turn = await deps.repos.turns.findById(claimed.askingTurnId);
-        if (!turn || turn.threadId !== input.threadId || turn.status !== "awaiting_answer")
-          throw new Error("Open ask is not attached to an awaiting turn");
+        if (
+          !turn ||
+          turn.threadId !== input.threadId ||
+          (turn.status !== "awaiting_answer" && !(input.claimLive && turn.status === "streaming"))
+        )
+          throw new Error("Live ask is not attached to its active asking turn");
         const blocks = await deps.repos.blocks.listByTurn(turn.id);
         const result = askToolResult(claimed);
         const block = contentForBlockInput({
@@ -195,6 +209,20 @@ export function createAskService(deps: {
         resolution: { kind: "cancelled" },
         continueRun: false,
       });
+    },
+    async cancelForThreadLifecycle(threadId) {
+      const ask = await deps.repos.asks.findLiveByThread(threadId);
+      if (!ask) return;
+      const result = await resolve({
+        askId: ask.id,
+        threadId,
+        status: "cancelled",
+        resolution: { kind: "cancelled" },
+        continueRun: false,
+        claimLive: true,
+      });
+      if (!result.ok && result.code !== "ask_not_open")
+        throw new Error(`Could not cancel live ask ${ask.id}`);
     },
   };
 }
