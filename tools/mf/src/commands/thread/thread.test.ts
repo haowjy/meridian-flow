@@ -227,22 +227,6 @@ describe("thread send", () => {
     expect(full.stderr).not.toContain("--full to show");
   });
 
-  it("ends a waiting_interrupt run with exactly one result and prints the respond command", async () => {
-    replyScenario(wire, { status: "waiting_interrupt" });
-    const result = await send("go", "--json");
-    const records = ndjson(result.stdout);
-    expect(result.code).toBe(EXIT.interrupt);
-    expect(records.filter((record) => record.type === "result")).toHaveLength(1);
-    expect(records.at(-1)).toMatchObject({
-      type: "result",
-      command: "thread.send",
-      threadId: THREAD_ID,
-      outcome: "interrupt",
-      reason: null,
-    });
-    expect((await send("go")).stderr).toContain("./mf thread respond");
-  });
-
   it("queue hand-back --all posts every queued id and maps the scripted lists to output and an exit code", async () => {
     const [a, b, c] = [
       "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -738,34 +722,6 @@ describe("thread view, cancel, events, respond", () => {
     ]);
     expect(result.code).toBe(EXIT.unavailable);
     expect(JSON.parse(result.stderr)).toMatchObject({ code: "unavailable" });
-  });
-
-  it("respond is confirmed only by its own interrupt (another interrupt's resolution proves nothing)", async () => {
-    wire.onClient = (message) => {
-      if (message.type !== "interrupt.respond") return;
-      wire.publish(frames.interrupt("a1", "other-id", "resolved"));
-    };
-    const result = await wire.mf([
-      "thread",
-      "respond",
-      THREAD_ID,
-      "--turn",
-      "a1",
-      "--interrupt",
-      "int-1",
-      "--value",
-      "null",
-      "--timeout",
-      "100ms",
-      "--json",
-    ]);
-    expect(result.code).toBe(EXIT.unproven);
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      type: "result",
-      command: "thread.respond",
-      outcome: "unproven",
-      reason: "unconfirmed",
-    });
   });
 });
 

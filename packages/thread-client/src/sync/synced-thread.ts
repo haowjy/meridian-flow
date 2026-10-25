@@ -270,11 +270,6 @@ export type SyncedTurnStoreOptions = {
   /** A held turn's status was written; `before` is the turn as it was. */
   onStatusPatched?(threadId: string, turnId: string, status: TurnStatus, before: Turn): void;
   invalidateThreadSnapshot?(threadId: string): void;
-  settleInterruptResponse?(identity: {
-    threadId: string;
-    turnId: string;
-    interruptId: string;
-  }): void;
 };
 
 /**
@@ -337,7 +332,5 @@ export function syncedTurnStore(options: SyncedTurnStoreOptions): TurnStore {
       write(threadId, { ...synced, eventsApplied });
       return eventsApplied;
     },
-
-    settleInterruptResponse: (identity) => options.settleInterruptResponse?.(identity),
   };
 }

@@ -107,8 +107,6 @@ function controlledListenerBus() {
         entry.active = false;
       };
     },
-    onInterruptResponseError: () => () => undefined,
-    onSocketGenerationClosed: () => () => undefined,
     cancel: async () => ({ threadId: "thread-1", turnId: "turn-1", status: "cancelled" }),
   } as unknown as ThreadTransport;
   const emit = (event: AGUIEvent, seq: string) => {

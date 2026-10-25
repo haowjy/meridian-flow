@@ -828,8 +828,8 @@ msgid "Another Work now has this name. Rename that Work, then restore this one."
 msgstr ""
 
 #: src/features/chat/TextBlock.tsx
-msgid "Answer the question"
-msgstr ""
+#~ msgid "Answer the question"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Appearance and behavior settings."
@@ -913,8 +913,8 @@ msgstr ""
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx
 #: src/features/chat/TextBlock.tsx
-msgid "auto-selected"
-msgstr ""
+#~ msgid "auto-selected"
+#~ msgstr ""
 
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
@@ -1274,8 +1274,8 @@ msgid "Choose a document or enter a web address or document path."
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Choose a listed option"
-msgstr ""
+#~ msgid "Choose a listed option"
+#~ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent"
@@ -1287,8 +1287,8 @@ msgid "Choose agent, currently {0}"
 msgstr ""
 
 #: src/features/chat/ChoiceBlock.tsx
-msgid "Choose an option"
-msgstr ""
+#~ msgid "Choose an option"
+#~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Choose what to do before continuing."
@@ -1456,8 +1456,8 @@ msgid "Composer controls"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Confirm"
-msgstr ""
+#~ msgid "Confirm"
+#~ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "Confirming your purchase…"
@@ -1885,8 +1885,8 @@ msgid "Couldn't send now."
 msgstr ""
 
 #: src/features/chat/InterruptResponseFeedback.tsx
-msgid "Couldn't send your answer."
-msgstr ""
+#~ msgid "Couldn't send your answer."
+#~ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/chat-card-copy.ts
@@ -2364,8 +2364,8 @@ msgid "Embedded blocks take no links."
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Enabled"
-msgstr ""
+#~ msgid "Enabled"
+#~ msgstr ""
 
 #: src/features/project/context/file-suggestions/FileSuggestionList.tsx
 msgid "Enclosing folder"
@@ -2506,8 +2506,8 @@ msgid "Fork from here"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Form payload is malformed."
-msgstr ""
+#~ msgid "Form payload is malformed."
+#~ msgstr ""
 
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
@@ -3154,20 +3154,20 @@ msgid "Moving {source} to"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Must be a number"
-msgstr ""
+#~ msgid "Must be a number"
+#~ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Must be a whole number"
-msgstr ""
+#~ msgid "Must be a whole number"
+#~ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Must be at least {value}"
-msgstr ""
+#~ msgid "Must be at least {value}"
+#~ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Must be at most {value}"
-msgstr ""
+#~ msgid "Must be at most {value}"
+#~ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -3257,8 +3257,8 @@ msgstr ""
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx
 #: src/features/chat/TextBlock.tsx
-msgid "No answer"
-msgstr ""
+#~ msgid "No answer"
+#~ msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "No archived Work."
@@ -3294,8 +3294,8 @@ msgid "No favorite chats yet."
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "No fields required; confirm to continue."
-msgstr ""
+#~ msgid "No fields required; confirm to continue."
+#~ msgstr ""
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "No files attached in this chat yet."
@@ -3755,12 +3755,12 @@ msgid "Recently opened"
 msgstr ""
 
 #: src/features/chat/ChoiceBlock.tsx
-msgid "Recommended"
-msgstr ""
+#~ msgid "Recommended"
+#~ msgstr ""
 
 #: src/features/chat/ChoiceBlock.tsx
-msgid "Recommended option is highlighted."
-msgstr ""
+#~ msgid "Recommended option is highlighted."
+#~ msgstr ""
 
 #: src/components/app/ConnectionBanner.tsx
 msgid "Reconnect now"
@@ -3899,8 +3899,8 @@ msgid "Report is unavailable"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Required"
-msgstr ""
+#~ msgid "Required"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Reset column widths"
@@ -4189,8 +4189,8 @@ msgid "Select the merged cell on its own to split it."
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Select…"
-msgstr ""
+#~ msgid "Select…"
+#~ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 msgid "Send message"
@@ -4209,8 +4209,8 @@ msgid "Sending now"
 msgstr ""
 
 #: src/features/chat/InterruptResponseFeedback.tsx
-msgid "Sending your answer…"
-msgstr ""
+#~ msgid "Sending your answer…"
+#~ msgstr ""
 
 #: src/features/chat/thread-message-renderer.tsx
 msgid "Sent a message to {line}"
@@ -4391,8 +4391,8 @@ msgid "Stop compaction"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Stop run"
-msgstr ""
+#~ msgid "Stop run"
+#~ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Stop switch to auto-apply"
@@ -4448,8 +4448,8 @@ msgid "Subagents, {0}"
 msgstr "子代理，{0}"
 
 #: src/features/chat/TextBlock.tsx
-msgid "Submit"
-msgstr ""
+#~ msgid "Submit"
+#~ msgstr ""
 
 #: src/features/billing/BillingPage.tsx
 msgid "Subscribe"
@@ -4460,13 +4460,13 @@ msgid "subsection"
 msgstr ""
 
 #: src/features/chat/TextBlock.tsx
-msgid "Suggested text is prefilled; edit it before submitting if needed."
-msgstr ""
+#~ msgid "Suggested text is prefilled; edit it before submitting if needed."
+#~ msgstr ""
 
 #. placeholder {0}: String(field.defaultValue)
 #: src/features/chat/FormBlock.tsx
-msgid "Suggested: {0}"
-msgstr ""
+#~ msgid "Suggested: {0}"
+#~ msgstr ""
 
 #: src/features/chat/ChatView.tsx
 msgid "Summarize earlier messages so the model has room to keep going"
@@ -5274,8 +5274,8 @@ msgid "Two of this Work's drafts share this path. Review the drafts to keep one.
 msgstr "此工作中的两个草稿使用了相同路径。请查看草稿并保留其中一个。"
 
 #: src/features/chat/TextBlock.tsx
-msgid "Type your answer…"
-msgstr ""
+#~ msgid "Type your answer…"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ul"
@@ -5578,8 +5578,8 @@ msgstr ""
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx
 #: src/features/chat/TextBlock.tsx
-msgid "you answered"
-msgstr ""
+#~ msgid "you answered"
+#~ msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "You can retry when this chat is free."
@@ -5594,8 +5594,8 @@ msgid "You're out of usage. Your messages will send when you add more."
 msgstr ""
 
 #: src/features/chat/InterruptResponseFeedback.tsx
-msgid "Your answer may not have reached the agent."
-msgstr ""
+#~ msgid "Your answer may not have reached the agent."
+#~ msgstr ""
 
 #: src/features/chat/UserTurn.tsx
 msgid "Your message"

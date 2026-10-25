@@ -117,7 +117,7 @@ export type ChatItem =
       card: string | null;
       /** A plain row's body, when the block is neither a card nor an image. */
       body: string | null;
-      /** `--full`: the card's content (props and interrupt) and a direct launch's saved result. */
+      /** `--full`: the card's content and a direct launch's saved result. */
       content?: JsonValue;
       direct?: unknown;
     }

@@ -86,8 +86,6 @@ function harness(initial: SyncedThread = EMPTY_SYNCED_THREAD, { join = true } = 
   };
 }
 
-type Harness = ReturnType<typeof harness>;
-
 function textBlock(id: string, turnId: string, text: string) {
   return {
     id,
@@ -146,14 +144,6 @@ const card = (status: string) =>
       sequence: 4,
       content: { kind: "spawn", props: { status, toolCallId: "call-1", execution: "child-turn" } },
     },
-  });
-const interrupt = (turnId: string, state: "created" | "resolved") =>
-  custom("meridian.interrupt", {
-    state,
-    turnId,
-    interruptId: "int-1",
-    blockSequence: 3,
-    ...(state === "resolved" ? { value: "yes", provenance: "user" } : {}),
   });
 const record = (version: string, executionId: string | null, items: unknown[] = []) =>
   custom("meridian.run_state", {
@@ -397,19 +387,6 @@ describe("when the sync asks for a read", () => {
 });
 
 describe("the end-of-turn check", () => {
-  /** The stream ends `turnId` after replay reopened it: interrupt created, resolved, then the end. */
-  function reopenAndEnd(h: Harness, turnId: string, end: "finish" | "error") {
-    h.emit(interrupt(turnId, "created"), "5001");
-    h.emit(interrupt(turnId, "resolved"), "5002");
-    h.emit(textDelta("m1", "Done"), "5003");
-    h.emit(
-      end === "finish"
-        ? runFinished(turnId)
-        : { type: EventType.RUN_ERROR, threadId: THREAD, message: "boom" },
-      "5004",
-    );
-  }
-
   it("compares a stream-ended turn with the read, and never trusts a turn a read wrote first", () => {
     // A stream that ends a turn with text the read doesn't hold is a difference.
     const differs = harness();
@@ -437,24 +414,6 @@ describe("the end-of-turn check", () => {
     changed.sync.receive(read([reply("turn-b", "complete", "Hi there")], "3000"));
     expect(changed.checks()).toEqual([
       { kind: "check", turnId: "turn-b", rewritten: true, diffs: [] },
-    ]);
-
-    // A turn a read showed terminal, reopened by replayed interrupt frames and ended again by
-    // RUN_FINISHED, stays rewritten; so does a second one from `error` after a delta the read covered.
-    const finished = harness();
-    finished.sync.receive(read([reply("turn-c", "complete", "Done")], "2000"));
-    reopenAndEnd(finished, "turn-c", "finish");
-    expect(finished.turn("turn-c")?.status).toBe("complete");
-    finished.sync.receive(read([reply("turn-c", "complete", "Done")], "6000"));
-    expect(finished.checks().map((check) => [check.turnId, check.rewritten])).toEqual([
-      ["turn-c", true],
-    ]);
-    const failed = harness();
-    failed.sync.receive(read([reply("turn-d", "error", "Done")], "2000"));
-    reopenAndEnd(failed, "turn-d", "error");
-    failed.sync.receive(read([reply("turn-d", "error", "Done")], "6000"));
-    expect(failed.checks().map((check) => [check.turnId, check.rewritten])).toEqual([
-      ["turn-d", true],
     ]);
 
     // A first read that installs the turn streaming with text, followed only by its end, stays
