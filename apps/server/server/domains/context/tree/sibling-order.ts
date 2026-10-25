@@ -204,10 +204,11 @@ async function liveRankBoundary(
 ): Promise<RankedNode | null> {
   const relation = input.anchor
     ? input.direction === "before"
-      ? sql`AND (rank < ${input.anchor.rank} OR (rank = ${input.anchor.rank} AND id < ${input.anchor.id}::uuid))`
-      : sql`AND (rank > ${input.anchor.rank} OR (rank = ${input.anchor.rank} AND id > ${input.anchor.id}::uuid))`
+      ? sql`AND (rank COLLATE "C" < ${input.anchor.rank} OR (rank = ${input.anchor.rank} AND id < ${input.anchor.id}::uuid))`
+      : sql`AND (rank COLLATE "C" > ${input.anchor.rank} OR (rank = ${input.anchor.rank} AND id > ${input.anchor.id}::uuid))`
     : sql``;
-  const order = input.direction === "before" ? sql`rank DESC, id DESC` : sql`rank, id`;
+  const order =
+    input.direction === "before" ? sql`rank COLLATE "C" DESC, id DESC` : sql`rank COLLATE "C", id`;
   const [row] = await currentDrizzleDb(db).execute<RankedNode>(sql`
     SELECT id, rank FROM (
       (SELECT d.id, d.rank FROM documents d

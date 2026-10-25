@@ -251,7 +251,7 @@ export const folders = pgTable(
       .on(table.contextSourceId, table.parentId)
       .where(sql`${table.deletedAt} IS NULL`),
     index("folders_sibling_rank_live")
-      .on(table.contextSourceId, table.parentId, table.rank, table.id)
+      .on(table.contextSourceId, table.parentId, sql`${table.rank} COLLATE "C"`, table.id)
       .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden} AND ${table.rank} IS NOT NULL`),
     check("folders_order_policy_valid", sql`${table.orderPolicy} IN ('default', 'manual')`),
     index("folders_context_parent_alias_active")
@@ -355,7 +355,7 @@ export const documents = pgTable(
       table.extension,
     ),
     index("documents_sibling_rank_live")
-      .on(table.contextSourceId, table.folderId, table.rank, table.id)
+      .on(table.contextSourceId, table.folderId, sql`${table.rank} COLLATE "C"`, table.id)
       .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden} AND ${table.rank} IS NOT NULL`),
     // Hidden documents occupy no live path; nothing makes them unique.
     uniqueIndex("documents_context_folder_name_live")

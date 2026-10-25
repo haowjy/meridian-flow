@@ -17,7 +17,7 @@ import {
   folders,
 } from "@meridian/database/schema";
 import { compareDefaultSiblings } from "@meridian/resource-replica";
-import { and, asc, desc, eq, gt, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { visibleDocuments, visibleFolders } from "./tree-view-sql.js";
@@ -270,18 +270,16 @@ async function branchRankBoundary(
 ): Promise<RankedNode | null> {
   const tx = currentDrizzleDb(db);
   const rankOrder = input.direction === "before" ? desc : asc;
-  const relation = <TId>(rank: Parameters<typeof eq>[0], id: TId) =>
+  const relation = (rank: Parameters<typeof eq>[0], id: Parameters<typeof eq>[0]) =>
     input.anchor
       ? input.direction === "before"
-        ? or(
-            lt(rank, input.anchor.rank),
-            and(eq(rank, input.anchor.rank), lt(id as Parameters<typeof lt>[0], input.anchor.id)),
-          )
-        : or(
-            gt(rank, input.anchor.rank),
-            and(eq(rank, input.anchor.rank), gt(id as Parameters<typeof gt>[0], input.anchor.id)),
-          )
+        ? sql`(${rank} COLLATE "C" < ${input.anchor.rank} OR (${rank} = ${input.anchor.rank} AND ${id} < ${input.anchor.id}::uuid))`
+        : sql`(${rank} COLLATE "C" > ${input.anchor.rank} OR (${rank} = ${input.anchor.rank} AND ${id} > ${input.anchor.id}::uuid))`
       : undefined;
+  const order = (rank: Parameters<typeof eq>[0], id: Parameters<typeof eq>[0]) => [
+    rankOrder(sql`${rank} COLLATE "C"`),
+    rankOrder(id),
+  ];
   if (input.branchOwned) {
     const [row] = await tx
       .select({ id: branchTreeRanks.nodeId, rank: branchTreeRanks.rank })
@@ -295,7 +293,7 @@ async function branchRankBoundary(
           relation(branchTreeRanks.rank, branchTreeRanks.nodeId),
         ),
       )
-      .orderBy(rankOrder(branchTreeRanks.rank), rankOrder(branchTreeRanks.nodeId))
+      .orderBy(...order(branchTreeRanks.rank, branchTreeRanks.nodeId))
       .limit(1);
     return row ?? null;
   }
@@ -317,7 +315,7 @@ async function branchRankBoundary(
           relation(vd.rank, vd.id),
         ),
       )
-      .orderBy(rankOrder(vd.rank), rankOrder(vd.id))
+      .orderBy(...order(vd.rank, vd.id))
       .limit(1),
     tx
       .select({ id: vf.id, rank: vf.rank })
@@ -333,7 +331,7 @@ async function branchRankBoundary(
           relation(vf.rank, vf.id),
         ),
       )
-      .orderBy(rankOrder(vf.rank), rankOrder(vf.id))
+      .orderBy(...order(vf.rank, vf.id))
       .limit(1),
   ]);
   return nearest(

@@ -18,4 +18,4 @@ ALTER TABLE "branch_tree_ranks" ADD CONSTRAINT "branch_tree_ranks_branch_id_bran
 --> statement-breakpoint
 ALTER TABLE "branch_tree_ranks" VALIDATE CONSTRAINT "branch_tree_ranks_branch_id_branches_id_fk";
 --> statement-breakpoint
-CREATE INDEX "branch_tree_ranks_parent_rank" ON "branch_tree_ranks" USING btree ("branch_id","parent_kind","parent_id","rank","node_id"); -- migration-lint: skip INDEX_NOT_CONCURRENTLY (table created empty in this migration; no concurrent writes can reach it before commit)
+CREATE INDEX "branch_tree_ranks_parent_rank" ON "branch_tree_ranks" USING btree ("branch_id","parent_kind","parent_id",("rank" COLLATE "C"),"node_id"); -- migration-lint: skip INDEX_NOT_CONCURRENTLY (table created empty in this migration; no concurrent writes can reach it before commit)
