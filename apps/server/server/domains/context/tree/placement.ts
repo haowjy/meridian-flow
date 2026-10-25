@@ -25,6 +25,7 @@ import type { CreateFault } from "./hidden-node-types.js";
 import { normalizeNames } from "./name-normalization.js";
 import { bumpLocationVersions, claimDocumentLocation } from "./node-locations.js";
 import { insertFolder } from "./node-rows.js";
+import { placeLiveSibling } from "./sibling-order.js";
 import { loadFolderChains } from "./tree-addresses.js";
 import {
   createTreeReader,
@@ -107,6 +108,12 @@ export async function ensureLiveFolderPath(
     await claimDocumentLocation(db, contextSourceId, gap.parentId, gap.name);
     if (hidden) {
       await updatePlacedFolder(db, hidden, { parentId: gap.parentId, clear: "hidden" });
+      await placeLiveSibling(db, {
+        node: { kind: "folder", id: hidden },
+        sourceId: contextSourceId,
+        parentId: gap.parentId,
+        arrived: true,
+      });
       // Another branch's hidden folder at the same path folds into the revealed one.
       await absorbAt(db, hidden);
     }
@@ -193,6 +200,12 @@ export async function placeLive(
   const { ancestors, parentId, at, filename } = prepared.value;
   await land(parentId, at);
   await normalizeNames(db, [target.node]);
+  await placeLiveSibling(db, {
+    node: target.node,
+    sourceId: target.at.contextSourceId,
+    parentId,
+    arrived: true,
+  });
   await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
   return Ok({ ancestors, at });
 }
@@ -396,6 +409,12 @@ async function placeAncestors(
       parentId,
       clear: row.hidden ? "hidden" : row.deleted ? "deleted" : null,
       contextSourceId,
+    });
+    await placeLiveSibling(db, {
+      node: { kind: "folder", id: row.id },
+      sourceId: contextSourceId,
+      parentId,
+      arrived: true,
     });
     await claimDocumentLocation(db, contextSourceId, parentId, row.name);
     // A split may have left a hidden twin at a restored folder's path (§8.3).

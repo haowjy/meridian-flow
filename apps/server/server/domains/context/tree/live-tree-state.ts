@@ -236,6 +236,8 @@ export async function moveToPlacement(
   deps: {
     arrivals?: Pick<DocumentArrivals, "settle">;
     catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
+    /** Apply reconciles branch-relative neighbours after every tree lifecycle path lands. */
+    deferOrder?: boolean;
   },
 ): Promise<ReturnMoveOutcome> {
   const tx = currentDrizzleDb(db);
@@ -270,12 +272,13 @@ export async function moveToPlacement(
     .from(documents)
     .where(inArray(documents.id, [input.documentId]));
   if (!placed) return { kind: "refused" };
-  await applyLiveRank(db, {
-    documentId: input.documentId,
-    sourceId: placed.sourceId,
-    parentId: placed.folderId,
-    rank: input.to.rank,
-  });
+  if (!deps.deferOrder)
+    await applyLiveRank(db, {
+      documentId: input.documentId,
+      sourceId: placed.sourceId,
+      parentId: placed.folderId,
+      rank: input.to.rank,
+    });
   await deps.arrivals?.settle(moved.value.documentIds);
   await deps.catalog.refreshSources(
     [...new Set([sourceId, ...(fromSource ? [fromSource] : [])])],

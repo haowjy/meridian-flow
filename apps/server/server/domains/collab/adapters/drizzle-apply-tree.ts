@@ -8,6 +8,7 @@ import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizz
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
+import { branchSiblingIntent } from "../../context/tree/branch-sibling-order.js";
 import {
   dropDocumentRows,
   settleUndoneCreatesAfterReveal,
@@ -16,7 +17,7 @@ import { tombstoneUnused } from "../../context/tree/end-use.js";
 import { moveToPlacement } from "../../context/tree/live-tree-state.js";
 import { place } from "../../context/tree/placement.js";
 import { restoreDocument } from "../../context/tree/removal.js";
-import { applyLiveRank } from "../../context/tree/sibling-order.js";
+import { placeLiveRelative } from "../../context/tree/sibling-order.js";
 import type { TreeStateNode } from "../../context/tree/tree-view.js";
 import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
 import type { AgentTreeHistory } from "../contracts.js";
@@ -82,22 +83,25 @@ export function createApplyTreeOperations(input: {
       );
     await settleUndoneCreatesAfterReveal(input.db, node.nodeId);
     await input.arrivals?.settle([node.nodeId]);
+    if (!placed.value.landed[0]) throw new ApplyClickRefused("not_found");
     await input.catalog.refreshSources(
       placed.value.sourceIds,
       placed.value.placed.map((ref) => ref.id),
     );
-    if (!placed.value.landed[0]) throw new ApplyClickRefused("not_found");
-    await applyLiveRank(input.db, {
-      documentId: node.nodeId,
-      sourceId: placed.value.landed[0].at.contextSourceId,
-      parentId: placed.value.landed[0].at.parentFolderId,
-      rank: node.target.rank,
-    });
   };
 
   const apply = async (
     node: TreeStateNode,
   ): Promise<{ item: AppliedReviewItem; restored: boolean }> => {
+    const orderIntent =
+      node.target.rank == null
+        ? null
+        : await branchSiblingIntent(input.db, {
+            branchId: input.branchId,
+            documentId: node.nodeId,
+            sourceId: node.target.contextSourceId,
+            parentId: node.target.parentFolderId,
+          });
     const before = await input.findLive(node.nodeId);
     const from =
       before.kind === "found" && before.document
@@ -199,7 +203,7 @@ export function createApplyTreeOperations(input: {
             rank: node.target.rank,
           },
         },
-        { arrivals: input.arrivals, catalog: input.catalog },
+        { arrivals: input.arrivals, catalog: input.catalog, deferOrder: orderIntent !== null },
       );
       if (moved.kind === "ancestor_taken") throw new ApplyClickRefused("ancestor_taken");
       if (moved.kind === "folder_missing") {
@@ -212,6 +216,17 @@ export function createApplyTreeOperations(input: {
       if (moved.kind !== "moved") throw new ApplyClickRefused("not_found");
     }
     if (node.hidden && node.origin === "created") await reveal(node, node.target);
+    if (orderIntent) {
+      const [landed] = await loadDocumentIdentityRows(tx, [node.nodeId]);
+      if (!landed || landed.deleted || landed.hidden) throw new ApplyClickRefused("not_found");
+      await placeLiveRelative(input.db, {
+        documentId: node.nodeId,
+        sourceId: landed.contextSourceId,
+        parentId: landed.folderId,
+        ...orderIntent,
+      });
+      await input.catalog.refreshSources([landed.contextSourceId], [node.nodeId]);
+    }
     return { item: await settle(node, from), restored };
   };
 
