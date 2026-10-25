@@ -1,6 +1,5 @@
 /** Authenticated writer adapter for the canonical thread Work-rebind command. */
 
-import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import { meridianError, meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import {
@@ -14,14 +13,13 @@ import type { WorkContextNotices, WorkRepository } from "../domains/projects/ind
 import type { RunClaim } from "../domains/runtime/index.js";
 import {
   RebindThreadWorkError,
-  rebindThreadWork,
   requireThreadOwner,
+  switchThreadWork,
   type ThreadRepository,
   type ThreadWorksRepository,
 } from "../domains/threads/index.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import { requireRequestId } from "./request-id.js";
-import { recordWorkSwitchNotice } from "./work-switch-notice.js";
 
 export interface ThreadWorkRebindRouteDeps {
   threads: Pick<ThreadRepository, "findById" | "findByIdIncludingDeleted">;
@@ -72,26 +70,14 @@ export async function handleRebindThreadWorkRequest(
     workId = input.body.workId;
   }
 
-  let transition: Awaited<ReturnType<typeof rebindThreadWork>>;
+  let transition: Awaited<ReturnType<typeof switchThreadWork>>;
   try {
     const claimed = await deps.runClaim.withExclusiveThread(thread.id, () =>
       deps.transaction(async () => {
-        const rebound = await rebindThreadWork(deps, {
+        return switchThreadWork(deps, {
           threadId: thread.id,
           workId,
         });
-        const root = await deps.threads.findByIdIncludingDeleted(thread.rootThreadId);
-        if (rebound.before.handle === null && !root?.ref)
-          throw new Error("Scratch requires the first chat's assigned handle");
-        const previousScratchUri = formatParsedContextUri(
-          "scratch",
-          "",
-          rebound.before.handle === null
-            ? { kind: "lineage", rootThreadRef: root?.ref ?? "" }
-            : { kind: "work", workHandle: rebound.before.handle },
-        );
-        await recordWorkSwitchNotice(deps.notices, rebound, previousScratchUri);
-        return rebound;
       }),
     );
     if (!claimed) {

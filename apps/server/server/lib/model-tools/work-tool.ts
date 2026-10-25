@@ -3,7 +3,6 @@
  * policy decides each command (D39). Work rebinding and queued write-mode
  * changes run under the calling execution's existing claim.
  */
-import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
@@ -27,8 +26,7 @@ import {
   type WorkShowResult,
   workActionRefusal,
 } from "../../domains/runtime/index.js";
-import { RebindThreadWorkError, rebindThreadWork } from "../../domains/threads/index.js";
-import { recordWorkSwitchNotice } from "../work-switch-notice.js";
+import { RebindThreadWorkError, switchThreadWork } from "../../domains/threads/index.js";
 import {
   isToolError,
   type ToolErrorOutput,
@@ -333,24 +331,12 @@ export function createWorkHandler(deps: ToolWiringDeps) {
           : await deps.works.findNoWork(thread.projectId);
         if (!target) return toolError({ message: "No Work is missing for this project" });
         if (isToolError(target)) return target;
-        const rebound = await deps.transaction(async () => {
-          const rebound = await rebindThreadWork(deps, {
+        const rebound = await deps.transaction(() =>
+          switchThreadWork(deps, {
             threadId: thread.id as ThreadId,
             workId: target.id,
-          });
-          const root = await deps.threads.findByIdIncludingDeleted(thread.rootThreadId);
-          if (rebound.before.handle === null && !root?.ref)
-            throw new Error("Scratch requires the first chat's assigned handle");
-          const previousScratchUri = formatParsedContextUri(
-            "scratch",
-            "",
-            rebound.before.handle === null
-              ? { kind: "lineage", rootThreadRef: root?.ref ?? "" }
-              : { kind: "work", workHandle: rebound.before.handle },
-          );
-          await recordWorkSwitchNotice(deps.notices, rebound, previousScratchUri);
-          return rebound;
-        });
+          }),
+        );
         return { handle: rebound.after.handle, name: rebound.after.name };
       }
       if (command.command === "write_mode") {
