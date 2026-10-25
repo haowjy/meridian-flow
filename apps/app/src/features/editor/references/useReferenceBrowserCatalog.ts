@@ -25,7 +25,7 @@ import {
   referenceRowForFile,
   referenceRowForFolder,
 } from "@/core/completion/reference-policy";
-import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
+import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import {
   useAccountResourceProjection,
   useOptionalAccountResourceReplica,
@@ -39,7 +39,7 @@ export function useReferenceBrowserCatalog(
   rootThreadId?: string | null,
   /** The chat whose uploads the picker offers: a subagent's top chat. */
   chatId?: string | null,
-): AtReferenceCatalog | null {
+): ReferenceBrowserCatalog | null {
   const queryClient = useContext(QueryClientContext);
   const resources = useOptionalAccountResourceReplica();
   const projection = useAccountResourceProjection(projectId ?? "");
@@ -92,7 +92,7 @@ export function useReferenceBrowserCatalog(
             };
             let referenceIndex: Map<
               string,
-              NonNullable<ReturnType<AtReferenceCatalog["resolveReference"]>>
+              NonNullable<ReturnType<ReferenceBrowserCatalog["resolveReference"]>>
             > | null = null;
             const buildReferenceIndex = () => {
               const authorities: CatalogAuthorityEntry[] = [];
@@ -110,7 +110,7 @@ export function useReferenceBrowserCatalog(
               const authorityIndex = referenceAuthorityIndex(authorities);
               const next = new Map<
                 string,
-                NonNullable<ReturnType<AtReferenceCatalog["resolveReference"]>>
+                NonNullable<ReturnType<ReferenceBrowserCatalog["resolveReference"]>>
               >();
               for (const entry of files) {
                 const row = referenceRowForFile(entry, authorityIndex);
@@ -122,7 +122,7 @@ export function useReferenceBrowserCatalog(
               }
               return next;
             };
-            const resolveReference: AtReferenceCatalog["resolveReference"] = (reference) => {
+            const resolveReference: ReferenceBrowserCatalog["resolveReference"] = (reference) => {
               referenceIndex ??= buildReferenceIndex();
               return referenceIndex.get(`${reference.kind}:${reference.id}`) ?? null;
             };

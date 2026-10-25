@@ -18,19 +18,13 @@ import {
   insertLinkAhead,
 } from "./document-link-insertion";
 
-export type AtReferenceCatalog = {
+export type ReferenceBrowserCatalog = {
   port: ReferenceCatalogPort;
   /** Cheap identity lookup over the catalog snapshots already installed for this surface. */
   resolveReference: (reference: {
     kind: "file" | "folder";
     id: string;
   }) => ReferenceTerminalRow | null;
-  /** Host-owned terminal transaction; trigger/browser/menu ownership stays shared. */
-  insertReference?: (
-    editor: import("@tiptap/core").Editor,
-    range: Range,
-    row: ReferenceTerminalRow,
-  ) => boolean;
   openContext: () => ReferenceBrowserOpenContext | null;
   label: string;
   /**
@@ -39,6 +33,11 @@ export type AtReferenceCatalog = {
    * must name an existing document (the chat composer).
    */
   linkAhead?: (name: string) => { uri: string } | null;
+};
+
+export type AtReferenceCatalog = ReferenceBrowserCatalog & {
+  /** The host's canonical node for a terminal row, shared by `@` and row drops. */
+  referenceNode: (schema: Schema, row: ReferenceTerminalRow) => PMNode | null;
 };
 
 /** The exact Editor node shape written by `@`, also used by row drops. */
@@ -60,13 +59,8 @@ export type AtReferenceMenu = SuggestionMenu<
   import("@/core/completion").ReferenceBrowserMeta
 >;
 
-function insertReference(
-  editor: import("@tiptap/core").Editor,
-  range: Range,
-  row: ReferenceTerminalRow,
-) {
-  const node = editorReferenceNode(editor.schema, row);
-  return node ? editor.chain().focus().insertContentAt(range, node).unsetMark("link").run() : false;
+function insertReference(editor: import("@tiptap/core").Editor, range: Range, node: PMNode) {
+  return editor.chain().focus().insertContentAt(range, node).unsetMark("link").run();
 }
 
 const lane = createSuggestionLane<
@@ -111,8 +105,8 @@ const lane = createSuggestionLane<
         yUndoPluginKey.getState(editor.state)?.undoManager.stopCapturing();
         editor.view.dispatch(closeHistory(editor.state.tr));
         const current = catalog();
-        if (current?.insertReference) current.insertReference(editor, triggerRange, row);
-        else insertReference(editor, triggerRange, row);
+        const node = current?.referenceNode(editor.schema, row);
+        if (node) insertReference(editor, triggerRange, node);
       },
     }),
   keyBindings: (menu) => ({
