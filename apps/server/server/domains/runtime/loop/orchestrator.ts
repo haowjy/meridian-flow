@@ -499,7 +499,12 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
     ...(skillMetadata && typeof skillMetadata === "object" && !Array.isArray(skillMetadata)
       ? skillMetadata
       : {}),
-    ...(input.child ? agentRequestMetadata(input.child.origin) : {}),
+    ...(input.child
+      ? agentRequestMetadata(input.child.origin, {
+          threadId: input.child.parentThreadId,
+          ...input.child.sender,
+        })
+      : {}),
   });
   let reservedTurnId: TurnId | undefined;
   const userTurn = await deps.delivery.withThreadLock(input.threadId, async (producer) => {

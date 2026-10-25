@@ -104,6 +104,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
         parentThreadId: input.parentThread.id as ThreadId,
         background: prepared.background,
         origin: prepared.origin,
+        sender: { ref: input.parentThread.ref, title: input.parentThread.title },
       },
       treeBudget: input.budget,
       executionReport: {
