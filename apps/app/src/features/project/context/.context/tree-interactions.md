@@ -250,7 +250,7 @@ final name. The hover shows that prediction before the drop: an accept whose
 rows would arrive renamed carries a warning, drawn as a second line under the
 hint ("chapter-1 will be renamed chapter-1 (2)", or "3 items will be renamed").
 Letting go accepts it; Escape or another target declines it. A drop moves every carried row through
-`move-entry.ts` (`execute-move.ts`), reselects them, reveals the destination (the target's
+`moveRows` (`entry-drag/execute-move.ts`), reselects them, reveals the destination (the target's
 own `reveal`, the same one the spring calls) and shows "Moved chapter-3 to Act
 2." (or "Moved chapter-3 to Act 2 as chapter-3 (2).") with Undo on the surface
 that took the drop, in that surface's one notice place, shared with delete
