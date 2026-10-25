@@ -1,5 +1,6 @@
 import type { Range } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
+import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import type {
   ReferenceBrowserOpenContext,
@@ -12,13 +13,17 @@ import { createReferenceBrowserController } from "@/core/completion";
 import { createSuggestionLane, type SuggestionLaneOptions } from "../suggestion";
 import { allowsAtTrigger } from "./at-trigger";
 import {
-  insertDocumentReference,
-  insertFolderReference,
+  documentReferenceNode,
+  folderReferenceNode,
   insertLinkAhead,
 } from "./document-link-insertion";
 
 export type AtReferenceCatalog = {
   port: ReferenceCatalogPort;
+  /** Cheap identity lookup over the catalog snapshots already installed for this surface. */
+  resolveReference: (reference: { kind: "file" | "folder"; id: string }) =>
+    | ReferenceTerminalRow
+    | null;
   /** Host-owned terminal transaction; trigger/browser/menu ownership stays shared. */
   insertReference?: (
     editor: import("@tiptap/core").Editor,
@@ -34,6 +39,22 @@ export type AtReferenceCatalog = {
    */
   linkAhead?: (name: string) => { uri: string } | null;
 };
+
+/** The exact Editor node shape written by `@`, also used by row drops. */
+export function editorReferenceNode(schema: Schema, row: ReferenceTerminalRow): PMNode | null {
+  if (row.kind === "folder-mention")
+    return folderReferenceNode(schema, row.action.reference);
+  const reference = row.action.reference;
+  if (row.fileKind === "asset")
+    return (
+      schema.nodes.image?.create({
+        src: `asset:${reference.documentId}`,
+        alt: reference.label,
+        title: null,
+      }) ?? null
+    );
+  return documentReferenceNode(schema, reference);
+}
 export type AtReferenceMenu = SuggestionMenu<
   ReferenceMenuRow,
   import("@/core/completion").ReferenceBrowserMeta
@@ -44,24 +65,8 @@ function insertReference(
   range: Range,
   row: ReferenceTerminalRow,
 ) {
-  if (row.kind === "folder-mention")
-    return insertFolderReference(editor, range, row.action.reference);
-  const reference = row.action.reference;
-  if (row.fileKind === "asset") {
-    return editor
-      .chain()
-      .focus()
-      .insertContentAt(range, {
-        type: "image",
-        attrs: { src: `asset:${reference.documentId}`, alt: reference.label, title: null },
-      })
-      .run();
-  }
-  return insertDocumentReference(editor, range, {
-    label: reference.label,
-    documentId: reference.documentId,
-    uri: reference.uri,
-  });
+  const node = editorReferenceNode(editor.schema, row);
+  return node ? editor.chain().focus().insertContentAt(range, node).unsetMark("link").run() : false;
 }
 
 const lane = createSuggestionLane<
