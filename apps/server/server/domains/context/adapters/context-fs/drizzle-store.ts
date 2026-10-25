@@ -57,10 +57,17 @@ type DocumentRow = Pick<
   | "sizeBytes"
   | "updatedAt"
   | "provisionalName"
+  | "rank"
 >;
 
-function mapFolder(row: { id: string; parentId: string | null; name: string }): ContextFolder {
-  return { id: row.id, parentId: row.parentId, name: row.name };
+function mapFolder(row: {
+  id: string;
+  parentId: string | null;
+  name: string;
+  rank: string | null;
+  orderPolicy: "default" | "manual";
+}): ContextFolder {
+  return { ...row };
 }
 
 function mapDocument(row: DocumentRow): ContextDocument {
@@ -77,6 +84,7 @@ function mapDocument(row: DocumentRow): ContextDocument {
     sizeBytes: row.sizeBytes === null ? null : Number(row.sizeBytes),
     updatedAt: row.updatedAt.toISOString(),
     provisionalName: row.provisionalName,
+    rank: row.rank,
   };
 }
 
@@ -322,7 +330,13 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   async listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]> {
     const vf = visibleFolders(view);
     const rows = await this.db
-      .select({ id: vf.id, parentId: vf.parentId, name: vf.name })
+      .select({
+        id: vf.id,
+        parentId: vf.parentId,
+        name: vf.name,
+        rank: vf.rank,
+        orderPolicy: vf.orderPolicy,
+      })
       .from(vf)
       .where(
         and(

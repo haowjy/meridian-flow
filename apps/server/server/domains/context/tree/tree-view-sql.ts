@@ -48,6 +48,7 @@ const visibleDocumentShape = pgTable("visible_documents", {
   sizeBytes: bigint("size_bytes", { mode: "number" }),
   metadata: jsonb("metadata").$type<JsonObject>().notNull(),
   provisionalName: boolean("provisional_name").notNull(),
+  rank: text("rank"),
   locationVersion: bigint("location_version", { mode: "bigint" }).notNull(),
   hidden: boolean("hidden").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
@@ -61,6 +62,8 @@ const visibleFolderShape = pgTable("visible_folders", {
   name: text("name").notNull(),
   description: text("description"),
   sortOrder: integer("sort_order").notNull(),
+  rank: text("rank"),
+  orderPolicy: text("order_policy").$type<"default" | "manual">().notNull(),
   hidden: boolean("hidden").notNull(),
   locationVersion: bigint("location_version", { mode: "bigint" }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
@@ -95,7 +98,7 @@ const documentTail = sql.raw(
     "d.location_version, d.hidden, d.created_at, d.updated_at",
 );
 const folderColumns = sql.raw(
-  "f.id, f.context_source_id, f.parent_id, f.name, f.description, f.sort_order, f.hidden, " +
+  "f.id, f.context_source_id, f.parent_id, f.name, f.description, f.sort_order, f.rank, f.order_policy, f.hidden, " +
     "f.location_version, f.created_at, f.updated_at",
 );
 
@@ -234,7 +237,7 @@ function documentsQuery(view: TreeView, match?: SlotMatch): SQL {
   const slots = slotted(match, "key, source_id, parent_id, name, extension");
   const select = match
     ? sql`SELECT p.key, d.id`
-    : sql`SELECT d.id, d.context_source_id, d.folder_id, d.name, d.extension, ${documentTail}`;
+    : sql`SELECT d.id, d.context_source_id, d.folder_id, d.name, d.extension, d.rank, ${documentTail}`;
   const live = sql`${select}
     FROM ${slots}documents d WHERE ${liveDocument}${at(match, rowLocation, "d.extension")}`;
   if (view.kind === "live") return live;
@@ -243,6 +246,7 @@ function documentsQuery(view: TreeView, match?: SlotMatch): SQL {
     ? sql`SELECT p.key, d.id`
     : sql`SELECT d.id, coalesce(mf.context_source_id, c.moved_root_source_id) AS context_source_id,
         c.moved_folder_id AS folder_id, c.moved_name AS name, c.moved_extension AS extension,
+        c.moved_rank AS rank,
         ${documentTail}`;
   return sql`${live} AND NOT ${treeFactOf(branch)}
     UNION ALL
