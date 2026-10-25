@@ -77,7 +77,6 @@ it("hides descendants of pending deletes and restores them after refusal", () =>
             filetype: "markdown",
             schemaType: "document",
             aliases: [],
-            importPending: false,
             hasProperties: false,
             provisionalName: false,
           },

@@ -1029,6 +1029,14 @@
   }
 }
 
+/* The phone's compact activity bar: 8px margins, directly under MobileTopBar
+   (its h-14 row plus the standalone status-bar inset) and over the content. */
+.activity-phone-bar {
+  top: calc(env(safe-area-inset-top) + 3.5rem + 0.5rem);
+  left: calc(0.5rem + env(safe-area-inset-left));
+  right: calc(0.5rem + env(safe-area-inset-right));
+}
+
 @keyframes block-reveal {
   0%, 100% { outline-color: transparent; background-color: transparent; }
   20%, 70% { outline-color: color-mix(in srgb, var(--color-primary) 58%, transparent); background-color: color-mix(in srgb, var(--color-primary) 9%, transparent); }

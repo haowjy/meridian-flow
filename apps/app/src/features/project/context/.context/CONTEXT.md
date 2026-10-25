@@ -89,7 +89,7 @@ ContextPaneController
        └─ ContextViewer
               ├─ ContextTabBar (reviewing tab surfaces dock tone)
               ├─ DocumentPaneChrome (shared with the dock's document)
-              │     ├─ PassageNotice, ArchivedWorkNotice, ImportDocumentNotice
+              │     ├─ PassageNotice, ArchivedWorkNotice
               │     ├─ DocumentIdentityBar (DocumentPath crumbs + chips and painted DraftReviewBand)
               │     └─ DocumentProperties (read-only frontmatter; mounts when the catalog entry
               │        has `hasProperties`, then fetches by document id; open/closed is one

@@ -22,18 +22,22 @@ import {
   ThreadStoreProvider,
 } from "@/client/stores";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
+import { ToastRegion } from "@/components/app/ToastRegion";
+import { ToastRegistryProvider } from "@/components/app/toast-registry";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { AccountSettingsProvider } from "@/features/account/AccountSettingsProvider";
 import { SettingsDialog } from "@/features/account/SettingsDialog";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
+import { ImportsProvider } from "@/features/import/ImportsProvider";
 import {
   AccountFeatureComposition,
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { parseProjectAddress } from "@/features/project/routing/project-address";
+import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { originalBrowserSearch } from "@/router-search";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
@@ -198,6 +202,7 @@ function AuthenticatedProviderTree({
   };
 }) {
   const resources = useOptionalAccountResourceReplica();
+  const phone = usePhoneShell();
 
   // Browser persistence is initialized only after the Query composition root
   // exists. Constructing these services during SSR crashes the authenticated shell.
@@ -214,24 +219,30 @@ function AuthenticatedProviderTree({
         <TransportProvider>
           <MeridianCopilotProvider>
             <DensityPopoverCollisionProvider>
-              <div className="app-frame flex flex-col">
-                <ConnectionBanner />
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  {/* Project parents key their shell by resolved identity; account fencing stays above. */}
-                  <Outlet />
-                </div>
-              </div>
-              <SettingsDialog />
-              {DebugOverlay ? (
-                <Suspense fallback={null}>
-                  <DebugOverlay />
-                </Suspense>
-              ) : null}
-              {ReactQueryDevtools ? (
-                <Suspense fallback={null}>
-                  <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
-                </Suspense>
-              ) : null}
+              <ToastRegistryProvider>
+                <ImportsProvider key={user.userId}>
+                  <div className="app-frame flex flex-col">
+                    <ConnectionBanner />
+                    <div className="min-h-0 flex-1 overflow-hidden">
+                      {/* Project parents key their shell by resolved identity; account fencing stays above. */}
+                      <Outlet />
+                    </div>
+                  </div>
+                  <SettingsDialog />
+                  <ToastRegion />
+                  {DebugOverlay ? (
+                    <Suspense fallback={null}>
+                      <DebugOverlay />
+                    </Suspense>
+                  ) : null}
+                  {/* Keep development controls out of the activity card and phone top bar. */}
+                  {ReactQueryDevtools && phone === false ? (
+                    <Suspense fallback={null}>
+                      <ReactQueryDevtools buttonPosition="top-right" initialIsOpen={false} />
+                    </Suspense>
+                  ) : null}
+                </ImportsProvider>
+              </ToastRegistryProvider>
             </DensityPopoverCollisionProvider>
           </MeridianCopilotProvider>
         </TransportProvider>

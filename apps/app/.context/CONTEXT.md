@@ -25,6 +25,23 @@ chunks, streaming memo/coalesce) live in [frontend-perf.md](frontend-perf.md).
 The Chat index feed/row contract and interaction ownership live with the feature in
 [`src/features/project/chat-index/.context/CONTEXT.md`](../src/features/project/chat-index/.context/CONTEXT.md).
 
+## Activity toasts
+
+`components/app/toast-registry.tsx` is the keyed store behind the app-wide
+`ToastRegion` (mounted once in `routes/_authenticated.tsx`, role `region`
+labelled "Activity"). An owner calls `useActivityToast(key, spec | null)` (or
+`useToastRegistry()` for `show`, `update`, `remove`, `reveal`) and supplies its
+own title, detail, progress, body, actions and `onClose`; the registry knows
+nothing about what a toast is for. Omitting `onClose` means the card has no
+close control. Desktop stacks the newest three in a 240px card region, 12px
+from the left and 96px above the bottom, inside the default rail above its
+account/navigation footer (older cards fold into "+N more"). Phone shows a
+compact top bar plus a bottom sheet; `useHasActivityToast()` reserves bar space
+in the project shell so the first Files row remains accessible. It reports the toasts it shows in a visible tab, and
+`useToastVisible(key)` exposes that, so an owner can time "seen for N seconds"
+without owning visibility logic. Collapse is remembered for the life of the
+tab, not across reloads. `ReviewToast` stays a separate transient hint.
+
 ## Server config and auth surface
 
 `src/server/config.ts` is the app server's config seam. It parses the
@@ -299,6 +316,9 @@ three-part snapshot queries and abort fences reject old responses. The exact
 Work-binding snapshot writer keeps that key and checks its captured epoch.
 
 ## Authenticated layout shell
+
+`ToastRegistryProvider` wraps the account-keyed `ImportsProvider`; import
+ownership and file handles outlive project navigation, not the account.
 
 `src/routes/__root.tsx` owns AuthKit and renders the route outlet directly.
 The authenticated route's `AccountFeatureComposition` constructs its account

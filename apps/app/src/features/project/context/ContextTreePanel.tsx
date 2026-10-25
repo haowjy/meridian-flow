@@ -23,7 +23,7 @@ import {
   useOptionalImports,
 } from "@/features/import/ImportProvider";
 import { canPickFolders } from "@/features/import/SelectionPicker";
-import { type ImportRowInfo, rowId, rowKind } from "@/features/import/tree-rows";
+import { rowId, rowKind } from "@/features/import/tree-rows";
 import { useImportedTree } from "@/features/import/use-imported-tree";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
@@ -34,7 +34,6 @@ import {
   schemeIcon,
   schemeLabel,
 } from "./context-schemes";
-import { ImportRunMark } from "./ImportRunMark";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 import {
@@ -163,7 +162,7 @@ function SchemeSection({
   const { isComplete, isError, refetch } = catalogState;
   const imports = useOptionalImports();
   const catalog = catalogState.catalog;
-  const tree = useImportedTree(catalog, scheme);
+  const tree = useImportedTree(catalog, scheme, projectId);
   const folderIds = useMemo(() => {
     if (!tree || !isComplete) return null;
     return treeFolderIds((parentId) =>
@@ -201,42 +200,27 @@ function SchemeSection({
     [catalog, setExpandedEntryIds],
   );
 
-  // A new import opens its area and its destination folder; its new top-level folders
-  // open one level as the run knows them (their ids are known from the pick).
   const importSnapshot = useImportsSnapshot(imports?.coordinator ?? null);
   const arrived = useRef(new Set<string>());
-  const opened = useRef(new Set<string>());
   useEffect(() => {
-    for (const { importId, target } of importSnapshot.imports) {
-      if (!target?.schemes.includes(scheme as never)) continue;
-      const first = !arrived.current.has(importId);
-      const fresh = target.rootIds.filter((id) => !opened.current.has(id));
-      if (!first && fresh.length === 0) continue;
+    for (const { importId, summary } of importSnapshot.imports) {
+      if (
+        summary.projectId !== projectId ||
+        summary.destination.folderUri.split(":")[0] !== scheme ||
+        arrived.current.has(importId)
+      )
+        continue;
       arrived.current.add(importId);
-      for (const id of fresh) opened.current.add(id);
-      if (first) {
-        setExpanded(true);
-        if (
-          target.destination &&
-          target.destination.scheme === scheme &&
-          target.destination.path !== "/"
-        )
-          revealPath(target.destination.path);
+      setExpanded(true);
+      const parent = summary.destination.folderId
+        ? catalog?.normalized.entries.get(summary.destination.folderId)
+        : null;
+      if (parent?.kind === "folder") {
+        revealPath(`/${parent.path.join("/")}`);
+        setExpandedEntryIds((current) => ({ ...current, [parent.entryId]: true }));
       }
-      setExpandedEntryIds((current) => {
-        const next = { ...current };
-        for (const id of fresh) next[id] = true;
-        const here = target.destination?.scheme === scheme ? target.destination : null;
-        const destination =
-          first && here
-            ? (here.folderId ??
-              (here.path !== "/" ? catalog?.findPath(here.path)?.entryId : undefined))
-            : undefined;
-        if (destination) next[destination] = true;
-        return next;
-      });
     }
-  }, [importSnapshot, scheme, setExpanded, revealPath, setExpandedEntryIds, catalog]);
+  }, [importSnapshot, projectId, scheme, setExpanded, revealPath, setExpandedEntryIds, catalog]);
 
   useEffect(() => {
     if (!activeLocationPath) {
@@ -359,7 +343,6 @@ function SchemeSection({
       onExpandedChange={handleExpandedChange}
       onOpenExpanded={() => setExpanded(true)}
       onRequestCreate={requestCreate}
-      importInfo={tree?.statusOf(tree.root.entryId)}
       onImport={
         importable
           ? (kind) => {
@@ -412,7 +395,6 @@ function AreaHeader({
   onExpandedChange,
   onOpenExpanded,
   onRequestCreate,
-  importInfo,
   onImport,
 }: {
   scheme: ProjectContextTreeScheme;
@@ -421,7 +403,6 @@ function AreaHeader({
   onOpenExpanded: () => void;
   onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
   /** What an import's own run shows on the area root: reading, or didn't start. */
-  importInfo?: ImportRowInfo;
   /** Present where the area takes imports: opens the OS picker for a folder or files. */
   onImport?: (kind: PickKind) => void;
 }) {
@@ -448,7 +429,6 @@ function AreaHeader({
       dropProps={drop.dropProps}
       dropState={drop.dropState}
       dropLabel={<Trans>Import here</Trans>}
-      status={<ImportRunMark info={importInfo} />}
       actions={
         schemeAllowsCreation(scheme) ? (
           <>

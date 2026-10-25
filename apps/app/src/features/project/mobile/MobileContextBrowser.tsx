@@ -3,22 +3,16 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { AlertCircle, ChevronRight, Folder } from "lucide-react";
+import { AlertCircle, ChevronRight, Folder, LoaderCircle } from "lucide-react";
 import type {
   CatalogContextView,
   CatalogDirectory as ContextDir,
   CatalogFile as ContextFile,
 } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
+import { useToastRegistry } from "@/components/app/toast-registry";
 import type { InlineEdit } from "@/components/ui/use-inline-edit";
-import { preparingSentence, refusalSentence, runSentence } from "@/features/import/reason-copy";
-import {
-  type ImportRowInfo,
-  type PendingRow,
-  rowKind,
-  siblingsOf,
-} from "@/features/import/tree-rows";
-import { useImportRowActions } from "@/features/import/use-import-row-actions";
+import { type PendingRow, rowKind, siblingsOf } from "@/features/import/tree-rows";
 import { useImportedTree } from "@/features/import/use-imported-tree";
 import { cn } from "@/lib/utils";
 import {
@@ -34,8 +28,6 @@ import { fileKindIcon } from "../context/context-file-icon";
 import { mobileContextTreeOverflowTriggerClassName } from "../context/context-row-geometry";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
 import { EntryNameField } from "../context/EntryNameField";
-import { ImportFailureMark, PendingRowStatus } from "../context/ImportRowStatus";
-import { ImportRunMark } from "../context/ImportRunMark";
 import { LinkUpdateNote } from "../context/LinkUpdateNote";
 import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
 import { useOpenProjectDocument } from "../context/open-project-document";
@@ -246,7 +238,7 @@ function FolderListingBody({
   onRequestDelete: (target: DeleteTarget) => void;
 }) {
   const openDocument = useOpenProjectDocument(projectId);
-  const tree = useImportedTree(catalog, scheme);
+  const tree = useImportedTree(catalog, scheme, projectId);
   if (isError && !catalog) {
     return (
       <ListingStatus tone="error">
@@ -278,12 +270,10 @@ function FolderListingBody({
 
   const rows = tree.rows(dir.entryId);
   // The run's own status for this listing: reading its files, or an import that did not start.
-  const runStatus = <MobileRunStatus info={tree.statusOf(dir.entryId)} />;
 
   if (rows.length === 0) {
     return (
       <div className="flex h-full flex-col">
-        {runStatus}
         <div className="min-h-0 flex-1">
           <ListingStatus tone="muted">
             <Trans>This folder is empty.</Trans>
@@ -309,64 +299,35 @@ function FolderListingBody({
   ];
 
   return (
-    <>
-      {runStatus}
-      <ul className="flex flex-col">
-        {listing.map((row) => {
-          if (row.origin === "import") return <MobilePendingRow key={row.id} row={row} />;
-          const { node, status } = row;
-          return node.kind === "dir" ? (
-            <MobileFolderRow
-              key={node.entryId}
-              dir={node}
-              status={status}
-              projectId={projectId}
-              editorWorkId={editorWorkId}
-              scheme={scheme}
-              siblings={siblings}
-              onDrill={() => onSelectContextFolder(node.path)}
-              onRequestDelete={onRequestDelete}
-            />
-          ) : (
-            <MobileFileRow
-              key={node.entryId}
-              file={node}
-              status={status}
-              projectId={projectId}
-              editorWorkId={editorWorkId}
-              scheme={scheme}
-              siblings={siblings}
-              onOpen={() => openFile(node)}
-              onRequestDelete={onRequestDelete}
-            />
-          );
-        })}
-      </ul>
-    </>
-  );
-}
-
-/** Says in words what the run is doing here; the mark's menu carries the commands that state allows. */
-function MobileRunStatus({ info }: { info: ImportRowInfo | undefined }) {
-  if (!info?.reading && !info?.preparing && !info?.notStarted && !info?.run) return null;
-  return (
-    <div
-      role="status"
-      className="flex min-h-11 items-center gap-2 border-b border-border-subtle px-4 text-sm text-ink-muted"
-    >
-      <ImportRunMark info={info} />
-      <span className="min-w-0 flex-1">
-        {info.notStarted ? (
-          <Trans>Import didn't start. {refusalSentence(info.notStarted.code)}</Trans>
-        ) : info.run ? (
-          runSentence(info.run)
-        ) : info.preparing ? (
-          preparingSentence()
+    <ul className="flex flex-col">
+      {listing.map((row) => {
+        if (row.origin === "import") return <MobilePendingRow key={row.id} row={row} />;
+        const { node } = row;
+        return node.kind === "dir" ? (
+          <MobileFolderRow
+            key={node.entryId}
+            dir={node}
+            projectId={projectId}
+            editorWorkId={editorWorkId}
+            scheme={scheme}
+            siblings={siblings}
+            onDrill={() => onSelectContextFolder(node.path)}
+            onRequestDelete={onRequestDelete}
+          />
         ) : (
-          <Trans>Reading your files</Trans>
-        )}
-      </span>
-    </div>
+          <MobileFileRow
+            key={node.entryId}
+            file={node}
+            projectId={projectId}
+            editorWorkId={editorWorkId}
+            scheme={scheme}
+            siblings={siblings}
+            onOpen={() => openFile(node)}
+            onRequestDelete={onRequestDelete}
+          />
+        );
+      })}
+    </ul>
   );
 }
 
@@ -411,7 +372,6 @@ function MobileCreateRow({
 /** Folder row with trailing `...` actions. Supports inline rename. */
 function MobileFolderRow({
   dir,
-  status,
   projectId,
   editorWorkId,
   scheme,
@@ -420,7 +380,6 @@ function MobileFolderRow({
   onRequestDelete,
 }: {
   dir: ContextDir;
-  status?: ImportRowInfo;
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
@@ -451,10 +410,8 @@ function MobileFolderRow({
         <DrillRow
           icon={<Folder aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
           label={dir.name}
-          muted={status?.arriving}
           trailing={
             <span className="flex items-center">
-              <ImportRunMark info={status} />
               <LinkUpdateNote
                 projectId={projectId}
                 subject={{ kind: "folder", id: dir.entryId }}
@@ -483,7 +440,6 @@ function MobileFolderRow({
 /** File row with trailing `...` actions. Supports inline rename. */
 function MobileFileRow({
   file,
-  status,
   projectId,
   editorWorkId,
   scheme,
@@ -492,7 +448,6 @@ function MobileFileRow({
   onRequestDelete,
 }: {
   file: ContextFile;
-  status?: ImportRowInfo;
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
@@ -500,7 +455,6 @@ function MobileFileRow({
   onOpen: () => void;
   onRequestDelete: (target: DeleteTarget) => void;
 }) {
-  const importRow = useImportRowActions(status);
   const interaction = useEntryInteraction({
     projectId,
     node: file,
@@ -509,7 +463,6 @@ function MobileFileRow({
     siblings,
     capabilities: scheme === "uploads" ? ["rename", "move"] : ["rename", "move", "delete"],
     onRequestDelete,
-    retryImport: importRow?.retry,
   });
   const FileIcon = fileKindIcon(file);
   if (interaction.renaming) {
@@ -526,10 +479,8 @@ function MobileFileRow({
         <DrillRow
           icon={<FileIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
           label={file.name}
-          muted={status?.arriving}
           trailing={
             <span className="flex items-center">
-              {status?.failure ? <ImportFailureMark reason={status.failure.reason} /> : null}
               <LinkUpdateNote
                 projectId={projectId}
                 subject={{ kind: "file", id: file.documentId }}
@@ -587,23 +538,24 @@ function MobileNameRow({
   );
 }
 
-/**
- * A row the importing tab draws before the server has made it: muted and inert while
- * it arrives. After a refused plan it is only a leftover, and its folder carries
- * Try again and Discard.
- */
+/** A pending root only reveals its activity card; it is not a namespace destination. */
 function MobilePendingRow({ row }: { row: PendingRow }) {
-  const Icon = row.kind === "dir" ? Folder : fileKindIcon(row.name);
-  const arriving = row.status.arriving === true;
+  const registry = useToastRegistry();
   return (
-    <li
-      aria-disabled={arriving || undefined}
-      title={arriving ? t`Still arriving` : undefined}
-      className="flex min-h-10 items-center gap-2.5 px-4 text-sm text-ink-muted"
-    >
-      <Icon aria-hidden className="size-4 shrink-0 opacity-60" />
-      <span className="min-w-0 flex-1 truncate">{row.name}</span>
-      <PendingRowStatus status={row.status} retryClassName="min-h-10 px-3 text-xs" />
+    <li>
+      <button
+        type="button"
+        data-import-root={row.id}
+        onClick={() => registry.reveal(row.importId)}
+        className="focus-ring flex min-h-11 w-full items-center gap-2.5 px-4 text-left text-sm text-ink-muted"
+      >
+        <Folder aria-hidden className="size-4 shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{row.name}</span>
+        <LoaderCircle aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
+        <span className="sr-only">
+          <Trans>Import in progress. Show activity</Trans>
+        </span>
+      </button>
     </li>
   );
 }

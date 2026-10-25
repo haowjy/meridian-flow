@@ -1,153 +1,158 @@
-/** A stand-in import server for tests: plans every file as planned, lands what it is sent. */
+/** Instance-owned durable fake. Uploads complete into organize; tests explicitly advance the build. */
 import {
-  type ImportCounts,
-  type ImportEntryStatus,
-  type ImportFolderStatus,
-  type ImportManifest,
-  type ImportStatus,
+  IMPORT_ADMISSION,
+  type ImportDetail,
+  type ImportSummary,
   importNodeId,
 } from "@meridian/contracts";
 import { ImportRequestError } from "@/client/api/imports-api";
 import type { ImportApi } from "./import-api-port";
-
-const rootFolderId = (rootId: number) => `${rootId}:`;
-
-export function fakeImportServer(options: { failSend?: (entryId: number) => boolean } = {}) {
-  const entries = new Map<number, ImportEntryStatus>();
-  const folders = new Map<string, ImportFolderStatus>();
-  let manifest: ImportManifest | null = null;
-  let finished = false;
-  let planning = false;
-  let version = 1;
-  const calls = { plan: 0, send: [] as number[][], finish: 0, resume: 0 };
-  const counts = (): ImportCounts => {
-    const all = [...entries.values()];
-    const count = (state: ImportEntryStatus["state"]) =>
-      all.filter((e) => e.state === state).length;
-    return {
-      total: all.filter((e) => e.state !== "skipped").length,
-      landed: count("landed"),
-      failed: count("failed"),
-      arriving: count("planned") + count("landing"),
-      deleted: count("deleted"),
-      notImported: count("not_imported"),
-      skipped: count("skipped"),
-    };
+export function fakeImportServer() {
+  const records = new Map<string, ImportDetail>();
+  const closed = new Set<string>();
+  const revealed = new Set<string>();
+  const sent: number[][] = [];
+  const read = (id: string) => {
+    const detail = records.get(id);
+    if (!detail) throw new ImportRequestError(404, "import_not_found", undefined, "Missing import");
+    return detail;
   };
-  const status = (): ImportStatus => ({
-    importId: manifest?.importId ?? "",
-    state: finished ? "finished" : planning ? "planning" : "ready",
-    destination: { folderUri: manifest?.destination.folderUri ?? "kb://", folderId: null },
-    counts: counts(),
-    lastActivityAt: new Date().toISOString(),
-    version: String(version),
-    folders: [...folders.values()],
-    roots: (manifest?.roots ?? []).map((root) => ({
-      ...root,
-      id: folders.get(rootFolderId(root.rootId))?.id ?? null,
-    })),
-    entries: [...entries.values()],
-  });
+  const update = (id: string) => {
+    const detail = read(id);
+    const entries = detail.entries;
+    detail.counts = {
+      files: entries.length,
+      bytes: entries.reduce((sum, entry) => sum + entry.size, 0),
+      received: entries.filter((entry) =>
+        ["received", "prepared", "organized"].includes(entry.state),
+      ).length,
+      receivedBytes: entries
+        .filter((entry) => ["received", "prepared", "organized"].includes(entry.state))
+        .reduce((sum, entry) => sum + entry.size, 0),
+      prepared: entries.filter((entry) => entry.state === "prepared").length,
+      organized: entries.filter((entry) => entry.state === "organized").length,
+      skipped: entries.filter((entry) => entry.state === "skipped").length,
+      failed: entries.filter((entry) => entry.state === "failed").length,
+      needsLook: entries.filter(
+        (entry) =>
+          entry.state === "failed" ||
+          ["unreadable", "not_found", "changed_after_pick", "kept_as_file"].includes(
+            entry.reason ?? "",
+          ),
+      ).length,
+    };
+    if (detail.state === "uploading" && !entries.some((entry) => entry.state === "awaiting"))
+      detail.state = "organizing";
+    detail.lastActivityAt = new Date().toISOString();
+    return structuredClone(detail);
+  };
   const api: ImportApi = {
-    async plan(projectId, planned) {
-      calls.plan += 1;
-      manifest = planned;
-      const idOf = (kind: "folder" | "entry", rootId: number, path: string) =>
-        importNodeId({ projectId, importId: planned.importId, rootId, kind, path });
-      for (const root of planned.roots) {
-        if (root.kind !== "folder") continue;
-        const id = await idOf("folder", root.rootId, "");
-        folders.set(rootFolderId(root.rootId), {
-          id,
-          parentId: null,
-          scheme: "kb",
-          name: root.name,
-          state: "planned",
-        });
-      }
-      for (const entry of planned.entries) {
-        const slash = entry.path.lastIndexOf("/");
-        const filename =
-          entry.path === ""
-            ? (planned.roots.find((root) => root.rootId === entry.rootId)?.name ?? "")
-            : entry.path.slice(slash + 1);
-        let parentId: string | null = folders.get(rootFolderId(entry.rootId))?.id ?? null;
-        if (slash > 0) {
-          const dir = entry.path.slice(0, slash);
-          parentId = await idOf("folder", entry.rootId, dir);
-          if (!folders.has(`${entry.rootId}:${dir}`))
-            folders.set(`${entry.rootId}:${dir}`, {
-              id: parentId,
-              parentId: folders.get(rootFolderId(entry.rootId))?.id ?? null,
-              scheme: "kb",
-              name: dir.slice(dir.lastIndexOf("/") + 1),
-              state: "planned",
-            });
-        }
-        const dot = filename.lastIndexOf(".");
-        const extension = dot > 0 ? filename.slice(dot + 1) : "";
-        entries.set(entry.entryId, {
-          entryId: entry.entryId,
-          rootId: entry.rootId,
-          path: entry.path,
-          filename,
-          size: entry.size,
-          sha256: entry.sha256,
-          documentId: await idOf("entry", entry.rootId, entry.path),
-          kind: extension === "md" ? "note" : "binary",
-          state: "planned",
-          parentId,
-          scheme: "kb",
-          name: dot > 0 ? filename.slice(0, dot) : filename,
-          extension,
-          reason: null,
-          wanted: true,
-        });
-      }
-      return status();
+    async create(projectId, selection) {
+      if (records.has(selection.importId)) return structuredClone(read(selection.importId));
+      const root =
+        selection.roots.length === 1 && selection.roots[0].kind === "folder"
+          ? selection.roots[0]
+          : null;
+      const id = (rootId: number, path: string, kind: "folder" | "entry") =>
+        importNodeId({ projectId, importId: selection.importId, rootId, path, kind });
+      records.set(selection.importId, {
+        importId: selection.importId,
+        projectId,
+        state: "uploading",
+        label: {
+          kind: root ? "folder" : "files",
+          name: root?.name ?? "",
+          count: selection.entries.length,
+        },
+        destination: { ...selection.destination, folderId: null, fellBack: false },
+        root: root ? { id: id(root.rootId, "", "folder"), name: root.name, created: false } : null,
+        waiting: false,
+        lastActivityAt: new Date().toISOString(),
+        reason: null,
+        roots: selection.roots,
+        counts: {} as ImportSummary["counts"],
+        entries: selection.entries.map((entry) => ({
+          ...entry,
+          state: entry.size > IMPORT_ADMISSION.fileBytes ? "failed" : "awaiting",
+          reason: entry.size > IMPORT_ADMISSION.fileBytes ? "too_large" : null,
+          documentId: id(entry.rootId, entry.path, "entry"),
+        })),
+      });
+      return update(selection.importId);
     },
-    async send(_projectId, _importId, parts) {
-      calls.send.push(parts.map((part) => part.entryId));
-      if (parts.some((part) => options.failSend?.(part.entryId)))
-        throw new ImportRequestError(500, null, undefined, "injected");
+    async send(_project, id, parts) {
+      const detail = read(id);
+      sent.push(parts.map((part) => part.entryId));
       for (const part of parts) {
-        const entry = entries.get(part.entryId);
-        if (entry) entries.set(part.entryId, { ...entry, state: "landed", wanted: false });
+        const entry = detail.entries.find((entry) => entry.entryId === part.entryId)!;
+        if (entry.state === "awaiting" && detail.state === "uploading") {
+          entry.state = "received";
+          if (part.changed) entry.reason = "changed_after_pick";
+        }
       }
-      version += 1;
-      if (counts().arriving === 0 && counts().failed === 0) finished = true;
-      return { entries: parts.map((part) => entries.get(part.entryId) as ImportEntryStatus) };
+      return {
+        entries: parts.map((part) =>
+          structuredClone(detail.entries.find((entry) => entry.entryId === part.entryId)!),
+        ),
+        summary: update(id),
+      };
     },
-    async finish() {
-      calls.finish += 1;
-      for (const [id, entry] of entries)
-        if (entry.state !== "landed" && entry.state !== "skipped")
-          entries.set(id, { ...entry, state: "not_imported", wanted: false });
-      finished = true;
-      version += 1;
-      return status();
+    async skip(_project, id, input) {
+      const detail = read(id);
+      for (const skip of input.entries) {
+        const entry = detail.entries.find((entry) => entry.entryId === skip.entryId)!;
+        if (entry.state === "awaiting") {
+          entry.state = "skipped";
+          entry.reason = skip.reason;
+        }
+      }
+      return update(id);
     },
-    async resume() {
-      calls.resume += 1;
-      planning = false;
-      return status();
+    async stop(_project, id) {
+      const detail = read(id);
+      if (detail.state === "finished" || revealed.has(id))
+        throw new ImportRequestError(409, "import_finished", undefined, "Finished");
+      detail.state = "cancelled";
+      closed.add(id);
+      return update(id);
     },
-    async status() {
-      return status();
+    async retry(_project, id) {
+      read(id).state = "organizing";
+      return update(id);
     },
-    async changes() {
-      return status();
+    async acknowledge(_project, id) {
+      closed.add(id);
+    },
+    async detail(_project, id) {
+      return structuredClone(read(id));
     },
     async listOpen() {
-      return [];
+      return [...records.values()]
+        .filter((detail) => !closed.has(detail.importId))
+        .map((detail) => structuredClone(detail));
     },
   };
   return {
     api,
-    calls,
-    entries,
-    /** The next status answers `planning` until `resume` is called. */
-    setPlanning: (value: boolean) => (planning = value),
-    setFailSend: (fn: (entryId: number) => boolean) => (options.failSend = fn),
+    sent,
+    fail(id: string) {
+      const detail = read(id);
+      detail.state = "failed";
+      detail.reason = "organize_failed";
+      return update(id);
+    },
+    advance(id: string, prepared: number, reveal = false, published = true) {
+      const detail = read(id);
+      let count = 0;
+      for (const entry of detail.entries)
+        if (["received", "prepared"].includes(entry.state) && count++ < prepared)
+          entry.state = reveal ? "organized" : "prepared";
+      if (reveal) {
+        revealed.add(id);
+        detail.state = published ? "finished" : "organizing";
+        if (detail.root) detail.root.created = true;
+      }
+      return update(id);
+    },
   };
 }

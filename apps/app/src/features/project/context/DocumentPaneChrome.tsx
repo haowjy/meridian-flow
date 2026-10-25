@@ -10,7 +10,6 @@ import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts
 import type { Work } from "@meridian/contracts/works";
 import type { ContextTab } from "@/client/stores";
 import { PassageNotice } from "@/features/editor/PassageNotice";
-import { ImportDocumentNotice } from "@/features/import/ImportDocumentNotice";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import { DocumentProperties } from "./DocumentProperties";
@@ -55,7 +54,6 @@ export function DocumentPaneChrome({
         <ArchivedWorkNotice projectId={projectId} work={archivedWork} className="px-4 pt-3" />
       ) : null}
       {/* An import's file still arriving, paused or failed says so before its page. */}
-      <ImportDocumentNotice projectId={projectId} tab={tab} className="mx-4 mt-3" />
       {/* Identity bar — the top edge of the page every open document
           shares. Keyed by document so edit state never crosses tabs. */}
       {identity ? (

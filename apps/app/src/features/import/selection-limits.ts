@@ -12,7 +12,7 @@ export function refusalOf(
   source: "folder" | "files" | "drop",
 ): string | null {
   const totals = selectionTotals(selection, IMPORT_ADMISSION.fileBytes);
-  if (totals.files === 0) {
+  if (totals.files === 0 && !selection.roots.some((root) => root.kind === "folder")) {
     if (source === "folder") return t`That folder has no files to import.`;
     if (source === "files") return t`Those files can't be imported.`;
     return t`There are no files to import here.`;
