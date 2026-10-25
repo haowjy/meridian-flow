@@ -1,8 +1,9 @@
 /**
  * "Moved chapter-3 to Act 2." with Undo, on the surface that took the move (a
  * drop or Move…). One owner per project holds each surface's latest move: its
- * rows, whether Undo still has something to put back (read from the replica,
- * so it needs no list on screen), and Undo itself. The notice shares its
+ * rows, which of them the server refused since, whether Undo still has
+ * something to put back (both read from the replica, so it needs no list on
+ * screen), and Undo itself. The notice shares its
  * surface's one notice place with delete notices (`useNoticeSlot`); a newer
  * notice of either kind replaces it. It stays until then, Dismiss, or leaving
  * the project: Undo is not a race.
@@ -24,13 +25,15 @@ import {
   useAccountResourceReplica,
 } from "../account-feature-context";
 import { type MoveResult, undoMove } from "./execute-move";
-import { type MoveEffect, planUndo } from "./move-plan";
+import { planUndo, refusedMoves } from "./move-plan";
 
 type MoveWindow = {
   /** Stays with the notice while its message or Undo changes. */
   id: number;
   message: string;
-  effects: readonly MoveEffect[];
+  /** What the move did, kept current as the server refuses rows. */
+  result: MoveResult;
+  destinationName: string;
   /** The replica has shown the move; until then a missing row means "not yet", not "gone". */
   applied: boolean;
   /** Something is still where the move put it. */
@@ -112,14 +115,14 @@ export function MoveNoticesProvider({
       // A move can finish after its project has gone; there is nowhere to say so.
       if (!mounted.current) return;
       const id = nextNoticeId++;
-      const effects = result.moved;
       setWindows((current) =>
         new Map(current).set(surface, {
           id,
           message: describeMove(result, destinationName),
-          effects,
-          applied: planUndo(latest.current, effects).length > 0,
-          undoable: effects.length > 0,
+          result,
+          destinationName,
+          applied: planUndo(latest.current, result.moved).length > 0,
+          undoable: result.moved.length > 0,
           undoing: false,
           refocus,
         }),
@@ -129,13 +132,34 @@ export function MoveNoticesProvider({
     [dismiss, slots],
   );
 
-  // Undo leaves once nothing it would put back is still in place: renamed, moved again or
-  // deleted since. The replica can show a move just after it resolves, so it retires only
-  // once it has applied and then stops applying.
+  // A row the server refused went back to its source with its failure mark; the notice
+  // stops claiming it moved. Undo leaves once nothing it would put back is still in place:
+  // refused, renamed, moved again or deleted since. The replica can show a move just after
+  // it resolves, so it retires only once it has applied and then stops applying.
   useEffect(() => {
     for (const [surface, window] of windows) {
-      if (!window.undoable || window.undoing) continue;
-      const live = planUndo(projection, window.effects).length > 0;
+      if (window.undoing) continue;
+      const refused = new Set(refusedMoves(projection, window.result.moved));
+      if (refused.size > 0) {
+        settle(surface, window.id, (now) => {
+          const result: MoveResult = {
+            moved: now.result.moved.filter((effect) => !refused.has(effect)),
+            failed: [
+              ...now.result.failed,
+              ...[...refused].map((effect) => ({ entry: effect.entry, name: effect.previousName })),
+            ],
+          };
+          return {
+            ...now,
+            result,
+            message: describeMove(result, now.destinationName),
+            undoable: now.undoable && result.moved.length > 0,
+          };
+        });
+        continue;
+      }
+      if (!window.undoable) continue;
+      const live = planUndo(projection, window.result.moved).length > 0;
       if (live && !window.applied) settle(surface, window.id, (now) => ({ ...now, applied: true }));
       else if (!live && window.applied)
         settle(surface, window.id, (now) => ({ ...now, undoable: false }));
@@ -147,7 +171,7 @@ export function MoveNoticesProvider({
       const window = windows.get(surface);
       if (window?.id !== id || !window.undoable) return false;
       settle(surface, id, (now) => ({ ...now, undoing: true }));
-      const failure = await undoMove(window.effects, { resources, projectId }).then(
+      const failure = await undoMove(window.result.moved, { resources, projectId }).then(
         describeUndoFailure,
         () => t`Couldn't move it back.`,
       );

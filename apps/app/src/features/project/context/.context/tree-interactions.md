@@ -265,7 +265,12 @@ not the list that made it is still on screen. Undo shows only while it has
 something to put back: the provider watches the replica and retires Undo once
 every moved row was renamed, moved again or deleted (only after the move has
 shown in the replica, which can trail the placement by a moment); the message
-stays until dismissed.
+stays until dismissed. A row the server refuses goes back with its failure mark,
+and the notice stops saying it moved: "Couldn't move chapter-3." without Undo,
+or "Moved 2 items to Act 2. Couldn't move chapter-3." when the rest landed.
+Refused means the replica settled that move's own operation (`MoveEffect.operationId`)
+as needs-repair (`refusedMoves`); a row the writer changed since supersedes that
+intent, so it only loses Undo.
 
 Move… publishes through the required surface supplied around its rows, whether
 or not a list is mounted. A desktop list optionally selects the moved row and
