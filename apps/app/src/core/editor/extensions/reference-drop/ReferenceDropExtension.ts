@@ -132,17 +132,38 @@ function snapOutsideAtom(
   return pos;
 }
 
-/** A pointer inside a word chooses the nearer edge; punctuation and whitespace keep their position. */
-function snapToWordEdge(view: EditorView, pos: number): number {
+function unreferencedTextRunAt(
+  view: EditorView,
+  pos: number,
+): { start: number; end: number } | null {
   const $pos = view.state.doc.resolve(pos);
-  if (
-    !$pos.parent.isTextblock ||
-    $pos.parentOffset === 0 ||
-    $pos.parentOffset === $pos.parent.content.size
-  )
-    return pos;
-  const start = pos - $pos.parentOffset;
-  const end = start + $pos.parent.content.size;
+  if (!$pos.parent.isTextblock) return null;
+  const landing = $pos.parentOffset;
+  let runStart: number | null = null;
+  let runEnd = 0;
+  let landingRun: { start: number; end: number } | null = null;
+  $pos.parent.forEach((node, offset) => {
+    if (node.isText && !identityLink(node)) {
+      runStart ??= offset;
+      runEnd = offset + node.nodeSize;
+      return;
+    }
+    if (runStart !== null && landing > runStart && landing < runEnd)
+      landingRun = { start: runStart, end: runEnd };
+    runStart = null;
+  });
+  if (runStart !== null && landing > runStart && landing < runEnd)
+    landingRun = { start: runStart, end: runEnd };
+  if (!landingRun) return null;
+  const parentStart = pos - landing;
+  return { start: parentStart + landingRun.start, end: parentStart + landingRun.end };
+}
+
+/** A pointer inside an unreferenced word chooses its nearer edge. */
+function snapToWordEdge(view: EditorView, pos: number): number {
+  const run = unreferencedTextRunAt(view, pos);
+  if (!run) return pos;
+  const { start, end } = run;
   if (!wordCharacterAt(view, pos - 1, start, end) || !wordCharacterAt(view, pos, start, end))
     return pos;
   let before = pos;
