@@ -21,7 +21,11 @@ import {
   WRITE_MODE_SWITCHED_EVENT,
   type WriteModeSwitchedValue,
 } from "@meridian/contracts/protocol";
-import type { BlockUpsertedRow, OrchestratorEvent } from "@meridian/contracts/threads";
+import {
+  ASK_UPDATED_EVENT,
+  type BlockUpsertedRow,
+  type OrchestratorEvent,
+} from "@meridian/contracts/threads";
 import {
   WORK_CONTEXT_PROJECTION_EVENT,
   type WorkContextProjectionSignal,
@@ -370,7 +374,7 @@ export function createOrchestratorEventProjector() {
         return [
           parseAguiEvent({
             type: EventType.CUSTOM,
-            name: "meridian.ask",
+            name: ASK_UPDATED_EVENT,
             value: event.ask,
           }),
         ];

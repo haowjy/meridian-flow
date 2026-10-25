@@ -20,6 +20,7 @@ import {
   renderAgentEditResult,
   WriteToolInputSchema,
 } from "@meridian/agent-edit/integration";
+import { askToolInputSchema } from "@meridian/contracts/components";
 import {
   INVALID_WORK_NAME,
   INVALID_WORK_STATUS,
@@ -179,35 +180,7 @@ const SearchToolInputSchema = z
   .strict();
 export type SearchToolInput = z.output<typeof SearchToolInputSchema>;
 
-export const AskToolInputSchema = z
-  .object({
-    question: z.string().min(1),
-    options: z
-      .array(
-        z
-          .object({
-            label: z.string().min(1),
-            description: z.string().min(1).optional(),
-          })
-          .strict(),
-      )
-      .min(2)
-      .max(4),
-    recommended: z.string().min(1).optional(),
-  })
-  .strict()
-  .superRefine((input, context) => {
-    if (
-      input.recommended !== undefined &&
-      !input.options.some((option) => option.label === input.recommended)
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["recommended"],
-        message: "Recommended option must match an option label",
-      });
-    }
-  });
+export const AskToolInputSchema = askToolInputSchema;
 
 /** Canonical list of runnable core tool names. */
 export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "search", "ask"] as const;
