@@ -23,16 +23,6 @@ import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 
 export type DocumentLinkRange = { from: number; to: number };
 
-/** A document row: `doc:<id>` at the document's current address. */
-export function insertDocumentReference(
-  editor: Editor,
-  range: DocumentLinkRange,
-  document: { label: string; documentId: string; uri: string },
-): boolean {
-  const node = documentReferenceNode(editor.schema, document);
-  return node ? insertDocumentLink(editor, range, node) : false;
-}
-
 /** The canonical Editor node for an identity-bearing document reference. */
 export function documentReferenceNode(
   schema: Schema,
@@ -43,16 +33,6 @@ export function documentReferenceNode(
     ref: documentRef(document.documentId),
     href: storedHref({ kind: "document", uri: document.uri }, ""),
   });
-}
-
-/** A folder row: `folder:<id>` at the folder's current address, spelled with its slash. */
-export function insertFolderReference(
-  editor: Editor,
-  range: DocumentLinkRange,
-  folder: { label: string; folderId: FolderId; uri: string },
-): boolean {
-  const node = folderReferenceNode(editor.schema, folder);
-  return node ? insertDocumentLink(editor, range, node) : false;
 }
 
 /** The canonical Editor node for an identity-bearing folder reference. */
