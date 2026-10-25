@@ -32,6 +32,7 @@ const names = [
   "settledGone",
   "open",
   "unregistered",
+  "folder",
 ] as const;
 const U = Object.fromEntries(
   names.map((name, index) => [
@@ -73,6 +74,19 @@ const addresses: Record<string, CatalogDocument | null | undefined> = {
 };
 const catalog: LinkCatalog = {
   document: (id) => documents[id],
+  folder: (id) =>
+    id === U.folder
+      ? { folderId: id, uri: "manuscript://book/Act 1", readable: true, nameable: true }
+      : null,
+  folderAt: (uri) =>
+    uri === "manuscript://book/Act 1"
+      ? {
+          folderId: U.folder,
+          uri,
+          readable: true,
+          nameable: true,
+        }
+      : null,
   settlement: (id) => settlements[id],
   documentAt: (uri) => (uri in addresses ? addresses[uri] : null),
 };
@@ -96,6 +110,14 @@ it("resolves and spells stored links by rule", () => {
     spelled: string;
     address: string | null;
   }[] = [
+    {
+      name: "folder identity follows its current directory address",
+      ref: `folder:${U.folder}`,
+      href: "manuscript://book/Before/",
+      kind: "folder",
+      spelled: "Act 1/",
+      address: "manuscript://book/Act 1",
+    },
     {
       name: "live document spells relative with the stored suffix",
       ref: `doc:${U.sibling}`,
@@ -238,6 +260,14 @@ it("resolves and spells stored links by rule", () => {
       address: null,
     },
     {
+      name: "a directory address with no folder is gone, never ahead",
+      ref: null,
+      href: "manuscript://book/Missing/",
+      kind: "gone",
+      spelled: "manuscript://book/Missing/",
+      address: null,
+    },
+    {
       name: "malformed ref is gone",
       ref: "doc:",
       href: "manuscript://book/ch2",
@@ -296,6 +326,11 @@ it("classifies written links and mints ahead addresses by grammar", () => {
     ["manuscript://ch1.md", "user://journal/today.md", { kind: "contextual" }],
     ["user://journal/old.md", "user://journal/today.md", internal("user://journal/old.md", "")],
     ["ch2.md", null, { kind: "external" }],
+    [
+      "manuscript://book/Act%201/",
+      null,
+      { kind: "internal", target: "folder", uri: "manuscript://book/Act 1", suffix: "" },
+    ],
     ["https://example.com/a.md", "manuscript://book/ch1.md", { kind: "external" }],
     ["javascript:alert(1)", "manuscript://book/ch1.md", { kind: "external" }],
   ];
@@ -306,6 +341,7 @@ it("classifies written links and mints ahead addresses by grammar", () => {
 
   const sources: [string, ReturnType<typeof classifyWrittenSource>][] = [
     ["assets/gate.png", internal("manuscript://assets/gate.png", "")],
+    ["assets/", { kind: "external" }],
     ["kb://maps/realm.png", internal("kb://maps/realm.png", "")],
     ["../escape.png", { kind: "external" }],
     ["https://example.com/a.png", { kind: "external" }],
@@ -342,6 +378,7 @@ it("classifies written links and mints ahead addresses by grammar", () => {
   const refs: [unknown, ReturnType<typeof parseLinkRef>][] = [
     [`doc:${uuid}`, { kind: "doc", documentId: uuid.toLowerCase() }],
     [`ahead:${uuid}`, { kind: "ahead", aheadId: uuid.toLowerCase() }],
+    [`folder:${uuid}`, { kind: "folder", folderId: uuid.toLowerCase() }],
     [null, null],
     ["", null],
     ["doc:", null],
@@ -435,12 +472,14 @@ it("classifies written links and mints ahead addresses by grammar", () => {
     }
     const address = aheadAddress(classified.uri, row.kind);
     expect.soft(address, `${row.written} address`).toBe(row.address);
-    const stored = storedHref(address ?? "", classified.suffix);
+    const stored = storedHref({ kind: "document", uri: address ?? "" }, classified.suffix);
     expect.soft(stored, `${row.written} stored`).toBe(row.stored);
 
     const asked: string[] = [];
     const empty: LinkCatalog = {
       document: () => null,
+      folder: () => null,
+      folderAt: () => null,
       settlement: () => null,
       documentAt: (uri) => {
         asked.push(uri);
@@ -464,7 +503,7 @@ it("classifies written links and mints ahead addresses by grammar", () => {
 });
 
 function internal(uri: string, suffix: string) {
-  return { kind: "internal" as const, uri, suffix };
+  return { kind: "internal" as const, target: "document" as const, uri, suffix };
 }
 
 it("spells lineage links through their holder, without a chat-only spelling channel", () => {

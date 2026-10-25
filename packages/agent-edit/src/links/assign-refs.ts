@@ -131,8 +131,11 @@ const GRAMMARS: Record<"link" | "source", Grammar> = {
   link: {
     address: (href, holderUri) => resolveDocumentHref(href, holderUri),
     correspondenceKey(href, holderUri) {
-      const uri = resolveDocumentHref(href, holderUri)?.uri;
-      return uri ? (aheadAddress(uri, "link") ?? uri) : null;
+      const target = resolveDocumentHref(href, holderUri);
+      if (!target) return null;
+      return target.kind === "folder"
+        ? target.uri
+        : (aheadAddress(target.uri, "link") ?? target.uri);
     },
     spell: (scope, attrs) => scope.spellLink({ href: attrs.href, ref: attrs.ref }),
     kind: "link",
@@ -186,7 +189,9 @@ function assignKind(input: {
       label: occurrence.label,
       ref: identity,
       current: spelled.address ?? "",
-      live: identity !== null && scope.isLive({ ref: identity, href: occurrence.attrs.href }),
+      live:
+        identity !== null &&
+        liveForGrammar(grammar, scope, { ref: identity, href: occurrence.attrs.href }),
     })),
     written: input.written.map((occurrence) => ({
       label: occurrence.label,
@@ -195,7 +200,7 @@ function assignKind(input: {
     shown: input.shown,
     holderUri,
     normalize: (href, base) => grammar.correspondenceKey(href, base),
-    isLive: (ref, address) => scope.isLive({ ref, href: address }),
+    isLive: (ref, address) => liveForGrammar(grammar, scope, { ref, href: address }),
   });
   // Old occurrences no address names: contextual ones, and an upload this reader is
   // shown no address for. Each continues only as written exactly as it spelled.
@@ -261,7 +266,7 @@ function continued(
     ref,
     title: written.title,
     href: address
-      ? storedHref(address, writtenSuffix)
+      ? storedHref({ kind: linkKind(ref), uri: address }, writtenSuffix)
       : splitDocumentHrefSuffix(old.href).path + writtenSuffix,
   };
 }
@@ -287,7 +292,11 @@ function shownAttrs(
     return { ref: null, href: `asset:${upload}`, title: written.title };
   const ref = upload !== null ? documentRef(upload) : shownRef;
   const address = currentUri(scope, { ref, href: shownAddress }) ?? shownAddress;
-  return { ref, title: written.title, href: storedHref(address, written.suffix) };
+  return {
+    ref,
+    title: written.title,
+    href: storedHref({ kind: linkKind(ref), uri: address }, written.suffix),
+  };
 }
 
 /** The upload a picture source would store as `asset:<id>` for a shown document ref, or null. */
@@ -325,9 +334,11 @@ function fresh(
     grammar: grammar.kind,
     holderUri: scope.holder.uri,
     documentFor: (uri) => scope.documentFor(uri),
+    folderFor: (uri) => scope.folderFor(uri),
     mint: input.mint,
   });
   if (assigned.kind === "literal") return { ref: null, href, title };
+  if (assigned.kind === "folder-address") return { ref: null, href: assigned.href, title };
   if (assigned.kind === "ahead")
     input.minted.push({
       ref: assigned.ref,
@@ -345,7 +356,22 @@ function fresh(
 function currentUri(scope: HolderLinkScope, link: { ref: string; href: string }): string | null {
   const resolution = scope.resolve(link);
   if (resolution.kind === "document") return resolution.document.uri;
+  if (resolution.kind === "folder") return resolution.folder.uri;
   return null;
+}
+
+function linkKind(ref: string): "document" | "folder" {
+  return parseLinkRef(ref)?.kind === "folder" ? "folder" : "document";
+}
+
+function liveForGrammar(
+  grammar: Grammar,
+  scope: HolderLinkScope,
+  link: { ref: string; href: string },
+): boolean {
+  return grammar.kind === "link" || parseLinkRef(link.ref)?.kind !== "folder"
+    ? scope.isLive(link)
+    : false;
 }
 
 function latestShownAddress(shown: readonly ShownLink[], ref: string): string {

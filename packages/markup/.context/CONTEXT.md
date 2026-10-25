@@ -149,8 +149,11 @@ explicit registry parameter.
 
 ## Link scope
 
-Stored links, images and figures may carry a `ref` (`doc:<uuid>`, `ahead:<uuid>`,
-see `@meridian/contracts` `document-ref.ts`). The codec never reads or writes
+Stored links may carry a `ref` (`doc:<uuid>`, `folder:<uuid>`, `ahead:<uuid>`);
+images and figures remain document-only. Folder refs spell through their current
+catalog address and directory hrefs bind only when a live folder is there. Folder
+addresses never mint ahead refs (see `@meridian/contracts` `document-ref.ts`).
+The codec never reads or writes
 it: serialization asks the call's `DocumentLinkScope` for every destination
 (`spellLink` for link marks and HTML-table anchors, `spellSource` for `image`
 and `figure` sources) and writes only the spelled `href`. A scope spells a
@@ -181,9 +184,9 @@ implements `HolderCatalog` over its own data (the server's prepared snapshot,
 agent-edit's static catalog, the client's document index plus its settlement
 memo). `undefined` from a catalog lookup is "not held": the server records a
 snapshot miss, the client asks the server. `assignFreshLink` is pass 3 of ref
-assignment for a written href or source: classify, then the document
-`documentFor` finds (exact, then unique extension-omitted) spelled with
-`storedHref`, else a minted ahead ref at `aheadAddress`; agent-edit's
+assignment for a written href or source: classify, then bind a directory href
+through `folderFor`, or a document href through `documentFor` (exact, then unique
+extension-omitted); only a missing document address mints an ahead ref. Agent-edit's
 `assignOccurrences` and the client's `assignWrittenHref` both call it. Only the
 `stored-links` entry reads Yjs (`yjs`, plus the fragment name from the
 side-effect-free `@meridian/prosemirror-schema/protocol`); markup stays a leaf

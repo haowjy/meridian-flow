@@ -209,6 +209,7 @@ describe("thread socket frames", () => {
 {
   const occurrence = {
     type: "reference",
+    kind: "document",
     text: "[Gate Map](uploads://@c1/gate-map.png)",
     documentId: "33333333-3333-4333-8333-333333333333",
     uri: "uploads://@c1/gate-map.png",
@@ -226,6 +227,20 @@ describe("thread socket frames", () => {
         referenceOccurrenceContent({
           blockType: "text",
           content: { ...occurrence, extra: true },
+        }),
+      ).toBeNull();
+      const folder = {
+        type: "reference",
+        kind: "folder",
+        text: "[Maps](kb://Maps/)",
+        folderId: "44444444-4444-4444-8444-444444444444",
+        uri: "kb://Maps",
+      };
+      expect(referenceOccurrenceContent({ blockType: "text", content: folder })).toEqual(folder);
+      expect(
+        referenceOccurrenceContent({
+          blockType: "text",
+          content: { ...folder, read: { result: {}, revision: null } },
         }),
       ).toBeNull();
       expect(

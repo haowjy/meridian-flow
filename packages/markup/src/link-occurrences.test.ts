@@ -32,6 +32,7 @@ const id = {
   map: "00000000-0000-4000-8000-000000000002",
   fig: "00000000-0000-4000-8000-000000000003",
   open: "00000000-0000-4000-8000-000000000004",
+  folder: "00000000-0000-4000-8000-000000000005",
 };
 const documents = new Map<string, CatalogDocument>(
   [
@@ -53,6 +54,8 @@ const documents = new Map<string, CatalogDocument>(
 );
 const catalog = {
   document: (id: string) => documents.get(id) ?? null,
+  folder: () => null,
+  folderAt: () => null,
   settlement: () => null,
   documentAt: () => null,
 };
@@ -231,12 +234,33 @@ it("aligns parse spans with walk order for links, images, figures and table anch
       grammar,
       holderUri: holder.uri,
       documentFor: () => null,
+      folderFor: (uri) =>
+        uri === "manuscript://book/Act 1"
+          ? { folderId: id.folder, uri, readable: true, nameable: true }
+          : null,
       mint: () => `ahead:${id.open}`,
     });
   const assigned: [string, "link" | "source", ReturnType<typeof fresh>][] = [
     ["//cdn.example.com/map.png", "source", { kind: "literal" }],
     ["assets/gate.", "source", { kind: "literal" }],
     ["....", "link", { kind: "literal" }],
+    [
+      "Act%201/",
+      "link",
+      {
+        kind: "folder",
+        ref: `folder:${id.folder}`,
+        href: "manuscript://book/Act 1/",
+      },
+    ],
+    [
+      "Missing/",
+      "link",
+      {
+        kind: "folder-address",
+        href: "manuscript://book/Missing/",
+      },
+    ],
     [
       "assets/50%.png",
       "source",
@@ -275,5 +299,5 @@ it("aligns parse spans with walk order for links, images, figures and table anch
       ),
       "preloaded source addresses",
     )
-    .toEqual(["manuscript://assets/50%.png"]);
+    .toEqual([{ kind: "document", uri: "manuscript://assets/50%.png", suffix: "" }]);
 });

@@ -14,6 +14,7 @@ describe("serializeMessageDoc reference occurrences", () => {
     type: "composerReference",
     attrs: {
       reference: {
+        kind: "document",
         documentId: "01900000-0000-7000-8000-000000000001",
         uri,
         fileType: "markdown",
@@ -48,12 +49,14 @@ describe("serializeMessageDoc reference occurrences", () => {
     expect(envelope.blocks.filter((block) => block.type === "reference")).toEqual([
       {
         type: "reference",
+        kind: "document",
         text: "[Lin Feng.md](<kb://characters/Lin Feng.md>)",
         documentId: "01900000-0000-7000-8000-000000000001",
         uri: "kb://characters/Lin Feng.md",
       },
       {
         type: "reference",
+        kind: "document",
         text: "[the \\[first\\] chapter](manuscript://volume-1/chapter-1.md)",
         documentId: "01900000-0000-7000-8000-000000000001",
         uri: "manuscript://volume-1/chapter-1.md",
@@ -83,7 +86,7 @@ describe("serializeMessageDoc reference occurrences", () => {
     // The model and a paste read each destination back as the referenced document.
     const destinations = [...envelope.text.matchAll(/\]\(<([^>]+)>\)/g)].map((match) => match[1]);
     expect(destinations.map((href) => resolveDocumentHref(href as string, null))).toEqual(
-      uris.map((uri) => ({ uri, suffix: "" })),
+      uris.map((uri) => ({ kind: "document", uri, suffix: "" })),
     );
   });
 });
@@ -104,7 +107,10 @@ describe("non-editor CLI-shaped message documents", () => {
           content: [
             { type: "composerSkill", attrs: skill },
             { type: "text", text: "Compare this" },
-            { type: "composerReference", attrs: { reference: { documentId, ...reference } } },
+            {
+              type: "composerReference",
+              attrs: { reference: { kind: "document", documentId, ...reference } },
+            },
           ],
         },
       ],
@@ -113,17 +119,31 @@ describe("non-editor CLI-shaped message documents", () => {
     expect(message.blocks).toEqual([
       { type: "skill", text: "/revise", ...skill },
       { type: "text", text: "Compare this" },
-      { type: "reference", text: spelling, documentId, uri: reference.uri },
+      { type: "reference", kind: "document", text: spelling, documentId, uri: reference.uri },
       ...(reference.imageCapable ? [{ type: "image", documentId, uri: reference.uri }] : []),
     ]);
-    expect(message.references).toEqual([{ documentId, uri: reference.uri, purpose: "reference" }]);
+    expect(message.references).toEqual([
+      { kind: "document", documentId, uri: reference.uri, purpose: "reference" },
+    ]);
     expect(message.text).toBe(`/reviseCompare this${spelling}`);
     expect(message.activatedSkillSlugs).toEqual(["revise"]);
   });
 
   it("keeps duplicate occurrences while deduplicating skill activation and reference admission", () => {
     const skill = { slug: "revise", name: "Revise", description: "" };
-    const reference = { documentId, uri: "kb://notes.md", label: "notes", imageCapable: false };
+    const reference = {
+      kind: "document" as const,
+      documentId,
+      uri: "kb://notes.md",
+      label: "notes",
+      imageCapable: false,
+    };
+    const folder = {
+      kind: "folder" as const,
+      folderId: "01900000-0000-7000-8000-000000000003",
+      uri: "kb://World/Places",
+      label: "Places",
+    };
     const message = serializeMessageDoc({
       type: "doc",
       content: [
@@ -138,6 +158,7 @@ describe("non-editor CLI-shaped message documents", () => {
               type: "composerReference",
               attrs: { reference: { ...reference, displayText: "again" } },
             },
+            { type: "composerReference", attrs: { reference: folder } },
           ],
         },
       ],
@@ -146,16 +167,39 @@ describe("non-editor CLI-shaped message documents", () => {
       { type: "skill", text: "/revise", ...skill },
       { type: "skill", text: "/revise", ...skill },
       { type: "text", text: "Compare\n" },
-      { type: "reference", text: "[notes](kb://notes.md)", documentId, uri: reference.uri },
-      { type: "reference", text: "[again](kb://notes.md)", documentId, uri: reference.uri },
+      {
+        type: "reference",
+        kind: "document",
+        text: "[notes](kb://notes.md)",
+        documentId,
+        uri: reference.uri,
+      },
+      {
+        type: "reference",
+        kind: "document",
+        text: "[again](kb://notes.md)",
+        documentId,
+        uri: reference.uri,
+      },
+      {
+        type: "reference",
+        kind: "folder",
+        text: "[Places](kb://World/Places/)",
+        folderId: folder.folderId,
+        uri: folder.uri,
+      },
     ]);
-    expect(message.references).toEqual([{ documentId, uri: reference.uri, purpose: "reference" }]);
+    expect(message.references).toEqual([
+      { kind: "document", documentId, uri: reference.uri, purpose: "reference" },
+      { kind: "folder", folderId: folder.folderId, uri: folder.uri },
+    ]);
     expect(message.activatedSkillSlugs).toEqual(["revise"]);
   });
 });
 
 it("visits every reference once while draft uploads win admission in either order", () => {
   const reference = {
+    kind: "document" as const,
     documentId: "01900000-0000-7000-8000-000000000001",
     uri: "kb://notes.md",
     label: "notes",
@@ -186,6 +230,7 @@ it("visits every reference once while draft uploads win admission in either orde
     expect(message.blocks.filter((block) => block.type === "reference")).toHaveLength(3);
     expect(message.references).toEqual([
       {
+        kind: "document",
         documentId: reference.documentId,
         uri: reference.uri,
         purpose: "draft-upload",

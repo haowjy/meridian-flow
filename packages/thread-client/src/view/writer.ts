@@ -8,12 +8,10 @@ import {
   type Turn,
 } from "@meridian/contracts/protocol";
 
-export type WriterReferenceOccurrence = {
-  from: number;
-  to: number;
-  documentId: string;
-  uri: string;
-};
+export type WriterReferenceOccurrence = (
+  | { kind: "document"; documentId: string }
+  | { kind: "folder"; folderId: string }
+) & { from: number; to: number; uri: string };
 export type WriterSkillOccurrence = {
   from: number;
   to: number;
@@ -53,12 +51,23 @@ export function projectWriterText(turn: Turn): WriterText {
         description: skill.description,
       });
     if (occurrence)
-      references.push({
-        from,
-        to: text.length,
-        documentId: occurrence.documentId,
-        uri: occurrence.uri,
-      });
+      references.push(
+        occurrence.kind === "document"
+          ? {
+              kind: "document",
+              from,
+              to: text.length,
+              documentId: occurrence.documentId,
+              uri: occurrence.uri,
+            }
+          : {
+              kind: "folder",
+              from,
+              to: text.length,
+              folderId: occurrence.folderId,
+              uri: occurrence.uri,
+            },
+      );
   }
   const projected = { text, references, skills };
   cache.set(turn, projected);

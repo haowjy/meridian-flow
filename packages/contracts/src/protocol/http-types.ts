@@ -629,12 +629,20 @@ export const sendNowRequestSchema = z.strictObject({
   waiting: z.array(z.uuid()).min(1).max(500),
 });
 
-const userMessageBlockSchema = z.discriminatedUnion("type", [
+const userMessageBlockSchema = z.union([
   z.object({ type: z.literal("text"), text: z.string() }),
   z.object({
     type: z.literal("reference"),
+    kind: z.literal("document"),
     text: z.string(),
     documentId: z.string(),
+    uri: z.string(),
+  }),
+  z.object({
+    type: z.literal("reference"),
+    kind: z.literal("folder"),
+    text: z.string(),
+    folderId: z.string(),
     uri: z.string(),
   }),
   z.object({

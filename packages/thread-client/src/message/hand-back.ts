@@ -25,9 +25,10 @@ import type {
 } from "./types";
 
 /** What a reference chip needs beyond the occurrence the server kept. */
-export type ReferenceFacts = Pick<RestorableReference, "fileType" | "authority">;
+type RestorableDocumentReference = Extract<RestorableReference, { kind: "document" }>;
+export type ReferenceFacts = Pick<RestorableDocumentReference, "fileType" | "authority">;
 export type ResolveReference = (
-  target: Pick<RestorableReference, "documentId" | "uri">,
+  target: Pick<RestorableDocumentReference, "documentId" | "uri">,
 ) => ReferenceFacts | null;
 
 /** The chat's own place: the owners its handed-back references can name. */
@@ -142,6 +143,20 @@ function paragraphsOf(
         attrs: { slug: block.slug, name: block.name, description: block.description },
       });
     } else if (block.type === "reference") {
+      if (block.kind === "folder") {
+        inline({
+          type: "composerReference",
+          attrs: {
+            reference: {
+              kind: "folder",
+              folderId: block.folderId,
+              uri: block.uri,
+              label: spelledLabel(block.text),
+            },
+          },
+        });
+        continue;
+      }
       // The serializer makes an image block right after an image-capable chip, so the chip
       // makes it again on send: that block is consumed here.
       const next = blocks[index + 1];
@@ -162,7 +177,7 @@ const textOf = (text: string): MessageInlineNode => ({ type: "text", text });
 
 /** A reference chip, or null when the chat can't say who owns the document. */
 function chip(
-  target: Pick<RestorableReference, "documentId" | "uri">,
+  target: Pick<RestorableDocumentReference, "documentId" | "uri">,
   resolve: ResolveReference,
   label: string,
   imageCapable: boolean,
@@ -177,6 +192,7 @@ function chip(
     type: "composerReference",
     attrs: {
       reference: {
+        kind: "document",
         documentId: target.documentId,
         uri: target.uri,
         ...known,
