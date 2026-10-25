@@ -192,13 +192,17 @@ async function materializeOrder(
 
 type RankedNode = { id: string; rank: string };
 
+function compareBytes(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function nearest(rows: RankedNode[], direction: "before" | "after"): RankedNode | null {
   return (
     rows.sort((left, right) => {
       const compared =
         left.rank === right.rank
-          ? left.id.localeCompare(right.id)
-          : left.rank.localeCompare(right.rank);
+          ? compareBytes(left.id, right.id)
+          : compareBytes(left.rank, right.rank);
       return direction === "before" ? -compared : compared;
     })[0] ?? null
   );
