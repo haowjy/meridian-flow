@@ -30,6 +30,7 @@ import type {
   ThreadTransportHandlers,
   ThreadTransportSubscribeOptions,
 } from "./thread-transport";
+import { DEFAULT_WS_ASK_ANSWER_DEADLINE_MS } from "./ws-thread-socket-utils";
 import { WsThreadSubscriptionRegistry } from "./ws-thread-subscription";
 
 export type ThreadSocketClientOptions = SocketLifecycleOptions & {
@@ -55,7 +56,10 @@ export class ThreadSocketClient implements ThreadTransport {
     Set<(hint: Extract<WsServerMessage, { type: "context-catalog-hint" }>) => void>
   >();
   /** Unanswered `ask.answer` frames by request id; a close settles every one as unconfirmed. */
-  private readonly askAnswers = new Map<string, (outcome: AskAnswerOutcome) => void>();
+  private readonly askAnswers = new Map<
+    string,
+    { resolve: (outcome: AskAnswerOutcome) => void; deadline: ReturnType<typeof setTimeout> }
+  >();
   private wantsConnection = false;
   private requestCounter = 0;
 
@@ -147,14 +151,24 @@ export class ThreadSocketClient implements ThreadTransport {
     const requestId = this.nextRequestId();
     if (!this.socket.isServerConnected() || !this.send({ type: "ask.answer", requestId, ...input }))
       return Promise.resolve({ type: "unconfirmed" });
-    return new Promise((resolve) => this.askAnswers.set(requestId, resolve));
+    return new Promise((resolve) =>
+      this.askAnswers.set(requestId, {
+        resolve,
+        deadline: setTimeout(
+          () => this.settleAskAnswer(requestId, { type: "unconfirmed" }),
+          DEFAULT_WS_ASK_ANSWER_DEADLINE_MS,
+        ),
+      }),
+    );
   }
 
+  /** The one settlement for an answer request: its reply, a request error, a close, or its deadline. */
   private settleAskAnswer(requestId: string, outcome: AskAnswerOutcome): boolean {
-    const resolve = this.askAnswers.get(requestId);
-    if (!resolve) return false;
+    const pending = this.askAnswers.get(requestId);
+    if (!pending) return false;
     this.askAnswers.delete(requestId);
-    resolve(outcome);
+    clearTimeout(pending.deadline);
+    pending.resolve(outcome);
     return true;
   }
 
