@@ -393,6 +393,7 @@ it("keeps delivery-group identity across tail growth but refreshes invocation-de
     origin: "system",
     metadata: {
       kind: "inbox_message",
+      agentRequestKind: "foreground_message",
       sender: { threadId: "sender-1", ref: "c1", title: "Planning" },
     },
   });
@@ -423,4 +424,25 @@ it("keeps delivery-group identity across tail growth but refreshes invocation-de
     message: "m1 words",
     sender: { threadId: "sender-1", ref: "c1", title: "Planning" },
   });
+
+  // Membership comes from causal placement, not sender attribution. A foreground delivery after a
+  // compaction gets its own row, while the initial child seed remains hidden.
+  const compact = turn("compact", "compaction", reply.id, { blocks: [] });
+  const unattributedForeground = turn("m2", "user", compact.id, {
+    origin: "system",
+    metadata: { kind: "inbox_message", agentRequestKind: "foreground_message" },
+  });
+  const childSeed = turn("seed", "user", unattributedForeground.id, {
+    origin: "system",
+    metadata: { kind: "inbox_message", agentRequestKind: "child_seed" },
+  });
+  const afterCompaction = viewTranscript({
+    turns: [reply, compact, unattributedForeground, childSeed],
+    activity: { awaitingSubagents: false },
+  });
+  expect(afterCompaction.rows.map((row) => [row.kind, row.turn.id])).toEqual([
+    ["turn", "a1"],
+    ["compaction", "compact"],
+    ["delivery", "m2"],
+  ]);
 });

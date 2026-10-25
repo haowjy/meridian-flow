@@ -248,16 +248,21 @@ export function inboxMessageMetadata(extra: JsonObject = {}): JsonObject {
   return { ...extra, kind: "inbox_message" };
 }
 
-export function agentRequestMetadata(origin: AgentRequestOrigin): JsonObject {
-  return origin === "spawn" ? childSeedMetadata() : foregroundMessageMetadata();
+type AgentRequestSender = { threadId: string; ref: string | null; title: string | null };
+
+export function agentRequestMetadata(
+  origin: AgentRequestOrigin,
+  sender: AgentRequestSender,
+): JsonObject {
+  return origin === "spawn" ? childSeedMetadata(sender) : foregroundMessageMetadata(sender);
 }
 
-export function childSeedMetadata(): JsonObject {
-  return { kind: "inbox_message", agentRequestKind: "child_seed" };
+export function childSeedMetadata(sender?: AgentRequestSender): JsonObject {
+  return { kind: "inbox_message", agentRequestKind: "child_seed", ...(sender ? { sender } : {}) };
 }
 
-export function foregroundMessageMetadata(): JsonObject {
-  return { kind: "inbox_message", agentRequestKind: "foreground_message" };
+export function foregroundMessageMetadata(sender: AgentRequestSender): JsonObject {
+  return { kind: "inbox_message", agentRequestKind: "foreground_message", sender };
 }
 
 export function childCompletionMetadata(input: {

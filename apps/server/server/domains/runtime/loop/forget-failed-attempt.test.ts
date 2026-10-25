@@ -346,7 +346,10 @@ describe("loadForgettingFacts", () => {
       cutoffTurnId: "y",
     },
   });
-  const childSeed = turn("c", "user", { origin: "system", metadata: { kind: "inbox_message" } });
+  const childSeed = turn("c", "user", {
+    origin: "system",
+    metadata: { kind: "inbox_message", agentRequestKind: "child_seed" },
+  });
   const reference = block("c", "custom", {
     content: { kind: "thread-reference", props: { threadId: "x" } },
   });
@@ -364,12 +367,7 @@ describe("loadForgettingFacts", () => {
       [],
       true,
     ],
-    [
-      "a child seed without references is delivered under the reply",
-      [childSeed, report],
-      ["c", "r"],
-      false,
-    ],
+    ["a child seed without references stays hidden", [childSeed, report], ["r"], false],
   ];
   it.each(
     walks,

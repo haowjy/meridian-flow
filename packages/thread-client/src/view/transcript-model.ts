@@ -1,4 +1,4 @@
-/** Transcript rows, response boundaries, delivery events and reveal targets: the indexed reading `viewTranscript` assembles. */
+/** Transcript rows, response boundaries, delivery placement and reveal targets for `viewTranscript`. */
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import {
   isHandoffSeed,
@@ -134,11 +134,10 @@ function inboxMessageSender(
 }
 
 /**
- * What the view draws for a turn, or null when the turn has no row of its own. This is the one rule for
- * "which turns are rows": the builder draws from it and the delivery walk stops at it, so the view and the
- * server's forgetting decision group deliveries the same way. It reads `turn.blocks` (an overflow shell is
- * empty, a child seed carries thread references) and the turn that follows, so a caller must hand it a turn
- * with its blocks loaded. It is visual membership only: whether a turn closes the chat is `isClosingRow`.
+ * The base row shape for a turn. Delivery placement builds on this boundary rule, so the transcript and
+ * server forgetting walk agree about whether a machine delivery belongs under an assistant. It reads
+ * `turn.blocks` (an overflow shell is empty, a child seed can carry thread references) and the successor,
+ * so callers provide hydrated turns. This is visual membership only; `isClosingRow` decides chat closure.
  */
 export type RowShape =
   | { kind: "compaction" | "write-mode" | "turn" | "handoff-seed" }
@@ -156,32 +155,81 @@ export function rowOf(turn: Turn, successor: Turn | undefined): RowShape | null 
   return references.length ? { kind: "thread-reference", references } : null;
 }
 
+export type DeliveryPlacement = { kind: "assistant"; assistantTurnId: string } | { kind: "row" };
+
+function isChildSeed(turn: Turn): boolean {
+  const metadata = turn.metadata;
+  return (
+    !!metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    metadata.kind === "inbox_message" &&
+    metadata.agentRequestKind === "child_seed"
+  );
+}
+
 /**
- * The delivery turns (a `subagent_update`) the view groups under an assistant reply: those that follow it
- * until the next row (`rowOf`). The caller supplies the successor index and the turns' blocks.
+ * Assigns every visible machine delivery exactly one place. A delivery stays under the preceding
+ * assistant while no row intervenes; otherwise it receives its own row. The initial child seed is
+ * context, not a message row. Sender provenance decorates the event and never decides membership.
  */
+export function placeDeliveries(
+  turns: readonly Turn[],
+  nextByPrev: ReadonlyMap<string, Turn>,
+  onVisit: (visited: Turn) => void = () => {},
+): ReadonlyMap<string, DeliveryPlacement> {
+  const openAssistantAfter = new Map<string, string | null>();
+  const placements = new Map<string, DeliveryPlacement>();
+  for (const turn of turns) {
+    onVisit(turn);
+    const predecessorAssistant = turn.prevTurnId
+      ? (openAssistantAfter.get(turn.prevTurnId) ?? null)
+      : null;
+    const shape = rowOf(turn, nextByPrev.get(turn.id));
+    if (classifyTurn(turn) === "delivery" && !isChildSeed(turn)) {
+      placements.set(
+        turn.id,
+        predecessorAssistant
+          ? { kind: "assistant", assistantTurnId: predecessorAssistant }
+          : { kind: "row" },
+      );
+    }
+    openAssistantAfter.set(
+      turn.id,
+      shape ? (turn.role === "assistant" ? turn.id : null) : predecessorAssistant,
+    );
+  }
+  return placements;
+}
+
+/** The deliveries assigned to one assistant by the shared placement rule. */
 export function deliveriesUnder(
   reply: Turn,
   nextByPrev: ReadonlyMap<string, Turn>,
   onVisit: (visited: Turn) => void = () => {},
 ): Turn[] {
-  const delivered: Turn[] = [];
-  const seen = new Set<string>();
+  const chain = [reply];
+  const seen = new Set([reply.id]);
   let next = nextByPrev.get(reply.id);
   while (next && !seen.has(next.id)) {
     seen.add(next.id);
-    onVisit(next);
-    if (rowOf(next, nextByPrev.get(next.id))) break;
-    if (classifyTurn(next) === "delivery") delivered.push(next);
-    next = nextByPrev.get(next.id);
+    chain.push(next);
+    const successor = nextByPrev.get(next.id);
+    if (rowOf(next, successor)) break;
+    next = successor;
   }
-  return delivered;
+  const placement = placeDeliveries(chain, nextByPrev, (turn) => {
+    if (turn.id !== reply.id) onVisit(turn);
+  });
+  return chain.filter((turn) => {
+    const placed = placement.get(turn.id);
+    return placed?.kind === "assistant" && placed.assistantTurnId === reply.id;
+  });
 }
 
 /**
  * Whether a closing turn (`isClosingRow`) follows a turn in this sequence: the chat has moved past it. A
- * failure and its Retry end there. It reads turns, not drawn rows, because an agent's `inbox_message`
- * closes the chat on the server yet draws no row.
+ * failure and its Retry end there. It reads closing turns rather than inferring closure from row kind.
  */
 export function chatMovedPast(turns: readonly Turn[]): (turn: Turn) => boolean {
   const at = new Map(turns.map((turn, index) => [turn.id, index]));
@@ -235,13 +283,15 @@ export function buildTranscriptModel(
       ...(sender ? { sender } : {}),
     });
   };
-  const groupedDeliveryIds = new Set(
-    turns.flatMap((turn) =>
-      turn.role === "assistant"
-        ? deliveriesUnder(turn, nextByPrev).map((delivery) => delivery.id)
-        : [],
-    ),
-  );
+  const deliveryPlacements = placeDeliveries(turns, nextByPrev);
+  const deliveriesByAssistant = new Map<string, Turn[]>();
+  for (const turn of turns) {
+    const placement = deliveryPlacements.get(turn.id);
+    if (placement?.kind !== "assistant") continue;
+    const grouped = deliveriesByAssistant.get(placement.assistantTurnId) ?? [];
+    grouped.push(turn);
+    deliveriesByAssistant.set(placement.assistantTurnId, grouped);
+  }
   const rows: TranscriptRow[] = [];
   const movedPast = chatMovedPast(turns);
   let latestSeedIndex = -1;
@@ -252,12 +302,7 @@ export function buildTranscriptModel(
       ? { ownerThreadId: owner, startsOwner: false, endsInherited: false }
       : null;
     if (!shape) {
-      if (
-        turn.role === "user" &&
-        classifyTurn(turn) === "delivery" &&
-        inboxMessageSender(turn) !== null &&
-        !groupedDeliveryIds.has(turn.id)
-      )
+      if (deliveryPlacements.get(turn.id)?.kind === "row")
         rows.push({ kind: "delivery", turn, event: deliveryEventFor(turn), inherited: mark });
       return;
     }
@@ -284,7 +329,7 @@ export function buildTranscriptModel(
   for (const turn of visibleTurns) {
     if (turn.role !== "assistant") continue;
     const events: DeliveryEvent[] = [];
-    for (const next of deliveriesUnder(turn, nextByPrev)) {
+    for (const next of deliveriesByAssistant.get(turn.id) ?? []) {
       const event = deliveryEventFor(next);
       events.push(event);
       const childThreadId = event.childThreadId;
