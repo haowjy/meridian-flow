@@ -46,7 +46,11 @@ import {
   type HolderLinkScope,
   LIVE_VIEW,
 } from "./ports/document-link-scope.js";
-import type { InitialDocumentSeeds, PreparedSeed } from "./ports/initial-document-seeds.js";
+import type {
+  InitialDocumentSeeds,
+  PreparedSeed,
+  SeedAnnouncement,
+} from "./ports/initial-document-seeds.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
 
@@ -174,7 +178,7 @@ export type MarkdownDocumentEngine = {
     origin: DocumentSeedOrigin;
   }): Promise<PreparedSeed>;
   /** Runs the write hook (derivations, projections) for seeds installed and committed. */
-  announceSeeds(seeds: readonly PreparedSeed[]): Promise<void>;
+  announceSeeds(seeds: readonly SeedAnnouncement[]): Promise<void>;
   writeDocument(input: {
     documentId: DocumentId;
     content: BoundWrite;
@@ -629,15 +633,26 @@ export function createMarkdownDocumentEngine(
           content.schemaType,
           deps.links.reader({ uri, view: LIVE_VIEW }),
         );
-        return { documentId, state: Y.encodeStateAsUpdate(seededDoc), markdown };
+        return {
+          documentId,
+          state: Y.encodeStateAsUpdate(seededDoc),
+          stateVector: Y.encodeStateVector(seededDoc),
+          attributionManifest: { version: 1, floor: null, attributions: [] },
+          markdown,
+        };
       } finally {
         seededDoc.destroy();
       }
     },
 
     async announceSeeds(seeds) {
-      for (const { documentId, markdown } of seeds)
-        await deps.afterWrite?.({ documentId, markdown });
+      for (let offset = 0; offset < seeds.length; offset += 8) {
+        await Promise.all(
+          seeds
+            .slice(offset, offset + 8)
+            .map(({ documentId, markdown }) => deps.afterWrite?.({ documentId, markdown })),
+        );
+      }
     },
 
     async writeDocument(input) {

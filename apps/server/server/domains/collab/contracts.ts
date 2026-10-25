@@ -47,7 +47,6 @@ export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
-import type { PreparedSeed } from "./domain/ports/initial-document-seeds.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
 import type { TurnReceiptChip } from "./domain/turn-receipt.js";
@@ -235,9 +234,9 @@ export type MarkdownDocumentStore = LinkBinder & {
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
   prepareSeed: import("./domain/markdown-document.js").MarkdownDocumentEngine["prepareSeed"];
-  announceSeeds: import("./domain/markdown-document.js").MarkdownDocumentEngine["announceSeeds"];
-  /** Inside the creator's transaction: first states for documents it just created. */
-  insertInitialStates(seeds: readonly PreparedSeed[]): Promise<void>;
+  stageInitialStates: import("./domain/ports/initial-document-seeds.js").InitialDocumentSeeds["stageInitialStates"];
+  commitStagedStates(stagingId: string): Promise<void>;
+  discardStagedStates: import("./domain/ports/initial-document-seeds.js").InitialDocumentSeeds["discardStagedStates"];
   writeDocument(input: {
     documentId: DocumentId;
     content: BoundWrite;

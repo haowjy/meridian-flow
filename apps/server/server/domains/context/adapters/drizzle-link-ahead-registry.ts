@@ -52,13 +52,14 @@ import {
   type LinkAheadRegistry,
   RegistrationInsideTransactionError,
 } from "../ports/link-ahead-registry.js";
-import { lockNamespaceKeys } from "./context-fs/document-locations.js";
+import { assertNamespaceKeysHeld, lockNamespaceKeys } from "./context-fs/document-locations.js";
 import {
-  currentDocumentAddress,
+  type DocumentAddress,
   type DocumentCoordinates,
   documentAt,
   listsThroughLiveManifest,
-  resolveCanonicalAddress,
+  loadDocumentAddresses,
+  resolveCanonicalAddresses,
   sameCoordinates,
 } from "./document-address.js";
 
@@ -75,99 +76,169 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     private readonly eventSink: EventSink = createNoopEventSink(),
   ) {}
 
+  private async resolveRegistrations(registrations: readonly AheadRegistration[]) {
+    const addresses = await resolveCanonicalAddresses(this.db, registrations);
+    return registrations.map((registration, index) => {
+      const aheadId = parseRequestId(registration.aheadId);
+      if (!aheadId) throw new RangeError(`Invalid ahead id: ${registration.aheadId}`);
+      return {
+        aheadId,
+        address: addresses[index],
+        awaitedDocumentId: registration.awaitedDocumentId ?? null,
+      };
+    });
+  }
+
   async register(registrations: readonly AheadRegistration[]): Promise<void> {
     if (isInDrizzleTransaction()) throw new RegistrationInsideTransactionError();
-    if (registrations.length === 0) return;
+    if (!registrations.length) return;
     await runOutsideWrite(() =>
       runInRootDrizzleTransaction(this.db, async () => {
-        const tx = currentDrizzleDb(this.db);
-        const resolved = [];
-        for (const registration of registrations) {
-          const aheadId = parseRequestId(registration.aheadId);
-          if (!aheadId) throw new RangeError(`Invalid ahead id: ${registration.aheadId}`);
-          resolved.push({
-            aheadId,
-            address: await resolveCanonicalAddress(this.db, registration),
-            awaitedDocumentId: registration.awaitedDocumentId ?? null,
-          });
-        }
-        // Namespace keys only: registration is not an authored write (archived Work
-        // scratch is a valid target) and holds nothing else, so it cannot close a cycle.
-        // A ref awaiting an id never settles by address, so it takes no address key.
+        const resolved = await this.resolveRegistrations(registrations);
+        // Target-only registration is not an authored write, including archived Work targets.
         await lockNamespaceKeys(
           this.db,
           resolved
-            .filter(({ awaitedDocumentId }) => !awaitedDocumentId)
+            .filter((row) => !row.awaitedDocumentId)
             .map(({ address }) => ({ ...address, workId: address.lockWorkId })),
         );
         await lockAwaitedStripes(
           this.db,
-          resolved.flatMap(({ awaitedDocumentId }) =>
-            awaitedDocumentId ? [awaitedDocumentId] : [],
-          ),
+          resolved.flatMap((row) => (row.awaitedDocumentId ? [row.awaitedDocumentId] : [])),
         );
-
-        const ids = resolved.map(({ aheadId }) => aheadId);
-        await tx
-          .insert(linkAheadRefs)
-          .values(
-            resolved.map(({ aheadId, address, awaitedDocumentId }) => ({
-              aheadId,
-              awaitedDocumentId,
-              projectId: address.projectId,
-              scheme: address.scheme,
-              workId: address.workId,
-              rootThreadId: address.rootThreadId ?? null,
-              path: address.path,
-            })),
-          )
-          .onConflictDoNothing({ target: linkAheadRefs.aheadId });
-        // After the insert: whichever registration owns an id, a different address is a bug.
-        const stored = new Map(
-          (await tx.select().from(linkAheadRefs).where(inArray(linkAheadRefs.aheadId, ids))).map(
-            (row) => [row.aheadId, row],
-          ),
-        );
-        for (const { aheadId, address } of resolved) {
-          const row = stored.get(aheadId);
-          if (
-            !row ||
-            !sameCoordinates(address, { ...row, scheme: row.scheme as ContextUriScheme })
-          ) {
-            throw new Error(`Ahead ref ${aheadId} was registered for another address`);
-          }
-        }
-
-        for (const { aheadId, address, awaitedDocumentId } of resolved) {
-          if (awaitedDocumentId) {
-            // Wherever it landed: the awaited document is live in this ref's project.
-            const landed = await currentDocumentAddress(this.db, awaitedDocumentId);
-            if (landed && (await this.isLive(landed, awaitedDocumentId)))
-              await this.settle(landed, awaitedDocumentId, aheadId);
-          } else {
-            const documentId = await this.liveDocumentAt(address);
-            if (documentId) await this.settle(address, documentId, aheadId);
-          }
-        }
+        await this.registerResolved(resolved);
       }),
     );
   }
 
-  async settleArrivals(documentIds: readonly DocumentId[]): Promise<number> {
-    let settled = 0;
-    await lockAwaitedStripes(this.db, documentIds);
-    for (const documentId of new Set(documentIds)) {
-      const address = await currentDocumentAddress(this.db, documentId);
-      // Every arrival calls this; the manifest read is paid only when a ref waits here.
-      if (
-        address &&
-        (await this.hasUnsettled(address, documentId)) &&
-        (await this.isLive(address, documentId))
-      ) {
-        settled += await this.settle(address, documentId);
-      }
+  async registerWithinTransaction(
+    registrations: readonly Omit<AheadRegistration, "awaitedDocumentId">[],
+  ): Promise<void> {
+    if (!registrations.length) return;
+    const resolved = await this.resolveRegistrations(registrations);
+    assertNamespaceKeysHeld(
+      resolved.map(({ address }) => ({ ...address, workId: address.lockWorkId })),
+    );
+    await this.registerResolved(resolved);
+  }
+
+  private async registerResolved(
+    resolved: Awaited<ReturnType<DrizzleLinkAheadRegistry["resolveRegistrations"]>>,
+  ): Promise<void> {
+    const tx = currentDrizzleDb(this.db);
+    const rows = resolved.map(({ aheadId, address, awaitedDocumentId }) => ({
+      aheadId,
+      awaitedDocumentId,
+      projectId: address.projectId,
+      scheme: address.scheme,
+      workId: address.workId,
+      rootThreadId: address.rootThreadId ?? null,
+      path: address.path,
+    }));
+    const input = sql`jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) as r(
+      "aheadId" uuid, "awaitedDocumentId" uuid, "projectId" uuid, scheme text, "workId" uuid, "rootThreadId" uuid, path text)`;
+    await tx.execute(sql`insert into link_ahead_refs (ahead_id, awaited_document_id, project_id, scheme, work_id, root_thread_id, path)
+      select "aheadId", "awaitedDocumentId", "projectId", scheme, "workId", "rootThreadId", path from ${input}
+      order by "aheadId" on conflict (ahead_id) do nothing`);
+    const stored = new Map(
+      (
+        await tx
+          .select()
+          .from(linkAheadRefs)
+          .where(
+            inArray(
+              linkAheadRefs.aheadId,
+              rows.map((row) => row.aheadId),
+            ),
+          )
+      ).map((row) => [row.aheadId, row]),
+    );
+    for (const { aheadId, address } of resolved) {
+      const row = stored.get(aheadId);
+      if (!row || !sameCoordinates(address, { ...row, scheme: row.scheme as ContextUriScheme }))
+        throw new Error(`Ahead ref ${aheadId} was registered for another address`);
     }
-    return settled;
+    const candidates = await tx.execute<{ id: string }>(sql`
+      with requested as materialized (select r.*, regexp_replace(r.path, '^.*/', '') as filename from ${input}),
+      sources as materialized (
+        select r.*, cs.id as source_id from requested r
+        join context_sources cs on cs.slug = r.scheme left join works w on w.id = cs.work_id
+        where r."awaitedDocumentId" is null and r."projectId" = coalesce(cs.project_id,w.project_id)
+          and r."workId" is not distinct from (case when w.is_no_work then null else cs.work_id end)
+          and r."rootThreadId" is not distinct from cs.root_thread_id
+      )
+      select d.id from requested r join documents d on d.id = r."awaitedDocumentId"
+        join context_sources cs on cs.id = d.context_source_id left join works w on w.id = cs.work_id
+        where coalesce(cs.project_id,w.project_id) = r."projectId" and d.deleted_at is null and d.kind = 'content'
+      union
+      select d.id from sources r join documents d on d.context_source_id = r.source_id
+        and d.name || case when d.extension = '' then '' else '.' || d.extension end = r.filename
+        where d.deleted_at is null and d.kind = 'content'`);
+    await this.settleAddresses(
+      await loadDocumentAddresses(this.db, { ids: candidates.map((row) => row.id) }),
+      rows.map((row) => row.aheadId),
+    );
+  }
+
+  async settleArrivals(documentIds: readonly DocumentId[]): Promise<number> {
+    if (!documentIds.length) return 0;
+    await lockAwaitedStripes(this.db, documentIds);
+    return this.settleAddresses(
+      await loadDocumentAddresses(this.db, { ids: [...new Set(documentIds)] }),
+    );
+  }
+
+  private async settleAddresses(
+    addresses: readonly DocumentAddress[],
+    aheadIds?: readonly string[],
+  ): Promise<number> {
+    const present = addresses.filter((address) => !address.deleted);
+    if (!present.length) return 0;
+    const tx = currentDrizzleDb(this.db);
+    const records = (
+      rows: readonly DocumentAddress[],
+    ) => sql`jsonb_to_recordset(${JSON.stringify(rows)}::jsonb)
+      as a("documentId" uuid, "projectId" uuid, scheme text, "workId" uuid, "rootThreadId" uuid, path text)`;
+    const restricted = aheadIds
+      ? sql`and r.ahead_id in (select value::uuid from jsonb_array_elements_text(${JSON.stringify(aheadIds)}::jsonb))`
+      : sql``;
+    // Separate identity and address joins: an OR between them prevents the path/awaited
+    // indexes (and hash joins) serving a vault with thousands of waiting refs.
+    const matching = sql`
+      select r.ahead_id, a."documentId" from addresses a join link_ahead_refs r
+        on r.project_id = a."projectId" and r.scheme = a.scheme
+          and md5(r.path) = md5(a.path) and r.path = a.path
+          and r.work_id is not distinct from a."workId" and r.root_thread_id is not distinct from a."rootThreadId"
+        where r.settled_document_id is null and r.awaited_document_id is null ${restricted}
+      union all
+      select r.ahead_id, a."documentId" from addresses a join link_ahead_refs r
+        on r.awaited_document_id = a."documentId" and r.project_id = a."projectId"
+        where r.settled_document_id is null ${restricted}`;
+    const waiting = await tx.execute<{ documentId: string }>(sql`
+      with addresses as (select * from ${records(present)})
+      select distinct "documentId" from (${matching}) matches`);
+    const wanted = new Set(waiting.map((row) => row.documentId));
+    const candidates = present.filter((row) => wanted.has(row.documentId));
+    const memberships = new Map<string, Set<string>>();
+    for (const projectId of new Set(
+      candidates.filter((row) => listsThroughLiveManifest(row.scheme)).map((row) => row.projectId),
+    )) {
+      memberships.set(
+        projectId,
+        new Set((await this.resolveManifestMembership({ projectId })).members),
+      );
+    }
+    const live = candidates.filter(
+      (row) =>
+        !listsThroughLiveManifest(row.scheme) ||
+        memberships.get(row.projectId)?.has(row.documentId),
+    );
+    if (!live.length) return 0;
+    const settled = await tx.execute(sql`
+      with addresses as (select * from ${records(live)}), matches as (${matching})
+      update link_ahead_refs r set settled_document_id = matches."documentId", settled_at = now()
+      from matches where r.ahead_id = matches.ahead_id and r.settled_document_id is null returning r.ahead_id`);
+    return settled.length;
   }
 
   async releaseAwaiting(documentIds: readonly DocumentId[]): Promise<number> {
@@ -320,15 +391,6 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     return documentId && (await this.isLive(address, documentId)) ? documentId : null;
   }
 
-  private async hasUnsettled(address: Address, documentId: string): Promise<boolean> {
-    const [row] = await currentDrizzleDb(this.db)
-      .select({ id: linkAheadRefs.aheadId })
-      .from(linkAheadRefs)
-      .where(and(isNull(linkAheadRefs.settledDocumentId), this.settlableBy(address, documentId)))
-      .limit(1);
-    return Boolean(row);
-  }
-
   /**
    * Which unsettled rows this document settles: the rows awaiting its id in its project,
    * wherever the ref was minted, and the rows awaiting nothing at its exact address.
@@ -402,10 +464,11 @@ async function lockAwaitedStripes(db: Database, documentIds: readonly string[]):
     const late = keys.find((key) => !held?.has(key) && top !== undefined && key < top);
     if (late) throw new Error(`Awaited stripe ${late} taken after ${top}`);
   }
-  for (const key of keys) {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0::bigint))`);
-    held?.add(key);
-  }
+  if (keys.length)
+    await tx.execute(sql`
+    select pg_advisory_xact_lock(hashtextextended(key, 0::bigint))
+    from (select value as key from jsonb_array_elements_text(${JSON.stringify(keys)}::jsonb) order by value) ordered`);
+  for (const key of keys) held?.add(key);
 }
 
 export function createDrizzleLinkAheadRegistry(

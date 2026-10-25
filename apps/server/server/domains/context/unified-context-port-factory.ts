@@ -24,6 +24,7 @@ import type { DocumentCreationAggregate } from "../collab/index.js";
 import { createInMemoryCollabDomain } from "../collab/index.js";
 import { sourceDestination } from "../file-policy/index.js";
 import type { EventSink } from "../observability/index.js";
+import { type DetachedWorkTracker, processDetachedWork } from "../runtime/detached-work.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { ContextFS, type ContextFSDeps } from "./adapters/context-fs/context-fs.js";
 import { lockContextNamespaces } from "./adapters/context-fs/document-locations.js";
@@ -74,6 +75,8 @@ const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] =
   WORK_SCOPED_CONTEXT_URI_SCHEMES;
 
 export interface UnifiedContextPortFactory {
+  /** Wait for every catalog repair queued by this composition. */
+  drainDetached(): Promise<void>;
   lineages: ScratchLineages;
   forProject(
     projectId: string,
@@ -589,6 +592,7 @@ export function createInMemoryUnifiedContextPortFactory(
     };
 
   return {
+    async drainDetached() {},
     lineages: storeResolvers.lineages,
     forProject(projectId, userId, workAuthorities, lineage) {
       return buildUnifiedContextPort({
@@ -621,10 +625,13 @@ export function createProductionUnifiedContextPortFactory(options: {
   eventSink?: EventSink;
   /** Ahead-ref settlement for uploads and move-ins (contract §9.3). */
   arrivals?: DocumentArrivals;
+  backgroundTasks?: DetachedWorkTracker;
 }): UnifiedContextPortFactory {
+  const backgroundTasks = options.backgroundTasks ?? processDetachedWork;
   const catalogMutations =
     options.catalogMutations ??
     createDrizzleContextCatalog(options.db, undefined, {
+      backgroundTasks,
       availabilityMutations: createDrizzleProjectContextAvailability(options.db, options.eventSink),
     });
   const storeResolvers = createProductionStoreResolvers(
@@ -653,6 +660,9 @@ export function createProductionUnifiedContextPortFactory(options: {
   }
 
   return {
+    async drainDetached() {
+      await backgroundTasks.drain();
+    },
     lineages: storeResolvers.lineages,
     forProject(projectId, userId, workAuthorities, lineage) {
       return buildUnifiedContextPort({

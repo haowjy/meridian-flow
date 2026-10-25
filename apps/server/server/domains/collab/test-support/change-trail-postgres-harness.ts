@@ -271,6 +271,7 @@ export type ChangeTrailHarnessOptions = {
     deleteWriterPrefix(documentId: DocumentId, length: number): Promise<void>;
   }) => Promise<void>;
   afterLiveApply?: () => void;
+  beforePushActivity?: (documentId: DocumentId) => Promise<void>;
   /** Ahead-ref settlement in push completions; absent, completions settle nothing. */
   arrivals?: DocumentArrivals;
 };
@@ -405,10 +406,17 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   );
   const durableWorkPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
   const durableWorkDraftPendingStore = createDrizzleWorkDraftPendingStore(db);
+  const projectionEffects = createDrizzleDocumentProjectionEffects(db);
   const durableSettlementStore = createDrizzlePendingSettlementStore(
     db,
     durableProjectionSerializer,
-    createDrizzleDocumentProjectionEffects(db),
+    {
+      ...projectionEffects,
+      async applyPushCompletion(input) {
+        await options.beforePushActivity?.(input.documentId);
+        return projectionEffects.applyPushCompletion(input);
+      },
+    },
     changeTrails,
     createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
     notices,
