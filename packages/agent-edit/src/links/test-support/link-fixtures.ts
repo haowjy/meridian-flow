@@ -44,7 +44,12 @@ export type Segment = string | { text: string; ref: string | null; href: string;
 
 /** A linked run naming document `id` at `uri`, stored the way producers store it. */
 export function docLink(text: string, id: string, uri: string, title?: string): Segment {
-  return { text, ref: documentRef(id), href: storedHref(uri, ""), ...(title ? { title } : {}) };
+  return {
+    text,
+    ref: documentRef(id),
+    href: storedHref({ kind: "document", uri }, ""),
+    ...(title ? { title } : {}),
+  };
 }
 
 export function paragraph(...segments: Segment[]): PMNode {

@@ -13,16 +13,28 @@ export function imageCapable(fileType: string | null | undefined): boolean {
 
 /** What the model and plain clipboard read: a link to the canonical URI. */
 export function referenceSpelling(value: MessageReference): string {
-  return formatMarkdownLink(value.displayText ?? value.label, spellDocumentHref(null, value.uri));
+  return formatMarkdownLink(
+    value.displayText ?? value.label,
+    spellDocumentHref(null, { kind: value.kind, uri: value.uri }),
+  );
 }
 
 export function referenceOccurrence(value: MessageReference): ReferenceOccurrence {
-  return {
-    type: "reference",
-    text: referenceSpelling(value),
-    documentId: value.documentId,
-    uri: value.uri,
-  };
+  return value.kind === "document"
+    ? {
+        type: "reference",
+        kind: "document",
+        text: referenceSpelling(value),
+        documentId: value.documentId,
+        uri: value.uri,
+      }
+    : {
+        type: "reference",
+        kind: "folder",
+        text: referenceSpelling(value),
+        folderId: value.folderId,
+        uri: value.uri,
+      };
 }
 
 export function skillOccurrence(skill: MessageSkill): SkillOccurrence {

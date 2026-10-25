@@ -68,16 +68,17 @@ handle and title, trashed first chat included.
 
 ## Stored links
 
-`document-href.ts` is the single resolver and speller for standard Markdown
-link destinations; stored links are never respelt in place, they carry refs and
-spell on read. `document-ref.ts` owns `doc:<uuid>` and `ahead:<uuid>` refs (only
+`document-href.ts` is the single kind-aware resolver and speller for standard
+Markdown link destinations. A folder URI has no trailing slash; its href does.
+Stored links are never respelt in place: they carry refs and spell on read.
+`document-ref.ts` owns `doc:<uuid>`, `folder:<uuid>`, and `ahead:<uuid>` refs (only
 canonical UUIDs parse), the only ahead-ref mint, the ahead-address rule, and
 preservation of malformed present refs so they resolve as gone instead of
 falling back to the link's address. `document-link.ts` owns written-link classification and stored-link resolution over a
 host `LinkCatalog`.
 
 Addresses are decoded canonical URIs; stored `href` and `src` values are
-escaped spellings. Build ref-bearing hrefs with `storedHref(uri, suffix)`, not
+escaped spellings. Build ref-bearing hrefs with `storedHref({ kind, uri }, suffix)`, not
 string concatenation, because `#`, `?`, and `%` in filenames are data. Refs
 never appear in Markdown, HTML, URIs, or model text. If a target is gone or
 unreachable, spell the stored href rather than its new location.

@@ -72,11 +72,13 @@ function sameLinkMark(a: Record<string, unknown>, b: Record<string, unknown>): b
   );
 }
 
-/** What spelling stored occurrences needs loaded: refs, ahead addresses and `asset:` ids. */
+/** What spelling stored occurrences needs loaded: refs, address-bound targets and `asset:` ids. */
 export interface StoredLinkKeys {
   refs: Set<string>;
   /** Decoded addresses of stored ahead refs (an arrival there settles them). */
   aheadAddresses: Set<string>;
+  /** Decoded addresses of ref-less directory hrefs, which resolve live or gone. */
+  folderAddresses: Set<string>;
   assetIds: Set<string>;
 }
 
@@ -90,6 +92,7 @@ export function storedLinkKeys(input: {
   const keys: StoredLinkKeys = {
     refs: new Set(),
     aheadAddresses: new Set(),
+    folderAddresses: new Set(),
     assetIds: new Set(),
   };
   for (const ref of input.refs ?? []) {
@@ -101,9 +104,12 @@ export function storedLinkKeys(input: {
       keys.refs.add(ref);
       if (parseLinkRef(ref)?.kind === "ahead") {
         const stored = resolveDocumentHref(href, null);
-        if (stored) keys.aheadAddresses.add(stored.uri);
+        if (stored?.kind === "document") keys.aheadAddresses.add(stored.uri);
       }
-    } else if (kind !== "link" && href.startsWith("asset:")) {
+    } else if (kind === "link") {
+      const stored = resolveDocumentHref(href, null);
+      if (stored?.kind === "folder") keys.folderAddresses.add(stored.uri);
+    } else if (href.startsWith("asset:")) {
       keys.assetIds.add(href.slice("asset:".length));
     }
   };

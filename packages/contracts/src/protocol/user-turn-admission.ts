@@ -1,17 +1,26 @@
 /** Durable writer-turn admission wire contracts. */
 import { z } from "zod";
 import { type CanonicalContextUri, parseContextUri } from "../context-uri.js";
-import type { DocumentId, UserId } from "../ids.js";
+import type { DocumentId, FolderId, UserId } from "../ids.js";
 import { parseRequestId } from "../request-id.js";
 import type { ThreadId, TurnId } from "../runtime/index.js";
 import type { JsonObject, JsonValue } from "../threads/index.js";
 
-export type ReferenceOccurrence = {
-  type: "reference";
-  text: string;
-  documentId: DocumentId;
-  uri: CanonicalContextUri;
-};
+export type ReferenceOccurrence =
+  | {
+      type: "reference";
+      kind: "document";
+      text: string;
+      documentId: DocumentId;
+      uri: CanonicalContextUri;
+    }
+  | {
+      type: "reference";
+      kind: "folder";
+      text: string;
+      folderId: FolderId;
+      uri: CanonicalContextUri;
+    };
 
 export type SkillOccurrence = {
   type: "skill";
@@ -49,12 +58,15 @@ export function userMessageTurnBlock(block: UserMessageBlock): {
   }
 }
 
-export type SubmittedReference = {
-  documentId: DocumentId;
-  uri: CanonicalContextUri;
-  purpose: "reference" | "draft-upload";
-  intakeId?: string;
-};
+export type SubmittedReference =
+  | {
+      kind: "document";
+      documentId: DocumentId;
+      uri: CanonicalContextUri;
+      purpose: "reference" | "draft-upload";
+      intakeId?: string;
+    }
+  | { kind: "folder"; folderId: FolderId; uri: CanonicalContextUri };
 
 export type AdmissionFingerprint = string;
 
@@ -128,9 +140,11 @@ export type AdmissionErrorCode = "idempotency_conflict" | "invalid_message" | "w
 export type UserTurnAdmissionResult = Exclude<AdmissionLookup, { kind: "not-seen" }>;
 
 /** Server-generated snapshot; input is validated before execution, then display-only JSON on replay. Never accepted in a submitted reference. */
-export type ReadReferenceOccurrence = ReferenceOccurrence & {
-  read?: { result: JsonValue; revision: string | null; input?: JsonObject };
-};
+export type ReadReferenceOccurrence =
+  | (Extract<ReferenceOccurrence, { kind: "document" }> & {
+      read?: { result: JsonValue; revision: string | null; input?: JsonObject };
+    })
+  | Extract<ReferenceOccurrence, { kind: "folder" }>;
 
 export function referenceOccurrenceContent(block: {
   blockType: unknown;
@@ -148,19 +162,24 @@ export function referenceOccurrenceContent(block: {
   const keys = Object.keys(content)
     .filter((key) => key !== "read")
     .sort();
+  const identityKey = content.kind === "folder" ? "folderId" : "documentId";
   if (
-    keys.length !== 4 ||
-    !["documentId", "text", "type", "uri"].every((key, index) => keys[index] === key) ||
+    keys.length !== 5 ||
+    ![identityKey, "kind", "text", "type", "uri"]
+      .sort()
+      .every((key, index) => keys[index] === key) ||
     content.type !== "reference" ||
+    (content.kind !== "document" && content.kind !== "folder") ||
     typeof content.text !== "string" ||
     content.text.length === 0 ||
-    typeof content.documentId !== "string" ||
-    !parseRequestId(content.documentId) ||
+    typeof content[identityKey] !== "string" ||
+    !parseRequestId(content[identityKey]) ||
     typeof content.uri !== "string"
   ) {
     return null;
   }
   if ("read" in content) {
+    if (content.kind !== "document") return null;
     const read = content.read;
     if (
       !read ||
