@@ -12,15 +12,15 @@ Use **direnv** so the shell picks up `.envrc`. `pnpm bootstrap` runs `direnv all
 
 ### Toolchain
 
-Node and Python are pinned in [`.tool-versions`](.tool-versions) (Node 24.17.0, Python 3.12) and loaded through mise:
+Node and Python are pinned in [`.tool-versions`](.tool-versions): Node 24.17.0, and Python 3.12, which resolves to the newest installed 3.12.x. mise loads the pins; this assumes mise and direnv are installed and direnv is hooked into your shell.
 
 ```bash
-mise install                  # install the pinned versions
-mise direnv                   # once per machine: writes the use_mise helper .envrc calls
+mise install                  # download the pinned versions
+mise direnv                   # once per machine: write ~/.config/direnv/lib/use_mise.sh
 eval "$(mise activate bash)"  # add to ~/.bashrc so every shell gets the pinned Node and Python
 ```
 
-[`.envrc`](.envrc) starts with `use mise`, which exists only after `mise direnv`. Without it direnv stops with `use_mise: command not found` and no project variables load.
+`mise current` prints the versions a shell resolves (`node 24.17.0`, `python 3.12.x`). [`.envrc`](.envrc) starts with `use mise`, a function that exists only after `mise direnv` writes it into direnv's config directory. Without it direnv stops with `use_mise: command not found` and no project variables load; rerun `mise direnv` to restore the helper.
 
 Runtime dev-tool contracts: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md).
 
