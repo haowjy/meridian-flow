@@ -1,13 +1,22 @@
 /**
- * The chat composer's open-ask mode: the takeover to draw in the box's place, and the own-answer
- * field's text. Whatever the field still holds when the ask closes (answered elsewhere, timed out,
- * or answered here with an option) is added to the composer draft, so nothing typed is lost.
+ * The chat composer's open-ask mode: the takeover to draw in the box's place, and the words the
+ * writer typed for the ask. Nothing typed is lost: when the ask ends, text still in the answer
+ * field, and sent words that lost to another resolution, are added to the composer draft once.
+ *
+ * Closure follows the ask's lifecycle, not the takeover: the takeover also hides while this
+ * device's answer sends or settles, and the words must wait for how the ask actually ended.
  */
+import type { ThreadAsk } from "@meridian/contracts/threads";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
-import { useOpenAsk } from "@/client/stores";
+import { useOpenAsk, useThreadStore } from "@/client/stores";
 import type { ComposerHandle } from "@/components/app/composer";
 import { AskTakeover } from "./AskTakeover";
 import { useAnswerAsk } from "./useAnswerAsk";
+
+/** The words held for one ask: still in the field, and sent but not yet known to have won. */
+type HeldWords = { askId: string | null; field: string; sent: string | null };
+
+const NONE: HeldWords = { askId: null, field: "", sent: null };
 
 export function useAskTakeover(
   threadId: string,
@@ -17,38 +26,58 @@ export function useAskTakeover(
   const open = useOpenAsk(threadId);
   const commands = useAnswerAsk(threadId);
   const openId = open?.ask.id ?? null;
-  // A failed own-words answer comes back into the field, where the rule above keeps it.
+  const [held, setHeld] = useState<HeldWords>(NONE);
+  // The ref is the truth for the effect: it changes with each write, before any render the
+  // answer's store update causes.
+  const heldRef = useRef(held);
+  const write = useCallback((next: HeldWords) => {
+    heldRef.current = next;
+    setHeld(next);
+  }, []);
+  const tracked = useThreadStore((state) =>
+    held.askId === null ? undefined : state.syncedByThread[threadId]?.asks.byId.get(held.askId),
+  );
   const failed = open?.attempt?.state === "failed" ? open.attempt : null;
   const failedText = failed?.answer.kind === "text" ? failed.answer.text : null;
-  const [field, setField] = useState({ askId: openId, text: failedText ?? "" });
-  // The ref is the field's truth for the close effect: it changes with each write, before any
-  // render the answer's store update causes.
-  const fieldRef = useRef(field);
-  const write = useCallback((next: { askId: string | null; text: string }) => {
-    fieldRef.current = next;
-    setField(next);
-  }, []);
 
   useEffect(() => {
-    const held = fieldRef.current;
-    if (held.askId === openId) return;
-    if (held.text.trim()) composer.current?.appendText(held.text);
-    write({ askId: openId, text: failedText ?? "" });
-  }, [composer, openId, failedText, write]);
+    const current = heldRef.current;
+    const ended = tracked?.resolution != null;
+    if (current.askId !== null && (ended || (openId !== null && openId !== current.askId))) {
+      const lost = current.sent !== null && !wonWith(tracked, current.sent);
+      const words = [current.field.trim(), lost ? current.sent : null].filter(Boolean).join("\n");
+      if (words) composer.current?.appendText(words);
+      write(NONE);
+      return;
+    }
+    if (openId !== null && current.askId === null) {
+      write({ askId: openId, field: failedText ?? "", sent: null });
+      return;
+    }
+    // A failed own-words answer comes back into the field, which owns it again.
+    if (failedText !== null && current.sent === failedText) {
+      write({ ...current, field: current.field || failedText, sent: null });
+    }
+  }, [composer, openId, tracked, failedText, write]);
 
   if (!open) return null;
   return (
     <AskTakeover
       open={open}
       agentName={agentName}
-      text={field.askId === open.ask.id ? field.text : ""}
-      onTextChange={(text) => write({ askId: open.ask.id, text })}
+      text={held.askId === open.ask.id ? held.field : ""}
+      onTextChange={(text) => write({ ...heldRef.current, askId: open.ask.id, field: text })}
       onSettle={() => commands.settle(open.ask.id)}
       onAnswer={(next) => {
-        // Sent words leave the field; anything else typed there stays for the draft.
-        if (next.kind === "text") write({ askId: open.ask.id, text: "" });
+        // Sent words leave the field but stay held until the ask says whether they won.
+        if (next.kind === "text") write({ askId: open.ask.id, field: "", sent: next.text });
         commands.answer(open.ask.id, next);
       }}
     />
   );
+}
+
+/** Whether the ask ended with exactly these words of this device's. */
+function wonWith(ask: ThreadAsk | undefined, words: string): boolean {
+  return ask?.resolution?.kind === "text" && ask.resolution.text === words;
 }
