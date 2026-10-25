@@ -92,7 +92,8 @@ it("returns only rows still where and as the drop left them", () => {
       ...view.placement,
       folderLocation: (id: string) => ({ name: id }),
       parentForFolder: () => folder("act"),
-      childrenAt: () => [],
+      childrenAt: () =>
+        ["c", "a", "b"].map((id) => ({ kind: "folder", entryId: id, name: id }) as CatalogEntry),
     },
   } as unknown as PlacementView;
   expect(planUndo(carriedView, carried).map((row) => row.position)).toEqual([
