@@ -393,7 +393,7 @@
     "packages/contracts/src/context-entry-validation.test.ts": 5,
     "packages/contracts/src/context-uri.test.ts": 19,
     "packages/contracts/src/contract-boundaries.test.ts": 4,
-    "packages/contracts/src/document-href.test.ts": 28,
+    "packages/contracts/src/document-href.test.ts": 27,
     "packages/contracts/src/document-link.test.ts": 4,
     "packages/contracts/src/failures/index.test.ts": 18,
     "packages/contracts/src/protocol/document-filename.test.ts": 11,
