@@ -1,6 +1,6 @@
 /** One terminal transaction for a turn and its admitted child execution report. */
-import type { MeridianError } from "@meridian/contracts/interrupt";
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import type { MeridianError } from "@meridian/contracts/errors";
+import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import {
@@ -17,7 +17,6 @@ import {
   CompactionFailureOutcomeCodec,
   CompactionFailureReasonCodec,
   compactionFailureMetadata,
-  type EventJournalWriter,
   type LiveEventWriter,
   replyFailureMetadata,
   type ThreadRepositories,

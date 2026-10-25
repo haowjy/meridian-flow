@@ -29,7 +29,7 @@ async function setup(gateway: Gateway, creditsMillicredits = "1000000") {
     toolRegistry: registry,
     toolExecutor: createToolExecutor(registry),
   });
-  return { ...rig, registry, interruptRegistry: rig.deps.interruptRegistry };
+  return { ...rig, registry };
 }
 
 describe("runtime credits", () => {

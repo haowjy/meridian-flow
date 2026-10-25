@@ -1,5 +1,5 @@
 /** Child-run coordination: admit, drive, release, then publish saved terminal truth. */
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   ExecutionReportCorrelation,

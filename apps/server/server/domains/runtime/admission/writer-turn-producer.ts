@@ -89,7 +89,7 @@ export function createWriterTurnProducer(deps: {
       const userTurnId = crypto.randomUUID() as TurnId;
       // Liveness comes from the runner map, never durable turn status: a
       // crash-orphaned `streaming` turn is not a live run, and a run parked on
-      // `waiting_interrupt` is. Only once the runner owns the thread do we look
+      // `awaiting_answer` is. Only once the runner owns the thread do we look
       // at durable rows, and only for the setup window where the runner has not
       // published the assistant id yet. `createdAfter` keeps an older orphan out.
       const liveReplyId = async () => {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { MeridianError } from "@meridian/contracts/interrupt";
+import type { MeridianError } from "@meridian/contracts/errors";
 import {
   encodeWsServerMessage,
   parseSeq,
@@ -8,8 +8,7 @@ import {
   WS_CLOSE,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
-import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
-import type { JsonValue } from "@meridian/contracts/threads";
+import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import {
   emitEvent,
   runWithEventCorrelation,
@@ -24,7 +23,7 @@ const SERVER_VERSION = "0.0.0";
 export type WsAuthenticatedContext = Readonly<{
   app: Pick<
     AppServices,
-    "eventSink" | "threadEventHub" | "projectRepo" | "interruptRegistry" | "contextCatalogWakeHub"
+    "eventSink" | "threadEventHub" | "projectRepo" | "contextCatalogWakeHub"
   > & {
     threadRuntime: Pick<AppServices["threadRuntime"], "requireOwnedThread" | "liveState">;
   };
@@ -76,16 +75,6 @@ function getPeerState(peer: WsPeer): WsPeerState {
 
 function meridianError(code: string, message: string, retryable = false): MeridianError {
   return { code, message, retryable, source: "system" };
-}
-
-function interruptRejectionError(
-  reason: "not_found" | "correlation_mismatch",
-  message: string,
-): MeridianError {
-  return meridianError(
-    reason === "not_found" ? "interrupt_not_pending" : "interrupt_correlation_mismatch",
-    message,
-  );
 }
 
 function toProtocolSequencedEvent(event: SequencedEventInternal): SequencedEvent {
@@ -415,48 +404,6 @@ export function createThreadWebSocketSession(peer: WsPeer) {
               const state = getPeerState(peer);
               state.catalogSubscriptions.get(message.projectId)?.unsubscribe?.();
               state.catalogSubscriptions.delete(message.projectId);
-              return;
-            }
-            case "interrupt.respond": {
-              const threadId = parseRequestId(message.threadId) as ThreadId | null;
-              if (!threadId) {
-                sendError(peer, meridianError("not_found", "Thread not found"), {
-                  requestId: message.requestId,
-                  threadId: message.threadId,
-                });
-                return;
-              }
-              const turnId = parseRequestId(message.turnId);
-              if (!turnId) {
-                sendError(peer, meridianError("not_found", "Turn not found"), {
-                  requestId: message.requestId,
-                  threadId,
-                });
-                return;
-              }
-              const context = peer.context;
-              try {
-                if (!context) throw new Error("Missing peer context");
-                await context.app.threadRuntime.requireOwnedThread(threadId, context.userId);
-              } catch {
-                sendError(peer, meridianError("not_found", "Thread not found"), {
-                  requestId: message.requestId,
-                  threadId,
-                });
-                return;
-              }
-              const result = context.app.interruptRegistry.resolve({
-                threadId,
-                turnId: turnId as TurnId,
-                interruptId: message.interruptId,
-                value: message.value as JsonValue,
-              });
-              if (!result.ok) {
-                sendError(peer, interruptRejectionError(result.reason, result.message), {
-                  requestId: message.requestId,
-                  threadId,
-                });
-              }
               return;
             }
             case "pong":

@@ -317,7 +317,6 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       },
       input: askUserToolInputSchema,
       execution: { type: "server", handler: handlers.ask_user },
-      capability: "interrupt",
     },
   ];
 }

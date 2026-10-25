@@ -1,5 +1,5 @@
 /** Diagnostic errors shared by preparation and its atomic failed-reply landing. */
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import { ThreadConversationContextError } from "../../threads/index.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
 import {
