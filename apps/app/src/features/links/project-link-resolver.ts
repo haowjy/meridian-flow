@@ -19,18 +19,12 @@
  * - A link with no ref resolves by its address: the complete index first
  *   (`matchDocumentPath`, through the catalog's `documentFor`), then the
  *   server.
- * - A folder (a `folder:` ref, or a directory address) answers only from the
- *   index. The resolve endpoint's answers name documents, so a folder the
- *   index does not hold (another Work's Scratch) stays unasked: drawn filled,
- *   and its menu looks the folder up by identity when it opens.
+ * - A folder (a `folder:` ref, or a directory address) resolves from the local
+ *   index when it can. Otherwise the server answers it in the same request as
+ *   documents, so another Work's Scratch folder still becomes filled or gone.
  */
 
-import {
-  type DocumentLinkAnswer,
-  parseLinkRef,
-  resolveDocumentHref,
-  resolveStoredLink,
-} from "@meridian/contracts";
+import { type DocumentLinkAnswer, parseLinkRef, resolveStoredLink } from "@meridian/contracts";
 import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/context-uri";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
@@ -39,7 +33,6 @@ import {
   type DocumentAnswer,
   type InternalLinkResolver,
   type LinkAnswer,
-  type LinkTarget,
   type LocalLinkAnswer,
   linkTargetAddress,
   linkTargetHref,
@@ -114,7 +107,6 @@ export function createProjectLinkResolver(
             })
           : UNASKED;
       }
-      if (namesFolder(ref, target, baseUri)) return UNASKED;
       if (resolution.kind === "address") {
         const uri = linkTargetAddress(target, baseUri);
         const document = uri ? catalog.documentFor(uri) : null;
@@ -155,13 +147,6 @@ export function createProjectLinkResolver(
   };
 }
 
-/** A folder ref, or a directory address: questions only the local index answers. */
-function namesFolder(ref: string | null, target: LinkTarget, baseUri: string | null): boolean {
-  if (ref !== null) return parseLinkRef(ref)?.kind === "folder";
-  const href = linkTargetHref(target);
-  return resolveDocumentHref(href, target.kind === "relative" ? baseUri : null)?.kind === "folder";
-}
-
 /**
  * The client's answer for the API's. `unresolvable` is no answer at all: the
  * server could not ask the question, which is not "nothing there", so it never
@@ -183,6 +168,16 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
         ? { ...found, branch: answer.branch }
         : found;
     }
+    case "folder":
+      return {
+        state: "folder",
+        document: null,
+        folder: {
+          folderId: answer.folder.id,
+          title: answer.folder.name,
+          uri: answer.folder.uri,
+        },
+      };
     case "gone":
       return answer.trashedDocumentId
         ? { ...GONE, trashedDocumentId: answer.trashedDocumentId }
