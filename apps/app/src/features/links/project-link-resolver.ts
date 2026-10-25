@@ -19,9 +19,18 @@
  * - A link with no ref resolves by its address: the complete index first
  *   (`matchDocumentPath`, through the catalog's `documentFor`), then the
  *   server.
+ * - A folder (a `folder:` ref, or a directory address) answers only from the
+ *   index. The resolve endpoint's answers name documents, so a folder the
+ *   index does not hold (another Work's Scratch) stays unasked: drawn filled,
+ *   and its menu looks the folder up by identity when it opens.
  */
 
-import { type DocumentLinkAnswer, parseLinkRef, resolveStoredLink } from "@meridian/contracts";
+import {
+  type DocumentLinkAnswer,
+  parseLinkRef,
+  resolveDocumentHref,
+  resolveStoredLink,
+} from "@meridian/contracts";
 import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/context-uri";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
@@ -30,6 +39,7 @@ import {
   type DocumentAnswer,
   type InternalLinkResolver,
   type LinkAnswer,
+  type LinkTarget,
   type LocalLinkAnswer,
   linkTargetAddress,
   linkTargetHref,
@@ -94,6 +104,17 @@ export function createProjectLinkResolver(
       const resolution = resolveStoredLink({ ref, href: linkTargetHref(target) }, catalog);
       let provisional: DocumentAnswer | null = null;
       if (resolution.kind === "gone") return answered(GONE);
+      if (resolution.kind === "folder") {
+        const folder = catalog.indexedFolder(resolution.folder.folderId);
+        return folder
+          ? answered({
+              state: "folder",
+              document: null,
+              folder: { folderId: folder.folderId, title: folder.title, uri: folder.uri },
+            })
+          : UNASKED;
+      }
+      if (namesFolder(ref, target, baseUri)) return UNASKED;
       if (resolution.kind === "address") {
         const uri = linkTargetAddress(target, baseUri);
         const document = uri ? catalog.documentFor(uri) : null;
@@ -132,6 +153,13 @@ export function createProjectLinkResolver(
       });
     },
   };
+}
+
+/** A folder ref, or a directory address: questions only the local index answers. */
+function namesFolder(ref: string | null, target: LinkTarget, baseUri: string | null): boolean {
+  if (ref !== null) return parseLinkRef(ref)?.kind === "folder";
+  const href = linkTargetHref(target);
+  return resolveDocumentHref(href, target.kind === "relative" ? baseUri : null)?.kind === "folder";
 }
 
 /**

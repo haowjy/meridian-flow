@@ -96,17 +96,27 @@ export function menuTabFor(areas: readonly MenuArea[], rowId: string): ServerCon
   return null;
 }
 
-/** The folders, outermost first, that hold the file at `path` in an area's own catalog. */
-export function foldersIn(area: MenuArea, path: string): DrillNode[] {
+/**
+ * The trail that walks an area's own catalog down through `folders` (names from
+ * the area root): the area, then each folder, outermost first. Every menu that
+ * opens along a path builds its trail here; callers choose how far down.
+ */
+export function trailAlong(area: MenuArea, folders: readonly string[]): DrillNode[] {
   const { catalog } = area;
-  if (!catalog) return [];
-  const folders = path.split("/").filter(Boolean).slice(0, -1);
-  return folders.flatMap((_, index) => {
-    const folder = catalog.findPath(`/${folders.slice(0, index + 1).join("/")}`);
-    return folder?.kind === "dir"
-      ? [{ id: folder.entryId, name: folder.name, folder: true, icon: Folder }]
-      : [];
-  });
+  const nodes = catalog
+    ? folders.flatMap((_, index) => {
+        const folder = catalog.findPath(`/${folders.slice(0, index + 1).join("/")}`);
+        return folder?.kind === "dir"
+          ? [{ id: folder.entryId, name: folder.name, folder: true, icon: Folder }]
+          : [];
+      })
+    : [];
+  return [areaNode(area), ...nodes];
+}
+
+/** The segments of a catalog path, from the area root. */
+export function pathSegments(path: string): string[] {
+  return path.split("/").filter(Boolean);
 }
 
 /** Catalog snapshots span multiple areas; an ID must belong to this projected source. */
@@ -128,6 +138,6 @@ export function crumbTrailFor(
   depth: number,
 ): DrillNode[] {
   if (!area) return [];
-  const trail = [areaNode(area), ...foldersIn(area, path)];
+  const trail = trailAlong(area, pathSegments(path).slice(0, -1));
   return trail.slice(0, depth === 0 && !area.listed ? 1 : depth);
 }

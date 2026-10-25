@@ -1,7 +1,13 @@
 /** Destination and display-text editing over the anchored link commands. */
 
 import { t } from "@lingui/core/macro";
-import { type DocumentRef, documentRef, storedHref } from "@meridian/contracts";
+import {
+  type DocumentRef,
+  documentRef,
+  type FolderRef,
+  folderRef,
+  storedHref,
+} from "@meridian/contracts";
 import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { Unlink } from "lucide-react";
@@ -114,7 +120,7 @@ function LinkFields({
   // The document picked from search, assigned by its id at commit, and how the
   // form names it.
   const [selected, setSelected] = useState<{
-    ref: DocumentRef;
+    ref: DocumentRef | FolderRef;
     label: string;
     location: string;
   } | null>(null);
@@ -163,11 +169,15 @@ function LinkFields({
             label: () => referenceCatalog.label,
             onCompleteSegment: ({ prefix }) => setQuery(prefix),
             onSelect: ({ row }) => {
-              // Assigned the way the Editor's `@` assigns it: by the document's id,
-              // spelled with its full address.
-              setHref(storedHref(row.action.reference.uri, ""));
+              // Assigned the way the Editor's `@` assigns it: by the document's or
+              // folder's id, spelled with its full address.
+              const { reference } = row.action;
+              setHref(storedHref({ kind: reference.kind, uri: reference.uri }, ""));
               setSelected({
-                ref: documentRef(row.action.reference.documentId),
+                ref:
+                  reference.kind === "folder"
+                    ? folderRef(reference.folderId)
+                    : documentRef(reference.documentId),
                 label: row.label,
                 location: row.location,
               });

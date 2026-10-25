@@ -59,7 +59,7 @@ const open: LinkDestination = async (document, gesture) => {
 
 /** Incomplete, so every question reaches the (mocked) server. */
 function catalog(revision: string): LinkableDocumentIndex {
-  return { documents: [], revision, complete: false };
+  return { documents: [], folders: [], revision, complete: false };
 }
 
 function Probe({

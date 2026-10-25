@@ -1,7 +1,7 @@
 /**
  * What choosing a row in the Editor's `@` menu writes: a standard link labeled
- * with a name, naming its target by ref and spelled with the target's full
- * Context URI as it stands now. Every surface spells it for its reader from
+ * with a name, naming its target (a document or a folder) by ref and spelled
+ * with the target's full Context URI as it stands now. Every surface spells it for its reader from
  * there; the `href` is only where the link pointed when it was written.
  *
  * Both producers assign refs without parsing and without the network: a
@@ -12,6 +12,8 @@
 import {
   aheadAddress,
   documentRef,
+  type FolderId,
+  folderRef,
   type LinkRef,
   mintAheadRef,
   storedHref,
@@ -29,7 +31,20 @@ export function insertDocumentReference(
   return insertDocumentLink(editor, range, {
     label: document.label,
     ref: documentRef(document.documentId),
-    href: storedHref(document.uri, ""),
+    href: storedHref({ kind: "document", uri: document.uri }, ""),
+  });
+}
+
+/** A folder row: `folder:<id>` at the folder's current address, spelled with its slash. */
+export function insertFolderReference(
+  editor: Editor,
+  range: DocumentLinkRange,
+  folder: { label: string; folderId: FolderId; uri: string },
+): boolean {
+  return insertDocumentLink(editor, range, {
+    label: folder.label,
+    ref: folderRef(folder.folderId),
+    href: storedHref({ kind: "folder", uri: folder.uri }, ""),
   });
 }
 
@@ -49,7 +64,7 @@ export function insertLinkAhead(
   return insertDocumentLink(editor, range, {
     label: row.label,
     ref: mintAheadRef(),
-    href: storedHref(address, ""),
+    href: storedHref({ kind: "document", uri: address }, ""),
   });
 }
 
