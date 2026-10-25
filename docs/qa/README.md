@@ -143,9 +143,8 @@ worktree's API origin and inspect the rendered detail/open-list responses:
 4. Pick a small file, then send a 52 MiB body for its id. The response must be a
    durable failed/too_large entry, not a 413 leaving the import awaiting. Send
    Stop immediately afterwards to check keep-alive transport remains usable.
-5. Seed `revealed_at` on an organizing import in the owned database (D2 later
-   performs that transition). Browser Stop must return 409 `import_finished`;
-   detail must remain organizing with no acknowledgement.
+5. Race Stop against the real reveal. Stop first leaves no live rows; reveal first
+   leaves the complete tree and returns 409 `import_finished` from Stop.
 6. Drive Folder/Files on desktop and a 393×852 touch phone in both themes.
    Reading appears immediately. Only the pending folder root appears in the
    tree/Files listing; tapping it opens the activity card. On phone the activity
@@ -158,25 +157,25 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    activity continues with the source project title. Stop in Reading, Uploading,
    Organizing, and Adding uses one confirmation and discards everything before
    reveal. Cancelling that confirmation resumes the same activity.
-8. Until the organize lane is available, exercise Waiting, ready counts, Adding,
-   Didn't finish (Try again and Stop), and Done through the app's fake import API.
-   On a project route after reload, run
-   `agent-browser --session <name> eval --stdin < apps/app/scripts/probe-import-states.js`.
-   Use `window.importStory.adding()`, `.revealed()`, `.failed()` and `.done()`
-   through browser eval to advance it. `.failNextDetail()` exercises read failure
-   after a lost Stop; `.reset()` restores real requests. This is fake evidence,
-   never proof of real organizing or catalog publication.
-   Keep Adding through the revealed-but-unpublished interval. A lost Stop race
-   says it finished before it could stop and waits for finished. Record fake
-   evidence separately from real-server evidence. Clean Done acknowledges only
-   after six visible seconds; needs-a-look results stay until dismissed.
+8. Let the real organizer finish. The whole staged tree and catalog appear together
+   with Done; no imported child is visible beforehand. A lost Stop race says it
+   finished before it could stop. Clean Done acknowledges only after six visible
+   seconds; needs-a-look results stay until dismissed. The fake import API remains
+   useful for isolated rendering work, but is not acceptance evidence.
 9. Fail the first create transport, then return an empty open list. Retry and
    Stop must remain available with held files. Restore transport and Retry:
    the same import id succeeds. A later 4xx must not turn an earlier unanswered
    create into a locally dismissible refusal.
-10. Once organize is available, verify atomic reveal and complete documents with
-   the notes-folder fixture under
+10. Verify atomic reveal and complete documents with the notes-folder fixture under
    `apps/server/server/domains/import/__fixtures__/`, including properties and links.
+
+For the large gate, generate a 3,219-file/1,207-folder vault with
+`pnpm --filter @meridian/server exec tsx scripts/build-import-performance-fixture.ts <output-dir>`.
+Import it through the browser. Sample the import header and `/readyz` while it runs;
+record selection-to-`organizing` as upload, `organizing` to every entry `prepared`
+as organize, and all-prepared to `revealed_at` as reveal. Keep upload, organize,
+reveal, batch count and unrelated-route p95 separate. The targets are under 60 s,
+under 5 s and under 300 ms respectively.
 
 The DB upload suite covers overlapping receipts, cumulative byte overflow,
 per-user admission, expiry, tombstones, key-age fences, and binary retention.

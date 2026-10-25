@@ -124,16 +124,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     return result.kind === "committed" ? result.value : "stale";
   }
 
-  async function buildBatch(
-    claim: OrganizeClaim,
-    record: ImportRecord,
-    entries: readonly ImportEntry[],
-    tree: OrganizedTree,
-    read: ContextImportRead,
-  ): Promise<number> {
-    const byId = new Map(entries.map((entry) => [entry.id, entry]));
-    const projectId = record.projectId;
-    if (!projectId) throw new Error("Import project is unavailable");
+  async function prepareBuild(record: ImportRecord, tree: OrganizedTree, read: ContextImportRead) {
     const uris = uriMap(tree);
     const planned = new Set(
       tree.nodes
@@ -160,11 +151,28 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       rootId: null,
       kind: "note",
     }));
-    const index = createLinkIndex(selected, existing);
-    const selectedById = new Map(selected.map((candidate) => [candidate.id, candidate]));
-    const roots = new Map(
-      plannedRoots({ roots: record.roots } as never).map((root) => [root.rootId, root]),
-    );
+    return {
+      uris,
+      planned,
+      index: createLinkIndex(selected, existing),
+      selectedById: new Map(selected.map((candidate) => [candidate.id, candidate])),
+      roots: new Map(
+        plannedRoots({ roots: record.roots } as never).map((root) => [root.rootId, root]),
+      ),
+    };
+  }
+
+  async function buildBatch(
+    claim: OrganizeClaim,
+    record: ImportRecord,
+    entries: readonly ImportEntry[],
+    tree: OrganizedTree,
+    build: Awaited<ReturnType<typeof prepareBuild>>,
+  ): Promise<number> {
+    const byId = new Map(entries.map((entry) => [entry.id, entry]));
+    const projectId = record.projectId;
+    if (!projectId) throw new Error("Import project is unavailable");
+    const { index, planned, roots, selectedById, uris } = build;
     const pending = tree.nodes.filter((node) => {
       const entry = byId.get(node.id);
       return node.state === "planned" && entry?.state !== "prepared";
@@ -291,7 +299,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     return result.kind === "committed" ? result.value : 0;
   }
 
-  async function organize(claim: OrganizeClaim): Promise<number> {
+  async function organize(claim: OrganizeClaim, signal: AbortSignal): Promise<number> {
     let record = await deps.repository.read(claim.importId);
     if (record?.state !== "organizing") return 0;
     const entries = await deps.repository.entries(record.id);
@@ -329,8 +337,16 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       const reset = await resetGeneration(claim, tree);
       return reset === "reset" ? 1 : 0;
     }
-    const built = await buildBatch(claim, record, durableEntries, tree, context.read);
-    if (built) return built;
+    const build = await prepareBuild(record, tree, context.read);
+    let built = 0;
+    let currentEntries = durableEntries;
+    while (!signal.aborted) {
+      const batch = await buildBatch(claim, record, currentEntries, tree, build);
+      if (!batch) break;
+      built += batch;
+      currentEntries = await deps.repository.entries(record.id);
+    }
+    if (signal.aborted) return built;
     const revealed = await runOrganizeTransaction(
       deps.db,
       { ...claim, generation: record.placementGeneration },
@@ -393,7 +409,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         const heartbeat = setInterval(() => void deps.queue.heartbeat(claim), 30_000);
         heartbeat.unref();
         try {
-          total += await organize(claim);
+          total += await organize(claim, signal);
         } catch (cause) {
           deps.diagnostic(cause, {
             importId: claim.importId,

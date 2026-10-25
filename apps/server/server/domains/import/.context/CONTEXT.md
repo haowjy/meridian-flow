@@ -2,9 +2,10 @@
 
 ## Phase boundary
 
-Upload is implemented independently of the organize runner. An upload completes
-by setting `organizing`; this branch's D2 adds the staged build and atomic reveal
-once the Collab and Context prerequisites merge. Do not reintroduce placeholders,
+Upload and organization are separate durable phases. Upload completion sets
+`organizing` and wakes one server-owned organizer lane. The organizer prepares
+receipts, stages bounded generations through Context and Collab, then reveals the
+tree, catalog publication and terminal import status in one transaction. Do not reintroduce placeholders,
 landing receipts, awaited document ids, or browser plan/resume loops to bridge
 that boundary. `OrganizeWake` is only a latency hint; durable rows are authoritative.
 
@@ -53,9 +54,8 @@ checks around database waits roll back an expired receive's transaction.
 ## Commands and cleanup
 
 Stop cancels and acknowledges uploading, organizing, or failed imports before
-reveal. A non-null `revealed_at` refuses with `import_finished`, even while still
-organizing for catalog publication; finished imports refuse too. D2 sets the
-reveal timestamp and only marks finished after publication commits. A failed import can Retry or Stop; only
+reveal. A non-null `revealed_at` refuses with `import_finished`; finished imports
+refuse too. Publication and the finished transition commit with the reveal. A failed import can Retry or Stop; only
 finished/cancelled imports can acknowledge. Stop returns without object-store I/O.
 The recovery lane discovers terminal headers with an unset sweep marker.
 
@@ -80,21 +80,31 @@ The repository projects nullable storage columns into one verified `FileReceipt`
 at its boundary. Entries expose immutable `selection` separately; folders and
 unreadable items have no receipt. Placement records destinations (including fallback),
 top-level names and the creation-set digest, independent of its header generation.
-Active sweeps protect both receipt and converted keys. D2 owns preparation,
-staged discard, and atomic reveal after lanes A and B merge. `convertNote` produces occurrence-indexed
+Active sweeps protect both receipt and converted keys. `convertNote` produces occurrence-indexed
 targets and hrefs, preserving adjacent links that spell the same address. The
 organizer binds selected targets directly by their planned document ids; ordinary
 unresolved links keep address-based ahead refs. There is no release-to-address
 fallback for selected targets.
 
 
-## Organize transaction seam (D2)
+## Organize transaction seam
 
-Keep `OrganizeQueue` (claim, heartbeat and release with token predicates) separate
-from the repository. Add one organize transaction entry before build, reset and
-reveal callers: lock the import, check organizing/token/generation, acquire the
+`OrganizeQueue` (claim, heartbeat and release with token predicates) stays separate
+from the repository. One organize transaction entry guards build, reset and
+reveal: lock the import, check organizing/token/generation, acquire the
 project lifecycle gate shared and check liveness, then run repository and Context
 staging writes in that same transaction. The generation reset persists placement,
 increments generation, resets prepared entries set-wise and discards the old stage.
 Do not add token arguments to upload mutations or open a second Context transaction.
-The entry awaits lane B's staged-creation boundary; it is not an upload capability.
+It is not an upload capability.
+
+Staged batches advance work only within their placement generation. A placement
+rebuild keeps the accumulated no-progress count; five rebuilt generations without
+a reveal fail the import with `organize_failed`.
+
+Context and Collab refusals retain typed causes in server diagnostics. Browser
+entry reasons remain the import-specific reason union; do not expose provider
+causes as a second refusal vocabulary.
+
+Publication commits in the reveal transaction. There is no separate publication
+phase and no detached publication task to drain.

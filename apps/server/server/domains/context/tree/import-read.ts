@@ -5,6 +5,7 @@ import { contextSources } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { ContextImportArea, ContextImportRead } from "../ports/context-import-read.js";
+import { loadDocumentAddresses } from "./tree-addresses.js";
 import { createTreeReader, LIVE_TREE, visibleDocuments, visibleFolders } from "./tree-view.js";
 
 export function createDrizzleContextImportRead(db: Database, projectId: string): ContextImportRead {
@@ -98,24 +99,27 @@ export function createDrizzleContextImportRead(db: Database, projectId: string):
             sourceRows.map((row) => row.id),
           ),
         );
-      return Promise.all(
-        rows.map(async (row) => {
-          const found = await tree.findById(LIVE_TREE, row.id);
-          if (found.kind !== "found")
-            throw new Error(`Live import candidate disappeared: ${row.id}`);
-          const area = sourceById.get(row.sourceId);
-          if (!area) throw new Error(`Import candidate has no project area: ${row.id}`);
-          return {
-            id: row.id,
-            uri: `${area}://${found.document.path}`,
-            path: found.document.path,
-            aliases: Array.isArray(row.metadata.aliases)
-              ? row.metadata.aliases.filter((alias): alias is string => typeof alias === "string")
-              : [],
-            filetype: row.filetype,
-          };
-        }),
+      const addresses = new Map(
+        (await loadDocumentAddresses(currentDrizzleDb(db), { ids: rows.map((row) => row.id) })).map(
+          (address) => [address.documentId, address],
+        ),
       );
+      return rows.map((row) => {
+        const address = addresses.get(row.id);
+        if (!address || address.deleted || address.hidden)
+          throw new Error(`Live import candidate disappeared: ${row.id}`);
+        const area = sourceById.get(row.sourceId);
+        if (!area) throw new Error(`Import candidate has no project area: ${row.id}`);
+        return {
+          id: row.id,
+          uri: address.uri,
+          path: address.path,
+          aliases: Array.isArray(row.metadata.aliases)
+            ? row.metadata.aliases.filter((alias): alias is string => typeof alias === "string")
+            : [],
+          filetype: row.filetype,
+        };
+      });
     },
   };
 }
