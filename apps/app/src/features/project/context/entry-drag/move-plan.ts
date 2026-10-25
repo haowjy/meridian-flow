@@ -13,6 +13,7 @@ import type {
 import {
   type FolderNamespaceRecord,
   type ParentRef,
+  placementStillOwned,
   type ResourceIdentityIndex,
   type ResourceLocation,
   type ResourcePlacement,
@@ -93,8 +94,6 @@ export type MoveEffect = {
   before: ParentRef;
   after: ParentRef;
   previousPosition: SiblingPositionWitness;
-  /** The placement this effect admitted; used to recognize a later reorder of the same entry. */
-  position?: ContextSiblingPosition;
   action: "move" | "reorder";
   /** The replica intent's operation; absent when the replica had nothing to change. */
   operationId?: string;
@@ -267,7 +266,6 @@ export function planMove(
             name: source.name,
             before: source.parent,
             after: into,
-            ...(target.position ? { position: target.position } : {}),
           },
         ]
       : [],
@@ -432,60 +430,20 @@ function insertWorking(working: string[], entryId: string, position: ContextSibl
   working.splice(position.kind === "before" ? anchor : anchor + 1, 0, entryId);
 }
 
+/** Whether the operation this effect admitted still owns its row's placement (the journal decides). */
 function placementIsFresh(view: PlacementView, effect: MoveEffect): boolean {
-  if (!effect.operationId) return true;
-  const record =
-    effect.entry.kind === "folder" ? undefined : recordFor(view.records, effect.entry.id);
-  const intents =
-    effect.entry.kind === "folder"
-      ? view.folders?.find((folder) => folder.folderId === effect.entry.id)?.intents
-      : record?.intents;
-  if (!intents) return true;
-  const intent = intents.find((candidate) => candidate.operationId === effect.operationId);
-  if (!intent) return true;
-  const newerIntent = intents.some(
-    (candidate) =>
-      candidate.sequence > intent.sequence &&
-      (candidate.desired.kind === "set-location" ||
-        candidate.desired.kind === "set-folder-location") &&
-      candidate.state !== "cancelled" &&
-      candidate.state !== "superseded" &&
-      candidate.state !== "unexecutable-after-terminal",
-  );
-  if (newerIntent) return false;
-  const outcome = intent.attempts.at(-1)?.outcome;
-  const receipt = outcome?.kind === "operation" ? outcome.receipt : null;
-  const acceptedLocationVersion =
-    receipt?.result.ok && "locationVersion" in receipt.result.value
-      ? receipt.result.value.locationVersion
-      : undefined;
-  const canonicalLocationVersion =
+  const holder =
     effect.entry.kind === "folder"
       ? view.folders?.find((folder) => folder.folderId === effect.entry.id)
-          ?.canonicalLocationVersion
-      : record?.resource.canonicalLocationVersion;
-  const canonicalObservationVersion =
-    effect.entry.kind === "folder"
-      ? view.folders?.find((folder) => folder.folderId === effect.entry.id)?.observationVersion
-      : record?.resource.observationVersion;
-  if (
-    acceptedLocationVersion &&
-    canonicalLocationVersion &&
-    canonicalObservationVersion &&
-    receipt &&
-    BigInt(canonicalObservationVersion) >= BigInt(receipt.observationVersion)
-  )
-    return canonicalLocationVersion === acceptedLocationVersion;
-  const position = effect.position;
-  if (!position) return true;
-  const siblings = view.placement.childrenAt(effect.after, view.records);
-  const at = siblings.findIndex((entry) => entry.entryId === effect.entry.id);
-  if (at < 0) return false;
-  if (position.kind === "start") return at === 0;
-  if (position.kind === "end") return at === siblings.length - 1;
-  if (!("siblingId" in position)) return false;
-  const anchor = siblings.findIndex((entry) => entry.entryId === position.siblingId);
-  return anchor >= 0 && at === anchor + (position.kind === "after" ? 1 : -1);
+      : recordFor(view.records, effect.entry.id);
+  if (!holder) return Boolean(effect.operationId);
+  const canonical = "resource" in holder ? holder.resource : holder;
+  return placementStillOwned({
+    intents: holder.intents,
+    operationId: effect.operationId,
+    canonicalLocationVersion: canonical.canonicalLocationVersion,
+    canonicalObservationVersion: canonical.observationVersion,
+  });
 }
 
 const UNANSWERED = new Set(["pending", "submitted", "received"]);

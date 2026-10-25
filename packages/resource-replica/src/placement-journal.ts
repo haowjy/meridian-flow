@@ -206,3 +206,54 @@ export function placementDispatchVerdict(
   }
   return verdict;
 }
+
+/** Whether a placement of the same subject was admitted after `intent` and has not been withdrawn. */
+export function placementTakenSince(
+  intents: readonly NamespaceIntent[],
+  intent: NamespaceIntent,
+): boolean {
+  return intents.some(
+    (later) =>
+      later.sequence > intent.sequence &&
+      (later.desired.kind === "set-location" || later.desired.kind === "set-folder-location") &&
+      later.state !== "cancelled" &&
+      later.state !== "superseded" &&
+      later.state !== "unexecutable-after-terminal",
+  );
+}
+
+/**
+ * Whether the placement that `operationId` admitted still owns its subject, so compensating it
+ * would undo the writer's own change and nobody else's. Ownership is the journal's: a newer live
+ * placement of the same subject took it over. Once the canonical observation covers the accepted
+ * receipt, the entry's location version must still be the one the receipt produced, which is how
+ * a peer's later move shows. Until it is covered the receipt is the latest evidence there is, so
+ * the operation keeps ownership; a peer move that raced the check resolves against the current
+ * list on the server, like any command.
+ */
+export function placementStillOwned(input: {
+  intents: readonly NamespaceIntent[];
+  operationId: string | undefined;
+  canonicalLocationVersion: string | undefined;
+  canonicalObservationVersion: string | undefined;
+}): boolean {
+  const { intents, operationId } = input;
+  if (!operationId) return false;
+  const own = intents.find((intent) => intent.operationId === operationId);
+  if (!own) return true;
+  if (placementFailed(own.state)) return false;
+  if (placementTakenSince(intents, own)) return false;
+  const outcome = own.attempts.at(-1)?.outcome;
+  const receipt = outcome?.kind === "operation" ? outcome.receipt : null;
+  const accepted =
+    receipt?.result.ok && "locationVersion" in receipt.result.value
+      ? receipt.result.value.locationVersion
+      : undefined;
+  const covered =
+    receipt &&
+    input.canonicalObservationVersion !== undefined &&
+    BigInt(input.canonicalObservationVersion) >= BigInt(receipt.observationVersion);
+  return accepted && covered && input.canonicalLocationVersion
+    ? input.canonicalLocationVersion === accepted
+    : true;
+}

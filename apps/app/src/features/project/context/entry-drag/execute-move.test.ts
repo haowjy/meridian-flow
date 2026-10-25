@@ -27,6 +27,7 @@ const effect = (id: string): MoveEffect => ({
   after: folder("act"),
   previousPosition: {},
   action: "move",
+  operationId: `operation-${id}`,
 });
 
 it("returns only rows still where and as the drop left them", () => {
@@ -41,6 +42,7 @@ it("returns only rows still where and as the drop left them", () => {
       identity: { documentId: "server-id" },
       aliases: { "local-id": { introducedAtIdentityRevision: 1 } },
     },
+    intents: [],
   } as unknown as ResourceRecord;
   const remintedEffect: MoveEffect = {
     entry: { kind: "file", id: "local-id" },
@@ -50,6 +52,7 @@ it("returns only rows still where and as the drop left them", () => {
     after: folder("act"),
     previousPosition: {},
     action: "move",
+    operationId: "operation-created",
   };
   const view = {
     records: [reminted],
@@ -145,11 +148,7 @@ it("returns only rows still where and as the drop left them", () => {
       },
     ],
   } as unknown as PlacementView;
-  const rankedEffect = {
-    ...effect("a"),
-    operationId: "operation",
-    position: { kind: "start" as const },
-  };
+  const rankedEffect = { ...effect("a"), operationId: "operation" };
   expect(planUndo(rankedView, [rankedEffect])).toHaveLength(1);
   const peerRankedView = {
     ...rankedView,
