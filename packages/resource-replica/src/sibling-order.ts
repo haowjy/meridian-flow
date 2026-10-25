@@ -21,6 +21,8 @@ export function compareDefaultSiblings(
 }
 
 type CatalogChild = Extract<CatalogEntry, { kind: "folder" | "file" }>;
+/** What display order reads of a child; a catalog row or a server listing row both have it. */
+export type RankedSibling = Pick<CatalogChild, "kind" | "name" | "rank" | "entryId">;
 
 /**
  * Display order of one parent's children: rank (compared bytewise, never with the
@@ -28,8 +30,8 @@ type CatalogChild = Extract<CatalogEntry, { kind: "folder" | "file" }>;
  */
 export function compareCatalogSiblings(
   manual: boolean,
-  left: CatalogChild,
-  right: CatalogChild,
+  left: RankedSibling,
+  right: RankedSibling,
 ): number {
   if (manual) {
     const leftRank = left.rank ?? "";

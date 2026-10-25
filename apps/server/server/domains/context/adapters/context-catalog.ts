@@ -248,7 +248,6 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
             parentId: vf.parentId,
             name: vf.name,
             description: vf.description,
-            sortOrder: vf.sortOrder,
             rank: vf.rank,
             locationVersion: vf.locationVersion,
             orderPolicy: vf.orderPolicy,
