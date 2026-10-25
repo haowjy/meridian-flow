@@ -14,7 +14,7 @@
  * `Read Chapter 3` and `Edited Chapter 3` with the same pen.
  *
  * Hidden tools: a few "tools" are protocol primitives whose UX lives elsewhere
- * (the custom interrupt card for `ask_user`). Their tool_use / tool_result
+ * (`ask`, whose receipt sits on the asking turn). Their tool_use / tool_result
  * blocks are duplication when rendered as activity rows; the view model drops
  * them (`isToolViewVisible`) before a fold reaches this row.
  */

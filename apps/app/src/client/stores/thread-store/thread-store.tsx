@@ -6,13 +6,19 @@
 import type {
   ThreadListItem,
   ThreadSnapshotResponse,
+  Turn,
   TurnStatus,
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import {
+  type AskReceipt,
+  askReceipt,
+  EMPTY_CHAT_ASKS,
   INITIAL_RUN_STATE_SLICE,
   isOptimisticTurnId,
   OPTIMISTIC_TURN_ID_PREFIX,
+  type OpenAsk,
+  openAsk,
   type RunStateSlice,
   type RunStateView,
 } from "@meridian/thread-client";
@@ -30,6 +36,7 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -109,6 +116,7 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     pruneStaleAssistantTurns: state.pruneStaleAssistantTurns,
     removeTurns: state.removeTurns,
     dispatchRunState: state.dispatchRunState,
+    updateAsks: state.updateAsks,
     markPendingCreation: state.markPendingCreation,
     clearPendingCreation: state.clearPendingCreation,
   };
@@ -133,7 +141,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         };
         const storeNow = () => new Date(get().now).toISOString();
 
-        // What the thread lists, the caches and the interrupt settlements do when a turn starts,
+        // What the thread lists and the caches do when a turn starts,
         // changes status, or a read lands. The sync's observations and the command actions that
         // cause the same thing both call these.
         const turnChanged = (
@@ -263,6 +271,10 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             update(threadId, (synced) => sync.receiveRunState(synced, action));
           },
 
+          updateAsks(threadId, change) {
+            update(threadId, (synced) => sync.updateAsks(synced, change));
+          },
+
           pruneStaleAssistantTurns(threadId) {
             update(threadId, sync.pruneStreamingTail);
           },
@@ -363,6 +375,21 @@ export function useRunStateSlice(threadId: string): RunStateSlice {
 /** The chat's run-state view, the one input to the package's selectors (`isBusy`, `stopRequest`, ...). */
 export function useRunState(threadId: string): RunStateView {
   return useRunStateSlice(threadId).view;
+}
+
+const NO_TURNS: Turn[] = [];
+
+/** The ask that takes over the chat's composer, if one is open. */
+export function useOpenAsk(threadId: string): OpenAsk | null {
+  const asks = useThreadStore((state) => state.syncedByThread[threadId]?.asks ?? EMPTY_CHAT_ASKS);
+  const turns = useThreadStore((state) => state.syncedByThread[threadId]?.turns ?? NO_TURNS);
+  return useMemo(() => openAsk(asks, turns), [asks, turns]);
+}
+
+/** The receipt line an asking turn shows, once its ask is answered here or resolved. */
+export function useAskReceipt(threadId: string, turnId: string): AskReceipt | null {
+  const asks = useThreadStore((state) => state.syncedByThread[threadId]?.asks ?? EMPTY_CHAT_ASKS);
+  return useMemo(() => askReceipt(asks, turnId), [asks, turnId]);
 }
 
 export function useThreadActions(): ThreadStoreActions {

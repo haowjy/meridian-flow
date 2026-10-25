@@ -3,9 +3,7 @@
  *
  * Purpose: object arms render as compact document links through the chat's
  * context navigation, image arms as thumbnails in a responsive grid, and the
- * reserved `liveView` arm gets a full-width isolated iframe slot. Extracted
- * from `FormBlock` so ask_user interrupts and agent report cards render the same
- * artifacts identically.
+ * reserved `liveView` arm gets a full-width isolated iframe slot.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
