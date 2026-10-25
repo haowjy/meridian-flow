@@ -62,8 +62,7 @@ import {
   type MeridianError,
   meridianErrorFromGateway,
   meridianErrorFromSystem,
-} from "@meridian/contracts/interrupt";
-import type { ProjectPreferences } from "@meridian/contracts/preferences";
+} from "@meridian/contracts/errors";
 import type {
   DocumentRemovalRecord,
   DocumentRevisionEvidence,
@@ -144,12 +143,6 @@ import type { TerminalCause } from "./execution-finalizer.js";
 import { decideForgetting, loadForgettingFacts } from "./forget-failed-attempt.js";
 import { CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
-import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
-import {
-  defaultInterruptAutoResumePolicy,
-  type InterruptAutoResumePolicy,
-  type InterruptRegistry,
-} from "./interrupts.js";
 import {
   createLocalTurn,
   currentTurnKind,
@@ -188,7 +181,7 @@ import {
   mapStreamEvent,
   toJsonValue,
 } from "./streaming.js";
-import { dispatchToolCall } from "./tool-dispatch.js";
+import { dispatchToolCall, reduceToolBatch, type ToolDispatchOutcome } from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
 import {
   type AssembledNextTurnContext,
@@ -261,15 +254,9 @@ export interface OrchestratorDeps {
   >;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
   toolRegistry: ToolRegistry;
-  projectPreferences: {
-    read(userId: string, projectId: string): Promise<ProjectPreferences>;
-  };
   workContext: WorkContextReader;
   billingUsage: BillingUsagePolicy;
-  /** Interrupt-boundary artifact flush; explicit noop adapter means disabled. */
-  interruptArtifacts: InterruptArtifactFlushPort;
   childRunCoordinator: ChildRunCoordinator;
-  interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   wakeIfRunnable(threadId: ThreadId): Promise<void>;
   modelRequestDebug: ModelRequestDebugStore;
@@ -426,14 +413,6 @@ function applyResponseToTurnSnapshot(turn: Turn, response: ModelResponseReceived
       responseCount,
     },
   };
-}
-
-async function resolveInterruptAutoResumePolicy(
-  deps: OrchestratorDeps,
-  thread: Thread,
-): Promise<InterruptAutoResumePolicy> {
-  const preferences = await deps.projectPreferences.read(thread.userId, thread.projectId);
-  return preferences.autoResume ?? defaultInterruptAutoResumePolicy();
 }
 
 async function admitRunExecution(
@@ -1849,7 +1828,6 @@ async function executeLoop({
     ackIds: (await deps.delivery.readPendingProjection(input.threadId)).run?.messageIds ?? [],
   };
   let executionSelector: TurnId | null = initialExecutionAdmitted ? reservedTurn.id : null;
-  let endTurnRequested = false;
   let terminalControl = false;
   // A message waits behind a queued write-mode switch: end the reply here.
   let yieldRequested = false;
@@ -2036,7 +2014,6 @@ async function executeLoop({
       allTurns.push(next);
       currentTurn = next;
       if (next.role === "assistant") carriedReservedFor = [];
-      endTurnRequested = false;
       input.onCurrentTurnChanged?.({
         id: next.id,
         kind: currentTurnKind(next),
@@ -2157,7 +2134,6 @@ async function executeLoop({
       // the run exits, so no suppression state is needed.
       let leaseCancelled = false;
       const isCancelled = () => (input.signal?.aborted ?? false) || leaseCancelled;
-      const interruptAutoResume = await resolveInterruptAutoResumePolicy(deps, thread);
 
       // Every cancellation/error path must persist terminal events, not just
       // return/throw, so subscribers see the turn lifecycle closure.
@@ -2566,6 +2542,7 @@ async function executeLoop({
               return cancelExit();
             }
 
+            const batchOutcomes: ToolDispatchOutcome[] = [];
             // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
             // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
             for (const call of toolCallsFromResult) {
@@ -2621,24 +2598,7 @@ async function executeLoop({
               }
 
               await publishPhase("waiting");
-              const interruptState = {
-                thread,
-                threadId: input.threadId,
-                currentTurn: currentTurn,
-                autoResume: interruptAutoResume,
-                signal: input.signal,
-                blockSeqRef: { value: blockSeq },
-                allBlocks,
-              };
-              const interruptSession = createInterruptSession(
-                {
-                  interruptRegistry: deps.interruptRegistry,
-                  interruptArtifacts: deps.interruptArtifacts,
-                  persistenceDeps: deps,
-                  eventSink,
-                },
-                interruptState,
-              );
+              const blockSeqRef = { value: blockSeq };
               const dispatched = await dispatchToolCall(
                 {
                   toolExecutor: deps.toolExecutor,
@@ -2658,26 +2618,25 @@ async function executeLoop({
                   agentSlug: built.agentSlug,
                   responseId,
                   editResponseId: scope.id,
-                  state: interruptState,
-                  interruptSession,
-                  interruptAutoResume,
+                  threadId: input.threadId,
+                  currentTurn,
+                  signal: input.signal,
+                  allBlocks,
                   treeBudget,
-                  blockSeqRef: interruptState.blockSeqRef,
+                  blockSeqRef,
                   allTurns,
                   planningBlockIds,
                   credited,
                   replyMutations: scope.reply,
                 },
               );
-              currentTurn = interruptState.currentTurn;
-              blockSeq = interruptState.blockSeqRef.value;
+              blockSeq = blockSeqRef.value;
 
-              if (!dispatched.cancelled) scope.stage(dispatched);
-              if (dispatched.cancelled || isCancelled()) {
-                return cancelExit();
-              }
-              if (dispatched.endTurn === true) endTurnRequested = true;
+              if (dispatched.kind === "cancelled" || isCancelled()) return cancelExit();
+              batchOutcomes.push(dispatched);
+              if (dispatched.kind === "completed") scope.stage(dispatched);
             }
+            const batchDisposition = reduceToolBatch(batchOutcomes);
             if (isCancelled()) {
               return cancelExit();
             }
@@ -2693,7 +2652,7 @@ async function executeLoop({
               return true;
             }
 
-            if (endTurnRequested) {
+            if (batchDisposition.kind === "end") {
               // A child called return_result: the report is captured and persisted,
               // so the turn ends here instead of looping into another model round.
               // A message that landed in the exit window keeps the run going.

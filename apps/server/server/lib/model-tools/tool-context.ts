@@ -15,7 +15,7 @@ import {
   type MeridianError,
   meridianErrorFromStructuredToolOutput,
   meridianErrorFromTool,
-} from "@meridian/contracts/interrupt";
+} from "@meridian/contracts/errors";
 import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";

@@ -1,6 +1,6 @@
 /** A request boundary's compaction choice; committed with its selected leaf and inbox batch. */
 
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { SummaryRejectionReason } from "@meridian/contracts/runtime";
 import type { Block, Turn } from "@meridian/contracts/threads";
 import {

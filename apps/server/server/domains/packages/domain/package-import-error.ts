@@ -5,7 +5,7 @@ import {
   type MeridianError,
   meridianError,
   meridianErrorFromSystem,
-} from "@meridian/contracts/interrupt";
+} from "@meridian/contracts/errors";
 import type { JsonValue } from "@meridian/contracts/threads";
 
 import type { MarsDependency } from "./types.js";

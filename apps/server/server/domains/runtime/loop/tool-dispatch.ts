@@ -2,13 +2,12 @@
  * Stateless tool dispatch step for the runtime loop.
  *
  * The orchestrator owns permission. This module runs the allowed call: live
- * output journal appends, spawn/returnResult callback wiring, interrupt
- * callback wiring, and durable tool_result persistence, which is also where a
+ * output journal appends, spawn/returnResult callback wiring, and durable
+ * tool_result persistence, which is also where a
  * result's shown-link candidates become evidence. Writer-facing
  * helper-result cards belong to spawn. return_result settlement (envelope,
- * tool_result + child-report, endTurn) is spawn-owned. The caller supplies
- * mutable turn/block state so interrupt callbacks can update the active turn
- * while the tool handler is awaited.
+ * tool_result + child-report, batch end) is spawn-owned. The caller supplies
+ * current turn and block allocation state.
  */
 
 import type { ReplyMutations } from "@meridian/agent-edit/integration";
@@ -39,8 +38,6 @@ import type {
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { createDeltaJournal } from "./delta-journal.js";
 import { type CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
-import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
-import type { InterruptAutoResumePolicy } from "./interrupts.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 import { toJsonValue } from "./streaming.js";
 
@@ -63,9 +60,10 @@ export interface ToolDispatchContext {
   responseId: string;
   /** Agent-edit lifecycle scope; rotates at an in-response Work switch. */
   editResponseId?: string;
-  state: InterruptTurnState;
-  interruptSession: InterruptSession;
-  interruptAutoResume: InterruptAutoResumePolicy;
+  threadId: ThreadId;
+  currentTurn: Turn;
+  signal?: AbortSignal;
+  allBlocks: Block[];
   treeBudget: TreeBudget;
   blockSeqRef: { value: number };
   allTurns: Turn[];
@@ -77,30 +75,49 @@ export interface ToolDispatchContext {
   credited: CreditedBlocks;
 }
 
-export type ToolDispatchResult =
-  | {
-      block: Block;
-      metadata?: Record<string, unknown>;
-      cancelled?: false;
-      /** Successful return_result asks the orchestrator to complete the turn after this batch. */
-      endTurn?: true;
-    }
-  | { cancelled: true };
+export type CompletedToolOutcome = {
+  kind: "completed";
+  block: Block;
+  metadata?: Record<string, unknown>;
+  /** Successful return_result ends the batch and completes the turn. */
+  end?: { cause: "success" };
+};
+
+export type ToolDispatchOutcome =
+  | CompletedToolOutcome
+  /** Reserved for durable tools whose result is written after this execution settles. */
+  | { kind: "deferred" };
+
+export type ToolDispatchResult = ToolDispatchOutcome | { kind: "cancelled" };
+
+export type BatchDisposition = { kind: "continue" } | { kind: "end"; cause: "success" };
+
+/** Reduce once per provider batch; ask-specific exclusivity joins this boundary in B2. */
+export function reduceToolBatch(outcomes: readonly ToolDispatchOutcome[]): BatchDisposition {
+  let disposition: BatchDisposition = { kind: "continue" };
+  for (const outcome of outcomes) {
+    if (outcome.kind === "deferred") throw new Error("Deferred tool outcomes are not enabled");
+    if (!outcome.end) continue;
+    if (disposition.kind === "end") throw new Error("Only one batch-ending tool call is allowed");
+    disposition = { kind: "end", cause: outcome.end.cause };
+  }
+  return disposition;
+}
 
 export async function dispatchToolCall(
   deps: ToolDispatchDeps,
   call: ToolCallInput,
   ctx: ToolDispatchContext,
 ): Promise<ToolDispatchResult> {
-  await deps.persistenceDeps.eventWriter.appendEvents(ctx.state.threadId, [
+  await deps.persistenceDeps.eventWriter.appendEvents(ctx.threadId, [
     {
       type: "tool.executing",
       toolCallId: call.id,
       name: call.name,
     },
   ]);
-  if (ctx.state.signal?.aborted) {
-    return { cancelled: true };
+  if (ctx.signal?.aborted) {
+    return { kind: "cancelled" };
   }
 
   if (ctx.thread.kind === "subagent") {
@@ -129,7 +146,7 @@ export async function dispatchToolCall(
   }
 
   const outputJournal = createDeltaJournal({
-    threadId: ctx.state.threadId,
+    threadId: ctx.threadId,
     appendEvents: (threadId, events) =>
       deps.persistenceDeps.eventWriter.appendEvents(threadId, events),
     eventSink: deps.eventSink,
@@ -145,14 +162,14 @@ export async function dispatchToolCall(
       source: "runtime.orchestrator",
       name: "tool_output_delta.dropped",
       correlation: {
-        threadId: ctx.state.threadId,
-        turnId: ctx.state.currentTurn.id,
-        runId: ctx.state.currentTurn.id,
+        threadId: ctx.threadId,
+        turnId: ctx.currentTurn.id,
+        runId: ctx.currentTurn.id,
         toolName: call.name,
       },
       payload: {
-        threadId: ctx.state.threadId,
-        turnId: ctx.state.currentTurn.id,
+        threadId: ctx.threadId,
+        turnId: ctx.currentTurn.id,
         reason,
         ...(failure ? unknownToEventPayload(failure.cause) : {}),
       },
@@ -185,10 +202,10 @@ export async function dispatchToolCall(
 
   const transcript: SpawnTranscript = {
     persistence: deps.persistenceDeps,
-    threadId: ctx.state.threadId,
-    turnId: ctx.state.currentTurn.id,
+    threadId: ctx.threadId,
+    turnId: ctx.currentTurn.id,
     blockSeqRef: ctx.blockSeqRef,
-    allBlocks: ctx.state.allBlocks,
+    allBlocks: ctx.allBlocks,
   };
 
   const spawn =
@@ -198,7 +215,7 @@ export async function dispatchToolCall(
           const request: ChildRunRequest = {
             kind: "spawn",
             parentThread: ctx.thread,
-            parentTurnId: ctx.state.currentTurn.id,
+            parentTurnId: ctx.currentTurn.id,
             agentSlug: spawnInput.agent,
             prompt: spawnInput.prompt,
             from: spawnInput.from,
@@ -210,13 +227,13 @@ export async function dispatchToolCall(
             budget: ctx.treeBudget,
             reportCorrelation: {
               callerThreadId: ctx.thread.id,
-              callerTurnId: ctx.state.currentTurn.id,
+              callerTurnId: ctx.currentTurn.id,
               toolCallId: call.id,
               cardBlockId: null,
               origin: "spawn",
               deliveryMode: spawnInput.mode === "background" ? "background_notification" : "direct",
             },
-            signal: ctx.state.signal,
+            signal: ctx.signal,
           };
           return deps.childRunCoordinator.runChild(request, {
             mode: spawnInput.mode,
@@ -232,7 +249,7 @@ export async function dispatchToolCall(
           const request: ChildRunRequest = {
             kind: "message",
             parentThread: ctx.thread,
-            parentTurnId: ctx.state.currentTurn.id,
+            parentTurnId: ctx.currentTurn.id,
             ref: messageInput.ref,
             prompt: messageInput.message,
             toolCallId: call.id,
@@ -241,7 +258,7 @@ export async function dispatchToolCall(
               ? {
                   reportCorrelation: {
                     callerThreadId: ctx.thread.id,
-                    callerTurnId: ctx.state.currentTurn.id,
+                    callerTurnId: ctx.currentTurn.id,
                     toolCallId: call.id,
                     cardBlockId: null,
                     origin: "message" as const,
@@ -249,7 +266,7 @@ export async function dispatchToolCall(
                   },
                 }
               : {}),
-            signal: ctx.state.signal,
+            signal: ctx.signal,
           };
           return deps.childRunCoordinator.runChild(request, {
             mode: messageInput.mode,
@@ -282,7 +299,7 @@ export async function dispatchToolCall(
     return { ok: true as const };
   };
 
-  const correlation = { threadId: ctx.state.threadId, turnId: ctx.state.currentTurn.id };
+  const correlation = { threadId: ctx.threadId, turnId: ctx.currentTurn.id };
   const execResult = await deps.toolExecutor.executeTool(
     {
       id: call.id,
@@ -291,24 +308,15 @@ export async function dispatchToolCall(
       ...(call.argumentsParseError ? { argumentsParseError: call.argumentsParseError } : {}),
     },
     {
-      threadId: ctx.state.threadId,
-      turnId: ctx.state.currentTurn.id,
+      threadId: ctx.threadId,
+      turnId: ctx.currentTurn.id,
       responseIdentity: {
         providerResponseId: ctx.responseId,
         editScopeId: ctx.editResponseId ?? ctx.responseId,
       },
       agentSlug: ctx.agentSlug,
-      signal: ctx.state.signal,
-      interruptTimeoutMs: ctx.interruptAutoResume.timeoutMs,
+      signal: ctx.signal,
       emitOutputDelta,
-      interrupt: async (...args) => {
-        await drainOutput();
-        return ctx.interruptSession.interrupt(...args);
-      },
-      updateComponentBlock: async (...args) => {
-        await drainOutput();
-        return ctx.interruptSession.updateComponentBlock(...args);
-      },
       spawn,
       threadMessage,
       threadReport,
@@ -322,8 +330,8 @@ export async function dispatchToolCall(
   );
   outputJournal.seal();
   await drainOutput();
-  if (ctx.state.signal?.aborted) {
-    return { cancelled: true };
+  if (ctx.signal?.aborted) {
+    return { kind: "cancelled" };
   }
 
   const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;
@@ -335,8 +343,9 @@ export async function dispatchToolCall(
       executionReports: deps.executionReports,
     });
     return {
+      kind: "completed",
       block: settled.block,
-      ...(settled.endTurn ? { endTurn: true as const } : {}),
+      ...(settled.endsBatch ? { end: { cause: "success" as const } } : {}),
     };
   }
   const persistedOutput = execResult.output;
@@ -346,10 +355,10 @@ export async function dispatchToolCall(
 
   const persistedToolResult = await persistAndAppendEvents(
     deps.persistenceDeps,
-    ctx.state.threadId,
+    ctx.threadId,
     async () => {
       const block = contentForBlockInput({
-        turnId: ctx.state.currentTurn.id,
+        turnId: ctx.currentTurn.id,
         ...(stagedWrite ? { responseId: ctx.responseId } : {}),
         blockType: "tool_result",
         sequence: ctx.blockSeqRef.value++,
@@ -384,19 +393,20 @@ export async function dispatchToolCall(
       afterEvents: async (block) => {
         const evidence = execResult.evidence;
         if (!evidence) return;
-        const owner = { threadId: ctx.state.threadId, turnId: block.turnId };
+        const owner = { threadId: ctx.threadId, turnId: block.turnId };
         for (const showing of evidence.shown)
           await deps.shownLinks.record({ ...showing, ...owner });
         if (evidence.frontier) await recordFrontier(deps, block.id, evidence.frontier, owner);
       },
     },
   );
-  ctx.state.allBlocks.push(persistedToolResult.result);
+  ctx.allBlocks.push(persistedToolResult.result);
   ctx.credited.add(persistedToolResult.result.id);
 
   const resultBlock = persistedToolResult.result;
   const resultMetadata = execResult.metadata;
   return {
+    kind: "completed",
     block: resultBlock,
     ...(resultMetadata
       ? {

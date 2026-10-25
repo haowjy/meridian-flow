@@ -7,7 +7,7 @@
  * for control flow while billing remains centralized and testable.
  */
 
-import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { TreeBudget } from "@meridian/contracts/spawn";
 import type { Thread } from "@meridian/contracts/threads";
@@ -99,7 +99,7 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
 
       if (BigInt(computedCost.millicredits) > 0n) {
         // Meter-pause while parked holds by construction: only model responses
-        // debit credits, and no model calls run while a turn is waiting_interrupt.
+        // debit credits, and no model calls run while a turn is awaiting_answer.
         await deps.billingUsage.debit({
           userId: thread.userId,
           rootThreadId: thread.rootThreadId,

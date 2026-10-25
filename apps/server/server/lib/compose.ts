@@ -5,7 +5,7 @@
  */
 
 import type { AgentPermission } from "@meridian/contracts/agents";
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
@@ -60,7 +60,6 @@ import {
   createFigureAssetService,
   createHiddenNodeRepair,
   createInMemoryUnifiedContextPortFactory,
-  createInterruptArtifactFlush,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createRemovalRecords,
@@ -117,12 +116,9 @@ import {
   seedDefaultAgentPackages,
   seedGeneralAgent,
 } from "../domains/packages/index.js";
-import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/adapters/in-memory/project-preferences-repository.js";
-import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
 import {
   type AccountSettingsRepository,
   createDrizzleAccountSettingsRepository,
-  createDrizzleProjectPreferencesRepository,
   createInMemoryAccountSettingsRepository,
 } from "../domains/preferences/index.js";
 import {
@@ -217,10 +213,6 @@ import {
   unavailableActivatedSkillSlugs,
 } from "../domains/runtime/loop/available-skills.js";
 import { wakeOnContendedRelease } from "../domains/runtime/loop/contended-claim-wake.js";
-import {
-  createInterruptRegistry,
-  type InterruptRegistry,
-} from "../domains/runtime/loop/interrupts.js";
 import { createWakeIfRunnable } from "../domains/runtime/loop/wake-if-runnable.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import {
@@ -309,11 +301,9 @@ export type AppServices = {
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
-  interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   eventQuery?: EventQuery;
   marsPackageFetcher: MarsPackageFetcher;
-  preferences: ProjectPreferencesRepository;
   accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
@@ -402,7 +392,6 @@ export type ProductionAppPorts = {
   billingSpendReader: BillingSpendReader;
   agentRevisions: AgentRevisionStore;
   marsPackageFetcher: MarsPackageFetcher;
-  preferences: ProjectPreferencesRepository;
   accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
@@ -515,7 +504,6 @@ export async function createProductionAppPorts(input: {
     ensureNoWork: (projectId) => workRepo.ensureNoWork(projectId),
   });
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
-  const preferences = createDrizzleProjectPreferencesRepository({ db });
   const accountSettings = createDrizzleAccountSettingsRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
@@ -736,7 +724,6 @@ export async function createProductionAppPorts(input: {
     billingSpendReader: billingDomain.spendReader,
     agentRevisions,
     marsPackageFetcher,
-    preferences,
     accountSettings,
     workingSet,
     recentDocuments,
@@ -789,7 +776,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     eventHub: threadEventHub,
   });
-  const interruptRegistry = createInterruptRegistry();
   const workContext = createWorkContextReader({
     threads: ports.threadRepos.threads,
     works: ports.workRepo,
@@ -1093,15 +1079,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agentRevisions: ports.agentRevisions,
     accountSkillInstalls: ports.accountSkillInstalls,
     toolRegistry,
-    projectPreferences: ports.preferences,
     workContext,
     childRunCoordinator,
-    interruptRegistry,
     billingUsage: ports.billingUsage,
-    interruptArtifacts: createInterruptArtifactFlush({
-      promotion: ports.promotionService,
-      objectStore: ports.objectStore,
-    }),
     eventSink: ports.eventSink,
     wakeIfRunnable,
     modelRequestDebug: ports.modelRequestDebug,
@@ -1174,11 +1154,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       unavailableReasons: (definition, model) =>
         agentExecutionUnavailableReasons(definition, ports.gateway, model),
     }),
-    interruptRegistry,
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
     marsPackageFetcher: ports.marsPackageFetcher,
-    preferences: ports.preferences,
     accountSettings: ports.accountSettings,
     workingSet: ports.workingSet,
     recentDocuments: ports.recentDocuments,
@@ -1239,7 +1217,6 @@ export function createInMemoryAppServices(): AppServices {
     threadExists: async (id) =>
       Boolean(await threadRepos.threads.findProjectIdByIdIncludingDeleted(id)),
   });
-  const preferences = createInMemoryProjectPreferencesRepository();
   const accountSettings = createInMemoryAccountSettingsRepository();
   const workingSet = createInMemoryWorkingSetRepository();
   const recentDocuments = createInMemoryRecentDocumentsRepository();
@@ -1667,14 +1644,12 @@ export function createInMemoryAppServices(): AppServices {
       unavailableReasons: (definition, model) =>
         agentExecutionUnavailableReasons(definition, {}, model),
     }),
-    interruptRegistry: createInterruptRegistry(),
     eventSink: createNoopEventSink(),
     marsPackageFetcher: {
       async fetch() {
         throw new Error("in-memory Mars package fetcher is not implemented");
       },
     },
-    preferences,
     accountSettings,
     workingSet,
     recentDocuments,

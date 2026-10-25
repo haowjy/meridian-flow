@@ -64,7 +64,7 @@ import {
   type MeridianError,
   meridianErrorFromTool,
   meridianErrorToJson,
-} from "@meridian/contracts/interrupt";
+} from "@meridian/contracts/errors";
 import { isReturnResultOutcome } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import {
@@ -74,7 +74,6 @@ import {
 } from "./invalid-arguments.js";
 import { isMeridianErrorValue, renderRefusal } from "./refusal.js";
 import type {
-  InterruptToolHandlerContext,
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
   ThreadMessageToolHandlerContext,
@@ -328,7 +327,6 @@ function handlerContextForRegistration(
   executionContext: ToolExecutionContext,
 ):
   | ToolHandlerContext
-  | InterruptToolHandlerContext
   | SpawnToolHandlerContext
   | ThreadMessageToolHandlerContext
   | ThreadReportToolHandlerContext
@@ -361,16 +359,6 @@ function handlerContextForRegistration(
         );
       }
       return { ...baseContext, returnResult: executionContext.returnResult };
-    case "interrupt":
-      if (!executionContext.interrupt || !executionContext.updateComponentBlock) {
-        throw new Error(`Interrupt tool ${registration.definition.name} missing interrupt context`);
-      }
-      return {
-        ...baseContext,
-        interruptTimeoutMs: executionContext.interruptTimeoutMs ?? 270_000,
-        interrupt: executionContext.interrupt,
-        updateComponentBlock: executionContext.updateComponentBlock,
-      };
   }
 }
 

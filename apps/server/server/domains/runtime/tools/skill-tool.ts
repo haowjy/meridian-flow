@@ -17,7 +17,7 @@ import {
   type WriteToolInput,
 } from "@meridian/agent-edit/integration";
 import { documentPathKey, splitDocumentHrefSuffix } from "@meridian/contracts";
-import { meridianErrorFromTool } from "@meridian/contracts/interrupt";
+import { meridianErrorFromTool } from "@meridian/contracts/errors";
 import { z } from "zod";
 import {
   isSkillsUri,

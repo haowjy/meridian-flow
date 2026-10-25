@@ -4,8 +4,8 @@
  * pre-call check suffices while spawns are serial.
  */
 
-import type { MeridianError } from "@meridian/contracts/interrupt";
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import type { MeridianError } from "@meridian/contracts/errors";
+import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import { DEFAULT_MAX_SPAWN_DEPTH, type TreeBudget } from "@meridian/contracts/spawn";
 
 /**

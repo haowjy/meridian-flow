@@ -12,8 +12,6 @@
  */
 import type { ObservationFrontier } from "@meridian/agent-edit/integration";
 import type { ModelResponseIdentity } from "@meridian/contracts";
-import type { InterruptAnswerEnvelope } from "@meridian/contracts/components";
-import type { AskRequest } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   ReturnResultCapture,
@@ -76,9 +74,6 @@ export interface ToolExecutionContext {
     toolCallId: string,
     chunk: { stream: "stdout" | "stderr"; text: string },
   ) => void;
-  interruptTimeoutMs?: number;
-  interrupt?: InterruptToolHandlerContext["interrupt"];
-  updateComponentBlock?: InterruptToolHandlerContext["updateComponentBlock"];
   spawn?: SpawnToolHandlerContext["spawn"];
   threadMessage?: ThreadMessageToolHandlerContext["threadMessage"];
   threadReport?: ThreadReportToolHandlerContext["threadReport"];
@@ -184,13 +179,6 @@ export interface ToolHandlerContext {
   frontiers?: FrontierLookups;
 }
 
-export type InterruptResponse = InterruptAnswerEnvelope;
-
-/**
- * Richer context injected only for registrations with `capability: "interrupt"`.
- * Interrupt tools are still normal async handlers; these callbacks are the
- * narrow suspend/resume seam the orchestrator owns.
- */
 export interface SpawnToolHandlerContext extends ToolHandlerContext {
   /** A run's result, or `invalid_arguments` for an override the caller may not make. */
   spawn(input: SpawnToolArgs): Promise<SpawnResult | InvalidArgumentsResult>;
@@ -207,21 +195,6 @@ export interface ThreadReportToolHandlerContext extends ToolHandlerContext {
 
 export interface ReturnResultToolHandlerContext extends ToolHandlerContext {
   returnResult(capture: ReturnResultCapture): Promise<ReturnResultOutcome>;
-}
-
-export interface InterruptToolHandlerContext extends ToolHandlerContext {
-  /** Effective timeout in milliseconds from project preferences unless the tool overrides it. */
-  interruptTimeoutMs: number;
-  /**
-   * Persist a component block, mark the turn as waiting_interrupt, and
-   * suspend until a user response or timeout resolves the interrupt.
-   */
-  interrupt(request: AskRequest, timeoutMs?: number): Promise<InterruptResponse>;
-  /**
-   * Patch the persisted component block's `props` after resolution so replay
-   * and cold-load can render the selected value/provenance.
-   */
-  updateComponentBlock(interruptId: string, propsPatch: JsonObject): Promise<void>;
 }
 
 /**
@@ -301,7 +274,6 @@ export interface ToolRegistration {
         type: "server";
         handler:
           | ToolHandler
-          | ToolHandler<InterruptToolHandlerContext>
           | ToolHandler<SpawnToolHandlerContext>
           | ToolHandler<ThreadMessageToolHandlerContext>
           | ToolHandler<ThreadReportToolHandlerContext>
@@ -310,7 +282,7 @@ export interface ToolRegistration {
     | { type: "client" };
   timeoutMs?: number;
   sequential?: boolean;
-  capability?: "interrupt" | "spawn" | "thread_message" | "thread_report" | "return_result";
+  capability?: "spawn" | "thread_message" | "thread_report" | "return_result";
   /** Maps executor-owned failures into a tool's model-facing result protocol. */
   formatExecutionError?: (error: ToolExecutionError) => unknown;
   /**
