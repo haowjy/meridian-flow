@@ -58,6 +58,7 @@ export {
   identityDocuments,
   identityFolderFields,
   identityFolders,
+  identityFoldersSql,
   livingDocumentUses,
   pendingDocuments,
   type VisibleDocumentsSubquery,
