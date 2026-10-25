@@ -1,6 +1,10 @@
 import { filetypeForKnownPath } from "@meridian/contracts/protocol";
 import mammoth from "mammoth";
-import TurndownService from "turndown";
+import rehypeParse from "rehype-parse";
+import rehypeRemark from "rehype-remark";
+import remarkGfm from "remark-gfm";
+import remarkStringify from "remark-stringify";
+import { unified } from "unified";
 import type {
   ConvertedDocument,
   CorpusImportFileKind,
@@ -22,11 +26,11 @@ function cleanMimeType(mimeType: string): string {
 }
 
 export function createMammothDocumentConverter(): DocumentConverterPort {
-  const turndown = new TurndownService({
-    headingStyle: "atx",
-    codeBlockStyle: "fenced",
-    bulletListMarker: "-",
-  });
+  const htmlToMarkdown = unified()
+    .use(rehypeParse, { fragment: true })
+    .use(rehypeRemark)
+    .use(remarkGfm)
+    .use(remarkStringify, { bullet: "-", fences: true, emphasis: "_", rule: "-" });
 
   function classify(input: { filename: string; mimeType: string }): CorpusImportFileKind {
     const ext = extension(input.filename);
@@ -48,7 +52,7 @@ export function createMammothDocumentConverter(): DocumentConverterPort {
       if (kind === "docx") {
         const result = await mammoth.convertToHtml({ buffer: Buffer.from(input.bytes) });
         return {
-          markdown: turndown.turndown(result.value).trim(),
+          markdown: String(await htmlToMarkdown.process(result.value)).trim(),
           messages: result.messages.map((message) => ({
             type: message.type === "warning" ? "warning" : "info",
             message: message.message,
