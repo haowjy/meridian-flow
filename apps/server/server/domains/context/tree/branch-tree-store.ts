@@ -132,6 +132,16 @@ export async function dropDocumentRows(
   input: { branchId: BranchId; documentIds: readonly DocumentId[]; settle: BranchSettlement },
 ): Promise<BranchSettlementResult> {
   if (input.documentIds.length === 0) return { pruned: [], applied: [] };
+  const affectedParents = await currentDrizzleDb(db)
+    .select({ kind: branchTreeRanks.parentKind, id: branchTreeRanks.parentId })
+    .from(branchTreeRanks)
+    .where(
+      and(
+        eq(branchTreeRanks.branchId, input.branchId),
+        eq(branchTreeRanks.nodeKind, "document"),
+        inArray(branchTreeRanks.nodeId, [...input.documentIds]),
+      ),
+    );
   const settled = await settleBranchEntries(db, input);
   await currentDrizzleDb(db)
     .delete(branchTreeChanges)
@@ -151,7 +161,7 @@ export async function dropDocumentRows(
         inArray(branchTreeRanks.nodeId, [...input.documentIds]),
       ),
     );
-  await reconcileBranchSiblingOrder(db, input.branchId);
+  await reconcileBranchSiblingOrder(db, input.branchId, affectedParents);
   return settled;
 }
 

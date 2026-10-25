@@ -29,6 +29,7 @@ type Parent = {
   sourceId: ContextSourceId;
   folderId: FolderId | null;
 };
+type ParentKey = Pick<Parent, "kind" | "id">;
 
 function parentOf(sourceId: ContextSourceId, folderId: FolderId | null): Parent {
   return folderId === null
@@ -515,8 +516,30 @@ export async function branchSiblingIntent(
 /** Keep a document's rank overlay aligned with its current branch facts. */
 export async function syncBranchSiblingFacts(
   db: Database,
-  input: { branchId: BranchId; documentId: DocumentId; facts: BranchTreeFacts },
+  input: {
+    branchId: BranchId;
+    documentId: DocumentId;
+    facts: BranchTreeFacts;
+    previousParent?: { sourceId: ContextSourceId; folderId: FolderId | null };
+  },
 ): Promise<void> {
+  const tx = currentDrizzleDb(db);
+  const [existing] = await tx
+    .select({ kind: branchTreeRanks.parentKind, id: branchTreeRanks.parentId })
+    .from(branchTreeRanks)
+    .where(
+      and(
+        eq(branchTreeRanks.branchId, input.branchId),
+        eq(branchTreeRanks.nodeKind, "document"),
+        eq(branchTreeRanks.nodeId, input.documentId),
+      ),
+    );
+  const affected: ParentKey[] = [
+    ...(existing ? [existing] : []),
+    ...(input.previousParent
+      ? [parentOf(input.previousParent.sourceId, input.previousParent.folderId)]
+      : []),
+  ];
   const moved = input.facts.moved;
   if (moved?.rank != null) {
     const sourceId = moved.rootSourceId as ContextSourceId | null;
@@ -529,7 +552,8 @@ export async function syncBranchSiblingFacts(
             .where(eq(folders.id, folderId))
         )[0]?.sourceId
       : sourceId;
-    if (resolvedSource)
+    if (resolvedSource) {
+      affected.push(parentOf(resolvedSource, folderId));
       await setRank(
         db,
         input.branchId,
@@ -537,8 +561,9 @@ export async function syncBranchSiblingFacts(
         { kind: "document", id: input.documentId },
         moved.rank,
       );
+    }
   } else {
-    await currentDrizzleDb(db)
+    await tx
       .delete(branchTreeRanks)
       .where(
         and(
@@ -548,42 +573,51 @@ export async function syncBranchSiblingFacts(
         ),
       );
   }
-  await reconcileBranchSiblingOrder(db, input.branchId);
+  await reconcileBranchSiblingOrder(db, input.branchId, affected);
 }
 
 /** Drop promoted baselines once no outstanding ordered placement is owned by their parent. */
-export async function reconcileBranchSiblingOrder(db: Database, branchId: BranchId): Promise<void> {
+export async function reconcileBranchSiblingOrder(
+  db: Database,
+  branchId: BranchId,
+  affectedParents: readonly ParentKey[],
+): Promise<void> {
   const tx = currentDrizzleDb(db);
-  const [owners, changes] = await Promise.all([
-    tx
-      .select({ kind: branchTreeParentOrders.parentKind, id: branchTreeParentOrders.parentId })
+  const parents = new Map(affectedParents.map((parent) => [`${parent.kind}:${parent.id}`, parent]));
+  for (const parent of parents.values()) {
+    const [owner] = await tx
+      .select({ id: branchTreeParentOrders.parentId })
       .from(branchTreeParentOrders)
-      .where(eq(branchTreeParentOrders.branchId, branchId)),
-    tx
-      .select({
-        folderId: branchTreeChanges.movedFolderId,
-        sourceId: branchTreeChanges.movedRootSourceId,
-      })
+      .where(
+        and(
+          eq(branchTreeParentOrders.branchId, branchId),
+          eq(branchTreeParentOrders.parentKind, parent.kind),
+          eq(branchTreeParentOrders.parentId, parent.id),
+        ),
+      );
+    if (!owner) continue;
+    const [active] = await tx
+      .select({ id: branchTreeChanges.nodeId })
       .from(branchTreeChanges)
       .where(
         and(
           eq(branchTreeChanges.branchId, branchId),
           eq(branchTreeChanges.moved, true),
           isNotNull(branchTreeChanges.movedRank),
+          parent.kind === "folder"
+            ? eq(branchTreeChanges.movedFolderId, parent.id as FolderId)
+            : and(
+                isNull(branchTreeChanges.movedFolderId),
+                eq(branchTreeChanges.movedRootSourceId, parent.id as ContextSourceId),
+              ),
         ),
-      ),
-  ]);
-  const active = new Set(
-    changes.map((change) =>
-      change.folderId ? `folder:${change.folderId}` : `source:${change.sourceId}`,
-    ),
-  );
-  for (const owner of owners) {
-    if (active.has(`${owner.kind}:${owner.id}`)) continue;
+      )
+      .limit(1);
+    if (active) continue;
     const owned = and(
       eq(branchTreeRanks.branchId, branchId),
-      eq(branchTreeRanks.parentKind, owner.kind),
-      eq(branchTreeRanks.parentId, owner.id),
+      eq(branchTreeRanks.parentKind, parent.kind),
+      eq(branchTreeRanks.parentId, parent.id),
     );
     await tx.delete(branchTreeRanks).where(owned);
     await tx
@@ -591,8 +625,8 @@ export async function reconcileBranchSiblingOrder(db: Database, branchId: Branch
       .where(
         and(
           eq(branchTreeParentOrders.branchId, branchId),
-          eq(branchTreeParentOrders.parentKind, owner.kind),
-          eq(branchTreeParentOrders.parentId, owner.id),
+          eq(branchTreeParentOrders.parentKind, parent.kind),
+          eq(branchTreeParentOrders.parentId, parent.id),
         ),
       );
   }
