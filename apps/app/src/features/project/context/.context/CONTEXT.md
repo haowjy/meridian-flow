@@ -99,7 +99,9 @@ owner per project, mounted together by `ProjectNoticesProvider`:
 `DocumentDeleteUndoProvider` for deletes, `MoveNoticesProvider`
 (`entry-drag/move-notice.tsx`) for moves. Each owner keeps its notice's Undo
 and decides from the replica when Undo still applies, so a notice outlives the
-list that published it. `SurfaceNotices` renders a surface's place: in the
+list that published it. A Trash restore reports its removal to the delete
+owner (`useReportRestoredRemovals`), which closes a delete's notice once every
+removal in that delete's receipt came back. `SurfaceNotices` renders a surface's place: in the
 rail between the tree and User; at the foot of Work Files, the phone browser
 and the chat Files menu.
 

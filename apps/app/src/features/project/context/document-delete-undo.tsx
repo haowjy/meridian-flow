@@ -62,7 +62,15 @@ type DeleteUndoContextValue = {
   requestDelete: (target: DeleteTarget, surface: NoticeSurface) => void;
   undo: (operationId: string) => void;
   dismiss: (operationId: string) => void;
+  restoredElsewhere: (documents: readonly RemovedDocument[]) => void;
 };
+
+type RemovedDocument = { documentId: string; removal: { locationVersion: string } };
+
+/** One removal of one document; a later delete of the same document is a different removal. */
+function removalKey({ documentId, removal }: RemovedDocument): string {
+  return `${documentId}@${removal.locationVersion}`;
+}
 
 const DeleteUndoContext = createContext<DeleteUndoContextValue | null>(null);
 
@@ -141,6 +149,7 @@ export function DocumentDeleteUndoProvider({
   );
   const restores = useRef(new Set<string>());
   const folderChecks = useRef(new Set<string>());
+  const restoredRemovals = useRef(new Set<string>());
   const lifetime = useRef<ProviderLifetime | null>(null);
   const windowsRef = useRef(windows);
   windowsRef.current = windows;
@@ -180,6 +189,7 @@ export function DocumentDeleteUndoProvider({
       owner.controller.abort();
       restores.current.clear();
       folderChecks.current.clear();
+      restoredRemovals.current.clear();
       void queryClient.cancelQueries({ queryKey: deleteOperationProjectKey(projectId) });
       if (lifetime.current === owner) lifetime.current = null;
     };
@@ -351,14 +361,41 @@ export function DocumentDeleteUndoProvider({
     }
   }, [deleteIntents, dismiss, windows, projectId, queryClient, runRestore]);
 
+  // Documents restored outside Undo (from Trash) close the notice whose delete removed them
+  // once nothing of that delete is left for Undo to restore.
+  const deleteIntentsRef = useRef(deleteIntents);
+  deleteIntentsRef.current = deleteIntents;
+  const restoredElsewhere = useCallback(
+    (documents: readonly RemovedDocument[]) => {
+      const owner = lifetime.current;
+      if (!owner) return;
+      for (const document of documents) restoredRemovals.current.add(removalKey(document));
+      for (const window of windowsRef.current.values()) {
+        const { operationId } = window;
+        if (window.feedback?.kind === "restoring") continue;
+        if (deleteOperationState(deleteIntentsRef.current, operationId) !== "landed") continue;
+        resolveDeleteReceipt(queryClient, projectId, operationId).then(
+          (removed) => {
+            if (!isActive(owner)) return;
+            if (removed.every((document) => restoredRemovals.current.has(removalKey(document))))
+              dismiss(operationId);
+          },
+          () => undefined,
+        );
+      }
+    },
+    [dismiss, projectId, queryClient],
+  );
+
   const value = useMemo<DeleteUndoContextValue>(
     () => ({
       notices: [...windows.values()].filter((window) => window.shown),
       requestDelete,
       undo,
       dismiss,
+      restoredElsewhere,
     }),
-    [dismiss, windows, requestDelete, undo],
+    [dismiss, windows, requestDelete, undo, restoredElsewhere],
   );
   return <DeleteUndoContext.Provider value={value}>{children}</DeleteUndoContext.Provider>;
 }
@@ -375,6 +412,11 @@ export function useDeleteContextEntry(surface: NoticeSurface = "sidebar") {
     () => ({ requestDelete: (target: DeleteTarget) => requestDelete(target, surface) }),
     [requestDelete, surface],
   );
+}
+
+/** Tells delete notices that these removals came back by another way than their Undo. */
+export function useReportRestoredRemovals() {
+  return useDocumentDeleteUndo().restoredElsewhere;
 }
 
 export function DocumentDeleteUndoNotice({

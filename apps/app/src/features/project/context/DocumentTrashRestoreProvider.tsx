@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import { documentLocationName } from "../../chat/document-display-name";
+import { useReportRestoredRemovals } from "./document-delete-undo";
 import { restoreTrashedDocument, type TrashRestoreOutcome } from "./restore-trashed-document";
 
 export type TrashRestoreState = { kind: "restoring" } | { kind: "failed"; message: string };
@@ -37,6 +38,7 @@ export function DocumentTrashRestoreProvider({
   children: ReactNode;
 }) {
   const queryClient = useQueryClient();
+  const reportRestored = useReportRestoredRemovals();
   const [notice, setNotice] = useState<RestoredNotice | null>(null);
   const [states, setStates] = useState<ReadonlyMap<string, TrashRestoreState>>(() => new Map());
   const restore = useCallback(
@@ -46,6 +48,7 @@ export function DocumentTrashRestoreProvider({
       void restoreTrashedDocument(queryClient, projectId, entry)
         .then(async (outcome) => {
           if (outcome.kind === "living") {
+            reportRestored([entry]);
             const failure = afterRestore ? await afterRestore(outcome) : null;
             if (failure) {
               setStates((current) =>
@@ -87,7 +90,7 @@ export function DocumentTrashRestoreProvider({
           ),
         );
     },
-    [projectId, queryClient, states],
+    [projectId, queryClient, reportRestored, states],
   );
   const value = useMemo(() => ({ states, restore }), [states, restore]);
   return (
