@@ -179,6 +179,11 @@ Three consumers read that record and nothing else:
   (the newest live placement intent; after a receipt, the canonical `locationVersion`), never whether
   a sibling gap still looks the same.
 
+Transport waits are bounded (`NAMESPACE_REQUEST_DEADLINE_MS`), but a deadline ends only the wait: the
+attempt stays `submitted`, the next pass reads its receipt or re-sends the identical recorded request
+with its operation id, and dependents keep waiting on it. A new operation is never minted because a
+response was lost.
+
 Exact replay of one client's intents is guaranteed. Its predicted final list under arbitrary peer
 changes is not: the server resolves each command against the current list. A create that is reminted
 after a conflict keeps its admission; third parties' predecessor references to the reminted
