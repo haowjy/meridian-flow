@@ -17,7 +17,7 @@ import {
   folders,
 } from "@meridian/database/schema";
 import { compareDefaultSiblings } from "@meridian/resource-replica";
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
 import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { visibleDocuments, visibleFolders } from "./tree-view-sql.js";
@@ -190,6 +190,160 @@ async function materializeOrder(
   return ordered;
 }
 
+type RankedNode = { id: string; rank: string };
+
+function nearest(rows: RankedNode[], direction: "before" | "after"): RankedNode | null {
+  return (
+    rows.sort((left, right) => {
+      const compared =
+        left.rank === right.rank
+          ? left.id.localeCompare(right.id)
+          : left.rank.localeCompare(right.rank);
+      return direction === "before" ? -compared : compared;
+    })[0] ?? null
+  );
+}
+
+async function branchRankedNode(
+  db: Database,
+  branchId: BranchId,
+  parent: Parent,
+  branchOwned: boolean,
+  id: string,
+): Promise<RankedNode | null> {
+  const tx = currentDrizzleDb(db);
+  if (branchOwned) {
+    const [row] = await tx
+      .select({ id: branchTreeRanks.nodeId, rank: branchTreeRanks.rank })
+      .from(branchTreeRanks)
+      .where(
+        and(
+          eq(branchTreeRanks.branchId, branchId),
+          eq(branchTreeRanks.parentKind, parent.kind),
+          eq(branchTreeRanks.parentId, parent.id),
+          eq(branchTreeRanks.nodeId, id),
+        ),
+      );
+    return row ?? null;
+  }
+  const view = { kind: "branch" as const, branchId };
+  const vd = visibleDocuments(view);
+  const vf = visibleFolders(view);
+  const [documentRows, folderRows] = await Promise.all([
+    tx
+      .select({ id: vd.id, rank: vd.rank })
+      .from(vd)
+      .where(
+        and(
+          eq(vd.id, id as DocumentId),
+          eq(vd.contextSourceId, parent.sourceId),
+          parent.folderId === null ? isNull(vd.folderId) : eq(vd.folderId, parent.folderId),
+          isNotNull(vd.rank),
+        ),
+      ),
+    tx
+      .select({ id: vf.id, rank: vf.rank })
+      .from(vf)
+      .where(
+        and(
+          eq(vf.id, id as FolderId),
+          eq(vf.contextSourceId, parent.sourceId),
+          parent.folderId === null ? isNull(vf.parentId) : eq(vf.parentId, parent.folderId),
+          isNotNull(vf.rank),
+        ),
+      ),
+  ]);
+  const row = documentRows[0] ?? folderRows[0];
+  return row?.rank ? { id: row.id, rank: row.rank } : null;
+}
+
+async function branchRankBoundary(
+  db: Database,
+  input: {
+    branchId: BranchId;
+    parent: Parent;
+    branchOwned: boolean;
+    movingId: string;
+    direction: "before" | "after";
+    anchor?: RankedNode;
+  },
+): Promise<RankedNode | null> {
+  const tx = currentDrizzleDb(db);
+  const rankOrder = input.direction === "before" ? desc : asc;
+  const relation = <TId>(rank: Parameters<typeof eq>[0], id: TId) =>
+    input.anchor
+      ? input.direction === "before"
+        ? or(
+            lt(rank, input.anchor.rank),
+            and(eq(rank, input.anchor.rank), lt(id as Parameters<typeof lt>[0], input.anchor.id)),
+          )
+        : or(
+            gt(rank, input.anchor.rank),
+            and(eq(rank, input.anchor.rank), gt(id as Parameters<typeof gt>[0], input.anchor.id)),
+          )
+      : undefined;
+  if (input.branchOwned) {
+    const [row] = await tx
+      .select({ id: branchTreeRanks.nodeId, rank: branchTreeRanks.rank })
+      .from(branchTreeRanks)
+      .where(
+        and(
+          eq(branchTreeRanks.branchId, input.branchId),
+          eq(branchTreeRanks.parentKind, input.parent.kind),
+          eq(branchTreeRanks.parentId, input.parent.id),
+          ne(branchTreeRanks.nodeId, input.movingId),
+          relation(branchTreeRanks.rank, branchTreeRanks.nodeId),
+        ),
+      )
+      .orderBy(rankOrder(branchTreeRanks.rank), rankOrder(branchTreeRanks.nodeId))
+      .limit(1);
+    return row ?? null;
+  }
+  const view = { kind: "branch" as const, branchId: input.branchId };
+  const vd = visibleDocuments(view);
+  const vf = visibleFolders(view);
+  const [documentRows, folderRows] = await Promise.all([
+    tx
+      .select({ id: vd.id, rank: vd.rank })
+      .from(vd)
+      .where(
+        and(
+          eq(vd.contextSourceId, input.parent.sourceId),
+          input.parent.folderId === null
+            ? isNull(vd.folderId)
+            : eq(vd.folderId, input.parent.folderId),
+          ne(vd.id, input.movingId as DocumentId),
+          isNotNull(vd.rank),
+          relation(vd.rank, vd.id),
+        ),
+      )
+      .orderBy(rankOrder(vd.rank), rankOrder(vd.id))
+      .limit(1),
+    tx
+      .select({ id: vf.id, rank: vf.rank })
+      .from(vf)
+      .where(
+        and(
+          eq(vf.contextSourceId, input.parent.sourceId),
+          input.parent.folderId === null
+            ? isNull(vf.parentId)
+            : eq(vf.parentId, input.parent.folderId),
+          ne(vf.id, input.movingId as FolderId),
+          isNotNull(vf.rank),
+          relation(vf.rank, vf.id),
+        ),
+      )
+      .orderBy(rankOrder(vf.rank), rankOrder(vf.id))
+      .limit(1),
+  ]);
+  return nearest(
+    [...documentRows, ...folderRows].flatMap((row) =>
+      row.rank ? [{ id: row.id, rank: row.rank }] : [],
+    ),
+    input.direction,
+  );
+}
+
 /** Allocate a drafted reorder or arrival without requiring the incoming placement to exist yet. */
 export async function placeBranchSibling(
   db: Database,
@@ -225,48 +379,106 @@ export async function placeBranchSibling(
   }
   if (policy.policy === "default" && !input.position) return null;
 
-  let rows = await siblings(db, input.branchId, parent);
-  let moving = rows.find((row) => row.id === input.documentId);
-  if (!moving) {
-    moving = { kind: "document", id: input.documentId, name: input.name, rank: null };
-    rows.push(moving);
-  } else {
-    moving.name = input.name;
-  }
+  let rows: Sibling[] | null = null;
+  let moving: Sibling = {
+    kind: "document",
+    id: input.documentId,
+    name: input.name,
+    rank: null,
+  };
   if (input.position && policy.policy === "default") {
+    rows = await siblings(db, input.branchId, parent);
+    const existing = rows.find((row) => row.id === input.documentId);
+    if (existing) moving = Object.assign(existing, { name: input.name });
+    else rows.push(moving);
     rows = await materializeOrder(db, input.branchId, parent, rows, "default");
     moving = rows.find((row) => row.id === input.documentId) as Sibling;
     policy = { policy: "manual", branchOwned: true };
   }
   if (policy.policy !== "manual") return null;
 
-  let others = rows
-    .filter((row) => row.id !== input.documentId)
-    .sort((left, right) => {
-      if (left.rank !== right.rank) return (left.rank as string) < (right.rank as string) ? -1 : 1;
-      return left.id < right.id ? -1 : 1;
-    });
-  let index = others.length;
-  if (input.position?.kind === "start") index = 0;
-  else if (input.position && "siblingId" in input.position) {
-    const position = input.position;
-    const anchor = others.findIndex((row) => row.id === position.siblingId);
-    if (anchor < 0) return "stale-anchor";
-    index = position.kind === "before" ? anchor : anchor + 1;
+  let before: string | null = null;
+  let after: string | null = null;
+  if (!input.position || input.position.kind === "end")
+    before =
+      (
+        await branchRankBoundary(db, {
+          branchId: input.branchId,
+          parent,
+          branchOwned: policy.branchOwned,
+          movingId: input.documentId,
+          direction: "before",
+        })
+      )?.rank ?? null;
+  else if (input.position.kind === "start")
+    after =
+      (
+        await branchRankBoundary(db, {
+          branchId: input.branchId,
+          parent,
+          branchOwned: policy.branchOwned,
+          movingId: input.documentId,
+          direction: "after",
+        })
+      )?.rank ?? null;
+  else {
+    if (!("siblingId" in input.position)) throw new Error("Invalid sibling position");
+    const anchor = await branchRankedNode(
+      db,
+      input.branchId,
+      parent,
+      policy.branchOwned,
+      input.position.siblingId,
+    );
+    if (!anchor || anchor.id === input.documentId) return "stale-anchor";
+    if (input.position.kind === "before") {
+      after = anchor.rank;
+      before =
+        (
+          await branchRankBoundary(db, {
+            branchId: input.branchId,
+            parent,
+            branchOwned: policy.branchOwned,
+            movingId: input.documentId,
+            direction: "before",
+            anchor,
+          })
+        )?.rank ?? null;
+    } else {
+      before = anchor.rank;
+      after =
+        (
+          await branchRankBoundary(db, {
+            branchId: input.branchId,
+            parent,
+            branchOwned: policy.branchOwned,
+            movingId: input.documentId,
+            direction: "after",
+            anchor,
+          })
+        )?.rank ?? null;
+    }
   }
-  if (others[index - 1]?.rank != null && others[index - 1]?.rank === others[index]?.rank) {
+  if (before !== null && before === after) {
+    rows ??= await siblings(db, input.branchId, parent);
+    const existing = rows.find((row) => row.id === input.documentId);
+    if (existing) moving = Object.assign(existing, { name: input.name });
+    else rows.push(moving);
     rows = await materializeOrder(db, input.branchId, parent, rows, "effective");
     moving = rows.find((row) => row.id === input.documentId) as Sibling;
-    others = rows.filter((row) => row.id !== input.documentId);
+    const others = rows.filter((row) => row.id !== input.documentId);
+    let index = others.length;
     if (input.position?.kind === "start") index = 0;
     else if (input.position && "siblingId" in input.position) {
       const position = input.position;
       const anchor = others.findIndex((row) => row.id === position.siblingId);
       if (anchor < 0) return "stale-anchor";
       index = position.kind === "before" ? anchor : anchor + 1;
-    } else index = others.length;
+    }
+    before = others[index - 1]?.rank ?? null;
+    after = others[index]?.rank ?? null;
   }
-  const rank = generateKeyBetween(others[index - 1]?.rank ?? null, others[index]?.rank ?? null);
+  const rank = generateKeyBetween(before, after);
   await setRank(db, input.branchId, parent, moving, rank);
   return rank;
 }
