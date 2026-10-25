@@ -30,6 +30,8 @@ Markdown link to an address; `[[name]]` is text and never reaches here.
   lifetime ([link-following decision][link-following]).
 - Reporter ownership is per follow. Dismiss and Retry operate through its
   verbs, not by branching on outcome state. Pending answers claim nothing.
+- A folder answer opens nothing here: the surface draws the folder menu
+  (`features/project/context/FolderMenu`) instead of following.
 - Missing creatable manuscript/kb/user documents offer Create at the exact
   canonical address and open locally at once. Uploads, Unfiled, and Scratch
   never offer link creation (a missing Scratch note reads "can't be found" in any

@@ -50,6 +50,7 @@ export {
   type ObjectOverlayPlacement,
   useObjectOverlayCorner,
 } from "./object-overlay";
+export { pointerAnchorStyle } from "./pointer-anchor";
 export {
   SuggestionMenu,
   type SuggestionMenuProps,

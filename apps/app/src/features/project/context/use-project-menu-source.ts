@@ -1,25 +1,30 @@
 /** Catalog-backed project areas for document paths and placement menus. */
+import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView, useContextCatalogViews } from "@/client/query/useContextCatalog";
+import { useLineageTitle } from "@/client/query/useLineageTitle";
+import { useWorks } from "@/client/query/useWorks";
 import type { ServerContextTab } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "./context-schemes";
 import {
-  areaNode,
   buildMenuTree,
   crumbTrailFor,
-  foldersIn,
   type MenuArea,
   menuEntryFor,
   menuTabFor,
+  pathSegments,
+  trailAlong,
 } from "./menu-tree";
 import { type ScratchSource, useScratchCatalogs } from "./use-scratch-catalogs";
 
 export type ProjectMenuSource = {
   tree: DrillTree;
   tabFor(rowId: string): ServerContextTab | null;
+  /** The trail that opens inside a folder, from whichever area holds it; null when none does. */
+  trailInside(folderId: string): DrillNode[] | null;
   /** Resolve an area or folder row into its placement destination. */
   folderFor(rowId: string): {
     scheme: ProjectContextTreeScheme;
@@ -28,25 +33,29 @@ export type ProjectMenuSource = {
     catalog: CatalogContextView;
     entryId: string;
   } | null;
-  /** The document's own catalog and source-owned opening trails. */
+  /** The own area's catalog and its opening trails. */
   own: {
     catalog: CatalogContextView | null;
+    /** Opens in the list holding the entry at `path`. */
     openAt(path: string): DrillNode[];
+    /** Opens inside the folder at `folders` (names from the area root). */
+    openInside(folders: readonly string[]): DrillNode[];
     crumbTrail(path: string, depth: number): DrillNode[];
   };
 };
 
 /**
  * The project browsing tree: Manuscript, Knowledge Base, User, Unfiled and the
- * Scratch on screen as folders under the project's title. The document's own
- * area is always reachable; when it is not one of those (an Uploads file, or a
- * Scratch the writer has since left), it is held but not offered at the root.
+ * Scratch on screen as folders under the project's title. The own area (the open
+ * document's, an entry being moved, or the folder a mention opens) is always
+ * reachable; when it is not one of those (an Uploads file, or another Work's
+ * Scratch), its catalog is acquired here and held but not offered at the root.
  */
 export function useProjectMenuSource({
   projectId,
   title,
   scratch,
-  document,
+  own,
 }: {
   projectId: string;
   /** The root heading: the project's title. */
@@ -54,11 +63,10 @@ export function useProjectMenuSource({
   /** The Scratch to offer at the root, or null when no chat or Work is in view. */
   scratch: ScratchSource | null;
   /**
-   * The open document's scheme and owner, and what to call its own area when
-   * the root does not offer it; null when no document is open (the menu opens
-   * at the root).
+   * The own area's scheme and owner, and what to call it when the root does not
+   * offer it; null when there is none (the menu opens at the root).
    */
-  document: {
+  own: {
     scheme: ProjectContextTreeScheme;
     owner: ContextOwner;
     heading: string;
@@ -87,9 +95,9 @@ export function useProjectMenuSource({
         : null,
     [scratch, primary.catalog, earlier.catalog],
   );
-  const documentScheme = document?.scheme ?? null;
-  const documentOwner = document?.owner ?? null;
-  const documentHeading = document?.heading ?? "";
+  const documentScheme = own?.scheme ?? null;
+  const documentOwner = own?.owner ?? null;
+  const documentHeading = own?.heading ?? "";
   const sameAsScratch =
     documentScheme === "scratch" &&
     scratch !== null &&
@@ -151,6 +159,13 @@ export function useProjectMenuSource({
   return {
     tree,
     tabFor: (rowId) => menuTabFor(areas, rowId),
+    trailInside: (folderId) => {
+      for (const area of areas) {
+        const folder = area.catalog ? menuEntryFor(area.catalog, folderId) : null;
+        if (folder?.kind === "dir") return trailAlong(area, pathSegments(folder.path));
+      }
+      return null;
+    },
     folderFor: (rowId) => {
       for (const area of areas) {
         const catalog = area.catalog;
@@ -177,8 +192,25 @@ export function useProjectMenuSource({
     },
     own: {
       catalog: ownArea?.catalog ?? null,
-      openAt: (path) => (ownArea ? [areaNode(ownArea), ...foldersIn(ownArea, path)] : []),
+      openAt: (path) => (ownArea ? trailAlong(ownArea, pathSegments(path).slice(0, -1)) : []),
+      openInside: (folders) => (ownArea ? trailAlong(ownArea, folders) : []),
       crumbTrail: (path, depth) => crumbTrailFor(ownArea, path, depth),
     },
   };
+}
+
+/** What a menu calls an area outside the root's: "Scratch for <Work>", or the area's name. */
+export function useOwnAreaHeading(
+  projectId: string,
+  own: { scheme: ProjectContextTreeScheme; owner: ContextOwner } | null,
+): string {
+  const { works } = useWorks(projectId);
+  const workId = own?.owner.workId;
+  const rootThreadId = own?.owner.rootThreadId;
+  const work = workId ? works?.find((candidate) => candidate.id === workId) : undefined;
+  // A document's owner names its own area: the Work, or the chat whose Scratch it is.
+  const lineageTitle = useLineageTitle(projectId, rootThreadId ? { rootThreadId } : null);
+  const ownerName = work?.name ?? lineageTitle;
+  if (!own) return "";
+  return ownerName ? t`${schemeLabel(own.scheme)} for ${ownerName}` : schemeLabel(own.scheme);
 }

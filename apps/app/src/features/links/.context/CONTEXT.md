@@ -19,6 +19,9 @@ resolution.registerResolver(
 //   malformed ref                          -> gone (never the address)
 //   doc:<id> the complete index holds      -> that document, wherever it lives now
 //   no ref, address the complete index has -> that document (matchDocumentPath)
+//   folder:<id> or a folder address (href ends in /) the index holds
+//                                          -> that folder (current name and URI)
+//   any other folder question              -> not asked (no folder answer on the wire)
 //   relative with no base                    -> not asked
 //   ahead ref the memo knows settled on D  -> exactly a doc ref to D
 //   ahead ref settled, identity unknown    -> ask, never the address
@@ -32,6 +35,12 @@ resolution.registerResolver(
 //   `settled: true` (rule 3) on an ahead ref's document or gone -> the memo learns it
 //   a provisional local answer stands unless the server says gone or another document
 ```
+
+**Folder links are answered locally only.** `DocumentLinkAnswer` has no
+folder state, so a folder the complete index does not hold (another Work's
+Scratch, not yet loaded) stays unasked and draws filled, not dashed. Pressing
+it still works: the folder menu finds the folder by identity
+(`lookupProjectFolderAvailability`), not through this resolver.
 
 The address answers apply one rule (`matchDocumentPath` from
 `@meridian/contracts`, beside `resolveDocumentHref`, through

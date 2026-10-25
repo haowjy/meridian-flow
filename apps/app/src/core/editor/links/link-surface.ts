@@ -99,6 +99,12 @@ export type LinkFollowOutcome = {
   address: string | null;
 };
 
+/**
+ * A folder link's menu: pressing a link that names a folder opens the drill-in
+ * menu inside it rather than following. `seq` keys each open, as for the form.
+ */
+export type LinkFolderRequest = { folderId: string; at: LinkPoint; seq: number };
+
 /** What the app's follower does when the writer acts on a follow's outcome. */
 export type FollowHandlers = { dismiss: () => void; retry: () => void };
 
@@ -106,6 +112,7 @@ export type LinkSurfaceState = {
   hint: LinkHint | null;
   form: LinkFormRequest | null;
   menu: LinkMenuRequest | null;
+  folder: LinkFolderRequest | null;
   follow: LinkFollowOutcome | null;
 };
 
@@ -124,6 +131,10 @@ export type LinkSurface = {
    */
   retargetMenu: (target: LinkMenuTarget | null) => void;
   closeMenu: () => void;
+
+  /** Open a folder link's menu; like the other summoned surfaces, it replaces them. */
+  openFolder: (request: { folderId: string; at: LinkPoint }) => void;
+  closeFolder: () => void;
 
   /** A follow that has something to say. Reported by whoever answered it. */
   reportFollow: (outcome: LinkFollowOutcome) => void;
@@ -150,7 +161,13 @@ export type LinkSurface = {
   destroy: () => void;
 };
 
-const EMPTY_STATE: LinkSurfaceState = { hint: null, form: null, menu: null, follow: null };
+const EMPTY_STATE: LinkSurfaceState = {
+  hint: null,
+  form: null,
+  menu: null,
+  folder: null,
+  follow: null,
+};
 
 export function createLinkSurface(): LinkSurface {
   const listeners = new Set<() => void>();
@@ -165,6 +182,7 @@ export function createLinkSurface(): LinkSurface {
       merged.hint === state.hint &&
       merged.form === state.form &&
       merged.menu === state.menu &&
+      merged.folder === state.folder &&
       merged.follow === state.follow
     ) {
       return;
@@ -192,7 +210,7 @@ export function createLinkSurface(): LinkSurface {
       // The two summoned surfaces are alternatives, never neighbours: Edit
       // link opens the form from the menu, and leaving the menu up behind it
       // would put two claims on the same link (law 4).
-      set({ form: { at, seq: sequence }, menu: null, hint: null });
+      set({ form: { at, seq: sequence }, menu: null, folder: null, hint: null });
     },
     closeForm() {
       set({ form: null });
@@ -200,7 +218,7 @@ export function createLinkSurface(): LinkSurface {
 
     openMenu(request) {
       sequence += 1;
-      set({ menu: { ...request, seq: sequence }, form: null, hint: null });
+      set({ menu: { ...request, seq: sequence }, form: null, folder: null, hint: null });
     },
     retargetMenu(target) {
       if (!state.menu) return;
@@ -208,6 +226,14 @@ export function createLinkSurface(): LinkSurface {
     },
     closeMenu() {
       set({ menu: null });
+    },
+
+    openFolder(request) {
+      sequence += 1;
+      set({ folder: { ...request, seq: sequence }, menu: null, form: null, hint: null });
+    },
+    closeFolder() {
+      set({ folder: null });
     },
 
     reportFollow(outcome) {

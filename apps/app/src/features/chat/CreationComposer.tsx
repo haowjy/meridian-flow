@@ -1,7 +1,7 @@
 /** Shared pinned new-chat composer for the center, dock, and phone. */
 import { t } from "@lingui/core/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useSelectionAvailableSkills } from "@/client/query/useAvailableSkills";
@@ -11,6 +11,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
+import { FolderMenuContext, type FolderMenuHost } from "@/features/project/context/FolderMenu";
 import {
   useCanOpenChatReference,
   useOpenChatDocument,
@@ -82,6 +83,13 @@ export function CreationComposer({
     creation.draft.chatId,
   );
   const openDocument = useOpenChatDocument(projectId);
+  const folders = useMemo<FolderMenuHost>(
+    () => ({
+      projectId,
+      openDocument: (documentId) => void openDocument({ documentId, disposition: "current" }),
+    }),
+    [openDocument, projectId],
+  );
   const canOpenReference = useCanOpenChatReference();
   // The Work's default shows until the writer picks a mode here, and only a
   // picked mode is sent: a stale default from another tab never overwrites a newer one.
@@ -116,7 +124,7 @@ export function CreationComposer({
   const agentsReady = agents.status === "ready" || agents.status === "empty";
   const choicesReady = worksReady && agentsReady && !unavailableChoice;
   return (
-    <>
+    <FolderMenuContext.Provider value={folders}>
       <Composer
         cards={
           creation.draft.notices.length > 0
@@ -185,6 +193,6 @@ export function CreationComposer({
           {unavailableMessage}
         </p>
       ) : null}
-    </>
+    </FolderMenuContext.Provider>
   );
 }

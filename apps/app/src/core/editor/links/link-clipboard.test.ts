@@ -290,7 +290,7 @@ it("carries what a copied link names across the clipboard", async () => {
     };
     editor.storage[LINK_SURFACE_NAME].resolution.registerResolver(
       {
-        index: { documents },
+        index: { documents, folders: [] },
         local: ({ ref }) => {
           const answer = ref ? settled[ref] : undefined;
           return answer ? { kind: "answered", answer } : { kind: "unasked" };

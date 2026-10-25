@@ -1,12 +1,11 @@
 /** Exact source authority for static user-turn references and skill presentation. */
 import { type PresentationSourceRun, presentationTextRange } from "@meridian/markup";
 
-export type MarkdownReferenceOccurrence = {
-  from: number;
-  to: number;
-  documentId: string;
-  uri: string;
-};
+/** An exact reference's range in the source: a document or a folder, by identity. */
+export type MarkdownReferenceOccurrence = (
+  | { kind: "document"; documentId: string }
+  | { kind: "folder"; folderId: string }
+) & { from: number; to: number; uri: string };
 export type MarkdownSkillOccurrence = {
   from: number;
   to: number;

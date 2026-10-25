@@ -7,12 +7,12 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import {
-  areaNode,
   buildMenuTree,
   crumbTrailFor,
-  foldersIn,
   type MenuArea,
   menuEntryFor,
+  pathSegments,
+  trailAlong,
 } from "./menu-tree";
 
 type Entry = { entryId: string; kind: "dir" | "file"; name: string; path: string; parent: string };
@@ -81,7 +81,7 @@ describe("a document menu's tree", () => {
 
   it("climbs: the open document's trail is its area then its folders, and each step lists in place", () => {
     const tree = buildMenuTree({ heading: "My Serial", areas: [manuscript] });
-    const trail = [areaNode(manuscript), ...foldersIn(manuscript, "/Act/ch.md")];
+    const trail = trailAlong(manuscript, pathSegments("/Act/ch.md").slice(0, -1));
     expect(trail.map((node) => node.id)).toEqual(["area:manuscript", "act"]);
     // Back rows pop the trail one level at a time; each level lists what is under it.
     expect(tree.children("act").map((node) => node.name)).toEqual(["ch.md"]);

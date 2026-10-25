@@ -8,20 +8,27 @@
  * another Work's Scratch or a document the reader lost, and an incomplete
  * index cannot prove what is at an address. Nothing is ever answered `null`
  * for a document, so on the client a local `gone` is only a malformed ref.
+ * Folders follow the same rule: a folder the index holds answers, anything
+ * else is `undefined`.
  */
 
-import type { CatalogDocument } from "@meridian/contracts";
+import type { CatalogDocument, CatalogFolder } from "@meridian/contracts";
 import { contextOwner } from "@meridian/contracts/protocol";
 import type { HolderCatalog } from "@meridian/markup/links";
 
-import { indexedDocumentAt } from "@/core/editor/links";
+import { indexedDocumentAt, indexedFolderAt } from "@/core/editor/links";
 
 import type { ProjectLinkSettlements } from "./link-settlements";
-import type { LinkableDocument, LinkableDocumentIndex } from "./useLinkableDocuments";
+import type {
+  LinkableDocument,
+  LinkableDocumentIndex,
+  LinkableFolder,
+} from "./useLinkableDocuments";
 
-/** The catalog, and the index row behind each document it answers with. */
+/** The catalog, and the index row behind each document or folder it answers with. */
 export type ProjectLinkCatalog = HolderCatalog & {
   indexed(documentId: string): LinkableDocument | undefined;
+  indexedFolder(folderId: string): LinkableFolder | undefined;
 };
 
 export function createProjectLinkCatalog(
@@ -30,6 +37,11 @@ export function createProjectLinkCatalog(
   settlements: ProjectLinkSettlements,
 ): ProjectLinkCatalog {
   const byId = new Map(index.documents.map((document) => [document.documentId, document]));
+  const foldersById = new Map(index.folders.map((folder) => [folder.folderId, folder]));
+  const catalogFolder = (folder: LinkableFolder | null | undefined): CatalogFolder | undefined =>
+    folder
+      ? { folderId: folder.folderId, uri: folder.uri, readable: true, nameable: true }
+      : undefined;
   const catalogDocument = (document: LinkableDocument): CatalogDocument => ({
     documentId: document.documentId,
     owner: contextOwner(document.workId, document.rootThreadId),
@@ -43,6 +55,10 @@ export function createProjectLinkCatalog(
     document ? catalogDocument(document) : undefined;
   return {
     indexed: (documentId) => byId.get(documentId),
+    indexedFolder: (folderId) => foldersById.get(folderId),
+    folder: (folderId) => (index.complete ? catalogFolder(foldersById.get(folderId)) : undefined),
+    folderAt: (uri) =>
+      index.complete ? catalogFolder(indexedFolderAt(index.folders, uri)) : undefined,
     document: (documentId) => (index.complete ? held(byId.get(documentId)) : undefined),
     settlement(aheadId) {
       const settled = settlements.get(aheadId);

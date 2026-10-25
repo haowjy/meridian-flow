@@ -9,7 +9,7 @@
  * serves the right-click menu, which must act on the link the pointer hit
  * rather than on wherever the caret happened to be.
  */
-import type { DocumentRef } from "@meridian/contracts";
+import type { DocumentRef, FolderRef } from "@meridian/contracts";
 import { type Editor, getMarkRange } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
 import type { Mark } from "@tiptap/pm/model";
@@ -101,11 +101,11 @@ export type LinkCommit = {
   text: string;
   href: string;
   /**
-   * The document the writer picked, when they picked one (the form's document
+   * The document or folder the writer picked, when they picked one (the form's
    * search): assigned by its id, never by parsing `href`. Omitted, the href is
    * assigned like any written link.
    */
-  ref?: DocumentRef;
+  ref?: DocumentRef | FolderRef;
 };
 
 export type LinkCommitResult = "applied" | "removed" | "invalid" | "refused";
@@ -258,14 +258,14 @@ export function commitLinkDraft(
  * The attrs a committed link stores. Submitting an existing link's own
  * destination unchanged keeps its attrs, ref included: relabelling a link is
  * not retargeting it. Any other destination is a retarget and is assigned fresh,
- * from the picked document or through `assignWrittenHref` against the holder
+ * from the picked document or folder or through `assignWrittenHref` against the holder
  * and the editor's local index; nothing waits on the network.
  */
 function committedLinkAttrs(
   editor: Editor,
   draft: LinkDraft,
   href: string,
-  picked: DocumentRef | undefined,
+  picked: DocumentRef | FolderRef | undefined,
 ): { href: string; title: string | null; ref: string | null } {
   if (!picked && draft.existing && draft.identity && href === draft.href) {
     const { attrs } = draft.identity;

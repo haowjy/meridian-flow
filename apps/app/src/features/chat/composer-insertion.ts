@@ -6,7 +6,7 @@
  */
 import { type RefObject, useEffect } from "react";
 import type { ComposerHandle } from "@/components/app/composer";
-import type { AuthoritativeReference } from "@/core/completion";
+import type { DocumentReference } from "@/core/completion";
 
 const composers = new Map<string, RefObject<ComposerHandle | null>>();
 
@@ -25,7 +25,7 @@ export function useRegisterChatComposer(
 /** Adds the file to the message being written; false when that chat's composer is not mounted. */
 export function insertIntoChatComposer(
   threadId: string,
-  reference: AuthoritativeReference,
+  reference: DocumentReference,
   fileKind: "document" | "asset",
 ): boolean {
   const handle = composers.get(threadId)?.current;
