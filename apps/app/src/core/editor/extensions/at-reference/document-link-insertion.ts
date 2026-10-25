@@ -94,9 +94,7 @@ function referenceLinkNode(
 ): PMNode | null {
   const mark = schema.marks.link;
   if (!mark || !link.label) return null;
-  return schema.text(link.label, [
-    mark.create({ href: link.href, title: null, ref: link.ref }),
-  ]);
+  return schema.text(link.label, [mark.create({ href: link.href, title: null, ref: link.ref })]);
 }
 
 function insertDocumentLink(editor: Editor, range: DocumentLinkRange, link: PMNode): boolean {

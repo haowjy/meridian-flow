@@ -21,9 +21,10 @@ import {
 export type AtReferenceCatalog = {
   port: ReferenceCatalogPort;
   /** Cheap identity lookup over the catalog snapshots already installed for this surface. */
-  resolveReference: (reference: { kind: "file" | "folder"; id: string }) =>
-    | ReferenceTerminalRow
-    | null;
+  resolveReference: (reference: {
+    kind: "file" | "folder";
+    id: string;
+  }) => ReferenceTerminalRow | null;
   /** Host-owned terminal transaction; trigger/browser/menu ownership stays shared. */
   insertReference?: (
     editor: import("@tiptap/core").Editor,
@@ -42,8 +43,7 @@ export type AtReferenceCatalog = {
 
 /** The exact Editor node shape written by `@`, also used by row drops. */
 export function editorReferenceNode(schema: Schema, row: ReferenceTerminalRow): PMNode | null {
-  if (row.kind === "folder-mention")
-    return folderReferenceNode(schema, row.action.reference);
+  if (row.kind === "folder-mention") return folderReferenceNode(schema, row.action.reference);
   const reference = row.action.reference;
   if (row.fileKind === "asset")
     return (

@@ -4,7 +4,6 @@ import type {
   CatalogFolderEntry,
   CatalogScope,
 } from "@meridian/contracts/protocol";
-import { catalogScopeKey } from "@meridian/contracts/protocol";
 import {
   type CatalogCacheView,
   catalogViewFromCheckpoint,
@@ -22,9 +21,9 @@ import {
 import { useIsProjectPendingCreation } from "@/client/query/useProjectCreation";
 import { useIsThreadPendingCreation } from "@/client/stores";
 import {
-  authoritativeReferenceForFile,
-  folderReferenceForEntry,
   referenceAuthorityIndex,
+  referenceRowForFile,
+  referenceRowForFolder,
 } from "@/core/completion/reference-policy";
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
 import {
@@ -114,29 +113,12 @@ export function useReferenceBrowserCatalog(
                 NonNullable<ReturnType<AtReferenceCatalog["resolveReference"]>>
               >();
               for (const entry of files) {
-                const reference = authoritativeReferenceForFile(entry, authorityIndex);
-                if (reference)
-                  next.set(`file:${entry.entryId}`, {
-                    kind: "file",
-                    rowId: `file:${entry.entryId}`,
-                    label: entry.name,
-                    location: entry.path.slice(0, -1).join("/"),
-                    fileKind: entry.editable ? "document" : "asset",
-                    aliases: entry.aliases,
-                    matchedAlias: null,
-                    action: { type: "select", reference },
-                  });
+                const row = referenceRowForFile(entry, authorityIndex);
+                if (row) next.set(`file:${entry.entryId}`, row);
               }
               for (const entry of folders) {
-                const reference = folderReferenceForEntry(entry, authorityIndex);
-                if (reference)
-                  next.set(`folder:${entry.entryId}`, {
-                    kind: "folder-mention",
-                    rowId: `folder-mention:${catalogScopeKey(entry.scope)}:${entry.entryId}`,
-                    label: entry.name,
-                    location: entry.path.slice(0, -1).join("/"),
-                    action: { type: "select", reference },
-                  });
+                const row = referenceRowForFolder(entry, authorityIndex);
+                if (row) next.set(`folder:${entry.entryId}`, row);
               }
               return next;
             };

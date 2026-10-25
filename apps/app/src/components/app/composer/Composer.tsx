@@ -265,9 +265,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             const row = catalog.resolveReference(entry.ref);
             return row
               ? schema.nodeFromJSON(
-                  pickedReferenceContent(
-                    row.action.reference,
-                    row.kind === "file" ? row.fileKind : null,
+                  composerReferenceContent(
+                    pickedReferenceAttrs(
+                      row.action.reference,
+                      row.kind === "file" ? row.fileKind : null,
+                    ),
                   ),
                 )
               : null;
