@@ -199,7 +199,7 @@ function projectActiveHistory(
   const reshown = (blocksByTurn.get(compaction.id) ?? [])
     .flatMap((block) => {
       const reference = referenceOccurrenceContent(block);
-      if (!reference?.read) return [];
+      if (reference?.kind !== "document" || !reference.read) return [];
       const textContent = importantFileText(
         reference.read.input ?? { path: reference.uri },
         referenceReadText(reference.read.result),

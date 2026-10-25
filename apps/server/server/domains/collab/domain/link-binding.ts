@@ -208,7 +208,14 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       holders: documentId ? [{ documentId, view }] : [],
       stored: previous ?? [],
       written,
-      ...(documentId ? {} : { addresses: writtenAddresses(written, holderUri), views: [view] }),
+      ...(documentId
+        ? {}
+        : {
+            addresses: writtenAddresses(written, holderUri)
+              .filter((target) => target.kind === "document")
+              .map((target) => target.uri),
+            views: [view],
+          }),
     });
     const scope: HolderLinkScope = documentId
       ? deps.links.holder({ documentId, view })

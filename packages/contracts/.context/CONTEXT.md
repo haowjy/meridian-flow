@@ -77,6 +77,10 @@ preservation of malformed present refs so they resolve as gone instead of
 falling back to the link's address. `document-link.ts` owns written-link classification and stored-link resolution over a
 host `LinkCatalog`.
 
+`DocumentLinkAnswer` returns a live folder as
+`{ state: "folder", folder: { id, name, uri } }`. An inaccessible or deleted
+folder uses the same `{ state: "gone" }` answer as a document.
+
 Addresses are decoded canonical URIs; stored `href` and `src` values are
 escaped spellings. Build ref-bearing hrefs with `storedHref({ kind, uri }, suffix)`, not
 string concatenation, because `#`, `?`, and `%` in filenames are data. Refs

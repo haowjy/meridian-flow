@@ -4,12 +4,15 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - catalog-backed canonical navigation under Work-specific readability (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
+
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   branches,
   branchTreeChanges,
   contextSources,
   documents,
+  folders,
   linkAheadRefs,
   projects,
   threads,
@@ -84,6 +87,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       const source = crypto.randomUUID();
       const chapter = crypto.randomUUID();
+      const act = crypto.randomUUID();
       await db.insert(contextSources).values({
         id: source,
         projectId: p,
@@ -94,6 +98,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db
         .insert(documents)
         .values({ id: chapter, contextSourceId: source, name: "chapter", extension: "" });
+      await db.insert(folders).values({
+        id: act,
+        contextSourceId: source,
+        name: "Act 1",
+        documentAlias: folderDocumentName("Act 1"),
+      });
       const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
         listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
       };
@@ -126,13 +136,32 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           request: {
             rootThreadId: root,
             baseUri,
-            links: [{ ref: `doc:${chapter}`, href: "manuscript://chapter" }],
+            links: [
+              { ref: `doc:${chapter}`, href: "manuscript://chapter" },
+              { ref: `folder:${act}`, href: "manuscript://Act%201/" },
+              { ref: null, href: "manuscript://Act%201/" },
+            ],
           },
         });
-        expect(response.answers).toMatchObject([{ state: "document", document: { id: chapter } }]);
+        expect(response.answers).toMatchObject([
+          { state: "document", document: { id: chapter } },
+          { state: "folder", folder: { id: act, name: "Act 1", uri: "manuscript://Act 1" } },
+          { state: "folder", folder: { id: act, name: "Act 1", uri: "manuscript://Act 1" } },
+        ]);
         // The lineage owns Scratch, not the branch: links read No Work's branch view.
         expect(viewed).toEqual([noWork]);
       }
+      await db.update(folders).set({ deletedAt: new Date() }).where(eq(folders.id, act));
+      const gone = await handleDocumentLinkResolveRequest(deps, {
+        projectId: p,
+        userId: u as never,
+        request: {
+          rootThreadId: root,
+          baseUri: null,
+          links: [{ ref: `folder:${act}`, href: "manuscript://Act%201/" }],
+        },
+      });
+      expect(gone.answers).toEqual([{ state: "gone" }]);
     });
     function resolver() {
       const db = database.current;

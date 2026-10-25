@@ -563,6 +563,7 @@ export async function createProductionAppPorts(input: {
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
+    availability: projectContextAvailability,
     observer: createLinkScopeObserver(eventSink),
     repair: hiddenNodeRepair,
   });

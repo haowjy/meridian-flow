@@ -292,9 +292,12 @@ committed mutation stays successful while its update is pending.
 
 ## References, images, and synchronization
 
-Current-turn text references load outside admission transactions and persist
-server-side evidence before gateway submission. Duplicate document identities
-read once per turn; replay reuses frozen results. Image inclusion decisions are
+Admission resolves document and folder identities at their submitted canonical
+URI. A mismatch becomes plain text. Folder references persist on the message
+but cause no attachment, upload, image, or read effect. Current-turn document
+references load outside admission transactions and persist server-side evidence
+before gateway submission. Duplicate document identities read once per turn;
+replay reuses frozen results. Image inclusion decisions are
 append-only by deciding turn, resolved late, and projected chronologically;
 definite loss or budget eviction creates a named break, while first-sight loss
 does not rewrite an already-sent prefix. Blocks retain identity, never bytes or
