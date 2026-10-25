@@ -69,6 +69,8 @@ export function createResourceNamespaceTransport(
       return {
         kind: "available",
         observationVersion: entry.observationVersion,
+        rank: entry.rank,
+        ...(entry.kind === "folder" ? { orderPolicy: entry.orderPolicy } : {}),
         parent:
           entry.parentId === entry.sourceId
             ? {

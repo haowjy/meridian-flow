@@ -4,6 +4,7 @@ import type { CatalogEntry, CatalogFileEntry, CatalogScope } from "@meridian/con
 import { catalogEntryParent } from "./catalog-installation";
 import { projectFolderNeedsRepair } from "./folder-namespace";
 import { folderPlacementGraph } from "./folder-placement";
+import { projectOptimisticSiblingOrder } from "./optimistic-sibling-order";
 import { owningLocationIntent, placementDestination } from "./resource-intent-policy";
 import { projectResourceLocation } from "./resource-projection";
 import type {
@@ -207,6 +208,8 @@ export function createResourcePlacement(
         path: location.path.split("/").filter(Boolean),
         uri: namespaceUri(location)!,
         hasChildren: false,
+        rank: folder.canonicalRank,
+        orderPolicy: folder.canonicalOrderPolicy,
       });
     }
     // Suppression is a result of the identity walk, before navigation gap completion.
@@ -269,6 +272,7 @@ export function createResourcePlacement(
         path,
         uri: requiredNamespaceUri(location),
         provisionalName: location.provisional,
+        rank: record.resource.canonicalRank,
         ...record.resource.classification,
       } satisfies CatalogFileEntry);
     }
@@ -320,7 +324,7 @@ export function createResourcePlacement(
     }
     const projectedIds = new Set(projected.map((entry) => entry.entryId));
     const foldersById = new Map(repairFolders.map((folder) => [folder.folderId, folder]));
-    return projected.map((entry): CatalogEntry => {
+    const placed = projected.map((entry): CatalogEntry => {
       if (entry.kind !== "file" && entry.kind !== "folder") return entry;
       const record = byDocument.get(entry.entryId);
       const folder = foldersById.get(entry.entryId);
@@ -349,6 +353,13 @@ export function createResourcePlacement(
         return { ...entry, parentId: identityParent.folderId };
       const parent = homes.get(homeKey(entry.sourceId, entry.path.slice(0, -1).join("/")));
       return { ...entry, parentId: parent?.entryId ?? entry.sourceId };
+    });
+    return projectOptimisticSiblingOrder({
+      projectId,
+      canonical: rows,
+      projected: placed,
+      records,
+      folders: repairFolders,
     });
   }
 
