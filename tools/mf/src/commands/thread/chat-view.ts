@@ -20,14 +20,21 @@ import {
   type Turn,
 } from "@meridian/contracts/threads";
 import {
+  type AskReceipt,
+  askReceipt,
+  type ChatAsks,
   type ChatCard,
   type ChatCards,
   chatCards,
   type DeliveryEvent,
   durableControls,
+  EMPTY_CHAT_ASKS,
   type FoldDigest,
   normalizeTurns,
+  type OpenAsk,
+  openAsk,
   type RowIdentity,
+  receiveAsks,
   switchState,
   type TranscriptView,
   type TurnStats,
@@ -157,6 +164,8 @@ export type ChatRow = {
   /** The mode a write-mode divider switched to. */
   writeMode?: string;
   handoff?: ReturnType<typeof readHandoffSeed> & { latest: boolean; brief: string | null };
+  /** The asking turn's receipt, as the app draws it under the reply. */
+  ask?: AskReceipt;
   references?: Array<{ threadId: string; title: string | null }>;
 };
 
@@ -185,7 +194,10 @@ export type ChatViewEnvelope = {
   inputs: ChatViewInputs;
   /** The failure cards `chatCards` projects for these facts, as the app draws them (usage first). */
   cards: ChatCard[];
+  /** The durable asks in the snapshot, including resolved asks outside the selected rows. */
   asks: ThreadAsk[];
+  /** The ask that takes over the composer, if one is open. */
+  openAsk: OpenAsk["ask"] | null;
   rows: ChatRow[];
   showing: number;
   total: number;
@@ -248,6 +260,7 @@ export function projectChatView(
 ): ChatViewEnvelope {
   const { rows, total } = selectRows(view.rows, options);
   const { thread } = snapshot;
+  const asks = receiveAsks(EMPTY_CHAT_ASKS, snapshot.asks);
   return {
     chatView: CHAT_VIEW_VERSION,
     thread: {
@@ -282,13 +295,19 @@ export function projectChatView(
     },
     cards: cards.cards,
     asks: snapshot.asks,
-    rows: rows.map((row) => chatRow(row, view, options)),
+    openAsk: openAsk(asks, snapshot.turns)?.ask ?? null,
+    rows: rows.map((row) => chatRow(row, view, asks, options)),
     showing: rows.length,
     total,
   };
 }
 
-function chatRow(row: ViewRow, view: TranscriptView, limits: { full: boolean }): ChatRow {
+function chatRow(
+  row: ViewRow,
+  view: TranscriptView,
+  asks: ChatAsks,
+  limits: { full: boolean },
+): ChatRow {
   const { turn } = row;
   const out: ChatRow = {
     identity: row.identity,
@@ -349,6 +368,10 @@ function chatRow(row: ViewRow, view: TranscriptView, limits: { full: boolean }):
     if (seed) out.handoff = { ...seed, latest: row.latest, brief: readHandoffBrief(turn) };
   }
   if (row.kind === "thread-reference") out.references = [...row.references];
+  if (turn.role === "assistant") {
+    const receipt = askReceipt(asks, turn.id);
+    if (receipt) out.ask = receipt;
+  }
   return out;
 }
 
@@ -561,7 +584,34 @@ function rowLines(row: ChatRow): string[] {
         break;
     }
   });
+  if (row.ask) lines.push(...indent(askLine(row.ask)));
   return lines;
+}
+
+function askLine({ ask, resolution }: AskReceipt): string {
+  const asked = ask.kind === "question" ? ask.payload.question : ask.payload.summary;
+  const answer =
+    resolution.kind === "option"
+      ? resolution.label
+      : resolution.kind === "text" || resolution.kind === "parent"
+        ? `${resolution.kind}: ${oneLine(resolution.text)}`
+        : resolution.kind === "timeout"
+          ? `timeout${resolution.label ? `, went with ${resolution.label}` : ""}`
+          : resolution.kind;
+  return `asked ${ask.id}: ${oneLine(asked)} -> ${answer}`;
+}
+
+function openAskLines(ask: OpenAsk["ask"]): string[] {
+  if (ask.kind === "permission")
+    return [`  open permission request ${ask.id}: ${oneLine(ask.payload.summary)}`];
+  const { question, options, recommended } = ask.payload;
+  return [
+    `  open question ${ask.id}: ${oneLine(question)}${ask.deadlineAt ? ` (continues at ${ask.deadlineAt})` : ""}`,
+    ...options.map(
+      (option) =>
+        `    - ${option.label}${option.label === recommended ? " (recommended)" : ""}${option.description ? `: ${oneLine(option.description)}` : ""}`,
+    ),
+  ];
 }
 
 /** One card as a line: its copy key, where it sits, its action and its occurrence key. */
@@ -589,10 +639,7 @@ export function renderChatView(view: ChatViewEnvelope): string {
   ];
   const queued = view.rows.filter((row) => row.queued).length;
   for (const card of view.cards) lines.push(cardLine(card));
-  for (const ask of view.asks)
-    lines.push(
-      `  ask ${ask.id} ${ask.status}: ${ask.kind === "question" ? ask.payload.question : ask.payload.summary}`,
-    );
+  if (view.openAsk) lines.push(...openAskLines(view.openAsk));
   for (const row of view.rows) {
     lines.push("");
     lines.push(...rowLines(row));

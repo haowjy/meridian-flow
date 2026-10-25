@@ -1,6 +1,7 @@
 /** Thread event subscription, cancellation, and connection-state contract. */
 import type { FailureOccurrence } from "@meridian/contracts/failures";
 import type {
+  AskAnswerReply,
   CancelTurnResponse,
   CatalogWakeHint,
   SequencedEvent,
@@ -8,6 +9,7 @@ import type {
   WsGapCause,
 } from "@meridian/contracts/protocol";
 
+import type { AskAnswer } from "@meridian/contracts/threads";
 import type { SocketClose } from "./socket-ports";
 
 /** Transport connection state surfaced to active subscribers. */
@@ -42,6 +44,20 @@ export interface ThreadTransportHandlers {
   onUnavailable?: (failure: FailureOccurrence | null) => void;
 }
 
+export type AskAnswerInput = {
+  threadId: string;
+  askId: string;
+  /** Reused by a Retry of the same answer, so a frame that did land answers once. */
+  submissionId: string;
+  answer: AskAnswer;
+};
+
+/**
+ * The server's reply, or `unconfirmed`: the frame never left, the socket closed before a reply, or
+ * the server failed the request. Each is retryable under the same `submissionId`.
+ */
+export type AskAnswerOutcome = AskAnswerReply | { type: "unconfirmed" };
+
 export interface ThreadTransportSubscribeOptions {
   /** Server-side cursor for catch-up/replay. */
   after?: string;
@@ -72,6 +88,9 @@ export interface ThreadTransport {
 
   /** Receive truth-free catalog wake hints over the existing authenticated socket. */
   subscribeCatalog(projectId: string, listener: (hint: CatalogWakeHint) => void): () => void;
+
+  /** Answer an open ask over the socket; resolves once, never rejects. */
+  answerAsk(input: AskAnswerInput): Promise<AskAnswerOutcome>;
 
   /** Cancel an in-flight turn via HTTP. */
   cancel(threadId: string, turnId: string): Promise<CancelTurnResponse>;

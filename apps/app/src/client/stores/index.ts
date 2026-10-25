@@ -59,7 +59,9 @@ export {
 } from "./thread-store/announcements";
 export {
   ThreadStoreProvider,
+  useAskReceipt,
   useIsThreadPendingCreation,
+  useOpenAsk,
   useRunState,
   useRunStateSlice,
   useThreadActions,

@@ -1,6 +1,11 @@
 /** Shared types for the per-thread store. */
 import type { Thread, Turn, TurnStatus, UserMessageBlock } from "@meridian/contracts/protocol";
-import type { RunStateAction, RunStateView, TurnStatusPatch } from "@meridian/thread-client";
+import type {
+  ChatAsks,
+  RunStateAction,
+  RunStateView,
+  TurnStatusPatch,
+} from "@meridian/thread-client";
 import type { SyncedThread, ThreadSyncPorts } from "@meridian/thread-client/sync";
 
 export type { TurnStatusPatch };
@@ -45,6 +50,8 @@ export type ThreadStoreActions = {
   pruneStaleAssistantTurns(threadId: string): void;
   /** Remove turns that left the conversation, keeping a tombstone at `seq` (see `removeTurnsIn`). */
   removeTurns(threadId: string, ids: readonly string[], seq: string): void;
+  /** Apply a change to the chat's asks (`@meridian/thread-client` `asks/`). */
+  updateAsks(threadId: string, change: (asks: ChatAsks) => ChatAsks): void;
   /** Take a fact about the chat's run state into its slice (`@meridian/thread-client` `run-state-slice.ts`). */
   dispatchRunState(threadId: string, action: RunStateAction): void;
   markPendingCreation(args: { threadId: string }): void;

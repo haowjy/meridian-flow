@@ -14,6 +14,7 @@ import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock, parseImageBlockContent } from "@/rich-content/ImageBlock";
 import { AssistantTurnActions } from "./AssistantTurnActions";
+import { AskReceipt } from "./ask/AskReceipt";
 import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
 import { blockRenderKey } from "./block-render-key";
 import { AnchoredCards } from "./ChatCards";
@@ -104,6 +105,7 @@ function AssistantTurnComponent({
             <DeliveryEventRows groups={deliveries} />
           </div>
         ) : null}
+        <AskReceipt threadId={resolvedThreadId} turnId={turn.id} />
 
         <TurnLineageReceipt
           threadId={resolvedThreadId}

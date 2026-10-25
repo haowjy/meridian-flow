@@ -13,6 +13,7 @@ import type {
   SendMessageResponse,
 } from "@meridian/contracts/protocol";
 import type {
+  AskAnswerOutcome,
   ThreadTransport,
   ThreadTransportHandlers,
   ThreadTransportSubscribeOptions,
@@ -84,6 +85,9 @@ class ScenarioThreadTransport implements ThreadTransport {
   /** What the next cancels answer. */
   cancelStatus: CancelTurnResponse["status"] = "cancelled";
 
+  async answerAsk(): Promise<AskAnswerOutcome> {
+    return { type: "unconfirmed" };
+  }
   async cancel(threadId: string, turnId: string): Promise<CancelTurnResponse> {
     this.cancelRequests.push({ threadId, turnId });
     return { threadId, turnId, status: this.cancelStatus };
