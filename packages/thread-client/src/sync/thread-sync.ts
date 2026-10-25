@@ -322,6 +322,9 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
           observe({ kind: "live", state: live });
           schedule(expected, true);
         },
+        onUnavailable: (unavailable) => {
+          if (current(expected)) state.set({ ...state.get(), unavailable });
+        },
         onError: (failure) => {
           if (!current(expected)) return;
           flush();

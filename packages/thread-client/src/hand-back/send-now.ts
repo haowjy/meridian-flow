@@ -15,6 +15,7 @@ export type FailedSendNow = {
   request: SendNowRequest;
   /** How many times this body has been posted: the card's occurrence, after its execution. */
   attempt: number;
+  requestId: string;
 };
 
 export type SendNowOutcome =

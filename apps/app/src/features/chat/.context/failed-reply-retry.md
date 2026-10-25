@@ -56,7 +56,8 @@ snapshot) replaces that.
 - **Refused (409 `reply_retry_unavailable`, or `runtime_shutting_down`).**
   Nothing was written. The stand-in goes, the snapshot refreshes, and the
   failed reply carries the generic refused error card. The cause never reaches the
-  writer; `reportRetryRefused` (`error-telemetry.ts`) logs it for diagnostics.
+  writer; `useRetryStandIns` records bounded failure metadata through `FailureLog`
+  and ends the same occurrence when its card retires.
   Any Retry or send clears every card (`clearRefused`). A reply that completes
   after the refusal clears it too: `useRetryStandIns` records, per refusal, the
   replies already complete, and the card ends when a stored reply completes that

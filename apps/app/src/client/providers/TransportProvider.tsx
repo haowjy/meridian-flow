@@ -11,6 +11,7 @@ import { ThreadSocketClient } from "@meridian/thread-client";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 import { MeridianApiError } from "@/client/api/meridian-error";
 import { cancelTurn } from "@/client/api/threads-api";
+import { useFailureLog } from "@/client/failures/failure-log";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { buildThreadsWsUrl } from "@/core/transport/dev-transport";
 import {
@@ -25,9 +26,11 @@ const ThreadTransportContext = createContext<ThreadTransport | null>(null);
 
 export function TransportProvider({ children }: { children: ReactNode }) {
   const connectivityHints = useConnectivityHints();
+  const failureLog = useFailureLog();
   const [transport] = useState(
     () =>
       new ThreadSocketClient({
+        failureLog,
         url: buildThreadsWsUrl,
         webSocketFactory: (url) => new WebSocket(url),
         connectivity: connectivityHints,

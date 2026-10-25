@@ -1,7 +1,7 @@
 /**
  * Thread event hub: the live fan-out + replay surface for a thread's AG-UI
  * events. Maintains a bounded hot cache, replays from the journal on
- * subscribe/cursor, and projects orchestrator events into AG-UI events for
+ * `catchupAndSubscribe` or cursor reads, and projects orchestrator events into AG-UI events for
  * subscribers. Owns the realtime delivery layer over the event journal.
  */
 import type { FailureRecord } from "@meridian/contracts/failures";
@@ -41,6 +41,7 @@ type ThreadHubState = {
   events: SequencedEventInternal[];
   projector: ReturnType<typeof createOrchestratorEventProjector>;
   journalCursor: bigint;
+  initialized: boolean;
   draining: Promise<void> | null;
   drainRequested: boolean;
   listeners: Set<(event: SequencedEventInternal) => void>;
@@ -153,6 +154,7 @@ export function createThreadEventHub(
         events: [],
         projector: createOrchestratorEventProjector(),
         journalCursor: 0n,
+        initialized: false,
         draining: null,
         drainRequested: false,
         listeners: new Set(),
@@ -184,6 +186,19 @@ export function createThreadEventHub(
     }
   }
 
+  async function* readThrough(threadId: ThreadId, after: bigint, through: bigint) {
+    let cursor = after;
+    while (cursor < through) {
+      const entries = await deps.journalReader.readAfter(threadId, cursor, JOURNAL_PAGE_SIZE);
+      if (entries.length === 0) return;
+      for (const entry of entries) {
+        if (entry.seq > through) return;
+        yield entry;
+        cursor = entry.seq;
+      }
+    }
+  }
+
   async function replayFromJournal(
     threadId: ThreadId,
     afterEventSeq: bigint,
@@ -193,21 +208,15 @@ export function createThreadEventHub(
     const replayed: SequencedEventInternal[] = [];
     // A cursor can split a multi-frame row. Reconstruct that row from the last reset
     // strictly before it, so both the remaining frames and their sub-indexes stay identical.
-    let cursor = await deps.journalReader.lastSeqBefore(
+    const cursor = await deps.journalReader.lastSeqBefore(
       threadId,
       journalSeqForEventSeq(afterEventSeq),
       PROJECTOR_RESET_EVENT_TYPES,
     );
-    while (cursor < throughJournalSeq) {
-      const entries = await deps.journalReader.readAfter(threadId, cursor, JOURNAL_PAGE_SIZE);
-      if (entries.length === 0) break;
-      for (const entry of entries) {
-        if (entry.seq > throughJournalSeq) return replayed;
-        const payload = entry.payload as OrchestratorEvent;
-        const projected = toSequencedEvents(entry.seq, projector.project(payload), payload);
-        replayed.push(...projected.filter((event) => event.seq > afterEventSeq));
-        cursor = entry.seq;
-      }
+    for await (const entry of readThrough(threadId, cursor, throughJournalSeq)) {
+      const payload = entry.payload as OrchestratorEvent;
+      const projected = toSequencedEvents(entry.seq, projector.project(payload), payload);
+      replayed.push(...projected.filter((event) => event.seq > afterEventSeq));
     }
     return replayed;
   }
@@ -223,21 +232,35 @@ export function createThreadEventHub(
     state.drainRequested = false;
     state.draining = (async () => {
       const head = await deps.journalReader.headSeq(threadId);
-      while (state.journalCursor < head) {
-        const entries = await deps.journalReader.readAfter(
+      if (!state.initialized) {
+        // Build privately: a failed page must not publish a partial projector. The head and
+        // reset belong to the live owner, never to whichever subscriber arrived first.
+        const cursor = await deps.journalReader.lastSeqBefore(
           threadId,
-          state.journalCursor,
-          JOURNAL_PAGE_SIZE,
+          head + 1n,
+          PROJECTOR_RESET_EVENT_TYPES,
         );
-        if (entries.length === 0) break;
-        for (const entry of entries) {
+        const projector = createOrchestratorEventProjector();
+        const events: SequencedEventInternal[] = [];
+        for await (const entry of readThrough(threadId, cursor, head)) {
           const event = entry.payload as OrchestratorEvent;
-          const projected = toSequencedEvents(entry.seq, state.projector.project(event), event);
-          state.journalCursor = entry.seq;
-          cacheHot(state, projected);
-          for (const sequenced of projected) notifyListeners(state, sequenced);
+          events.push(...toSequencedEvents(entry.seq, projector.project(event), event));
+          if (events.length > HOT_CACHE_LIMIT) events.splice(0, events.length - HOT_CACHE_LIMIT);
         }
+        state.projector = projector;
+        state.events = events;
+        state.journalCursor = head;
+        state.initialized = true;
+        return;
       }
+      for await (const entry of readThrough(threadId, state.journalCursor, head)) {
+        const event = entry.payload as OrchestratorEvent;
+        const projected = toSequencedEvents(entry.seq, state.projector.project(event), event);
+        state.journalCursor = entry.seq;
+        cacheHot(state, projected);
+        for (const sequenced of projected) notifyListeners(state, sequenced);
+      }
+      state.journalCursor = head;
     })().finally(() => {
       state.draining = null;
       if (state.drainRequested) {
@@ -266,6 +289,7 @@ export function createThreadEventHub(
     afterSeq: bigint,
   ): Promise<SequencedEventInternal[]> {
     const state = threads.get(threadId);
+    if (state && afterSeq >= cursorSeqForJournalHead(state.journalCursor)) return [];
     const hotEvents = state?.events ?? [];
     if (hotEvents.length > 0 && afterSeq >= hotEvents[0].seq - 1n) {
       return hotEvents.filter((entry) => entry.seq > afterSeq);
@@ -303,15 +327,6 @@ export function createThreadEventHub(
       return catchup;
     },
 
-    subscribe(threadId: ThreadId, listener: (event: SequencedEventInternal) => void): () => void {
-      const state = getState(threadId);
-      state.listeners.add(listener);
-      return () => {
-        state.listeners.delete(listener);
-        onListenerRemoved(threadId);
-      };
-    },
-
     /**
      * Replay backlog while a guard listener buffers any live appendEvent fan-out,
      * then attach the real listener. Buffered events are merged into catchup so
@@ -326,7 +341,6 @@ export function createThreadEventHub(
       unsubscribe: () => void;
     }> {
       const state = getState(threadId);
-      const cold = state.journalCursor === 0n;
       const bufferedLive: SequencedEventInternal[] = [];
       const guardListener = (entry: SequencedEventInternal) => {
         if (entry.seq > afterSeq) bufferedLive.push(entry);
@@ -336,7 +350,7 @@ export function createThreadEventHub(
       let catchupEvents: SequencedEventInternal[];
       try {
         await drainCommittedJournal(threadId);
-        catchupEvents = cold ? [] : await readCatchup(threadId, afterSeq);
+        catchupEvents = await readCatchup(threadId, afterSeq);
       } catch (error) {
         state.listeners.delete(guardListener);
         onListenerRemoved(threadId);

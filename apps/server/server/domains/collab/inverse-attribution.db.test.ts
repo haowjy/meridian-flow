@@ -103,8 +103,7 @@ it("an already-connected live room sees Undo, Redo and immediate rollback withou
     expect(prose()).toBe("Alpha Beta.\n\nBlue.");
   } finally {
     peer.destroy();
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+    await harness.dispose();
   }
 });
 

@@ -91,6 +91,7 @@ export class Output {
         `${JSON.stringify({
           error: error.message,
           code: error.code,
+          ...error.occurrence,
           ...(error.hint ? { hint: error.hint } : {}),
           ...(error.details !== undefined ? { details: error.details } : {}),
         })}\n`,

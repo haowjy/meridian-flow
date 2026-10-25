@@ -103,7 +103,7 @@ async function resolveReferences(session: Session, threadId: string, refs: strin
       uri: target.uri,
       documentId: document.documentId,
       label: document.entry.name,
-      imageCapable: imageCapable(document.entry.fileType),
+      imageCapable: !document.entry.editable && imageCapable(document.entry.fileType),
     });
   }
   return references;

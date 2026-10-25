@@ -200,8 +200,7 @@ describe("document revisions (postgres and collab)", () => {
   beforeEach(() => resetDatabase(db));
   afterEach(async () => {
     for (const harness of harnesses.splice(0)) {
-      harness.cancelScheduledPulls();
-      await harness.settleDraftEffects();
+      await harness.dispose();
     }
   });
   afterAll(() => closeDatabase(db));

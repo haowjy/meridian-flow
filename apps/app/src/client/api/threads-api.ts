@@ -9,6 +9,7 @@
 import {
   type AdmissionLookup,
   API_THREADS_PATH,
+  admissionLookupSchema,
   apiAvailableSkillsPath,
   apiThreadAdmissionPath,
   apiThreadCancelPath,
@@ -30,12 +31,14 @@ import {
   apiThreadUserStatePath,
   apiThreadWorkPath,
   type CancelTurnResponse,
+  cancelTurnResponseSchema,
   deserializeTransport,
   type ForkThreadRequest,
   type HandoffBriefRetryRequest,
   type HandoffThreadRequest,
   type ListThreadRecentDocumentsResponse,
   type ListThreadsResponse,
+  listThreadsResponseSchema,
   type ModelRequestDebugListResponse,
   type RenameThreadRequest,
   type RenameThreadResponse,
@@ -43,6 +46,7 @@ import {
   type ReplyRetryResponse,
   type RetireAdmissionResult,
   type SendMessageResponse,
+  sendMessageResponseSchema,
   type Thread,
   type ThreadAvailableSkillsResponse,
   type ThreadRecentDocumentItem,
@@ -51,6 +55,7 @@ import {
   type TranscriptPageResponse,
   type Turn,
   type TurnContextPreview,
+  threadAvailableSkillsResponseSchema,
   threadSnapshotSchema,
   type UpdateThreadUserStateRequest,
   type UpdateThreadUserStateResponse,
@@ -60,6 +65,7 @@ import type {
   EnqueueThreadControlResponse,
   WithdrawThreadControlResponse,
 } from "@meridian/contracts/threads";
+import { threadSchema, turnSchema } from "@meridian/contracts/threads";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
 
 import type { HttpResult } from "@meridian/thread-client";
@@ -98,15 +104,18 @@ export async function listThreads(init?: {
   headers?: HeadersInit;
 }): Promise<Thread[]> {
   const url = init?.origin ? new URL(API_THREADS_PATH, init.origin).toString() : API_THREADS_PATH;
-  const response = await getJson<ListThreadsResponse>(url, { headers: init?.headers });
+  const response = await getJson<ListThreadsResponse>(url, {
+    headers: init?.headers,
+    schema: listThreadsResponseSchema,
+  });
   // Server returns domain types; JSON serialization strips brands + converts Dates to strings,
   // yielding the Wire shape the frontend operates on.
-  return response.threads as unknown as Thread[];
+  return response.threads;
 }
 
 /** Create-or-get a fork under the client-minted `request.id`; a retry lands on the same thread. */
 export function forkThread(sourceThreadId: string, request: ForkThreadRequest): Promise<Thread> {
-  return postJson(apiThreadForkPath(sourceThreadId), request) as unknown as Promise<Thread>;
+  return postJson(apiThreadForkPath(sourceThreadId), request, { schema: threadSchema });
 }
 
 /** Create-or-get a handoff under the client-minted `request.id`; its brief runs in the background. */
@@ -114,7 +123,7 @@ export function handoffThread(
   sourceThreadId: string,
   request: HandoffThreadRequest,
 ): Promise<Thread> {
-  return postJson(apiThreadHandoffPath(sourceThreadId), request) as unknown as Promise<Thread>;
+  return postJson(apiThreadHandoffPath(sourceThreadId), request, { schema: threadSchema });
 }
 
 /**
@@ -126,7 +135,7 @@ export function retryHandoffBrief(
   threadId: string,
   request: HandoffBriefRetryRequest,
 ): Promise<Turn> {
-  return postJson(apiThreadHandoffBriefPath(threadId), request);
+  return postJson(apiThreadHandoffBriefPath(threadId), request, { schema: turnSchema });
 }
 
 /** Retry a latest failed reply: the server answers the same messages under `request.id`. */
@@ -154,13 +163,16 @@ export function appendUserMessage({
   data: AppendUserMessageInput;
   signal?: AbortSignal;
 }): Promise<SendMessageResponse> {
-  return postJson(apiThreadMessagePath(data.threadId), data, { signal });
+  return postJson(apiThreadMessagePath(data.threadId), data, {
+    signal,
+    schema: sendMessageResponseSchema,
+  });
 }
 
 export function listThreadAvailableSkills(
   threadId: string,
 ): Promise<ThreadAvailableSkillsResponse> {
-  return getJson(apiThreadSkillsPath(threadId));
+  return getJson(apiThreadSkillsPath(threadId), { schema: threadAvailableSkillsResponseSchema });
 }
 
 export function listSelectionAvailableSkills(input: {
@@ -168,7 +180,7 @@ export function listSelectionAvailableSkills(input: {
   definitionRevisionId: string;
   projectId?: string | null;
 }): Promise<ThreadAvailableSkillsResponse> {
-  return getJson(apiAvailableSkillsPath(input));
+  return getJson(apiAvailableSkillsPath(input), { schema: threadAvailableSkillsResponseSchema });
 }
 
 export function lookupUserMessageAdmission(input: {
@@ -178,6 +190,7 @@ export function lookupUserMessageAdmission(input: {
 }): Promise<AdmissionLookup> {
   return getJson(apiThreadAdmissionPath(input.threadId, input.submissionId), {
     signal: input.signal,
+    schema: admissionLookupSchema,
   });
 }
 
@@ -192,9 +205,13 @@ export function retireUserMessageAdmission(input: {
 }
 
 export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelTurnResponse> {
-  return postJson(apiThreadCancelPath(data.threadId, data.turnId), {
-    reason: data.reason,
-  });
+  return postJson(
+    apiThreadCancelPath(data.threadId, data.turnId),
+    {
+      reason: data.reason,
+    },
+    { schema: cancelTurnResponseSchema },
+  );
 }
 
 /**
@@ -248,9 +265,10 @@ export async function getThreadSnapshot({
   data: GetThreadSnapshotInput;
   signal?: AbortSignal;
 }): Promise<ThreadSnapshotResponse> {
-  return threadSnapshotSchema.parse(
-    await getJson<unknown>(apiThreadSnapshotPath(data.threadId, { after: data.after }), { signal }),
-  );
+  return getJson(apiThreadSnapshotPath(data.threadId, { after: data.after }), {
+    signal,
+    schema: threadSnapshotSchema,
+  });
 }
 
 export function updateThreadUserState(

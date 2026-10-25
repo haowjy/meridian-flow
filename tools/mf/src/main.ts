@@ -18,6 +18,7 @@ import {
   GLOBAL_OPTIONS,
   parseCommandArgs,
 } from "./core/command";
+import { sendFailure } from "./core/failure-log";
 import { type Io, Output } from "./core/output";
 import { openSession, type Session } from "./core/session";
 
@@ -136,6 +137,7 @@ export async function runCli(argv: string[], deps: RunDeps): Promise<ExitCode> {
   }
 
   let out = bootstrapOut;
+  const connection: { session?: Promise<Session> } = {};
   try {
     const { positionals, values } = parseCommandArgs(found.spec, found.rest);
     if (values.help === true) {
@@ -154,15 +156,17 @@ export async function runCli(argv: string[], deps: RunDeps): Promise<ExitCode> {
           }
         : {}),
     });
-    let session: Promise<Session> | null = null;
     const ctx = {
       positionals,
       values,
       out,
       env: deps.env,
       session: () => {
-        session ??= (deps.openSession ?? openSession)({ repoRoot: deps.repoRoot, env: deps.env });
-        return session;
+        connection.session ??= (deps.openSession ?? openSession)({
+          repoRoot: deps.repoRoot,
+          env: deps.env,
+        });
+        return connection.session;
       },
     };
     return (await found.spec.run(ctx)) ?? EXIT.ok;
@@ -172,6 +176,11 @@ export async function runCli(argv: string[], deps: RunDeps): Promise<ExitCode> {
         ? error
         : new CliError("http_error", error instanceof Error ? error.message : String(error));
     out.error(cliError);
+    if (connection.session)
+      await connection.session.then(
+        (connected) => sendFailure(connected, cliError.occurrence),
+        () => undefined,
+      );
     return cliError.exitCode;
   }
 }

@@ -10,6 +10,7 @@
  * delivery cursor (the highest frame the stream wrote here).
  */
 
+import type { FailureOccurrence } from "@meridian/contracts/failures";
 import type { Block } from "@meridian/contracts/protocol";
 import { compareSeq, parseSeq, type Turn, type TurnStatus } from "@meridian/contracts/protocol";
 import type { RunState } from "@meridian/contracts/threads";
@@ -41,6 +42,7 @@ import {
 import { isOptimisticTurnId } from "../view/optimistic-turn-id";
 
 export type SyncedThread = {
+  unavailable: FailureOccurrence | null;
   turns: Turn[];
   /** Turns removed from the conversation, until a read covering the removal arrives. */
   tombstones: Tombstones;
@@ -63,6 +65,7 @@ export type SyncedThread = {
 };
 
 export const EMPTY_SYNCED_THREAD: SyncedThread = {
+  unavailable: null,
   turns: [],
   tombstones: new Map(),
   dividers: new Map(),

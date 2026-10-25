@@ -9,6 +9,7 @@ import type { Occurrence } from "../commands";
 
 /** The closed set of cards. The app owns the words; a reply's own words ride in `text`. */
 export type ChatCardCopy =
+  | "updates-disconnected"
   /** "This response failed." */
   | "reply-failed"
   /** "The AI provider turned this request down." */
@@ -51,6 +52,7 @@ export type ChatCardCopy =
   | "switch-withdraw-failed";
 
 export type ChatCardAction =
+  | "reload"
   | "retry"
   | "retry_brief"
   | "try_again"

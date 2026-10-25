@@ -25,6 +25,12 @@ contract owns a rule and where it is consumed.
   frames and the write-once run identity a turn carries
   (`Turn.executionId`/`reservedForUserTurnIds`/`delivery`/`position`).
   Consumers order an execution's turns by `position`.
+- An HTTP response DTO that both the app and `./mf` read has one canonical
+  schema here (`protocol/http-types.ts`, `threads/`, `works/`), widened to every
+  field and route variant either host uses. The app passes it to its HTTP
+  helper, which throws `InvalidResponseError` for a 2xx body that fails it; the
+  CLI derives any narrower projection from it. Never add a host-only schema for
+  a shared route.
 - Durable trail contracts stay lifecycle-neutral. Receiving-writer attention is
   computed per connection as `ChangeEventProjection.swept`, a best-effort
   live-session hint that never enters `TrailChangeV1` or persisted projections.

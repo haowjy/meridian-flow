@@ -184,8 +184,22 @@ function CardView({
   const inline = typeof card.anchor !== "string" && !("turn" in card.anchor);
   const dismiss = card.action === "dismiss" ? dismissOf(card, handlers) : undefined;
   return (
-    <FailureCard tone="error" announce={false} inline={inline} onDismiss={dismiss}>
-      <p className={inline ? undefined : "min-w-0 flex-1"} data-chat-card={card.copy}>
+    <FailureCard
+      tone="error"
+      announce={false}
+      inline={inline}
+      onDismiss={dismiss}
+      note={
+        card.copy === "updates-disconnected" ? (
+          <p>{t`Reload to see the latest replies.`}</p>
+        ) : undefined
+      }
+    >
+      <p
+        className={inline ? undefined : "min-w-0 flex-1"}
+        data-chat-card={card.copy}
+        data-failure-id={card.key}
+      >
         {chatCardText(card)}
       </p>
       <CardAction card={card} handlers={handlers} recovery={recovery} />
@@ -222,6 +236,8 @@ function CardAction({
     </Button>
   );
   switch (card.action) {
+    case "reload":
+      return button(t`Reload`, () => window.location.reload());
     case "add_usage":
       return button(t`Add usage`, handlers.addUsage);
     case "retry":

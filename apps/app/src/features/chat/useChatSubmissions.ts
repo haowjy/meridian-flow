@@ -17,6 +17,7 @@ import {
 import { ChatSubmissionOwner } from "@/client/chat-submissions/owner";
 import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
+import { useFailureLog } from "@/client/failures/failure-log";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { ThreadStoreActions } from "@/client/stores";
@@ -36,6 +37,7 @@ export function useChatSubmissions(
   deletion?: { visible: boolean; title: string | null; leave(moved: boolean): void },
 ) {
   const queryClient = useQueryClient();
+  const failureLog = useFailureLog();
   const transport = useOptionalThreadTransport();
   const accountSignal = useOptionalAccountEpochSignal();
   const driver = useRef<ChatSubmissionOwner | null>(null);
@@ -56,6 +58,7 @@ export function useChatSubmissions(
       getChatSubmissionAccountId() === accountId &&
       getChatSubmissionEpoch() === epoch;
     const owner = new ChatSubmissionOwner({
+      failureLog,
       accountId,
       threadId,
       projectId,
@@ -131,7 +134,16 @@ export function useChatSubmissions(
       window.removeEventListener("storage", storage);
       window.removeEventListener("online", wake);
     };
-  }, [threadId, projectId, accountId, controller, accountSignal, queryClient, transport]);
+  }, [
+    threadId,
+    projectId,
+    accountId,
+    controller,
+    accountSignal,
+    queryClient,
+    transport,
+    failureLog,
+  ]);
 
   return {
     presentation: driver.current?.presentation,

@@ -169,8 +169,7 @@ it.each([
       result: { message: expect.stringContaining("e2") },
     });
   } finally {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+    await harness.dispose();
   }
 });
 
@@ -257,7 +256,6 @@ it.each([
       control: "undo",
     });
   } finally {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+    await harness.dispose();
   }
 });

@@ -50,7 +50,6 @@ import {
   interruptResponseKey,
 } from "@/core/session/interrupt-response";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
-import { announceError } from "./announcements";
 import { buildOptimisticUserTurn } from "./build-optimistic-user-turn";
 import { createThreadCache, type ThreadCachePort } from "./thread-cache";
 import type { ThreadStoreActions, ThreadStoreState } from "./types";
@@ -264,9 +263,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               break;
             case "interruptSettled":
               get().settleInterruptResponse(observation.identity);
-              break;
-            case "error":
-              announceError(observation.error.message || "Thread stream failed");
               break;
             default:
               break;
