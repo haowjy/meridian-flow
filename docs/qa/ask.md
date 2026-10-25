@@ -60,9 +60,11 @@ without `recommended`; the result is `{"answer":null,"timed_out":true}`.
 ## Queue barrier
 
 While an ask is open, send a writer message from a second `./mf` process. PASS:
-the bubble and pending run-state item persist, but no run starts and no prefix
-turn is materialized. Answer the ask. PASS: the continuation starts first from
-the tool result; the queued message is adopted at its first safe boundary.
+the bubble and pending run-state item persist, but no complete transcript turn
+or active-lineage change is materialized. Answer the ask. PASS: one continuation
+adopts the continuation row and queued message together. Its first model request
+orders the ask tool use, tool result, then queued writer message, and produces
+exactly one reply; the message is acknowledged exactly once.
 
 Queue a write-mode switch and a message during the ask. PASS: the continuation
 still starts first. The existing switch rule yields at the continuation's first
@@ -94,9 +96,13 @@ Use the crash controller described in
    one terminal ask state and at most one continuation remain.
 2. Try to fork or hand off through an `awaiting_answer` turn. PASS: the request
    is refused with `Answer or skip the question first.`
-3. Cancel the asking turn, press the settled chat's Stop route, and delete the
-   chat in separate runs. PASS: the ask is cancelled, the asking turn is
-   cancelled with `{"cancelled":true}`, and no continuation starts.
+3. Regenerate the asking turn, edit an earlier message, and branch before the
+   asking turn in separate runs. PASS: the abandoned ask is cancelled without a
+   tool result because its turn has left the active lineage.
+4. Press the settled chat's Stop route, archive the chat, and delete the chat in
+   separate runs. PASS: the ask is cancelled, the asking turn is cancelled with
+   `{"cancelled":true}`, the receipt reads “withdrawn,” and no continuation
+   starts.
 
 ## Browser confirmation
 
