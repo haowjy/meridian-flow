@@ -24,6 +24,11 @@ type ControlEntry = {
   send?: Send;
   withdrawal?: Withdrawal;
   admitted: boolean;
+  /**
+   * Newest record version known to list the command (an admission answer or an accepted record).
+   * Only a newer record without it proves removal: an older one may predate admission.
+   */
+  listedAt: string | null;
   /** First authoritative absence, retained even while the writer hides the row. */
   droppedAt: string | null;
 };
@@ -76,13 +81,14 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
       row: { id, control: action.control, status: "queued" },
       send: { request: "sending", attempt: 1 },
       admitted: false,
+      listedAt: null,
       droppedAt: null,
     });
     return next;
   }
   if (action.type === "withdraw") {
     next.set(id, {
-      ...(entry ?? { row: action.row, admitted: true, droppedAt: null }),
+      ...(entry ?? { row: action.row, admitted: true, listedAt: null, droppedAt: null }),
       withdrawal: {
         ...nextOccurrence(entry?.withdrawal?.attempt ?? 0, action.requestId),
         status: "withdrawing",
@@ -101,7 +107,10 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
       next.set(id, {
         ...entry,
         admitted: true,
-        droppedAt: action.version,
+        // An answer listing the command is admission evidence; one without it fences removal.
+        ...(action.sent
+          ? { listedAt: newer(entry.listedAt, action.version) }
+          : { droppedAt: action.version }),
         send: { request: action.sent ? "sent" : "finished", attempt: entry.send.attempt },
       });
       break;
@@ -147,6 +156,7 @@ function reconcile(state: LocalControls, facts: ControlFacts): LocalControls {
       row,
       send: undefined,
       admitted: true,
+      listedAt: newer(next.get(row.id)?.listedAt ?? null, facts.version),
       droppedAt: null,
     });
   };
@@ -161,12 +171,22 @@ function reconcile(state: LocalControls, facts: ControlFacts): LocalControls {
     }
     // A snapshot predating admission cannot disprove a local request still in flight.
     if (present.has(id) || !entry.admitted) continue;
-    const droppedAt = entry.droppedAt ?? facts.version;
+    const absentAt =
+      facts.version !== null &&
+      (entry.listedAt === null || compareSeq(facts.version, entry.listedAt) > 0)
+        ? facts.version
+        : null;
+    const droppedAt = entry.droppedAt ?? absentAt;
     if (droppedAt !== null && facts.history !== null && compareSeq(facts.history, droppedAt) >= 0)
       next.delete(id);
     else if (droppedAt !== entry.droppedAt) next.set(id, { ...entry, droppedAt });
   }
   return next;
+}
+
+function newer(a: string | null, b: string | null): string | null {
+  if (a === null || b === null) return a ?? b;
+  return compareSeq(a, b) >= 0 ? a : b;
 }
 
 /** Visibility has no authority: hiding a pending withdrawal preserves its target evidence. */
