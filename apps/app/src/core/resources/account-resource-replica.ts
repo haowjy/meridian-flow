@@ -3,11 +3,14 @@ import type { CatalogScope } from "@meridian/contracts/protocol";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import {
   acknowledgeResourceTerminalCleanup,
+  capturePlacementAdmission,
   type FolderNamespaceWrite,
   installedFolderObservation,
   markResourceCreateEligible,
   ownerOf,
   type ParentRef,
+  type PlacementAdmission,
+  type PlacementSpec,
   planCachedSessionAdoption,
   planFolderDeletion,
   planFolderLocation,
@@ -18,6 +21,7 @@ import {
   type ResourceDestination,
   type ResourceKey,
   type ResourceLocation,
+  type ResourcePlacement,
   type ResourceProjectionSnapshot,
   type ResourceRecord,
   recordAcquiredResourceContent,
@@ -100,10 +104,9 @@ export class AccountResourceReplica {
     }
   >();
   private readonly serverSessionCaptures = new Map<string, Promise<void>>();
-  private reservationTail: Promise<void> = Promise.resolve();
-  private readonly reservationLocks = nativeLocks();
+  private readonly exclusiveTails = new Map<string, Promise<void>>();
+  private readonly locks = nativeLocks();
   private readonly locationOperations = new ResourceLocationOperationQueue();
-  private lastNamespaceAdmission = Date.now();
   private started = false;
   private stopReconciliation: (() => void) | null = null;
   private closing = false;
@@ -173,9 +176,58 @@ export class AccountResourceReplica {
     };
   }
 
-  private nextNamespaceAdmission(): number {
-    this.lastNamespaceAdmission = Math.max(Date.now(), this.lastNamespaceAdmission + 1);
-    return this.lastNamespaceAdmission;
+  /** One section at a time per name: across browser contexts where Web Locks exist, else in this one. */
+  private async exclusive<T>(name: string, run: () => Promise<T>): Promise<T> {
+    if (this.locks)
+      return this.locks.request(
+        `meridian:resource:v2:${name}`,
+        { mode: "exclusive", signal: this.lockLifetime.signal },
+        async (lock) => {
+          if (!lock) throw new Error("Resource exclusive lock is unavailable");
+          this.requireOpen();
+          return run();
+        },
+      );
+    const before = this.exclusiveTails.get(name) ?? Promise.resolve();
+    let release!: () => void;
+    const turn = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.exclusiveTails.set(name, turn);
+    await before;
+    try {
+      return await run();
+    } finally {
+      release();
+      if (this.exclusiveTails.get(name) === turn) this.exclusiveTails.delete(name);
+    }
+  }
+
+  /**
+   * Admit a placement behind everything it conflicts with, atomically across this account's
+   * browser contexts: the snapshot that fixes its order and predecessors is read, and the intent
+   * committed, inside one lock. Two tabs therefore never assign contradictory local order.
+   */
+  private admitPlacement<T>(
+    projectId: string,
+    describe: (view: {
+      snapshot: ResourceProjectionSnapshot;
+      placement: ResourcePlacement;
+    }) => PlacementSpec,
+    commit: (admission: PlacementAdmission) => Promise<T>,
+  ): Promise<T> {
+    this.requireOpen();
+    return this.exclusive(`placement-admission/${encodeURIComponent(this.accountId)}`, async () => {
+      const snapshot = await this.metadata.readProjection(projectId);
+      const placement = resourcePlacementForSnapshot(projectId, snapshot);
+      return commit(
+        capturePlacementAdmission({
+          snapshot,
+          placement,
+          spec: describe({ snapshot, placement }),
+        }),
+      );
+    });
   }
 
   /**
@@ -194,28 +246,10 @@ export class AccountResourceReplica {
     content: ResourceContentOpenResult;
   }> {
     this.requireOpen();
-    if (this.reservationLocks) {
-      return this.reservationLocks.request(
-        `meridian:resource:v2:reservation/${encodeURIComponent(this.accountId)}/${encodeURIComponent(projectId)}`,
-        { mode: "exclusive", signal: this.lockLifetime.signal },
-        async (lock) => {
-          if (!lock) throw new Error("Resource reservation lock is unavailable");
-          this.requireOpen();
-          return this.reserveDocumentSerial(projectId, folderPath, destination);
-        },
-      );
-    }
-    const before = this.reservationTail;
-    let release!: () => void;
-    this.reservationTail = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await before;
-    try {
-      return await this.reserveDocumentSerial(projectId, folderPath, destination);
-    } finally {
-      release();
-    }
+    return this.exclusive(
+      `reservation/${encodeURIComponent(this.accountId)}/${encodeURIComponent(projectId)}`,
+      () => this.reserveDocumentSerial(projectId, folderPath, destination),
+    );
   }
 
   private async reserveDocumentSerial(
@@ -244,20 +278,32 @@ export class AccountResourceReplica {
       ordinal += 1;
       name = `Untitled ${ordinal}`;
     }
-    const write = reserveResourceDocument({
-      projectId,
-      handle: key.handle,
-      documentId,
-      databaseName: exactPersistenceName(this.accountId, crypto.randomUUID()),
-      schema: collabSchemaKeyTag(),
-      intentId: crypto.randomUUID(),
-      admissionOrder: this.nextNamespaceAdmission(),
-      folderPath,
-      provisionalName: destination?.name ?? name,
-      ...(destination ? { destination: { value: destination, eligibleAt: Date.now() } } : {}),
-    });
-    if ((await this.metadata.commitResource(write)) !== "committed")
-      throw new Error("Resource identity reservation collided");
+    const reserve = (admission?: PlacementAdmission) =>
+      reserveResourceDocument({
+        projectId,
+        handle: key.handle,
+        documentId,
+        databaseName: exactPersistenceName(this.accountId, crypto.randomUUID()),
+        schema: collabSchemaKeyTag(),
+        intentId: crypto.randomUUID(),
+        ...(admission ? { admission } : {}),
+        folderPath,
+        provisionalName: destination?.name ?? name,
+        ...(destination ? { destination: { value: destination, eligibleAt: Date.now() } } : {}),
+      });
+    const committed = destination
+      ? await this.admitPlacement(
+          projectId,
+          () => ({
+            subject: documentId,
+            source: null,
+            destination: destination.parent,
+            position: destination.position,
+          }),
+          async (admission) => this.metadata.commitResource(reserve(admission)),
+        )
+      : await this.metadata.commitResource(reserve());
+    if (committed !== "committed") throw new Error("Resource identity reservation collided");
     const content = await this.content.open(projectId, key, `reservation:${key.handle}`);
     return { key, name: destination?.name ?? name, content };
   }
@@ -619,21 +665,33 @@ export class AccountResourceReplica {
     typedName?: string,
   ): Promise<{ isLatest: boolean; operationId?: string }> {
     const operationId = crypto.randomUUID();
-    const admissionOrder = this.nextNamespaceAdmission();
     let admitted = false;
     const { isLatest } = await this.locationOperations.run(key, async () => {
       admitted =
-        (await this.commitPlan(key, (record) =>
-          planResourceLocation({
-            record,
-            projectId,
-            intentId: crypto.randomUUID(),
-            operationId,
-            eligibleAt: Date.now(),
-            admissionOrder,
-            destination,
-            typedName,
-          }),
+        (await this.admitPlacement(
+          projectId,
+          ({ snapshot, placement }) => {
+            const record = snapshot.records.find((r) => r.resource.handle === key.handle);
+            return {
+              subject: record?.resource.identity.documentId ?? key.handle,
+              source: record ? placement.parentForResource(record) : null,
+              destination: destination.parent,
+              position: destination.position,
+            };
+          },
+          (admission) =>
+            this.commitPlan(key, (record) =>
+              planResourceLocation({
+                record,
+                projectId,
+                intentId: crypto.randomUUID(),
+                operationId,
+                eligibleAt: Date.now(),
+                admission,
+                destination,
+                typedName,
+              }),
+            ),
         )) === "committed";
       this.reconciler.schedule(key);
     });
@@ -650,25 +708,40 @@ export class AccountResourceReplica {
     destination: ResourceDestination,
     typedName?: string,
   ): Promise<{ operationId?: string }> {
-    const admissionOrder = this.nextNamespaceAdmission();
-    return this.commitFolderPlan(projectId, folderId, (input) =>
-      planFolderLocation({ ...input, destination, typedName, admissionOrder }),
+    return this.commitFolderPlan(projectId, folderId, destination, (input) =>
+      planFolderLocation({ ...input, destination, typedName }),
     );
   }
 
   async deleteFolder(projectId: string, folderId: string): Promise<{ operationId?: string }> {
-    const admissionOrder = this.nextNamespaceAdmission();
-    return this.commitFolderPlan(projectId, folderId, (input) =>
-      planFolderDeletion({ ...input, admissionOrder }),
-    );
+    return this.commitFolderPlan(projectId, folderId, null, planFolderDeletion);
   }
 
-  private async commitFolderPlan(
+  private commitFolderPlan(
     projectId: string,
     folderId: string,
+    destination: ResourceDestination | null,
     plan: (input: Parameters<typeof planFolderDeletion>[0]) => FolderNamespaceWrite | null,
   ): Promise<{ operationId?: string }> {
     this.requireOpen();
+    return this.admitPlacement(
+      projectId,
+      ({ placement }) => ({
+        subject: folderId,
+        source: placement.parentForFolder(folderId),
+        destination: destination?.parent ?? null,
+        position: destination?.position,
+      }),
+      (admission) => this.commitFolderPlanAdmitted(projectId, folderId, admission, plan),
+    );
+  }
+
+  private async commitFolderPlanAdmitted(
+    projectId: string,
+    folderId: string,
+    admission: PlacementAdmission,
+    plan: (input: Parameters<typeof planFolderDeletion>[0]) => FolderNamespaceWrite | null,
+  ): Promise<{ operationId?: string }> {
     const key = folderKey(folderId);
     const operationId = crypto.randomUUID();
     for (;;) {
@@ -689,6 +762,7 @@ export class AccountResourceReplica {
         sourceObservationVersion: current?.observationVersion ?? observation?.observationVersion,
         intentId: crypto.randomUUID(),
         operationId,
+        admission,
       });
       if (!write) return {};
       if ((await this.metadata.commitFolder(write)) !== "committed") continue;
@@ -699,22 +773,33 @@ export class AccountResourceReplica {
 
   async deleteDocument(projectId: string, key: ResourceKey): Promise<{ operationId?: string }> {
     const operationId = crypto.randomUUID();
-    const admissionOrder = this.nextNamespaceAdmission();
     let undoable = false;
-    const admitted = await this.commitPlan(key, (record) => {
-      const write = planResourceDeletion(
-        record,
-        projectId,
-        crypto.randomUUID(),
-        operationId,
-        admissionOrder,
-      );
-      undoable =
-        write?.next.intents.some(
-          (intent) => intent.operationId === operationId && intent.state !== "settled-locally",
-        ) ?? false;
-      return write;
-    });
+    const admitted = await this.admitPlacement(
+      projectId,
+      ({ snapshot, placement }) => {
+        const record = snapshot.records.find((r) => r.resource.handle === key.handle);
+        return {
+          subject: record?.resource.identity.documentId ?? key.handle,
+          source: record ? placement.parentForResource(record) : null,
+          destination: null,
+        };
+      },
+      (admission) =>
+        this.commitPlan(key, (record) => {
+          const write = planResourceDeletion(
+            record,
+            projectId,
+            crypto.randomUUID(),
+            operationId,
+            admission,
+          );
+          undoable =
+            write?.next.intents.some(
+              (intent) => intent.operationId === operationId && intent.state !== "settled-locally",
+            ) ?? false;
+          return write;
+        }),
+    );
     this.reconciler.schedule(key);
     return admitted === "committed" && undoable ? { operationId } : {};
   }

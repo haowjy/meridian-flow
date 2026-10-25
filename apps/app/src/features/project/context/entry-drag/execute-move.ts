@@ -8,9 +8,9 @@
  * wording, selection and the notice belong to the caller.
  */
 
-import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import {
   type ParentRef,
+  placementParentKey,
   type ResourceDestination,
   type ResourcePlacement,
   type ResourceRecord,
@@ -88,13 +88,13 @@ function arrivals(view: NamingView, rows: readonly Arrival[]) {
   const staying = new Map<string, Set<string>>();
   for (const row of rows) {
     if (!row.before || !sameParent(row.before, row.after)) continue;
-    const key = parentKey(row.after);
+    const key = placementParentKey(row.after);
     const entries = staying.get(key) ?? new Set<string>();
     entries.add(row.entry.id);
     staying.set(key, entries);
   }
   const occupancy = (parent: ParentRef) => {
-    const key = parentKey(parent);
+    const key = placementParentKey(parent);
     let occupied = byParent.get(key);
     if (!occupied) {
       occupied = nameOccupancy(
@@ -128,13 +128,6 @@ function arrivals(view: NamingView, rows: readonly Arrival[]) {
         filename: name,
       }),
   };
-}
-
-/** One key per parent `sameParent` treats as equal. */
-function parentKey(parent: ParentRef): string {
-  if (parent.kind === "folder") return `folder:${parent.folderId}`;
-  if (isProjectScopedScheme(parent.scheme)) return `root:${parent.scheme}`;
-  return `root:${parent.scheme}:${parent.owner.workId ?? ""}:${parent.owner.rootThreadId ?? ""}`;
 }
 
 /**

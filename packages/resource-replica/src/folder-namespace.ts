@@ -37,6 +37,7 @@ import type {
   NamespaceOutcome,
   NamespaceRequest,
   ParentRef,
+  PlacementAdmission,
   ResourceDestination,
   ResourceKey,
   ResourceLocation,
@@ -117,7 +118,7 @@ export function planFolderDeletion(input: {
   sourceObservationVersion?: string;
   intentId: string;
   operationId: string;
-  admissionOrder?: number;
+  admission?: PlacementAdmission;
 }): FolderNamespaceWrite | null {
   const previous = input.record ?? null;
   if (
@@ -159,7 +160,7 @@ export function planFolderDeletion(input: {
           sequence: Math.max(0, ...record.intents.map((intent) => intent.sequence)) + 1,
           identityRevision: 1,
           desired: { kind: "delete" },
-          ...(input.admissionOrder !== undefined ? { admissionOrder: input.admissionOrder } : {}),
+          ...(input.admission ? { admission: input.admission } : {}),
           attempts: [],
           state: "pending",
         },
@@ -179,7 +180,7 @@ export function planFolderLocation(input: {
   sourceObservationVersion?: string;
   intentId: string;
   operationId: string;
-  admissionOrder?: number;
+  admission?: PlacementAdmission;
   destination: ResourceDestination;
   typedName?: string;
 }): FolderNamespaceWrite | null {
@@ -234,7 +235,7 @@ export function planFolderLocation(input: {
     intentId: input.intentId,
     operationId: input.operationId,
     sequence: Math.max(0, ...record.intents.map((item) => item.sequence)) + 1,
-    ...(input.admissionOrder !== undefined ? { admissionOrder: input.admissionOrder } : {}),
+    ...(input.admission ? { admission: input.admission } : {}),
     identityRevision: 1,
     desired: {
       kind: "set-folder-location",
