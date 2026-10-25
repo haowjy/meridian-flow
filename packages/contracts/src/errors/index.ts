@@ -174,11 +174,6 @@ const WS_BOUNDARY_CODES: Record<string, Pick<MeridianError, "code" | "retryable"
   already_active: { code: "already_active", retryable: false },
   rate_limited: { code: "rate_limited", retryable: true },
   bad_request: { code: "bad_request", retryable: false },
-  interrupt_not_pending: { code: "interrupt_not_pending", retryable: false },
-  interrupt_correlation_mismatch: {
-    code: "interrupt_correlation_mismatch",
-    retryable: false,
-  },
   internal: { code: "internal", retryable: false },
 };
 

@@ -13,7 +13,8 @@
 import type { FailureOccurrence } from "@meridian/contracts/failures";
 import type { Block } from "@meridian/contracts/protocol";
 import { compareSeq, parseSeq, type Turn, type TurnStatus } from "@meridian/contracts/protocol";
-import type { RunState } from "@meridian/contracts/threads";
+import type { RunState, ThreadAsk } from "@meridian/contracts/threads";
+import { type ChatAsks, EMPTY_CHAT_ASKS, receiveAsks } from "../asks/asks";
 import { unheldWriterMessages } from "../run-state/fold-messages";
 import {
   INITIAL_RUN_STATE_SLICE,
@@ -62,6 +63,8 @@ export type SyncedThread = {
   /** The reducer's event counter; it names fallback block ids, so it never resets. */
   eventsApplied: number;
   runState: RunStateSlice;
+  /** The chat's asks and this device's answers to them (`asks/`). */
+  asks: ChatAsks;
 };
 
 export const EMPTY_SYNCED_THREAD: SyncedThread = {
@@ -75,11 +78,13 @@ export const EMPTY_SYNCED_THREAD: SyncedThread = {
   deliveryCursor: null,
   eventsApplied: 0,
   runState: INITIAL_RUN_STATE_SLICE,
+  asks: EMPTY_CHAT_ASKS,
 };
 
 /** The facts of one applied read: its turns, and its record, which reaches the slice as `history`. */
 export type ReadFacts = {
   turns: Turn[];
+  asks: readonly ThreadAsk[];
   nextSeq: string;
   /** The assistant turn the server says is still running, even before the read's turns hold it. */
   runningTurnId: string | null;
@@ -129,6 +134,7 @@ export function applyRead(synced: SyncedThread, read: ReadFacts): SyncedThread |
     floor: nextSeq,
     durableCursor,
     runState: reduceRunState(synced.runState, { type: "history", runState: read.runState }),
+    asks: receiveAsks(synced.asks, read.asks),
   };
 }
 
@@ -155,6 +161,15 @@ export function acceptDurableBlockSeq(synced: SyncedThread, seq: string): Synced
     durableCursor: seq,
     floor: synced.floor && compareSeq(synced.floor, nextFloor) > 0 ? synced.floor : nextFloor,
   };
+}
+
+/** Apply a change to the chat's asks (a frame, an answer and its reply). */
+export function updateAsks(
+  synced: SyncedThread,
+  change: (asks: ChatAsks) => ChatAsks,
+): SyncedThread {
+  const asks = change(synced.asks);
+  return asks === synced.asks ? synced : { ...synced, asks };
 }
 
 export function receiveRunState(synced: SyncedThread, action: RunStateAction): SyncedThread {
@@ -245,8 +260,8 @@ export function markForgotten(
 
 /**
  * Drop an orphaned transport tail. Submit-time pruning runs after the controller tore down its
- * live subscription; only a streaming assistant row can be one, since pending rows and waiting
- * interrupts are authoritative server state.
+ * live subscription; only a streaming assistant row can be one, since pending rows and turns
+ * awaiting an answer are authoritative server state.
  */
 export function pruneStreamingTail(synced: SyncedThread): SyncedThread {
   const turns = synced.turns.filter(
@@ -324,6 +339,13 @@ export function syncedTurnStore(options: SyncedTurnStoreOptions): TurnStore {
 
     markForgotten(threadId, ids, byTurnId) {
       write(threadId, markForgotten(read(threadId), ids, byTurnId));
+    },
+
+    receiveAsk(threadId, ask) {
+      write(
+        threadId,
+        updateAsks(read(threadId), (asks) => receiveAsks(asks, [ask])),
+      );
     },
 
     bumpEventsApplied(threadId) {

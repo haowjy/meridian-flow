@@ -424,6 +424,7 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
       const runState = read.liveState.runState;
       const next = applyRead(state.get(), {
         turns: read.turns,
+        asks: read.asks,
         nextSeq: read.nextSeq,
         runningTurnId: runState.execution?.currentTurnId ?? null,
         runState,

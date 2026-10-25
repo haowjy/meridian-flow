@@ -5,7 +5,10 @@
 `ThreadSocketClient` composes the connection lifecycle with the subscription
 registry. The lifecycle owns handshake readiness and reconnect; the registry owns
 replay requests, outcomes, timers and sequenced delivery. The client routes wire
-messages, connection notifications, catalog subscriptions and interrupt answers.
+messages, connection notifications, catalog subscriptions and `ask.answer`
+requests. `answerAsk` resolves once and never rejects: the server's reply, or
+`unconfirmed` when the frame never left, the socket closed first, or the server
+failed the request. A close settles every outstanding answer as `unconfirmed`.
 Socket generations fence stale product callbacks; close observation precedes
 that fence so controlled closes remain visible. Gap consumers recover truncated
 history through snapshots. Cancellation uses the injected HTTP operation.
@@ -48,7 +51,7 @@ and says what it left out. The decision and its rejected alternatives are in the
   (`awaiting_run`), otherwise at the tail. A `waiting` switch, or one only this
   device holds, stays at the tail.
 - **Counts, kinds and numbers, never strings.** Lingui and `Intl` stay in the
-  app. Not here: composer, row actions, control rows, interrupts, announcements,
+  app. Not here: composer, row actions, control rows, announcements,
   card display text and failure copy. Do not add a card-text or failure-copy
   rule for one client; card display would move here as one projection both
   clients draw.
@@ -124,9 +127,7 @@ and its fix are in [FUTURE](FUTURE).
 way; neither keeps its own interpretation of events. Reduction never depends on
 the optional `invalidateThreadSnapshot` an adapter may supply.
 
-- **Instance state.** Buffered interrupt resolutions (a resolution can arrive
-  before its component block) live in the reducer instance, with
-  `clearPendingInterruptPatchesFor{Thread,Turn}`. Make one reducer per store.
+- **One reducer per store.**
 - **No ambient clock.** `now()` returns an ISO timestamp; the reducer never reads
   `Date`, and the package touches no browser or Node global at module load.
 - **One store semantics.** `turn-ops.ts` owns turn creation, block upsert by
@@ -178,7 +179,7 @@ the optional `invalidateThreadSnapshot` an adapter may supply.
   flush the run's highest seq; `stop()` flushes first; a gap raises it to `toSeq`). A stream write that ends a turn requests a `"fresh"` read at
   once; a durable block for a turn the transcript lacks requests an `"any"` read. Host effects go
   through `observe(observation)` after the write each follows (`event`, `live`, `gap`, `read`,
-  `check`, `turn`, `interruptSettled`, `error`).
+  `check`, `turn`, `error`).
 - **The end-of-turn check.** Per turn the sync keeps sets of ids: *stream-ended* (the reducer's
   first not-terminal to terminal write), *checked*, and *rewritten* (a read put the turn's status
   or text in the cell before the stream ended it, or changed a turn the reducer was writing, or
@@ -192,7 +193,7 @@ the optional `invalidateThreadSnapshot` an adapter may supply.
   (`run-state/run-state-slice.ts`, with `JournalSwitch`) and `StreamDeltaCoalescer`
   with `frameScheduler` (`sync/`, subpath `@meridian/thread-client/sync`).
 - **Stays in the host.** Optimistic-row construction, cache invalidation, thread-list
-  patches, account checks and the interrupt response UI. Visible-turn and transcript partition
+  patches, account checks and the ask takeover UI. Visible-turn and transcript partition
   policy is also the app's.
 - **A new server CUSTOM name** needs a decision in `reduce-turn-event.ts` (apply,
   leave to the snapshot, or ignore) and a reducer test.
@@ -475,3 +476,21 @@ facts separately from `onError`; retryable replay and reconnect errors do not
 create a failure card. A matching subscribed acknowledgment clears that thread;
 last-handler removal retires a per-thread refusal. HTTP snapshot cursors remain
 in `liveState.resumeAfterSeq`; socket `ThreadLiveState` carries no cursor.
+
+## Asks (`src/asks/`)
+
+A chat's asks live on `SyncedThread.asks`: the server's `ThreadAsk`s by id, and
+this device's answer attempts by ask id. Reads, `meridian.ask` frames and
+answer replies all go through `receiveAsks`, which never moves a status back
+(pending, open, then one resolution), so their arrival order doesn't matter. A
+resolved ask retires this device's attempt.
+
+- `openAsk(asks, turns)` is the ask that takes over the composer: open, on the
+  chat's nearest assistant turn, and not being answered from this device. A
+  failed attempt rides along so the takeover can offer Retry.
+- `askReceipt(asks, turnId)` is the asking turn's receipt: the server's
+  resolution, or this device's sending answer marked `pending`.
+- `answerAsk(ports, …)` is the one answer command. A Retry of the same answer
+  reuses its `submissionId`; a different answer is a new submission.
+  `ask_not_open` takes the winning resolution from the reply when it has one
+  and always asks for a read.
