@@ -10,6 +10,18 @@ Secrets and provider keys live in **`.env` on the main git checkout** (copy from
 
 Use **direnv** so the shell picks up `.envrc`. `pnpm bootstrap` runs `direnv allow` when direnv is installed; re-enter the directory or run `direnv reload` if variables look stale.
 
+### Toolchain
+
+Node and Python are pinned in [`.tool-versions`](.tool-versions) (Node 24.17.0, Python 3.12) and loaded through mise:
+
+```bash
+mise install                  # install the pinned versions
+mise direnv                   # once per machine: writes the use_mise helper .envrc calls
+eval "$(mise activate bash)"  # add to ~/.bashrc so every shell gets the pinned Node and Python
+```
+
+[`.envrc`](.envrc) starts with `use mise`, which exists only after `mise direnv`. Without it direnv stops with `use_mise: command not found` and no project variables load.
+
 Runtime dev-tool contracts: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md).
 
 ### Stripe test-mode workflow
@@ -40,6 +52,9 @@ image downloads on first read.
 Then, in the checkout:
 
 ```bash
+mise install                  # pinned Node and Python from .tool-versions
+mise direnv                   # once per machine: the use_mise helper .envrc calls
+eval "$(mise activate bash)"  # or add this line to ~/.bashrc
 pnpm install
 cp .env.example .env          # fill in WorkOS keys, etc.
 pnpm dev:infra                # start postgres:16 Docker container (:54422)
