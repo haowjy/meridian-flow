@@ -1,5 +1,5 @@
 {
-  "id": "7f051a55-a748-47af-87e7-99dcfa97b976",
+  "id": "ea2ef425-192a-4093-bffc-a5a5241f99b0",
   "prevId": "1890703d-0d84-4ee5-a7f9-51324839971d",
   "version": "7",
   "dialect": "postgresql",
@@ -4389,12 +4389,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "moved_rank": {
-          "name": "moved_rank",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "base_version": {
           "name": "base_version",
           "type": "bigint",
@@ -4645,89 +4639,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.branch_tree_parent_orders": {
-      "name": "branch_tree_parent_orders",
-      "schema": "",
-      "columns": {
-        "branch_id": {
-          "name": "branch_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "parent_kind": {
-          "name": "parent_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "parent_id": {
-          "name": "parent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "order_policy": {
-          "name": "order_policy",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "branch_tree_parent_orders_branch_id_branches_id_fk": {
-          "name": "branch_tree_parent_orders_branch_id_branches_id_fk",
-          "tableFrom": "branch_tree_parent_orders",
-          "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "branch_tree_parent_orders_branch_id_parent_kind_parent_id_pk": {
-          "name": "branch_tree_parent_orders_branch_id_parent_kind_parent_id_pk",
-          "columns": [
-            "branch_id",
-            "parent_kind",
-            "parent_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "branch_tree_parent_orders_kind_valid": {
-          "name": "branch_tree_parent_orders_kind_valid",
-          "value": "\"branch_tree_parent_orders\".\"parent_kind\" IN ('source', 'folder')"
-        },
-        "branch_tree_parent_orders_policy_valid": {
-          "name": "branch_tree_parent_orders_policy_valid",
-          "value": "\"branch_tree_parent_orders\".\"order_policy\" IN ('default', 'manual')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.branch_tree_unsettled": {
@@ -5035,13 +4946,6 @@
           "notNull": true,
           "default": 0
         },
-        "order_policy": {
-          "name": "order_policy",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'default'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -5265,10 +5169,6 @@
         "context_sources_adapter_type_valid": {
           "name": "context_sources_adapter_type_valid",
           "value": "\"context_sources\".\"adapter_type\" IN ('local', 'google_drive', 'dropbox', 'notion')"
-        },
-        "context_sources_order_policy_valid": {
-          "name": "context_sources_order_policy_valid",
-          "value": "\"context_sources\".\"order_policy\" IN ('default', 'manual')"
         }
       },
       "isRLSEnabled": false
@@ -5726,12 +5626,6 @@
           "notNull": true,
           "default": false
         },
-        "rank": {
-          "name": "rank",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "metadata": {
           "name": "metadata",
           "type": "jsonb",
@@ -5755,12 +5649,6 @@
         },
         "deleted_at": {
           "name": "deleted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "content_purged_at": {
-          "name": "content_purged_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -5804,28 +5692,6 @@
         }
       },
       "indexes": {
-        "documents_purge_candidates": {
-          "name": "documents_purge_candidates",
-          "columns": [
-            {
-              "expression": "deleted_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"documents\".\"content_purged_at\" IS NULL AND \"documents\".\"deleted_at\" IS NOT NULL AND \"documents\".\"deletion_reason\" = 'deleted' AND NOT \"documents\".\"hidden\" AND \"documents\".\"deleted_by_work_id\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "documents_deleted_by_work_idx": {
           "name": "documents_deleted_by_work_idx",
           "columns": [
@@ -6142,19 +6008,6 @@
           "notNull": true,
           "default": 0
         },
-        "rank": {
-          "name": "rank",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "order_policy": {
-          "name": "order_policy",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'default'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -6410,12 +6263,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "folders_order_policy_valid": {
-          "name": "folders_order_policy_valid",
-          "value": "\"folders\".\"order_policy\" IN ('default', 'manual')"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.link_ahead_refs": {
@@ -7745,22 +7593,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "document_edit_parts_live_origin_seq": {
-          "name": "document_edit_parts_live_origin_seq",
-          "columns": [
-            {
-              "expression": "((\"origin\"->>'seq')::bigint)",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"document_edit_parts\".\"origin\"->>'kind' = 'live'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -7830,12 +7662,6 @@
         },
         "edit_scope_id": {
           "name": "edit_scope_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tool_call_id": {
-          "name": "tool_call_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -8006,7 +7832,7 @@
         },
         "document_edits_tree_change_valid": {
           "name": "document_edits_tree_change_valid",
-          "value": "\"document_edits\".\"tree_change\" IS NULL OR (\n        \"document_edits\".\"tree_change\"->>'op' IN ('create','move','delete','restore','settle')\n        AND \"document_edits\".\"tree_change\"->'destination'->>'kind' IN ('live','draft')\n        AND jsonb_typeof(\"document_edits\".\"tree_change\"->'seq') = 'number'\n        AND jsonb_typeof(\"document_edits\".\"tree_change\"->'targets') = 'array'\n        AND (\"document_edits\".\"tree_change\"->>'op' <> 'settle' OR \"document_edits\".\"tree_change\" ? 'settles')\n      )"
+          "value": "\"document_edits\".\"tree_change\" IS NULL OR (\n        \"document_edits\".\"tree_change\"->>'op' IN ('move','delete','restore','settle')\n        AND \"document_edits\".\"tree_change\"->'destination'->>'kind' IN ('live','draft')\n        AND jsonb_typeof(\"document_edits\".\"tree_change\"->'seq') = 'number'\n        AND jsonb_typeof(\"document_edits\".\"tree_change\"->'targets') = 'array'\n        AND (\"document_edits\".\"tree_change\"->>'op' <> 'settle' OR \"document_edits\".\"tree_change\" ? 'settles')\n      )"
         }
       },
       "isRLSEnabled": false
@@ -8919,130 +8745,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.apply_command_effects": {
-      "name": "apply_command_effects",
-      "schema": "",
-      "columns": {
-        "command_id": {
-          "name": "command_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ordinal": {
-          "name": "ordinal",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "group_id": {
-          "name": "group_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "draft_id": {
-          "name": "draft_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "live_update_seq": {
-          "name": "live_update_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "base_start": {
-          "name": "base_start",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "base_delta": {
-          "name": "base_delta",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "unapplied_by": {
-          "name": "unapplied_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "apply_command_effects_group": {
-          "name": "apply_command_effects_group",
-          "columns": [
-            {
-              "expression": "command_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "group_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "apply_command_effects_command_id_branch_commands_id_fk": {
-          "name": "apply_command_effects_command_id_branch_commands_id_fk",
-          "tableFrom": "apply_command_effects",
-          "tableTo": "branch_commands",
-          "columnsFrom": [
-            "command_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "apply_command_effects_document_id_documents_id_fk": {
-          "name": "apply_command_effects_document_id_documents_id_fk",
-          "tableFrom": "apply_command_effects",
-          "tableTo": "documents",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "apply_command_effects_command_id_ordinal_pk": {
-          "name": "apply_command_effects_command_id_ordinal_pk",
-          "columns": [
-            "command_id",
-            "ordinal"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.branch_commands": {
       "name": "branch_commands",
       "schema": "",
@@ -9174,7 +8876,7 @@
       "checkConstraints": {
         "branch_commands_kind_valid": {
           "name": "branch_commands_kind_valid",
-          "value": "\"branch_commands\".\"kind\" IN ('apply_click', 'unapply_click', 'apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_branch')"
+          "value": "\"branch_commands\".\"kind\" IN ('apply_click', 'apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_branch')"
         },
         "branch_commands_state_valid": {
           "name": "branch_commands_state_valid",

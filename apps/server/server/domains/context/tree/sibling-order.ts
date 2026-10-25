@@ -4,7 +4,7 @@ import type { ContextSiblingPosition } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, folders } from "@meridian/database/schema";
 import { compareDefaultSiblings } from "@meridian/resource-replica";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, type SQL, sql } from "drizzle-orm";
 import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 
@@ -165,6 +165,68 @@ async function rebalance(db: Database, rows: Sibling[]): Promise<Sibling[]> {
   return ordered.map((row, index) => ({ ...row, rank: ranks[index] as string }));
 }
 
+type RankedNode = { id: string; rank: string };
+
+function parentPredicate(column: SQL, parentId: FolderId | null): SQL {
+  return parentId === null ? sql`${column} IS NULL` : sql`${column} = ${parentId}`;
+}
+
+async function liveRankedNode(
+  db: Database,
+  sourceId: ContextSourceId,
+  parentId: FolderId | null,
+  id: string,
+): Promise<RankedNode | null> {
+  const [row] = await currentDrizzleDb(db).execute<RankedNode>(sql`
+    SELECT id, rank FROM (
+      SELECT d.id, d.rank FROM documents d
+      WHERE d.id = ${id}::uuid AND d.context_source_id = ${sourceId}
+        AND ${parentPredicate(sql.raw("d.folder_id"), parentId)}
+        AND d.deleted_at IS NULL AND NOT d.hidden AND d.rank IS NOT NULL
+      UNION ALL
+      SELECT f.id, f.rank FROM folders f
+      WHERE f.id = ${id}::uuid AND f.context_source_id = ${sourceId}
+        AND ${parentPredicate(sql.raw("f.parent_id"), parentId)}
+        AND f.deleted_at IS NULL AND NOT f.hidden AND f.rank IS NOT NULL
+    ) ranked`);
+  return row ?? null;
+}
+
+async function liveRankBoundary(
+  db: Database,
+  input: {
+    sourceId: ContextSourceId;
+    parentId: FolderId | null;
+    movingId: string;
+    direction: "before" | "after";
+    anchor?: RankedNode;
+  },
+): Promise<RankedNode | null> {
+  const relation = input.anchor
+    ? input.direction === "before"
+      ? sql`AND (rank < ${input.anchor.rank} OR (rank = ${input.anchor.rank} AND id < ${input.anchor.id}::uuid))`
+      : sql`AND (rank > ${input.anchor.rank} OR (rank = ${input.anchor.rank} AND id > ${input.anchor.id}::uuid))`
+    : sql``;
+  const order = input.direction === "before" ? sql`rank DESC, id DESC` : sql`rank, id`;
+  const [row] = await currentDrizzleDb(db).execute<RankedNode>(sql`
+    SELECT id, rank FROM (
+      (SELECT d.id, d.rank FROM documents d
+       WHERE d.context_source_id = ${input.sourceId}
+         AND ${parentPredicate(sql.raw("d.folder_id"), input.parentId)}
+         AND d.id <> ${input.movingId}::uuid
+         AND d.deleted_at IS NULL AND NOT d.hidden AND d.rank IS NOT NULL
+         ${relation} ORDER BY ${order} LIMIT 1)
+      UNION ALL
+      (SELECT f.id, f.rank FROM folders f
+       WHERE f.context_source_id = ${input.sourceId}
+         AND ${parentPredicate(sql.raw("f.parent_id"), input.parentId)}
+         AND f.id <> ${input.movingId}::uuid
+         AND f.deleted_at IS NULL AND NOT f.hidden AND f.rank IS NOT NULL
+         ${relation} ORDER BY ${order} LIMIT 1)
+    ) boundary ORDER BY ${order} LIMIT 1`);
+  return row ?? null;
+}
+
 /** Apply an explicit reorder, or the destination parent's ordinary arrival rule. */
 export async function placeLiveSibling(
   db: Database,
@@ -176,45 +238,74 @@ export async function placeLiveSibling(
     arrived: boolean;
   },
 ): Promise<"placed" | "stale-anchor"> {
-  let rows = await siblings(db, input.sourceId, input.parentId);
-  const moving = rows.find((row) => row.id === input.node.id);
-  if (!moving) throw new Error("Moved node is absent from its committed parent");
   let parentPolicy = await liveParentOrderPolicy(db, input.sourceId, input.parentId);
+  if (parentPolicy === "default" && !input.position) {
+    if (input.arrived)
+      await setRank(
+        db,
+        { kind: input.node.kind === "folder" ? "folder" : "file", id: input.node.id },
+        null,
+      );
+    return "placed";
+  }
+  if (parentPolicy === "manual" && !input.position && !input.arrived) return "placed";
+  let rows: Sibling[] | null = null;
   if (input.position && parentPolicy === "default") {
+    rows = await siblings(db, input.sourceId, input.parentId);
+    if (!rows.some((row) => row.id === input.node.id))
+      throw new Error("Moved node is absent from its committed parent");
     rows = await promote(db, input.sourceId, input.parentId, rows);
     parentPolicy = "manual";
   }
-  if (parentPolicy === "default") {
-    if (input.arrived) await setRank(db, moving, null);
-    return "placed";
-  }
-  if (!input.position && !input.arrived) return "placed";
-  const others = rows
-    .filter((row) => row.id !== moving.id)
-    .sort((left, right) =>
-      (left.rank as string) < (right.rank as string)
-        ? -1
-        : (left.rank as string) > (right.rank as string)
-          ? 1
-          : left.id < right.id
-            ? -1
-            : 1,
-    );
-  let index: number;
-  if (!input.position || input.position.kind === "end") index = others.length;
-  else if (input.position.kind === "start") index = 0;
+  if (parentPolicy !== "manual") throw new Error("Unexpected sibling order policy");
+  let before: string | null = null;
+  let after: string | null = null;
+  if (!input.position || input.position.kind === "end")
+    before =
+      (await liveRankBoundary(db, { ...input, movingId: input.node.id, direction: "before" }))
+        ?.rank ?? null;
+  else if (input.position.kind === "start")
+    after =
+      (await liveRankBoundary(db, { ...input, movingId: input.node.id, direction: "after" }))
+        ?.rank ?? null;
   else {
-    const position = input.position;
-    if (!("siblingId" in position)) throw new Error("Invalid sibling position");
-    const anchor = others.findIndex((row) => row.id === position.siblingId);
-    if (anchor < 0) return "stale-anchor";
-    index = position.kind === "before" ? anchor : anchor + 1;
+    if (!("siblingId" in input.position)) throw new Error("Invalid sibling position");
+    const anchor = await liveRankedNode(
+      db,
+      input.sourceId,
+      input.parentId,
+      input.position.siblingId,
+    );
+    if (!anchor || anchor.id === input.node.id) return "stale-anchor";
+    if (input.position.kind === "before") {
+      after = anchor.rank;
+      before =
+        (
+          await liveRankBoundary(db, {
+            ...input,
+            movingId: input.node.id,
+            direction: "before",
+            anchor,
+          })
+        )?.rank ?? null;
+    } else {
+      before = anchor.rank;
+      after =
+        (
+          await liveRankBoundary(db, {
+            ...input,
+            movingId: input.node.id,
+            direction: "after",
+            anchor,
+          })
+        )?.rank ?? null;
+    }
   }
-  let before = others[index - 1]?.rank ?? null;
-  let after = others[index]?.rank ?? null;
   if (before !== null && before === after) {
+    rows ??= await siblings(db, input.sourceId, input.parentId);
     rows = await rebalance(db, rows);
-    const ordered = rows.filter((row) => row.id !== moving.id);
+    const ordered = rows.filter((row) => row.id !== input.node.id);
+    let index: number;
     if (!input.position || input.position.kind === "end") index = ordered.length;
     else if (input.position.kind === "start") index = 0;
     else if ("siblingId" in input.position) {
@@ -226,7 +317,11 @@ export async function placeLiveSibling(
     before = ordered[index - 1]?.rank ?? null;
     after = ordered[index]?.rank ?? null;
   }
-  await setRank(db, moving, generateKeyBetween(before, after));
+  await setRank(
+    db,
+    { kind: input.node.kind === "folder" ? "folder" : "file", id: input.node.id },
+    generateKeyBetween(before, after),
+  );
   return "placed";
 }
 
