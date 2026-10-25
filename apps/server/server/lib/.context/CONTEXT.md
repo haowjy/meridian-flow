@@ -102,7 +102,21 @@ Move requests carry `destinationParent` when they use destination identity.
 The route passes that identity into the domain command and receipt, maps typed
 `destination_missing` to non-retryable repair, and rechecks edit authority on
 the resolved destination under the move transaction. URI-only callers retain
-path semantics. Identity conflicts may name a renamed or relocated destination;
+path semantics.
+
+The app's durable namespace queue resends any move, delete or create-untitled it
+has not settled, and it settles a refusal only from a typed non-retryable 4xx (the
+interrupt envelope, `retryable: false`) or a receipt. Those routes must therefore
+answer a deterministic refusal typed. Each route body runs inside
+`withDurableIntentInterruptBoundary` (`shared/interrupt-boundary.ts`), which turns
+any bare Nitro `HTTPError` 4xx (one thrown without the envelope, such as a parse or
+ownership `createError`) into a typed, non-retryable envelope with the same status,
+message and `data`. It leaves 401, 408 and 429 bare, so they stay
+uncertain and the client retries. A new route that queue replays needs the same wrapper.
+Domain failures go through `contextErrorToHttp`, which types every code;
+`stale_source`, `stale_target` and `io_error` are the retryable ones. The boundary stays per route rather
+than in the global error handler: typing every error there would make a 401
+final, and app code on other routes branches on the untyped `HttpResponseError`. Identity conflicts may name a renamed or relocated destination;
 URI-only conflicts must still match the requested home. If immutable destination
 Work/lineage authority retired before intake, the identity move remains
 `destination_missing` even if a folder later relocates. Model tools and `./mf`

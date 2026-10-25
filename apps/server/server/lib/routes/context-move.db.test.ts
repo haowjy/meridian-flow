@@ -846,7 +846,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             destinationParent: { ...body.destinationParent, createFolders: ["Different"] },
           },
         }),
-      ).rejects.toMatchObject({ status: 409 });
+      ).rejects.toMatchObject({
+        status: 409,
+        data: {
+          __meridianInterruptEnvelope: {
+            error: { code: "operation_mismatch", retryable: false },
+          },
+        },
+      });
     });
 
     it("creates a missing link address beneath an area-root identity", async () => {

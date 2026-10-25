@@ -1,11 +1,14 @@
 /**
  * "Moved chapter-3 to Act 2." with Undo, on the surface that took the move (a
  * drop or Move…). One owner per project holds each surface's latest move: its
- * rows, whether Undo still has something to put back (read from the replica,
- * so it needs no list on screen), and Undo itself. The notice shares its
+ * rows, which of them the server refused since, whether Undo still has
+ * something to put back (both read from the replica, so it needs no list on
+ * screen), and Undo itself. The notice shares its
  * surface's one notice place with delete notices (`useNoticeSlot`); a newer
  * notice of either kind replaces it. It stays until then, Dismiss, or leaving
- * the project: Undo is not a race.
+ * the project: Undo is not a race. After Undo the notice leaves at once but
+ * its surface keeps watching the reverse moves, off screen, until the server
+ * answers each, so a refused Undo comes back as "Couldn't move X back.".
  */
 import { plural, t } from "@lingui/core/macro";
 import {
@@ -24,21 +27,49 @@ import {
   useAccountResourceReplica,
 } from "../account-feature-context";
 import { type MoveResult, undoMove } from "./execute-move";
-import { type MoveEffect, planUndo } from "./move-plan";
+import { type MoveEffect, moveSettlement, planUndo } from "./move-plan";
 
-type MoveWindow = {
-  /** Stays with the notice while its message or Undo changes. */
-  id: number;
-  message: string;
-  effects: readonly MoveEffect[];
-  /** The replica has shown the move; until then a missing row means "not yet", not "gone". */
-  applied: boolean;
-  /** Something is still where the move put it. */
-  undoable: boolean;
-  undoing: boolean;
-  /** Puts focus back in a mounted list when the notice leaves under it. */
-  refocus?: () => void;
-};
+type Failure = MoveResult["failed"][number];
+
+/**
+ * One surface's latest move, by phase. Only `moved` offers Undo, and only
+ * `reversing` is off screen; what the notice says follows from the phase.
+ */
+type MoveWindow =
+  | {
+      phase: "moved";
+      /** Stays with the notice through every phase, so a stale answer can't touch a newer one. */
+      id: number;
+      /** What the move did, kept current as the server refuses rows. */
+      result: MoveResult;
+      destinationName: string;
+      /** The moves the server has not settled yet; refusals are looked for only here. */
+      unsettled: readonly MoveEffect[];
+      /** The replica has shown the move; until then a missing row means "not yet", not "gone". */
+      applied: boolean;
+      /** Something is still where the move put it. */
+      undoable: boolean;
+      /** Puts focus back in a mounted list when the notice leaves under it. */
+      refocus?: () => void;
+    }
+  /** The replica is admitting Undo's reverse moves; the notice stays, its Undo disabled. */
+  | { phase: "undoing"; id: number; move: Extract<MoveWindow, { phase: "moved" }> }
+  /** Undo closed the notice; it comes back only if the server refuses one of `pending`. */
+  | { phase: "reversing"; id: number; pending: readonly MoveEffect[]; refocus?: () => void }
+  /**
+   * Rows Undo could not put back, the replica's refusals and the server's
+   * together; no `failed` means Undo threw before naming any. Still watches
+   * the rest of its reverse moves, which can only add to the count.
+   */
+  | {
+      phase: "undo-failed";
+      id: number;
+      failed: readonly Failure[];
+      pending: readonly MoveEffect[];
+      refocus?: () => void;
+    };
+
+type MovedWindow = Extract<MoveWindow, { phase: "moved" }>;
 
 type MoveNotices = {
   windows: ReadonlyMap<NoticeSurface, MoveWindow>;
@@ -48,7 +79,10 @@ type MoveNotices = {
     destinationName: string,
     refocus?: () => void,
   ) => void;
-  /** Resolves true once every row went back and the notice closed. */
+  /**
+   * Resolves true once the replica took every row back and the notice closed;
+   * the notice returns if the server then refuses one.
+   */
   undo: (surface: NoticeSurface, id: number) => Promise<boolean>;
   dismiss: (surface: NoticeSurface, id: number) => void;
 };
@@ -112,15 +146,15 @@ export function MoveNoticesProvider({
       // A move can finish after its project has gone; there is nowhere to say so.
       if (!mounted.current) return;
       const id = nextNoticeId++;
-      const effects = result.moved;
       setWindows((current) =>
         new Map(current).set(surface, {
+          phase: "moved",
           id,
-          message: describeMove(result, destinationName),
-          effects,
-          applied: planUndo(latest.current, effects).length > 0,
-          undoable: effects.length > 0,
-          undoing: false,
+          result,
+          destinationName,
+          unsettled: result.moved.filter((effect) => effect.operationId),
+          applied: planUndo(latest.current, result.moved).length > 0,
+          undoable: result.moved.length > 0,
           refocus,
         }),
       );
@@ -129,32 +163,95 @@ export function MoveNoticesProvider({
     [dismiss, slots],
   );
 
-  // Undo leaves once nothing it would put back is still in place: renamed, moved again or
-  // deleted since. The replica can show a move just after it resolves, so it retires only
-  // once it has applied and then stops applying.
   useEffect(() => {
     for (const [surface, window] of windows) {
-      if (!window.undoable || window.undoing) continue;
-      const live = planUndo(projection, window.effects).length > 0;
-      if (live && !window.applied) settle(surface, window.id, (now) => ({ ...now, applied: true }));
-      else if (!live && window.applied)
-        settle(surface, window.id, (now) => ({ ...now, undoable: false }));
+      if (window.phase === "moved") watchMove(surface, window);
+      else if (window.phase !== "undoing") watchReverse(surface, window);
+    }
+
+    // A row the server refused went back to its source with its failure mark; the notice
+    // stops claiming it moved. Undo leaves once nothing it would put back is still in place:
+    // refused, renamed, moved again or deleted since. The replica can show a move just after
+    // it resolves, so it retires only once it has applied and then stops applying.
+    function watchMove(surface: NoticeSurface, window: MovedWindow) {
+      const { refused, pending } = moveSettlement(projection, window.unsettled);
+      if (refused.length > 0) {
+        const gone = new Set(refused);
+        settle(surface, window.id, (now) => {
+          if (now.phase !== "moved") return now;
+          const moved = now.result.moved.filter((effect) => !gone.has(effect));
+          return {
+            ...now,
+            result: { moved, failed: [...now.result.failed, ...wentBack(refused)] },
+            unsettled: pending,
+            undoable: now.undoable && moved.length > 0,
+          };
+        });
+        return;
+      }
+      if (pending.length < window.unsettled.length)
+        settle(surface, window.id, (now) =>
+          now.phase === "moved" ? { ...now, unsettled: pending } : now,
+        );
+      if (!window.undoable) return;
+      const live = planUndo(projection, window.result.moved).length > 0;
+      if (live !== window.applied)
+        settle(surface, window.id, (now) =>
+          now.phase !== "moved"
+            ? now
+            : live
+              ? { ...now, applied: true }
+              : { ...now, undoable: false },
+        );
+    }
+
+    // Only the server's answer retires a reverse move: accepted, or overtaken by the
+    // writer's next change to the row.
+    function watchReverse(
+      surface: NoticeSurface,
+      window: Extract<MoveWindow, { phase: "reversing" | "undo-failed" }>,
+    ) {
+      const { refused, pending } = moveSettlement(projection, window.pending);
+      if (pending.length === window.pending.length) return;
+      settle(surface, window.id, (now) => {
+        if (now.phase !== "reversing" && now.phase !== "undo-failed") return now;
+        if (refused.length > 0)
+          return {
+            phase: "undo-failed",
+            id: now.id,
+            failed: [...(now.phase === "undo-failed" ? now.failed : []), ...wentBack(refused)],
+            pending,
+            refocus: now.refocus,
+          };
+        if (now.phase === "undo-failed") return { ...now, pending };
+        return pending.length > 0 ? { ...now, pending } : null;
+      });
     }
   }, [projection, windows, settle]);
 
   const undo = useCallback<MoveNotices["undo"]>(
     async (surface, id) => {
       const window = windows.get(surface);
-      if (window?.id !== id || !window.undoable) return false;
-      settle(surface, id, (now) => ({ ...now, undoing: true }));
-      const failure = await undoMove(window.effects, { resources, projectId }).then(
-        describeUndoFailure,
-        () => t`Couldn't move it back.`,
-      );
+      if (window?.phase !== "moved" || window.id !== id || !window.undoable) return false;
       settle(surface, id, (now) =>
-        failure ? { ...now, message: failure, undoable: false, undoing: false } : null,
+        now.phase === "moved" ? { phase: "undoing", id, move: now } : now,
       );
-      return !failure;
+      const back = await undoMove(window.result.moved, { resources, projectId }).catch(() => null);
+      const pending = back?.moved.filter((effect) => effect.operationId) ?? [];
+      settle(surface, id, () =>
+        !back || back.failed.length > 0
+          ? {
+              phase: "undo-failed",
+              id,
+              failed: back?.failed ?? [],
+              pending,
+              refocus: window.refocus,
+            }
+          : pending.length > 0
+            ? { phase: "reversing", id, pending, refocus: window.refocus }
+            : null,
+      );
+      return back !== null && back.failed.length === 0;
     },
     [windows, settle, resources, projectId],
   );
@@ -202,7 +299,9 @@ export function MoveNotice({ surface, className }: { surface: NoticeSurface; cla
   const { windows, undo, dismiss } = useMoveNotices();
   const ref = useRef<HTMLDivElement>(null);
   const window = windows.get(surface);
-  if (!window) return null;
+  const shown = window && present(window);
+  if (!window || !shown) return null;
+  const { refocus } = shown;
   // Asked before anything awaits: Undo's button disables while it runs and drops focus.
   const holdsFocus = () => ref.current?.contains(document.activeElement) ?? false;
   return (
@@ -210,25 +309,50 @@ export function MoveNotice({ surface, className }: { surface: NoticeSurface; cla
       <SurfaceNotice
         className={className}
         notice={{
-          message: window.message,
-          undoing: window.undoing,
-          undo: window.undoable
+          message: shown.message,
+          undoing: shown.undoing,
+          undo: shown.undoable
             ? () => {
                 const focused = holdsFocus();
                 void undo(surface, window.id).then((closed) => {
-                  if (closed && focused) window.refocus?.();
+                  if (closed && focused) refocus?.();
                 });
               }
             : null,
           dismiss: () => {
             const focused = holdsFocus();
             dismiss(surface, window.id);
-            if (focused) window.refocus?.();
+            if (focused) refocus?.();
           },
         }}
       />
     </div>
   );
+}
+
+/** What a window shows; null while Undo's reverse moves are out of sight. */
+function present(window: MoveWindow) {
+  switch (window.phase) {
+    case "moved":
+    case "undoing": {
+      const move = window.phase === "moved" ? window : window.move;
+      return {
+        message: describeMove(move.result, move.destinationName),
+        undoable: move.undoable,
+        undoing: window.phase === "undoing",
+        refocus: move.refocus,
+      };
+    }
+    case "reversing":
+      return null;
+    case "undo-failed":
+      return {
+        message: describeUndoFailure(window.failed) ?? t`Couldn't move it back.`,
+        undoable: false,
+        undoing: false,
+        refocus: window.refocus,
+      };
+  }
 }
 
 /**
@@ -269,8 +393,13 @@ export function describeRenames(renamed: readonly { name: string; as: string }[]
   });
 }
 
+/** A refused row went back where it came from, under its name there. */
+function wentBack(effects: readonly MoveEffect[]) {
+  return effects.map((effect) => ({ entry: effect.entry, name: effect.previousName }));
+}
+
 /** Null when every row went back. */
-export function describeUndoFailure({ failed }: MoveResult): string | null {
+export function describeUndoFailure(failed: readonly Failure[]): string | null {
   if (failed.length === 0) return null;
   const [lost] = failed;
   if (failed.length === 1 && lost) return t`Couldn't move ${lost.name} back.`;
