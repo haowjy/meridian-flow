@@ -87,6 +87,7 @@ export type VisibleDocument = {
   sizeBytes: number | null;
   metadata: JsonObject;
   provisionalName: boolean;
+  rank: string | null;
   locationVersion: bigint;
   hidden: boolean;
   updatedAt: Date;
@@ -99,6 +100,8 @@ export type VisibleFolder = {
   contextSourceId: ContextSourceId;
   parentId: FolderId | null;
   name: string;
+  rank: string | null;
+  orderPolicy: "default" | "manual";
   hidden: boolean;
   locationVersion: bigint;
   path: string;
@@ -296,6 +299,8 @@ type VisibleFolderRow = {
   contextSourceId: ContextSourceId;
   parentId: FolderId | null;
   name: string;
+  rank: string | null;
+  orderPolicy: "default" | "manual";
   hidden: boolean;
   locationVersion: bigint;
 };
@@ -345,6 +350,8 @@ export function createTreeReader(
         contextSourceId: vf.contextSourceId,
         parentId: vf.parentId,
         name: vf.name,
+        rank: vf.rank,
+        orderPolicy: vf.orderPolicy,
         hidden: vf.hidden,
         locationVersion: vf.locationVersion,
       })
@@ -366,6 +373,7 @@ export function createTreeReader(
       sizeBytes: row.sizeBytes,
       metadata: row.metadata,
       provisionalName: row.provisionalName,
+      rank: row.rank,
       locationVersion: row.locationVersion,
       hidden: row.hidden,
       updatedAt: row.updatedAt,

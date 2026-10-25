@@ -73,6 +73,7 @@ export const branches = pgTable(
 );
 
 export type BranchTreeNodeKind = "document" | "folder";
+export type BranchTreeParentKind = "source" | "folder";
 
 /**
  * Every write of a row's moved or deleted facts takes the next value, so a revision never
@@ -116,6 +117,8 @@ export const branchTreeChanges = pgTable(
     movedRootSourceId: uuid("moved_root_source_id").$type<ContextSourceId>(),
     movedName: text("moved_name"),
     movedExtension: text("moved_extension"),
+    /** Branch-local rank override; null while the effective parent remains in default order. */
+    movedRank: text("moved_rank"),
     /** `documents.location_version` when the branch first moved or deleted it. */
     baseVersion: bigint("base_version", { mode: "bigint" }),
     /**
@@ -163,6 +166,31 @@ export const branchTreeChanges = pgTable(
     check(
       "branch_tree_changes_revision_present",
       sql`NOT (${table.moved} OR ${table.deleted}) OR ${table.revision} IS NOT NULL`,
+    ),
+  ],
+);
+
+/** Branch-local parent ordering policy overrides. Absence inherits the live parent's policy. */
+export const branchTreeParentOrders = pgTable(
+  "branch_tree_parent_orders",
+  {
+    branchId: uuid("branch_id")
+      .$type<BranchId>()
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+    parentKind: text("parent_kind").$type<BranchTreeParentKind>().notNull(),
+    /** context_sources.id or folders.id; both live rows are tombstoned rather than hard-deleted. */
+    parentId: uuid("parent_id").notNull(),
+    orderPolicy: text("order_policy").$type<"default" | "manual">().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.branchId, table.parentKind, table.parentId] }),
+    check("branch_tree_parent_orders_kind_valid", sql`${table.parentKind} IN ('source', 'folder')`),
+    check(
+      "branch_tree_parent_orders_policy_valid",
+      sql`${table.orderPolicy} IN ('default', 'manual')`,
     ),
   ],
 );

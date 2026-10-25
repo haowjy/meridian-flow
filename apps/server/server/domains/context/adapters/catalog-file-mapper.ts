@@ -33,6 +33,7 @@ export type CatalogFileRow = {
   mimeType: string | null;
   metadata: unknown;
   provisionalName: boolean;
+  rank: string | null;
   /** Ids a device's create forwarded into this document (a join). */
   joinedFrom?: readonly string[];
 };
@@ -128,6 +129,7 @@ export function mapAuthoritativeFile(input: {
     ),
     ...persistedClassification,
     provisionalName: document.provisionalName,
+    rank: document.rank,
     ...(input.upload
       ? {
           upload: {
