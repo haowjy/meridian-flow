@@ -89,7 +89,12 @@ export const threadAnswerCommand: CommandSpec = {
           update: (change) => {
             asks = change(asks);
           },
-          refresh: () => {},
+          refresh: async () => {
+            const read = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
+              decode: jsonResponse(threadSnapshotSchema),
+            });
+            asks = receiveAsks(asks, read.asks);
+          },
           newSubmissionId: () => globalThis.crypto.randomUUID(),
         },
         threadId,

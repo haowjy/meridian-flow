@@ -20,8 +20,14 @@ export type AskAnswerAttempt = {
   askId: string;
   submissionId: string;
   answer: AskAnswer;
-  /** `sending`: the receipt shows it, marked pending. `failed`: the takeover reopens with Retry. */
-  state: "sending" | "failed";
+  /**
+   * - `sending`: on the wire; the receipt shows it, marked pending.
+   * - `failed`: did not land; the takeover reopens with it and Retry.
+   * - `settling`: the server said the ask is no longer open without saying how it ended; nothing
+   *   can answer it until a read does.
+   * - `unsettled`: that read failed; the takeover offers only to read again.
+   */
+  state: "sending" | "failed" | "settling" | "unsettled";
 };
 
 export type ChatAsks = {
@@ -102,11 +108,16 @@ export function failAskAnswer(asks: ChatAsks, askId: string, submissionId: strin
   return { ...asks, attempts };
 }
 
-/** The ask was no longer open and the reply did not say how it ended: the read will. */
-export function dropAskAnswer(asks: ChatAsks, askId: string): ChatAsks {
-  if (!asks.attempts.has(askId)) return asks;
+/** Move the ask's attempt to `state`; an ask with no attempt is left alone. */
+export function markAskAnswer(
+  asks: ChatAsks,
+  askId: string,
+  state: "settling" | "unsettled",
+): ChatAsks {
+  const held = asks.attempts.get(askId);
+  if (!held || held.state === state) return asks;
   const attempts = new Map(asks.attempts);
-  attempts.delete(askId);
+  attempts.set(askId, { ...held, state });
   return { ...asks, attempts };
 }
 
@@ -124,21 +135,22 @@ function nearestAssistantTurnId(turns: readonly Turn[]): string | null {
 
 export type OpenAsk = {
   ask: ThreadAsk;
-  /** The failed answer, filled back in with Retry. Null before any answer. */
-  failed: AskAnswerAttempt | null;
+  /** A `failed` answer (filled back in, with Retry) or an `unsettled` one (read again). */
+  attempt: AskAnswerAttempt | null;
 };
 
 /**
  * The ask that takes over the composer: open, on the chat's nearest assistant turn, and not being
- * answered from this device right now (a sending answer shows as the pending receipt instead).
+ * answered or settled from this device right now (a sending answer shows as the pending receipt;
+ * a settling one waits for the read that says how the ask ended).
  */
 export function openAsk(asks: ChatAsks, turns: readonly Turn[]): OpenAsk | null {
   const turnId = nearestAssistantTurnId(turns);
   const ask = turnId === null ? undefined : askOfTurn(asks, turnId);
   if (ask?.status !== "open") return null;
   const attempt = asks.attempts.get(ask.id) ?? null;
-  if (attempt?.state === "sending") return null;
-  return { ask, failed: attempt };
+  if (attempt?.state === "sending" || attempt?.state === "settling") return null;
+  return { ask, attempt };
 }
 
 function askOfTurn(asks: ChatAsks, turnId: string): ThreadAsk | undefined {

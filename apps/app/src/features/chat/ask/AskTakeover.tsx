@@ -23,10 +23,36 @@ export type AskTakeoverProps = {
   text: string;
   onTextChange: (text: string) => void;
   onAnswer: (answer: AskAnswer) => void;
+  /** Read the chat again: the server closed the ask without saying how. */
+  onSettle: () => void;
 };
 
-export function AskTakeover({ open, agentName, text, onTextChange, onAnswer }: AskTakeoverProps) {
-  const { ask, failed } = open;
+export function AskTakeover({
+  open,
+  agentName,
+  text,
+  onTextChange,
+  onAnswer,
+  onSettle,
+}: AskTakeoverProps) {
+  const { ask, attempt } = open;
+  if (attempt?.state === "unsettled") {
+    // The ask is closed; only how it ended is unknown. Nothing here may answer it again.
+    return (
+      <>
+        <div className="mb-[var(--chat-space-inline)]">
+          <FailureCard tone="error">
+            <p className="min-w-0 flex-1">{t`Couldn't check how this question ended.`}</p>
+            <Button type="button" size="xs" variant="outline" onClick={onSettle}>
+              {t`Refresh`}
+            </Button>
+          </FailureCard>
+        </div>
+        <ClosedTakeover ask={ask} agentName={agentName} />
+      </>
+    );
+  }
+  const failed = attempt?.state === "failed" ? attempt : null;
   const failure = failed ? (
     <FailureCard tone="error">
       <p className="min-w-0 flex-1">{t`Couldn't send your answer.`}</p>
@@ -73,6 +99,20 @@ function TakeoverFrame({ labelledBy, children }: { labelledBy: string; children:
     >
       {children}
     </section>
+  );
+}
+
+/** The ask's title alone: it can no longer be answered here. */
+function ClosedTakeover({ ask, agentName }: { ask: ThreadAsk; agentName: string }) {
+  const titleId = useId();
+  return (
+    <TakeoverFrame labelledBy={titleId}>
+      <TakeoverTitle id={titleId}>
+        {ask.kind === "question"
+          ? ask.payload.question
+          : t`${agentName} wants to ${ask.payload.summary}?`}
+      </TakeoverTitle>
+    </TakeoverFrame>
   );
 }
 
