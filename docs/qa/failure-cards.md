@@ -144,7 +144,10 @@ valid body, a transport-envelope body, a 4xx and a 5xx.
 
 Block `/api/diagnostics/failures`: local records remain, there is one local
 `failure.ingest_failed` event per failed batch, and no recursive diagnostic
-requests or new cards. POST duplicate records, another accountId, a foreign
-threadId, arbitrary text fields and more than 32 records: deduplicate the first
-and reject the invalid batches. Switch accounts during delivery: the old batch
-must not be accepted under the new account.
+requests or new cards. Stall one request: it times out after two seconds and
+the next batch can proceed. POST duplicate records: accept each occurrence once.
+Mix valid records with missing or foreign thread IDs: accept the metadata but
+strip unproven thread/turn correlation. Keep correlation for owned deleted
+threads. Reject another accountId, arbitrary text fields and more than 32
+records. Switch accounts during delivery: the old batch must not be accepted
+under the new account.

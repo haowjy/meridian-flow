@@ -102,6 +102,11 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
   };
   switch (action.type) {
     case "retire":
+      if (
+        !state.sends.some((entry) => action.ids.has(entry.id)) &&
+        ![...state.withdrawals.keys()].some((id) => action.ids.has(id))
+      )
+        return state;
       return {
         sends: state.sends.filter((e) => !action.ids.has(e.id)),
         withdrawals: new Map([...state.withdrawals].filter(([id]) => !action.ids.has(id))),
@@ -151,7 +156,10 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
         nextOccurrence(state.withdrawals.get(action.id)?.attempt ?? 0, action.requestId),
       );
     case "withdrawn":
-      return withdrawal(action.id, "settled");
+      return {
+        ...withdrawal(action.id, "settled"),
+        sends: state.sends.filter((entry) => entry.id !== action.id),
+      };
     case "withdraw_failed": {
       const next = withdrawal(action.id, "failed");
       const entry = next.withdrawals.get(action.id);
@@ -262,10 +270,11 @@ export type HeldControls = Map<string, { row: QueuedControl; droppedAt: string |
  * reaches the transcript. The one other way out is proof it won't run: an accepted snapshot at
  * or after the dropping record (`history`) whose turns lack it, as after a Withdraw from another
  * tab. This device's own Withdraw releases the row at once (`held.delete`). Keyed by control
- * id, mutating `held` between calls.
+ * id; the owner commits the returned retention state and retires local commands
+ * from the same proof. Rendering never mutates the held state.
  */
-export function retainControls(
-  held: HeldControls,
+export function reconcileControls(
+  previous: HeldControls,
   input: {
     rows: readonly QueuedControl[];
     answered: ReadonlySet<string>;
@@ -273,7 +282,9 @@ export function retainControls(
     version: string | null;
     history: string | null;
   },
-): QueuedControl[] {
+): { held: HeldControls; rows: QueuedControl[]; retired: ReadonlySet<string> } {
+  const held: HeldControls = new Map([...previous].map(([id, entry]) => [id, { ...entry }]));
+  const retired = new Set<string>();
   const { rows, answered, version, history } = input;
   const shown = new Set<string>();
   for (const row of rows) {
@@ -284,6 +295,7 @@ export function retainControls(
   for (const [id, entry] of held) {
     if (answered.has(id)) {
       held.delete(id);
+      retired.add(id);
       continue;
     }
     if (!shown.has(id)) {
@@ -293,10 +305,11 @@ export function retainControls(
         (history !== null && compareSeq(history, entry.droppedAt) >= 0)
       ) {
         held.delete(id);
+        retired.add(id);
         continue;
       }
     }
     result.push(entry.row);
   }
-  return result;
+  return { held, rows: result, retired };
 }

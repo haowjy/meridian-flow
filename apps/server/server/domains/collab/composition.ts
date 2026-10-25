@@ -578,8 +578,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   return createCollabFacade({
     lifecycle: {
       dispose: async () => {
-        draftAheads.cancelScheduled();
-        await Promise.all([draftPulls.shutdown(), draftEffects.dispose()]);
+        await Promise.all([draftAheads.shutdown(), draftPulls.shutdown(), draftEffects.dispose()]);
       },
     },
     transport: {

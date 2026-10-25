@@ -629,8 +629,8 @@ retires the addressed peer and does not roll back unrelated documents in the rep
 
 ## Producer shutdown
 
-`DraftPullService.shutdown` and `DraftProjection.dispose` stop scheduling and
-join their running work. Callers await collaboration disposal before destroying
+`DraftPullService.shutdown`, ahead-reference registration `shutdown`, and
+`DraftProjection.dispose` stop scheduling and join their running work. Callers await collaboration disposal before destroying
 warm documents or resetting fixture rows. The PostgreSQL change-trail harness
 owns that ordering in `dispose`; its mid-case `cancelScheduledPulls` and
 `destroyWarmState` controls are not teardown. `flush` remains assertion-time

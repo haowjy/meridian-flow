@@ -2,7 +2,6 @@
 import { clientFailureBatchSchema, clientFailureEvent } from "@meridian/contracts/failures";
 import { createError } from "nitro/h3";
 import type { EventSink } from "../domains/observability/index.js";
-import { requireThreadOwner } from "../domains/threads/index.js";
 import type { ThreadRepositories } from "./compose.js";
 
 const seen = new Map<string, number>();
@@ -30,10 +29,15 @@ export async function ingestClientFailures(
   current.count += parsed.data.records.length;
   rates.set(userId, current);
   if (rates.size > 1000) rates.delete(rates.keys().next().value as string);
+  const owned = new Set<string>();
   for (const threadId of new Set(
     parsed.data.records.flatMap((r) => (r.threadId ? [r.threadId] : [])),
-  ))
-    await requireThreadOwner({ threads: deps.threads }, threadId, userId);
+  )) {
+    const row = await deps.threads.findByIdIncludingDeleted(threadId as never);
+    // Diagnostics remain useful after deletion or failed creation. Only correlation needs
+    // ownership proof; unknown and foreign targets both become account-scoped metadata.
+    if (row?.userId === userId && row.project?.userId === userId) owned.add(threadId);
+  }
   let accepted = 0;
   for (const record of parsed.data.records) {
     const key = `${userId}:${record.occurrenceId}:${record.phase}`;
@@ -41,12 +45,13 @@ export async function ingestClientFailures(
     if (at !== undefined && now - at < 5 * WINDOW_MS) continue;
     seen.set(key, now);
     if (seen.size > 5000) seen.delete(seen.keys().next().value as string);
+    const threadId = record.threadId && owned.has(record.threadId) ? record.threadId : undefined;
     let turnId: string | undefined;
-    if (record.turnId && record.threadId) {
+    if (record.turnId && threadId) {
       const turn = await deps.turns.findById(record.turnId as never);
-      if (turn?.threadId === record.threadId) turnId = record.turnId;
+      if (turn?.threadId === threadId) turnId = record.turnId;
     }
-    deps.sink.emit(clientFailureEvent({ ...record, turnId }));
+    deps.sink.emit(clientFailureEvent({ ...record, threadId, turnId }));
     accepted += 1;
   }
   return { accepted };

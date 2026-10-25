@@ -61,7 +61,11 @@ export function clientFailureEvent(record: ClientFailureRecord): EventRecord {
     level: record.failure.source === "bug" ? "error" : "warn",
     source: "client",
     name: `failure.${record.phase}`,
-    correlation: { threadId: record.threadId, turnId: record.turnId, requestId: record.requestId },
+    correlation: {
+      ...(record.threadId ? { threadId: record.threadId } : {}),
+      ...(record.turnId ? { turnId: record.turnId } : {}),
+      ...(record.requestId ? { requestId: record.requestId } : {}),
+    },
     payload: {
       occurrenceId: record.occurrenceId,
       category: record.failure.category,

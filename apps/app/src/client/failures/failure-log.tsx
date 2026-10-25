@@ -21,7 +21,7 @@ export function FailureLogProvider({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ accountId, records }),
-          signal: abort.signal,
+          signal: AbortSignal.any([abort.signal, AbortSignal.timeout(2_000)]),
         });
         if (!response.ok) throw new Error("Failure ingest unavailable");
       },

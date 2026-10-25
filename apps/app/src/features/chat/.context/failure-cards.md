@@ -57,7 +57,9 @@ Command owners emit `failure.recorded` and `failure.ended` at their transitions,
 using the same occurrence key as the card. Rendering and announcing do not log.
 `FailureLogProvider` keeps a bounded local trace and sends bounded, best-effort
 metadata batches to authenticated `/api/diagnostics/failures`. It fences batches
-to the account; ingestion failure stays local and never changes an action's
-outcome. No message, prompt, response body or exception text enters that route.
+to the account and gives each request a two-second deadline; ingestion failure
+stays local and never changes an action's outcome. Missing or foreign targets
+lose thread/turn correlation, not the authenticated failure record. Owned
+deleted targets retain correlation. No message, prompt, response body or exception text enters that route.
 The non-chat `useFailure` hook owns the same lifetime for Work goal editing;
 this is not a migration of every error surface.

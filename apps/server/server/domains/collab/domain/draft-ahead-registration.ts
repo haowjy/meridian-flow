@@ -20,12 +20,10 @@ import type { AheadRefRegistrar } from "./ports/document-link-scope.js";
 export interface DraftAheadRegistration {
   /** After an admitted writer update: registers the draft's refs, debounced per draft. */
   schedule(draftId: string): void;
-  /** Reads the draft now and registers its refs. */
-  registerDraftAheads(draftId: string): Promise<void>;
-  /** Resolves once every scheduled and running registration has finished. */
+  /** Assertion-time convergence, distinct from shutdown. */
   flush(): Promise<void>;
-  /** Drops scheduled registrations that haven't started; running ones finish. */
-  cancelScheduled(): void;
+  /** Stops admission, cancels queued registrations, and joins running work. */
+  shutdown(): Promise<void>;
 }
 
 export type DraftAheadDiagnostics = {
@@ -42,6 +40,7 @@ export function createDraftAheadRegistration(input: {
   maxDebounceMs?: number;
   diagnostics?: DraftAheadDiagnostics;
 }): DraftAheadRegistration {
+  let stopped = false;
   const debounceMs = input.debounceMs ?? 2000;
   const maxDebounceMs = input.maxDebounceMs ?? 10000;
   const timers = new Map<
@@ -96,6 +95,7 @@ export function createDraftAheadRegistration(input: {
   }
 
   function run(draftId: string) {
+    if (stopped) return;
     const entry = timers.get(draftId);
     if (!entry) return;
     if (entry.debounce) clearTimeout(entry.debounce);
@@ -122,13 +122,13 @@ export function createDraftAheadRegistration(input: {
 
   return {
     schedule(draftId) {
+      if (stopped) return;
       const entry = timers.get(draftId) ?? {};
       if (entry.debounce) clearTimeout(entry.debounce);
       entry.debounce = setTimeout(() => run(draftId), debounceMs);
       entry.max ??= setTimeout(() => run(draftId), maxDebounceMs);
       timers.set(draftId, entry);
     },
-    registerDraftAheads,
     async flush() {
       while (timers.size > 0) {
         const pending = [...timers];
@@ -136,7 +136,8 @@ export function createDraftAheadRegistration(input: {
         await Promise.all(pending.map(([, entry]) => entry.running));
       }
     },
-    cancelScheduled() {
+    async shutdown() {
+      stopped = true;
       for (const [draftId, entry] of timers) {
         if (entry.debounce) clearTimeout(entry.debounce);
         if (entry.max) clearTimeout(entry.max);
@@ -145,6 +146,8 @@ export function createDraftAheadRegistration(input: {
         entry.again = false;
         if (!entry.running) timers.delete(draftId);
       }
+      await Promise.allSettled([...timers.values()].map((entry) => entry.running));
+      timers.clear();
     },
   };
 }
