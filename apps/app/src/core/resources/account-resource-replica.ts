@@ -657,7 +657,10 @@ export class AccountResourceReplica {
   }
 
   async deleteFolder(projectId: string, folderId: string): Promise<{ operationId?: string }> {
-    return this.commitFolderPlan(projectId, folderId, planFolderDeletion);
+    const admissionOrder = this.nextNamespaceAdmission();
+    return this.commitFolderPlan(projectId, folderId, (input) =>
+      planFolderDeletion({ ...input, admissionOrder }),
+    );
   }
 
   private async commitFolderPlan(
@@ -696,9 +699,16 @@ export class AccountResourceReplica {
 
   async deleteDocument(projectId: string, key: ResourceKey): Promise<{ operationId?: string }> {
     const operationId = crypto.randomUUID();
+    const admissionOrder = this.nextNamespaceAdmission();
     let undoable = false;
     const admitted = await this.commitPlan(key, (record) => {
-      const write = planResourceDeletion(record, projectId, crypto.randomUUID(), operationId);
+      const write = planResourceDeletion(
+        record,
+        projectId,
+        crypto.randomUUID(),
+        operationId,
+        admissionOrder,
+      );
       undoable =
         write?.next.intents.some(
           (intent) => intent.operationId === operationId && intent.state !== "settled-locally",
