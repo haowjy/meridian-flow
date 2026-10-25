@@ -356,7 +356,6 @@ export function ContextViewerSurfaceController({
         );
     }
   }, [
-    active,
     activeContextPath,
     activeContextScheme,
     availability,
