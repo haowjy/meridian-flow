@@ -8,7 +8,6 @@
  * single source of the orchestrator->AG-UI mapping; depends only on the protocol
  * contracts.
  */
-import type { InterruptAnswerProvenance } from "@meridian/contracts/components";
 import {
   type AGUIEvent,
   EventSchemas,
@@ -36,8 +35,6 @@ export const PROJECTOR_RESET_EVENT_TYPES = [
   "turn.cancelled",
   "turn.error",
 ] as const satisfies readonly OrchestratorEvent["type"][];
-
-const USER_INTERRUPT_PROVENANCE: InterruptAnswerProvenance = "user";
 
 function parseAguiEvent(input: Record<string, unknown>): AGUIEvent {
   return EventSchemas.parse(input);
@@ -369,49 +366,12 @@ export function createOrchestratorEventProjector() {
         return events;
       }
 
-      case "interrupt.created":
+      case "ask.updated":
         return [
           parseAguiEvent({
             type: EventType.CUSTOM,
-            name: "meridian.interrupt",
-            value: {
-              turnId: event.turnId,
-              interruptId: event.interruptId,
-              blockSequence: event.blockSequence,
-              state: "created",
-            },
-          }),
-        ];
-
-      case "interrupt.resolved":
-        return [
-          parseAguiEvent({
-            type: EventType.CUSTOM,
-            name: "meridian.interrupt",
-            value: {
-              turnId: event.turnId,
-              interruptId: event.interruptId,
-              blockSequence: event.blockSequence,
-              state: "resolved",
-              value: event.value,
-              provenance: USER_INTERRUPT_PROVENANCE,
-            },
-          }),
-        ];
-
-      case "interrupt.expired":
-        return [
-          parseAguiEvent({
-            type: EventType.CUSTOM,
-            name: "meridian.interrupt",
-            value: {
-              turnId: event.turnId,
-              interruptId: event.interruptId,
-              blockSequence: event.blockSequence,
-              state: "expired",
-              value: null,
-              provenance: "auto",
-            },
+            name: "meridian.ask",
+            value: event.ask,
           }),
         ];
 

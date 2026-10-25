@@ -24,7 +24,7 @@ export type TurnRole = z.infer<typeof TurnRole>;
 export const TurnStatus = z.enum([
   "pending",
   "streaming",
-  "waiting_interrupt",
+  "awaiting_answer",
   "complete",
   "cancelled",
   "error",

@@ -848,7 +848,7 @@ export function createInMemoryRepositories(
             (span.throughPosition === null || turn.position <= span.throughPosition) &&
             (turn.status === "pending" ||
               turn.status === "streaming" ||
-              turn.status === "waiting_interrupt"),
+              turn.status === "awaiting_answer"),
         ),
       );
       return matches.sort((left, right) => left.position - right.position)[0] ?? null;
@@ -887,9 +887,7 @@ export function createInMemoryRepositories(
         [...turns.values()].filter(
           (turn) =>
             turn.threadId === threadId &&
-            (turn.status === "pending" ||
-              turn.status === "streaming" ||
-              turn.status === "waiting_interrupt"),
+            (turn.status === "pending" || turn.status === "streaming"),
         ),
       );
     },
@@ -914,9 +912,7 @@ export function createInMemoryRepositories(
           (turn) =>
             threads.get(turn.threadId)?.kind === "primary" &&
             turn.role === "assistant" &&
-            (turn.status === "pending" ||
-              turn.status === "streaming" ||
-              turn.status === "waiting_interrupt") &&
+            (turn.status === "pending" || turn.status === "streaming") &&
             (!after ||
               turn.threadId.localeCompare(after.threadId) > 0 ||
               (turn.threadId === after.threadId && turn.position > after.position)),
@@ -942,9 +938,7 @@ export function createInMemoryRepositories(
         .find(
           (turn) =>
             turn.role === "assistant" &&
-            (turn.status === "pending" ||
-              turn.status === "streaming" ||
-              turn.status === "waiting_interrupt") &&
+            (turn.status === "pending" || turn.status === "streaming") &&
             (createdAfter === undefined || turn.createdAt >= createdAfter),
         );
       return running?.id ?? null;

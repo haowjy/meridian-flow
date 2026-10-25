@@ -27,5 +27,5 @@ export function isThreadActionRequired(input: {
   activeLineage: ReadonlyArray<Pick<Turn, "role" | "status">>;
 }): boolean {
   const nearestAssistant = input.activeLineage.find((turn) => turn.role === "assistant");
-  return nearestAssistant?.status === "waiting_interrupt";
+  return nearestAssistant?.status === "awaiting_answer";
 }

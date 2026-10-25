@@ -104,16 +104,6 @@ function turnToLifecycleStatusUpdate(turn: Turn): UpdateTurnStatusInput {
   };
 }
 
-async function updateInterruptTurnStatus(
-  repos: ReadModelProjectorRepositories,
-  turnId: string,
-  status: UpdateTurnStatusInput["status"],
-): Promise<void> {
-  const turn = await repos.turns.findById(turnId);
-  if (!turn || isTerminalTurnStatus(turn.status)) return;
-  await repos.turns.updateStatus(turnId, { status });
-}
-
 export async function projectReadModelEvent(
   repos: ReadModelProjectorRepositories,
   event: OrchestratorEvent,
@@ -126,12 +116,7 @@ export async function projectReadModelEvent(
     case "turn.error":
       await repos.turns.updateStatus(event.turn.id, turnToLifecycleStatusUpdate(event.turn));
       return null;
-    case "interrupt.created":
-      await updateInterruptTurnStatus(repos, event.turnId, "waiting_interrupt");
-      return null;
-    case "interrupt.resolved":
-    case "interrupt.expired":
-      await updateInterruptTurnStatus(repos, event.turnId, "streaming");
+    case "ask.updated":
       return null;
     case "model.response_received": {
       const response = responseToCreateInput(event.response);

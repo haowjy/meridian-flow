@@ -402,7 +402,7 @@ export const turns = pgTable(
       .where(sql`${table.promptBakeId} IS NOT NULL`),
     index("turns_unsettled")
       .on(table.threadId, table.position)
-      .where(sql`${table.status} IN ('pending','streaming','waiting_interrupt')`),
+      .where(sql`${table.status} IN ('pending','streaming','awaiting_answer')`),
     index("turns_execution")
       .on(table.threadId, table.executionId)
       .where(sql`${table.executionId} IS NOT NULL`),
@@ -428,7 +428,7 @@ export const turns = pgTable(
     ),
     check(
       "turns_status_valid",
-      sql`${table.status} IN ('pending', 'streaming', 'waiting_interrupt', 'complete', 'cancelled', 'error')`,
+      sql`${table.status} IN ('pending', 'streaming', 'awaiting_answer', 'complete', 'cancelled', 'error')`,
     ),
     check(
       "turns_compaction_model_required",

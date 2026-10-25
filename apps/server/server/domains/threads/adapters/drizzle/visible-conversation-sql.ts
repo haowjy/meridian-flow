@@ -47,7 +47,7 @@ export function threadActionRequiredSql(columns: ActionRequiredColumns): SQL<boo
       WHERE active_lineage.role <> 'assistant'
         AND active_lineage.depth < ${MAX_ACTIVE_LINEAGE_DEPTH}
     )
-    SELECT nearest.status = 'waiting_interrupt'
+    SELECT nearest.status = 'awaiting_answer'
     FROM active_lineage nearest
     WHERE nearest.role = 'assistant'
   ), false)`;
