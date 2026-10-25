@@ -24,7 +24,7 @@ import {
   createReferenceBrowserController,
   type DocumentReference,
 } from "@/core/completion";
-import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
+import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import { linkChipAttributes, referenceChip } from "@/core/editor/links";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
 import { ReferenceSuggestionMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
@@ -37,7 +37,7 @@ import {
 
 export type ComposerReferenceRuntime = {
   onOpen?: (reference: DocumentReference) => void;
-  catalog: AtReferenceCatalog | null;
+  catalog: ReferenceBrowserCatalog | null;
 };
 
 export function ComposerReferenceMenu({
@@ -204,7 +204,7 @@ function ReferenceReplacement({
   onSelect,
 }: {
   editor: NodeViewProps["editor"];
-  catalog: AtReferenceCatalog;
+  catalog: ReferenceBrowserCatalog;
   onSelect: (reference: ComposerReferenceAttrs) => void;
 }) {
   const id = useId();

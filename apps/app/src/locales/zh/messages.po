@@ -1024,6 +1024,10 @@ msgstr ""
 msgid "Can't go inside itself"
 msgstr ""
 
+#: src/features/editor/SessionEditor.tsx
+msgid "Can’t mention inside code"
+msgstr ""
+
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source} to that location."
 msgstr ""
@@ -2969,6 +2973,11 @@ msgstr ""
 msgid "Medium"
 msgstr ""
 
+#: src/components/app/composer/Composer.tsx
+#: src/features/editor/SessionEditor.tsx
+msgid "Mention"
+msgstr ""
+
 #. placeholder {0}: row.label
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "Mention {0}"
@@ -3355,6 +3364,14 @@ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work yet."
+msgstr ""
+
+#: src/components/app/composer/Composer.tsx
+msgid "Not available in this chat"
+msgstr ""
+
+#: src/features/editor/SessionEditor.tsx
+msgid "Not available in this document"
 msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
@@ -5087,6 +5104,10 @@ msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
+msgstr ""
+
+#: src/components/app/composer/Composer.tsx
+msgid "This part of the message can’t hold mentions"
 msgstr ""
 
 #: src/features/editor/SchemaNotices.tsx

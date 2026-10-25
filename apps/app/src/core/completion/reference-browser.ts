@@ -7,7 +7,6 @@ import {
 import type {
   CatalogAuthorityEntry,
   CatalogEntry,
-  CatalogFileEntry,
   CatalogScope,
 } from "@meridian/contracts/protocol";
 import {
@@ -17,7 +16,6 @@ import {
 } from "@meridian/contracts/protocol";
 import { type CatalogCacheView, catalogChildren } from "@meridian/resource-replica";
 import {
-  authoritativeReferenceForFile,
   canonicalReferenceUri,
   folderReferenceForEntry,
   normalizeReferenceName,
@@ -29,6 +27,8 @@ import {
   type ReferenceTerminalRow,
   rankReferenceRows,
   referenceAuthorityIndex,
+  referenceRowForFile,
+  referenceRowForFolder,
 } from "./reference-policy";
 import {
   createSuggestionDriverCore,
@@ -617,15 +617,7 @@ function folderMentionRow(
       : catalog.read(listed.scope);
   const entry = view?.entries.get(listed.containerId);
   if (entry?.kind !== "folder") return null;
-  const reference = folderReferenceForEntry(entry, authorities);
-  if (!reference) return null;
-  return {
-    kind: "folder-mention",
-    rowId: `folder-mention:${catalogScopeKey(entry.scope)}:${entry.entryId}`,
-    label: entry.name,
-    location: entry.path.slice(0, -1).join("/"),
-    action: { type: "select", reference },
-  };
+  return referenceRowForFolder(entry, authorities);
 }
 
 function catalogIncomplete(view: CatalogCacheView | null): boolean {
@@ -656,7 +648,7 @@ function populatedContainers(
       if (!folders || !folderReferenceForEntry(entry, authorities)) continue;
       parentId = entry.entryId;
     } else if (entry.kind === "file") {
-      const row = rowForFile(entry, authorities);
+      const row = referenceRowForFile(entry, authorities);
       if (!row || (kinds && !kinds.includes(row.fileKind))) continue;
       parentId = entry.parentId;
     } else continue;
@@ -709,7 +701,7 @@ function rowForEntry(
   entry: BrowsableCatalogEntry,
   authorities: ReferenceAuthorityIndex,
 ): ReferenceRow | null {
-  if (entry.kind === "file") return rowForFile(entry, authorities);
+  if (entry.kind === "file") return referenceRowForFile(entry, authorities);
   const prefix = canonicalReferenceUri(entry.scope, entry.uri, authorities);
   if (!prefix) return null;
   if (entry.kind === "source") {
@@ -741,24 +733,6 @@ function rowForEntry(
       containerId: entry.entryId,
       acquire: false,
     },
-  };
-}
-
-function rowForFile(
-  entry: CatalogFileEntry,
-  authorities: ReferenceAuthorityIndex,
-): Extract<ReferenceRow, { kind: "file" }> | null {
-  const reference = authoritativeReferenceForFile(entry, authorities);
-  if (!reference) return null;
-  return {
-    kind: "file",
-    rowId: `file:${entry.entryId}`,
-    label: entry.name,
-    location: entry.path.slice(0, -1).join("/"),
-    fileKind: entry.editable ? "document" : "asset",
-    aliases: entry.aliases,
-    matchedAlias: null,
-    action: { type: "select", reference },
   };
 }
 

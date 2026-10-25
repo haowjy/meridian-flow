@@ -50,6 +50,7 @@ import {
 } from "./extensions/meridian-extensions";
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
+import { ReferenceDropExtension, type ReferenceDropOptions } from "./extensions/reference-drop";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
@@ -104,6 +105,8 @@ export type CreateEditorExtensionsOptions = {
   /** Mounts the slash insertion menu; omitted surfaces never pay for it. */
   slashCommands?: SlashCommandExtensionOptions;
   atReferences?: AtReferenceExtensionOptions;
+  /** Turns project-tree rows into the same references `@` writes. */
+  referenceDrop?: ReferenceDropOptions;
   /** Turns a pasted `[[Name]]` into a link; only the Editor mounts it. */
   wikilinkPaste?: WikilinkPasteOptions;
 };
@@ -286,6 +289,7 @@ export function createEditorExtensions({
   agentNames,
   slashCommands,
   atReferences,
+  referenceDrop,
   wikilinkPaste,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
@@ -301,6 +305,7 @@ export function createEditorExtensions({
       assetRenderContext,
       slashCommands,
       atReferences,
+      referenceDrop,
       wikilinkPaste,
     }),
     ...collaboration,
@@ -328,10 +333,16 @@ export function createStandaloneEditorExtensions({
   assetRenderContext,
   slashCommands,
   atReferences,
+  referenceDrop,
   wikilinkPaste,
 }: Pick<
   CreateEditorExtensionsOptions,
-  "schemaType" | "assetRenderContext" | "slashCommands" | "atReferences" | "wikilinkPaste"
+  | "schemaType"
+  | "assetRenderContext"
+  | "slashCommands"
+  | "atReferences"
+  | "referenceDrop"
+  | "wikilinkPaste"
 > = {}): Extensions {
   if (schemaType === "code") {
     return [
@@ -405,6 +416,9 @@ export function createStandaloneEditorExtensions({
     // Where dragged content lands, and the dropcursor that promises it:
     // inside a table both resolve into a cell, never a new column.
     DropLandingExtension,
+    // Later extensions receive DOM events first: entry drops own their caret
+    // and insertion before the generic ProseMirror slice door sees them.
+    ...(referenceDrop ? [ReferenceDropExtension.configure(referenceDrop)] : []),
     // Chrome mounts only on the document schema: a code file is one code
     // block with no objects and no surfaces to own.
     ...EDITOR_CHROME_EXTENSIONS,
@@ -423,6 +437,7 @@ export function createEditorConfig({
   agentNames,
   slashCommands,
   atReferences,
+  referenceDrop,
   wikilinkPaste,
   editable = true,
   autofocus = false,
@@ -453,6 +468,7 @@ export function createEditorConfig({
         agentNames,
         slashCommands,
         atReferences,
+        referenceDrop,
         wikilinkPaste,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),

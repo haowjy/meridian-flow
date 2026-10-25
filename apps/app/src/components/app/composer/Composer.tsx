@@ -4,6 +4,7 @@ import { t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts";
 import type { UploadIntakeResult } from "@meridian/contracts/protocol";
 import { imageCapable } from "@meridian/thread-client";
+import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ArrowUp, Paperclip } from "lucide-react";
@@ -20,12 +21,19 @@ import {
 } from "react";
 import { FailureCard } from "@/components/app/FailureCard";
 import { Button } from "@/components/ui/button";
-import type { DocumentReference, StableReferenceAuthority } from "@/core/completion";
+import type {
+  DocumentReference,
+  ReferenceTerminalRow,
+  StableReferenceAuthority,
+} from "@/core/completion";
 import { ChromeKernelExtension, getEditorChrome } from "@/core/editor/chrome";
-import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
+import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import { AtReferenceExtension } from "@/core/editor/extensions/at-reference";
+import { ReferenceDropExtension } from "@/core/editor/extensions/reference-drop";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
 import { AtReferenceMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
+import { activeEntryDrag } from "@/features/project/context/entry-drag/drag-session";
+import { clearDragHint, showDragHint } from "@/features/project/context/tree-drop/drag-hint";
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
 import { ComposerSkillAtom } from "./ComposerSkillAtom";
@@ -84,6 +92,14 @@ function authorityForUpload(
   };
 }
 
+function composerReferenceNode(schema: Schema, row: ReferenceTerminalRow): PMNode {
+  return schema.nodeFromJSON(
+    composerReferenceContent(
+      pickedReferenceAttrs(row.action.reference, row.kind === "file" ? row.fileKind : null),
+    ),
+  );
+}
+
 /** Intake may allocate a free leaf name; the chip must spell the authoritative URI it received. */
 function uploadLabel(uri: UploadIntakeResult["uri"], fallback: string): string {
   const parsed = parseContextUri(uri);
@@ -127,7 +143,7 @@ export type ComposerProps = {
   submitDisabledReason?: string;
   uploadScope?: ComposerUploadScope;
   uploadPort?: ComposerUploadPort;
-  referenceCatalog?: AtReferenceCatalog | null;
+  referenceCatalog?: ReferenceBrowserCatalog | null;
   availableSkills?: readonly ComposerAvailableSkill[] | null;
   /** Chat verbs (`/compact`) the owning surface can run on its thread. */
   commands?: readonly ComposerChatCommand[] | null;
@@ -234,24 +250,30 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           if (!catalog) return null;
           return {
             ...catalog,
-            insertReference: (current, range, row) => {
-              return current
-                .chain()
-                .focus()
-                .insertContentAt(
-                  range,
-                  composerReferenceContent(
-                    pickedReferenceAttrs(
-                      row.action.reference,
-                      row.kind === "file" ? row.fileKind : null,
-                    ),
-                  ),
-                )
-                .run();
-            },
+            referenceNode: composerReferenceNode,
           };
         },
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),
+      }),
+      ReferenceDropExtension.configure({
+        activeDrag: activeEntryDrag,
+        content: (schema, entries) => {
+          const catalog = referenceCatalogRef.current;
+          if (!catalog) return null;
+          const nodes = entries.map((entry) => {
+            const row = catalog.resolveReference(entry.ref);
+            return row ? composerReferenceNode(schema, row) : null;
+          });
+          return nodes.every((node) => node !== null) ? nodes : null;
+        },
+        label: (kind) =>
+          kind === "accept"
+            ? t`Mention`
+            : kind === "unavailable"
+              ? t`Not available in this chat`
+              : t`This part of the message can’t hold mentions`,
+        showHint: (owner, verdict, point) => showDragHint(owner, verdict, point),
+        clearHint: clearDragHint,
       }),
       ComposerCommandExtension.configure({
         catalog: () => {

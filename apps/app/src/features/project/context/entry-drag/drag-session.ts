@@ -1,8 +1,8 @@
 /**
  * The rows being dragged right now. A browser hides a drag's data until the
  * drop, so targets decide from this record instead. The drag carries only
- * Meridian's own type: a surface that can't take rows yet (the composer, the
- * editor) ignores the drop rather than pasting the names as stray text.
+ * Meridian's own type: writing surfaces turn resolvable rows into mentions,
+ * while every other surface ignores it rather than pasting stray text.
  */
 import type { DragEvent } from "react";
 import { MERIDIAN_ENTRIES_MIME } from "../tree-drop/drag-payload";
