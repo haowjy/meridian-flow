@@ -810,7 +810,13 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         sourceId: await sourceTree.sourceId(),
       };
       const moved = await callAdapter(destination.value.canonical, () =>
-        destinationTree.move(destination.value.path, { documentId, from, changedBy, record }),
+        destinationTree.move(destination.value.path, {
+          documentId,
+          from,
+          changedBy,
+          record,
+          ...(command.position ? { position: command.position } : {}),
+        }),
       );
       if (!moved.ok) return moved;
       const { scheme, authority } = destination.value;

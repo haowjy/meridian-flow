@@ -30,6 +30,7 @@
     "@t3-oss/env-core": "^0.13.11",
     "@workos/authkit-session": "^0.7.0",
     "drizzle-orm": "catalog:",
+    "fractional-indexing": "^4.0.0",
     "jsonrepair": "catalog:",
     "lib0": "^0.2.117",
     "mammoth": "1.12.0",

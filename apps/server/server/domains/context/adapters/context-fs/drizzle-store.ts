@@ -7,7 +7,11 @@
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documentMarkdownProjections } from "@meridian/database/schema";
+import {
+  branchTreeParentOrders,
+  branchTreeRanks,
+  documentMarkdownProjections,
+} from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -32,6 +36,7 @@ import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
 import { insertDocumentRow } from "../../tree/node-rows.js";
 import { ensureLiveFolderPath } from "../../tree/placement.js";
+import { liveParentOrderPolicy } from "../../tree/sibling-order.js";
 import {
   createTreeReader,
   LIVE_TREE,
@@ -327,6 +332,23 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return new Map(rows.map((row) => [row.documentId, row.markdown]));
   }
 
+  async parentOrderPolicy(view: TreeView, parentId: string | null) {
+    if (view.kind === "branch") {
+      const [override] = await this.db
+        .select({ orderPolicy: branchTreeParentOrders.orderPolicy })
+        .from(branchTreeParentOrders)
+        .where(
+          and(
+            eq(branchTreeParentOrders.branchId, view.branchId),
+            eq(branchTreeParentOrders.parentKind, parentId === null ? "source" : "folder"),
+            eq(branchTreeParentOrders.parentId, (parentId ?? this.sourceId) as never),
+          ),
+        );
+      if (override) return override.orderPolicy;
+    }
+    return liveParentOrderPolicy(this.db, this.sourceId, parentId as FolderId | null);
+  }
+
   async listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]> {
     const vf = visibleFolders(view);
     const rows = await this.db
@@ -344,7 +366,27 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           parentId === null ? isNull(vf.parentId) : eq(vf.parentId, parentId as FolderId),
         ),
       );
-    return rows.map(mapFolder);
+    const ranks =
+      view.kind === "branch" && rows.length
+        ? new Map(
+            (
+              await this.db
+                .select({ id: branchTreeRanks.nodeId, rank: branchTreeRanks.rank })
+                .from(branchTreeRanks)
+                .where(
+                  and(
+                    eq(branchTreeRanks.branchId, view.branchId),
+                    eq(branchTreeRanks.nodeKind, "folder"),
+                    inArray(
+                      branchTreeRanks.nodeId,
+                      rows.map((row) => row.id),
+                    ),
+                  ),
+                )
+            ).map((row) => [row.id, row.rank]),
+          )
+        : null;
+    return rows.map((row) => mapFolder({ ...row, rank: ranks?.get(row.id) ?? row.rank }));
   }
 
   async listDocuments(view: TreeView, folderId: string | null): Promise<ContextDocument[]> {
@@ -358,7 +400,27 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           folderId === null ? isNull(vd.folderId) : eq(vd.folderId, folderId as FolderId),
         ),
       );
-    return rows.map(mapDocument);
+    const ranks =
+      view.kind === "branch" && rows.length
+        ? new Map(
+            (
+              await this.db
+                .select({ id: branchTreeRanks.nodeId, rank: branchTreeRanks.rank })
+                .from(branchTreeRanks)
+                .where(
+                  and(
+                    eq(branchTreeRanks.branchId, view.branchId),
+                    eq(branchTreeRanks.nodeKind, "document"),
+                    inArray(
+                      branchTreeRanks.nodeId,
+                      rows.map((row) => row.id),
+                    ),
+                  ),
+                )
+            ).map((row) => [row.id, row.rank]),
+          )
+        : null;
+    return rows.map((row) => mapDocument({ ...row, rank: ranks?.get(row.id) ?? row.rank }));
   }
 }
 

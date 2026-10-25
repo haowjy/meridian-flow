@@ -130,6 +130,7 @@ export interface ContextDocumentStore {
     documentId: string,
   ): Promise<{ path: string; name: string; deleted: boolean } | null>;
   readProjections(ids: string[]): Promise<Map<string, string>>;
+  parentOrderPolicy(view: TreeView, parentId: string | null): Promise<"default" | "manual">;
   listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]>;
   listDocuments(view: TreeView, folderId: string | null): Promise<ContextDocument[]>;
   /**

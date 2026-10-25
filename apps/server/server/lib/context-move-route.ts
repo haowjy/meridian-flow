@@ -68,6 +68,7 @@ export interface ParsedContextMove {
   operationId: string;
   expected: MoveContextEntryRequest["expected"];
   destinationParent?: MoveContextEntryRequest["destinationParent"];
+  position?: MoveContextEntryRequest["position"];
   source: ContextMoveLocator;
   destination: ContextMoveLocator;
   name?: string;
@@ -85,6 +86,7 @@ export type ResolvedContextMove = {
   operationId: string;
   expected: MoveContextEntryRequest["expected"];
   destinationParent?: MoveContextEntryRequest["destinationParent"];
+  position?: MoveContextEntryRequest["position"];
   source: ResolvedContextMoveLocator;
   destination: ResolvedContextMoveLocator;
   name?: string;
@@ -208,6 +210,19 @@ export function parseContextMove(input: {
     throw createError({ statusCode: 400, message: "Request body must be an object" });
   }
   const body = input.body as Record<string, unknown>;
+  let position: MoveContextEntryRequest["position"];
+  if (body.position !== undefined) {
+    if (!body.position || typeof body.position !== "object")
+      throw createError({ statusCode: 400, message: "Position is invalid" });
+    const raw = body.position as Record<string, unknown>;
+    if (raw.kind === "start" || raw.kind === "end") position = { kind: raw.kind };
+    else if (raw.kind === "before" || raw.kind === "after")
+      position = {
+        kind: raw.kind,
+        siblingId: requireRequestId(raw.siblingId, "position.siblingId"),
+      };
+    else throw createError({ statusCode: 400, message: "Position is invalid" });
+  }
   const expected = body.expected as Record<string, unknown> | undefined;
   if (
     !expected ||
@@ -245,6 +260,7 @@ export function parseContextMove(input: {
     operationId: requireRequestId(body.operationId, "operationId"),
     expected: { kind: expected.kind, nodeId: expected.nodeId },
     ...(destinationParent ? { destinationParent } : {}),
+    ...(position ? { position } : {}),
     source: parseLocator({
       scheme: input.sourceScheme,
       path: sourcePath,
@@ -293,6 +309,7 @@ export async function commitContextMove(input: {
       origin: { type: "human", userId: input.userId },
       expected: input.move.expected,
       destinationParent: input.move.destinationParent,
+      position: input.move.position,
       authorizeDestination: input.authorizeDestination,
       operationId: input.move.operationId,
     },
@@ -415,6 +432,7 @@ export async function handleContextMoveRequest(
     operationId: move.operationId,
     expected: move.expected,
     destinationParent: move.destinationParent,
+    position: move.position,
     source: await resolveLocator(move.source),
     destination: await resolveLocator(move.destination, true),
     ...(move.name ? { name: move.name } : {}),
