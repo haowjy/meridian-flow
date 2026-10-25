@@ -57,6 +57,7 @@ export type ContextOperationCommand =
       destinationUri: string;
       expected: MoveContextEntryRequest["expected"];
       destinationParent?: MoveContextEntryRequest["destinationParent"];
+      position?: MoveContextEntryRequest["position"];
     }
   | { kind: "delete"; uri: string; expected: DeleteContextEntryRequest["expected"] };
 
