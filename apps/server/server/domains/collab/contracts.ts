@@ -43,7 +43,7 @@ import type { DraftReviewItem } from "./domain/branch-review-items.js";
 import type { Branches } from "./domain/branches.js";
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftAheadRegistration } from "./domain/draft-ahead-registration.js";
-import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
+import type { BoundWrite, ImportLinkBinder, LinkBinder } from "./domain/link-binding.js";
 import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
 
@@ -551,6 +551,6 @@ export type CollabDomain = CollabTransport &
   DraftPeerShadowAccess &
   CollabBranches &
   CollabBranchResolver &
-  DocumentCreationAggregate;
+  DocumentCreationAggregate & { importBinder: ImportLinkBinder };
 
 export type { DocumentCreationAggregate } from "./domain/document-creation.js";

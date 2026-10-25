@@ -4,7 +4,6 @@
  * chooses concrete server adapters and assembles domain services behind ports.
  */
 
-import type { ProjectId } from "@meridian/contracts";
 import type { AgentPermission } from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -70,6 +69,7 @@ import {
   createRestoreRemovedDocuments,
   createUploadIntake,
   type DocumentAddressResolver,
+  type DocumentArrivals,
   type DocumentLinkResolver,
   type DocumentPropertiesReader,
   type DocumentRemovals,
@@ -106,9 +106,13 @@ import {
   type PgFileAccessChanges,
 } from "../domains/file-policy/index.js";
 import {
+  createOrganizeWakeHub,
+  createProductionImportOrganizer,
   createProductionImportService,
+  type ImportOrganizer,
   type ImportService,
   listOpenImports,
+  type OrganizeWakeHub,
 } from "../domains/import/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
 import {
@@ -295,6 +299,8 @@ export type AppServices = {
   projectExport: ProjectExport;
   imports(projectId: string, userId: string): ImportService;
   openImports(userId: string): Promise<import("@meridian/contracts").ImportSummary[]>;
+  importOrganizer: ImportOrganizer;
+  organizeWake: OrganizeWakeHub;
   liveDocuments: Pick<TreeReader, "findById">;
   gateway: Gateway;
   threadRepos: ThreadRepositories;
@@ -414,6 +420,8 @@ export type ProductionAppPorts = {
   linkScopes: DocumentLinkScopes;
   exportSnapshot: ExportSnapshotStore;
   linkAheadRegistry: LinkAheadRegistry;
+  documentArrivals: DocumentArrivals;
+  organizeWake: OrganizeWakeHub;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -521,6 +529,7 @@ export async function createProductionAppPorts(input: {
   const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
   const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, { eventSink });
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
+  const organizeWake = createOrganizeWakeHub();
   const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals);
   const threadRepos = createDrizzleRepositories(
     db,
@@ -718,6 +727,8 @@ export async function createProductionAppPorts(input: {
     eventSink,
     eventQuery: input.eventQuery,
     documentSync,
+    documentArrivals: arrivals,
+    organizeWake,
     linkAheadRegistry,
     contextPorts,
     contextCatalog,
@@ -814,6 +825,15 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     db: ports.db,
     journalWriter: ports.journalWriter,
     eventHub: threadEventHub,
+  });
+  const importOrganizer = createProductionImportOrganizer({
+    db: ports.db,
+    objects: ports.objectStore,
+    eventSink: ports.eventSink,
+    documents: ports.documentSync,
+    ahead: ports.linkAheadRegistry,
+    arrivals: ports.documentArrivals,
+    catalog: ports.contextCatalog,
   });
   const interruptRegistry = createInterruptRegistry();
   const workContext = createWorkContextReader({
@@ -1191,12 +1211,15 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
     openImports: (userId) => listOpenImports(ports.db, userId),
+    importOrganizer,
+    organizeWake: ports.organizeWake,
     imports: (projectId, userId) =>
       createProductionImportService(
         {
           db: ports.db,
           objects: ports.objectStore,
           eventSink: ports.eventSink,
+          wake: ports.organizeWake,
         },
         projectId,
         userId,
@@ -1528,6 +1551,12 @@ export function createInMemoryAppServices(): AppServices {
     linkAheadRegistry,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     openImports: async () => [],
+    importOrganizer: {
+      async runPass() {
+        return 0;
+      },
+    },
+    organizeWake: createOrganizeWakeHub(),
     imports: () => {
       throw new Error("Import requires durable persistence");
     },

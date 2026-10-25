@@ -4,11 +4,13 @@ import { IMPORT_ADMISSION, type ImportSelection } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { imports, projects, users } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { createInMemoryObjectStore } from "../storage/index.js";
 import { createDrizzleImportRepository } from "./adapters/drizzle-import-repository.js";
+import { runOrganizeTransaction } from "./adapters/drizzle-organize-lifecycle.js";
+import { createDrizzleOrganizeQueue } from "./adapters/drizzle-organize-queue.js";
 import { sweepImportObjects } from "./domain/object-sweep.js";
 import { createImportAdmission } from "./domain/receive-admission.js";
 import { createImportUploadService, queryOpenImports } from "./domain/upload-service.js";
@@ -353,5 +355,32 @@ describe.runIf(enabled)("durable upload", () => {
     await expect(service().create(projectId, userId, input)).rejects.toMatchObject({
       code: "import_exists",
     });
+  });
+  it("fences an expired organizer owner from heartbeat, release, and writes after reclaim", async () => {
+    const input = selection(1);
+    await service().create(projectId, userId, input);
+    await send(input.importId, 0);
+    const queue = createDrizzleOrganizeQueue(db);
+    const claims = await Promise.all([queue.claim(), queue.claim()]);
+    const first = claims.find((claim) => claim !== null);
+    expect(first).toBeTruthy();
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    if (!first) return;
+    await db
+      .update(imports)
+      .set({ leaseUntil: sql`clock_timestamp() - interval '1 second'` })
+      .where(eq(imports.id, input.importId));
+    const current = await queue.claim();
+    expect(current?.token).not.toBe(first.token);
+    if (!current) return;
+    expect(await queue.heartbeat(first)).toBe(false);
+    await queue.release(first);
+    expect(await repository.read(input.importId)).toMatchObject({ leaseToken: current.token });
+    await expect(
+      runOrganizeTransaction(db, first, async () =>
+        repository.update(input.importId, { fellBack: true }),
+      ),
+    ).resolves.toEqual({ kind: "stale_owner" });
+    expect((await repository.read(input.importId))?.fellBack).toBe(false);
   });
 });

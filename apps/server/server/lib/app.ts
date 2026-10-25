@@ -52,6 +52,11 @@ async function createAppServices(): Promise<AppServices> {
         delayMs: WAKE_SWEEP_INTERVAL_MS,
         run: createImportObjectSweeper(db, ports.objectStore),
       },
+      {
+        name: "import-organize",
+        delayMs: WAKE_SWEEP_INTERVAL_MS,
+        run: app.importOrganizer.runPass,
+      },
       { name: "wake-scan", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.scanWakes },
       { name: "orphan-repair", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.repairOrphans },
       { name: "work-purge", delayMs: RETENTION_PURGE_INTERVAL_MS, run: app.recovery.purgeWorks },
@@ -84,6 +89,7 @@ async function createAppServices(): Promise<AppServices> {
     ],
     eventSink,
   );
+  app.organizeWake.bind(() => scheduler.wake("import-organize"));
   registerProcessShutdownCallback(async () => {
     await Promise.all([scheduler.stop(), app.shutdown()]);
   });

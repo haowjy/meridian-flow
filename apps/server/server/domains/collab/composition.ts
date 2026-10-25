@@ -576,6 +576,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });
   return createCollabFacade({
+    importBinder: runtime.importBinder,
     lifecycle: {
       dispose: () => {
         draftPulls.cancelScheduledPulls();

@@ -86,6 +86,12 @@ export type {
   CreateDocumentInput,
 } from "./ports/context-document-store.js";
 export { ContextEntryConflictError } from "./ports/context-document-store.js";
+export type {
+  ContextImportArea,
+  ContextImportDestination,
+  ContextImportLinkCandidate,
+  ContextImportRead,
+} from "./ports/context-import-read.js";
 export type { ContextParentLocations } from "./ports/context-parent-locations.js";
 export type {
   BinaryFileEntry,
@@ -174,6 +180,7 @@ export {
 export { createDrizzleDocumentTrash } from "./tree/drizzle-document-trash.js";
 export { createHiddenNodeRepair, type HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 export { createDrizzleContextParentLocations } from "./tree/import-parent-locations.js";
+export { createDrizzleContextImportRead } from "./tree/import-read.js";
 export { createDrizzleContextStagedCreation } from "./tree/import-staging.js";
 export {
   createDocumentRemoval,

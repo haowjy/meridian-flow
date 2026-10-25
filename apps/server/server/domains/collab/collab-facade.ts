@@ -17,6 +17,7 @@ import type {
   TurnReversalAccess,
 } from "./contracts.js";
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
+import type { ImportLinkBinder } from "./domain/link-binding.js";
 
 export type CollabFacadeServices = {
   transport: CollabTransport;
@@ -34,6 +35,7 @@ export type CollabFacadeServices = {
   branches: CollabBranches;
   branchResolver: CollabBranchResolver;
   documentCreation: DocumentCreationAggregate;
+  importBinder: ImportLinkBinder;
 };
 
 export function createCollabFacade(services: CollabFacadeServices): CollabDomain {
@@ -53,5 +55,6 @@ export function createCollabFacade(services: CollabFacadeServices): CollabDomain
     ...services.branches,
     ...services.branchResolver,
     ...services.documentCreation,
+    importBinder: services.importBinder,
   };
 }

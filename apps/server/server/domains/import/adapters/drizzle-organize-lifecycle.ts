@@ -35,9 +35,11 @@ export async function runOrganizeTransaction<T>(
       (fence.generation !== undefined && record.placementGeneration !== fence.generation)
     )
       return { kind: "stale_owner" };
-    const [{ current }] = await tx.execute<{ current: boolean }>(
-      sql`select ${record.leaseUntil}::timestamptz > clock_timestamp() as current`,
-    );
+    const [lease] = await tx
+      .select({ current: sql<boolean>`${imports.leaseUntil} > clock_timestamp()` })
+      .from(imports)
+      .where(eq(imports.id, fence.importId));
+    const current = lease?.current ?? false;
     if (!current) return { kind: "stale_owner" };
     if (!record.projectId) return { kind: "project_unavailable" };
 

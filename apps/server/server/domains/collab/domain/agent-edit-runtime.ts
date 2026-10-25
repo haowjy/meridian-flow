@@ -15,7 +15,7 @@ import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
-import { createLinkBinder, createUnboundParser } from "./link-binding.js";
+import { createImportLinkBinder, createLinkBinder, createUnboundParser } from "./link-binding.js";
 import {
   createMarkdownDocumentEngine,
   type MarkdownSerializationAnomalyObserver,
@@ -130,9 +130,18 @@ export function createAgentEditRuntime(input: {
     resolveFiletype: input.resolveDocumentFiletype,
     inTransaction: input.inTransaction,
   });
+  const importBinder = createImportLinkBinder({
+    codec: markupCodec,
+    schema,
+    links: input.links,
+    registrar: input.aheadRefs,
+    resolveFiletype: input.resolveDocumentFiletype,
+    inTransaction: input.inTransaction,
+  });
   return {
     codec,
     linkBinder,
+    importBinder,
     liveUtilityCore,
     markdownDocuments,
     markupCodec,

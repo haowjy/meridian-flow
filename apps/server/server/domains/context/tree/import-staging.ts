@@ -35,7 +35,6 @@ export function createDrizzleContextStagedCreation(deps: {
     MarkdownDocumentStore,
     "stageInitialStates" | "commitStagedStates" | "discardStagedStates"
   >;
-  recordMembership(documentIds: readonly DocumentId[]): Promise<void>;
   ahead: Pick<LinkAheadRegistry, "registerWithinTransaction">;
   arrivals: DocumentArrivals;
   catalog: ContextCatalogMutationPort;
@@ -262,8 +261,8 @@ export function createDrizzleContextStagedCreation(deps: {
               ),
             )
         : [];
-      await tx.execute(sql`insert into folders (id, context_source_id, parent_id, name)
-        select f.id, cs.id, f.parent_id, f.name from context_staged_folders f join context_sources cs
+      await tx.execute(sql`insert into folders (id, context_source_id, parent_id, name, document_alias)
+        select f.id, cs.id, f.parent_id, f.name, f.name from context_staged_folders f join context_sources cs
           on cs.project_id = f.project_id and cs.slug = f.area and cs.work_id is null and cs.root_thread_id is null and cs.deleted_at is null
         where f.staging_id = ${stagingId}`);
       await tx.execute(sql`insert into documents
@@ -295,7 +294,6 @@ export function createDrizzleContextStagedCreation(deps: {
       await deps.documents.commitStagedStates(stagingId);
       await deps.ahead.registerWithinTransaction(registrations);
       const ids = files.map((row) => row.id as DocumentId);
-      await deps.recordMembership(ids);
       await deps.arrivals.settle(ids);
       const sourceIds = liveSources.map((row) => row.id);
       await deps.catalog.refreshSources(sourceIds);
