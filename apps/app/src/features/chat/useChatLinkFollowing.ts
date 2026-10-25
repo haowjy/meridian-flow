@@ -59,10 +59,10 @@ import {
   useLinkableDocuments,
   useLinkFollower,
 } from "@/features/links";
+import type { FolderMenuHost } from "@/features/project/context/FolderMenu";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 import { useReviewingLinkDestination } from "@/features/project/dock/useAiDraftLauncher";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
-
 import { type ChatDoors, type ContextPassageAnchor, useChatDoors } from "./ChatContextNavigation";
 import { createReferenceAvailability, type ReferenceAvailability } from "./reference-availability";
 
@@ -114,6 +114,8 @@ export function useChatLinkFollowing({
 }): {
   navigation: TranscriptLinkNavigation;
   references: ReferenceAvailability;
+  /** What the chat's folder chips (transcript and composer) open documents through. */
+  folders: FolderMenuHost;
   dialog: ComponentProps<typeof LinkFollowDialog>;
   /** The shell's URI doors, following through this same follower; null without a shell. */
   doors: {
@@ -159,6 +161,10 @@ export function useChatLinkFollowing({
     [openReferenceDocument],
   );
   const open = useReviewingLinkDestination(openLive);
+  const folders = useMemo<FolderMenuHost>(
+    () => ({ projectId, openDocument: (documentId) => void open({ documentId }, "current") }),
+    [open, projectId],
+  );
 
   const { outcome, reporter } = useFollowOutcomeState();
   const [resolution] = useState(createLinkAnswerCache);
@@ -170,7 +176,10 @@ export function useChatLinkFollowing({
   // (a document created, renamed, moved, or deleted) asks again about every
   // reference shown, in one batch.
   const references = useMemo(
-    () => createReferenceAvailability((ids) => lookupProjectContextAvailability(projectId, ids)),
+    () =>
+      createReferenceAvailability(({ documentIds, folderIds }) =>
+        lookupProjectContextAvailability(projectId, documentIds, undefined, folderIds),
+      ),
     [projectId],
   );
   // The revision this store last answered for. Seeded from the first COMPLETE
@@ -226,6 +235,7 @@ export function useChatLinkFollowing({
   return {
     navigation,
     references,
+    folders,
     doors,
     dialog: {
       outcome,

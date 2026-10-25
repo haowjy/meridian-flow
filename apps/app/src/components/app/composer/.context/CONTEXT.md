@@ -9,8 +9,15 @@ card stack.
   never the raw URI, so `#` or `%` in a name stays part of the address). Rich HTML preserves identity but is untrusted; admission,
   not clipboard metadata, authorizes access. A copied occurrence never owns the
   source draft's upload lifecycle.
+- A folder chip is the same atom with the folder branch (`folder:` identity,
+  URI with a trailing `/`). Pressing it opens `FolderMenu` from the host's
+  `FolderMenuContext`; without a host it is inert.
 - Manuscript marks carry targets, not attachment identity. Preserve their full
   recorded address when copying into chat, where a relative href has no holder.
+- A row drop is an identity-bearing reference insertion, not pasted tree text.
+  It reads the already-installed `@` catalog, refuses identities that catalog
+  cannot name, and writes the same atom the picker writes. Several rows are one
+  transaction and one Undo step; typing after the drop starts the next step.
 - Submission keys belong to the editor kernel below suggestion keys. Chat `/`
   commands share the suggestion kernel with `@`; only registered command atoms
   execute, while typed `/slug` prose does not activate a skill. Send copies a
@@ -39,7 +46,8 @@ card stack.
 - Hosts own session persistence through `initialDraft`/`onDraftChange`; apply an
   initial snapshot once. A successful catalog acquisition removes restored
   reference atoms whose resources are gone; offline or unavailable catalogs do
-  not. Confirmed uploads retain ownership, while in-memory bytes do not persist.
+  not. Restore checks document atoms only: folder atoms stay, and a deleted
+  folder shows on its chip's menu rather than vanishing from the draft. Confirmed uploads retain ownership, while in-memory bytes do not persist.
 - Send records the exact structured fingerprint before clearing unchanged words.
   If local recording fails, retain the live draft and show the shared
   `FailureCard`; Send again is retry. Host cards and composer failure form one

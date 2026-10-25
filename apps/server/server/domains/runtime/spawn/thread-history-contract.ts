@@ -472,6 +472,7 @@ export function defineThreadHistoryContract(
       const writer = await f.turn("user", null, "complete", "writer");
       await f.block(writer, "text", {
         type: "reference",
+        kind: "document",
         documentId: "11111111-1111-4111-8111-111111111111",
         uri: "manuscript://chapter.md",
         text: "@chapter",

@@ -11,6 +11,7 @@ import {
 } from "@/features/project/context/open-chat-document";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { Markdown } from "@/rich-content/Markdown";
+import { referenceKey } from "@/rich-content/TranscriptReference";
 import { AnchoredCards } from "./ChatCards";
 import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
 import { useReferenceAvailability } from "./reference-availability";
@@ -51,7 +52,15 @@ function UserTurnComponent({
   const canOpenReference = useCanOpenChatReference();
   const resolutions = useReferenceAvailability(
     useMemo(
-      () => [...new Set(projected.references.map(({ documentId }) => documentId))],
+      () => [
+        ...new Set(
+          projected.references.map((reference) =>
+            reference.kind === "document"
+              ? referenceKey("document", reference.documentId)
+              : referenceKey("folder", reference.folderId),
+          ),
+        ),
+      ],
       [projected.references],
     ),
   );

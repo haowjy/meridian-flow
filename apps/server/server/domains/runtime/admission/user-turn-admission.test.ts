@@ -23,6 +23,7 @@ import {
 const actor = "11111111-1111-4111-8111-111111111111" as never;
 const threadId = "22222222-2222-4222-8222-222222222222" as never;
 const documentId = "33333333-3333-4333-8333-333333333333" as never;
+const folderId = "33333333-3333-4333-8333-333333333334" as never;
 const projectId = "44444444-4444-4444-8444-444444444444" as never;
 const uri = "uploads://@c1/map.png";
 const occurrenceText = "[map](uploads://@c1/map.png)";
@@ -35,12 +36,14 @@ function input(overrides: Partial<UserTurnAdmissionInput> = {}): UserTurnAdmissi
     text: `see ${occurrenceText}${occurrenceText}`,
     blocks: [
       { type: "text", text: "see " },
-      { type: "reference", text: occurrenceText, documentId, uri },
+      { type: "reference", kind: "document", text: occurrenceText, documentId, uri },
       { type: "image", documentId, uri },
-      { type: "reference", text: occurrenceText, documentId, uri },
+      { type: "reference", kind: "document", text: occurrenceText, documentId, uri },
       { type: "image", documentId, uri },
     ],
-    references: [{ documentId, uri, purpose: "draft-upload", intakeId: "intake-1" }],
+    references: [
+      { kind: "document" as const, documentId, uri, purpose: "draft-upload", intakeId: "intake-1" },
+    ],
     ...overrides,
   };
 }
@@ -99,13 +102,14 @@ function harness(
     capturedStart = start;
     return accepted();
   };
-  const availability = {
-    lookup: vi.fn(async () => ({
+  const availabilityLookup = vi.fn(
+    async (): Promise<Awaited<ReturnType<ProjectContextAvailabilityPort["lookup"]>>> => ({
       projectId,
       resolutionId: "resolution",
-      resolutions,
-    })),
-  } as ProjectContextAvailabilityPort;
+      resolutions: resolutions as never,
+    }),
+  );
+  const availability = { lookup: availabilityLookup } as ProjectContextAvailabilityPort;
   const threadProject = vi.fn(async () => projectId);
   const runClaim = createInMemoryRunClaim();
   const service = createUserTurnAdmission({
@@ -141,6 +145,7 @@ function harness(
     lookup,
     producer,
     availability,
+    availabilityLookup,
     threadProject,
     runClaim,
     captured: () => capturedStart,
@@ -164,11 +169,17 @@ describe("UserTurnAdmission", () => {
       parseUserMessageBlocks([{ type: "text", text: input().text, extra: true }], input().text),
     ).toThrow(InvalidAdmissionError);
     for (const invalid of [
-      { type: "reference", text: "", documentId, uri },
-      { type: "reference", text: occurrenceText, documentId: "invalid", uri },
-      { type: "reference", text: occurrenceText, documentId, uri: "uploads://@c1//map.png" },
-      { type: "reference", text: occurrenceText, documentId },
-      { type: "reference", text: occurrenceText, documentId, uri, extra: true },
+      { type: "reference", kind: "document", text: "", documentId, uri },
+      { type: "reference", kind: "document", text: occurrenceText, documentId: "invalid", uri },
+      {
+        type: "reference",
+        kind: "document",
+        text: occurrenceText,
+        documentId,
+        uri: "uploads://@c1//map.png",
+      },
+      { type: "reference", kind: "document", text: occurrenceText, documentId },
+      { type: "reference", kind: "document", text: occurrenceText, documentId, uri, extra: true },
     ]) {
       expect(() => parseUserMessageBlocks([invalid], occurrenceText)).toThrow(
         InvalidAdmissionError,
@@ -176,8 +187,8 @@ describe("UserTurnAdmission", () => {
     }
     expect(() =>
       parseSubmittedReferences([
-        { documentId, uri, purpose: "reference" },
-        { documentId, uri, purpose: "draft-upload", intakeId: "intake" },
+        { kind: "document" as const, documentId, uri, purpose: "reference" },
+        { kind: "document" as const, documentId, uri, purpose: "draft-upload", intakeId: "intake" },
       ]),
     ).toThrow(InvalidAdmissionError);
   });
@@ -192,9 +203,15 @@ describe("UserTurnAdmission", () => {
         text: `see [Map](uploads://@c1/map.png)${occurrenceText}`,
         blocks: [
           { type: "text", text: "see " },
-          { type: "reference", text: "[Map](uploads://@c1/map.png)", documentId, uri },
+          {
+            type: "reference",
+            kind: "document",
+            text: "[Map](uploads://@c1/map.png)",
+            documentId,
+            uri,
+          },
           { type: "image", documentId, uri },
-          { type: "reference", text: occurrenceText, documentId, uri },
+          { type: "reference", kind: "document", text: occurrenceText, documentId, uri },
           { type: "image", documentId, uri },
         ],
       }),
@@ -203,26 +220,32 @@ describe("UserTurnAdmission", () => {
           block.type === "text" ? block : { ...block, documentId: alternateId },
         ),
         references: [
-          { documentId: alternateId, uri, purpose: "draft-upload", intakeId: "intake-1" },
+          {
+            kind: "document" as const,
+            documentId: alternateId,
+            uri,
+            purpose: "draft-upload",
+            intakeId: "intake-1",
+          },
         ],
       }),
       input({
         text: `see ${occurrenceText}`,
         blocks: [
           { type: "text", text: "see " },
-          { type: "reference", text: occurrenceText, documentId, uri },
+          { type: "reference", kind: "document", text: occurrenceText, documentId, uri },
           { type: "image", documentId, uri },
         ],
       }),
       input({
         blocks: [
           { type: "text", text: "see " },
-          { type: "reference", text: occurrenceText, documentId, uri },
-          { type: "reference", text: occurrenceText, documentId, uri },
+          { type: "reference", kind: "document", text: occurrenceText, documentId, uri },
+          { type: "reference", kind: "document", text: occurrenceText, documentId, uri },
           { type: "image", documentId, uri },
         ],
       }),
-      input({ references: [{ documentId, uri, purpose: "reference" }] }),
+      input({ references: [{ kind: "document" as const, documentId, uri, purpose: "reference" }] }),
     ];
     for (const variant of variants) {
       const variantFingerprint = canonicalAdmissionFingerprint({
@@ -233,19 +256,27 @@ describe("UserTurnAdmission", () => {
       expect(variantFingerprint).not.toBe(fingerprint);
     }
     const orderedBlocks = [
-      { type: "reference" as const, text: occurrenceText, documentId, uri },
       {
         type: "reference" as const,
+        kind: "document" as const,
+        text: occurrenceText,
+        documentId,
+        uri,
+      },
+      {
+        type: "reference" as const,
+        kind: "document" as const,
         text: "[map](uploads://@c1/alternate.png)",
         documentId: alternateId,
         uri: "uploads://@c1/alternate.png",
       },
     ];
     const orderedReferences = [
-      { documentId, uri, purpose: "reference" as const },
+      { kind: "document" as const, documentId, uri, purpose: "reference" as const },
       {
         documentId: alternateId,
         uri: "uploads://@c1/alternate.png",
+        kind: "document" as const,
         purpose: "reference" as const,
       },
     ];
@@ -288,13 +319,72 @@ describe("UserTurnAdmission", () => {
       "image",
     ]);
     expect(start.references).toEqual([
-      { documentId, uri, purpose: "draft-upload", intakeId: "intake-1", relationship: "created" },
+      {
+        kind: "document" as const,
+        documentId,
+        uri,
+        purpose: "draft-upload",
+        intakeId: "intake-1",
+        relationship: "created",
+      },
     ]);
     expect(h.availability.lookup).toHaveBeenCalledTimes(1);
     expect(h.availability.lookup).toHaveBeenCalledWith(
-      { projectId, documentIds: [documentId] },
+      { projectId, documentIds: [documentId], folderIds: [] },
       { userId: actor },
     );
+
+    const folderUri = "manuscript://Act 1";
+    const folderText = "[Act 1](manuscript://Act%201/)";
+    const folderEntry = {
+      kind: "available" as const,
+      folderId,
+      generation: "1",
+      entry: {
+        kind: "folder" as const,
+        observationVersion: "1",
+        entryId: folderId,
+        sourceId: "source",
+        parentId: "source",
+        scope: { kind: "project" as const, projectId },
+        name: "Act 1",
+        path: ["Act 1"],
+        uri: folderUri,
+        hasChildren: true,
+      },
+    };
+    const folderInput = input({
+      text: folderText,
+      blocks: [{ type: "reference", kind: "folder", text: folderText, folderId, uri: folderUri }],
+      references: [{ kind: "folder", folderId, uri: folderUri }],
+    });
+    const admitted = harness();
+    admitted.availabilityLookup.mockResolvedValueOnce({
+      projectId,
+      resolutionId: "folder-resolution",
+      resolutions: [],
+      folderResolutions: [folderEntry],
+    });
+    await admitted.service.admit(folderInput);
+    expect(admitted.captured()).toMatchObject({
+      blocks: [{ kind: "folder", folderId, uri: folderUri }],
+      references: [{ kind: "folder", folderId, uri: folderUri, relationship: "reading" }],
+    });
+
+    const moved = harness();
+    moved.availabilityLookup.mockResolvedValueOnce({
+      projectId,
+      resolutionId: "moved-folder-resolution",
+      resolutions: [],
+      folderResolutions: [
+        { ...folderEntry, entry: { ...folderEntry.entry, uri: "manuscript://Act 2" } },
+      ],
+    });
+    await moved.service.admit(folderInput);
+    expect(moved.captured()).toMatchObject({
+      blocks: [{ type: "text", text: folderText }],
+      references: [],
+    });
   });
 
   it.each([
@@ -337,9 +427,21 @@ describe("UserTurnAdmission", () => {
     const moved = "[map](uploads://@c1/moved.png)";
     expect(h.captured()?.blocks).toEqual([
       { type: "text", text: "see " },
-      { type: "reference", text: moved, documentId, uri: "uploads://@c1/moved.png" },
+      {
+        type: "reference",
+        kind: "document",
+        text: moved,
+        documentId,
+        uri: "uploads://@c1/moved.png",
+      },
       { type: "image", documentId, uri: "uploads://@c1/moved.png" },
-      { type: "reference", text: moved, documentId, uri: "uploads://@c1/moved.png" },
+      {
+        type: "reference",
+        kind: "document",
+        text: moved,
+        documentId,
+        uri: "uploads://@c1/moved.png",
+      },
       { type: "image", documentId, uri: "uploads://@c1/moved.png" },
     ]);
     expect(h.captured()?.admission.text).toBe(`see ${moved}${moved}`);
@@ -347,6 +449,7 @@ describe("UserTurnAdmission", () => {
       {
         documentId,
         uri: "uploads://@c1/moved.png",
+        kind: "document" as const,
         purpose: "draft-upload",
         intakeId: "intake-1",
         relationship: "created",
@@ -356,17 +459,26 @@ describe("UserTurnAdmission", () => {
     // Names the serializer escapes are re-spelled through it too, with the label kept.
     for (const name of ["my seal.png", "Issue #3.png", "100% Done.png", "a (b).png"]) {
       const chatUri = `uploads://@c1/${name}`;
-      const spelled = (target: string) => formatMarkdownLink(name, spellDocumentHref(null, target));
+      const spelled = (target: string) =>
+        formatMarkdownLink(name, spellDocumentHref(null, { kind: "document", uri: target }));
       const h = harness(null, [availableResolution(chatUri)]);
       const bare = `uploads://${name}`;
       await h.service.admit(
         input({
           text: spelled(bare),
           blocks: [
-            { type: "reference", text: spelled(bare), documentId, uri: bare },
+            { type: "reference", kind: "document", text: spelled(bare), documentId, uri: bare },
             { type: "image", documentId, uri: bare },
           ],
-          references: [{ documentId, uri: bare, purpose: "draft-upload", intakeId: "intake-1" }],
+          references: [
+            {
+              kind: "document",
+              documentId,
+              uri: bare,
+              purpose: "draft-upload",
+              intakeId: "intake-1",
+            },
+          ],
         }),
       );
       expect(h.captured()?.blocks[0]).toMatchObject({ text: spelled(chatUri), uri: chatUri });
@@ -379,7 +491,7 @@ describe("UserTurnAdmission", () => {
     await expect(
       h.service.admit(
         input({
-          blocks: [{ type: "reference", text: occurrenceText, documentId, uri }],
+          blocks: [{ type: "reference", kind: "document", text: occurrenceText, documentId, uri }],
           text: occurrenceText,
           references: [],
         }),
@@ -391,7 +503,7 @@ describe("UserTurnAdmission", () => {
           blocks: [
             { type: "text", text: "see " },
             { type: "image", documentId, uri },
-            { type: "reference", text: occurrenceText, documentId, uri },
+            { type: "reference", kind: "document", text: occurrenceText, documentId, uri },
           ],
           text: `see ${occurrenceText}`,
         }),
@@ -400,6 +512,7 @@ describe("UserTurnAdmission", () => {
     const references = Array.from({ length: 129 }, (_, index) => ({
       documentId: `33333333-3333-4333-8333-${index.toString().padStart(12, "0")}` as never,
       uri: `uploads://@c1/map-${index}.png`,
+      kind: "document" as const,
       purpose: "reference" as const,
     }));
     await expect(
@@ -453,6 +566,7 @@ it("rejects client-authored read snapshots on references", () => {
       [
         {
           type: "reference",
+          kind: "document",
           text: "[chapter.md](kb://chapter.md)",
           documentId: "00000000-0000-4000-8000-000000000001",
           uri: "kb://chapter.md",

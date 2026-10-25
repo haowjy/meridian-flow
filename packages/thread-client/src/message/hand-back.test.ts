@@ -15,6 +15,7 @@ const scope = {
 const resolve = chatReferenceResolver(scope);
 
 const reference = (name: string, imageCapable: boolean): RestorableReference => ({
+  kind: "document",
   documentId: `doc-${name}`,
   uri: `scratch://@c1/${name}` as never,
   fileType: name.endsWith(".png") ? "png" : "markdown",
@@ -31,7 +32,16 @@ describe("hand-back composer content", () => {
       buildMessageDoc({
         text: "Rework this\nthen that",
         skills: [{ slug: "tighten", name: "Tighten", description: "Tighten prose" }],
-        references: [reference("hero.png", true), reference("notes.md", false)],
+        references: [
+          reference("hero.png", true),
+          reference("notes.md", false),
+          {
+            kind: "folder",
+            folderId: "01900000-0000-7000-8000-000000000003",
+            uri: "scratch://@c1/World" as never,
+            label: "World",
+          },
+        ],
       }),
     ).blocks;
     expect(sent.some((block) => block.type === "image")).toBe(true);
@@ -50,6 +60,7 @@ describe("hand-back composer content", () => {
     const foreign: UserMessageBlock[] = [
       {
         type: "reference",
+        kind: "document",
         text: "[x](manuscript://@other/x.md)",
         documentId: "doc-f",
         uri: "manuscript://@other/x.md" as never,
@@ -65,6 +76,7 @@ describe("hand-back composer content", () => {
     const other: UserMessageBlock[] = [
       {
         type: "reference",
+        kind: "document",
         text: "[x](scratch://@c9/x.md)",
         documentId: "doc-o",
         uri: "scratch://@c9/x.md" as never,
@@ -78,6 +90,7 @@ describe("hand-back composer content", () => {
     const plain: UserMessageBlock[] = [
       {
         type: "reference",
+        kind: "document",
         text: "[sketch](scratch://@c1/sketch)",
         documentId: "doc-s",
         uri: "scratch://@c1/sketch" as never,

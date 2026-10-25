@@ -59,7 +59,7 @@ const open: LinkDestination = async (document, gesture) => {
 
 /** Incomplete, so every question reaches the (mocked) server. */
 function catalog(revision: string): LinkableDocumentIndex {
-  return { documents: [], revision, complete: false };
+  return { documents: [], folders: [], revision, complete: false };
 }
 
 function Probe({
@@ -83,7 +83,11 @@ function render({
   act(() => root.render(<Probe scope={rendered} index={index} />));
 }
 
-const address = (name: string): LinkTarget => ({ kind: "scheme", uri: `manuscript://${name}.md` });
+const address = (name: string): LinkTarget => ({
+  kind: "scheme",
+  addressKind: "document",
+  uri: `manuscript://${name}.md`,
+});
 
 async function answer(name: string, document: ResolvedDocumentLink | null) {
   await act(async () => {

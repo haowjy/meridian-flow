@@ -1,6 +1,6 @@
 /**
- * Every document a link in this scope can reach, from the trees the app already
- * has.
+ * Every document and folder a link in this scope can reach, from the trees the
+ * app already has.
  *
  * One index answers the link questions an editor scope asks: what the
  * document holding a link is called (its address, which a relative link
@@ -16,7 +16,9 @@
  * delete makes every cached answer a claim about a project that no longer
  * exists — without the project, the Work, or the base URI having moved. The
  * revision is what tells the resolution scope that, so no mutation site has to
- * remember to poke a cache it does not own.
+ * remember to poke a cache it does not own. Project catalog wake hints also
+ * advance it because a server answer may name a folder or hidden document
+ * outside the catalogs this surface loads.
  *
  * Cached client-side and free: these are the same queries the context tree
  * already pays for, so the index costs no request.
@@ -25,7 +27,7 @@
 import { contextOwner } from "@meridian/contracts/protocol";
 import { useMemo, useRef } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import { useDraftLinkEpoch } from "@/client/query/draft-link-epoch";
+import { useLinkResolutionEpoch } from "@/client/query/link-resolution-epoch";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 
 import { linkableCatalogScopes, ownedLinkableSchemes } from "./linkable-catalog-scopes";
@@ -42,8 +44,12 @@ export type LinkableDocument = {
   rootThreadId?: string;
 };
 
+/** A folder a link can name: by entry id, at its current canonical address. */
+export type LinkableFolder = { folderId: string; title: string; uri: string };
+
 export type LinkableDocumentIndex = {
   readonly documents: readonly LinkableDocument[];
+  readonly folders: readonly LinkableFolder[];
   /**
    * Which catalog these rows are. Content, not an object identity and not a
    * counter: a refetch that found the same documents is the same revision and
@@ -66,7 +72,7 @@ export function useLinkableDocuments({
   rootThreadId?: string | null;
   chatId?: string | null;
 }): LinkableDocumentIndex {
-  const draftEpoch = useDraftLinkEpoch(projectId);
+  const resolutionEpoch = useLinkResolutionEpoch(projectId);
   const prior = useRef<LinkableDocumentIndex | null>(null);
   const scopes = linkableCatalogScopes({ projectId, workId, rootThreadId, chatId });
   const catalogWorkId = scopes?.workId ?? null;
@@ -85,6 +91,7 @@ export function useLinkableDocuments({
 
   return useMemo(() => {
     const documents: LinkableDocument[] = [];
+    const folders: LinkableFolder[] = [];
     let complete = scopes !== null;
     for (const scheme of schemes) {
       const { catalog, isComplete } = views[scheme];
@@ -99,17 +106,19 @@ export function useLinkableDocuments({
             )
           : linkableDocuments(catalog, null)),
       );
+      folders.push(...linkableFolders(catalog));
     }
     const next = {
       documents,
-      revision: `${draftEpoch}\n${catalogRevision(documents)}`,
+      folders,
+      revision: `${resolutionEpoch}\n${catalogRevision(documents, folders)}`,
       complete,
     };
     if (prior.current?.revision === next.revision && prior.current.complete === next.complete)
       return prior.current;
     prior.current = next;
     return next;
-  }, [schemes, views, scopes, catalogWorkId, catalogRootThreadId, draftEpoch]);
+  }, [schemes, views, scopes, catalogWorkId, catalogRootThreadId, resolutionEpoch]);
 }
 
 /**
@@ -118,8 +127,29 @@ export function useLinkableDocuments({
  * where any link goes, which is the property the resolution scope needs — a
  * link is re-asked when this changes and left alone when it does not.
  */
-function catalogRevision(documents: readonly LinkableDocument[]): string {
-  return documents.map((entry) => `${entry.documentId} ${entry.uri}`).join("\n");
+function catalogRevision(
+  documents: readonly LinkableDocument[],
+  folders: readonly LinkableFolder[],
+): string {
+  return [
+    ...documents.map((entry) => `${entry.documentId} ${entry.uri}`),
+    ...folders.map((entry) => `${entry.folderId} ${entry.uri}/`),
+  ].join("\n");
+}
+
+/** The catalog's folders with a server identity; device-synthesized ancestry names nothing. */
+function linkableFolders(catalog: CatalogContextView): LinkableFolder[] {
+  const folders: LinkableFolder[] = [];
+  const walk = (parentId: string) => {
+    for (const node of catalog.children(parentId)) {
+      if (node.kind !== "dir") continue;
+      if (!node.navigationOnly)
+        folders.push({ folderId: node.entryId, title: node.name, uri: node.uri });
+      walk(node.entryId);
+    }
+  };
+  walk(catalog.root.entryId);
+  return folders;
 }
 
 function linkableDocuments(

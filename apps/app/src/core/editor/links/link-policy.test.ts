@@ -40,10 +40,16 @@ it("keeps bare hosts external without requiring extensions on internal names", (
 });
 
 it("labels an escaped literal # before interpreting an href section", () => {
-  expect(linkTargetLabel({ kind: "relative", path: "Chapter%2313.md" })).toBe("Chapter#13");
-  expect(linkTargetLabel({ kind: "relative", path: "Chapter%2313.md#opening" })).toBe(
-    "Chapter#13#opening",
-  );
+  expect(
+    linkTargetLabel({ kind: "relative", addressKind: "document", path: "Chapter%2313.md" }),
+  ).toBe("Chapter#13");
+  expect(
+    linkTargetLabel({
+      kind: "relative",
+      addressKind: "document",
+      path: "Chapter%2313.md#opening",
+    }),
+  ).toBe("Chapter#13#opening");
 });
 
 const KAEL_ID = "00000000-0000-4000-8000-00000000000a";
@@ -104,8 +110,14 @@ it("keeps two refs sharing an href apart", async () => {
   expect(resolution.read(KAEL_LINK)).toEqual({ state: "document", document: KAEL });
   expect(asked).toEqual([
     [
-      { ref: KAEL_LINK.ref, target: { kind: "scheme", uri: "manuscript://Kael.md" } },
-      { ref: gone.ref, target: { kind: "scheme", uri: "manuscript://Kael.md" } },
+      {
+        ref: KAEL_LINK.ref,
+        target: { kind: "scheme", addressKind: "document", uri: "manuscript://Kael.md" },
+      },
+      {
+        ref: gone.ref,
+        target: { kind: "scheme", addressKind: "document", uri: "manuscript://Kael.md" },
+      },
     ],
   ]);
 });

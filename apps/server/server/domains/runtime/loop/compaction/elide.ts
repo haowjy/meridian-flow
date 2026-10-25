@@ -54,7 +54,7 @@ export function collectRecordedDocuments(
     const referenceBlocks = turn.role === "compaction" ? [...blocks].reverse() : blocks;
     for (const block of referenceBlocks) {
       const reference = referenceOccurrenceContent(block);
-      if (reference?.read)
+      if (reference?.kind === "document" && reference.read)
         recorded.set(block.id, [
           {
             documentId: reference.documentId,
@@ -152,7 +152,7 @@ export function planModelElisions(input: {
     }
     for (const block of blocks) {
       const reference = referenceOccurrenceContent(block);
-      if (!reference?.read) continue;
+      if (reference?.kind !== "document" || !reference.read) continue;
       const elision = elisionOf(recorded.get(block.id), current, reshown);
       if (!elision) continue;
       elisions.push({

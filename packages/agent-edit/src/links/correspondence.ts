@@ -23,7 +23,7 @@ export interface OldOccurrence {
    * the written spelling it has now, so it keeps its place among empty sources.
    */
   ref: string | null;
-  /** Canonical absolute address it spells now (no suffix). */
+  /** Kind-aware correspondence key for the canonical address it spells now. */
   current: string;
   /** Its target resolves live now (resolution rules 1 and 3). */
   live: boolean;
@@ -41,6 +41,8 @@ export interface CorrespondenceInput {
   holderUri: string | null;
   /** Written href → canonical absolute address in the same key space, or null if not internal. */
   normalize(href: string, holderUri: string | null): string | null;
+  /** A shown identity and address → the same kind-aware key space. */
+  showingKey?(ref: string, address: string): string;
   /** Current liveness of a shown ref at the address it was shown, for pass 2 ties. */
   isLive(ref: string, address: string): boolean;
 }
@@ -70,6 +72,7 @@ function showingOrder(a: ShownLink, b: ShownLink) {
 
 /** Passes 1 and 2 of ref assignment; classification and fresh resolution remain the caller's. */
 export function correspondLinks(input: CorrespondenceInput): LinkMatch[] {
+  const showingKey = input.showingKey ?? ((_ref: string, address: string) => address);
   const history = new Map<string, ShownLink[]>();
   for (const showing of input.shown) {
     const entries = history.get(showing.ref) ?? [];
@@ -94,14 +97,14 @@ export function correspondLinks(input: CorrespondenceInput): LinkMatch[] {
     const view = latest ? addresses(latest.holderUri) : current;
     input.written.forEach((written, j) => {
       const strong = latest
-        ? view[j] !== null && view[j] === latest.address
+        ? view[j] !== null && view[j] === showingKey(latest.ref, latest.address)
         : current[j] !== null && current[j] === old.current;
       const compatible =
         strong ||
         (current[j] !== null && current[j] === old.current) ||
         showings.some((showing) => {
           const address = addresses(showing.holderUri)[j];
-          return address !== null && address === showing.address;
+          return address !== null && address === showingKey(showing.ref, showing.address);
         });
       if (compatible) {
         candidates[j].occurrences.push(occurrence);
@@ -129,7 +132,7 @@ export function correspondLinks(input: CorrespondenceInput): LinkMatch[] {
     if (occurrence >= 0) return { pass: 1, occurrence };
     const showing = latest.find((candidate) => {
       const address = addresses(candidate.holderUri)[j];
-      return address !== null && address === candidate.address;
+      return address !== null && address === showingKey(candidate.ref, candidate.address);
     });
     return showing ? { pass: 2, ref: showing.ref } : { pass: 3 };
   });

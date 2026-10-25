@@ -166,8 +166,8 @@ msgstr "{0} documents"
 msgid "{0} finished"
 msgstr "{0} finished"
 
-#. placeholder {0}: schemeLabel(locatedTab.scheme)
-#: src/features/project/context/DocumentPath.tsx
+#. placeholder {0}: schemeLabel(own.scheme)
+#: src/features/project/context/use-project-menu-source.ts
 msgid "{0} for {ownerName}"
 msgstr "{0} for {ownerName}"
 
@@ -1024,6 +1024,10 @@ msgstr "Can't delete {source}: it changed during the delete."
 msgid "Can't go inside itself"
 msgstr "Can't go inside itself"
 
+#: src/features/editor/SessionEditor.tsx
+msgid "Can’t mention inside code"
+msgstr "Can’t mention inside code"
+
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source} to that location."
 msgstr "Can't move {source} to that location."
@@ -1751,6 +1755,10 @@ msgstr "Couldn't open this document."
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't open this draft. Try again."
 msgstr "Couldn't open this draft. Try again."
+
+#: src/features/project/context/FolderMenu.tsx
+msgid "Couldn't open this folder."
+msgstr "Couldn't open this folder."
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't queue the compaction."
@@ -2936,6 +2944,7 @@ msgstr "Loading Work…"
 
 #: src/features/billing/UsageCard.tsx
 #: src/features/project/context/DocumentPath.tsx
+#: src/features/project/context/FolderMenu.tsx
 msgid "Loading…"
 msgstr "Loading…"
 
@@ -2967,6 +2976,16 @@ msgstr "Maximum is {0}."
 #: src/features/account/SettingsDialog.tsx
 msgid "Medium"
 msgstr "Medium"
+
+#: src/components/app/composer/Composer.tsx
+#: src/features/editor/SessionEditor.tsx
+msgid "Mention"
+msgstr "Mention"
+
+#. placeholder {0}: row.label
+#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
+msgid "Mention {0}"
+msgstr "Mention {0}"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Merge cells"
@@ -3350,6 +3369,14 @@ msgstr "No Work matches your search."
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work yet."
 msgstr "No Work yet."
+
+#: src/components/app/composer/Composer.tsx
+msgid "Not available in this chat"
+msgstr "Not available in this chat"
+
+#: src/features/editor/SessionEditor.tsx
+msgid "Not available in this document"
+msgstr "Not available in this document"
 
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
@@ -5042,6 +5069,10 @@ msgstr "This filename contains unsupported characters. Rename the file and attac
 msgid "This folder is empty."
 msgstr "This folder is empty."
 
+#: src/features/project/context/FolderMenu.tsx
+msgid "This folder is no longer available."
+msgstr "This folder is no longer available."
+
 #: src/features/project/context/use-rename-entry-form.ts
 msgid "This folder is unavailable. Refresh and try again."
 msgstr "This folder is unavailable. Refresh and try again."
@@ -5085,6 +5116,10 @@ msgstr "This note is empty. Open it in the Editor to write."
 #: src/routes/dev-login.tsx
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
 msgstr "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
+
+#: src/components/app/composer/Composer.tsx
+msgid "This part of the message can’t hold mentions"
+msgstr "This part of the message can’t hold mentions"
 
 #: src/features/editor/SchemaNotices.tsx
 msgid "This passage couldn't be recovered."

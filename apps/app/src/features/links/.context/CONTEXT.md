@@ -19,6 +19,9 @@ resolution.registerResolver(
 //   malformed ref                          -> gone (never the address)
 //   doc:<id> the complete index holds      -> that document, wherever it lives now
 //   no ref, address the complete index has -> that document (matchDocumentPath)
+//   folder:<id> or a folder address (href ends in /) the index holds
+//                                          -> that folder (current name and URI)
+//   any other folder question              -> ask
 //   relative with no base                    -> not asked
 //   ahead ref the memo knows settled on D  -> exactly a doc ref to D
 //   ahead ref settled, identity unknown    -> ask, never the address
@@ -28,10 +31,23 @@ resolution.registerResolver(
 // remote, per batch of asked questions (at most 200):
 //   one POST of { workId, baseUri, holderDocumentId, links: [{ ref, href }] };
 //     answers in request order:
-//   document -> document;  gone -> gone;  missing -> missing;  unresolvable -> no answer
+//   document -> document; folder -> folder; gone -> gone; missing -> missing;
+//   unresolvable -> no answer
 //   `settled: true` (rule 3) on an ahead ref's document or gone -> the memo learns it
 //   a provisional local answer stands unless the server says gone or another document
 ```
+
+**Folder links use the same local-first path as document links.** A folder in
+the complete index answers synchronously. Any folder the index does not hold,
+including another Work's Scratch, goes to the resolve endpoint; its `folder`
+or `gone` answer makes the chip filled or dashed. Opening still finds the
+folder by identity through `lookupProjectFolderAvailability`, so a move or
+rename after the link was written opens its current location.
+Every project catalog wake advances `link-resolution-epoch`, which registers a
+new resolver generation even when the changed catalog is not one this surface
+loads. This is how a deleted folder in another Work turns dashed without a
+reload. Focus and network return recheck after 15 seconds as a missed-wake
+fallback.
 
 The address answers apply one rule (`matchDocumentPath` from
 `@meridian/contracts`, beside `resolveDocumentHref`, through
@@ -91,6 +107,7 @@ Scratch.
 
 `{ projectId, workId, rootThreadId, baseUri, holderDocumentId }` plus the index's
 `revision` is the complete semantic input to every question the resolver asks.
+The revision contains both the loaded catalog rows and the project link-resolution epoch.
 The registration effect is keyed on exactly those, and reads none of them through
 a ref. The index object keeps its identity while its revision and completeness
 hold, so the index stands in for the revision.
@@ -130,8 +147,8 @@ is one request of up to 200 links, four batches at most in flight.
 | the request failed | "That link could not be checked", with Try again |
 | still in flight past 250ms | "Opening the link", with Cancel, which stops the follow |
 
-Every outcome carries `address`: the canonical Context URI the link names
-(`linkTargetAddress`, a relative path resolved against the holder's `baseUri`,
+Every outcome carries `address`: the canonical Context URI from the shared
+kind-aware stored-link resolver (relative to the holder's `baseUri`, with the
 fragment and query dropped), or null when it names none. The dialog never shows
 it as text. Every state draws one location line: the area's icon and the
 folder, worded by `documentLocation` as the `@` menu words a row's location

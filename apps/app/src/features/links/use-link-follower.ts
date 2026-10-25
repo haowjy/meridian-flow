@@ -150,6 +150,7 @@ export function useLinkFollower({
     if (!resolution || !projectId || !workId) return;
     const registered: LinkableDocumentIndex = {
       documents: catalog.current.documents,
+      folders: catalog.current.folders,
       revision,
       get complete() {
         return catalog.current.complete;

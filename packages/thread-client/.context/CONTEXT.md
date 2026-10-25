@@ -97,9 +97,10 @@ Its typed construction shape prevents top-level inline nodes. The serializer sti
 accepts editor JSON so browser schema and editor lifecycle remain app-owned.
 
 `serializeMessageDoc` reads plain JSON, preserving authored spacing and occurrence order.
-References spell canonical Markdown links through `@meridian/markup/links`; image-capable
-references also emit an image block. Submitted identities deduplicate by document and URI,
-with draft-upload metadata taking precedence. Skills activate once per slug but every
+Document and folder references spell canonical Markdown links through the shared href codec;
+folder spellings end in `/`. Image capability, upload intake, file type and ownership belong
+only to document references. Submitted identities deduplicate by kind, identity and URI, with
+document draft-upload metadata taking precedence. Skills activate once per slug but every
 occurrence remains in the blocks. The canonical walk exposes each source reference
 through `onReference`; the app projects its owned uploads from those visits without
 walking the document again. Draft snapshots and upload lifecycle ownership stay in the app.
@@ -108,8 +109,9 @@ walking the document again. Draft snapshots and upload lifecycle ownership stay 
 turns handed-back `UserMessageBlock`s into one composer document (serializing it
 again gives the same blocks), and `prependMessageDoc` puts it above typed text with
 a blank line. Every prepend in the app uses it, failed-send Edit included. A chip is
-a `RestorableReference` (`MessageReference` plus `fileType` and owner authority);
-`chatReferenceResolver(scope)` builds one only when the URI proves the owner
+a `RestorableReference`. A document branch adds `fileType` and owner authority;
+a folder branch already has every field hand-back needs. `chatReferenceResolver(scope)` builds
+a document branch only when the URI proves the owner
 against this chat (its lineage handle for `scratch://`, `uploads://@c15/` for this chat's own
 chat, its own Work's `@w3`, or a project or user scheme). Anything else comes back
 as link text. An image block in the message makes the chip an image. The limit

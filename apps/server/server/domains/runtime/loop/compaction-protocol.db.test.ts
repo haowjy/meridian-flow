@@ -296,6 +296,7 @@ else
         status: "complete",
         content: {
           type: "reference",
+          kind: "document",
           text: "Old chapter",
           documentId: "00000000-0000-4000-8000-000000000099",
           uri: "kb://old-chapter",
@@ -320,6 +321,7 @@ else
           { type: "text", text: "Continue " },
           {
             type: "reference",
+            kind: "document",
             text: "Chapter",
             documentId: "00000000-0000-4000-8000-000000000012",
             uri: "manuscript://chapter",
@@ -1600,6 +1602,7 @@ else
         status: "complete",
         content: {
           type: "reference",
+          kind: "document",
           text: "Notes",
           documentId: "00000000-0000-4000-8000-000000000099",
           uri: "kb://notes",

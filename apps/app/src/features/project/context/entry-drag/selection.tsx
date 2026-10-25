@@ -60,12 +60,10 @@ const FOCUS_RECLAIM_MS = 2000;
 
 /**
  * One list's selection; the list component owns it and hands it to its rows and
- * drop route. `prune` drops from a drag the rows a carried folder already
- * carries; the list knows the current ancestry, the selection does not.
+ * drop route. Every selected row stays in the drag; each destination decides
+ * whether its operation subsumes descendants.
  */
-export function useEntrySelection(
-  prune: (entries: DragEntry[]) => DragEntry[] = (entries) => entries,
-): EntrySelection {
+export function useEntrySelection(): EntrySelection {
   // null: no explicit selection, so the selection is the open row.
   const [explicit, setExplicit] = useState<ReadonlySet<string> | null>(null);
   const anchor = useRef<string | null>(null);
@@ -167,7 +165,7 @@ export function useEntrySelection(
           .filter((key) => selected.has(key))
           .map((key) => registry.current.get(key)?.entry)
           .filter((row): row is DragEntry => row !== undefined);
-        return prune(rows);
+        return rows;
       },
       replace(keys) {
         setExplicit(keys.length > 0 ? new Set(keys) : null);
@@ -198,7 +196,7 @@ export function useEntrySelection(
         };
       },
     };
-  }, [explicit, draggable, screenOrder, openKey, prune, paintRuns]);
+  }, [explicit, draggable, screenOrder, openKey, paintRuns]);
 }
 
 const SelectionContext = createContext<EntrySelection | null>(null);

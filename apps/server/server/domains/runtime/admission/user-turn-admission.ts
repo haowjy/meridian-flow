@@ -1,6 +1,6 @@
 /** Authoritative parsing, identity, replay, and settlement for writer turns. */
 import { createHash } from "node:crypto";
-import { spellDocumentHref } from "@meridian/contracts";
+import { type LinkAddressKind, spellDocumentHref } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   AcceptedAdmission,
@@ -130,12 +130,11 @@ export function parseUserMessageBlocks(value: unknown, text: string): UserMessag
       }
       return { type: "text", text: candidate.text };
     }
-    if (
-      exactObject(candidate, ["type", "text", "documentId", "uri"]) &&
-      candidate.type === "reference"
-    ) {
-      const documentId =
-        typeof candidate.documentId === "string" ? parseRequestId(candidate.documentId) : null;
+    if (candidate?.type === "reference" && candidate.kind === "document") {
+      if (!exactObject(candidate, ["type", "kind", "text", "documentId", "uri"])) {
+        throw new InvalidAdmissionError(`blocks[${index}] has invalid reference identity`);
+      }
+      const documentId = parseIdentity(candidate.documentId);
       if (!documentId || typeof candidate.text !== "string" || candidate.text.length === 0) {
         throw new InvalidAdmissionError(`blocks[${index}] has invalid reference identity`);
       }
@@ -145,8 +144,29 @@ export function parseUserMessageBlocks(value: unknown, text: string): UserMessag
       }
       return {
         type: "reference",
+        kind: "document",
         text: candidate.text,
-        documentId: documentId as Extract<UserMessageBlock, { type: "reference" }>["documentId"],
+        documentId: documentId as Extract<UserMessageBlock, { kind: "document" }>["documentId"],
+        uri: canonicalUri(candidate.uri, `blocks[${index}].uri`),
+      };
+    }
+    if (candidate?.type === "reference" && candidate.kind === "folder") {
+      if (!exactObject(candidate, ["type", "kind", "text", "folderId", "uri"])) {
+        throw new InvalidAdmissionError(`blocks[${index}] has invalid reference identity`);
+      }
+      const folderId = parseIdentity(candidate.folderId);
+      if (!folderId || typeof candidate.text !== "string" || candidate.text.length === 0) {
+        throw new InvalidAdmissionError(`blocks[${index}] has invalid reference identity`);
+      }
+      references += 1;
+      if (references > MAX_REFERENCE_OCCURRENCES) {
+        throw new InvalidAdmissionError("too many reference occurrences");
+      }
+      return {
+        type: "reference",
+        kind: "folder",
+        text: candidate.text,
+        folderId: folderId as Extract<UserMessageBlock, { kind: "folder" }>["folderId"],
         uri: canonicalUri(candidate.uri, `blocks[${index}].uri`),
       };
     }
@@ -210,12 +230,30 @@ export function parseSubmittedReferences(value: unknown): SubmittedReference[] {
       throw new InvalidAdmissionError(`references[${index}] has an invalid shape`);
     }
     const record = candidate as Record<string, unknown>;
+    if (record.kind === "folder") {
+      if (!exactObject(record, ["kind", "folderId", "uri"])) {
+        throw new InvalidAdmissionError(`references[${index}] has an invalid shape`);
+      }
+      const folderId = parseIdentity(record.folderId);
+      if (!folderId) throw new InvalidAdmissionError(`references[${index}] has invalid identity`);
+      const uri = canonicalUri(record.uri, `references[${index}].uri`);
+      const key = `folder:${folderId}\0${uri}`;
+      if (identities.has(key)) {
+        throw new InvalidAdmissionError("references must be deduplicated by identity");
+      }
+      identities.add(key);
+      return { kind: "folder", folderId: folderId as never, uri };
+    }
     const purpose = record.purpose;
     const expected =
       purpose === "draft-upload"
-        ? ["documentId", "uri", "purpose", "intakeId"]
-        : ["documentId", "uri", "purpose"];
-    if (!exactObject(record, expected) || (purpose !== "reference" && purpose !== "draft-upload")) {
+        ? ["kind", "documentId", "uri", "purpose", "intakeId"]
+        : ["kind", "documentId", "uri", "purpose"];
+    if (
+      !exactObject(record, expected) ||
+      record.kind !== "document" ||
+      (purpose !== "reference" && purpose !== "draft-upload")
+    ) {
       throw new InvalidAdmissionError(`references[${index}] has an invalid shape`);
     }
     const documentId =
@@ -233,7 +271,8 @@ export function parseSubmittedReferences(value: unknown): SubmittedReference[] {
     }
     identities.add(key);
     return {
-      documentId: documentId as SubmittedReference["documentId"],
+      kind: "document",
+      documentId: documentId as Extract<SubmittedReference, { kind: "document" }>["documentId"],
       uri,
       purpose,
       ...(purpose === "draft-upload" ? { intakeId: record.intakeId as string } : {}),
@@ -246,16 +285,28 @@ export function parseSubmittedReferences(value: unknown): SubmittedReference[] {
  * `#` or `%` are escaped there), keeping the label exactly as the writer's composer wrote it.
  * Text that is not the canonical spelling of `from` is left as submitted.
  */
-function requalifyLinkText(text: string, from: string, to: string): string {
-  const closing = (uri: string) => `](${markdownLinkDestination(spellDocumentHref(null, uri))})`;
+function requalifyLinkText(text: string, kind: LinkAddressKind, from: string, to: string): string {
+  const closing = (uri: string) =>
+    `](${markdownLinkDestination(spellDocumentHref(null, { kind, uri }))})`;
   const old = closing(from);
   return text.startsWith("[") && text.endsWith(old)
     ? `${text.slice(0, -old.length)}${closing(to)}`
     : text;
 }
 
-function referenceIdentity(reference: { documentId: string; uri: string }): string {
-  return `${reference.documentId}\0${reference.uri}`;
+function parseIdentity(value: unknown): string | null {
+  return typeof value === "string" ? parseRequestId(value) : null;
+}
+
+function referenceIdentity(
+  reference:
+    | Pick<Extract<SubmittedReference, { kind: "document" }>, "kind" | "documentId" | "uri">
+    | Pick<Extract<SubmittedReference, { kind: "folder" }>, "kind" | "folderId" | "uri">
+    | Extract<UserMessageBlock, { type: "image" }>,
+): string {
+  return "folderId" in reference
+    ? `folder:${reference.folderId}\0${reference.uri}`
+    : `document:${reference.documentId}\0${reference.uri}`;
 }
 
 function validateReferenceMembership(
@@ -273,7 +324,11 @@ function validateReferenceMembership(
     }
     if (block.type === "image") {
       const previous = blocks[index - 1];
-      if (previous?.type !== "reference" || referenceIdentity(previous) !== key) {
+      if (
+        previous?.type !== "reference" ||
+        previous.kind !== "document" ||
+        referenceIdentity(previous) !== key
+      ) {
         throw new InvalidAdmissionError(`blocks[${index}] is not paired with its occurrence`);
       }
     }
@@ -372,7 +427,7 @@ export function createUserTurnAdmission(deps: {
   threadProject(threadId: string): Promise<string | null>;
   /** Identity, not spelling: the intake, its document, and that the thread's top chat owns it. */
   verifyDraftUpload?(
-    reference: SubmittedReference & { intakeId: string },
+    reference: Extract<SubmittedReference, { kind: "document" }> & { intakeId: string },
     threadId: string,
   ): Promise<boolean>;
   authorizeActivatedSkills?(input: { threadId: string; slugs: readonly string[] }): Promise<void>;
@@ -446,16 +501,33 @@ export function createUserTurnAdmission(deps: {
 
       const projectId = await deps.threadProject(input.threadId);
       if (!projectId) throw new Error(`Thread project is unavailable: ${input.threadId}`);
-      const ids = [
+      const documentIds = [
         ...new Set([
-          ...references.map((reference) => reference.documentId),
+          ...references.flatMap((reference) =>
+            reference.kind === "document" ? [reference.documentId] : [],
+          ),
           ...blocks
-            .filter((block) => block.type === "reference" || block.type === "image")
+            .filter(
+              (
+                block,
+              ): block is Extract<UserMessageBlock, { kind: "document" } | { type: "image" }> =>
+                block.type === "image" || (block.type === "reference" && block.kind === "document"),
+            )
             .map((block) => block.documentId),
         ]),
       ];
+      const folderIds = [
+        ...new Set([
+          ...references.flatMap((reference) =>
+            reference.kind === "folder" ? [reference.folderId] : [],
+          ),
+          ...blocks.flatMap((block) =>
+            block.type === "reference" && block.kind === "folder" ? [block.folderId] : [],
+          ),
+        ]),
+      ];
       const resolved = await deps.availability.lookup(
-        { projectId: projectId as never, documentIds: ids },
+        { projectId: projectId as never, documentIds, folderIds },
         { userId: input.actorUserId },
       );
       const available = new Map(
@@ -463,9 +535,21 @@ export function createUserTurnAdmission(deps: {
           .filter((item) => item.kind === "available")
           .map((item) => [item.documentId, item]),
       );
+      const availableFolders = new Map(
+        (resolved.folderResolutions ?? [])
+          .filter((item) => item.kind === "available")
+          .map((item) => [item.folderId, item]),
+      );
       const admittedReferences: AuthorizedReference[] = [];
       const admittedUris = new Map<string, string>();
       for (const reference of references) {
+        if (reference.kind === "folder") {
+          const identity = availableFolders.get(reference.folderId);
+          if (!identity || identity.entry.uri !== reference.uri) continue;
+          admittedUris.set(referenceIdentity(reference), reference.uri);
+          admittedReferences.push({ ...reference, relationship: "reading" });
+          continue;
+        }
         const identity = available.get(reference.documentId);
         if (!identity) continue;
         // A New-chat upload was attached before the chat had a handle, so its atom holds the
@@ -477,7 +561,9 @@ export function createUserTurnAdmission(deps: {
           draftUpload &&
           deps.verifyDraftUpload &&
           !(await deps.verifyDraftUpload(
-            reference as SubmittedReference & { intakeId: string },
+            reference as Extract<SubmittedReference, { kind: "document" }> & {
+              intakeId: string;
+            },
             input.threadId,
           ))
         ) {
@@ -505,7 +591,7 @@ export function createUserTurnAdmission(deps: {
             ? {
                 ...block,
                 uri: admittedUri,
-                text: requalifyLinkText(block.text, block.uri, admittedUri),
+                text: requalifyLinkText(block.text, block.kind, block.uri, admittedUri),
               }
             : { ...block, uri: admittedUri },
         ];

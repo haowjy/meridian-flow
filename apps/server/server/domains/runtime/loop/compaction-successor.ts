@@ -212,7 +212,7 @@ async function reshowImportantFiles(args: {
             (input.format === undefined || input.format === "full") &&
             splitDocumentFile(input.path).fragment === undefined,
         )
-        .map(({ reference }) => reference.documentId),
+        .flatMap(({ reference }) => (reference.kind === "document" ? [reference.documentId] : [])),
     ),
     labels: kept.map(({ input }) => readInputLabel(input)),
   };

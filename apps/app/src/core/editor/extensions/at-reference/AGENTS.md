@@ -10,11 +10,15 @@ paste policy). The surface is `AtReferenceMenu` in
 
 ## Key rules
 
-- **A choice is a link that names its document.** `insertDocumentReference`
-  writes `{ href: <full Context URI>, ref: doc:<id> }`: the row's id, never a
+- **A document choice is a link that names its document.** Its canonical node
+  carries `{ href: <full Context URI>, ref: doc:<id> }`: the row's id, never a
   parsed path, so the link follows the document through moves while every
   surface spells its current path. An uploaded picture goes in as an image with
   its `asset:` identity instead.
+- **A folder mention is a link that names its folder.** The listing's "Mention
+  <folder>" row carries `{ href: <folder URI with trailing />, ref:
+  folder:<id> }`. Pressing it opens the folder menu (`../../links/`), not a
+  document.
 - **The Editor links ahead.** When a root search names no listed document
   exactly, the catalog's `linkAhead` adds one row that links
   `<holder folder>/<name>.md` (`linkAheadAddress`, the filename rule a follow's
@@ -23,9 +27,10 @@ paste policy). The surface is `AtReferenceMenu` in
   inserts a link with a freshly minted ahead ref (`insertLinkAhead`, offline,
   at `aheadAddress`) and creates nothing: the chip is dashed until a document
   arrives at exactly that address (a follow's Create), which settles the ref.
-- **The composer reuses this lane with its own insertion** (`insertReference`)
-  and no `linkAhead`: a chat reference is identity-bearing and must name an
-  existing document.
+- **Each host owns one terminal-row node builder.** `@` selection and row drops
+  both consume that builder, so a document, asset, or folder has one node shape
+  per host. Interaction code still owns its own landing, spacing, and Undo.
+  The composer has no `linkAhead`: a chat reference must name an existing row.
 
 → [`../suggestion/suggestion-lane.ts`](../suggestion/suggestion-lane.ts) — the
   mechanism every lane shares

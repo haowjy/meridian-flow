@@ -45,6 +45,7 @@ export interface ScopePrepareRequest {
   holders: readonly { documentId: string; view: LinkView }[];
   refs?: readonly string[];
   addresses?: readonly string[];
+  folderAddresses?: readonly string[];
   /** Refs, asset ids and ahead addresses are extracted from these (stored-link extraction). */
   docs?: readonly Y.Doc[];
   /** Nodes already carrying stored attrs (copies, host-bound content): extracted like `docs`. */
