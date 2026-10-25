@@ -19,7 +19,7 @@ import {
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { SpelledLinkFact } from "@meridian/markup/links";
-import { compareDefaultSiblings } from "@meridian/resource-replica";
+import { compareCatalogSiblings } from "@meridian/resource-replica";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
@@ -664,26 +664,26 @@ export class ContextFS implements ContextSchemeAdapter {
     const orderPolicy = await this.store.parentOrderPolicy(view, folderId);
     const siblings = [
       ...folders.map((folder) => ({
-        order: { kind: "folder" as const, name: folder.name, identity: folder.id },
+        order: {
+          kind: "folder" as const,
+          name: folder.name,
+          rank: folder.rank,
+          entryId: folder.id,
+        },
         folder,
       })),
       ...documents.map((document) => ({
         order: {
           kind: "file" as const,
           name: renderFilename(document.name, document.extension),
-          identity: document.id,
+          rank: document.rank,
+          entryId: document.id,
         },
         document,
       })),
-    ].sort((left, right) => {
-      if (orderPolicy === "manual") {
-        const leftRank = "folder" in left ? left.folder.rank : left.document.rank;
-        const rightRank = "folder" in right ? right.folder.rank : right.document.rank;
-        if (leftRank !== rightRank) return (leftRank ?? "") < (rightRank ?? "") ? -1 : 1;
-        return left.order.identity < right.order.identity ? -1 : 1;
-      }
-      return compareDefaultSiblings(left.order, right.order);
-    });
+    ].sort((left, right) =>
+      compareCatalogSiblings(orderPolicy === "manual", left.order, right.order),
+    );
     const entries: AdapterFileEntry[] = [];
     for (const sibling of siblings) {
       if ("folder" in sibling) {

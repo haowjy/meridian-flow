@@ -19,16 +19,7 @@ import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol
 import type { JsonObject } from "@meridian/contracts/threads";
 import { branchTreeChanges, documents, folders } from "@meridian/database/schema";
 import { and, eq, getTableColumns, inArray, isNull, type SQL, Subquery, sql } from "drizzle-orm";
-import {
-  bigint,
-  boolean,
-  integer,
-  jsonb,
-  pgTable,
-  text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { bigint, boolean, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { SelectionProxyHandler } from "drizzle-orm/selection-proxy";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { BINARY_FILE_TYPES } from "../adapters/catalog-file-mapper.js";
@@ -61,7 +52,6 @@ const visibleFolderShape = pgTable("visible_folders", {
   parentId: uuid("parent_id").$type<FolderId>(),
   name: text("name").notNull(),
   description: text("description"),
-  sortOrder: integer("sort_order").notNull(),
   rank: text("rank"),
   orderPolicy: text("order_policy").$type<"default" | "manual">().notNull(),
   hidden: boolean("hidden").notNull(),
@@ -98,7 +88,7 @@ const documentTail = sql.raw(
     "d.location_version, d.hidden, d.created_at, d.updated_at",
 );
 const folderColumns = sql.raw(
-  "f.id, f.context_source_id, f.parent_id, f.name, f.description, f.sort_order, f.rank, f.order_policy, f.hidden, " +
+  "f.id, f.context_source_id, f.parent_id, f.name, f.description, f.rank, f.order_policy, f.hidden, " +
     "f.location_version, f.created_at, f.updated_at",
 );
 
