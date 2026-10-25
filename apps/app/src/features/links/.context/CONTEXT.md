@@ -147,8 +147,8 @@ is one request of up to 200 links, four batches at most in flight.
 | the request failed | "That link could not be checked", with Try again |
 | still in flight past 250ms | "Opening the link", with Cancel, which stops the follow |
 
-Every outcome carries `address`: the canonical Context URI the link names
-(`linkTargetAddress`, a relative path resolved against the holder's `baseUri`,
+Every outcome carries `address`: the canonical Context URI from the shared
+kind-aware stored-link resolver (relative to the holder's `baseUri`, with the
 fragment and query dropped), or null when it names none. The dialog never shows
 it as text. Every state draws one location line: the area's icon and the
 folder, worded by `documentLocation` as the `@` menu words a row's location

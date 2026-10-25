@@ -28,6 +28,7 @@ import {
   type ResolvedDocumentHref,
   resolveDocumentHref,
   resolveStoredLink,
+  resolveStoredLinkAddress,
   type SpelledHref,
   spellStoredLink,
   storedHref,
@@ -41,7 +42,10 @@ import type { DocumentLinkScope } from "./types.js";
 /** One holder's synchronous view over a catalog. */
 export interface HolderLinkScope extends DocumentLinkScope {
   readonly holder: LinkHolder;
-  resolve(link: { ref: string | null; href: string }): LinkResolution;
+  resolve(
+    link: { ref: string | null; href: string },
+    address?: ResolvedDocumentHref | null,
+  ): LinkResolution;
   /** Pass 3 resolve: exact, then unique extension-omitted (matchDocumentPath), in this view. */
   documentFor(uri: string): CatalogDocument | null;
   /** Pass 3 exact folder lookup in this view. */
@@ -99,8 +103,11 @@ export function createHolderLinkScope(
   catalog: HolderCatalog,
   onMiss: (what: string) => void = () => {},
 ): HolderLinkScope {
-  const resolve = (link: { ref: string | null; href: string }): LinkResolution => {
-    const resolution = resolveStoredLink(link, catalog);
+  const resolve = (
+    link: { ref: string | null; href: string },
+    address = resolveStoredLinkAddress(link, holder.uri),
+  ): LinkResolution => {
+    const resolution = resolveStoredLink(link, address, catalog);
     if (resolution.kind === "unknown") onMiss(link.ref ?? link.href);
     return resolution;
   };

@@ -8,7 +8,7 @@
  * own destination and host rather than by writing a second follow.
  */
 
-import { draftItemKey } from "@meridian/contracts";
+import { draftItemKey, resolveStoredLinkAddress } from "@meridian/contracts";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import {
   type DocumentAnswer as DocumentEntry,
@@ -17,7 +17,6 @@ import {
   type LinkFollowDisposition,
   type LinkFollowOutcome,
   type LinkTarget,
-  linkTargetAddress,
   linkTargetHref,
 } from "@/core/editor/links";
 
@@ -109,7 +108,7 @@ export async function followProjectLink({
   const outcome = (state: LinkFollowOutcome["state"]): LinkFollowOutcome => ({
     state,
     target,
-    address: linkTargetAddress(target, resolution.baseUri),
+    address: resolveStoredLinkAddress(link, resolution.baseUri)?.uri ?? null,
   });
 
   let settled = false;

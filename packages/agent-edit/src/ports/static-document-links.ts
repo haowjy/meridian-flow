@@ -91,10 +91,12 @@ export function createStaticDocumentLinks(
     async prepare(request) {
       if (!loaded) return;
       loaded.ids.add(request.documentId);
+      const holderUri = byId(request.documentId)?.uri ?? null;
       const keys = storedLinkKeys({
         docs: request.docs,
         ...(request.stored ? { nodes: request.stored } : {}),
         refs: [...(request.shown ?? []).map((showing) => showing.ref), ...(request.refs ?? [])],
+        holderUri,
       });
       for (const address of request.addresses ?? []) loaded.addresses.add(address);
       for (const id of keys.assetIds) loaded.ids.add(id);
@@ -114,7 +116,6 @@ export function createStaticDocumentLinks(
         const entry = byId(id);
         if (entry?.image && entry.presence === "deleted") loaded.addresses.add(entry.uri);
       }
-      const holderUri = byId(request.documentId)?.uri ?? null;
       for (const target of writtenAddresses(
         request.written ?? [],
         holderUri,

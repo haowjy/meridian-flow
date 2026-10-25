@@ -206,9 +206,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ] as const) {
         const id = await add(scheme, "Gate", workId);
         const uri = `${scheme}://${qualifier}Gate`;
-        expect(
-          await r.resolve({ projectId: p, userId: u, workId: a, target: { kind: "scheme", uri } }),
-        ).toMatchObject({
+        expect(await r.resolve({ projectId: p, userId: u, workId: a, uri })).toMatchObject({
           documentId: id,
           uri,
           workId,
@@ -230,7 +228,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: u,
           workId: a,
           ...(chat ? { chatId: chat } : {}),
-          target: { kind: "scheme", uri },
+          uri,
         });
       expect(await resolveUpload("uploads://@c9/Gate")).toMatchObject({
         documentId: upload,
@@ -254,7 +252,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         r.resolve({
           projectId: p,
           userId: u,
-          target: { kind: "scheme", uri: `manuscript://${path}` },
+          uri: `manuscript://${path}`,
         });
       expect(await resolve("outline")).toMatchObject({
         documentId: data,
@@ -288,7 +286,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://Gate" },
+          uri: "scratch://Gate",
         }),
       ).toMatchObject({ documentId: local });
       expect(
@@ -296,7 +294,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: null,
-          target: { kind: "scheme", uri: "scratch://Gate" },
+          uri: "scratch://Gate",
         }),
       ).toBeNull();
       await database.current.update(works).set({ archivedAt: new Date() }).where(eq(works.id, b));
@@ -305,7 +303,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://@w3/Gate" },
+          uri: "scratch://@w3/Gate",
         }),
       ).toMatchObject({ scheme: "scratch", path: "Gate" });
       await database.current.update(works).set({ deletedAt: new Date() }).where(eq(works.id, b));
@@ -314,7 +312,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://@w3/Gate" },
+          uri: "scratch://@w3/Gate",
         }),
       ).toBeNull();
       await database.current
@@ -326,7 +324,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://Gate" },
+          uri: "scratch://Gate",
         }),
       ).toBeNull();
     });
@@ -355,7 +353,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const input = {
         projectId: p,
         userId: u,
-        target: { kind: "scheme" as const, uri: "manuscript://old" },
+        uri: "manuscript://old",
       };
       const chat = { ...input, previousLocations: true };
       expect(await r.resolve(chat)).toMatchObject({
