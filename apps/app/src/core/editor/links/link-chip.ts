@@ -54,6 +54,11 @@ export function linkChip(
   if (entry?.state === "document")
     return { state: entry.branch ? "draft" : "filled", icon: entry.document.scheme };
   if (entry?.state === "folder") return { state: "filled", icon: "folder" };
+  if (target.addressKind === "folder")
+    return {
+      state: entry?.state === "gone" ? "dashed" : "filled",
+      icon: "folder",
+    };
   const icon = targetFamily(target, baseUri) ?? "file";
   const reachesNothing = entry?.state === "missing" || entry?.state === "gone";
   return { state: reachesNothing ? "dashed" : "filled", icon };

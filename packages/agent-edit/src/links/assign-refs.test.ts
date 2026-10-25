@@ -220,7 +220,11 @@ const doors: DoorCase[] = [
       const folderId = uuid(6);
       const links = createStaticDocumentLinks({
         projectId: PROJECT,
-        documents: [catalogDocument(H, HOLDER), catalogDocument(D, target)],
+        documents: [
+          catalogDocument(H, HOLDER),
+          catalogDocument(D, target),
+          catalogDocument(G, ch("Act")),
+        ],
         folders: [
           {
             folderId,
@@ -275,6 +279,34 @@ const doors: DoorCase[] = [
       expect.soft(walkLinkOccurrences(folderKept)[0]?.attrs, this.name).toMatchObject({
         ref: `folder:${folderId}`,
         href: storedHref({ kind: "folder", uri: ch("Act") }, ""),
+      });
+
+      // A path shared by a folder and a document cannot carry identity across kinds.
+      const documentWritten = codecFactory.parse("[Act document](Act)").blocks;
+      await links.prepare({ documentId: H, docs: [], written: documentWritten });
+      const documentSwap = assignLinkRefs({
+        old: walkLinkOccurrences(folderBound),
+        written: documentWritten,
+        scope: links.scopeFor(H, undefined),
+        shown: [],
+      }).nodes;
+      expect.soft(walkLinkOccurrences(documentSwap)[0]?.attrs, this.name).toMatchObject({
+        ref: documentRef(G),
+        href: storedHref({ kind: "document", uri: ch("Act") }, ""),
+      });
+
+      // Folder showings are not eligible correspondence evidence for image sources.
+      const imageWritten = codecFactory.parse("![Act](chapters/Act)").blocks;
+      await links.prepare({ documentId: H, docs: [], written: imageWritten });
+      const image = assignLinkRefs({
+        old: [],
+        written: imageWritten,
+        scope: links.scopeFor(H, undefined),
+        shown: [{ ref: `folder:${folderId}`, address: ch("Act"), holderUri: HOLDER, at: 1 }],
+      }).nodes;
+      expect.soft(walkLinkOccurrences(image)[0]?.attrs, this.name).toMatchObject({
+        ref: documentRef(G),
+        href: storedHref({ kind: "document", uri: ch("Act") }, ""),
       });
     },
   },
