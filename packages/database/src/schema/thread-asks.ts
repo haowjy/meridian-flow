@@ -12,6 +12,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt } from "./_shared";
@@ -48,6 +49,9 @@ export const asks = pgTable(
       .on(table.deadlineAt, table.id)
       .where(sql`${table.status} = 'open' AND ${table.deadlineAt} IS NOT NULL`),
     index("asks_thread_created").on(table.threadId, table.createdAt, table.id),
+    uniqueIndex("asks_one_live_per_thread")
+      .on(table.threadId)
+      .where(sql`${table.status} IN ('pending', 'open')`),
     check("asks_kind_valid", sql`${table.kind} IN ('question', 'permission')`),
     check(
       "asks_status_valid",

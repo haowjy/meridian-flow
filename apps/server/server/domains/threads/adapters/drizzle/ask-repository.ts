@@ -48,7 +48,6 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
         .select()
         .from(asks)
         .where(and(eq(asks.threadId, threadId), eq(asks.status, "open")))
-        .orderBy(asc(asks.createdAt))
         .limit(1);
       return row ? storedAsk(row) : null;
     },
