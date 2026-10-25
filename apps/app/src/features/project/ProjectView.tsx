@@ -839,6 +839,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                   ? props.editorWork
                   : (mountedEditor?.editorWork ?? null)
               }
+              routeDisplayed={props.activeScreen === "context"}
               active={editorActive}
               sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
               dockToggle={surfaceToggle("chat", t`Expand chat`)}

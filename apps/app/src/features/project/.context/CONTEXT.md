@@ -64,7 +64,9 @@ than compatibility aliases. Invalid required identity stays in place and shows
 an unavailable destination. `repairAddress` is reserved for canonical,
 entry-guarded replacement. A document path is a location, not identity:
 resource handle, live catalog membership, and draft admission resolve identity.
-Rename/move replaces the path while preserving a review item.
+Rename/move prepares the open tab's new locator and the replacement address as
+one navigation commit, so the old address keeps its identity continuity until
+the new address is accepted. The commit preserves a review item.
 
 Project content uses absent, no-Work, or explicit Work selection distinctly.
 Scratch has either a named Work or a No Work chat lineage; Uploads belong to a
