@@ -14,7 +14,7 @@ const SERVER_MESSAGE_CLASSES = new Set([
   "error",
   "ping",
 ]);
-const CLIENT_MESSAGE_CLASSES = new Set(["subscribe", "unsubscribe", "pong", "interrupt.respond"]);
+const CLIENT_MESSAGE_CLASSES = new Set(["subscribe", "unsubscribe", "pong"]);
 const AGUI_EVENT_TYPES = new Set<string>(Object.values(EventType));
 const EVENT_SEQ_PATTERN = /^(0|[1-9]\d*)$/;
 const textEncoder = new TextEncoder();

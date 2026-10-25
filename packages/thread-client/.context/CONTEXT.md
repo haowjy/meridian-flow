@@ -314,10 +314,10 @@ The rule this serves is the KB's
 ## Thread wire protocol and recovery
 
 The thread socket's client wire vocabulary is `subscribe`, `unsubscribe`, `pong`,
-`interrupt.respond`, `catalog.subscribe`, and `catalog.unsubscribe`; its server
-vocabulary is `connected`, `subscribed`, `event`, `gap`, `error`, `ping`, and
-`context-catalog-hint`. Turn cancellation is an HTTP operation through the injected
-`cancelTurn` port, not a WebSocket message. Keep these names aligned with
+`ask.answer`, `catalog.subscribe`, and `catalog.unsubscribe`; its server vocabulary is
+`connected`, `subscribed`, `event`, `gap`, `error`, `ping`, `ask.answer.ok`,
+`ask.answer.error`, and `context-catalog-hint`. Turn cancellation is an HTTP operation
+through the injected `cancelTurn` port, not a WebSocket message. Keep these names aligned with
 `@meridian/contracts/protocol` rather than inferring them from UI actions.
 
 **Every client message except `pong` carries a `requestId`** (`r1`, `r2`, ..., a counter

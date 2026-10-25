@@ -3,7 +3,7 @@
  * transition, and the one classifier for a failed reply. Pure: the server, thread-client, the app and
  * `./mf` import it; nothing here logs.
  */
-import type { GatewayErrorCode } from "../interrupt/mapping.js";
+import type { GatewayErrorCode } from "../errors/index.js";
 import type { SummaryRejectionReason } from "../runtime/summary-outcome.js";
 
 export type FailureCategory = "reply" | "command" | "usage" | "unavailable";

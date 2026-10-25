@@ -1,26 +1,14 @@
 /**
- * Purpose: Defines the shared custom component-block and interrupt-answer contracts used by server persistence and client renderers.
- * Key decisions: component block content stays JSON-natural and generic at the envelope, while invocation cards and `ask_user` props have explicit typed builders so server producers do not lose their required fields.
+ * Shared custom component blocks and the disabled ask_user input contract.
  */
 
 import { z } from "zod";
 import type { ThreadId, TurnId } from "../runtime/index.js";
 import type { ExecutionReportDelivery, SavedOutcome } from "../spawn/index.js";
-import type { JsonObject, JsonValue } from "../threads/index.js";
+import type { JsonObject } from "../threads/index.js";
 
 /** Registry key for a renderer/tool-owned custom component. */
 export type ComponentKind = string;
-
-export type InterruptAnswerProvenance = "user" | "auto";
-
-/**
- * Metadata that correlates a rendered component with the suspended orchestrator interrupt.
- * `id` is the interrupt registry id, not the block id; `timeoutMs` is milliseconds until auto-resume.
- */
-export type ComponentInterrupt = {
-  id: string;
-  timeoutMs?: number;
-};
 
 /**
  * Canonical content persisted in `Block.content` for `blockType: "custom"` component blocks.
@@ -29,7 +17,6 @@ export type ComponentInterrupt = {
 export type ComponentBlockContent = {
   kind: ComponentKind;
   props: JsonObject;
-  interrupt?: ComponentInterrupt;
 };
 
 /** Runtime-created pointer in a child's first user turn; text is frozen at spawn. */
@@ -138,18 +125,6 @@ export function buildInvocationCardContent(input: InvocationCardProps): Componen
   return { kind: "helper-result", props: input as unknown as JsonObject };
 }
 
-/** Answer returned to interrupt tools after user response or auto-resume. */
-export type InterruptAnswerEnvelope = {
-  value: JsonValue;
-  provenance: InterruptAnswerProvenance;
-};
-
-/** Props patched back onto a component block after a interrupt resolves. */
-export type InterruptResolvedProps = {
-  resolvedValue: string;
-  answerProvenance: InterruptAnswerProvenance;
-};
-
 export const ASK_USER_KIND_VALUES = ["choice", "free-text"] as const;
 
 export type AskUserKind = (typeof ASK_USER_KIND_VALUES)[number];
@@ -157,40 +132,6 @@ export type AskUserKind = (typeof ASK_USER_KIND_VALUES)[number];
 export type AskUserOption = JsonObject & {
   value: string;
   label: string;
-};
-
-export type AskUserBaseProps = JsonObject & {
-  question: string;
-  recommended: string | null;
-  requiresHuman: boolean;
-  resolvedValue?: string;
-  answerProvenance?: InterruptAnswerProvenance;
-};
-
-export type AskUserChoiceProps = AskUserBaseProps & {
-  options: AskUserOption[];
-};
-
-export type AskUserFreeTextProps = AskUserBaseProps;
-
-export type AskUserComponentContent =
-  | (ComponentBlockContent & {
-      kind: "choice";
-      props: AskUserChoiceProps;
-    })
-  | (ComponentBlockContent & {
-      kind: "free-text";
-      props: AskUserFreeTextProps;
-    });
-
-export type BuildAskUserComponentContentInput = {
-  interruptId: string;
-  question: string;
-  kind: AskUserKind;
-  options?: AskUserOption[];
-  recommended: string | null;
-  requiresHuman: boolean;
-  timeoutMs: number;
 };
 
 export type AskUserToolInput = {
@@ -252,113 +193,3 @@ export const askUserToolInputSchema = z
       ...(input.timeout_ms !== undefined ? { timeoutMs: input.timeout_ms } : {}),
     }),
   );
-
-export function isAskUserKind(value: unknown): value is AskUserKind {
-  return ASK_USER_KIND_VALUES.includes(value as AskUserKind);
-}
-
-export function parseAskUserOptions(value: unknown): AskUserOption[] | null {
-  if (!Array.isArray(value)) return null;
-
-  const options: AskUserOption[] = [];
-  for (const option of value) {
-    if (!option || typeof option !== "object" || Array.isArray(option)) return null;
-    const record = option as Record<string, unknown>;
-    if (typeof record.value !== "string" || typeof record.label !== "string") return null;
-    options.push({ value: record.value, label: record.label });
-  }
-  return options;
-}
-
-export function buildAskUserComponentContent(
-  input: BuildAskUserComponentContentInput,
-): AskUserComponentContent {
-  const baseProps: AskUserBaseProps = {
-    question: input.question,
-    recommended: input.recommended,
-    requiresHuman: input.requiresHuman,
-  };
-
-  const props =
-    input.kind === "choice" ? { ...baseProps, options: input.options ?? [] } : baseProps;
-
-  return {
-    kind: input.kind,
-    props,
-    interrupt: {
-      id: input.interruptId,
-      timeoutMs: input.timeoutMs,
-    },
-  } as AskUserComponentContent;
-}
-
-export function askUserChoiceProps(content: ComponentBlockContent): AskUserChoiceProps | null {
-  if (content.kind !== "choice") return null;
-  const props = content.props;
-  if (typeof props.question !== "string") return null;
-  if (typeof props.requiresHuman !== "boolean") return null;
-  if (props.recommended !== null && typeof props.recommended !== "string") return null;
-  const options = parseAskUserOptions(props.options);
-  if (!options) return null;
-
-  const typed: AskUserChoiceProps = {
-    ...props,
-    question: props.question,
-    options,
-    recommended: props.recommended,
-    requiresHuman: props.requiresHuman,
-  };
-  if (typeof props.resolvedValue === "string") typed.resolvedValue = props.resolvedValue;
-  if (props.answerProvenance === "user" || props.answerProvenance === "auto") {
-    typed.answerProvenance = props.answerProvenance;
-  }
-  return typed;
-}
-
-export function askUserFreeTextProps(content: ComponentBlockContent): AskUserFreeTextProps | null {
-  if (content.kind !== "free-text") return null;
-  const props = content.props;
-  if (typeof props.question !== "string") return null;
-  if (typeof props.requiresHuman !== "boolean") return null;
-  if (props.recommended !== null && typeof props.recommended !== "string") return null;
-
-  const typed: AskUserFreeTextProps = {
-    ...props,
-    question: props.question,
-    recommended: props.recommended,
-    requiresHuman: props.requiresHuman,
-  };
-  if (typeof props.resolvedValue === "string") typed.resolvedValue = props.resolvedValue;
-  if (props.answerProvenance === "user" || props.answerProvenance === "auto") {
-    typed.answerProvenance = props.answerProvenance;
-  }
-  return typed;
-}
-
-/**
- * Normalize the interrupt response payload to the string value shown in component props and returned to the model.
- *
- * The websocket response frame wraps the component response payload under `value`, while the ask_user payload also uses a
- * `value` field. Peeling exactly one wrapper here avoids server/client copies that accidentally unwrap different depths.
- */
-export function normalizeInterruptAnswerValue(responseValue: JsonValue): string {
-  if (typeof responseValue === "string") return responseValue;
-
-  if (responseValue && typeof responseValue === "object" && !Array.isArray(responseValue)) {
-    const wrappedValue = responseValue.value;
-    if (typeof wrappedValue === "string") return wrappedValue;
-    if (wrappedValue !== undefined) return JSON.stringify(wrappedValue);
-  }
-
-  return JSON.stringify(responseValue);
-}
-
-export function interruptResolvedPropsFromAnswer(input: {
-  value: JsonValue;
-  provenance: InterruptAnswerProvenance;
-}): InterruptResolvedProps {
-  return {
-    resolvedValue: normalizeInterruptAnswerValue(input.value),
-    answerProvenance: input.provenance,
-  };
-}

@@ -24,9 +24,6 @@ import { dispatchWsServerMessage } from "./dispatch-ws-server-message";
 import { SocketLifecycleController, type SocketLifecycleOptions } from "./socket-lifecycle";
 import type {
   ConnectionState,
-  InterruptRespondInput,
-  InterruptRespondReceipt,
-  ThreadInterruptResponseError,
   ThreadTransport,
   ThreadTransportHandlers,
   ThreadTransportSubscribeOptions,
@@ -55,10 +52,6 @@ export class ThreadSocketClient implements ThreadTransport {
     string,
     Set<(hint: Extract<WsServerMessage, { type: "context-catalog-hint" }>) => void>
   >();
-  private readonly interruptResponseErrorListeners = new Set<
-    (event: ThreadInterruptResponseError) => void
-  >();
-  private readonly socketGenerationClosedListeners = new Set<(generation: number) => void>();
   private wantsConnection = false;
   private requestCounter = 0;
 
@@ -72,10 +65,6 @@ export class ThreadSocketClient implements ThreadTransport {
           // The generation that just closed is still `currentGeneration` here
           // (it only advances on the next `startSocket`/`teardown`), so a send
           // tagged with it can be recognized as unconfirmed.
-          const closedGeneration = this.socket.currentGeneration;
-          for (const listener of this.socketGenerationClosedListeners) {
-            listener(closedGeneration);
-          }
           this.subscriptions.connectionLost();
           for (const handler of this.subscriptions.handlers()) handler.onClose?.(event);
         },
@@ -123,30 +112,6 @@ export class ThreadSocketClient implements ThreadTransport {
     handlers.onConnectionState?.(this.socket.state);
     this.ensureConnected();
     return () => this.subscriptions.remove(threadId, handlers);
-  }
-
-  respondInterrupt(input: InterruptRespondInput): InterruptRespondReceipt {
-    const socketGeneration = this.socket.currentGeneration;
-    const sent = this.send({
-      type: "interrupt.respond",
-      requestId: this.nextRequestId(),
-      ...input,
-    });
-    return sent ? { sent: true, socketGeneration } : { sent: false };
-  }
-
-  onInterruptResponseError(listener: (event: ThreadInterruptResponseError) => void): () => void {
-    this.interruptResponseErrorListeners.add(listener);
-    return () => {
-      this.interruptResponseErrorListeners.delete(listener);
-    };
-  }
-
-  onSocketGenerationClosed(listener: (generation: number) => void): () => void {
-    this.socketGenerationClosedListeners.add(listener);
-    return () => {
-      this.socketGenerationClosedListeners.delete(listener);
-    };
   }
 
   subscribeCatalog(
@@ -223,11 +188,6 @@ export class ThreadSocketClient implements ThreadTransport {
       onThreadError: (threadId, error) => {
         for (const handler of this.subscriptions.handlers(threadId)) {
           handler.onError?.(error);
-        }
-      },
-      onInterruptResponseError: (threadId, error) => {
-        for (const listener of this.interruptResponseErrorListeners) {
-          listener({ threadId, error });
         }
       },
       onGlobalError: (error) => this.publishError(error),

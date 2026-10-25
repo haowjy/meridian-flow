@@ -6,13 +6,9 @@
  */
 
 import { z } from "zod";
+import { type ArtifactRef, artifactRefSchema } from "../artifacts/index.js";
 import { parseContextUri } from "../context-uri.js";
-import {
-  type ArtifactRef,
-  artifactRefSchema,
-  type MeridianError,
-  meridianErrorSchema,
-} from "../interrupt/index.js";
+import { type MeridianError, meridianErrorSchema } from "../errors/index.js";
 import type { ThreadId, TurnBlockId, TurnId } from "../runtime/index.js";
 import type { JsonValue } from "../threads/index.js";
 

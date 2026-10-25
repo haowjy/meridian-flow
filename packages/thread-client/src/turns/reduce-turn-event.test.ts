@@ -1,9 +1,8 @@
 /**
- * The reducer against `syncedTurnStore`: tool results, instance-owned
- * interrupt buffering, and the injected clock.
+ * The reducer against `syncedTurnStore`: tool results and the injected clock.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Injected-clock event reduction and interrupt buffering
+ * - Injected-clock event reduction
  */
 import type { AGUIEvent, Turn } from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";
@@ -43,61 +42,14 @@ function instance(now = () => TURN_FIXTURE_NOW) {
 }
 type TestStore = ReturnType<typeof instance>["store"];
 
-const blockEvent = (id: string, interruptId = "int-1", sequence = 1): AGUIEvent =>
-  ({
-    type: EventType.CUSTOM,
-    name: "meridian.block.upserted",
-    value: {
-      block: {
-        id,
-        turnId: "turn-1",
-        blockType: "custom",
-        sequence,
-        content: { interrupt: { id: interruptId }, props: {} },
-      },
-    },
-  }) as unknown as AGUIEvent;
-
-const resolvedEvent = (interruptId = "int-1") =>
-  ({
-    type: EventType.CUSTOM,
-    name: "meridian.interrupt",
-    value: { state: "resolved", turnId: "turn-1", interruptId, value: "yes" },
-  }) as unknown as AGUIEvent;
-
 describe("turn reducer", () => {
-  it("buffers an early interrupt resolution per instance", () => {
-    const first = instance();
-    const second = instance();
-    for (const { reducer } of [first, second]) {
-      reducer.applyEvent(THREAD, TURN_FIXTURE_EVENTS[0] as AGUIEvent);
-    }
-    first.reducer.applyEvent(THREAD, resolvedEvent());
-    first.reducer.applyEvent(THREAD, blockEvent("b1"));
-    second.reducer.applyEvent(THREAD, blockEvent("b1"));
-
-    const props = (store: TestStore) =>
-      (store.turns(THREAD)?.[0]?.blocks[0]?.content as { props: Record<string, unknown> }).props;
-    expect(props(first.store)).toMatchObject({ resolvedValue: "yes" });
-    expect(props(second.store)).not.toHaveProperty("resolvedValue");
-
-    // int-2 is resolved before its block exists, so the resolution is buffered.
-    second.reducer.applyEvent(THREAD, resolvedEvent("int-2"));
-    second.reducer.clearPendingInterruptPatchesForThread(THREAD);
-    second.reducer.applyEvent(THREAD, blockEvent("b2", "int-2", 2));
-    const late = second.store.turns(THREAD)?.[0]?.blocks.find((block) => block.id === "b2");
-    expect(late?.content).not.toHaveProperty("props.resolvedValue");
-
-    // The fixture stream's end state is the canonical turn contract: the typed tool result
-    // survives later events, rows carry the injected clock, blocks sit in sequence order, and an
-    // identical rewrite changes nothing.
+  it("keeps typed results and ordering across a complete fixture stream", () => {
     const whole = instance();
     const statuses: unknown[] = [];
     for (const event of TURN_FIXTURE_EVENTS) {
       whole.reducer.applyEvent(THREAD, event);
       statuses.push(whole.store.turns(THREAD)?.[0]?.status);
     }
-    expect(statuses).toContain("waiting_interrupt");
     const turns = whole.store.turns(THREAD) ?? [];
     expect(turns.map((turn) => [turn.id, turn.status])).toEqual([
       ["turn-1", "complete"],
@@ -108,9 +60,8 @@ describe("turn reducer", () => {
       [0, "m1"],
       [1, "turn-1::1"],
       [2, "tool-call-1"],
-      [3, "interrupt-block-1"],
-      [4, "m2"],
-      [5, expect.stringMatching(/^text_[1-9]\d*$/)],
+      [3, "m2"],
+      [4, expect.stringMatching(/^text_[1-9]\d*$/)],
       [7, "late-b"],
       [9, "late-c"],
     ]);

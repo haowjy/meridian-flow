@@ -1,11 +1,9 @@
 /**
- * Owns a writer submission from admission through transport recovery, and the interrupt
- * responses. It follows no run: the chat's run state is the mounted subscriber's
+ * Owns a writer submission from admission through transport recovery. It follows no run: the chat's run state is the mounted subscriber's
  * (`useThreadSnapshotSync`), and this controller only tells that view what the writer admitted.
  */
 import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
-import type { JsonValue } from "@meridian/contracts/threads";
-import { type InterruptRespondInput, isBusy, type ThreadTransport } from "@meridian/thread-client";
+import { isBusy, type ThreadTransport } from "@meridian/thread-client";
 import { HttpResponseError } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
@@ -16,7 +14,6 @@ import {
 import { abortable } from "@/client/chat-submissions/lock";
 import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import type { ThreadStoreActions } from "@/client/stores";
-import type { InterruptResponseState } from "@/core/session/interrupt-response";
 
 type AppendUserMessageFn = typeof appendUserMessage;
 type LookupAdmissionFn = typeof lookupUserMessageAdmission;
@@ -82,8 +79,6 @@ export class ThreadRunController {
   private activationGeneration = 0;
 
   private recoverySessions = new Set<object>();
-  private unsubscribeInterruptResponseError: (() => void) | null = null;
-  private unsubscribeSocketGenerationClosed: (() => void) | null = null;
 
   constructor(options: ThreadRunControllerOptions) {
     this.transport = options.transport;
@@ -97,33 +92,9 @@ export class ThreadRunController {
 
   /** Pair provider effect setup with disposal; construction is render-pure. */
   activate(): void {
-    if (this.accountSignal.aborted || this.unsubscribeInterruptResponseError) return;
+    if (this.accountSignal.aborted) return;
     this.disposed = false;
-    const ownerGeneration = ++this.activationGeneration;
-    this.unsubscribeInterruptResponseError = this.transport.onInterruptResponseError(
-      ({ threadId, error }) => {
-        if (
-          !this.accountSignal.aborted &&
-          !this.disposed &&
-          this.activationGeneration === ownerGeneration
-        )
-          this.settleInterruptResponseError(threadId, error);
-      },
-    );
-    try {
-      this.unsubscribeSocketGenerationClosed = this.transport.onSocketGenerationClosed(
-        (generation) =>
-          !this.accountSignal.aborted &&
-          !this.disposed &&
-          this.activationGeneration === ownerGeneration &&
-          this.actions.markInterruptResponsesForGenerationAmbiguous(generation),
-      );
-    } catch (error) {
-      this.unsubscribeInterruptResponseError?.();
-      this.unsubscribeInterruptResponseError = null;
-      this.activationGeneration += 1;
-      throw error;
-    }
+    this.activationGeneration += 1;
   }
 
   /** Re-admit a journal-recovered submission under its owning recovery session. */
@@ -272,44 +243,6 @@ export class ThreadRunController {
     return outcome("ambiguous");
   }
 
-  respondInterrupt(input: InterruptRespondInput): InterruptResponseState {
-    // Overlap policy: one in-flight response per tuple. A second click while
-    // this tuple is pending returns the existing state and writes nothing, so
-    // the server cannot see a duplicate frame and the retained value is not
-    // overwritten. Retry after a failed/ambiguous attempt is allowed.
-    const existing = this.actions.interruptResponseFor(input);
-    if (existing?.status === "pending") return { status: "pending" };
-
-    // The wire envelope allows `unknown`; the component protocol only emits
-    // JSON, so the retained retry value is a JsonValue.
-    const value = input.value as JsonValue;
-    const receipt = this.transport.respondInterrupt(input);
-    if (!receipt.sent) {
-      // The socket was not open, so the frame never left the client. This is a
-      // proven send failure (retryable), not an ambiguous outcome.
-      const failure: InterruptResponseState = { status: "failed" };
-      this.actions.failInterruptResponse({ ...input, value }, failure);
-      return failure;
-    }
-    // Record the socket generation so a close before any resolution can mark
-    // this entry ambiguous (queued, not proven delivered).
-    this.actions.beginInterruptResponse({
-      ...input,
-      value,
-      generation: receipt.socketGeneration,
-    });
-    return { status: "pending" };
-  }
-
-  private settleInterruptResponseError(threadId: string, error: Error): void {
-    const pending = this.actions.pendingInterruptResponseForThread(threadId);
-    if (!pending) return;
-    const code = isMeridianApiError(error) ? error.code : undefined;
-    this.actions.failInterruptResponse(pending, {
-      status: code === "interrupt_correlation_mismatch" ? "failed" : "ambiguous",
-    });
-  }
-
   /**
    * The lock-holding tab's admission. The chat owes the message until its record shows it
    * answered, so the admission becomes a message intent at the version its answer carries (none
@@ -336,9 +269,5 @@ export class ThreadRunController {
     this.disposed = true;
     this.activationGeneration += 1;
     this.recoverySessions.clear();
-    this.unsubscribeInterruptResponseError?.();
-    this.unsubscribeSocketGenerationClosed?.();
-    this.unsubscribeInterruptResponseError = null;
-    this.unsubscribeSocketGenerationClosed = null;
   }
 }

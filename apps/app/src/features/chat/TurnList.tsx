@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
-import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { CompactionDivider } from "./compaction/CompactionDivider";
 import { HandoffBriefCard } from "./derivation/HandoffBriefCard";
 import { ForkPointRule, InheritedSourceHeader } from "./derivation/InheritedMarks";
@@ -55,7 +54,6 @@ export type TurnListProps = {
   tailFollowRevision: number;
   /** Accessible label for the scroll log region. */
   ariaLabel: string;
-  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   changeTrails?: Record<string, ChangeTrailShell>;
   /** Recovered failed submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
@@ -112,7 +110,6 @@ export function TurnList({
   historySettled,
   tailFollowRevision,
   ariaLabel,
-  onRespondToInterrupt,
   changeTrails = {},
   submissionRecoveryByTurnId,
   controls = null,
@@ -320,7 +317,6 @@ export function TurnList({
           brief={handoff ? brief : null}
           destinationBusy={handoff && busy}
           owners={row.inherited ? (inherited?.owners ?? null) : null}
-          onRespondToInterrupt={assistant && local ? onRespondToInterrupt : undefined}
           changeTrail={assistant && local ? byTurnId.get(row.turn.id) : undefined}
           navigateToChange={assistant ? navigateToChange : undefined}
           // Thread cache stats follow the active run, or the latest settled
@@ -345,7 +341,6 @@ export function TurnList({
       lastAssistantIdx,
       lastQueuedTurnId,
       navigateToChange,
-      onRespondToInterrupt,
       onRetryInherited,
       queue,
       queuedCount,
@@ -478,7 +473,6 @@ const TranscriptRow = memo(function TranscriptRow({
   brief,
   destinationBusy,
   owners,
-  onRespondToInterrupt,
   changeTrail,
   navigateToChange,
   threadUsage,
@@ -499,7 +493,6 @@ const TranscriptRow = memo(function TranscriptRow({
   brief?: HandoffBrief | null;
   destinationBusy: boolean;
   owners: InheritedView["owners"] | null;
-  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   changeTrail?: ChangeTrailShell;
   navigateToChange?: ReturnType<typeof useChangeTrailNavigation>;
   threadUsage: TurnListProps["threadUsage"];
@@ -555,7 +548,6 @@ const TranscriptRow = memo(function TranscriptRow({
         movedPast={row.movedPast}
         continuesResponse={row.continuing}
         standIn={standIn}
-        onRespondToInterrupt={onRespondToInterrupt}
         changeTrail={changeTrail}
         navigateToChange={navigateToChange}
       />

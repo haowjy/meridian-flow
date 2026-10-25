@@ -5,7 +5,6 @@ import type {
   CatalogWakeHint,
   SequencedEvent,
   ThreadLiveState,
-  WsClientMessage,
   WsGapCause,
 } from "@meridian/contracts/protocol";
 
@@ -22,11 +21,6 @@ export type ConnectionState =
   | { kind: "reset"; reason: string; code?: number }
   | { kind: "unauthorized"; reason: string; code?: number };
 
-export type InterruptRespondInput = Omit<
-  Extract<WsClientMessage, { type: "interrupt.respond" }>,
-  "type" | "requestId"
->;
-
 export type ThreadGapEvent = {
   threadId: string;
   cause: WsGapCause;
@@ -35,14 +29,6 @@ export type ThreadGapEvent = {
   message?: string;
   gapCount: number;
 };
-
-export type ThreadInterruptResponseError = {
-  threadId: string;
-  error: Error;
-};
-
-/** Only `sent: false` proves the response never left the client. */
-export type InterruptRespondReceipt = { sent: false } | { sent: true; socketGeneration: number };
 
 export interface ThreadTransportHandlers {
   onEvent: (event: SequencedEvent) => void;
@@ -86,15 +72,6 @@ export interface ThreadTransport {
 
   /** Receive truth-free catalog wake hints over the existing authenticated socket. */
   subscribeCatalog(projectId: string, listener: (hint: CatalogWakeHint) => void): () => void;
-
-  /** Send an interrupt answer over the existing thread WebSocket. */
-  respondInterrupt(input: InterruptRespondInput): InterruptRespondReceipt;
-
-  /** Rejections settle a response attempt without closing the thread stream. */
-  onInterruptResponseError(listener: (event: ThreadInterruptResponseError) => void): () => void;
-
-  /** Responses on a closed generation are ambiguous until server reconciliation. */
-  onSocketGenerationClosed(listener: (generation: number) => void): () => void;
 
   /** Cancel an in-flight turn via HTTP. */
   cancel(threadId: string, turnId: string): Promise<CancelTurnResponse>;

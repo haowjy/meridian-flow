@@ -27,12 +27,6 @@ export type CliEvent =
       result: string;
     }
   | { type: "tool.errored"; seq: string; toolCallId: string; name: string }
-  | {
-      type: "interrupt.requested" | "interrupt.resolved" | "interrupt.expired";
-      seq: string;
-      turnId: string;
-      interruptId: string;
-    }
   | { type: "turn.finished"; seq: string; turnId: string }
   | {
       type: "turn.failed";
@@ -155,23 +149,6 @@ export class RunEventMapper {
 
   private mapCustom(seq: string, name: string, value: unknown): CliEvent[] {
     const record = (value ?? {}) as Record<string, unknown>;
-    if (name === "meridian.interrupt") {
-      const state = String(record.state);
-      const type =
-        state === "created"
-          ? "interrupt.requested"
-          : state === "resolved"
-            ? "interrupt.resolved"
-            : "interrupt.expired";
-      return [
-        {
-          type,
-          seq,
-          turnId: String(record.turnId),
-          interruptId: String(record.interruptId),
-        },
-      ];
-    }
     if (name === "meridian.tool.result_error") {
       // Follows its TOOL_CALL_RESULT, so it marks the already-emitted completion.
       const toolCallId = String(record.toolCallId);
@@ -201,11 +178,6 @@ export function renderEventLine(event: CliEvent, full: boolean): string | null {
       return `${event.type} ${event.name}(${truncate(oneLine(event.args), limit)}) -> ${truncate(oneLine(event.result), limit)}`;
     case "tool.errored":
       return `tool.errored ${event.name} (${event.toolCallId})`;
-    case "interrupt.requested":
-      return `interrupt.requested ${event.interruptId} on turn ${event.turnId}`;
-    case "interrupt.resolved":
-    case "interrupt.expired":
-      return `${event.type} ${event.interruptId}`;
     case "turn.finished":
       return `turn.finished ${event.turnId}`;
     case "turn.failed":

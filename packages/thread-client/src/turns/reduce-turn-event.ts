@@ -1,13 +1,8 @@
 /** Applies accepted stream events to a turn. */
-import {
-  type InterruptAnswerProvenance,
-  interruptResolvedPropsFromAnswer,
-} from "@meridian/contracts/components";
 import type { AGUIEvent, Block, BlockType, JsonValue, Turn } from "@meridian/contracts/protocol";
 import {
   blockContentRecord,
   EventType,
-  interruptIdForBlock,
   MESSAGES_HANDED_BACK_EVENT,
   RUN_STATE_EVENT,
   readMessagesHandedBack,
@@ -27,15 +22,6 @@ import {
   toBlockContent,
 } from "./state-helpers";
 import type { SwitchTurnFacts } from "./turn-ops";
-
-type InterruptLifecyclePayload = {
-  turnId: string;
-  interruptId: string;
-  state: "created" | "resolved" | "expired";
-  blockSequence?: number;
-  value?: JsonValue;
-  provenance?: "user" | "auto";
-};
 
 type CustomBlockUpsertPayload = {
   block: {
@@ -85,11 +71,6 @@ export type TurnStore = {
    */
   markForgotten(threadId: string, ids: readonly string[], byTurnId: string): void;
   bumpEventsApplied(threadId: string): number;
-  settleInterruptResponse(identity: {
-    threadId: string;
-    turnId: string;
-    interruptId: string;
-  }): void;
 };
 
 /** The addressed block vocabulary has one reducer owner, independent of a run. */
@@ -133,8 +114,6 @@ export type TurnReducer = {
   applyEvent(threadId: string, event: AGUIEvent, seq?: string): void;
   /** False means the owned vocabulary was malformed or not for this thread. */
   applyDurableBlockEvent(threadId: string, event: AGUIEvent): boolean;
-  clearPendingInterruptPatchesForThread(threadId: string): void;
-  clearPendingInterruptPatchesForTurn(threadId: string, turnId: string): void;
 };
 
 export type TurnReducerOptions = {
@@ -482,165 +461,20 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
     }
   }
 
-  function parseInterruptLifecyclePayload(value: unknown): InterruptLifecyclePayload | null {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-    const candidate = value as Record<string, unknown>;
-    const state = candidate.state;
-    const turnId = candidate.turnId;
-    const interruptId = candidate.interruptId;
-    if (state !== "created" && state !== "resolved" && state !== "expired") return null;
-    if (typeof turnId !== "string" || turnId.length === 0) return null;
-    if (typeof interruptId !== "string" || interruptId.length === 0) return null;
-
-    return {
-      turnId,
-      interruptId,
-      state,
-      blockSequence:
-        typeof candidate.blockSequence === "number" ? candidate.blockSequence : undefined,
-      value: "value" in candidate ? (candidate.value as JsonValue) : undefined,
-      provenance:
-        candidate.provenance === "user" || candidate.provenance === "auto"
-          ? candidate.provenance
-          : undefined,
-    };
-  }
-
-  function interruptBlockForPayload(turn: Turn, payload: InterruptLifecyclePayload): Block | null {
-    if (typeof payload.blockSequence === "number") {
-      const sequenced = turn.blocks.find((block) => block.sequence === payload.blockSequence);
-      if (
-        sequenced?.blockType === "custom" &&
-        interruptIdForBlock(sequenced) === payload.interruptId
-      ) {
-        return sequenced;
-      }
-    }
-
-    return (
-      turn.blocks.find(
-        (block) =>
-          block.blockType === "custom" && interruptIdForBlock(block) === payload.interruptId,
-      ) ?? null
-    );
-  }
-
-  function resolvedInterruptAnswer(payload: InterruptLifecyclePayload): {
-    value: JsonValue;
-    provenance: InterruptAnswerProvenance;
-  } {
-    // The server may omit an explicit expired answer in the lifecycle event; the
-    // component still needs a durable sentinel so cold-load renders as resolved.
-    return {
-      value: payload.value ?? (payload.state === "expired" ? "__expired__" : null),
-      provenance: payload.provenance ?? (payload.state === "expired" ? "auto" : "user"),
-    };
-  }
-
-  function patchInterruptBlock(block: Block, payload: InterruptLifecyclePayload): Block {
-    const content = blockContentRecord(block);
-    const props =
-      content.props && typeof content.props === "object" && !Array.isArray(content.props)
-        ? (content.props as Record<string, JsonValue>)
-        : {};
-
-    return {
-      ...block,
-      content: {
-        ...content,
-        props: {
-          ...props,
-          ...interruptResolvedPropsFromAnswer(resolvedInterruptAnswer(payload)),
-        },
-      },
-    };
-  }
-
-  /** Buffered interrupt resolution patches keyed by thread/turn/interrupt id. */
-  const pendingInterruptPatches = new Map<string, InterruptLifecyclePayload>();
-
-  function pendingInterruptPatchKey(threadId: string, turnId: string, interruptId: string): string {
-    return `${threadId}\u0000${turnId}\u0000${interruptId}`;
-  }
-
-  function pendingInterruptPatchForBlock(
-    threadId: string,
-    block: Block,
-  ): InterruptLifecyclePayload | null {
-    const interruptId = interruptIdForBlock(block);
-    if (!interruptId) return null;
-    const key = pendingInterruptPatchKey(threadId, block.turnId, interruptId);
-    const payload = pendingInterruptPatches.get(key);
-    if (!payload) return null;
-    pendingInterruptPatches.delete(key);
-    return payload;
-  }
-
-  function clearPendingInterruptPatchesForThread(threadId: string): void {
-    for (const key of pendingInterruptPatches.keys()) {
-      if (key.startsWith(`${threadId}\u0000`)) pendingInterruptPatches.delete(key);
-    }
-  }
-
-  function clearPendingInterruptPatchesForTurn(threadId: string, turnId: string): void {
-    for (const key of pendingInterruptPatches.keys()) {
-      if (key.startsWith(`${threadId}\u0000${turnId}\u0000`)) pendingInterruptPatches.delete(key);
-    }
-  }
-
   function applyCustomBlockUpsertEvent(
     store: TurnStore,
     threadId: string,
     payload: CustomBlockUpsertPayload,
   ): void {
-    // Custom upserts include historical same-card replacements. Never mint a
-    // synthetic streaming turn for one: the durable snapshot is the authority.
     if (!turnById(store, threadId, payload.block.turnId)) {
       store.invalidateThreadSnapshot?.(threadId);
       return;
     }
-
-    let block = blockFromCustomUpsertPayload(payload);
-    const pendingPatch = pendingInterruptPatchForBlock(threadId, block);
-    if (pendingPatch) {
-      // Replay can legally deliver interrupt resolution before the component
-      // block when a client reconnects around the pause/resume boundary.
-      block = patchInterruptBlock(block, pendingPatch);
-    }
-
-    store.upsertAssistantBlock(threadId, payload.block.turnId, block);
-  }
-
-  function applyInterruptLifecycleEvent(
-    store: TurnStore,
-    threadId: string,
-    payload: InterruptLifecyclePayload,
-  ): void {
-    store.ensureAssistantTurn(threadId, payload.turnId, { createdAt: now() });
-
-    if (payload.state === "created") {
-      store.patchTurnStatus(threadId, payload.turnId, "waiting_interrupt");
-      return;
-    }
-
-    const turn = turnById(store, threadId, payload.turnId);
-    const block = turn ? interruptBlockForPayload(turn, payload) : null;
-    if (block) {
-      store.upsertAssistantBlock(threadId, payload.turnId, patchInterruptBlock(block, payload));
-    } else {
-      pendingInterruptPatches.set(
-        pendingInterruptPatchKey(threadId, payload.turnId, payload.interruptId),
-        payload,
-      );
-    }
-    // A resolved/expired lifecycle event is the server-confirmed settlement of
-    // any local response send for this tuple; drop the local pending/error state.
-    store.settleInterruptResponse({
+    store.upsertAssistantBlock(
       threadId,
-      turnId: payload.turnId,
-      interruptId: payload.interruptId,
-    });
-    store.patchTurnStatus(threadId, payload.turnId, "streaming");
+      payload.block.turnId,
+      blockFromCustomUpsertPayload(payload),
+    );
   }
 
   function toolNameFromBlock(block: Block | null): string {
@@ -1001,7 +835,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
             eventsApplied,
           }),
         );
-        if (snapshot.status === "streaming" || snapshot.status === "waiting_interrupt") {
+        if (snapshot.status === "streaming") {
           store.patchTurnStatus(threadId, turn.id, "streaming");
         }
         return;
@@ -1024,11 +858,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
       }
 
       case EventType.CUSTOM: {
-        if (event.name === "meridian.interrupt") {
-          const payload = parseInterruptLifecyclePayload(event.value);
-          if (payload) applyInterruptLifecycleEvent(store, threadId, payload);
-          return;
-        }
         if (event.name === "meridian.tool.output_delta") {
           const payload = parseToolOutputDeltaPayload(event.value);
           if (!payload) {
@@ -1169,7 +998,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           typeof event.result === "object" &&
           "stopReason" in event.result &&
           event.result.stopReason === "user_cancelled";
-        clearPendingInterruptPatchesForTurn(threadId, turn.id);
         store.patchTurnStatus(threadId, turn.id, stopReason ? "cancelled" : "complete", {
           completedAt: now(),
           finishReason: stopReason ? "stop_sequence" : "end_turn",
@@ -1180,7 +1008,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
       case EventType.RUN_ERROR: {
         const turn = activeAssistantTurn(store, threadId);
         if (!turn) return;
-        clearPendingInterruptPatchesForTurn(threadId, turn.id);
         store.patchTurnStatus(threadId, turn.id, "error", {
           completedAt: now(),
           error: event.message,
@@ -1197,7 +1024,5 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
   return {
     applyEvent,
     applyDurableBlockEvent,
-    clearPendingInterruptPatchesForThread,
-    clearPendingInterruptPatchesForTurn,
   };
 }

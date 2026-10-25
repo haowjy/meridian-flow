@@ -72,7 +72,6 @@ import { ChatComposer } from "./ChatComposer";
 import { ChatContextNavigationProvider } from "./ChatContextNavigation";
 import { ChatSurface } from "./ChatSurface";
 import { useOpenChatThread } from "./ChatThreadNavigation";
-import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { chatLineageId } from "./chat-scratch-owner";
 import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
 import { useRegisterChatComposer } from "./composer-insertion";
@@ -640,10 +639,6 @@ export function ChatView({
   });
   const handleWriteModeChange = useCommittedEvent(controls.switchWriteMode);
 
-  const handleRespondToInterrupt = useCommittedEvent((request: InterruptRespondRequest) =>
-    controller.respondInterrupt(request),
-  );
-
   const links = useChatLinkFollowing({ projectId, activeThread, activeWork, active });
 
   return (
@@ -695,7 +690,6 @@ export function ChatView({
                           historySettled={historySettled}
                           tailFollowRevision={tailFollowRevision}
                           ariaLabel={t`Chat`}
-                          onRespondToInterrupt={handleRespondToInterrupt}
                           changeTrails={changeTrails.byId}
                           submissionRecoveryByTurnId={submissions.presentation}
                           controls={controls}

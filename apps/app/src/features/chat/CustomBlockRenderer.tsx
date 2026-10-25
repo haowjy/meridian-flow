@@ -11,85 +11,24 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Block, TurnStatus } from "@meridian/contracts/protocol";
-import type { JsonValue } from "@meridian/contracts/threads";
+import type { Block } from "@meridian/contracts/protocol";
 import type { DirectInvocationResult } from "@meridian/thread-client";
 import { componentBlockContent } from "@meridian/thread-client";
-import { useThreadStore } from "@/client/stores";
-import { interruptResponseKey } from "@/core/session/interrupt-response";
 import { COMPONENT_REGISTRY } from "./component-registry";
-
-export type InterruptRespondRequest = {
-  threadId: string;
-  turnId: string;
-  interruptId: string;
-  value: JsonValue;
-};
 
 export type CustomBlockRendererProps = {
   block: Block;
   threadId: string;
-  turnStatus?: TurnStatus;
-  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   directResult?: DirectInvocationResult | null;
 };
 
-export function CustomBlockRenderer({
-  block,
-  threadId,
-  turnStatus,
-  onRespondToInterrupt,
-  directResult,
-}: CustomBlockRendererProps) {
+export function CustomBlockRenderer({ block, threadId, directResult }: CustomBlockRendererProps) {
   const content = componentBlockContent(block.content);
   const kind = content?.kind ?? null;
   const Component = kind ? COMPONENT_REGISTRY[kind] : undefined;
-  const interruptId = content?.interrupt?.id ?? null;
-  const responseEntry = useThreadStore((state) =>
-    interruptId
-      ? state.interruptResponses[
-          interruptResponseKey({ threadId, turnId: block.turnId, interruptId })
-        ]
-      : undefined,
-  );
-
-  if (!content || !Component) {
-    return <UnknownComponentFallback block={block} kind={kind} />;
-  }
-
-  const hasResolvedValue = Object.hasOwn(content.props, "resolvedValue");
-  const respond = (value: JsonValue) => {
-    if (!interruptId) return;
-    onRespondToInterrupt?.({
-      threadId,
-      turnId: block.turnId,
-      interruptId,
-      value,
-    });
-  };
-  // Retry replays the exact submitted value with the same correlation tuple.
-  const retry = () => {
-    if (!interruptId || !responseEntry) return;
-    onRespondToInterrupt?.({
-      threadId,
-      turnId: block.turnId,
-      interruptId,
-      value: responseEntry.value,
-    });
-  };
-
+  if (!content || !Component) return <UnknownComponentFallback block={block} kind={kind} />;
   return (
-    <Component
-      content={content}
-      respond={respond}
-      isAwaitingResponse={Boolean(
-        interruptId && !hasResolvedValue && turnStatus === "waiting_interrupt",
-      )}
-      responseState={responseEntry ? { status: responseEntry.status } : null}
-      retry={retry}
-      invocationResult={kind === "helper-result" ? (directResult ?? null) : undefined}
-      threadId={threadId}
-    />
+    <Component content={content} invocationResult={directResult ?? null} threadId={threadId} />
   );
 }
 

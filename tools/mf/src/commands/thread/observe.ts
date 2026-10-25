@@ -231,8 +231,6 @@ export function createObserver(options: ObserverOptions): Observer {
         // Retryable replay/network errors stay with the transport; only refusals end the command.
         if (observation.error instanceof CliError) failure ??= observation.error;
         break;
-      case "interruptSettled":
-        break;
     }
     notify();
   };
