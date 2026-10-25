@@ -21,6 +21,9 @@ import {
   resourceContextAuthority,
   resourceContextUri,
 } from "./resource-work-authority";
+import { compareCatalogSiblings, isManualParent } from "./sibling-order";
+
+type CatalogChild = Extract<CatalogEntry, { kind: "file" | "folder" }>;
 
 /** Supply all destination sources/parents, including other Work catalogs for cross-Work moves. */
 export function createResourcePlacement(
@@ -381,25 +384,34 @@ export function createResourcePlacement(
   const placedRows = new WeakMap<
     readonly ResourceRecord[],
     {
-      byParent: Map<string, CatalogEntry[]>;
+      byParent: Map<string, CatalogChild[]>;
       sources: Extract<CatalogEntry, { kind: "source" }>[];
     }
   >();
-  /** The files and folders a parent holds as placed, including pending moves and creates. */
+  /**
+   * The files and folders a parent holds as placed, including pending moves and creates,
+   * in the order the tree shows them.
+   */
   function childrenAt(
     parent: ParentRef,
     records: readonly ResourceRecord[],
   ): readonly CatalogEntry[] {
     let index = placedRows.get(records);
     if (!index) {
-      const byParent = new Map<string, CatalogEntry[]>();
+      const byParent = new Map<string, CatalogChild[]>();
       const sources: Extract<CatalogEntry, { kind: "source" }>[] = [];
+      const parents = new Map<string, CatalogEntry>();
       for (const row of projectCatalog(entries, records)) {
+        parents.set(row.entryId, row);
         if (row.kind === "source") sources.push(row);
         if (row.kind !== "file" && row.kind !== "folder") continue;
         const siblings = byParent.get(row.parentId);
         if (siblings) siblings.push(row);
         else byParent.set(row.parentId, [row]);
+      }
+      for (const [parentId, siblings] of byParent) {
+        const manual = isManualParent(parents.get(parentId));
+        siblings.sort((left, right) => compareCatalogSiblings(manual, left, right));
       }
       index = { byParent, sources };
       placedRows.set(records, index);
