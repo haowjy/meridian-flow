@@ -169,35 +169,28 @@ targeted path's optional fifth `meridian work done` action.
 
 ### Orphan dev sessions
 
-Deleting a checkout directly can leave its tmux session and dev servers running.
-`pnpm dev` sweeps these orphan sessions before starting or reusing a dev stack.
-`--print` and `--stop` do not sweep other sessions. To inspect or run the sweep
-without starting a stack:
+Deleting a checkout directly can leave its tmux terminal session and dev servers
+running. `pnpm dev` cleans up these abandoned stacks before starting or reusing a
+stack. `--print` and `--stop` never sweep other checkouts. To inspect the cleanup
+plan before stopping anything:
 
 ```bash
 pnpm dev:prune-worktrees -- --orphans --dry-run
 pnpm dev:prune-worktrees -- --orphans          # confirm interactively; --yes skips the prompt
 ```
 
-The sweep requires a managed `meridian-…-<path-hash>` session, a missing checkout,
-and every pane still under that checkout. Unregistered paths must be immediate
-children of this repo's sibling `<repo>.worktrees/` directory. Live checkouts,
-locked registrations, other repositories, and unrelated tmux sessions are left
-alone. Git discovery ignores inherited repository overrides. The same ownership
-checks run before each shutdown phase; newly added or relocated panes abort
-teardown. Same-user descendants are tracked through the TERM grace period,
-including detached children spawned during shutdown. After tmux teardown,
-captured survivors are briefly stopped for a stable descendant census, then
-force-killed; an ownership refusal resumes any processes this invocation paused.
-A still-present PID with changed identity (including an executable change) refuses
-cleanup instead of counting as exited. Inspect the reported PID before retrying.
-Processes that reparent before their identity or ancestry can be captured are
-not guessed at.
+Only sessions created by the dev launcher qualify: their names include a hash of
+the checkout path, that path must be missing, and every terminal pane must still
+point inside it. Live checkouts, locked Git registrations, other repositories,
+and unrelated terminals are left alone. Branches, databases and work items are
+never deleted. A refusal means ownership could not be proved; inspect the
+reported session and PID before retrying, rather than killing by name or path.
 
-Portless route maintenance is separate: failures warn rather than block dev
-startup. Rerun `--orphans --yes` to retry maintenance even if all sessions are
-already gone; dry-run and cancelled plans never maintain routes. The sweep never
-deletes branches, databases, or work items.
+Portless maps local HTTPS names to dev servers. Cleanup also removes its stale
+routes; a route-maintenance failure warns without undoing process cleanup.
+Rerun `--orphans --yes` to retry that maintenance even when no sessions remain.
+Dry-run and cancelled plans never change routes. The detailed ownership and
+shutdown contracts are in [the dev-tool context](tools/dev/.context/CONTEXT.md).
 
 Details: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md), [packages/database/README.md](packages/database/README.md).
 
