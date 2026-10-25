@@ -13,6 +13,10 @@ import type { ControlBody } from "@meridian/contracts/threads";
 import type { InboxMessage } from "./ports.js";
 
 export type ControlMessage = InboxMessage & { intent: "control"; body: ControlBody };
+export type AskResolvedMessage = InboxMessage & {
+  intent: "control";
+  body: { kind: "ask_resolved"; askId: string };
+};
 export type WriteModeSwitchMessage = InboxMessage & {
   intent: "control";
   body: Extract<ControlBody, { kind: "write_mode" }>;
@@ -20,7 +24,7 @@ export type WriteModeSwitchMessage = InboxMessage & {
 
 export type InboxWorkSelection =
   | { kind: "batch"; rows: InboxMessage[] }
-  | { kind: "control"; control: ControlMessage; rows: InboxMessage[] }
+  | { kind: "control"; control: ControlMessage | AskResolvedMessage; rows: InboxMessage[] }
   | { kind: "switch"; control: WriteModeSwitchMessage }
   | { kind: "yield" }
   | { kind: "none" };
@@ -31,6 +35,11 @@ export function next(
   at: "run_start" | "boundary",
   retry = false,
 ): InboxWorkSelection {
+  const continuation = pending.find(isAskResolved);
+  if (continuation)
+    return at === "run_start"
+      ? { kind: "control", control: continuation, rows: [] }
+      : { kind: "none" };
   const queuedSwitch = pending.find(isWriteModeSwitch);
   if (queuedSwitch && at === "run_start" && retry) return { kind: "switch", control: queuedSwitch };
   if (queuedSwitch && pending.some((row) => row.intent === "message" && row.seq > queuedSwitch.seq))
@@ -57,7 +66,11 @@ export function queuedWriteModeSwitch(
 }
 
 function isControl(row: InboxMessage): row is ControlMessage {
-  return row.intent === "control";
+  return row.intent === "control" && row.body.kind !== "ask_resolved";
+}
+
+function isAskResolved(row: InboxMessage): row is AskResolvedMessage {
+  return row.intent === "control" && row.body.kind === "ask_resolved";
 }
 
 function isWriteModeSwitch(row: InboxMessage): row is WriteModeSwitchMessage {

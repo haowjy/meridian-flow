@@ -14,6 +14,7 @@ import {
 } from "@meridian/contracts/failures";
 import {
   type AGUIEvent,
+  type AskAnswerReply,
   type CancelTurnResponse,
   type MeridianError,
   parseWsServerMessage,
@@ -54,6 +55,13 @@ export class ThreadSocketClient implements ThreadTransport {
   >();
   private wantsConnection = false;
   private requestCounter = 0;
+  private readonly askAnswers = new Map<
+    string,
+    {
+      message: import("@meridian/contracts/protocol").WsClientMessage & { type: "ask.answer" };
+      resolve: (reply: AskAnswerReply) => void;
+    }
+  >();
 
   constructor(private readonly options: ThreadSocketClientOptions) {
     this.socket = new SocketLifecycleController(
@@ -141,6 +149,21 @@ export class ThreadSocketClient implements ThreadTransport {
     return this.options.cancelTurn(threadId, turnId);
   }
 
+  answerAsk(input: {
+    threadId: string;
+    askId: string;
+    submissionId: string;
+    answer: import("@meridian/contracts/threads").AskAnswer;
+  }): Promise<AskAnswerReply> {
+    const requestId = this.nextRequestId();
+    const message = { type: "ask.answer" as const, requestId, ...input };
+    this.ensureConnected();
+    return new Promise((resolve) => {
+      this.askAnswers.set(requestId, { message, resolve });
+      if (this.socket.isServerConnected()) this.send(message);
+    });
+  }
+
   private nextRequestId(): string {
     this.requestCounter += 1;
     return `r${this.requestCounter}`;
@@ -156,6 +179,14 @@ export class ThreadSocketClient implements ThreadTransport {
 
     const message = parseWsServerMessage(data);
     if (!message) return;
+    if (message.type === "ask.answer.ok" || message.type === "ask.answer.error") {
+      const pending = this.askAnswers.get(message.requestId);
+      if (pending) {
+        this.askAnswers.delete(message.requestId);
+        pending.resolve(message);
+      }
+      return;
+    }
     if (message.type === "context-catalog-hint") {
       const projectId = message.scope.kind === "user" ? null : message.scope.projectId;
       const targets = projectId
@@ -182,6 +213,7 @@ export class ThreadSocketClient implements ThreadTransport {
         for (const projectId of this.catalogSubscriptions.keys()) {
           this.send({ type: "catalog.subscribe", requestId: this.nextRequestId(), projectId });
         }
+        for (const pending of this.askAnswers.values()) this.send(pending.message);
       },
       onRequestError: (requestId, error, retryable) =>
         this.subscriptions.handleRequestError(requestId, error, retryable),

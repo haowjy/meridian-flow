@@ -1,5 +1,5 @@
 /**
- * Shared custom component blocks and the disabled ask_user input contract.
+ * Shared custom component blocks.
  */
 
 import { z } from "zod";
@@ -124,72 +124,3 @@ export function parseInvocationCard(content: unknown): InvocationCardProps | nul
 export function buildInvocationCardContent(input: InvocationCardProps): ComponentBlockContent {
   return { kind: "helper-result", props: input as unknown as JsonObject };
 }
-
-export const ASK_USER_KIND_VALUES = ["choice", "free-text"] as const;
-
-export type AskUserKind = (typeof ASK_USER_KIND_VALUES)[number];
-
-export type AskUserOption = JsonObject & {
-  value: string;
-  label: string;
-};
-
-export type AskUserToolInput = {
-  question: string;
-  kind: AskUserKind;
-  options?: AskUserOption[];
-  recommended: string | null;
-  requiresHuman: boolean;
-  timeoutMs?: number;
-};
-
-/**
- * The model's ask_user arguments: snake_case on the wire, the camelCase
- * AskUserToolInput after parsing. A choice question needs at least one option.
- */
-export const askUserToolInputSchema = z
-  .object({
-    question: z.string().min(1).describe("The question for the user."),
-    kind: z
-      .enum(ASK_USER_KIND_VALUES)
-      .describe("choice shows options to pick from; free-text shows a text field."),
-    options: z
-      .array(z.object({ value: z.string(), label: z.string() }).strict())
-      .describe("Required for choice. value is returned; label is shown.")
-      .optional(),
-    recommended: z
-      .string()
-      .nullable()
-      .describe("Value used if the question times out; null if none is safe.")
-      .optional(),
-    requires_human: z
-      .boolean()
-      .describe("Never resolve on timeout; wait for the user. Defaults to false.")
-      .optional(),
-    timeout_ms: z
-      .number()
-      .int()
-      .positive()
-      .describe("Timeout in milliseconds; defaults to the project's.")
-      .optional(),
-  })
-  .strict()
-  .superRefine((input, context) => {
-    if (input.kind === "choice" && !input.options?.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["options"],
-        message: "choice needs at least one { value, label } option",
-      });
-    }
-  })
-  .transform(
-    (input): AskUserToolInput => ({
-      question: input.question,
-      kind: input.kind,
-      ...(input.options !== undefined ? { options: input.options } : {}),
-      recommended: input.recommended ?? null,
-      requiresHuman: input.requires_human ?? false,
-      ...(input.timeout_ms !== undefined ? { timeoutMs: input.timeout_ms } : {}),
-    }),
-  );

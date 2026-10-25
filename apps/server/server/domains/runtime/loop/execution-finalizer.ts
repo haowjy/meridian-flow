@@ -12,6 +12,7 @@ import {
   type ProviderErrorResponse,
   type Turn,
 } from "@meridian/contracts/threads";
+import { threadAsk } from "../../threads/domain/ask.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import {
   CompactionFailureOutcomeCodec,
@@ -27,6 +28,7 @@ import { persistAndAppendEvents } from "./persistence.js";
 
 export type TerminalCause =
   | { kind: "success"; finishReason: FinishReason }
+  | { kind: "asked"; askId: string }
   | {
       kind: "failed";
       reason: string;
@@ -76,7 +78,7 @@ async function resolveReportContent(
 }
 
 function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
-  if (cause.kind === "success") return { type: "turn.completed", turn };
+  if (cause.kind === "success" || cause.kind === "asked") return { type: "turn.completed", turn };
   if (cause.kind === "cancelled") return { type: "turn.cancelled", turn };
   if (turn.role === "compaction") {
     return {
@@ -135,6 +137,7 @@ export async function finalizeExecution(
     repos: Pick<
       ThreadRepositories,
       | "promptBakes"
+      | "asks"
       | "threads"
       | "turns"
       | "blocks"
@@ -211,9 +214,11 @@ export async function finalizeExecution(
         status:
           input.cause.kind === "success"
             ? "complete"
-            : input.cause.kind === "cancelled"
-              ? "cancelled"
-              : "error",
+            : input.cause.kind === "asked"
+              ? "awaiting_answer"
+              : input.cause.kind === "cancelled"
+                ? "cancelled"
+                : "error",
         finishReason:
           input.cause.kind === "success"
             ? input.cause.finishReason
@@ -223,10 +228,26 @@ export async function finalizeExecution(
         error,
         completedAt,
       };
-      if (input.cause.kind === "success") {
+      let askEvent: OrchestratorEvent | null = null;
+      if (input.cause.kind === "asked") {
+        const opened = await deps.repos.asks.openPending(
+          input.cause.askId,
+          input.turnId,
+          new Date(Date.now() + 270_000),
+        );
+        if (!opened)
+          throw new Error(`Pending ask disappeared before settlement: ${input.cause.askId}`);
+        askEvent = { type: "ask.updated", ask: threadAsk(opened) };
+      } else {
+        await deps.repos.asks.cancelPendingByTurn(input.turnId);
+      }
+      if (input.cause.kind === "success" || input.cause.kind === "asked") {
         await deps.repos.threads.updateCost(input.threadId, "0", 1);
       }
-      return { result: updated, events: [turnEvent(updated, input.cause)] };
+      return {
+        result: updated,
+        events: [turnEvent(updated, input.cause), ...(askEvent ? [askEvent] : [])],
+      };
     },
     {
       async afterEvents(turn) {
@@ -238,7 +259,7 @@ export async function finalizeExecution(
         }
         const capture = admitted.capture;
         const outcome =
-          input.cause.kind === "success"
+          input.cause.kind === "success" || input.cause.kind === "asked"
             ? "succeeded"
             : input.cause.kind === "cancelled"
               ? "cancelled"
@@ -276,7 +297,10 @@ export async function finalizeExecution(
           executionTurnId: admitted.executionTurnId,
           terminalTurnId: turn.id as TurnId,
           outcome,
-          reason: input.cause.kind === "success" ? null : input.cause.reason,
+          reason:
+            input.cause.kind === "failed" || input.cause.kind === "cancelled"
+              ? input.cause.reason
+              : null,
           ...content,
           costMillicredits: Number(cost),
         });

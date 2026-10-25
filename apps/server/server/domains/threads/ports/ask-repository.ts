@@ -14,6 +14,7 @@ export type StoredAsk = {
   deadlineAt: Date | null;
   status: AskStatus;
   resolution: AskResolution | null;
+  submissionId: string | null;
   createdAt: Date;
   resolvedAt: Date | null;
 };
@@ -29,4 +30,14 @@ export interface AskRepository {
   findOpenByThread(threadId: ThreadId): Promise<StoredAsk | null>;
   listByThread(threadId: ThreadId): Promise<StoredAsk[]>;
   listOpenDueBy(deadline: Date, limit: number): Promise<StoredAsk[]>;
+  listByTurnIds(turnIds: readonly TurnId[]): Promise<StoredAsk[]>;
+  openPending(id: string, turnId: TurnId, deadline: Date): Promise<StoredAsk | null>;
+  cancelPendingByTurn(turnId: TurnId): Promise<StoredAsk[]>;
+  resolveOpen(input: {
+    id: string;
+    status: Extract<AskStatus, "answered" | "expired" | "cancelled">;
+    resolution: AskResolution;
+    submissionId?: string | null;
+    resolvedAt: Date;
+  }): Promise<StoredAsk | null>;
 }

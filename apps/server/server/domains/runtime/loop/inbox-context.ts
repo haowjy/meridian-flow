@@ -423,6 +423,8 @@ export function inboxMessageText(message: InboxMessage): string {
       return message.body.text;
     case "context":
       return message.body.parts.map((part) => part.text).join("\n\n");
+    case "ask_resolved":
+      return "";
   }
 }
 

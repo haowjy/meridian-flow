@@ -33,6 +33,7 @@ export const asks = pgTable(
     deadlineAt: timestamp("deadline_at", { withTimezone: true }),
     status: text("status").$type<AskStatus>().notNull().default("pending"),
     resolution: jsonb("resolution").$type<AskResolution>(),
+    submissionId: text("submission_id"),
     createdAt: createdAt(),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   },

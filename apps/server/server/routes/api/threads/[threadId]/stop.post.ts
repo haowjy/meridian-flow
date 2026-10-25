@@ -20,6 +20,8 @@ export default defineEventHandler(async (event) => {
   if (!parsed.success) throw createError({ statusCode: 400, message: "invalid_stop" });
   try {
     const request: StopRequest = parsed.data;
+    const openAsk = await app.threadRepos.asks.findOpenByThread(threadId);
+    if (openAsk) await app.asks.cancelOpen(threadId, openAsk.id);
     return serializeTransport((await app.runner.stop(threadId, request)) satisfies StopResponse);
   } catch (error) {
     if (error instanceof HandBackConflictError)

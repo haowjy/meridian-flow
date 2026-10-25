@@ -16,6 +16,7 @@ import {
   readWriteModeSwitch,
   replyProviderError,
   type Thread,
+  type ThreadAsk,
   type Turn,
 } from "@meridian/contracts/threads";
 import {
@@ -184,6 +185,7 @@ export type ChatViewEnvelope = {
   inputs: ChatViewInputs;
   /** The failure cards `chatCards` projects for these facts, as the app draws them (usage first). */
   cards: ChatCard[];
+  asks: ThreadAsk[];
   rows: ChatRow[];
   showing: number;
   total: number;
@@ -279,6 +281,7 @@ export function projectChatView(
       changeTrails: "not fetched",
     },
     cards: cards.cards,
+    asks: snapshot.asks,
     rows: rows.map((row) => chatRow(row, view, options)),
     showing: rows.length,
     total,
@@ -586,6 +589,10 @@ export function renderChatView(view: ChatViewEnvelope): string {
   ];
   const queued = view.rows.filter((row) => row.queued).length;
   for (const card of view.cards) lines.push(cardLine(card));
+  for (const ask of view.asks)
+    lines.push(
+      `  ask ${ask.id} ${ask.status}: ${ask.kind === "question" ? ask.payload.question : ask.payload.summary}`,
+    );
   for (const row of view.rows) {
     lines.push("");
     lines.push(...rowLines(row));

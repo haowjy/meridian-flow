@@ -1,7 +1,7 @@
 /** Drizzle adapter for durable ask storage and deadline discovery. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { asks } from "@meridian/database/schema";
-import { and, asc, eq, lte } from "drizzle-orm";
+import { and, asc, eq, inArray, lte } from "drizzle-orm";
 import type { AskRepository, StoredAsk } from "../../ports/ask-repository.js";
 import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
@@ -17,6 +17,7 @@ function storedAsk(row: typeof asks.$inferSelect): StoredAsk {
     deadlineAt: row.deadlineAt,
     status: row.status,
     resolution: row.resolution,
+    submissionId: row.submissionId,
     createdAt: row.createdAt,
     resolvedAt: row.resolvedAt,
   };
@@ -58,6 +59,47 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
         .orderBy(asc(asks.deadlineAt), asc(asks.id))
         .limit(limit);
       return rows.map(storedAsk);
+    },
+    async listByTurnIds(turnIds) {
+      if (turnIds.length === 0) return [];
+      return (
+        await currentDrizzleDb(db)
+          .select()
+          .from(asks)
+          .where(inArray(asks.askingTurnId, [...turnIds]))
+          .orderBy(asc(asks.createdAt), asc(asks.id))
+      ).map(storedAsk);
+    },
+    async openPending(id, turnId, deadline) {
+      const [row] = await currentDrizzleDb(db)
+        .update(asks)
+        .set({ status: "open", deadlineAt: deadline })
+        .where(and(eq(asks.id, id), eq(asks.askingTurnId, turnId), eq(asks.status, "pending")))
+        .returning();
+      return row ? storedAsk(row) : null;
+    },
+    async cancelPendingByTurn(turnId) {
+      const now = new Date();
+      return (
+        await currentDrizzleDb(db)
+          .update(asks)
+          .set({ status: "cancelled", resolution: { kind: "cancelled" }, resolvedAt: now })
+          .where(and(eq(asks.askingTurnId, turnId), eq(asks.status, "pending")))
+          .returning()
+      ).map(storedAsk);
+    },
+    async resolveOpen(input) {
+      const [row] = await currentDrizzleDb(db)
+        .update(asks)
+        .set({
+          status: input.status,
+          resolution: input.resolution,
+          submissionId: input.submissionId ?? null,
+          resolvedAt: input.resolvedAt,
+        })
+        .where(and(eq(asks.id, input.id), eq(asks.status, "open")))
+        .returning();
+      return row ? storedAsk(row) : null;
     },
   };
 }

@@ -144,6 +144,7 @@ import {
   agentExecutionUnavailableReasons,
   agentModelUnavailableReasons,
 } from "../domains/runtime/agent-definition-support.js";
+import { type AskService, createAskService } from "../domains/runtime/asks/ask-service.js";
 import {
   createDetachedWorkTracker,
   type DetachedWorkTracker,
@@ -312,6 +313,7 @@ export type AppServices = {
   stopThreadRun(threadId: ThreadId): Promise<void>;
   runStarter: RunStarter;
   delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
+  asks: AskService;
   handoffBriefs: HandoffBriefs;
   shutdown(): Promise<void>;
   /** Startup/interval recovery for threads with a pending message and no live run. */
@@ -321,6 +323,7 @@ export type AppServices = {
     publishReports(): Promise<number>;
     purgeWorks(): Promise<number>;
     purgeDocuments(): Promise<number>;
+    expireAsks(): Promise<number>;
   };
   userTurnAdmission: UserTurnAdmission;
   runClaim: Pick<RunClaim, "withExclusiveThread">;
@@ -827,6 +830,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         await publishReport(report.childThreadId, report.executionTurnId);
     },
   });
+  const asks = createAskService({
+    repos: ports.threadRepos,
+    eventWriter: threadEventHub,
+    delivery,
+  });
   const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
   const responseWrites = createAgentEditResponseWriteLifecycle({
@@ -943,6 +951,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
     purgeWorks: () => workPurger.sweep(),
     purgeDocuments: () => ports.documentTrash.purge(),
+    expireAsks: () => asks.expireDue(),
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
@@ -1165,6 +1174,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     stopThreadRun,
     runStarter,
     delivery,
+    asks,
     recovery,
     handoffBriefs,
     userTurnAdmission,
@@ -1263,6 +1273,7 @@ export function createInMemoryAppServices(): AppServices {
       void task();
     },
   });
+  const asks = createAskService({ repos: threadRepos, eventWriter: journal, delivery });
   const handoffBriefs: HandoffBriefs = {
     async hold() {
       return null;
@@ -1292,6 +1303,7 @@ export function createInMemoryAppServices(): AppServices {
     async purgeDocuments() {
       return 0;
     },
+    expireAsks: () => asks.expireDue(),
   };
 
   const documentSync: CollabDomain = createInMemoryCollabDomain();
@@ -1635,6 +1647,7 @@ export function createInMemoryAppServices(): AppServices {
     workAuthorityResolver,
     workContext: unavailableWorkContext,
     workContextNotices: delivery,
+    asks,
     responseWrites: createAgentEditResponseWriteLifecycle({ documentSync }),
     billing: billingDomain.service,
     agentRevisions,

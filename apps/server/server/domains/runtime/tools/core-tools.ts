@@ -20,7 +20,6 @@ import {
   renderAgentEditResult,
   WriteToolInputSchema,
 } from "@meridian/agent-edit/integration";
-import { askUserToolInputSchema } from "@meridian/contracts/components";
 import {
   INVALID_WORK_NAME,
   INVALID_WORK_STATUS,
@@ -180,8 +179,38 @@ const SearchToolInputSchema = z
   .strict();
 export type SearchToolInput = z.output<typeof SearchToolInputSchema>;
 
+export const AskToolInputSchema = z
+  .object({
+    question: z.string().min(1),
+    options: z
+      .array(
+        z
+          .object({
+            label: z.string().min(1),
+            description: z.string().min(1).optional(),
+          })
+          .strict(),
+      )
+      .min(2)
+      .max(4),
+    recommended: z.string().min(1).optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (
+      input.recommended !== undefined &&
+      !input.options.some((option) => option.label === input.recommended)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["recommended"],
+        message: "Recommended option must match an option label",
+      });
+    }
+  });
+
 /** Canonical list of runnable core tool names. */
-export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "search", "ask_user"] as const;
+export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "search", "ask"] as const;
 
 export type CoreToolName = (typeof CORE_TOOL_NAMES)[number];
 type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server" }>["handler"];
@@ -311,12 +340,13 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       source: "core",
       definition: {
         type: "function",
-        name: "ask_user",
-        description: "Ask the user a question and wait for the answer.",
-        inputSchema: modelToolSchema(askUserToolInputSchema),
+        name: "ask",
+        description:
+          "Ask only when the answer changes what you do and you can't make a reasonable choice. Otherwise choose, say what you chose, and continue. Give 2–4 options; the writer can also answer in their own words. Mark one recommended if you have a preference: it's used if no one answers within a few minutes. Asking ends your turn, and the answer arrives as this tool's result.",
+        inputSchema: modelToolSchema(AskToolInputSchema),
       },
-      input: askUserToolInputSchema,
-      execution: { type: "server", handler: handlers.ask_user },
+      input: AskToolInputSchema,
+      execution: { type: "server", handler: handlers.ask },
     },
   ];
 }
