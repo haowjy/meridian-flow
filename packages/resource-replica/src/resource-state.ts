@@ -114,8 +114,11 @@ export function planResourceLocation(input: {
   );
   const destination = stored.ok ? { ...input.destination, name: stored.name } : input.destination;
   const superseded = supersedeRepairableNamespaceWork(record, input.projectId);
+  // A position reads the list as the placements before it left it, so the same words after other
+  // placements are a different command; only a plain destination can be a duplicate.
   if (
     !superseded.repaired &&
+    !destination.position &&
     latest?.desired.kind === "set-location" &&
     latest.state === "pending" &&
     latest.desired.typedName === (input.typedName ?? input.destination.name) &&
