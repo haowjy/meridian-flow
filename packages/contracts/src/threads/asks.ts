@@ -1,6 +1,9 @@
 /** Durable question and permission-request contracts shared by thread clients and the server. */
 import { z } from "zod";
 
+/** The AG-UI CUSTOM event name carrying an `ask.updated` frame; its value is the whole `ThreadAsk`. */
+export const ASK_UPDATED_EVENT = "meridian.ask" as const;
+
 const askOptionSchema = z.strictObject({
   label: z.string().min(1),
   description: z.string().min(1).optional(),

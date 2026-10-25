@@ -124,3 +124,32 @@ export function parseInvocationCard(content: unknown): InvocationCardProps | nul
 export function buildInvocationCardContent(input: InvocationCardProps): ComponentBlockContent {
   return { kind: "helper-result", props: input as unknown as JsonObject };
 }
+
+export const askToolInputSchema = z
+  .strictObject({
+    question: z.string().min(1),
+    options: z
+      .array(
+        z.strictObject({
+          label: z.string().min(1),
+          description: z.string().min(1).optional(),
+        }),
+      )
+      .min(2)
+      .max(4),
+    recommended: z.string().min(1).optional(),
+  })
+  .superRefine((input, context) => {
+    if (
+      input.recommended !== undefined &&
+      !input.options.some((option) => option.label === input.recommended)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["recommended"],
+        message: "Recommended option must match an option label",
+      });
+    }
+  });
+
+export type AskToolInput = z.infer<typeof askToolInputSchema>;

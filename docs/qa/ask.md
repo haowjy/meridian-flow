@@ -37,9 +37,9 @@ result it received.
 
 | Case | Command | Expected tool result |
 |---|---|---|
-| Option | `./mf thread respond "$chat" --ask "$ask" --option 'Third person'` | `{"answer":"Third person"}` |
-| Own words | `./mf thread respond "$chat" --ask "$ask" --text 'Alternate at the scene break'` | `{"answer":"Alternate at the scene break","free_text":true}` |
-| Skip | `./mf thread respond "$chat" --ask "$ask" --skip` | `{"answer":null,"skipped":true}` |
+| Option | `./mf thread answer "$chat" --ask "$ask" --option 'Third person'` | `{"answer":"Third person"}` |
+| Own words | `./mf thread answer "$chat" --ask "$ask" --text 'Alternate at the scene break'` | `{"answer":"Alternate at the scene break","free_text":true}` |
+| Skip | `./mf thread answer "$chat" --ask "$ask" --skip` | `{"answer":null,"skipped":true}` |
 
 PASS for every case: the asking turn becomes complete, its tool use and result
 remain on that turn, exactly one new assistant turn continues, and the answer
@@ -78,7 +78,7 @@ Use the crash controller described in
    and send the scripted ask. PASS after worker restart: stale repair cancels the
    pending ask; it was never published and the chat is not action-required.
 2. **Restart while open.** Open an ask, stop only this stack, restart it, then
-   answer with `./mf thread respond`. PASS: the original asking turn completes
+   answer with `./mf thread answer`. PASS: the original asking turn completes
    and one continuation starts.
 3. **Answer committed, wake lost.** Start with
    `HOOK_CRASH_AT=ask.answer.afterCommit HOOK_CRASH_ARM=/tmp/ask-answer-arm`, arm

@@ -83,7 +83,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   claim bookkeeping: it counts only if above the claim's cursor (`send`: the admission's
   `resumeAfterSeq`; `tail`: the first applied read's) and above every seq already counted. A gap
   counts against the claim when its range reaches past the cursor or is unknown.
-  `thread events`, plain `thread tail` and `thread respond` read the journal over the shared
+  `thread events`, plain `thread tail` and `thread answer` read the journal over the shared
   transport and hold no client state. Plain tail and the printer claim nothing from content;
   `respond` proves its own interrupt resolution.
   `thread stop` and `thread queue` read one snapshot and run the hand-back operation.
