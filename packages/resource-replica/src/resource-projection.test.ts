@@ -159,6 +159,95 @@ it("projects only the requesting project's durable location intention", () => {
       .sort((left, right) => (left.rank ?? "").localeCompare(right.rank ?? ""))
       .map((entry) => entry.entryId),
   ).toEqual(["C", "B", "A"]);
+
+  // A promotion changes how later arrivals are placed: the server appends to the now-manual
+  // parent even though the catalog snapshot used to build the projection still says default.
+  const promotionRecord = reserveResourceDocument({
+    projectId: "project-a",
+    handle: "promotion",
+    documentId: "B",
+    databaseName: "promotion",
+    schema: "schema",
+    intentId: "create-promotion",
+  }).next;
+  promotionRecord.resource.canonical = {
+    scheme: "manuscript",
+    path: "/P/B",
+    name: "B",
+    workId: null,
+  };
+  promotionRecord.resource.canonicalParent = { kind: "folder", folderId: "P" };
+  const promotion = planResourceLocation({
+    record: promotionRecord,
+    projectId: "project-a",
+    intentId: "promote",
+    eligibleAt: 1,
+    admissionOrder: 2,
+    destination: {
+      parent: { kind: "folder", folderId: "P" },
+      name: "B",
+      position: { kind: "start" },
+    },
+  });
+  if (!promotion) throw new Error("Missing promotion");
+  const arrival = reserveResourceDocument({
+    projectId: "project-a",
+    handle: "arrival",
+    documentId: "A",
+    databaseName: "arrival",
+    schema: "schema",
+    intentId: "create-arrival",
+  }).next;
+  arrival.resource.canonical = {
+    scheme: "manuscript",
+    path: "/Q/A",
+    name: "A",
+    workId: null,
+  };
+  arrival.resource.canonicalParent = { kind: "folder", folderId: "Q" };
+  const movedArrival = planResourceLocation({
+    record: arrival,
+    projectId: "project-a",
+    intentId: "move-arrival",
+    eligibleAt: 1,
+    admissionOrder: 3,
+    destination: { parent: { kind: "folder", folderId: "P" }, name: "A" },
+  });
+  if (!movedArrival) throw new Error("Missing arrival");
+  const parentP = node("P", "P");
+  const parentQ = node("Q", "Q");
+  const root = entries[0];
+  if (!root || parentP.kind !== "folder" || parentQ.kind !== "folder")
+    throw new Error("Missing parent folders");
+  const promotedThenArrived = projectOptimisticSiblingOrder({
+    projectId: "project-a",
+    canonical: [
+      root,
+      { ...parentP, orderPolicy: "default" },
+      { ...parentQ, orderPolicy: "default" },
+      node("A", "Q/A", "Q", "file"),
+      node("B", "P/B", "P", "file"),
+      node("C", "P/C", "P", "file"),
+    ],
+    projected: [
+      root,
+      { ...parentP, orderPolicy: "default" },
+      { ...parentQ, orderPolicy: "default" },
+      node("A", "P/A", "P", "file"),
+      node("B", "P/B", "P", "file"),
+      node("C", "P/C", "P", "file"),
+    ],
+    records: [promotion.next, movedArrival.next],
+    folders: [],
+  });
+  expect(
+    promotedThenArrived
+      .flatMap((entry) =>
+        (entry.kind === "file" || entry.kind === "folder") && entry.parentId === "P" ? [entry] : [],
+      )
+      .sort((left, right) => (left.rank ?? "").localeCompare(right.rank ?? ""))
+      .map((entry) => entry.entryId),
+  ).toEqual(["B", "C", "A"]);
 });
 
 it("prefers a current server identity over another resource's obsolete remint alias", () => {
