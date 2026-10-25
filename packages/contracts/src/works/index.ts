@@ -88,7 +88,7 @@ export const workSchema = z.object({
 
 export const worksSnapshotSchema = z.object({
   projectId: z.string().min(1),
-  catalogGeneration: z.string().regex(/^(0|[1-9]\d*)$/),
+  catalogGeneration: z.uuid(),
   authorityRevision: z.string().regex(/^(0|[1-9]\d*)$/),
   requestId: z.string().min(1),
   works: z.array(workSchema.extend({ isNoWork: z.literal(false), handle: workHandleSchema })),
