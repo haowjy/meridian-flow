@@ -43,6 +43,11 @@ including another Work's Scratch, goes to the resolve endpoint; its `folder`
 or `gone` answer makes the chip filled or dashed. Opening still finds the
 folder by identity through `lookupProjectFolderAvailability`, so a move or
 rename after the link was written opens its current location.
+Every project catalog wake advances `link-resolution-epoch`, which registers a
+new resolver generation even when the changed catalog is not one this surface
+loads. This is how a deleted folder in another Work turns dashed without a
+reload. Focus and network return recheck after 15 seconds as a missed-wake
+fallback.
 
 The address answers apply one rule (`matchDocumentPath` from
 `@meridian/contracts`, beside `resolveDocumentHref`, through
@@ -102,6 +107,7 @@ Scratch.
 
 `{ projectId, workId, rootThreadId, baseUri, holderDocumentId }` plus the index's
 `revision` is the complete semantic input to every question the resolver asks.
+The revision contains both the loaded catalog rows and the project link-resolution epoch.
 The registration effect is keyed on exactly those, and reads none of them through
 a ref. The index object keeps its identity while its revision and completeness
 hold, so the index stands in for the revision.

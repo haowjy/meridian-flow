@@ -16,7 +16,9 @@
  * delete makes every cached answer a claim about a project that no longer
  * exists — without the project, the Work, or the base URI having moved. The
  * revision is what tells the resolution scope that, so no mutation site has to
- * remember to poke a cache it does not own.
+ * remember to poke a cache it does not own. Project catalog wake hints also
+ * advance it because a server answer may name a folder or hidden document
+ * outside the catalogs this surface loads.
  *
  * Cached client-side and free: these are the same queries the context tree
  * already pays for, so the index costs no request.
@@ -25,7 +27,7 @@
 import { contextOwner } from "@meridian/contracts/protocol";
 import { useMemo, useRef } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import { useDraftLinkEpoch } from "@/client/query/draft-link-epoch";
+import { useLinkResolutionEpoch } from "@/client/query/link-resolution-epoch";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 
 import { linkableCatalogScopes, ownedLinkableSchemes } from "./linkable-catalog-scopes";
@@ -70,7 +72,7 @@ export function useLinkableDocuments({
   rootThreadId?: string | null;
   chatId?: string | null;
 }): LinkableDocumentIndex {
-  const draftEpoch = useDraftLinkEpoch(projectId);
+  const resolutionEpoch = useLinkResolutionEpoch(projectId);
   const prior = useRef<LinkableDocumentIndex | null>(null);
   const scopes = linkableCatalogScopes({ projectId, workId, rootThreadId, chatId });
   const catalogWorkId = scopes?.workId ?? null;
@@ -109,14 +111,14 @@ export function useLinkableDocuments({
     const next = {
       documents,
       folders,
-      revision: `${draftEpoch}\n${catalogRevision(documents, folders)}`,
+      revision: `${resolutionEpoch}\n${catalogRevision(documents, folders)}`,
       complete,
     };
     if (prior.current?.revision === next.revision && prior.current.complete === next.complete)
       return prior.current;
     prior.current = next;
     return next;
-  }, [schemes, views, scopes, catalogWorkId, catalogRootThreadId, draftEpoch]);
+  }, [schemes, views, scopes, catalogWorkId, catalogRootThreadId, resolutionEpoch]);
 }
 
 /**
