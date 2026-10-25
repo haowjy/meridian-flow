@@ -168,6 +168,7 @@ export async function moveRows(
         previousName: row.name,
         before: row.before,
         after: row.after,
+        ...(operationId ? { operationId } : {}),
       });
     } catch {
       failed.push({ entry: row.entry, name: row.name });

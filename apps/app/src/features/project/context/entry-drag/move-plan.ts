@@ -7,6 +7,7 @@
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import {
+  type FolderNamespaceRecord,
   type ParentRef,
   type ResourceIdentityIndex,
   type ResourceLocation,
@@ -63,6 +64,8 @@ export type MoveEffect = {
   previousName: string;
   before: ParentRef;
   after: ParentRef;
+  /** The replica intent's operation; absent when the replica had nothing to change. */
+  operationId?: string;
 };
 
 /** One row ready for `moveRows`: its current name and parent, and its resolved destination. */
@@ -249,5 +252,29 @@ export function planUndo(view: PlacementView, effects: readonly MoveEffect[]) {
           },
         ]
       : [];
+  });
+}
+
+/**
+ * The moves the server refused: the row's intent for that operation settled as
+ * needs-repair, so the row went back to its source carrying the failure mark. A
+ * row the writer moved, renamed or deleted since supersedes that intent and is
+ * not counted.
+ */
+export function refusedMoves(
+  view: { records: readonly ResourceRecord[]; folders: readonly FolderNamespaceRecord[] },
+  effects: readonly MoveEffect[],
+): MoveEffect[] {
+  return effects.filter((effect) => {
+    if (!effect.operationId) return false;
+    const intents =
+      effect.entry.kind === "folder"
+        ? view.folders.find((folder) => folder.folderId === effect.entry.id)?.intents
+        : recordFor(view.records, effect.entry.id)?.intents;
+    return (
+      intents?.some(
+        (intent) => intent.operationId === effect.operationId && intent.state === "needs-repair",
+      ) ?? false
+    );
   });
 }
