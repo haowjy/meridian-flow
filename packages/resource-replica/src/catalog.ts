@@ -95,6 +95,15 @@ export function indexCatalogView(
     childIdsByParentId.set(entry.parentId, ids);
   }
   for (const ids of childIdsByParentId.values()) {
+    const first = ids[0];
+    const firstEntry = first ? view.entries.get(first) : undefined;
+    const parentId =
+      firstEntry?.kind === "folder" || firstEntry?.kind === "file"
+        ? firstEntry.parentId
+        : undefined;
+    const parent = parentId ? view.entries.get(parentId) : undefined;
+    const manual =
+      (parent?.kind === "source" || parent?.kind === "folder") && parent.orderPolicy === "manual";
     ids.sort((leftId, rightId) => {
       const left = view.entries.get(leftId);
       const right = view.entries.get(rightId);
@@ -104,6 +113,12 @@ export function indexCatalogView(
         (right.kind !== "folder" && right.kind !== "file")
       )
         return 0;
+      if (manual) {
+        const leftRank = left.rank ?? "";
+        const rightRank = right.rank ?? "";
+        if (leftRank !== rightRank) return leftRank < rightRank ? -1 : 1;
+        return left.entryId < right.entryId ? -1 : left.entryId > right.entryId ? 1 : 0;
+      }
       return compareDefaultSiblings(
         {
           kind: left.kind,

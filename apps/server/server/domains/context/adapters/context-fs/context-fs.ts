@@ -661,6 +661,7 @@ export class ContextFS implements ContextSchemeAdapter {
           documents.filter((doc) => doc.fileType === null).map((doc) => doc.id),
         )
       : new Map<string, string>();
+    const orderPolicy = await this.store.parentOrderPolicy(view, folderId);
     const siblings = [
       ...folders.map((folder) => ({
         order: { kind: "folder" as const, name: folder.name, identity: folder.id },
@@ -674,11 +675,23 @@ export class ContextFS implements ContextSchemeAdapter {
         },
         document,
       })),
-    ].sort((left, right) => compareDefaultSiblings(left.order, right.order));
+    ].sort((left, right) => {
+      if (orderPolicy === "manual") {
+        const leftRank = "folder" in left ? left.folder.rank : left.document.rank;
+        const rightRank = "folder" in right ? right.folder.rank : right.document.rank;
+        if (leftRank !== rightRank) return (leftRank ?? "") < (rightRank ?? "") ? -1 : 1;
+        return left.order.identity < right.order.identity ? -1 : 1;
+      }
+      return compareDefaultSiblings(left.order, right.order);
+    });
     const entries: AdapterFileEntry[] = [];
     for (const sibling of siblings) {
       if ("folder" in sibling) {
-        entries.push({ path: joinPath(path, sibling.folder.name), kind: "directory" });
+        entries.push({
+          path: joinPath(path, sibling.folder.name),
+          kind: "directory",
+          folderId: sibling.folder.id,
+        });
         continue;
       }
       const doc = sibling.document;
@@ -900,6 +913,7 @@ export class ContextFS implements ContextSchemeAdapter {
         destinationPath: prepared.destinationPath,
         expectedTarget: prepared.expectedTarget,
         overwrite: prepared.overwrite,
+        position: prepared.position,
         graduateProvisionalName:
           "graduateProvisionalName" in prepared && prepared.graduateProvisionalName === true,
         destinationFiletype: destinationFiletype.value,
@@ -922,6 +936,7 @@ export class ContextFS implements ContextSchemeAdapter {
       destinationPath: prepared.destinationPath,
       expectedTarget: prepared.expectedTarget,
       overwrite: prepared.overwrite,
+      position: prepared.position,
     });
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
