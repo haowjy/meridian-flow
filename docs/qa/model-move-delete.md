@@ -47,7 +47,7 @@ model.
    lists "Moved ch4 to ch4-old" with ch3 and ch5 "Rolled back" under "Undo leaves 2 parts as
    they are".
 
-`ask_user` doesn't hold a mock step open: the reply completes.
+Do not add `ask` to this fixture: it ends the reply and waits for an answer.
 
 ### Draft mode (steps 6 to 9)
 

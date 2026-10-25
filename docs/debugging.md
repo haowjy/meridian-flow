@@ -427,10 +427,10 @@ from the real runtime, not fabricated model output.
 - [Truncated response](../tools/mf/fixtures/mock-truncated.json): a partial sentence with the provider's length finish reason.
 - [Provider failure](../tools/mf/fixtures/mock-provider-error.json): a sticky failure. Inspect the failed reply, not only the send exit code.
 
-`ask_user` is currently disabled for every agent pending its
-[rework](https://github.com/haowjy/meridian-flow/issues/601). A mock script does
-not bypass tool availability or permissions, so it cannot display that question
-UI. Calls to disabled tools exercise the real refusal path instead.
+The `ask` tool is available in primary chats. Queue a tool call with the shape
+shown in [the ask QA recipe](qa/ask.md); answer it with `./mf thread respond`.
+It remains unavailable in child chats until question forwarding lands. A mock
+script does not bypass tool availability or permissions.
 
 To exercise another tool, replace `toolCalls` with its current name and
 arguments; invalid arguments exercise the real refusal path. Scripts do not
