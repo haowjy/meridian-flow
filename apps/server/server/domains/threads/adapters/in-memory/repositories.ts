@@ -1427,10 +1427,26 @@ export function createInMemoryRepositories(
         const row = asks.get(id);
         return row ? { ...row } : null;
       },
+      async findLiveByTurnForUpdate(turnId) {
+        return (
+          [...asks.values()].find(
+            (ask) =>
+              ask.askingTurnId === turnId && (ask.status === "pending" || ask.status === "open"),
+          ) ?? null
+        );
+      },
       async findOpenByThread(threadId) {
         return (
           [...asks.values()].find((ask) => ask.threadId === threadId && ask.status === "open") ??
           null
+        );
+      },
+      async findLiveByThread(threadId) {
+        return (
+          [...asks.values()].find(
+            (ask) =>
+              ask.threadId === threadId && (ask.status === "pending" || ask.status === "open"),
+          ) ?? null
         );
       },
       async listByThread(threadId) {
@@ -1475,6 +1491,18 @@ export function createInMemoryRepositories(
           status: input.status,
           resolution: input.resolution as AskResolution,
           submissionId: input.submissionId ?? null,
+          resolvedAt: input.resolvedAt,
+        };
+        asks.set(row.id, row);
+        return row;
+      },
+      async resolveLive(input) {
+        const ask = asks.get(input.id);
+        if (!ask || (ask.status !== "pending" && ask.status !== "open")) return null;
+        const row: StoredAsk = {
+          ...ask,
+          status: input.status,
+          resolution: input.resolution as AskResolution,
           resolvedAt: input.resolvedAt,
         };
         asks.set(row.id, row);
