@@ -9,6 +9,7 @@ export function planResourceDeletion(
   projectId: string,
   intentId: string,
   operationId?: string,
+  admissionOrder?: number,
 ): ResourceWrite | null {
   if (
     record.resource.lifecycle.kind === "terminal" ||
@@ -29,6 +30,7 @@ export function planResourceDeletion(
     sequence: Math.max(0, ...record.intents.map((intent) => intent.sequence)) + 1,
     identityRevision: record.resource.identity.revision,
     desired: { kind: "delete" },
+    ...(admissionOrder !== undefined ? { admissionOrder } : {}),
     ...(operationId ? { operationId } : {}),
     attempts: [],
     state: neverSubmitted ? "settled-locally" : "pending",

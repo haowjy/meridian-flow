@@ -8,6 +8,7 @@ type Action = {
   entryId: string;
   parentId: string;
   position?: ContextSiblingPosition;
+  movedParent: boolean;
   promote: boolean;
   admissionOrder: number;
 };
@@ -37,19 +38,17 @@ function activeActions(
     const desired = intent?.desired;
     const row = rows.get(entryId);
     if (!row || !desired) return;
-    const parent = projected.find((entry) => entry.entryId === row.parentId);
     const canonicalRow = canonical.get(entryId);
     const movedParent =
       !canonicalRow ||
       (canonicalRow.kind !== "file" && canonicalRow.kind !== "folder") ||
       canonicalRow.parentId !== row.parentId;
-    const manual =
-      (parent?.kind === "source" || parent?.kind === "folder") && parent.orderPolicy === "manual";
-    if (!desired.destination.position && !(movedParent && manual)) return;
+    if (!desired.destination.position && !movedParent) return;
     actions.push({
       entryId,
       parentId: row.parentId,
       ...(desired.destination.position ? { position: desired.destination.position } : {}),
+      movedParent,
       promote: Boolean(desired.destination.position),
       admissionOrder: intent?.admissionOrder ?? 0,
     });
@@ -165,6 +164,10 @@ export function projectOptimisticSiblingOrder(input: {
   );
   const affected = new Set<string>();
   for (const action of actions) {
+    const parent = entries.get(action.parentId);
+    const manual =
+      (parent?.kind === "source" || parent?.kind === "folder") && parent.orderPolicy === "manual";
+    if (!action.position && !(action.movedParent && manual)) continue;
     const siblings = byParent.get(action.parentId) ?? [];
     insertAtPosition(siblings, action.entryId, action.position);
     byParent.set(action.parentId, siblings);
