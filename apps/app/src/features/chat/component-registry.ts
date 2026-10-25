@@ -2,10 +2,10 @@
  * component-registry — custom chat block registry and prop contract.
  *
  * Purpose: Defines the frontend seam that maps `blockType: "custom"`
- * payloads to React components by `content.kind`. Adding a interrupt kind
- * stays one component file plus one entry in `COMPONENT_REGISTRY`.
+ * payloads to React components by `content.kind`. Adding a kind stays one
+ * component file plus one entry in `COMPONENT_REGISTRY`.
  * Key decision: the registry is deliberately lean — a kind maps directly to a
- * component. Component-block content and interrupt answer contracts live in
+ * component. Component-block content contracts live in
  * `@meridian/contracts/components`, so the client does not grow a parallel
  * schema.
  */

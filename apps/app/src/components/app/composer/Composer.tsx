@@ -151,6 +151,11 @@ export type ComposerProps = {
   cards?: ReactNode;
   /** Strips joined to the box's top edge (the draft dock); the notes sit above them. */
   attached?: ReactNode;
+  /**
+   * Drawn in the box's place (an open ask). The editor stays mounted and hidden, so the draft,
+   * its atoms and its uploads come back as they were when this clears.
+   */
+  takeover?: ReactNode;
 };
 export type ComposerHandle = {
   focus: () => void;
@@ -167,6 +172,8 @@ export type ComposerHandle = {
   hasContent: () => boolean;
   snapshot: () => ComposerDraftSnapshot;
   restoreSnapshot: (snapshot: ComposerDraftSnapshot, expectedRevision?: number) => boolean;
+  /** Adds plain text after the draft, as its own paragraph when the draft holds anything. */
+  appendText: (text: string) => void;
 };
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(props, ref) {
@@ -190,6 +197,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     commands = null,
     cards,
     attached,
+    takeover,
   } = props;
   const rotatingPlaceholder = useComposerPlaceholder(running);
   const [initialDraft] = useState(props.initialDraft);
@@ -435,6 +443,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       hasContent: () => hasContent,
       snapshot,
       restoreSnapshot,
+      appendText: (text) => {
+        if (!editor || editor.isDestroyed || !text) return;
+        const [paragraph] = plainComposerDoc(text).content ?? [];
+        if (!paragraph) return;
+        if (hasContent) editor.commands.insertContentAt(editor.state.doc.content.size, paragraph);
+        else editor.commands.setContent({ type: "doc", content: [paragraph] });
+      },
     }),
     [editor, hasContent, restoreSnapshot, snapshot],
   );
@@ -611,8 +626,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         </div>
       ) : null}
       {attached}
+      {takeover}
       <div
         data-composer=""
+        hidden={takeover ? true : undefined}
         className={cn(
           "border border-composer-border bg-composer-surface px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-card-pad-y)] focus-within:border-border-focus",
           variant === "hero" ? "rounded-composer" : "rounded-composer-pinned",

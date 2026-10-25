@@ -62,15 +62,11 @@ creating a synthetic streaming turn; an equal replacement is a
 reference-preserving no-op. `waitingWriterMessages` (`@meridian/thread-client`)
 projects writer rows still waiting; `awaiting_run` has no duplicate queue label.
 
-Interrupt responses are fire-and-forget and use local state keyed by
-`(threadId, turnId, interruptId)`. Pending controls remain disabled across
-remount; proven or ambiguous failure offers Retry with the same tuple. The agent
-outcome is never projected locally: the journaled server interrupt lifecycle
-stays authoritative and clears the local entry. Non-fatal rejection frames
-settle that state without tearing down the run subscription. The server does not
-advertise `ask_user` until its rework
-([#601](https://github.com/haowjy/meridian-flow/issues/601)); keep the interrupt
-card and its response path, they are not dead code.
+An open ask takes over the composer (`ask/useAskTakeover.tsx`): the editor stays
+mounted and hidden, and text left in the own-answer field when the ask closes is
+appended to the draft. The asking turn draws its receipt after its items and
+deliveries (`ask/AskReceipt.tsx`); the `ask` tool row itself is hidden. Ask
+state and the answer command are `@meridian/thread-client`'s (`asks/`).
 
 ## Scrolling and run state
 
