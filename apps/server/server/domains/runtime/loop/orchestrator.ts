@@ -1551,13 +1551,14 @@ function buildGenerateRequestFromAssembled(input: {
 }
 
 /**
- * A call that must see the reply's writes saved first. An undo or redo
- * reverses saved history, so it can't reach a write still staged in this reply.
+ * A call that must see the reply's writes saved first. History reversal needs
+ * saved edits, and a Work switch must settle earlier writes under the old Work.
  */
 function isSaveBoundary(call: { name: string; arguments?: unknown }): boolean {
   const args = call.arguments;
   if (!args || typeof args !== "object") return false;
   if (call.name === "read" && "format" in args && args.format === "edits") return true;
+  if (call.name === "work" && "command" in args && args.command === "switch") return true;
   if (call.name !== "write" || !("command" in args)) {
     return false;
   }
