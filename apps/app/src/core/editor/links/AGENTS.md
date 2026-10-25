@@ -12,7 +12,8 @@ clipboard, and paste all consume it. `linkClickIntent` decides follow versus
 caret; `followLink` delegates external and internal destinations to registered
 adapters. A missing navigator is a real refusal, not an alternate resolver.
 
-The mark stores address and optional document ref. Resolution is live cache data,
+The mark stores address and an optional `doc:`, `asset:`, ahead, or `folder:`
+ref. Resolution is live cache data,
 never document state. `linkChip` maps target and resolution to filled or dashed
 appearance; chip styling and icons belong to the shared component.
 
@@ -48,6 +49,10 @@ appearance; chip styling and icons belong to the shared component.
   unresolved or failed answers must not be rewritten as absent.
 - Create-on-miss uses the exact link address and then re-resolves. It never
   creates from a parsed label, guessed folder, or a stale href.
+- A folder link (`folder:<id>`, href ending in `/`) is a link to the folder,
+  not a document. Following it opens the folder surface (`openFolder`), never
+  the document navigator. Every href is spelled through `storedHref` with the
+  address's `kind`, so a folder keeps its trailing `/`.
 - Clipboard assignment preserves kept identity only when the sanitizer proves
   it. Otherwise one assignment pass binds links from the destination catalog;
   resolver answers and capability metadata never enter the document.
