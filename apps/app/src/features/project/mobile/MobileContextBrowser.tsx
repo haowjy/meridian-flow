@@ -9,8 +9,10 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
-import { DocumentDeleteUndoNotice, useDeleteContextEntry } from "../context/document-delete-undo";
+import { useDeleteContextEntry } from "../context/document-delete-undo";
+import { MoveFeedbackProvider } from "../context/entry-drag/move-notice";
 import { useOpenProjectDocument } from "../context/open-project-document";
+import { SurfaceNotices } from "../context/project-notices";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import type { ResolvedProjectViewProps } from "../ProjectView";
@@ -35,13 +37,7 @@ export type MobileContextBrowserProps = Pick<
 
 export function MobileContextBrowser(props: MobileContextBrowserProps) {
   if (props.activeContextScheme)
-    return (
-      <MobileFolderTree
-        key={`${props.projectId}:${props.activeContextScheme}:${props.editorWorkId}`}
-        {...props}
-        scheme={props.activeContextScheme}
-      />
-    );
+    return <MobileFolderTree {...props} scheme={props.activeContextScheme} />;
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-background">
       {EDITOR_CONTEXT_SCHEMES.map((scheme) => {
@@ -167,11 +163,13 @@ function MobileFolderTree({
             },
           }}
         >
-          <TreeChildren
-            parentId={dir.entryId}
-            parentPath={dir.entryId === catalog.root.entryId ? "" : dir.path}
-            depth={0}
-          />
+          <MoveFeedbackProvider feedback={{ surface: "mobile" }}>
+            <TreeChildren
+              parentId={dir.entryId}
+              parentPath={dir.entryId === catalog.root.entryId ? "" : dir.path}
+              depth={0}
+            />
+          </MoveFeedbackProvider>
           {!pending && catalog.children(dir.entryId).length === 0 ? (
             <p className="p-4 text-sm text-muted-foreground">
               <Trans>This folder is empty.</Trans>
@@ -182,7 +180,7 @@ function MobileFolderTree({
       {catalog && isError ? (
         <InlineErrorRow message={t`Could not load files.`} onRetry={refetch} />
       ) : null}
-      <DocumentDeleteUndoNotice surface="mobile" className="sticky bottom-2 mx-2 mt-2" />
+      <SurfaceNotices surface="mobile" className="sticky bottom-2 mx-2 mt-2" />
     </div>
   );
 }

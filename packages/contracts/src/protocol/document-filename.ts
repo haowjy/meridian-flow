@@ -121,17 +121,31 @@ export function sameNamespaceName(left: NamespaceNameClaim, right: NamespaceName
     : namespaceName(left) === namespaceName(right);
 }
 
-/** Smallest available name at or after `startSuffix`. Callers own the atomic claim. */
-export async function allocateFilename(
-  desired: { kind: "document"; name: string; extension: string } | { kind: "folder"; name: string },
-  isTaken: (candidate: NamespaceNameClaim) => boolean | Promise<boolean>,
+type DesiredFilename =
+  | { kind: "document"; name: string; extension: string }
+  | { kind: "folder"; name: string };
+
+/** The names an arrival tries in order: `name`, then `name (2)`, `name (3)`… from `startSuffix`. */
+export function* filenameCandidates(
+  desired: DesiredFilename,
   startSuffix = 1,
-): Promise<string> {
+): Generator<NamespaceNameClaim, never> {
   for (let suffix = startSuffix; ; suffix += 1) {
     const base = suffix === 1 ? desired.name : `${desired.name} (${suffix})`;
     const filename = desired.kind === "document" ? renderFilename(base, desired.extension) : base;
-    if (!(await isTaken({ kind: desired.kind, filename }))) return filename;
+    yield { kind: desired.kind, filename };
   }
+}
+
+/** Smallest available name at or after `startSuffix`. Callers own the atomic claim. */
+export async function allocateFilename(
+  desired: DesiredFilename,
+  isTaken: (candidate: NamespaceNameClaim) => boolean | Promise<boolean>,
+  startSuffix = 1,
+): Promise<string> {
+  for (const candidate of filenameCandidates(desired, startSuffix))
+    if (!(await isTaken(candidate))) return candidate.filename;
+  throw new Error("unreachable");
 }
 
 /** Destination naming shared by optimistic clients and server commands.

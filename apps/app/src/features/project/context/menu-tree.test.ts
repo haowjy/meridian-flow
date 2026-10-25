@@ -11,7 +11,6 @@ import {
   buildMenuTree,
   crumbTrailFor,
   foldersIn,
-  isFolderWithin,
   type MenuArea,
   menuEntryFor,
 } from "./menu-tree";
@@ -129,13 +128,6 @@ describe("folder picker boundaries", () => {
     expect(menuEntryFor(m, "k-act")).toBeNull();
     expect(menuEntryFor(k, "k-act")?.entryId).toBe("k-act");
     expect(tree.children("k-act").map((node) => node.name)).toEqual(["note.md"]);
-  });
-
-  it("rejects self and descendants without rejecting similarly prefixed siblings or parents", () => {
-    expect(isFolderWithin("/Act", "/Act")).toBe(true);
-    expect(isFolderWithin("/Act/Scene", "/Act")).toBe(true);
-    expect(isFolderWithin("/Act Two", "/Act")).toBe(false);
-    expect(isFolderWithin("/", "/Act")).toBe(false);
   });
 });
 

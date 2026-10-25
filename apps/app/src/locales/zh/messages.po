@@ -101,9 +101,24 @@ msgstr ""
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, other {# 次调用}}"
 
+#. placeholder {0}: renamed.length
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
+msgstr ""
+
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
+msgstr ""
+
+#. placeholder {0}: failed.length
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
+msgstr ""
+
+#. placeholder {0}: failed.length
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
 msgstr ""
 
 #. placeholder {0}: card.count
@@ -114,6 +129,11 @@ msgstr ""
 #. placeholder {0}: card.count
 #: src/features/chat/chat-card-copy.ts
 msgid "{0, plural, one {Couldn't move your queued message.} other {Couldn't move your queued messages.}}"
+msgstr ""
+
+#. placeholder {0}: moved.length
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0, plural, one {Moved # item to {destinationName}.} other {Moved # items to {destinationName}.}}"
 msgstr ""
 
 #. placeholder {0}: digest.readDocuments
@@ -207,6 +227,12 @@ msgstr "{0} 个子代理已完成（{1} 个已停止）"
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} tok/s"
 msgstr "{0} 词元/秒"
+
+#. placeholder {0}: only.name
+#. placeholder {1}: only.as
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0} will be renamed {1}"
+msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -994,6 +1020,10 @@ msgstr ""
 msgid "Can't delete {source}: it changed during the delete."
 msgstr ""
 
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+msgid "Can't go inside itself"
+msgstr ""
+
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source} to that location."
 msgstr ""
@@ -1677,6 +1707,20 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't move"
+msgstr ""
+
+#. placeholder {0}: lost.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Couldn't move {0} back."
+msgstr ""
+
+#. placeholder {0}: lost.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Couldn't move {0}."
+msgstr ""
+
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Couldn't move it back."
 msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
@@ -3009,6 +3053,10 @@ msgstr ""
 msgid "Move to {0}"
 msgstr ""
 
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+msgid "Move to {destinationName}"
+msgstr ""
+
 #: src/features/chat/UserTurn.tsx
 msgid "Move to the message box"
 msgstr ""
@@ -3023,6 +3071,17 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Moved"
+msgstr ""
+
+#. placeholder {0}: first.previousName
+#. placeholder {1}: first.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Moved {0} to {destinationName} as {1}."
+msgstr ""
+
+#. placeholder {0}: first.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Moved {0} to {destinationName}."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -3047,8 +3106,8 @@ msgstr ""
 
 #. placeholder {0}: folder ?? ""
 #: src/features/project/context/LinkUpdateNote.tsx
-msgid "Moved to {0}"
-msgstr ""
+#~ msgid "Moved to {0}"
+#~ msgstr ""
 
 #. placeholder {0}: documentLocationName(landing.landedAt, names)
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -3813,13 +3872,18 @@ msgstr ""
 msgid "Reset size"
 msgstr ""
 
+#. placeholder {0}: schemeLabel(id)
+#: src/features/project/shell/DockedRailSection.tsx
+msgid "Resize {0}"
+msgstr ""
+
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize right rail"
 msgstr ""
 
 #: src/features/project/chat/ChatScratch.tsx
-msgid "Resize Scratch"
-msgstr ""
+#~ msgid "Resize Scratch"
+#~ msgstr ""
 
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize sidebar"

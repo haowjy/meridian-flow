@@ -10,7 +10,11 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import { serverTabFromFile } from "../context/context-tab-from-file";
-import { DocumentDeleteUndoNotice, useDeleteContextEntry } from "../context/document-delete-undo";
+import { useDeleteContextEntry } from "../context/document-delete-undo";
+import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
+import { SurfaceNotices } from "../context/project-notices";
+import { DropRegion } from "../context/tree-drop/DropRegion";
+import { useTreeDropTarget } from "../context/tree-drop/tree-drop";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useDockDocument } from "../dock/dock-document-store";
@@ -64,17 +68,14 @@ export function WorkFilesActions({ files }: { files: WorkFiles }) {
   );
 }
 
-export function WorkFilesView({
-  projectId,
-  work,
-  search,
-  files,
-}: {
+type WorkFilesViewProps = {
   projectId: string;
   work: AddressableWork;
   search: string;
   files: WorkFiles;
-}) {
+};
+
+export function WorkFilesView({ projectId, work, search, files }: WorkFilesViewProps) {
   const { scratch, intake } = files;
   const scratchDelete = useDeleteContextEntry("work-files");
   const catalog = scratch.catalog;
@@ -121,6 +122,13 @@ export function WorkFilesView({
     visit(catalog.root.entryId, false);
     return ids;
   }, [catalog, query, files.renaming]);
+  const owner = useMemo(() => ({ workId: work.id }), [work.id]);
+  const areas = useMemo(
+    () =>
+      catalog ? [{ scheme: "scratch" as const, owner, catalog, movable: files.editable }] : [],
+    [catalog, owner, files.editable],
+  );
+  const list = useEntryList({ projectId, surface: "work-files", areas });
   const matchesSearch = workFileSearch(search);
   const hasRows = catalog
     ?.children(catalog.root.entryId)
@@ -129,65 +137,90 @@ export function WorkFilesView({
   return (
     <div className="min-w-0 [--row-rule-inset:--spacing(2)]">
       <WorkChanges projectId={projectId} work={work} matchesSearch={matchesSearch} />
-      <WorkFileGroup label={t`Scratch`}>
-        {scratch.isError && !catalog ? (
-          <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
-        ) : !catalog ? (
-          <WorkFileGroupLoading />
-        ) : hasRows ? (
-          <TreeEnvProvider
-            value={{
-              projectId,
-              owner: { workId: work.id },
-              scheme: "scratch",
-              catalog,
-              capabilities: files.editable ? ["rename", "move", "delete"] : [],
-              activeScheme: "scratch",
-              activePath: catalog.findDocument(docked ?? "")?.path ?? null,
-              visibleIds,
-              rename: files.renaming
-                ? { path: files.renaming, done: () => files.setRenaming(null) }
-                : undefined,
-              isExpanded: query ? (id) => !searchDisclosure.collapsed.has(id) : isExpanded,
-              toggleEntry: query
-                ? (id) =>
-                    setSearchDisclosure((current) => {
-                      const collapsed = new Set(current.collapsed);
-                      if (collapsed.has(id)) collapsed.delete(id);
-                      else collapsed.add(id);
-                      return { query, collapsed };
-                    })
-                : toggleEntry,
-              onRequestDelete: scratchDelete.requestDelete,
-              onSelectFile: (_scheme, file) => {
-                const tab = serverTabFromFile("scratch", file, { workId: work.id });
-                if (tab) openFile(tab);
-              },
-            }}
-          >
-            <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={0} />
-          </TreeEnvProvider>
-        ) : !intake.note ? (
-          <WorkFileGroupNote>
-            {search ? (
-              <Trans>No scratch notes match “{search}”.</Trans>
-            ) : (
-              <Trans>No scratch notes yet.</Trans>
-            )}
-          </WorkFileGroupNote>
-        ) : null}
-        {intake.note ? (
-          <NoteAttemptRow
-            attempt={intake.note}
-            onRetry={files.editable ? files.retryNote : undefined}
-            onDismiss={intake.dismissNote}
-          />
-        ) : null}
-        {scratch.isError && catalog ? (
-          <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
-        ) : null}
-      </WorkFileGroup>
-      <DocumentDeleteUndoNotice surface="work-files" className="sticky bottom-2 mt-2 px-2" />
+      <EntryList list={list}>
+        <ScratchDropGroup catalogRootId={catalog?.root.entryId ?? null}>
+          <WorkFileGroup label={t`Scratch`}>
+            {scratch.isError && !catalog ? (
+              <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
+            ) : !catalog ? (
+              <WorkFileGroupLoading />
+            ) : hasRows ? (
+              <TreeEnvProvider
+                value={{
+                  projectId,
+                  owner,
+                  scheme: "scratch",
+                  catalog,
+                  capabilities: files.editable ? ["rename", "move", "delete"] : [],
+                  activeScheme: "scratch",
+                  activePath: catalog.findDocument(docked ?? "")?.path ?? null,
+                  visibleIds,
+                  rename: files.renaming
+                    ? { path: files.renaming, done: () => files.setRenaming(null) }
+                    : undefined,
+                  isExpanded: query ? (id) => !searchDisclosure.collapsed.has(id) : isExpanded,
+                  toggleEntry: query
+                    ? (id) =>
+                        setSearchDisclosure((current) => {
+                          const collapsed = new Set(current.collapsed);
+                          if (collapsed.has(id)) collapsed.delete(id);
+                          else collapsed.add(id);
+                          return { query, collapsed };
+                        })
+                    : toggleEntry,
+                  onRequestDelete: scratchDelete.requestDelete,
+                  onSelectFile: (_scheme, file) => {
+                    const tab = serverTabFromFile("scratch", file, { workId: work.id });
+                    if (tab) openFile(tab);
+                  },
+                }}
+              >
+                <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={0} />
+              </TreeEnvProvider>
+            ) : !intake.note ? (
+              <WorkFileGroupNote>
+                {search ? (
+                  <Trans>No scratch notes match “{search}”.</Trans>
+                ) : (
+                  <Trans>No scratch notes yet.</Trans>
+                )}
+              </WorkFileGroupNote>
+            ) : null}
+            {intake.note ? (
+              <NoteAttemptRow
+                attempt={intake.note}
+                onRetry={files.editable ? files.retryNote : undefined}
+                onDismiss={intake.dismissNote}
+              />
+            ) : null}
+            {scratch.isError && catalog ? (
+              <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
+            ) : null}
+          </WorkFileGroup>
+        </ScratchDropGroup>
+      </EntryList>
+      {/* Under the list, which stays visible with the sidebar collapsed. */}
+      <SurfaceNotices surface="work-files" className="sticky bottom-2 mt-2 px-2" />
+    </div>
+  );
+}
+
+/** The whole Scratch group is its top level: a drop on the heading or between rows files there. */
+function ScratchDropGroup({
+  catalogRootId,
+  children,
+}: {
+  catalogRootId: string | null;
+  children: React.ReactNode;
+}) {
+  const drop = useTreeDropTarget({
+    scheme: "scratch",
+    catalogRootId: catalogRootId ?? "scratch:loading",
+    folder: null,
+  });
+  return (
+    <div {...drop.dropProps}>
+      <DropRegion state={drop.dropState}>{children}</DropRegion>
     </div>
   );
 }
