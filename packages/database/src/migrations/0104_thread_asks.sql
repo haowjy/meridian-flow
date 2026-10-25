@@ -9,6 +9,7 @@ CREATE TABLE "asks" (
   "deadline_at" timestamp with time zone,
   "status" text DEFAULT 'pending' NOT NULL,
   "resolution" jsonb,
+  "submission_id" text,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
   "resolved_at" timestamp with time zone,
   CONSTRAINT "asks_turn_tool_call_unique" UNIQUE("asking_turn_id", "tool_call_id"),
@@ -24,3 +25,5 @@ ALTER TABLE "asks" ADD CONSTRAINT "asks_asking_turn_fk" FOREIGN KEY ("thread_id"
 CREATE INDEX "asks_open_deadline" ON "asks" USING btree ("deadline_at", "id") WHERE "status" = 'open' AND "deadline_at" IS NOT NULL; -- migration-lint: skip INDEX_NOT_CONCURRENTLY (new table has no rows)
 --> statement-breakpoint
 CREATE INDEX "asks_thread_created" ON "asks" USING btree ("thread_id", "created_at", "id"); -- migration-lint: skip INDEX_NOT_CONCURRENTLY (new table has no rows)
+--> statement-breakpoint
+CREATE UNIQUE INDEX "asks_one_live_per_thread" ON "asks" USING btree ("thread_id") WHERE "status" IN ('pending', 'open'); -- migration-lint: skip INDEX_NOT_CONCURRENTLY (new table has no rows)

@@ -1,5 +1,5 @@
 {
-  "id": "6559fc37-c0ab-4b04-a106-6f4068389e44",
+  "id": "24a99824-f643-4393-a81a-a2439a87757a",
   "prevId": "f9887b14-fa64-4c91-bcab-fe32d70f5cce",
   "version": "7",
   "dialect": "postgresql",
@@ -8408,6 +8408,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "submission_id": {
+          "name": "submission_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -8468,6 +8474,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "asks_one_live_per_thread": {
+          "name": "asks_one_live_per_thread",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"asks\".\"status\" IN ('pending', 'open')",
           "concurrently": false,
           "method": "btree",
           "with": {}
