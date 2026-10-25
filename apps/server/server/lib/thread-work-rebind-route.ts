@@ -21,7 +21,7 @@ import {
 } from "../domains/threads/index.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import { requireRequestId } from "./request-id.js";
-import { recordWriterWorkSwitchNotice } from "./writer-work-switch-notice.js";
+import { recordWorkSwitchNotice } from "./work-switch-notice.js";
 
 export interface ThreadWorkRebindRouteDeps {
   threads: Pick<ThreadRepository, "findById" | "findByIdIncludingDeleted">;
@@ -90,7 +90,7 @@ export async function handleRebindThreadWorkRequest(
             ? { kind: "lineage", rootThreadRef: root?.ref ?? "" }
             : { kind: "work", workHandle: rebound.before.handle },
         );
-        await recordWriterWorkSwitchNotice(deps.notices, rebound, previousScratchUri);
+        await recordWorkSwitchNotice(deps.notices, rebound, previousScratchUri);
         return rebound;
       }),
     );

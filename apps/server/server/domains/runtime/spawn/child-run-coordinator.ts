@@ -13,12 +13,10 @@ import type { Block, Thread, ThreadActivity } from "@meridian/contracts/threads"
 import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore, CompiledAgentDefinition } from "../../packages/index.js";
 import type {
-  EventJournalWriter,
   LiveEventWriter,
   SubagentThreadFactory,
   ThreadRepositories,
   ThreadRepository,
-  TurnRepository,
 } from "../../threads/index.js";
 import { createBoundConversation, TurnStartConflictError } from "../../threads/index.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
@@ -291,7 +289,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       targetRef: request.ref,
       mode: background ? "background" : "foreground",
       threads: deps.repos.threads,
-      turns: deps.repos.turns,
     });
     if (!authorized.ok) return { status: "error", error: authorized.error };
     return prepareForegroundMessage(request, authorized.target);
@@ -373,7 +370,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       targetRef: request.ref,
       mode: "background",
       threads: deps.repos.threads,
-      turns: deps.repos.turns,
     });
     if (!authorized.ok) return { status: "error", error: authorized.error };
 

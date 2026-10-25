@@ -22,6 +22,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import { askUserToolInputSchema } from "@meridian/contracts/components";
 import {
+  aiWriteModeSchema,
   INVALID_WORK_NAME,
   INVALID_WORK_STATUS,
   normalizeWorkGoal,
@@ -140,7 +141,16 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
         .describe('Work handle, e.g. "w3"; omit or null for No Work.'),
     })
     .strict()
-    .describe("Move this conversation to another Work. Needs the user's approval."),
+    .describe("Move this conversation to another Work."),
+  z
+    .object({
+      command: z.literal("write_mode"),
+      mode: aiWriteModeSchema.describe("The AI write mode for this chat."),
+    })
+    .strict()
+    .describe(
+      "Change this chat's AI write mode. The current reply finishes in its starting mode; the change applies from the next reply.",
+    ),
 ]);
 
 export type WorkCommand = z.output<typeof WorkCommandSchema>;

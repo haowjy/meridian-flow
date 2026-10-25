@@ -1,8 +1,8 @@
 # Controls
 
-Writer commands in the durable inbox: `/compact` and the chat's write-mode
-switch (`{ kind: "write_mode", mode }`). Handoff Stop and Retry act on handoff
-seeds, not inbox controls; see [handoff](handoff.md).
+Commands in the durable inbox: the writer's `/compact` and write-mode switch,
+and the model's write-mode switch (`{ kind: "write_mode", mode }`). Handoff Stop
+and Retry act on handoff seeds, not inbox controls; see [handoff](handoff.md).
 
 Two terms keep one meaning here. An **execution** is one run of a chat, one
 hold of its run lease from run start until it releases the run claim
@@ -103,12 +103,13 @@ compensating one. This holds the thread lock for that preparation, so a writer
 admission on the chat waits for it (a start with no due switch prepares outside
 the lock as before).
 
-A switch never wakes the chat and the route never applies one. Switching back,
+A switch never wakes the chat and enqueue never applies one. Switching back,
 or Stop, cancels the queued switch with nothing recorded. The Work's
 `default_ai_write_mode` follows the writer's latest choice, not the apply: it
 is set when the writer switches, switches back or stops the pending switch (last
-action wins), so a chat created in between starts in the mode the writer just
-chose. A fork or handoff starts in the mode the writer sees
+writer action wins). A model-queued switch never changes that default. A chat
+created in between therefore starts in the mode the writer last chose. A fork or
+handoff starts in the mode the writer sees
 (`effectiveWriteMode`: the pending switch's, else the applied one); a subagent
 keeps its parent's applied mode, which is the running reply's. The thread read serves the same
 rule as `effectiveAiWriteMode` (a `pendingWriteMode` subquery in the thread repository's
@@ -142,7 +143,8 @@ Enqueue runs under the thread lock, and every request writes its own row.
    most one queued switch.
 3. **No change.** A switch to the queued mode, or to the chat's current mode
    with nothing queued, writes the row already acknowledged.
-4. **Otherwise** the switch is queued, idle chat or not, and sets the Work's default.
+4. **Otherwise** the switch is queued, idle chat or not. A writer switch also
+   sets the Work's default; a model switch changes only its calling chat.
 5. `compact_requires_completed_reply` applies to `compact` only.
 
 An acknowledged row with no switch turn answers replays with `turnId` null and

@@ -36,6 +36,7 @@ import type { DocumentRemovals } from "../../domains/context/ports/document-remo
 import type { DocumentTrash } from "../../domains/context/ports/document-trash.js";
 import type { UnifiedContextPortFactory } from "../../domains/context/unified-context-port-factory.js";
 import type { AgentChain, FileAccess, Principal } from "../../domains/file-policy/index.js";
+import type { NoticePort } from "../../domains/notices/index.js";
 import {
   type EventSink,
   emitEvent,
@@ -52,6 +53,7 @@ import {
   type SkillFilesDeps,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
+import type { ThreadControls } from "../../domains/runtime/loop/runtime-delivery.js";
 import type { ObjectStorePort } from "../../domains/storage/index.js";
 import type {
   ThreadRepository,
@@ -67,10 +69,13 @@ export interface ToolWiringDeps {
   contextPorts: UnifiedContextPortFactory;
   documentSync: AgentEditAccess & DocumentProjectionRefresher & ResponseWriteFinalizer;
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
-  threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
+  threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
   works: WorkRepository;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContextNotices: Pick<WorkContextNotices, "workChanged" | "threadChanged">;
+  notices: Pick<NoticePort, "record">;
+  controls: Pick<ThreadControls, "enqueueControl">;
+  transaction<T>(operation: () => Promise<T>): Promise<T>;
   stopThreadRun(threadId: ThreadId): Promise<void>;
   branches: Pick<CollabBranches, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;

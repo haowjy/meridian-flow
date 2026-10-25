@@ -247,7 +247,7 @@ else
           if (call !== 1) return;
           await rig.delivery.enqueueControl({
             threadId: rig.threadId as never,
-            actorId: rig.ids.user,
+            provenance: { kind: "writer", actorId: rig.ids.user },
             id: crypto.randomUUID(),
             control: { kind: "write_mode", mode: "draft" },
           });
@@ -928,7 +928,7 @@ else
       // A switch and a message behind it queue while C summarizes, so C yields at its boundary.
       await rig.delivery.enqueueControl({
         threadId: rig.threadId as never,
-        actorId: rig.ids.user,
+        provenance: { kind: "writer", actorId: rig.ids.user },
         id: crypto.randomUUID(),
         control: { kind: "write_mode", mode: "draft" },
       });

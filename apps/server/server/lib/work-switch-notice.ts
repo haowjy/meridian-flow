@@ -1,8 +1,8 @@
-/** Writer-adapter policy for recording a committed thread Work transition. */
+/** Record the notice for a committed thread Work transition. */
 import type { RebindThreadWorkResult } from "@meridian/contracts/works";
 import { createWriterWorkSwitchedNotice, type NoticePort } from "../domains/notices/index.js";
 
-export async function recordWriterWorkSwitchNotice(
+export async function recordWorkSwitchNotice(
   notices: Pick<NoticePort, "record">,
   transition: RebindThreadWorkResult,
   previousScratchUri?: string,

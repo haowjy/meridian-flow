@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
     const result = await app.delivery.enqueueControl({
       ...parsed.data,
       threadId,
-      actorId: user.userId,
+      provenance: { kind: "writer", actorId: user.userId },
     });
     setResponseStatus(event, result.created ? 201 : 200);
     return result.response;

@@ -70,8 +70,10 @@ Work handles (`w1`, `w2`, ...) are minted per project from `project_handle_count
 at creation and never reused. Rename preserves the handle; soft deletion releases
 active name uniqueness but keeps the handle reserved. Names are labels, unique among
 non-deleted Works.
-Omitted or explicit-null root creation `workId` selects locked No Work. Only a
-writer Chat rebind changes a chat's Work; model tools cannot rebind it.
+Omitted or explicit-null root creation `workId` selects locked No Work. The
+writer route and an edit Agent's `work switch` both use the canonical chat
+rebind transition. The model path runs under its execution's existing claim;
+the writer route acquires an exclusive claim.
 
 ## Lifecycle invariants
 
