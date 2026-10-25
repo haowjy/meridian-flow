@@ -33,6 +33,7 @@ import {
   latestTransition,
   type StoredTreeEntry,
 } from "../../collab/domain/tree-inverse.js";
+import { reconcileBranchSiblingOrder } from "./branch-sibling-order.js";
 import { tombstoneFolders } from "./node-rows.js";
 import { loadFolderChains } from "./tree-addresses.js";
 import type { NodeRef } from "./tree-view.js";
@@ -150,6 +151,7 @@ export async function dropDocumentRows(
         inArray(branchTreeRanks.nodeId, [...input.documentIds]),
       ),
     );
+  await reconcileBranchSiblingOrder(db, input.branchId);
   return settled;
 }
 
@@ -490,19 +492,6 @@ export async function writeBranchTreeFacts(
         updatedAt: new Date(),
       },
     });
-  if (moved?.rank)
-    await tx
-      .insert(branchTreeRanks)
-      .values({
-        branchId: input.branchId,
-        nodeKind: "document",
-        nodeId: input.documentId,
-        rank: moved.rank,
-      })
-      .onConflictDoUpdate({
-        target: [branchTreeRanks.branchId, branchTreeRanks.nodeKind, branchTreeRanks.nodeId],
-        set: { rank: moved.rank, updatedAt: new Date() },
-      });
   // Held until the branch's entries on the document settle, wherever its row goes since.
   if (moved?.folderId)
     await tx

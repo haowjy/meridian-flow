@@ -155,6 +155,16 @@ async function promote(
   return ordered.map((row, index) => ({ ...row, rank: ranks[index] as string }));
 }
 
+async function rebalance(db: Database, rows: Sibling[]): Promise<Sibling[]> {
+  const ordered = [...rows].sort((left, right) => {
+    if (left.rank !== right.rank) return (left.rank ?? "") < (right.rank ?? "") ? -1 : 1;
+    return left.id < right.id ? -1 : 1;
+  });
+  const ranks = generateNKeysBetween(null, null, ordered.length);
+  await Promise.all(ordered.map((row, index) => setRank(db, row, ranks[index] as string)));
+  return ordered.map((row, index) => ({ ...row, rank: ranks[index] as string }));
+}
+
 /** Apply an explicit reorder, or the destination parent's ordinary arrival rule. */
 export async function placeLiveSibling(
   db: Database,
@@ -200,13 +210,60 @@ export async function placeLiveSibling(
     if (anchor < 0) return "stale-anchor";
     index = position.kind === "before" ? anchor : anchor + 1;
   }
-  const before = others[index - 1]?.rank ?? null;
-  const after = others[index]?.rank ?? null;
+  let before = others[index - 1]?.rank ?? null;
+  let after = others[index]?.rank ?? null;
+  if (before !== null && before === after) {
+    rows = await rebalance(db, rows);
+    const ordered = rows.filter((row) => row.id !== moving.id);
+    if (!input.position || input.position.kind === "end") index = ordered.length;
+    else if (input.position.kind === "start") index = 0;
+    else if ("siblingId" in input.position) {
+      const position = input.position;
+      const anchor = ordered.findIndex((row) => row.id === position.siblingId);
+      if (anchor < 0) return "stale-anchor";
+      index = position.kind === "before" ? anchor : anchor + 1;
+    } else throw new Error("Invalid sibling position");
+    before = ordered[index - 1]?.rank ?? null;
+    after = ordered[index]?.rank ?? null;
+  }
   await setRank(db, moving, generateKeyBetween(before, after));
   return "placed";
 }
 
-/** Materialize a server-minted branch rank into live placement during Apply. */
+/** Reconcile a branch-relative placement against the siblings that are live at Apply time. */
+export async function placeLiveRelative(
+  db: Database,
+  input: {
+    documentId: DocumentId;
+    sourceId: ContextSourceId;
+    parentId: FolderId | null;
+    left: readonly string[];
+    right: readonly string[];
+  },
+): Promise<void> {
+  const rows = await siblings(db, input.sourceId, input.parentId);
+  const ids = new Set(rows.filter((row) => row.id !== input.documentId).map((row) => row.id));
+  const right = input.right.find((id) => ids.has(id));
+  const left = input.left.find((id) => ids.has(id));
+  const position: ContextSiblingPosition = right
+    ? { kind: "before", siblingId: right }
+    : left
+      ? { kind: "after", siblingId: left }
+      : input.right.length
+        ? { kind: "start" }
+        : { kind: "end" };
+  const placed = await placeLiveSibling(db, {
+    node: { kind: "document", id: input.documentId },
+    sourceId: input.sourceId,
+    parentId: input.parentId,
+    position,
+    arrived: false,
+  });
+  if (placed === "stale-anchor")
+    throw new Error("Live sibling changed under its namespace lock during Apply");
+}
+
+/** Re-mint a recorded rank as relative live placement; never copy a possibly colliding key. */
 export async function applyLiveRank(
   db: Database,
   input: {
@@ -217,10 +274,29 @@ export async function applyLiveRank(
   },
 ) {
   if (input.rank == null) return;
-  const tx = currentDrizzleDb(db);
+  const desiredRank = input.rank;
+  let rows = await siblings(db, input.sourceId, input.parentId);
   if ((await liveParentOrderPolicy(db, input.sourceId, input.parentId)) === "default") {
-    const rows = await siblings(db, input.sourceId, input.parentId);
-    await promote(db, input.sourceId, input.parentId, rows);
+    rows = await promote(db, input.sourceId, input.parentId, rows);
   }
-  await tx.update(documents).set({ rank: input.rank }).where(eq(documents.id, input.documentId));
+  let others = rows
+    .filter((row) => row.id !== input.documentId)
+    .sort((left, right) => {
+      if (left.rank !== right.rank) return (left.rank as string) < (right.rank as string) ? -1 : 1;
+      return left.id < right.id ? -1 : 1;
+    });
+  let index = others.findIndex((row) => (row.rank as string) > desiredRank);
+  if (index < 0) index = others.length;
+  if (others[index - 1]?.rank === others[index]?.rank) {
+    rows = await rebalance(db, rows);
+    others = rows.filter((row) => row.id !== input.documentId);
+    index = others.findIndex((row) => (row.rank as string) > desiredRank);
+    if (index < 0) index = others.length;
+  }
+  await currentDrizzleDb(db)
+    .update(documents)
+    .set({
+      rank: generateKeyBetween(others[index - 1]?.rank ?? null, others[index]?.rank ?? null),
+    })
+    .where(eq(documents.id, input.documentId));
 }

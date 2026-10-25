@@ -24,7 +24,7 @@ import { allocateFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import { placeBranchSibling, restoreBranchSibling } from "./branch-sibling-order.js";
+import { placeBranchSibling, syncBranchSiblingFacts } from "./branch-sibling-order.js";
 import {
   readBranchTreeFacts,
   settleBranchEntries,
@@ -143,6 +143,7 @@ export async function moveInBranch(
     documentId: input.documentId,
     sourceId: contextSourceId,
     parentId: walk.folderId,
+    name: input.to.extension ? `${landedName}.${input.to.extension}` : landedName,
     ...(input.position ? { position: input.position } : {}),
     arrived:
       current.document.contextSourceId !== contextSourceId ||
@@ -168,6 +169,11 @@ export async function moveInBranch(
     facts: after,
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: input.changedBy,
+  });
+  await syncBranchSiblingFacts(db, {
+    branchId: input.branchId,
+    documentId: input.documentId,
+    facts: after,
   });
   return Ok({ before, after });
 }
@@ -212,16 +218,15 @@ export async function discardBranchTreeFacts(
   await lockDocuments(db, [input.documentId]);
   const facts = await factsOf(db, input.branchId, input.documentId);
   if (!facts.moved && !facts.deleted) return { discarded: false };
+  const after = { ...facts, moved: null, deleted: false };
   await writeBranchTreeFacts(db, {
     branchId: input.branchId,
     documentId: input.documentId,
-    facts: { ...facts, moved: null, deleted: false },
+    facts: after,
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: null,
   });
-  if (facts.moved?.rank != null) {
-    await restoreBranchSibling(db, input);
-  }
+  await syncBranchSiblingFacts(db, { ...input, facts: after });
   await settleBranchEntries(db, {
     branchId: input.branchId,
     documentIds: [input.documentId],
@@ -274,9 +279,11 @@ export async function writeBackBranchFacts(
     changedBy: input.changedBy,
     ...(!current.row && facts.created ? { createdBy: input.changedBy } : {}),
   });
-  if (input.expected.moved?.rank != null && facts.moved?.rank == null) {
-    await restoreBranchSibling(db, input);
-  }
+  await syncBranchSiblingFacts(db, {
+    branchId: input.branchId,
+    documentId: input.documentId,
+    facts,
+  });
   return Ok(facts);
 }
 

@@ -1,6 +1,6 @@
 {
   "id": "bd08ccfd-df5a-427c-bc22-33469e37c35e",
-  "prevId": "e46c4dd5-2a31-4bef-b2ea-5899e5d43863",
+  "prevId": "7f051a55-a748-47af-87e7-99dcfa97b976",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4740,6 +4740,18 @@
           "primaryKey": false,
           "notNull": true
         },
+        "parent_kind": {
+          "name": "parent_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "node_kind": {
           "name": "node_kind",
           "type": "text",
@@ -4773,7 +4785,47 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "branch_tree_ranks_parent_rank": {
+          "name": "branch_tree_ranks_parent_rank",
+          "columns": [
+            {
+              "expression": "branch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "parent_kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "parent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rank",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "branch_tree_ranks_branch_id_branches_id_fk": {
           "name": "branch_tree_ranks_branch_id_branches_id_fk",
@@ -4805,6 +4857,10 @@
         "branch_tree_ranks_kind_valid": {
           "name": "branch_tree_ranks_kind_valid",
           "value": "\"branch_tree_ranks\".\"node_kind\" IN ('document', 'folder')"
+        },
+        "branch_tree_ranks_parent_kind_valid": {
+          "name": "branch_tree_ranks_parent_kind_valid",
+          "value": "\"branch_tree_ranks\".\"parent_kind\" IN ('source', 'folder')"
         }
       },
       "isRLSEnabled": false

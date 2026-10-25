@@ -203,6 +203,9 @@ export const branchTreeRanks = pgTable(
       .$type<BranchId>()
       .notNull()
       .references(() => branches.id, { onDelete: "cascade" }),
+    parentKind: text("parent_kind").$type<BranchTreeParentKind>().notNull(),
+    /** The source or folder whose branch-local child order owns this rank. */
+    parentId: uuid("parent_id").notNull(),
     nodeKind: text("node_kind").$type<BranchTreeNodeKind>().notNull(),
     nodeId: uuid("node_id").notNull(),
     rank: text("rank").notNull(),
@@ -211,6 +214,14 @@ export const branchTreeRanks = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.branchId, table.nodeKind, table.nodeId] }),
+    index("branch_tree_ranks_parent_rank").on(
+      table.branchId,
+      table.parentKind,
+      table.parentId,
+      table.rank,
+      table.nodeId,
+    ),
+    check("branch_tree_ranks_parent_kind_valid", sql`${table.parentKind} IN ('source', 'folder')`),
     check("branch_tree_ranks_kind_valid", sql`${table.nodeKind} IN ('document', 'folder')`),
   ],
 );
