@@ -60,8 +60,8 @@ browser reports no fine pointer, so rows render at touch height.
    as `chapter-1 (2)`; the notice
    reads "Moved chapter-1 to <folder> as chapter-1 (2)." Undo puts it back as
    `chapter-1` (or the next free name if one took its place meanwhile).
-8. Drag a row into the chat composer and into the open document: nothing is
-   inserted (mention drops aren't built yet; no stray names as text).
+8. Run [Mention drops](mention-drop.md). A writing drop copies references and
+   never enters this recipe's move route.
 9. After every drag, check that no region stays lit
    (`document.querySelectorAll('div[aria-hidden].-z-10').length === 0`).
 

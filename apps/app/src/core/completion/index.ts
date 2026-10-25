@@ -37,6 +37,8 @@ export {
   type ReferenceTerminalRow,
   rankReferenceRows,
   referenceAuthorityIndex,
+  referenceRowForFile,
+  referenceRowForFolder,
   referenceUriForAuthority,
   type StableReferenceAuthority,
   validReferenceQuery,

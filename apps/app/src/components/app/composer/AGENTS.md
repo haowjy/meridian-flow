@@ -18,6 +18,9 @@ is the authoring boundary; admission and server authority live outside it.
   stack above attached strips, never between a strip and the box.
 - Usage waiting comes from the chat's `RunState`, never a client balance guess.
 - Hosts own session persistence through `initialDraft` and `onDraftChange`.
+- A context row drop resolves through the same live catalog as `@` and
+  inserts the same `composerReference` atom. The shared editor drop extension
+  owns word snapping, spacing, one-step Undo, and the drop caret.
 
 Reference spelling, commands, Stop and Send states and copy, draft restore:
 [`.context/CONTEXT.md`](.context/CONTEXT.md).

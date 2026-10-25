@@ -147,10 +147,6 @@ function dropNested<T extends { ref: EntryRef }>(
 }
 
 /** A folder carries its contents, so a row inside a carried folder is dropped from the carry. */
-export function withoutNested<T extends { ref: EntryRef }>(view: PlacementView, items: T[]): T[] {
-  return dropNested(view, items, (item) => parentOf(view, item.ref));
-}
-
 type Refusal = "inside-itself" | "already-there";
 
 function refusalFor(view: PlacementView, source: PlacedEntry, into: ParentRef): Refusal | null {

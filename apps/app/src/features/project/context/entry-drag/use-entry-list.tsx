@@ -17,10 +17,10 @@ import {
 } from "../account-feature-context";
 import { type EntriesRoute, type EntriesVerdict, TreeDropScope } from "../tree-drop/tree-drop";
 import { activeEntryDrag } from "./drag-session";
-import { type DragEntry, entryKey } from "./entry";
+import { entryKey } from "./entry";
 import { type MoveResult, moveRows, renamesOnArrival } from "./execute-move";
 import { describeRenames, MoveFeedbackProvider, useMoveNotices } from "./move-notice";
-import { type MoveArea, planMove, withoutNested } from "./move-plan";
+import { type MoveArea, planMove } from "./move-plan";
 import { type EntrySelection, EntrySelectionProvider, useEntrySelection } from "./selection";
 
 type ListMoveEffects = {
@@ -49,12 +49,7 @@ export function useEntryList({
   const { works, noWork } = useWorks(projectId);
   const projection = useAccountResourceProjection(projectId);
   const notices = useMoveNotices();
-  // Hovers plan from the latest observation without remaking the route (and re-rendering every target).
-  const prune = useCallback(
-    (entries: DragEntry[]) => withoutNested(latest.current.projection, entries),
-    [],
-  );
-  const selection = useEntrySelection(prune);
+  const selection = useEntrySelection();
   const latest = useRef({ areas, projection, works, noWork, selection });
   useLayoutEffect(() => {
     latest.current = { areas, projection, works, noWork, selection };

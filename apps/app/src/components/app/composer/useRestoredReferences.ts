@@ -6,13 +6,13 @@
 import type { CatalogScope } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import { useEffect } from "react";
-import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
+import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import type { ComposerDraftSnapshot, ComposerReferenceAttrs } from "./composer-document";
 
 export function useRestoredReferences(
   editor: Editor | null,
   draft: ComposerDraftSnapshot | null | undefined,
-  catalog: AtReferenceCatalog | null,
+  catalog: ReferenceBrowserCatalog | null,
 ) {
   useEffect(() => {
     if (!editor || !draft || !catalog) return;

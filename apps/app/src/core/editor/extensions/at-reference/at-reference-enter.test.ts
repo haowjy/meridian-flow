@@ -13,7 +13,7 @@ import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../../config";
-import { getAtReferenceMenu } from "./AtReferenceExtension";
+import { editorReferenceNode, getAtReferenceMenu } from "./AtReferenceExtension";
 
 const PROJECT = "01900000-0000-7000-8000-000000000002";
 const scope = { kind: "project", projectId: PROJECT } as CatalogScope;
@@ -52,6 +52,8 @@ function mount(): Editor {
             read: () => catalog,
             acquire: async () => catalog,
           },
+          resolveReference: () => null,
+          referenceNode: editorReferenceNode,
           openContext: () => ({ warmScopes: [scope] }),
           label: "Reference a file",
           holderUri: "manuscript://volume-1/chapter-2.md",

@@ -14,6 +14,10 @@ card stack.
   `FolderMenuContext`; without a host it is inert.
 - Manuscript marks carry targets, not attachment identity. Preserve their full
   recorded address when copying into chat, where a relative href has no holder.
+- A row drop is an identity-bearing reference insertion, not pasted tree text.
+  It reads the already-installed `@` catalog, refuses identities that catalog
+  cannot name, and writes the same atom the picker writes. Several rows are one
+  transaction and one Undo step; typing after the drop starts the next step.
 - Submission keys belong to the editor kernel below suggestion keys. Chat `/`
   commands share the suggestion kernel with `@`; only registered command atoms
   execute, while typed `/slug` prose does not activate a skill. Send copies a

@@ -50,7 +50,8 @@ the whole-document ProseMirror rebuild caused by remote Yjs writes.
   retired snapshot or transfers selection to a replacement draft.
 - Editor-owned keys remain consumed on refusals, and table drops have one
   landing authority. The Tab ladder, cell Enter behavior, dropcursor policy,
-  diagram faces, and `@` delimiter rule are in the editor context.
+  reference-drop word snapping, diagram faces, and `@` delimiter rule are in
+  the editor context.
 - Remote writes can move or replace anything while a menu, picker, drag, or
   review operation is open. Hold identity with `EditorAnchor`/`NodeHold`, then
   resolve and validate at use time. Never trust a raw position or DOM element.

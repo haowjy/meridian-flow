@@ -13,6 +13,7 @@ import type {
   DocumentFileType,
   Filetype,
 } from "@meridian/contracts/protocol";
+import { catalogScopeKey } from "@meridian/contracts/protocol";
 import type { StableReferenceAuthority } from "@meridian/thread-client";
 
 export const REFERENCE_ROW_LIMIT = 20;
@@ -160,6 +161,41 @@ export function folderReferenceForEntry(
   if (entry.navigationOnly || entry.path.length === 0) return null;
   const uri = canonicalReferenceUri(entry.scope, entry.uri, authorities);
   return uri ? { kind: "folder", folderId: entry.entryId, uri, label: entry.name } : null;
+}
+
+/** The terminal browser row for a catalog file. */
+export function referenceRowForFile(
+  entry: CatalogFileEntry,
+  authorities: ReferenceAuthorityIndex,
+): Extract<ReferenceRow, { kind: "file" }> | null {
+  const reference = authoritativeReferenceForFile(entry, authorities);
+  if (!reference) return null;
+  return {
+    kind: "file",
+    rowId: `file:${entry.entryId}`,
+    label: entry.name,
+    location: entry.path.slice(0, -1).join("/"),
+    fileKind: entry.editable ? "document" : "asset",
+    aliases: entry.aliases,
+    matchedAlias: null,
+    action: { type: "select", reference },
+  };
+}
+
+/** The terminal browser row that names a folder rather than opening it. */
+export function referenceRowForFolder(
+  entry: CatalogFolderEntry,
+  authorities: ReferenceAuthorityIndex,
+): Extract<ReferenceRow, { kind: "folder-mention" }> | null {
+  const reference = folderReferenceForEntry(entry, authorities);
+  if (!reference) return null;
+  return {
+    kind: "folder-mention",
+    rowId: `folder-mention:${catalogScopeKey(entry.scope)}:${entry.entryId}`,
+    label: entry.name,
+    location: entry.path.slice(0, -1).join("/"),
+    action: { type: "select", reference },
+  };
 }
 
 /** Verify that catalog syntax already carries the stable authority F1 promised. */
