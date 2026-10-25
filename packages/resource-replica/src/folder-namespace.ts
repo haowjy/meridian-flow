@@ -21,6 +21,7 @@ import {
 import {
   activeNamespaceIntent,
   type NamespaceAttemptIds,
+  type NamespaceGate,
   type NamespaceReconcileResult,
   namespaceAttemptWithOutcome,
   namespaceOutcomeMatches,
@@ -626,6 +627,7 @@ export function reconcileFolderNamespace(input: {
   transport: ResourceNamespaceTransport;
   lock: ResourceNamespaceLock;
   newAttemptIds: () => NamespaceAttemptIds;
+  gate?: NamespaceGate;
   now?: () => number;
 }): Promise<NamespaceReconcileResult> {
   return reconcileNamespaceJournal({
@@ -665,6 +667,8 @@ export function reconcileFolderNamespace(input: {
         observed?.kind === "available" ? observed.location : null,
       );
     },
+    repair: (record, intentId) =>
+      replaceIntent(record, intentId, (current) => ({ ...current, state: "needs-repair" })),
     recordOutcome: recordFolderNamespaceOutcome,
     settle: (record: FolderNamespaceRecord) => settleFolderNamespaceOutcome(record, input.now?.()),
     // A changed source path must reach the server for an authoritative, identity-bound

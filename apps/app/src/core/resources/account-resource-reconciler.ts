@@ -2,14 +2,18 @@
  * Account-scoped background reconciliation of resource metadata: one runner per handle that
  * dispatches namespace work, follows joins and reminted creates, adopts sessions and cleans up
  * deleted content. Retry triggers and projection observations feed it; the replica composes it.
+ * Runners are independent: a placement waits only for the predecessors its journal admission
+ * names (`placementDispatchVerdict`), so unrelated work never queues behind a held request.
  */
 import {
   acknowledgeLocalResourceCleanup,
-  activeNamespaceIntent,
   type FolderNamespaceRecord,
   folderNeedsBackgroundReconciliation,
   joinReservation,
+  type NamespaceIntent,
+  type PlacementVerdict,
   pendingJoinTarget,
+  placementDispatchVerdict,
   type ResourceKey,
   type ResourceNamespaceLock,
   type ResourceRecord,
@@ -51,34 +55,6 @@ export type ResourceReconcilerPorts = {
 
 /** A metadata write, and the Y.Doc session's new id when the write changes it. */
 type IdentityPlan = { write: ResourceWrite; nextDocumentId?: string };
-
-type ReconciliationCandidate = {
-  kind: "resource" | "folder";
-  key: ResourceKey;
-  admissionOrder: number;
-};
-
-function candidateForResource(record: ResourceRecord): ReconciliationCandidate {
-  return {
-    kind: "resource",
-    key: record.resource,
-    admissionOrder: activeNamespaceIntent(record)?.admission?.order ?? Number.MAX_SAFE_INTEGER,
-  };
-}
-
-function candidateForFolder(record: FolderNamespaceRecord): ReconciliationCandidate {
-  return {
-    kind: "folder",
-    key: record,
-    admissionOrder: activeNamespaceIntent(record)?.admission?.order ?? Number.MAX_SAFE_INTEGER,
-  };
-}
-
-function compareCandidates(left: ReconciliationCandidate, right: ReconciliationCandidate): number {
-  return (
-    left.admissionOrder - right.admissionOrder || left.key.handle.localeCompare(right.key.handle)
-  );
-}
 
 /**
  * The one identity transition: prepare the Y.Doc session's re-identity, commit the metadata, and
@@ -128,7 +104,8 @@ export class AccountResourceReconciler {
   private readonly reruns = new Map<string, () => void>();
   private readonly observedResourceRevisions = new Map<string, number>();
   private readonly observedFolderRevisions = new Map<string, number>();
-  private namespaceTail: Promise<void> = Promise.resolve();
+  /** Handles holding a placement behind predecessors, woken whenever any journal changes. */
+  private readonly waiting = new Map<string, () => void>();
   private stopHints: (() => void) | null = null;
   private retryTimer: number | null = null;
 
@@ -163,20 +140,23 @@ export class AccountResourceReconciler {
     records: readonly ResourceRecord[],
     folders: readonly FolderNamespaceRecord[],
   ): void {
-    const candidates: ReconciliationCandidate[] = [];
+    let changed = false;
     for (const record of records) {
       const { handle, revision } = record.resource;
       if (this.observedResourceRevisions.get(handle) === revision) continue;
       this.observedResourceRevisions.set(handle, revision);
+      changed = true;
       this.ports.content.reconcileMetadata(record);
-      candidates.push(candidateForResource(record));
+      this.schedule(record.resource);
     }
     for (const folder of folders) {
       if (this.observedFolderRevisions.get(folder.handle) === folder.revision) continue;
       this.observedFolderRevisions.set(folder.handle, folder.revision);
-      if (folderNeedsBackgroundReconciliation(folder)) candidates.push(candidateForFolder(folder));
+      changed = true;
+      if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
     }
-    this.scheduleCandidates(candidates);
+    // Any journal change, from any tab, may resolve a predecessor someone is waiting on.
+    if (changed) for (const rerun of [...this.waiting.values()]) rerun();
   }
 
   schedule(key: ResourceKey): void {
@@ -199,20 +179,13 @@ export class AccountResourceReconciler {
     void this.ports.metadata
       .readProjection("")
       .then(({ records, folders }) => {
-        this.scheduleCandidates([
-          ...records.filter(resourceNeedsBackgroundReconciliation).map(candidateForResource),
-          ...folders.filter(folderNeedsBackgroundReconciliation).map(candidateForFolder),
-        ]);
+        for (const record of records)
+          if (resourceNeedsBackgroundReconciliation(record)) this.schedule(record.resource);
+        for (const folder of folders)
+          if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
       })
       .catch(() => undefined);
   };
-
-  private scheduleCandidates(candidates: readonly ReconciliationCandidate[]): void {
-    for (const candidate of [...candidates].sort(compareCandidates)) {
-      if (candidate.kind === "folder") this.scheduleFolder(candidate.key);
-      else this.schedule(candidate.key);
-    }
-  }
 
   /** One runner per handle; a request that arrives mid-run reruns once when it finishes. */
   private scheduleOnce(key: ResourceKey, start: () => Promise<void>, rerun: () => void): void {
@@ -222,6 +195,7 @@ export class AccountResourceReconciler {
       this.reruns.set(id, rerun);
       return;
     }
+    this.waiting.delete(id);
     const runner = start()
       .catch(() => undefined)
       .finally(() => {
@@ -237,15 +211,14 @@ export class AccountResourceReconciler {
   private async runFolder(key: ResourceKey): Promise<void> {
     const { metadata, namespace: transport, lock } = this.ports;
     for (let step = 0; step < 100 && !this.ports.isClosing(); step += 1) {
-      const result = await this.inNamespaceOrder(() =>
-        reconcileFolderNamespace({
-          key,
-          metadata,
-          transport,
-          lock,
-          newAttemptIds,
-        }),
-      );
+      const result = await reconcileFolderNamespace({
+        key,
+        metadata,
+        transport,
+        lock,
+        newAttemptIds,
+        gate: this.gate(key, () => this.scheduleFolder(key)),
+      });
       if (result !== "progressed") return;
     }
   }
@@ -253,15 +226,14 @@ export class AccountResourceReconciler {
   private async run(key: ResourceKey): Promise<void> {
     const { metadata, namespace: transport, lock, adoption } = this.ports;
     for (let step = 0; step < 100 && !this.ports.isClosing(); step += 1) {
-      const namespace = await this.inNamespaceOrder(() =>
-        reconcileResourceNamespace({
-          key,
-          metadata,
-          transport,
-          lock,
-          newAttemptIds,
-        }),
-      );
+      const namespace = await reconcileResourceNamespace({
+        key,
+        metadata,
+        transport,
+        lock,
+        newAttemptIds,
+        gate: this.gate(key, () => this.schedule(key)),
+      });
       if (namespace === "needs-join" && (await this.commitIdentity(key, (c) => this.planJoin(c))))
         continue;
       if (namespace === "needs-repair" && (await this.commitIdentity(key, planRemint))) continue;
@@ -272,14 +244,31 @@ export class AccountResourceReconciler {
     }
   }
 
-  /** One account sends placement intentions in the same order that optimistic replay applies. */
-  private inNamespaceOrder<Result>(run: () => Promise<Result>): Promise<Result> {
-    const turn = this.namespaceTail.then(run);
-    this.namespaceTail = turn.then(
-      () => undefined,
-      () => undefined,
-    );
-    return turn;
+  /**
+   * Holds a placement behind its predecessors. The handle is registered as waiting before the
+   * predecessors are read, so a change that lands while reading still wakes it.
+   */
+  private gate(key: ResourceKey, rerun: () => void) {
+    const id = encodeURIComponent(key.handle);
+    return async (intent: NamespaceIntent): Promise<PlacementVerdict> => {
+      const predecessors = intent.admission?.predecessors ?? [];
+      if (predecessors.length === 0) return "go";
+      this.waiting.set(id, rerun);
+      const found = new Map<string, NamespaceIntent | undefined>();
+      for (const ref of predecessors) {
+        const journal =
+          ref.kind === "folder"
+            ? await this.ports.metadata.readFolder({ handle: ref.handle })
+            : await this.ports.metadata.readResource({ handle: ref.handle });
+        found.set(
+          ref.intentId,
+          journal?.intents.find((candidate) => candidate.intentId === ref.intentId),
+        );
+      }
+      const verdict = placementDispatchVerdict(intent, (ref) => found.get(ref.intentId));
+      if (verdict !== "wait") this.waiting.delete(id);
+      return verdict;
+    };
   }
 
   /** Returns whether a plan applied or a conflict was settled, so the runner takes another pass. */

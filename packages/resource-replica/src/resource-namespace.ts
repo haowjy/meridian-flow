@@ -16,6 +16,7 @@ import {
   resolveUnavailableNamespace,
   settleNamespaceIntent,
 } from "./namespace-journal-policy";
+import type { PlacementVerdict } from "./placement-journal";
 import { committedResourceDeletion } from "./resource-deletion";
 import { followedJoin, pendingJoinTarget } from "./resource-join";
 import type {
@@ -670,6 +671,7 @@ export function reconcileResourceNamespace(input: {
   transport: ResourceNamespaceTransport;
   lock: ResourceNamespaceLock;
   newAttemptIds: () => NamespaceAttemptIds;
+  gate?: NamespaceGate;
   now?: () => number;
 }): Promise<NamespaceReconcileResult> {
   return reconcileNamespaceJournal({
@@ -691,6 +693,10 @@ export function reconcileResourceNamespace(input: {
         observed?.kind === "available" ? observed.location : null,
       );
     },
+    repair: (record, intentId) => ({
+      expectedRevision: record.resource.revision,
+      next: replaceIntent(record, intentId, (current) => ({ ...current, state: "needs-repair" })),
+    }),
     recordOutcome: recordNamespaceOutcome,
     settle: (record: ResourceRecord) => settleNamespaceOutcome(record, input.now?.()),
     pendingJoin: (record: ResourceRecord) => pendingJoinTarget(record) !== null,
@@ -716,6 +722,9 @@ export function reconcileResourceNamespace(input: {
   });
 }
 
+/** Whether a pending placement may dispatch now (see `placementDispatchVerdict`). */
+export type NamespaceGate = (intent: NamespaceIntent) => Promise<PlacementVerdict>;
+
 /** Shared journal replay for content resources and folder namespace records. */
 export async function reconcileNamespaceJournal<
   Record extends { intents: readonly NamespaceIntent[] },
@@ -728,7 +737,11 @@ export async function reconcileNamespaceJournal<
   newAttemptIds: () => NamespaceAttemptIds;
   read: () => Promise<Record | null>;
   commit: (write: Write) => Promise<"committed" | "stale">;
+  /** Holds a pending placement behind its predecessors, or sends it to repair when their failure changed its premise. */
+  gate?: NamespaceGate;
   prepare: (record: Record, ids: NamespaceAttemptIds) => Write | null | Promise<Write | null>;
+  /** Marks a pending intent as needing the writer's repair, as when its destination is gone. */
+  repair: (record: Record, intentId: string) => Write;
   recordOutcome: (
     record: Record,
     intentId: string,
@@ -759,7 +772,12 @@ export async function reconcileNamespaceJournal<
     if (!intent) return "idle";
     if (intent.state === "needs-repair") return "needs-repair";
     if (intent.state === "pending") {
-      const write = await input.prepare(record, input.newAttemptIds());
+      const verdict = (await input.gate?.(intent)) ?? "go";
+      if (verdict === "wait") return "blocked";
+      const write =
+        verdict === "repair"
+          ? input.repair(record, intent.intentId)
+          : await input.prepare(record, input.newAttemptIds());
       if (!write) return "blocked";
       if ((await input.commit(write)) === "stale") continue;
       if (
