@@ -18,3 +18,4 @@ export { destinationLocation, destinationParentLocation } from "./resource-recor
 export * from "./resource-records-policy";
 export * from "./resource-state";
 export * from "./resource-work-authority";
+export * from "./sibling-order";

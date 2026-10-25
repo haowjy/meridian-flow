@@ -101,8 +101,7 @@ export function createLsHandler(deps: ToolWiringDeps) {
       }),
     );
     const listing = entries.flat();
-    // Storage returns rows unordered; the model reads a sorted listing.
-    if (path) return { uri: result.value.uri, entries: sortLsEntries(listing) };
+    if (path) return { uri: result.value.uri, entries: listing };
     return { uri: null, entries: [...listing, ...(await skillsRootEntries(deps, ctx.threadId))] };
   };
 }
