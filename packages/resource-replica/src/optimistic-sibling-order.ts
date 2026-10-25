@@ -9,6 +9,7 @@ type Action = {
   parentId: string;
   position?: ContextSiblingPosition;
   promote: boolean;
+  admissionOrder: number;
 };
 
 function activeActions(
@@ -26,8 +27,14 @@ function activeActions(
   const actions: Action[] = [];
   const add = (
     entryId: string,
-    desired: { destination: { position?: ContextSiblingPosition } } | undefined,
+    intent:
+      | {
+          admissionOrder?: number;
+          desired: { destination: { position?: ContextSiblingPosition } };
+        }
+      | undefined,
   ) => {
+    const desired = intent?.desired;
     const row = rows.get(entryId);
     if (!row || !desired) return;
     const parent = projected.find((entry) => entry.entryId === row.parentId);
@@ -44,6 +51,7 @@ function activeActions(
       parentId: row.parentId,
       ...(desired.destination.position ? { position: desired.destination.position } : {}),
       promote: Boolean(desired.destination.position),
+      admissionOrder: intent?.admissionOrder ?? 0,
     });
   };
 
@@ -69,9 +77,12 @@ function activeActions(
     add(
       record.resource.identity.documentId,
       intent?.desired.kind === "set-location"
-        ? intent.desired
+        ? { admissionOrder: intent.admissionOrder, desired: intent.desired }
         : create?.desired.kind === "create" && create.desired.destination
-          ? { destination: create.desired.destination }
+          ? {
+              admissionOrder: create.admissionOrder,
+              desired: { destination: create.desired.destination },
+            }
           : undefined,
     );
   }
@@ -83,10 +94,12 @@ function activeActions(
     );
     add(
       folder.folderId,
-      intent?.desired.kind === "set-folder-location" ? intent.desired : undefined,
+      intent?.desired.kind === "set-folder-location"
+        ? { admissionOrder: intent.admissionOrder, desired: intent.desired }
+        : undefined,
     );
   }
-  return actions;
+  return actions.sort((left, right) => left.admissionOrder - right.admissionOrder);
 }
 
 function insertAtPosition(

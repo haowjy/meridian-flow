@@ -103,6 +103,7 @@ export class AccountResourceReplica {
   private reservationTail: Promise<void> = Promise.resolve();
   private readonly reservationLocks = nativeLocks();
   private readonly locationOperations = new ResourceLocationOperationQueue();
+  private lastNamespaceAdmission = Date.now();
   private started = false;
   private stopReconciliation: (() => void) | null = null;
   private closing = false;
@@ -170,6 +171,11 @@ export class AccountResourceReplica {
     this.terminal = {
       continueTerminal: (input, run) => this.continueTerminal(input, run),
     };
+  }
+
+  private nextNamespaceAdmission(): number {
+    this.lastNamespaceAdmission = Math.max(Date.now(), this.lastNamespaceAdmission + 1);
+    return this.lastNamespaceAdmission;
   }
 
   /**
@@ -245,6 +251,7 @@ export class AccountResourceReplica {
       databaseName: exactPersistenceName(this.accountId, crypto.randomUUID()),
       schema: collabSchemaKeyTag(),
       intentId: crypto.randomUUID(),
+      admissionOrder: this.nextNamespaceAdmission(),
       folderPath,
       provisionalName: destination?.name ?? name,
       ...(destination ? { destination: { value: destination, eligibleAt: Date.now() } } : {}),
@@ -612,6 +619,7 @@ export class AccountResourceReplica {
     typedName?: string,
   ): Promise<{ isLatest: boolean; operationId?: string }> {
     const operationId = crypto.randomUUID();
+    const admissionOrder = this.nextNamespaceAdmission();
     let admitted = false;
     const { isLatest } = await this.locationOperations.run(key, async () => {
       admitted =
@@ -622,6 +630,7 @@ export class AccountResourceReplica {
             intentId: crypto.randomUUID(),
             operationId,
             eligibleAt: Date.now(),
+            admissionOrder,
             destination,
             typedName,
           }),
@@ -641,8 +650,9 @@ export class AccountResourceReplica {
     destination: ResourceDestination,
     typedName?: string,
   ): Promise<{ operationId?: string }> {
+    const admissionOrder = this.nextNamespaceAdmission();
     return this.commitFolderPlan(projectId, folderId, (input) =>
-      planFolderLocation({ ...input, destination, typedName }),
+      planFolderLocation({ ...input, destination, typedName, admissionOrder }),
     );
   }
 

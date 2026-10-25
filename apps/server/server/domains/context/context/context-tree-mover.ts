@@ -267,6 +267,9 @@ export class ContextTreeMover {
           const moved: ContextMoveResult = {
             movedNodeId: result.value.movedNodeId,
             ...(result.value.linkUpdate ? { linkUpdate: result.value.linkUpdate } : {}),
+            ...(result.value.locationVersion
+              ? { locationVersion: result.value.locationVersion }
+              : {}),
             destinationPath: result.value.path,
             ...(policy.target === "exact" && policy.destinationParent
               ? {

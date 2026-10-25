@@ -125,6 +125,8 @@ export type ResourceDescriptor = ResourceKey & {
   canonicalParent?: ParentRef;
   /** Sibling rank from the same canonical observation; meaningful when its parent is manual. */
   canonicalRank?: string | null;
+  /** Per-entry namespace mutation revision from the same canonical observation. */
+  canonicalLocationVersion?: string;
   /** Server namespace watermark of the canonical observation; absent for local identities. */
   observationVersion?: string;
   lifecycle:
@@ -206,6 +208,8 @@ export type NamespaceIntent = ResourceKey & {
   /** Caller-issued id lets surfaces correlate settlement before background dispatch. */
   operationId?: string;
   sequence: number;
+  /** Account-local placement admission order; comparable across file and folder journals. */
+  admissionOrder?: number;
   identityRevision: number;
   desired:
     | {
@@ -262,6 +266,7 @@ export type FolderNamespaceRecord = ResourceKey & {
   canonicalParent?: ParentRef;
   /** This folder's rank and child-order policy from the same canonical observation. */
   canonicalRank?: string | null;
+  canonicalLocationVersion?: string;
   canonicalOrderPolicy?: ContextParentOrderPolicy;
   /** Server namespace watermark of the canonical observation; absent for local identities. */
   observationVersion?: string;
@@ -336,6 +341,7 @@ export type NamespaceIdentityAvailability =
       location: ResourceLocation;
       parent: ParentRef;
       observationVersion: string;
+      locationVersion?: string;
       rank?: string | null;
       orderPolicy?: ContextParentOrderPolicy;
     }

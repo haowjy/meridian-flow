@@ -193,7 +193,11 @@ contains rows with their authoritative `ParentRef`; hover prediction and
 `moveRows` (`entry-drag/execute-move.ts`) places, remembers each operation for
 its row's link-update note and returns the result to the project-owned notice
 surface. Root authority resolution lives in `move-entry.ts`; arrival naming is
-`arrivals` in `execute-move.ts`, over `context-entry-name.ts`.
+`arrivals` in `execute-move.ts`, over `context-entry-name.ts`. A positional
+destination makes a same-parent placement a reorder rather than "already there";
+the subject is removed from name occupancy, so keeping its name cannot collide
+with itself. Cross-parent placement without a position appends when the server
+says the destination parent is manual.
 
 The chat's Scratch renders one owner-bound `TreeEnvProvider` and `TreeChildren`
 per real catalog. Earlier notes is a navigation disclosure outside the second
@@ -265,7 +269,7 @@ that surface, Dismiss, or the project changing, so Undo is never a race.
 `MoveNoticesProvider` keeps each surface's latest move, as data, whether or
 not the list that made it is still on screen. Undo shows only while it has
 something to put back: the provider watches the replica and retires Undo once
-every moved row was renamed, moved again or deleted (only after the move has
+every moved row was renamed, moved again, reordered or deleted (only after the move has
 shown in the replica, which can trail the placement by a moment); the message
 stays until dismissed. A row the server refuses goes back with its failure mark,
 and the notice stops saying it moved: "Couldn't move chapter-3." without Undo,
@@ -273,6 +277,9 @@ or "Moved 2 items to Act 2. Couldn't move chapter-3." when the rest landed.
 Refused means the replica settled that move's own operation (`MoveEffect.operationId`)
 as needs-repair (`moveSettlement`); a row the writer changed since supersedes that
 intent, so it only loses Undo.
+Freshness uses the move receipt's per-entry `locationVersion` after its server observation fence,
+not the catalog's scope-wide observation version; unrelated namespace edits therefore do not retire
+Undo, while a same-entry peer change does even if it later returns to the same rank.
 
 Each surface's window is in one phase, and the phase decides what shows:
 
@@ -304,9 +311,11 @@ Placement is optimistic, exactly as for Move…: each placement's operation is
 remembered, so the row's link-update note follows its receipt and a later server
 refusal lands on the row as its failure mark. A row the replica won't admit is
 named in the notice, and Undo still covers the rows that moved. Undo returns
-each row to its previous parent (the next free name there if its own was taken
-since, read from the replica's placement with `childrenAt`), skips a row renamed
-or moved again since, or gone (the writer's newer choice), and reads the replica as it
+each row to its previous parent and sibling position (the next free name there if its own was taken
+since, read from the replica's placement with `childrenAt`). The reverse placement
+leaves that parent manually ordered. Undo skips a row renamed, moved, reordered
+or deleted since by comparing its operation with later journal/catalog evidence,
+and reads the replica as it
 is when pressed, not as it was at the drop. Verdicts likewise resolve each
 dragged row by identity from the replica's placement graph (rows another list
 dragged included), so a peer's rename or move during the drag can't slip a

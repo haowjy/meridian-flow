@@ -188,10 +188,11 @@ function observedResourceWrite(input: {
   classification: CatalogFileClassification;
   parent: ParentRef;
   rank?: string | null;
+  locationVersion?: string;
   fence: CatalogObservationFence;
   observationVersion: string;
 }): ResourceWrite | null {
-  const { record, location, classification, parent, rank, fence } = input;
+  const { record, location, classification, parent, rank, locationVersion, fence } = input;
   const current = record.resource;
   if (current.lifecycle.kind === "terminal") return revivedResourceWrite(input);
   if (current.lifecycle.kind !== "acknowledged") return null;
@@ -215,6 +216,7 @@ function observedResourceWrite(input: {
         location,
         parent,
         rank,
+        locationVersion,
         observationVersion: input.observationVersion,
       })
     : null;
@@ -228,10 +230,14 @@ function observedResourceWrite(input: {
     canonical: location,
     canonicalParent: parent,
     canonicalRank: rank,
+    canonicalLocationVersion: locationVersion,
     observationVersion: input.observationVersion,
     obligations,
   };
-  return { expectedRevision: current.revision, next: { resource: next, intents: record.intents } };
+  return {
+    expectedRevision: current.revision,
+    next: { resource: next, intents: refreshed?.next.intents ?? record.intents },
+  };
 }
 
 /**
@@ -243,7 +249,7 @@ function observedResourceWrite(input: {
 function revivedResourceWrite(
   input: Parameters<typeof observedResourceWrite>[0],
 ): ResourceWrite | null {
-  const { record, location, classification, parent, rank, fence } = input;
+  const { record, location, classification, parent, rank, locationVersion, fence } = input;
   const current = record.resource;
   if (current.lifecycle.kind !== "terminal" || current.obligations.cleanup) return null;
   if (fence.resources?.get(current.handle)?.revision !== current.revision) return null;
@@ -259,6 +265,7 @@ function revivedResourceWrite(
     canonical: location,
     canonicalParent: parent,
     canonicalRank: rank,
+    canonicalLocationVersion: locationVersion,
     observationVersion: input.observationVersion,
     lifecycle: { kind: "acknowledged", availabilityGeneration: null },
     revivedFrom: {
@@ -281,6 +288,7 @@ function discoveredResource(entry: CatalogFileEntry, location: ResourceLocation)
     canonical: location,
     canonicalParent: catalogEntryParent(entry, location),
     canonicalRank: entry.rank,
+    canonicalLocationVersion: entry.locationVersion,
     observationVersion: entry.observationVersion,
     lifecycle: { kind: "acknowledged", availabilityGeneration: null },
     aliases: {},
@@ -297,6 +305,7 @@ function joinedReservation(
     location: ResourceLocation;
     parent: ParentRef;
     rank?: string | null;
+    locationVersion?: string;
     classification: CatalogFileClassification;
   },
 ): ResourceWrite | null {
@@ -346,6 +355,7 @@ export function planCatalogInstallation(input: {
         classification: classificationFor(entry),
         parent: catalogEntryParent(entry, location),
         rank: entry.rank,
+        locationVersion: entry.locationVersion,
         fence,
         observationVersion: entry.observationVersion,
       });
@@ -358,6 +368,7 @@ export function planCatalogInstallation(input: {
       location,
       parent: catalogEntryParent(entry, location),
       rank: entry.rank,
+      locationVersion: entry.locationVersion,
       classification: classificationFor(entry),
     });
     if (joined) {

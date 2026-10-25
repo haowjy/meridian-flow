@@ -82,6 +82,7 @@ export function planFolderCatalogInstallation(input: {
         observationVersion: entry.observationVersion,
         canonicalParent: catalogEntryParent(entry, location),
         canonicalRank: entry.rank,
+        canonicalLocationVersion: entry.locationVersion,
         canonicalOrderPolicy: entry.orderPolicy,
         intents: [],
       },
@@ -103,6 +104,7 @@ export function planFolderCatalogInstallation(input: {
         entry.observationVersion,
         entry.rank,
         entry.orderPolicy,
+        entry.locationVersion,
       );
       if (write) writes.push(write);
       continue;
@@ -122,6 +124,7 @@ export function planFolderCatalogInstallation(input: {
         observationVersion: entry.observationVersion,
         canonicalParent: catalogEntryParent(entry, location),
         canonicalRank: entry.rank,
+        canonicalLocationVersion: entry.locationVersion,
         canonicalOrderPolicy: entry.orderPolicy,
       },
     });

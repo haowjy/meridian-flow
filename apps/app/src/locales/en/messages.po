@@ -141,6 +141,11 @@ msgstr "{0, plural, one {Moved # item to {destinationName}.} other {Moved # item
 msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr "{0, plural, one {read # document} other {read # documents}}"
 
+#. placeholder {0}: moved.length
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0, plural, one {Reordered # item.} other {Reordered # items.}}"
+msgstr "{0, plural, one {Reordered # item.} other {Reordered # items.}}"
+
 #. placeholder {0}: others.length
 #: src/features/editor/DocumentDraftHint.tsx
 msgid "{0, plural, other {# Works have drafts for this}}"
@@ -1804,6 +1809,11 @@ msgstr "Couldn’t rename this Work. Try again."
 msgid "Couldn't rename. Use Rename in the file list to try again."
 msgstr "Couldn't rename. Use Rename in the file list to try again."
 
+#. placeholder {0}: lost.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Couldn't reorder {0}."
+msgstr "Couldn't reorder {0}."
+
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
 msgid "Couldn't restore {0}."
@@ -1818,6 +1828,11 @@ msgstr "Couldn't restore {0}. A file is in the way."
 #: src/features/project/context/document-delete-undo.tsx
 msgid "Couldn't restore {0}. Try again."
 msgstr "Couldn't restore {0}. Try again."
+
+#. placeholder {0}: lost.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Couldn't restore {0}'s position."
+msgstr "Couldn't restore {0}'s position."
 
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Couldn't restore {name}."
@@ -3878,6 +3893,11 @@ msgstr "Reopen draft"
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Reopens the documents you had open when you switch devices."
 msgstr "Reopens the documents you had open when you switch devices."
+
+#. placeholder {0}: first.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Reordered {0}."
+msgstr "Reordered {0}."
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"

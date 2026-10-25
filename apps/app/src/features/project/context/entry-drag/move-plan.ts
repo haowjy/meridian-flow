@@ -5,7 +5,11 @@
  * synchronous: hovering plans on every `dragover`.
  */
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
-import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type {
+  ContextOwner,
+  ContextSiblingPosition,
+  ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import {
   type FolderNamespaceRecord,
   type ParentRef,
@@ -34,6 +38,7 @@ export type MoveArea = {
 /** The project's current placement: every catalog and folder journal, not just what a list shows. */
 export type PlacementView = {
   records: readonly ResourceRecord[];
+  folders?: readonly FolderNamespaceRecord[];
   placement: Pick<
     ResourcePlacement,
     "resourceLocation" | "parentForResource" | "folderLocation" | "parentForFolder" | "childrenAt"
@@ -57,6 +62,11 @@ type PlacedEntry = {
   parent: ParentRef;
 };
 
+export type SiblingPositionWitness = {
+  beforeId?: string;
+  afterId?: string;
+};
+
 /** One row the replica admitted: where it was and under what name, where it went and the name it arrived under. */
 export type MoveEffect = {
   entry: EntryRef;
@@ -64,6 +74,10 @@ export type MoveEffect = {
   previousName: string;
   before: ParentRef;
   after: ParentRef;
+  previousPosition: SiblingPositionWitness;
+  /** The placement this effect admitted; used to recognize a later reorder of the same entry. */
+  position?: ContextSiblingPosition;
+  action: "move" | "reorder";
   /** The replica intent's operation; absent when the replica had nothing to change. */
   operationId?: string;
 };
@@ -76,6 +90,7 @@ export type MoveRow = {
   typed?: string;
   before: ParentRef;
   after: ParentRef;
+  position?: ContextSiblingPosition;
 };
 
 type MovePlan =
@@ -149,19 +164,29 @@ function dropNested<T extends { ref: EntryRef }>(
 /** A folder carries its contents, so a row inside a carried folder is dropped from the carry. */
 type Refusal = "inside-itself" | "already-there";
 
-function refusalFor(view: PlacementView, source: PlacedEntry, into: ParentRef): Refusal | null {
+function refusalFor(
+  view: PlacementView,
+  source: PlacedEntry,
+  into: ParentRef,
+  position?: ContextSiblingPosition,
+): Refusal | null {
   if (source.ref.kind === "folder" && into.kind === "folder" && within(view, into, source.ref.id))
     return "inside-itself";
-  return sameParent(source.parent, into) ? "already-there" : null;
+  return sameParent(source.parent, into) && !position ? "already-there" : null;
 }
 
 /**
  * Why `ref` can't move into `into`, judged by identity from the placement graph
  * (the same rule a drop uses); null when it can or when `ref` isn't placed yet.
  */
-export function moveRefusal(view: PlacementView, ref: EntryRef, into: ParentRef): Refusal | null {
+export function moveRefusal(
+  view: PlacementView,
+  ref: EntryRef,
+  into: ParentRef,
+  position?: ContextSiblingPosition,
+): Refusal | null {
   const placed = placeEntryRef(view, ref);
-  return placed ? refusalFor(view, placed, into) : null;
+  return placed ? refusalFor(view, placed, into, position) : null;
 }
 
 /** The same folder, or the same area top level (project areas ignore the owner). */
@@ -210,7 +235,7 @@ export function planMove(
   if (sources.some((source) => entrySystem(source.location.scheme, source.location) !== system))
     return NONE;
 
-  const refusals = sources.map((source) => refusalFor(view, source, into));
+  const refusals = sources.map((source) => refusalFor(view, source, into, target.position));
   if (refusals.includes("inside-itself")) return { kind: "inside-itself" };
   // Rows already there stay put; a taken name never refuses (the row arrives at the next free name).
   const moves = sources.flatMap((source, index) =>
@@ -221,6 +246,7 @@ export function planMove(
             name: source.name,
             before: source.parent,
             after: into,
+            ...(target.position ? { position: target.position } : {}),
           },
         ]
       : [],
@@ -236,19 +262,105 @@ export function planMove(
  * that left and came back from one that never left; both return.)
  */
 export function planUndo(view: PlacementView, effects: readonly MoveEffect[]) {
+  const planned = new Set<string>();
   return effects.flatMap((effect) => {
     const now = placeEntryRef(view, effect.entry);
-    return now && now.name === effect.name && sameParent(now.parent, effect.after)
-      ? [
-          {
-            entry: effect.entry,
-            name: effect.previousName,
-            before: effect.after,
-            after: effect.before,
-          },
-        ]
-      : [];
+    if (
+      !now ||
+      now.name !== effect.name ||
+      !sameParent(now.parent, effect.after) ||
+      !placementIsFresh(view, effect)
+    )
+      return [];
+    const row = {
+      entry: effect.entry,
+      name: effect.previousName,
+      before: effect.after,
+      after: effect.before,
+      position: restorePosition(view, effect, planned),
+    };
+    planned.add(effect.entry.id);
+    return [row];
   });
+}
+
+function restorePosition(
+  view: PlacementView,
+  effect: MoveEffect,
+  planned: ReadonlySet<string>,
+): ContextSiblingPosition {
+  const siblings = view.placement
+    .childrenAt(effect.before, view.records)
+    .filter((entry) => entry.entryId !== effect.entry.id);
+  if (
+    effect.previousPosition.beforeId &&
+    (planned.has(effect.previousPosition.beforeId) ||
+      siblings.some((entry) => entry.entryId === effect.previousPosition.beforeId))
+  )
+    return { kind: "before", siblingId: effect.previousPosition.beforeId };
+  if (
+    effect.previousPosition.afterId &&
+    (planned.has(effect.previousPosition.afterId) ||
+      siblings.some((entry) => entry.entryId === effect.previousPosition.afterId))
+  )
+    return { kind: "after", siblingId: effect.previousPosition.afterId };
+  return effect.previousPosition.beforeId ? { kind: "start" } : { kind: "end" };
+}
+
+function placementIsFresh(view: PlacementView, effect: MoveEffect): boolean {
+  if (!effect.operationId) return true;
+  const record =
+    effect.entry.kind === "folder" ? undefined : recordFor(view.records, effect.entry.id);
+  const intents =
+    effect.entry.kind === "folder"
+      ? view.folders?.find((folder) => folder.folderId === effect.entry.id)?.intents
+      : record?.intents;
+  if (!intents) return true;
+  const intent = intents.find((candidate) => candidate.operationId === effect.operationId);
+  if (!intent) return true;
+  const newerIntent = intents.some(
+    (candidate) =>
+      candidate.sequence > intent.sequence &&
+      (candidate.desired.kind === "set-location" ||
+        candidate.desired.kind === "set-folder-location") &&
+      candidate.state !== "cancelled" &&
+      candidate.state !== "superseded" &&
+      candidate.state !== "unexecutable-after-terminal",
+  );
+  if (newerIntent) return false;
+  const outcome = intent.attempts.at(-1)?.outcome;
+  const receipt = outcome?.kind === "operation" ? outcome.receipt : null;
+  const acceptedLocationVersion =
+    receipt?.result.ok && "locationVersion" in receipt.result.value
+      ? receipt.result.value.locationVersion
+      : undefined;
+  const canonicalLocationVersion =
+    effect.entry.kind === "folder"
+      ? view.folders?.find((folder) => folder.folderId === effect.entry.id)
+          ?.canonicalLocationVersion
+      : record?.resource.canonicalLocationVersion;
+  const canonicalObservationVersion =
+    effect.entry.kind === "folder"
+      ? view.folders?.find((folder) => folder.folderId === effect.entry.id)?.observationVersion
+      : record?.resource.observationVersion;
+  if (
+    acceptedLocationVersion &&
+    canonicalLocationVersion &&
+    canonicalObservationVersion &&
+    receipt &&
+    BigInt(canonicalObservationVersion) >= BigInt(receipt.observationVersion)
+  )
+    return canonicalLocationVersion === acceptedLocationVersion;
+  const position = effect.position;
+  if (!position) return true;
+  const siblings = view.placement.childrenAt(effect.after, view.records);
+  const at = siblings.findIndex((entry) => entry.entryId === effect.entry.id);
+  if (at < 0) return false;
+  if (position.kind === "start") return at === 0;
+  if (position.kind === "end") return at === siblings.length - 1;
+  if (!("siblingId" in position)) return false;
+  const anchor = siblings.findIndex((entry) => entry.entryId === position.siblingId);
+  return anchor >= 0 && at === anchor + (position.kind === "after" ? 1 : -1);
 }
 
 const UNANSWERED = new Set(["pending", "submitted", "received"]);

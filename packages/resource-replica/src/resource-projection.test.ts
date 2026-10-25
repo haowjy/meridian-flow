@@ -8,6 +8,7 @@
 import { expect, it } from "vitest";
 import { createResourcePlacement } from "./folder-projection";
 import { entries, move, node } from "./namespace-schedule-fixtures";
+import { projectOptimisticSiblingOrder } from "./optimistic-sibling-order";
 import { prepareNamespaceAttempt, recordNamespaceOutcome } from "./resource-namespace";
 import {
   projectResourceLocation,
@@ -100,6 +101,64 @@ it("projects only the requesting project's durable location intention", () => {
     path: "/moved/opening",
     provisional: false,
   });
+
+  // Cross-record placement replay follows durable admission order, not record iteration order.
+  const canonical = [
+    { ...entries[0], orderPolicy: "default" as const },
+    { ...node("P", "P"), orderPolicy: "default" as const },
+    node("A", "P/A", "P", "file"),
+    node("B", "P/B", "P", "file"),
+    node("C", "P/C", "P", "file"),
+  ];
+  const reordered = [
+    { id: "A", admissionOrder: 2, position: { kind: "after" as const, siblingId: "B" } },
+    { id: "B", admissionOrder: 1, position: { kind: "after" as const, siblingId: "C" } },
+  ].map(({ id, admissionOrder, position }) => {
+    const reserved = reserveResourceDocument({
+      projectId: "project-a",
+      handle: id,
+      documentId: id,
+      databaseName: id,
+      schema: "schema",
+      intentId: `create-${id}`,
+    }).next;
+    reserved.resource.canonical = {
+      scheme: "manuscript",
+      path: `/P/${id}`,
+      name: id,
+      workId: null,
+    };
+    reserved.resource.canonicalParent = { kind: "folder", folderId: "P" };
+    const write = planResourceLocation({
+      record: reserved,
+      projectId: "project-a",
+      intentId: `move-${id}`,
+      eligibleAt: 1,
+      admissionOrder,
+      destination: {
+        parent: { kind: "folder", folderId: "P" },
+        name: id,
+        position,
+      },
+    });
+    if (!write) throw new Error("Missing reorder");
+    return write.next;
+  });
+  const optimistic = projectOptimisticSiblingOrder({
+    projectId: "project-a",
+    canonical,
+    projected: canonical,
+    records: reordered,
+    folders: [],
+  });
+  expect(
+    optimistic
+      .flatMap((entry) =>
+        (entry.kind === "file" || entry.kind === "folder") && entry.parentId === "P" ? [entry] : [],
+      )
+      .sort((left, right) => (left.rank ?? "").localeCompare(right.rank ?? ""))
+      .map((entry) => entry.entryId),
+  ).toEqual(["C", "B", "A"]);
 });
 
 it("prefers a current server identity over another resource's obsolete remint alias", () => {
