@@ -1,4 +1,10 @@
-import type { CatalogScope } from "@meridian/contracts/protocol";
+import type {
+  CatalogAuthorityEntry,
+  CatalogFileEntry,
+  CatalogFolderEntry,
+  CatalogScope,
+} from "@meridian/contracts/protocol";
+import { catalogScopeKey } from "@meridian/contracts/protocol";
 import {
   type CatalogCacheView,
   catalogViewFromCheckpoint,
@@ -15,6 +21,11 @@ import {
 } from "@/client/query/useContextCatalog";
 import { useIsProjectPendingCreation } from "@/client/query/useProjectCreation";
 import { useIsThreadPendingCreation } from "@/client/stores";
+import {
+  authoritativeReferenceForFile,
+  folderReferenceForEntry,
+  referenceAuthorityIndex,
+} from "@/core/completion/reference-policy";
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
 import {
   useAccountResourceProjection,
@@ -80,8 +91,62 @@ export function useReferenceBrowserCatalog(
                   )
                 : null;
             };
+            let referenceIndex: Map<
+              string,
+              NonNullable<ReturnType<AtReferenceCatalog["resolveReference"]>>
+            > | null = null;
+            const buildReferenceIndex = () => {
+              const authorities: CatalogAuthorityEntry[] = [];
+              const files: CatalogFileEntry[] = [];
+              const folders: CatalogFolderEntry[] = [];
+              for (const scope of scopes) {
+                const view = read(scope);
+                if (!view) continue;
+                for (const entry of view.entries.values()) {
+                  if (entry.kind === "authority") authorities.push(entry);
+                  else if (entry.kind === "file") files.push(entry);
+                  else if (entry.kind === "folder") folders.push(entry);
+                }
+              }
+              const authorityIndex = referenceAuthorityIndex(authorities);
+              const next = new Map<
+                string,
+                NonNullable<ReturnType<AtReferenceCatalog["resolveReference"]>>
+              >();
+              for (const entry of files) {
+                const reference = authoritativeReferenceForFile(entry, authorityIndex);
+                if (reference)
+                  next.set(`file:${entry.entryId}`, {
+                    kind: "file",
+                    rowId: `file:${entry.entryId}`,
+                    label: entry.name,
+                    location: entry.path.slice(0, -1).join("/"),
+                    fileKind: entry.editable ? "document" : "asset",
+                    aliases: entry.aliases,
+                    matchedAlias: null,
+                    action: { type: "select", reference },
+                  });
+              }
+              for (const entry of folders) {
+                const reference = folderReferenceForEntry(entry, authorityIndex);
+                if (reference)
+                  next.set(`folder:${entry.entryId}`, {
+                    kind: "folder-mention",
+                    rowId: `folder-mention:${catalogScopeKey(entry.scope)}:${entry.entryId}`,
+                    label: entry.name,
+                    location: entry.path.slice(0, -1).join("/"),
+                    action: { type: "select", reference },
+                  });
+              }
+              return next;
+            };
+            const resolveReference: AtReferenceCatalog["resolveReference"] = (reference) => {
+              referenceIndex ??= buildReferenceIndex();
+              return referenceIndex.get(`${reference.kind}:${reference.id}`) ?? null;
+            };
             return {
               label,
+              resolveReference,
               openContext: () => {
                 for (const scope of scopes)
                   void queryClient.prefetchQuery(
@@ -98,14 +163,17 @@ export function useReferenceBrowserCatalog(
                       key[1] === projectId &&
                       key[2] === "context-catalog" &&
                       (event.type === "updated" || event.type === "removed")
-                    )
+                    ) {
+                      referenceIndex = null;
                       listener();
+                    }
                   });
                   const stopProjection = resources.observeProjection(
                     projectId,
                     (next) => {
                       snapshot = next;
                       projectionError = null;
+                      referenceIndex = null;
                       listener();
                     },
                     (error) => {

@@ -52,6 +52,7 @@ function mount(): Editor {
             read: () => catalog,
             acquire: async () => catalog,
           },
+          resolveReference: () => null,
           openContext: () => ({ warmScopes: [scope] }),
           label: "Reference a file",
           holderUri: "manuscript://volume-1/chapter-2.md",

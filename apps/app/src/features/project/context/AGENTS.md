@@ -30,8 +30,10 @@ chat resources rather than ordinary Editor tabs.
 - Selection and dragging (`entry-drag/`): one desktop list is one selection,
   one drop route and one drop scope (`useEntryList`/`EntryList`). They carry
   identities, never placement; plans read placement from the replica at hover,
-  drop and Undo. Rows move within one system only. Desktop only; phones publish
-  Move… directly to their notice surface, and every drop also has that menu path.
+  drop and Undo. Rows move within one system only. A writing surface may copy
+  those identities into references through its own drop extension; that drop
+  never enters the tree's move route. Desktop only; phones publish Move… directly
+  to their notice surface, and every move drop also has that menu path.
 - Drop dispatch (`tree-drop/`) is the one scope that row moves and desktop
   import (#798) share; add a route, not a second scope. A refused drop is not
   an error: no fill, no red, the pointer hint names the reason.

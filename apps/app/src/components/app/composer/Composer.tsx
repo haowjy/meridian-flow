@@ -24,8 +24,11 @@ import type { DocumentReference, StableReferenceAuthority } from "@/core/complet
 import { ChromeKernelExtension, getEditorChrome } from "@/core/editor/chrome";
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
 import { AtReferenceExtension } from "@/core/editor/extensions/at-reference";
+import { ReferenceDropExtension } from "@/core/editor/extensions/reference-drop";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
 import { AtReferenceMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
+import { activeEntryDrag } from "@/features/project/context/entry-drag/drag-session";
+import { clearDragHint, showDragHint } from "@/features/project/context/tree-drop/drag-hint";
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
 import { ComposerSkillAtom } from "./ComposerSkillAtom";
@@ -252,6 +255,33 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           };
         },
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),
+      }),
+      ReferenceDropExtension.configure({
+        activeDrag: activeEntryDrag,
+        content: (schema, entries) => {
+          const catalog = referenceCatalogRef.current;
+          if (!catalog) return null;
+          const nodes = entries.map((entry) => {
+            const row = catalog.resolveReference(entry.ref);
+            return row
+              ? schema.nodeFromJSON(
+                  pickedReferenceContent(
+                    row.action.reference,
+                    row.kind === "file" ? row.fileKind : null,
+                  ),
+                )
+              : null;
+          });
+          return nodes.every((node) => node !== null) ? nodes : null;
+        },
+        label: (kind) =>
+          kind === "accept"
+            ? t`Mention`
+            : kind === "unavailable"
+              ? t`Can’t mention that`
+              : t`Can’t mention there`,
+        showHint: (owner, verdict, point) => showDragHint(owner, verdict, point),
+        clearHint: clearDragHint,
       }),
       ComposerCommandExtension.configure({
         catalog: () => {
