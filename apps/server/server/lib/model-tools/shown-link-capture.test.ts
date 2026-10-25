@@ -262,6 +262,7 @@ type Rig = Awaited<ReturnType<typeof runtimeScenario>>;
 /** An `@` reference to one of the harness documents. */
 const reference = (documentId: string, name: string) => ({
   type: "reference" as const,
+  kind: "document" as const,
   text: `@${name}`,
   documentId,
   uri: `user://${name}`,
