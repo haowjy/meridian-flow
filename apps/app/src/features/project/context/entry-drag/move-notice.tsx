@@ -6,7 +6,9 @@
  * screen), and Undo itself. The notice shares its
  * surface's one notice place with delete notices (`useNoticeSlot`); a newer
  * notice of either kind replaces it. It stays until then, Dismiss, or leaving
- * the project: Undo is not a race.
+ * the project: Undo is not a race. After Undo the notice leaves at once but
+ * its surface keeps a hidden window on the reverse moves until the server
+ * settles them, so a refused Undo comes back as "Couldn't move X back.".
  */
 import { plural, t } from "@lingui/core/macro";
 import {
@@ -25,7 +27,7 @@ import {
   useAccountResourceReplica,
 } from "../account-feature-context";
 import { type MoveResult, undoMove } from "./execute-move";
-import { planUndo, refusedMoves } from "./move-plan";
+import { type MoveEffect, moveSettlement, planUndo } from "./move-plan";
 
 type MoveWindow = {
   /** Stays with the notice while its message or Undo changes. */
@@ -41,6 +43,10 @@ type MoveWindow = {
   undoing: boolean;
   /** Puts focus back in a mounted list when the notice leaves under it. */
   refocus?: () => void;
+  /** Undo's reverse moves the server has not answered; watched for a refusal. */
+  reverse?: readonly MoveEffect[];
+  /** Undo closed the notice; it shows again only if the server refuses a reverse move. */
+  hidden?: boolean;
 };
 
 type MoveNotices = {
@@ -51,7 +57,10 @@ type MoveNotices = {
     destinationName: string,
     refocus?: () => void,
   ) => void;
-  /** Resolves true once every row went back and the notice closed. */
+  /**
+   * Resolves true once the replica took every row back and the notice closed;
+   * the notice returns if the server then refuses one.
+   */
   undo: (surface: NoticeSurface, id: number) => Promise<boolean>;
   dismiss: (surface: NoticeSurface, id: number) => void;
 };
@@ -139,15 +148,33 @@ export function MoveNoticesProvider({
   useEffect(() => {
     for (const [surface, window] of windows) {
       if (window.undoing) continue;
-      const refused = new Set(refusedMoves(projection, window.result.moved));
+      if (window.reverse) {
+        const { refused, pending } = moveSettlement(projection, window.reverse);
+        if (refused.length > 0)
+          settle(surface, window.id, (now) => {
+            const result: MoveResult = {
+              moved: [],
+              failed: [...now.result.failed, ...wentBack(refused)],
+            };
+            return {
+              ...now,
+              result,
+              message: describeUndoFailure(result) ?? now.message,
+              reverse: pending.length > 0 ? pending : undefined,
+              hidden: false,
+            };
+          });
+        // Every reverse move landed or was overtaken by the writer's next change.
+        else if (pending.length === 0)
+          settle(surface, window.id, (now) => (now.hidden ? null : { ...now, reverse: undefined }));
+        continue;
+      }
+      const refused = new Set(moveSettlement(projection, window.result.moved).refused);
       if (refused.size > 0) {
         settle(surface, window.id, (now) => {
           const result: MoveResult = {
             moved: now.result.moved.filter((effect) => !refused.has(effect)),
-            failed: [
-              ...now.result.failed,
-              ...[...refused].map((effect) => ({ entry: effect.entry, name: effect.previousName })),
-            ],
+            failed: [...now.result.failed, ...wentBack([...refused])],
           };
           return {
             ...now,
@@ -171,12 +198,22 @@ export function MoveNoticesProvider({
       const window = windows.get(surface);
       if (window?.id !== id || !window.undoable) return false;
       settle(surface, id, (now) => ({ ...now, undoing: true }));
-      const failure = await undoMove(window.result.moved, { resources, projectId }).then(
-        describeUndoFailure,
-        () => t`Couldn't move it back.`,
-      );
+      const back = await undoMove(window.result.moved, { resources, projectId }).catch(() => null);
+      const result: MoveResult = { moved: [], failed: back?.failed ?? [] };
+      const failure = back ? describeUndoFailure(result) : t`Couldn't move it back.`;
+      const reverse = back && back.moved.length > 0 ? back.moved : undefined;
       settle(surface, id, (now) =>
-        failure ? { ...now, message: failure, undoable: false, undoing: false } : null,
+        failure || reverse
+          ? {
+              ...now,
+              result,
+              message: failure ?? now.message,
+              undoable: false,
+              undoing: false,
+              reverse,
+              hidden: !failure,
+            }
+          : null,
       );
       return !failure;
     },
@@ -226,7 +263,7 @@ export function MoveNotice({ surface, className }: { surface: NoticeSurface; cla
   const { windows, undo, dismiss } = useMoveNotices();
   const ref = useRef<HTMLDivElement>(null);
   const window = windows.get(surface);
-  if (!window) return null;
+  if (!window || window.hidden) return null;
   // Asked before anything awaits: Undo's button disables while it runs and drops focus.
   const holdsFocus = () => ref.current?.contains(document.activeElement) ?? false;
   return (
@@ -291,6 +328,11 @@ export function describeRenames(renamed: readonly { name: string; as: string }[]
     one: "# item will be renamed",
     other: "# items will be renamed",
   });
+}
+
+/** A refused row went back where it came from, under its name there. */
+function wentBack(effects: readonly MoveEffect[]) {
+  return effects.map((effect) => ({ entry: effect.entry, name: effect.previousName }));
 }
 
 /** Null when every row went back. */

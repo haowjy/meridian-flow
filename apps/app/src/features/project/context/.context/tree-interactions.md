@@ -269,8 +269,13 @@ stays until dismissed. A row the server refuses goes back with its failure mark,
 and the notice stops saying it moved: "Couldn't move chapter-3." without Undo,
 or "Moved 2 items to Act 2. Couldn't move chapter-3." when the rest landed.
 Refused means the replica settled that move's own operation (`MoveEffect.operationId`)
-as needs-repair (`refusedMoves`); a row the writer changed since supersedes that
-intent, so it only loses Undo.
+as needs-repair (`moveSettlement`); a row the writer changed since supersedes that
+intent, so it only loses Undo. Undo closes the notice as soon as the replica takes
+the rows back, but the surface keeps a hidden window on the reverse moves until
+the server settles them. If it refuses one, the notice comes back as "Couldn't
+move chapter-3 back." with Dismiss only. The hidden window goes once every reverse
+move is accepted or superseded by the writer's next change, or when a newer
+notice takes the surface or the project changes.
 
 Move… publishes through the required surface supplied around its rows, whether
 or not a list is mounted. A desktop list optionally selects the moved row and

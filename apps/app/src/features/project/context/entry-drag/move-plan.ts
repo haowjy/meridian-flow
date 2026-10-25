@@ -255,26 +255,30 @@ export function planUndo(view: PlacementView, effects: readonly MoveEffect[]) {
   });
 }
 
+const PENDING_INTENT = new Set(["pending", "submitted", "received"]);
+
 /**
- * The moves the server refused: the row's intent for that operation settled as
- * needs-repair, so the row went back to its source carrying the failure mark. A
- * row the writer moved, renamed or deleted since supersedes that intent and is
- * not counted.
+ * Where the server stands on each move. Refused: the row's intent for that
+ * operation settled as needs-repair, so the row went back to where it came
+ * from carrying the failure mark. Pending: the server has not answered yet. A
+ * move the server accepted, or one the writer superseded by moving, renaming
+ * or deleting the row since, is neither.
  */
-export function refusedMoves(
+export function moveSettlement(
   view: { records: readonly ResourceRecord[]; folders: readonly FolderNamespaceRecord[] },
   effects: readonly MoveEffect[],
-): MoveEffect[] {
-  return effects.filter((effect) => {
-    if (!effect.operationId) return false;
+): { refused: MoveEffect[]; pending: MoveEffect[] } {
+  const refused: MoveEffect[] = [];
+  const pending: MoveEffect[] = [];
+  for (const effect of effects) {
+    if (!effect.operationId) continue;
     const intents =
       effect.entry.kind === "folder"
         ? view.folders.find((folder) => folder.folderId === effect.entry.id)?.intents
         : recordFor(view.records, effect.entry.id)?.intents;
-    return (
-      intents?.some(
-        (intent) => intent.operationId === effect.operationId && intent.state === "needs-repair",
-      ) ?? false
-    );
-  });
+    const state = intents?.find((intent) => intent.operationId === effect.operationId)?.state;
+    if (state === "needs-repair") refused.push(effect);
+    else if (state && PENDING_INTENT.has(state)) pending.push(effect);
+  }
+  return { refused, pending };
 }
