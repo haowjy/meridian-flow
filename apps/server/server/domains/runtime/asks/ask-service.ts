@@ -9,7 +9,7 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
   AskAnswer,
   AskResolution,
-  JsonObject,
+  JsonValue,
   QuestionAskPayload,
   ThreadAsk,
 } from "@meridian/contracts/threads";
@@ -25,6 +25,12 @@ export type AskAnswerResult =
   | { ok: false; code: "ask_not_open" | "invalid_answer"; ask?: ThreadAsk };
 
 export type AskToolResultPlan = { kind: "from_resolution" };
+
+export type AskToolResult = {
+  output: JsonValue;
+  result: JsonValue;
+  isError: boolean;
+};
 
 export type AskContinuationPlan = { kind: "queue" } | { kind: "none" };
 
@@ -154,16 +160,14 @@ export function createAskService(deps: {
     )
       throw new Error("Live ask is not attached to its active asking turn");
     const blocks = await deps.repos.blocks.listByTurn(turn.id);
-    const result = await toolResult(input.ask, input.plan.toolResult);
+    const result = await resolveToolResult(input.ask, input.plan.toolResult);
     const block = contentForBlockInput({
       turnId: turn.id,
       blockType: "tool_result",
       sequence: Math.max(-1, ...blocks.map((candidate) => candidate.sequence)) + 1,
       content: {
         toolCallId: input.ask.toolCallId,
-        output: result,
-        result,
-        isError: false,
+        ...result,
       },
       status: "complete",
     });
@@ -179,9 +183,7 @@ export function createAskService(deps: {
         {
           type: "tool.result" as const,
           toolCallId: input.ask.toolCallId,
-          output: result,
-          result,
-          isError: false,
+          ...result,
         },
         input.plan.kind === "resume"
           ? { type: "turn.completed" as const, turn: completed }
@@ -191,10 +193,15 @@ export function createAskService(deps: {
     }));
   }
 
-  async function toolResult(ask: StoredAsk, plan: AskToolResultPlan): Promise<JsonObject> {
+  async function resolveToolResult(
+    ask: StoredAsk,
+    plan: AskToolResultPlan,
+  ): Promise<AskToolResult> {
     switch (plan.kind) {
-      case "from_resolution":
-        return askToolResult(ask);
+      case "from_resolution": {
+        const result = askToolResult(ask);
+        return { output: result, result, isError: false };
+      }
     }
   }
 
@@ -203,14 +210,21 @@ export function createAskService(deps: {
     ask: StoredAsk,
     plan: AskContinuationPlan,
   ) {
-    if (plan.kind === "none") return;
-    await producer.enqueue({
-      threadId: ask.threadId,
-      intent: "control",
-      provenance: { kind: "system", source: "ask" },
-      body: { kind: "ask_resolved", askId: ask.id },
-      idempotencyKey: `ask-resolved:${ask.id}`,
-    });
+    switch (plan.kind) {
+      case "none":
+        return;
+      case "queue":
+        await producer.enqueue({
+          threadId: ask.threadId,
+          intent: "control",
+          provenance: { kind: "system", source: "ask" },
+          body: { kind: "ask_resolved", askId: ask.id },
+          idempotencyKey: `ask-resolved:${ask.id}`,
+        });
+        return;
+      default:
+        plan satisfies never;
+    }
   }
 
   async function resolve(input: {
