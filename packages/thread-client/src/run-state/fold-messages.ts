@@ -98,9 +98,16 @@ export function isBlockedForUsage(view: RunStateView, userTurnId: string): boole
   return usageBlockedMessages(view).some((item) => item.id === userTurnId);
 }
 
-/** The queued tray: writer messages waiting on the open reply, or all of them while a start is blocked. */
-export function waitingWriterMessages(view: RunStateView): PendingInboxItem[] {
-  const blocked = view.record?.blocked != null;
+/**
+ * The queued tray: writer messages waiting on the open reply, or all of them while delivery is
+ * blocked. `deliveryBlocked` covers a durable ask, which intentionally leaves its messages in
+ * `awaiting_run` rather than materializing turns before the continuation adopts them.
+ */
+export function waitingWriterMessages(
+  view: RunStateView,
+  deliveryBlocked = false,
+): PendingInboxItem[] {
+  const blocked = deliveryBlocked || view.record?.blocked != null;
   return writerItems(view).filter((item) => blocked || item.deliveryState === "waiting");
 }
 

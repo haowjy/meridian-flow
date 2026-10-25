@@ -34,6 +34,7 @@ import {
   isAwaitingExecution,
   isBusy,
   normalizeTurns,
+  queuedWriterTurnStandIns,
   switchState,
   type TurnFacts,
   usageBlockedMessages,
@@ -47,6 +48,7 @@ import { useLineage } from "@/client/query/useLineageTitle";
 import { useTopChat } from "@/client/query/useTopChat";
 import {
   useIsThreadPendingCreation,
+  useOpenAsk,
   useRunStateSlice,
   useThreadActions,
   useThreadStore,
@@ -184,6 +186,7 @@ export function ChatView({
   );
   const brief = useHandoffBrief({ threadId, storedTurns });
   const { view: runState, history } = useRunStateSlice(threadId);
+  const openAsk = useOpenAsk(threadId);
   const replyRetry = useReplyRetry({ threadId, storedTurns });
   // A handoff's brief is on its way the moment the writer lands; until the
   // server's seed arrives the card stands in for it (it has nothing to stop
@@ -201,9 +204,17 @@ export function ChatView({
   const runningBackgroundSubagents = runningSubagents.filter(
     (node) => node.deliveryMode === "background_notification",
   );
+  const queuedWriterItems = useMemo(
+    () => waitingWriterMessages(runState, openAsk !== null),
+    [openAsk, runState],
+  );
   const queuedWriterTurnIds = useMemo(
-    () => new Set(waitingWriterMessages(runState).map((item) => item.id)),
-    [runState],
+    () => new Set(queuedWriterItems.map((item) => item.id)),
+    [queuedWriterItems],
+  );
+  const queuedWriterTurns = useMemo(
+    () => queuedWriterTurnStandIns(threadId, storedTurns, queuedWriterItems),
+    [queuedWriterItems, storedTurns, threadId],
   );
   const hiddenTurnIds = useMemo(() => hiddenWriterTurns(runState), [runState]);
   const usageBlocked = usageBlockedMessages(runState).length > 0;
@@ -227,7 +238,10 @@ export function ChatView({
         : null,
     [derivation?.state, intent, storedTurns, threadId],
   );
-  const standIns = useMemo(() => [...localSeeds, ...replyStandIns], [localSeeds, replyStandIns]);
+  const standIns = useMemo(
+    () => [...localSeeds, ...replyStandIns, ...queuedWriterTurns],
+    [localSeeds, queuedWriterTurns, replyStandIns],
+  );
   const awaitingSubagents = runningBackgroundSubagents.length > 0;
   // The effective sequence every later step reads (`normalizeTurns`): cards, rows, the running
   // reply and the answered controls all start from these facts and none re-derives them.
