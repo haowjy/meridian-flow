@@ -5,6 +5,10 @@ a live module-level connection or register suite hooks at helper import time.
 Each suite creates its own connections and closes them in `afterAll`. Close
 `Database` clients with `closeTestDatabase`, which drains detached work before
 applying a bounded pool shutdown; close bespoke PostgreSQL clients explicitly.
+Suite-owned databases must use the shared disposable-database lifecycle. On a
+managed local run, leave them to the detached collector instead of dropping
+inline: PostgreSQL waits for an immediate checkpoint on every database drop.
+Unmanaged runs still drop inline because they have no collector.
 Shared helpers accept connections explicitly. The server DB setup drains
 detached work after each case, once file-local teardown finishes and before
 suite pool closers run. A file-level drain remains the backstop before the next
