@@ -65,8 +65,12 @@ card (the failed reply under the newest message carries it).
 
 Hand off from a reply with the same two scripts queued. The brief card shows "Handoff brief"
 with Retry in its header and a card with the server's words ("This handoff brief couldn't be
-generated. Try again."). Replace the scripts with a delayed brief (`"delayMs":60000`), wrap `fetch` to
-throw on `/cancel`, press Retry then Stop: "Couldn't stop the brief." with Try again sits on the
+generated. Try again."). Keep this case free of later replies: once a later
+reply completes, the old brief's failure card and Retry disappear. Test that
+separately by queueing a message during a delayed failing brief and confirming
+that it runs after failure. For the Retry/Stop case, replace the scripts with a
+delayed brief (`"delayMs":60000`), wrap `fetch` to throw on `/cancel`, press Retry
+then Stop: "Couldn't stop the brief." with Try again sits on the
 generating brief. Restore `fetch` and press Try again: the brief stops and the card goes.
 
 ## FC-06: the live region clears with its card
