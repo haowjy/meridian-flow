@@ -9,8 +9,8 @@ Sign in with dev-login. Seed a chat with `./mf seed tools/mf/fixtures/basic.json
 then a folder with one document and an empty subfolder:
 
 ```bash
-./mf doc put "manuscript://Act 1/Opening.md"
-./mf doc put "manuscript://Act 1/Battle/Draft.md"
+./mf doc put "manuscript://Act 1/Opening.md" --text "Opening scene"
+./mf doc put "manuscript://Act 1/Battle/Draft.md" --text "Draft"
 ./mf doc rm "manuscript://Act 1/Battle/Draft.md"   # leaves Battle empty
 ```
 
@@ -30,19 +30,44 @@ then a folder with one document and an empty subfolder:
 4. **Editor link.** Open Opening in the Editor and type `@`, then mention Act 1.
    The link chip has a folder icon; the stored Markdown (`./mf doc read
    "manuscript://Act 1/Opening.md"` after the save) is
-   `[Act 1](manuscript://Act%201/)`. Hover shows Act 1. Click it: the drill-in
+   `[Act 1](<../Act 1/>)`. Hover shows Act 1. Click it: the drill-in
    menu opens below the link. Escape closes it and returns the caret to the
    prose. The link menu's Open does the same.
-5. **Rename, then click.** Rename Act 1 to "Act One" in the sidebar. The Editor
-   chip, the composer chip and the Editor hover read "Act One". Clicking any of
-   them opens the menu inside Act One.
-6. **Transcript.** Once sending works (it needs the server lane), send a message
-   with the folder chip. The transcript chip keeps the label it was sent with,
-   and clicking it opens the menu inside the folder after a rename or a move.
-   Delete the folder: the chip turns dashed and opens nothing.
+5. **Rename, then click.** Rename Act 1 to "Act One" in the sidebar. The prose
+   label stays as written, while the Editor hover and every opened menu use
+   "Act One". Clicking the Editor or composer chip opens inside Act One.
+6. **Transcript and model input.** Send a message with the folder chip. It has
+   the folder icon, and clicking it opens inside the folder. Rename or move the
+   folder, then click the sent chip again: the menu opens at the current
+   location, while the message text keeps its send-time label. Run `./mf thread
+   context <thread>` and confirm the user message contains the send-time
+   Markdown link (`[Act 1](<manuscript://Act 1/>)`). Run `./mf thread view
+   <thread> --json` and confirm no folder read was inlined (`readDocuments`
+   remains zero). Delete the folder: the chip turns dashed and opens nothing.
 7. **Deleted folder in an open menu.** Mention a folder in the composer, delete
    the folder from the sidebar, then click the chip. The menu says "This folder
    is no longer available."
+8. **Folder outside the loaded catalogs.** Create another Work and put a note
+   under a Scratch folder, then create a manuscript document containing a link
+   to that qualified folder. This setup keeps the foreign Work's Scratch out of
+   the Editor's local link index:
+
+   ```bash
+   project_id=$(./mf project default --json | jq -r .projectId)
+   work=$(./mf api POST "/api/projects/$project_id/works" \
+     --data '{"name":"Foreign Scratch"}' --json)
+   work_id=$(printf '%s' "$work" | jq -r .id)
+   work_handle=$(printf '%s' "$work" | jq -r .handle)
+   ./mf doc put "scratch://Remote Folder/Seed.md" --work "$work_handle" --text "Seed"
+   ./mf doc put "manuscript://Foreign Folder Link.md" \
+     --text "[Remote Folder](<scratch://@$work_handle/Remote Folder/>)"
+   ```
+
+   Open Foreign Folder Link in the Editor. Remote Folder resolves with a filled
+   folder chip, and the console has no `catalog.folderAt is not a function`
+   error. Delete the Work with `./mf api DELETE "/api/works/$work_id"`. Without
+   reloading, the chip turns dashed: the server's `gone` answer reached a link
+   whose target catalog was never loaded by this Editor.
 
 Record the commit, date, stack, outcome and screenshot paths in the active work
 directory after a run.
