@@ -44,8 +44,8 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { PMNode } from "@meridian/markup";
 import { decodeStateVector } from "yjs";
 import {
-  deferUntilDrizzleCommit,
   deferUntilDrizzleRollback,
+  runAfterDrizzleCommit,
 } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { CollabDomain } from "../../collab/index.js";
@@ -143,6 +143,34 @@ export interface ContextCopyCommand {
   copy(input: ContextCopyInput): Promise<Result<CopyContextEntriesResult, ContextError>>;
 }
 
+/**
+ * Prepares in flight in this process, by operation ID: a duplicate request waits for the
+ * first instead of reading every source and binding the tree again. Only a committed receipt
+ * is durable; another process would still re-prepare.
+ */
+const inFlight = new Map<string, Promise<void>>();
+
+function tryHoldOperation(operationId: string): (() => void) | null {
+  if (inFlight.has(operationId)) return null;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  inFlight.set(operationId, held);
+  return () => {
+    inFlight.delete(operationId);
+    release();
+  };
+}
+
+async function holdOperation(operationId: string): Promise<() => void> {
+  for (;;) {
+    const release = tryHoldOperation(operationId);
+    if (release) return release;
+    await inFlight.get(operationId);
+  }
+}
+
 export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextCopyCommand {
   async function copy(
     input: ContextCopyInput,
@@ -152,28 +180,42 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     const selected = { ...input, sources: outermostRoots(input.sources) };
     const { receipts, commandTransaction } = input.environment;
     // A replay has nothing to read: its answer is stored, and receipts are never deleted.
-    const replay = await receipts.lookup(input.request.operationId);
-    // Reading holds no transaction. A source room that is not open loads through a second
-    // connection, so Copies that each held one while reading would starve the pool they wait on.
-    const prepared = replay ? null : await prepare(selected);
-    let claimed = false;
+    let replay = await receipts.lookup(input.request.operationId);
+    // A duplicate that arrives while the first attempt is still preparing waits for it; the
+    // winner's receipt, when it records one, is then the waiter's answer.
+    const release = replay ? null : await holdOperation(input.request.operationId);
     try {
-      return await receipts.execute(input.request.operationId, receiptCommand(input), async () => {
-        claimed = true;
-        if (!prepared) throw new Error("A stored receipt vanished between its lookup and its use");
-        if (!prepared.ok) return prepared;
-        // The rows name these objects only if this operation commits.
-        const { putKeys } = prepared.value;
-        if (putKeys.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
-        return commandTransaction.run(
-          () => write(selected, prepared.value),
-          [scopeOf(input.destination)],
-          { sourceIds: prepared.value.sourceIds },
+      replay = replay ?? (await receipts.lookup(input.request.operationId));
+      // Reading holds no transaction. A source room that is not open loads through a second
+      // connection, so Copies that each held one while reading would starve the pool they
+      // wait on.
+      const prepared = replay ? null : await prepare(selected);
+      let claimed = false;
+      try {
+        return await receipts.execute(
+          input.request.operationId,
+          receiptCommand(input),
+          async () => {
+            claimed = true;
+            if (!prepared)
+              throw new Error("A stored receipt vanished between its lookup and its use");
+            if (!prepared.ok) return prepared;
+            // The rows name these objects only if this operation commits.
+            const { putKeys } = prepared.value;
+            if (putKeys.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
+            return commandTransaction.run(
+              () => write(selected, prepared.value),
+              [scopeOf(input.destination)],
+              { sourceIds: prepared.value.sourceIds },
+            );
+          },
         );
-      });
+      } finally {
+        // A replay, a mismatch or a throw before the receipt's callback ran leaves them unclaimed.
+        if (!claimed && prepared?.ok) await deps.release.keys(prepared.value.putKeys);
+      }
     } finally {
-      // A replay, a mismatch or a throw before the receipt's callback ran leaves them unclaimed.
-      if (!claimed && prepared?.ok) await deps.release.keys(prepared.value.putKeys);
+      release?.();
     }
   }
 
@@ -402,7 +444,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       if (replans > 0) throw new Error("A copy planned under the namespace lock did not hold");
       planned = await planAndBind(dest, prepared.ready, prepared.documents);
     }
-    await deriveAfterCommit(
+    deriveAfterCommit(
       entries.flatMap((entry) =>
         entry.kind === "file" && prepared.documents.has(entry.copiedFrom)
           ? [entry.id as DocumentId]
@@ -418,7 +460,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
    * answer does not wait for it; a failure is logged by the refresher and the stale sweep
    * recovers the document.
    */
-  async function deriveAfterCommit(documentIds: readonly DocumentId[]): Promise<void> {
+  function deriveAfterCommit(documentIds: readonly DocumentId[]): void {
     if (documentIds.length === 0) return;
     const derive = async () => {
       const queue = [...documentIds];
@@ -429,7 +471,9 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       };
       await Promise.all(Array.from({ length: Math.min(DERIVE_CONCURRENCY, queue.length) }, worker));
     };
-    if (!deferUntilDrizzleCommit(derive)) await derive();
+    runAfterDrizzleCommit(() => {
+      void derive();
+    });
   }
 
   async function resolvedDestination(
