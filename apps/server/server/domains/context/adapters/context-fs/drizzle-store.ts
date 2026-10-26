@@ -225,6 +225,9 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           throw new ContextEntryConflictError("folder");
         return { status: "already-exists" as const, folderId, path: await pathOf(folderId) };
       }
+      // Folder and document ids share the catalog's entry-id space.
+      const [document] = await loadDocumentIdentityRows(this.db, [folderId]);
+      if (document) throw new ContextEntryConflictError("folder");
       await createLiveFolder(this.deps.db, {
         contextSourceId: this.sourceId,
         parentId: input.parentId as FolderId | null,

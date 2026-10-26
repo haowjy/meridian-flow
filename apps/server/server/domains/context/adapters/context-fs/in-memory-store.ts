@@ -292,6 +292,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
         path: locationPath(this.backing, held.parentId, held.name).split("/"),
       };
     }
+    if (this.backing.documents.has(input.id)) throw new ContextEntryConflictError("folder");
     const name = await allocateFilename({ kind: "folder", name: input.name }, ({ filename }) =>
       Promise.resolve(
         this.findFolderRecord(input.parentId, filename) !== null ||
