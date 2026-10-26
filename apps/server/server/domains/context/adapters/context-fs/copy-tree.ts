@@ -1,15 +1,19 @@
 /**
- * Copy's insertion half in one ContextFS source: naming, identity, content and arrival for
- * a tree another source's snapshot described, inside the caller's command transaction.
+ * Copy's destination half in one ContextFS source: naming and identity, planned without a
+ * lock, and the insertion of a plan inside the caller's command transaction.
  *
  * Names are this namespace's, so allocation happens here, against live occupants, hidden
- * occupants (which are taken, never revealed) and the rest of the batch. A copied folder is
- * inserted before its children and keeps its source's own ordering policy, so inserting the
- * children in source order reproduces the source's visible order in a manual folder and
- * leaves name order alone in a default one.
+ * occupants (which are taken, never revealed) and the rest of the batch. Only the roots meet
+ * occupants that already exist: a copied folder is new, so nothing live or hidden can sit
+ * inside it, and the batch's own names are its whole namespace. Planning therefore reads the
+ * destination parent once and holds nothing; the insert re-reads the parent under the lock
+ * and, if the roots would now take other names, answers `replan` instead of inserting.
  *
- * Two passes, because a link may cross roots: mint every identity first, hand back the whole
- * old→new map to `bind` for each document, then write rows and content in one order.
+ * A copied folder is inserted before its children and keeps its source's own ordering policy,
+ * so inserting the children in source order reproduces the source's visible order in a manual
+ * folder and leaves name order alone in a default one. Two passes, because a link may cross
+ * roots: the plan mints every identity first, and the caller binds each document against the
+ * whole old→new map before anything is written.
  */
 
 import {
@@ -22,7 +26,6 @@ import {
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import {
-  type CopyIdentityMap,
   createCopyIdentityMap,
   type DocumentCreationAggregate,
   type MarkdownDocumentStore,
@@ -32,9 +35,11 @@ import type { AdapterFault } from "../../ports/context-adapter.js";
 import type {
   CopiedContent,
   CopyCreatedEntry,
+  CopyOutcome,
+  CopyPlan,
   CopySourceEntry,
-  CopySourceFile,
-  CopySourceFolder,
+  PlannedCopyFile,
+  PlannedCopyNode,
 } from "../../ports/context-copy.js";
 import {
   type ContextDocumentStore,
@@ -50,67 +55,22 @@ export interface CopyTreeDeps {
   holderUri(path: string): string;
 }
 
-type PlannedFolder = {
-  kind: "folder";
-  source: CopySourceFolder;
-  id: string;
-  name: string;
-  /** Scheme-relative path the copy lands at. */
-  path: string;
-  uri: string;
-  children: PlannedNode[];
-};
-
-type PlannedFile = {
-  kind: "file";
-  source: CopySourceFile;
-  id: string;
-  name: string;
-  extension: string;
-  path: string;
-  uri: string;
-  /** The copy's first Yjs state; null when the source has no text. */
-  state: Uint8Array | null;
-  /** What the source read was; the row records it as `metadata.copiedFrom`. */
-  copiedFrom: CopiedFrom | null;
-};
-
-type PlannedNode = PlannedFolder | PlannedFile;
-
-export interface CopyTreeInput {
-  /** Scheme-relative destination folder. */
-  dir: readonly string[];
-  roots: readonly CopySourceEntry[];
-  /** An explicit sibling position for the run of roots: the first lands there, the rest follow. */
-  position?: ContextSiblingPosition;
-  bind(input: {
-    file: CopySourceFile;
-    uri: string;
-    map: CopyIdentityMap;
-  }): Promise<Result<CopiedContent, AdapterFault>>;
-}
-
-export async function insertCopiedTree(
+/** Plan `roots` under `dir`: read the destination parent, write nothing, hold no lock. */
+export async function planCopyTree(
   deps: CopyTreeDeps,
-  input: CopyTreeInput,
-): Promise<Result<CopyCreatedEntry[], AdapterFault>> {
-  const parent = await ensureDestinationParent(deps, input.dir);
-  if (!parent.ok) return parent;
-
-  // Only the roots meet occupants that already exist: a copied folder is new, so nothing
-  // live or hidden can sit inside it, and the batch's own names are the whole namespace there.
+  input: { dir: readonly string[]; roots: readonly CopySourceEntry[] },
+): Promise<CopyPlan> {
+  const parent = await findDestinationParent(deps, input.dir);
   const planned = await planLevel(
     deps,
     [...input.dir],
-    await occupantClaims(deps, parent.value),
+    parent.found ? await occupantClaims(deps, parent.id) : [],
     input.roots,
   );
-  if (!planned.ok) return planned;
-  const minted = planned.value;
-
+  const nodes = flatten(planned);
   const identity = createCopyIdentityMap({
     // Binaries are in the map too: an image inside the copied set must show its copy.
-    documents: flatten(minted).flatMap((node) =>
+    documents: nodes.flatMap((node) =>
       node.kind === "file"
         ? [
             {
@@ -122,7 +82,7 @@ export async function insertCopiedTree(
           ]
         : [],
     ),
-    folders: flatten(minted).flatMap((node) =>
+    folders: nodes.flatMap((node) =>
       node.kind === "folder"
         ? [
             {
@@ -135,19 +95,40 @@ export async function insertCopiedTree(
         : [],
     ),
   });
+  return {
+    dir: input.dir,
+    roots: planned,
+    map: identity,
+    documents: nodes.filter(
+      (node): node is PlannedCopyFile => node.kind === "file" && node.source.fileType === null,
+    ),
+  };
+}
 
-  for (const node of flatten(minted)) {
-    if (node.kind === "folder" || node.source.fileType !== null) continue;
-    const content = await input.bind({ file: node.source, uri: node.uri, map: identity });
-    if (!content.ok) return content;
-    node.state = content.value.state;
-    node.copiedFrom = content.value.copiedFrom;
-  }
+export async function insertCopiedTree(
+  deps: CopyTreeDeps,
+  input: {
+    dir: readonly string[];
+    plan: CopyPlan;
+    contents: ReadonlyMap<string, CopiedContent>;
+    position?: ContextSiblingPosition;
+  },
+): Promise<Result<CopyOutcome, AdapterFault>> {
+  const parent = await ensureDestinationParent(deps, input.dir);
+  if (!parent.ok) return parent;
+  const { plan } = input;
+  if (!(await planHolds(deps, input.dir, parent.value, plan))) return Ok({ kind: "replan" });
+  const minted = plan.roots;
 
   // The catalog reconciles the project's whole scope, so it is refreshed once, after the tree.
   const batch = deps.store.withCatalogBatch();
   try {
-    const created = await insertLevel({ ...deps, store: batch.store }, parent.value, minted);
+    const created = await insertLevel(
+      { ...deps, store: batch.store },
+      parent.value,
+      minted,
+      input.contents,
+    );
     if (!created.ok) return created;
     // The roots land as one run at the position, in the order they were selected.
     let position = input.position;
@@ -163,7 +144,7 @@ export async function insertCopiedTree(
       position = { kind: "after", siblingId: root.id };
     }
     await batch.flush();
-    return created;
+    return Ok({ kind: "copied", entries: created.value });
   } catch (error) {
     if (error instanceof ContextEntryConflictError) {
       return Err({
@@ -175,7 +156,31 @@ export async function insertCopiedTree(
   }
 }
 
-function flatten(nodes: readonly PlannedNode[]): PlannedNode[] {
+/**
+ * Whether the roots would take the names the plan gave them, against the destination as the
+ * caller's lock now holds it. Everything below a root follows from the root's name.
+ */
+async function planHolds(
+  deps: CopyTreeDeps,
+  dir: readonly string[],
+  parentId: string | null,
+  plan: CopyPlan,
+): Promise<boolean> {
+  if (plan.dir.join("/") !== dir.join("/")) return false;
+  const taken = await occupantClaims(deps, parentId);
+  for (const root of plan.roots) {
+    const filename = await allocateName(root.source, taken);
+    if (
+      filename !== (root.kind === "folder" ? root.name : renderFilename(root.name, root.extension))
+    ) {
+      return false;
+    }
+    taken.push(claimOf(root.source, filename));
+  }
+  return true;
+}
+
+function flatten(nodes: readonly PlannedCopyNode[]): PlannedCopyNode[] {
   return nodes.flatMap((node) =>
     node.kind === "folder" ? [node, ...flatten(node.children)] : [node],
   );
@@ -198,23 +203,45 @@ async function ensureDestinationParent(
   }
 }
 
+/** The destination parent as it is now, without making it. */
+async function findDestinationParent(
+  deps: CopyTreeDeps,
+  dir: readonly string[],
+): Promise<{ found: true; id: string | null } | { found: false }> {
+  if (dir.length === 0) return { found: true, id: null };
+  const folder = await deps.store.resolveFolderAt(LIVE_TREE, dir.join("/"));
+  return folder.kind === "found" && folder.node
+    ? { found: true, id: folder.node.id }
+    : { found: false };
+}
+
+/** The first free filename for a source among the names already taken. */
+function allocateName(source: CopySourceEntry, taken: readonly NamespaceNameClaim[]) {
+  return allocateFilename(
+    source.kind === "folder"
+      ? { kind: "folder", name: source.name }
+      : { kind: "document", name: source.name, extension: source.extension },
+    (candidate) => taken.some((claim) => sameNamespaceName(candidate, claim)),
+  );
+}
+
+function claimOf(source: CopySourceEntry, filename: string): NamespaceNameClaim {
+  return { kind: source.kind === "folder" ? "folder" : "document", filename };
+}
+
 /** Allocate every name and mint every identity, parents before their children. */
 async function planLevel(
   deps: CopyTreeDeps,
   dir: readonly string[],
   taken: NamespaceNameClaim[],
   sources: readonly CopySourceEntry[],
-): Promise<Result<PlannedNode[], AdapterFault>> {
-  const planned: PlannedNode[] = [];
+): Promise<PlannedCopyNode[]> {
+  const planned: PlannedCopyNode[] = [];
   for (const source of sources) {
+    const filename = await allocateName(source, taken);
+    const path = [...dir, filename].join("/");
+    taken.push(claimOf(source, filename));
     if (source.kind === "folder") {
-      const filename = await allocateFilename({ kind: "folder", name: source.name }, (candidate) =>
-        taken.some((claim) => sameNamespaceName(candidate, claim)),
-      );
-      const path = [...dir, filename].join("/");
-      taken.push({ kind: "folder", filename });
-      const children = await planLevel(deps, [...dir, filename], [], source.children);
-      if (!children.ok) return children;
       planned.push({
         kind: "folder",
         source,
@@ -222,16 +249,10 @@ async function planLevel(
         name: filename,
         path,
         uri: deps.holderUri(path),
-        children: children.value,
+        children: await planLevel(deps, [...dir, filename], [], source.children),
       });
       continue;
     }
-    const filename = await allocateFilename(
-      { kind: "document", name: source.name, extension: source.extension },
-      (candidate) => taken.some((claim) => sameNamespaceName(candidate, claim)),
-    );
-    const path = [...dir, filename].join("/");
-    taken.push({ kind: "document", filename });
     const { name, extension } = splitAllocatedFilename(filename, source.extension);
     planned.push({
       kind: "file",
@@ -241,11 +262,9 @@ async function planLevel(
       extension,
       path,
       uri: deps.holderUri(path),
-      state: null,
-      copiedFrom: null,
     });
   }
-  return Ok(planned);
+  return planned;
 }
 
 /** A rendered filename split back into the stored name and extension. */
@@ -283,7 +302,8 @@ async function occupantClaims(
 async function insertLevel(
   deps: CopyTreeDeps,
   parentId: string | null,
-  nodes: readonly PlannedNode[],
+  nodes: readonly PlannedCopyNode[],
+  contents: ReadonlyMap<string, CopiedContent>,
 ): Promise<Result<CopyCreatedEntry[], AdapterFault>> {
   const created: CopyCreatedEntry[] = [];
   for (const node of nodes) {
@@ -302,7 +322,7 @@ async function insertLevel(
         name: node.name,
         copiedFrom: node.source.folderId,
       });
-      const children = await insertLevel(deps, folderId, node.children);
+      const children = await insertLevel(deps, folderId, node.children, contents);
       if (!children.ok) return children;
       created.push(...children.value);
       continue;
@@ -322,7 +342,9 @@ async function insertLevel(
       continue;
     }
 
-    const documentId = await insertCopiedDocument(deps, parentId, node);
+    const content = contents.get(node.source.documentId);
+    if (!content) throw new Error(`No content was bound for ${node.source.path}`);
+    const documentId = await insertCopiedDocument(deps, parentId, node, content);
     if (!documentId.ok) return documentId;
     created.push({
       kind: "file",
@@ -343,7 +365,8 @@ async function insertLevel(
 async function insertCopiedDocument(
   deps: CopyTreeDeps,
   parentId: string | null,
-  node: PlannedFile,
+  node: PlannedCopyFile,
+  content: CopiedContent,
 ): Promise<Result<string, AdapterFault>> {
   const filetype: Filetype = node.source.filetype;
   const created = await deps.documentCreation.createDocumentAtomically({
@@ -356,14 +379,14 @@ async function insertCopiedDocument(
           extension: node.extension,
           markdown: "",
           filetype,
-          metadata: { copiedFrom: node.copiedFrom ?? copiedFromProvenance(node) },
+          metadata: { copiedFrom: content.copiedFrom },
         },
         { kind: "none" },
       );
       return claimed?.document.id ?? null;
     },
     initializeContent: async (documentId) => {
-      if (node.state) await deps.documentSync.installSeed(documentId, node.state);
+      if (content.state) await deps.documentSync.installSeed(documentId, content.state);
       else await deps.documentSync.initializeEmptyDocument(documentId);
     },
   });
@@ -375,7 +398,7 @@ async function insertCopiedDocument(
 async function insertCopiedBinary(
   deps: CopyTreeDeps,
   parentId: string | null,
-  node: PlannedFile,
+  node: PlannedCopyFile,
 ): Promise<Result<string, AdapterFault>> {
   if (!node.source.fileType || !node.source.storageUrl) {
     return Err({
@@ -406,7 +429,7 @@ async function insertCopiedBinary(
   }
 }
 
-function copiedFromProvenance(node: PlannedFile): CopiedFrom {
+function copiedFromProvenance(node: PlannedCopyFile): CopiedFrom {
   // A binary has no drafts or revisions, so its copy always records the live file.
   return { uri: node.source.uri, version: "live", revision: null };
 }
