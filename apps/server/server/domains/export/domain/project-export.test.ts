@@ -41,18 +41,31 @@ function document(id: string, uri: string, extra: Partial<ExportDocument> = {}):
   };
 }
 function fixture() {
+  // Tree order, as the snapshot adapter delivers it: sources by address, then sibling order.
   const docs = [
-    document("chapter", "manuscript://Chapter", {
-      metadata: { properties: { format: "yaml", text: "aliases: [Gate]\n# kept\n" } },
-    }),
     document("lore", "kb://Lore/Sects"),
-    document("x", "kb://x"),
     document("X", "kb://X"),
     document("image", "kb://map.png", {
       name: "map",
       extension: "png",
       fileType: "image",
       storageUrl: "object://meridian/assets/map.png",
+    }),
+    document("x", "kb://x"),
+    document("chapter", "manuscript://Chapter", {
+      metadata: { properties: { format: "yaml", text: "aliases: [Gate]\n# kept\n" } },
+    }),
+    document("chat1", "scratch://@c1/note", {
+      path: "note",
+      name: "note",
+      rootThreadId: "chat1",
+      chatTitle: "Chat",
+    }),
+    document("chat2", "scratch://@c2/note", {
+      path: "note",
+      name: "note",
+      rootThreadId: "chat2",
+      chatTitle: "chat",
     }),
     document("scratch1", "scratch://@w1/note", {
       path: "note",
@@ -87,18 +100,6 @@ function fixture() {
       name: "file",
       extension: "json",
       fileType: "json",
-    }),
-    document("chat1", "scratch://@c1/note", {
-      path: "note",
-      name: "note",
-      rootThreadId: "chat1",
-      chatTitle: "Chat",
-    }),
-    document("chat2", "scratch://@c2/note", {
-      path: "note",
-      name: "note",
-      rootThreadId: "chat2",
-      chatTitle: "chat",
     }),
   ];
   const blocks = [

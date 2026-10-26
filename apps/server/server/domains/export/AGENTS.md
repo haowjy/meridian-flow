@@ -5,6 +5,10 @@ canonical addresses and ahead settlements before reading any content. Layout
 and link spelling use that captured identity map for the entire ZIP, even if
 files move while it streams.
 
+- Documents arrive in tree order: sources by canonical address, each walked depth first with
+  every folder's children in the project's sibling order (the shared
+  `compareCatalogSiblings`, from `export-inventory.ts`). `buildExportLayout` does not sort
+  documents: the first sibling to claim a name keeps it, and the ZIP streams in that order.
 - `ports/` owns the inventory boundary; the Drizzle adapter takes a short
   repeatable-read snapshot, not a transaction spanning a download.
 - The service filters through file policy and live manifest membership.

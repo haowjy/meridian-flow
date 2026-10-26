@@ -63,9 +63,9 @@ export function buildExportLayout(
     const root = rootFor(source);
     if (root) roots.set(source.uri, root);
   }
-  for (const doc of [...documents].sort((a, b) =>
-    a.uri < b.uri ? -1 : a.uri > b.uri ? 1 : a.id.localeCompare(b.id),
-  )) {
+  // `documents` arrive in tree order (sibling order, depth first): the first sibling to claim a
+  // name keeps it, and `paths` iterates in the order the archive streams.
+  for (const doc of documents) {
     let parent = rootFor(doc);
     if (!parent) continue;
     roots.set(doc.uri.slice(0, -doc.path.length), parent);
