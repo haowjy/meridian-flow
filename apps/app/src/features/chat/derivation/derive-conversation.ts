@@ -11,6 +11,7 @@ import { t } from "@lingui/core/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { httpErrorStatus } from "@/client/api/http-client";
 import { forkThread, handoffThread } from "@/client/api/threads-api";
 import { type ThreadStoreActions, useIsThreadPendingCreation } from "@/client/stores";
 import type { CreationAgent } from "@/features/agents/creation-agent";
@@ -44,7 +45,10 @@ export type DerivationStatus = {
   state: "creating" | "failed" | "created";
   /** A fork's prefix, shown before the server can read it. */
   inherited: InheritedView | null;
+  failure?: DerivationFailure;
 };
+
+export type DerivationFailure = { message: string; retryable: boolean };
 
 export type DerivationDeps = {
   accountId: string;
@@ -183,10 +187,15 @@ function create(intent: DerivationIntent, deps: DerivationDeps) {
       setStatus(threadId, { intent, state: "created", inherited: latest?.inherited ?? null });
       settle(threadId, true);
     },
-    () => {
+    (error) => {
       if (deps.accountSignal.aborted) return;
       const latest = statuses.get(threadId);
-      setStatus(threadId, { intent, state: "failed", inherited: latest?.inherited ?? null });
+      setStatus(threadId, {
+        intent,
+        state: "failed",
+        inherited: latest?.inherited ?? null,
+        failure: classifyDerivationFailure(intent.kind, error),
+      });
       // The destination's alert row says so; the writer is already there.
       settle(threadId, false);
     },
@@ -195,6 +204,18 @@ function create(intent: DerivationIntent, deps: DerivationDeps) {
 
 export function derivationFailureCopy(kind: DerivationKind): string {
   return kind === "fork" ? t`Couldn't create this fork.` : t`Couldn't start this handoff.`;
+}
+
+export function classifyDerivationFailure(kind: DerivationKind, error: unknown): DerivationFailure {
+  if (
+    kind === "fork" &&
+    httpErrorStatus(error) === 409 &&
+    error instanceof Error &&
+    error.message === "Answer or skip the question first."
+  ) {
+    return { message: error.message, retryable: false };
+  }
+  return { message: derivationFailureCopy(kind), retryable: true };
 }
 
 /**

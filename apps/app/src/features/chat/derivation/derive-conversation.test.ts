@@ -6,6 +6,7 @@
  */
 import type { Thread } from "@meridian/contracts/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpResponseError } from "@/client/api/http-client";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray) => strings[0],
@@ -23,6 +24,7 @@ vi.mock("@/client/stores", () => ({
 }));
 
 import {
+  classifyDerivationFailure,
   type DerivationDeps,
   readDerivationIntent,
   resetDerivationsForTest,
@@ -117,6 +119,12 @@ describe("startDerivation", () => {
   });
 
   it("keeps a failure on the destination: never closes it, keeps it pending, offers Retry with the same id", async () => {
+    expect(
+      classifyDerivationFailure(
+        "fork",
+        new HttpResponseError("Answer or skip the question first.", 409, null),
+      ),
+    ).toEqual({ message: "Answer or skip the question first.", retryable: false });
     api.forkThread.mockRejectedValueOnce(new Error("409"));
     const { log, deps, open } = harness();
     const threadId = startDerivation(forkInput, { ...deps, source, inherited: null, open });
