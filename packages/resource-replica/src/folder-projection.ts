@@ -146,6 +146,8 @@ export function createResourcePlacement(
     const byDocument = new Map(
       records.map((record) => [record.resource.identity.documentId, record]),
     );
+    // A catalog holds a handful of sources; scanning every row for one per row is quadratic.
+    const sourceRows = rows.filter((row) => row.kind === "source");
     let projected = rows.map((entry): CatalogEntry => {
       if (entry.kind !== "file" && entry.kind !== "folder") return entry;
       const location = locations.get(entry.entryId);
@@ -157,7 +159,7 @@ export function createResourcePlacement(
             ? resourceLocation(record)
             : location && graph.place(location, undefined, parents.get(entry.entryId)).location;
       if (!next) return entry;
-      const source = rows.find(
+      const source = sourceRows.find(
         (candidate) =>
           candidate.kind === "source" &&
           candidate.scheme === next.scheme &&
