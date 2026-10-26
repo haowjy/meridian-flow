@@ -37,11 +37,11 @@ export function threadHistorySummary(input: JsonObject, result: JsonValue): stri
   return typeof ref === "string" ? ref : undefined;
 }
 
-/** `work`: how many Works a listing found, or the Work a create made. */
+/** `work`: how many Works a listing found, or the Work a create/switch selected. */
 export function workHistorySummary(input: JsonObject, result: JsonValue): string | undefined {
   if (input.command === "list" && Array.isArray(result))
     return `${result.length} ${result.length === 1 ? "Work" : "Works"}`;
-  if (input.command !== "create") return undefined;
+  if (input.command !== "create" && input.command !== "switch") return undefined;
   const handle = object(result)?.handle;
   return typeof handle === "string" ? handle : undefined;
 }

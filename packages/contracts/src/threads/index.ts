@@ -188,6 +188,8 @@ export type MessageProvenance =
   | {
       kind: "agent";
       threadId: string;
+      /** Writer-visible identity of the chat that sent a directed message. */
+      sender?: { ref: string | null; title: string | null };
       /**
        * Set when a parent re-tasks its own child: the parent's invoking turn and
        * tool call. The run that adopts the message reports back to the parent.
