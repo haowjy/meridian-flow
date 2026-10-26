@@ -16,12 +16,3 @@
   every 30 s. Offline with two tabs, about a dozen identical retries ran in 85 s.
   They carry one operation id, so they are harmless; back the retry off if the
   chatter shows up in a profile or the server log.
-
-- A document the server never accepted can be placed optimistically, then refused
-  again (filed while its create was in flight, or a repair the server refuses). The
-  route has already moved to the destination path; once the row returns to Unfiled the
-  route tab reads "This destination is unavailable." until it is closed or reloaded.
-  `routeContinuityDocumentId` binds only server identities, so the route cannot follow a
-  local one back. The document's own tab shows the failure and its text. Make the route
-  follow a local resource handle through a rollback if this shows up beyond the repair
-  path.

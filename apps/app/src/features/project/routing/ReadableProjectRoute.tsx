@@ -674,6 +674,27 @@ function ReadableProjectDestination({
       }),
     [contextRemoval, projectId, user.userId],
   );
+  // A document the server never accepted keeps its stable local identity when its placement is
+  // refused, and the route bound to it follows that identity back to Unfiled. Its own tab already
+  // went there; the path it was filed at no longer names it.
+  const departedLocalTab =
+    boundDocumentId && documentDestination
+      ? workspaceTabs.find(
+          (tab) =>
+            tab.documentId === boundDocumentId &&
+            (tab.kind === "new" ||
+              (tab.kind === "tracked" &&
+                tab.origin === "local-resource" &&
+                tab.scheme === "unfiled")),
+        )
+      : undefined;
+  useEffect(() => {
+    if (!departedLocalTab || !workId) return;
+    void openContext(
+      { ...routeTargetForTab(departedLocalTab, workId), documentId: departedLocalTab.documentId },
+      { replace: true },
+    );
+  }, [departedLocalTab?.documentId, workId, openContext]);
   const setEditorReviewItemKey = useCallback((itemKey: string | null, changeId?: string) => {
     const current = latest.current;
     if (!current.navigation) return;
