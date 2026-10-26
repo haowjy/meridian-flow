@@ -22,7 +22,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { postCommand } from "@/client/api/threads-api";
 import { useFailureLog } from "@/client/failures/failure-log";
-import { announce, useRunState, useThreadActions } from "@/client/stores";
+import { announce, useRunState, useThreadActions, useThreadAsks } from "@/client/stores";
 
 export type SendNow = {
   /** Whether the record shows an open reply with a queue behind it. */
@@ -38,10 +38,11 @@ export type SendNow = {
 
 export function useSendNow(threadId: string): SendNow {
   const view = useRunState(threadId);
+  const asks = useThreadAsks(threadId);
   const log = useFailureLog();
   const actions = useThreadActions();
-  const latest = useRef({ view, actions });
-  latest.current = { view, actions };
+  const latest = useRef({ view, asks, actions });
+  latest.current = { view, asks, actions };
   const [command, setCommand] = useState<{
     request: "idle" | "pending";
     cancelledExecutionId: string | null;
@@ -149,7 +150,7 @@ export function useSendNow(threadId: string): SendNow {
 
   const send = useCallback(() => {
     if (busyRef.current) return;
-    const body = sendNowRequest(latest.current.view);
+    const body = sendNowRequest(latest.current.view, latest.current.asks.byId.values());
     if (!body) return;
     announce(t`Sending now`);
     post(body);
@@ -159,5 +160,12 @@ export function useSendNow(threadId: string): SendNow {
   }, [failed, post]);
   const dismiss = useCallback(() => retire("dismissed"), [retire]);
 
-  return { available: sendNowRequest(view) !== null, busy, send, failed, retry, dismiss };
+  return {
+    available: sendNowRequest(view, asks.byId.values()) !== null,
+    busy,
+    send,
+    failed,
+    retry,
+    dismiss,
+  };
 }

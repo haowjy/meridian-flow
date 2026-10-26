@@ -7,7 +7,7 @@
 import { t } from "@lingui/core/macro";
 import { waitingWriterMessages } from "@meridian/thread-client";
 import { useCallback, useRef } from "react";
-import { announce, useOpenAsk, useRunState } from "@/client/stores";
+import { announce, useRunState, useThreadAsks } from "@/client/stores";
 import type { ChatHandBack } from "./useHandBack";
 
 export type QueueControls = {
@@ -21,9 +21,9 @@ export function useQueueControls(input: { threadId: string; handBack: ChatHandBa
   const { threadId, handBack } = input;
   const { operation } = handBack;
   const view = useRunState(threadId);
-  const askBlocked = useOpenAsk(threadId) !== null;
-  const latest = useRef({ view, askBlocked });
-  latest.current = { view, askBlocked };
+  const asks = useThreadAsks(threadId);
+  const latest = useRef({ view, asks });
+  latest.current = { view, asks };
 
   const press = useCallback(
     (ids: readonly string[]) => {
@@ -41,7 +41,7 @@ export function useQueueControls(input: { threadId: string; handBack: ChatHandBa
   const cancelQueue = useCallback(
     () =>
       press(
-        waitingWriterMessages(latest.current.view, latest.current.askBlocked).map(
+        waitingWriterMessages(latest.current.view, latest.current.asks.byId.values()).map(
           (item) => item.id,
         ),
       ),

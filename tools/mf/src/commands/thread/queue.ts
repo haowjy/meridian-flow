@@ -92,10 +92,9 @@ export const threadQueueHandBackCommand: CommandSpec = {
         const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
           decode: jsonResponse(threadSnapshotSchema),
         });
-        requested = waitingWriterMessages(
-          viewOfSnapshot(snapshot),
-          snapshot.asks.some((ask) => ask.status === "open"),
-        ).map((item) => item.id);
+        requested = waitingWriterMessages(viewOfSnapshot(snapshot), snapshot.asks).map(
+          (item) => item.id,
+        );
         if (requested.length === 0) {
           const nothing = terminalResult(
             "thread.queue.hand-back",
@@ -191,7 +190,7 @@ export const threadQueueSendNowCommand: CommandSpec = {
       const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
         decode: jsonResponse(threadSnapshotSchema),
       });
-      body = sendNowRequest(viewOfSnapshot(snapshot));
+      body = sendNowRequest(viewOfSnapshot(snapshot), snapshot.asks);
     }
     if (!body) {
       const nothing = terminalResult(

@@ -13,6 +13,7 @@ import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import {
   type AskReceipt,
   askReceipt,
+  type ChatAsks,
   EMPTY_CHAT_ASKS,
   INITIAL_RUN_STATE_SLICE,
   isOptimisticTurnId,
@@ -379,16 +380,21 @@ export function useRunState(threadId: string): RunStateView {
 
 const NO_TURNS: Turn[] = [];
 
+/** The chat's authoritative asks, including resolved history and this device's answer attempts. */
+export function useThreadAsks(threadId: string): ChatAsks {
+  return useThreadStore((state) => state.syncedByThread[threadId]?.asks ?? EMPTY_CHAT_ASKS);
+}
+
 /** The ask that takes over the chat's composer, if one is open. */
 export function useOpenAsk(threadId: string): OpenAsk | null {
-  const asks = useThreadStore((state) => state.syncedByThread[threadId]?.asks ?? EMPTY_CHAT_ASKS);
+  const asks = useThreadAsks(threadId);
   const turns = useThreadStore((state) => state.syncedByThread[threadId]?.turns ?? NO_TURNS);
   return useMemo(() => openAsk(asks, turns), [asks, turns]);
 }
 
 /** The receipt line an asking turn shows, once its ask is answered here or resolved. */
 export function useAskReceipt(threadId: string, turnId: string): AskReceipt | null {
-  const asks = useThreadStore((state) => state.syncedByThread[threadId]?.asks ?? EMPTY_CHAT_ASKS);
+  const asks = useThreadAsks(threadId);
   return useMemo(() => askReceipt(asks, turnId), [asks, turnId]);
 }
 

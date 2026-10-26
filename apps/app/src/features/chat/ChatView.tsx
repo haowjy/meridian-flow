@@ -47,9 +47,9 @@ import { useLineage } from "@/client/query/useLineageTitle";
 import { useTopChat } from "@/client/query/useTopChat";
 import {
   useIsThreadPendingCreation,
-  useOpenAsk,
   useRunStateSlice,
   useThreadActions,
+  useThreadAsks,
   useThreadStore,
 } from "@/client/stores";
 import type { ComposerChatCommand, ComposerHandle } from "@/components/app/composer";
@@ -185,7 +185,7 @@ export function ChatView({
   );
   const brief = useHandoffBrief({ threadId, storedTurns });
   const { view: runState, history } = useRunStateSlice(threadId);
-  const openAsk = useOpenAsk(threadId);
+  const asks = useThreadAsks(threadId);
   const replyRetry = useReplyRetry({ threadId, storedTurns });
   // A handoff's brief is on its way the moment the writer lands; until the
   // server's seed arrives the card stands in for it (it has nothing to stop
@@ -204,8 +204,8 @@ export function ChatView({
     (node) => node.deliveryMode === "background_notification",
   );
   const queuedWriterItems = useMemo(
-    () => waitingWriterMessages(runState, openAsk !== null),
-    [openAsk, runState],
+    () => waitingWriterMessages(runState, asks.byId.values()),
+    [asks, runState],
   );
   const queuedWriterTurnIds = useMemo(
     () => new Set(queuedWriterItems.map((item) => item.id)),
