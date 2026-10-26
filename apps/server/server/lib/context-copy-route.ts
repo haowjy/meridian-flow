@@ -71,6 +71,7 @@ interface ParsedCopySource {
   locator: CopySourceLocator;
   expected: { kind: "file" | "folder"; nodeId: string };
   view: CopyContextEntryView;
+  copyId?: string;
   stateVector?: Uint8Array;
 }
 
@@ -90,9 +91,18 @@ export function parseContextCopy(input: { body: unknown }): ParsedCopy {
   if (!Array.isArray(body.sources) || body.sources.length === 0) {
     throw createError({ statusCode: 400, message: "A copy needs at least one source" });
   }
+  const sources = body.sources.map(parseSource);
+  const copyIds = new Set<string>();
+  for (const source of sources) {
+    if (!source.copyId) continue;
+    if (copyIds.has(source.copyId)) {
+      throw createError({ statusCode: 400, message: "`sources[].copyId` values must be distinct" });
+    }
+    copyIds.add(source.copyId);
+  }
   return {
     operationId: requireRequestId(body.operationId, "operationId"),
-    sources: body.sources.map(parseSource),
+    sources,
     destination: parseDestination(body),
     ...(body.destinationParent === undefined
       ? {}
@@ -121,6 +131,9 @@ function parseSource(raw: unknown): ParsedCopySource {
     locator: parseSourceLocator(source),
     expected: { kind: expected.kind, nodeId: expected.nodeId },
     view,
+    ...(source.copyId === undefined
+      ? {}
+      : { copyId: requireRequestId(source.copyId, "sources[].copyId") }),
     ...(stateVector ? { stateVector } : {}),
   };
 }
@@ -292,6 +305,7 @@ interface ResolvedSource {
   uri: string;
   expected: { kind: "file" | "folder"; nodeId: string };
   view: CopyContextEntryView;
+  copyId?: string;
   stateVector?: Uint8Array;
   /** The file-policy target its read is granted on. */
   target: FileTarget;
@@ -336,6 +350,7 @@ export async function handleContextCopyRequest(
         uri: uploadsUri(source.locator.chatRef, source.locator.path),
         expected: source.expected,
         view: { kind: "live" },
+        ...(source.copyId ? { copyId: source.copyId } : {}),
         target: {
           kind: "container",
           scheme: "uploads",
@@ -365,6 +380,7 @@ export async function handleContextCopyRequest(
       uri: locatorUri(resolved),
       expected: source.expected,
       view: source.view,
+      ...(source.copyId ? { copyId: source.copyId } : {}),
       ...(source.stateVector ? { stateVector: source.stateVector } : {}),
       target:
         source.expected.kind === "file"
@@ -439,6 +455,7 @@ export async function handleContextCopyRequest(
         uri: source.uri,
         view: source.view,
         expected: source.expected,
+        ...(source.copyId ? { copyId: source.copyId } : {}),
         ...(source.stateVector ? { stateVector: source.stateVector } : {}),
       })),
       destinationUri,

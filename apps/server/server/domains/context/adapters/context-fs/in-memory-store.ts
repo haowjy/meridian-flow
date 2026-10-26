@@ -285,6 +285,13 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     parentId: string | null;
     roots: readonly NewTreeNode[];
   }): Promise<"inserted"> {
+    // A client-minted root id is unusable when any row already holds it.
+    for (const root of input.roots) {
+      const heldFolder = this.backing.folders.has(root.id);
+      if (heldFolder || this.backing.documents.has(root.id)) {
+        throw new ContextEntryConflictError(heldFolder ? "folder" : "file");
+      }
+    }
     // The in-memory backing has no sibling ranks: a copy's position is a live-tree concern.
     const insert = async (parentId: string | null, nodes: readonly NewTreeNode[]) => {
       for (const node of nodes) {

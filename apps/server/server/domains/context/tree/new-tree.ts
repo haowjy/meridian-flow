@@ -15,10 +15,12 @@ import type { Database } from "@meridian/database";
 import { documentMarkdownProjections, documents, folders } from "@meridian/database/schema";
 import { generateNKeysBetween } from "fractional-indexing";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { ContextEntryConflictError } from "../ports/context-document-store.js";
 import type { BinaryNode, TrackedNode } from "./hidden-node-types.js";
 import { type ClaimedLocation, recordLocationHistory } from "./node-locations.js";
 import { documentRowValues, folderRowValues } from "./node-rows.js";
 import { arrivalRanks, placeLiveSibling } from "./sibling-order.js";
+import { loadDocumentIdentityRows, loadFolderIdentityRows } from "./tree-view-sql.js";
 
 export type NewTreeNode =
   | {
@@ -64,6 +66,18 @@ export async function insertNewTree(
   },
 ): Promise<{ folderIds: FolderId[]; binaryIds: DocumentId[] } | "stale-anchor"> {
   const { sourceId, parentId, roots } = input;
+  // A client may mint a root's identity (`copyId`). Any row already holding it — live,
+  // hidden, deleted, another source's, or a document's — makes it unusable. A replay never
+  // comes here (its receipt answers it), so every holder is a conflict. Descendants are
+  // server-minted, so only roots need the check.
+  const rootIds = roots.map((root) => root.id);
+  const [heldFolders, heldDocuments] = await Promise.all([
+    loadFolderIdentityRows(db, rootIds as FolderId[]),
+    loadDocumentIdentityRows(db, rootIds as DocumentId[]),
+  ]);
+  if (heldFolders.length > 0 || heldDocuments.length > 0) {
+    throw new ContextEntryConflictError(heldFolders.length > 0 ? "folder" : "file");
+  }
   const folderRows: (ReturnType<typeof folderRowValues> & { rank: string | null })[] = [];
   const documentRows: (ReturnType<typeof documentRowValues> & { rank: string | null })[] = [];
   const projectionRows: { documentId: DocumentId }[] = [];

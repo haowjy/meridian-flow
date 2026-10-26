@@ -290,6 +290,8 @@ export interface ContextCopyRequest {
     uri: string;
     view?: CopyContextEntryView;
     expected: { kind: "file" | "folder"; nodeId: string };
+    /** The device-minted identity for this root's copy; descendants are server-minted. */
+    copyId?: string;
     /** The client's own Yjs state vector for a file it holds open, decoded by the route. */
     stateVector?: Uint8Array;
   }[];

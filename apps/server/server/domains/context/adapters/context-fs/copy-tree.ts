@@ -12,8 +12,9 @@
  * A copied folder is inserted before its children and keeps its source's own ordering policy,
  * so inserting the children in source order reproduces the source's visible order in a manual
  * folder and leaves name order alone in a default one. Two passes, because a link may cross
- * roots: the plan mints every identity first, and the caller binds each document against the
- * whole old→new map before anything is written.
+ * roots: the plan mints every identity first (a selected root takes the device's id when it
+ * sent one), and the caller binds each document against the whole old→new map before anything
+ * is written.
  */
 
 import type { DocumentId, FolderId } from "@meridian/contracts";
@@ -345,7 +346,8 @@ async function planLevel(
       planned.push({
         kind: "folder",
         source,
-        id: crypto.randomUUID(),
+        // A selected root may carry the device's id; a folder's children never do.
+        id: source.copyId ?? crypto.randomUUID(),
         name: filename,
         path,
         uri: deps.holderUri(path),
@@ -357,7 +359,7 @@ async function planLevel(
     planned.push({
       kind: "file",
       source,
-      id: crypto.randomUUID(),
+      id: source.copyId ?? crypto.randomUUID(),
       name,
       extension,
       path,

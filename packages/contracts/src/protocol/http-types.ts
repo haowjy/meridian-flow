@@ -350,6 +350,13 @@ export type CopyContextEntrySource = {
   /** Defaults to the live document. */
   view?: CopyContextEntryView;
   /**
+   * The device's identity for this root's copy, when the client minted one: a UUID. The root
+   * takes it and descendants keep server-minted ids, so a replay or a replan keeps the root's
+   * identity. An id another row already holds is a `conflict`, the same answer a document or
+   * folder create gives for a held id.
+   */
+  copyId?: string;
+  /**
    * A document the writer holds open sends its Yjs state vector (base64) with the view that
    * room is: the live room for a live view, the draft room for a draft view. A folder has no
    * room of its own, and a vector on one is a 400, as is one that does not decode. The server

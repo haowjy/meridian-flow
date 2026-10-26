@@ -189,13 +189,19 @@ one source's tree contributes.
 - The operation receipt (`kind: "copy"`) owns the transaction. Inside it the command
   transaction takes the destination's Work and namespace, and nothing else: the sources are
   a frozen cut, so their namespaces are not locked and a source deleted mid-copy is a copy
-  of what the writer saw. The command re-resolves an identity destination, then the
-  destination adapter inserts the plan (`copyInto`).
+  of what the writer saw. The command re-resolves an identity destination through the
+  router's one resolver (the one Create and Move also use: `destination_missing` when the
+  folder is gone, `permission_denied` when the writer cannot edit it), then the destination
+  adapter inserts the plan (`copyInto`).
 - Names are the destination namespace's, so its adapter plans them (`planCopy`): allocated
   against live occupants, hidden occupants (taken, never revealed) and the rest of the batch,
   from a lock-free read of the destination parent. Only the roots meet existing occupants.
-  The plan mints every identity before any content is bound, so one old→new map binds links
-  between roots through `collab/domain/copied-blocks.ts`: links inside the copied set name
+  A selected root may carry the device's `copyId` (a UUID); the root copy takes it and
+  every descendant keeps a server-minted identity, so a replay or a replan keeps the roots
+  the client already names. Any row already holding a `copyId` — live, hidden, deleted, in
+  another source, or a document's — makes the insert a typed `conflict`; a duplicate id
+  within one request is a 400. The plan mints every identity before any content is bound,
+  so one old→new map binds links between roots through `collab/domain/copied-blocks.ts`: links inside the copied set name
   the copies (a settled `ahead:` ref and an image or link to a copied binary included),
   everything else keeps its target. The model's `copy` tool calls the same
   `remapCopiedBlocks`, with the same settled-ahead map read from the same cut, so a document
@@ -225,7 +231,9 @@ one source's tree contributes.
   version's revision; folder provenance lives in the receipt.
 - Refusals are typed and recorded on the receipt, so a replay under the same operation ID
   answers the same result: `not_found` or `stale_source` for a gone or changed source,
-  `destination_missing` or `stale_target` for a destination that moved, `invalid_operation`
+  `destination_missing` for a destination that no longer exists, `stale_target` for one that
+  moved, `permission_denied` for an identity destination the writer cannot edit,
+  `invalid_operation`
   for a folder into its own subtree ("Can't go inside itself", the drag hint's words), an
   unsupported source (a draft view of a folder), the source root, or a draft placement
   destination. Uploads as the destination (by path or by folder identity), a malformed path

@@ -6,7 +6,8 @@
  *
  * 1. duplicates every binary's object — bytes leave the database's reach before any row
  *    names them, and their keys are released if no transaction commits to name them (D24);
- * 2. asks the destination adapter to plan the tree (names and identities), and binds each
+ * 2. asks the destination adapter to plan the tree (names and identities; a root takes the
+ *    device's `copyId` when it sent one), and binds each
  *    document's content for the address its copy will have through
  *    `collab/domain/copied-blocks.ts` — one identity map across the whole selection, so a link
  *    between two roots names both copies. Steps 1-2 and the reads hold no transaction and no
@@ -22,8 +23,13 @@
  *
  * A refusal is typed and recorded on the receipt, so a replay reads the same answer. An
  * infrastructure failure, or a source whose room has not yet received the client's edits,
- * records nothing and stays retryable under the same operation ID.
- * There is no Undo command: Copy's Undo is ordinary deletion of the created identities.
+ * records nothing and stays retryable under the same operation ID. A duplicate that arrives
+ * while the first attempt is preparing waits for it in this process instead of reading every
+ * source again.
+ *
+ * The answer returns when the rows commit; their projections and link rows are derived after
+ * commit without holding the answer. There is no Undo command: Copy's Undo is ordinary
+ * deletion of the created identities.
  */
 
 import { setTimeout as delay } from "node:timers/promises";
@@ -47,12 +53,12 @@ import type { ObjectRelease, ObjectStorePort } from "../../storage/index.js";
 import { prepareBinaryCopy } from "../binary-copy.js";
 import { adapterFaultToContextError } from "../context/adapter-fault.js";
 import type { ContextOperationReceipts } from "../context/context-operation-receipts.js";
-import type { ContextSchemeAdapter } from "../ports/context-adapter.js";
 import type {
   ContextCommandScope,
   ContextCommandTransaction,
 } from "../ports/context-command-transaction.js";
 import type {
+  ContextCopyAdapter,
   CopiedContent,
   CopyCreatedEntry,
   CopyPlan,
@@ -74,13 +80,16 @@ const BIND_YIELD_EVERY = 25;
 export interface CopySourceHandoff {
   /** Canonical address of the root. */
   uri: string;
-  adapter: ContextSchemeAdapter;
+  /** The source scheme's copy capability. */
+  copy: ContextCopyAdapter;
   /** Scheme-relative path of the root. */
   path: string;
   /** The Work whose lifecycle and namespace this end belongs to; null for no Work. */
   workScopeId: string | null;
   view: CopyContextEntryView;
   expected: { kind: "file" | "folder"; nodeId: string };
+  /** The device-minted identity for this root's copy; descendants are server-minted. */
+  copyId?: string;
   /**
    * The client's own Yjs state vector, when it holds this document open. Only a file source
    * carries one; the cut compared against it is the view's room.
@@ -92,7 +101,10 @@ export interface CopySourceHandoff {
 export interface CopyDestinationHandoff {
   /** Canonical address of the destination parent folder. */
   uri: string;
-  adapter: ContextSchemeAdapter;
+  /** The destination scheme's copy capability. */
+  copy: ContextCopyAdapter;
+  /** The destination scheme, for the command transaction's namespace scope. */
+  scheme: ContextScheme;
   /** Scheme-relative path of the destination parent folder. */
   dir: readonly string[];
   /** The Work whose lifecycle and namespace this end belongs to; null for no Work. */
@@ -172,9 +184,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   async function prepare(input: ContextCopyInput): Promise<Result<PreparedCopy, ContextError>> {
     const roots: PreparedRoot[] = [];
     for (const source of input.sources) {
-      const copy = source.adapter.copy;
-      if (!copy) return unsupportedSource(source.uri);
-      const snapshot = await copy.snapshotSource(source.path);
+      const snapshot = await source.copy.snapshotSource(source.path);
       if (!snapshot.ok) return Err(adapterFaultToContextError(snapshot.error, source.uri));
       if (snapshot.value.kind !== source.expected.kind) {
         return Err({ code: "not_found", uri: source.uri });
@@ -184,14 +194,18 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       }
       const documents = await prepareDocuments(source, snapshot.value);
       if (!documents.ok) return documents;
-      roots.push({ uri: source.uri, snapshot: snapshot.value, documents: documents.value });
+      roots.push({
+        uri: source.uri,
+        snapshot: source.copyId ? { ...snapshot.value, copyId: source.copyId } : snapshot.value,
+        documents: documents.value,
+      });
     }
 
     const duplicated = await duplicateBinaries(binariesOf(roots));
     if (!duplicated.ok) return duplicated;
     const ready = seededRoots(roots, duplicated.value.binaries);
     const documents = new Map(roots.flatMap((root) => [...root.documents]));
-    const destinationSourceId = await input.destination.adapter.copy?.sourceId();
+    const destinationSourceId = await input.destination.copy.sourceId();
     return Ok({
       roots,
       sourceIds: destinationSourceId ? [destinationSourceId] : [],
@@ -210,15 +224,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     roots: readonly CopySourceEntry[],
     documents: ReadonlyMap<string, PreparedDocument>,
   ): Promise<Result<PlannedCopy, ContextError>> {
-    const copy = destination.adapter.copy;
-    if (!copy) {
-      return Err({
-        code: "invalid_operation",
-        uri: destination.uri,
-        message: "This destination cannot take a copy",
-      });
-    }
-    const planned = await copy.planCopy({ dir: destination.dir, roots });
+    const planned = await destination.copy.planCopy({ dir: destination.dir, roots });
     if (!planned.ok) return Err(adapterFaultToContextError(planned.error, destination.uri));
     return Ok({ plan: planned.value, contents: await bind(planned.value, documents) });
   }
@@ -381,19 +387,12 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     let entries: CopyCreatedEntry[] | null = null;
     for (let replans = 0; !entries; replans++) {
       if (!planned.ok) return planned;
-      const inserted = await dest.adapter.copy?.copyInto({
+      const inserted = await dest.copy.copyInto({
         dir: dest.dir,
         plan: planned.value.plan,
         contents: planned.value.contents,
         ...(input.request.position ? { position: input.request.position } : {}),
       });
-      if (!inserted) {
-        return Err({
-          code: "invalid_operation",
-          uri: dest.uri,
-          message: "This destination cannot take a copy",
-        });
-      }
       if (!inserted.ok) return Err(adapterFaultToContextError(inserted.error, dest.uri));
       if (inserted.value.kind === "copied") {
         entries = inserted.value.entries;
@@ -415,8 +414,9 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
 
   /**
    * Derive the new documents' projections and link rows once the locks are released: the
-   * derivation reads committed rows, so nothing about it needs the namespace held. A failure
-   * is logged by the refresher and the stale sweep recovers the document.
+   * derivation reads committed rows, so nothing about it needs the namespace held. The
+   * answer does not wait for it; a failure is logged by the refresher and the stale sweep
+   * recovers the document.
    */
   async function deriveAfterCommit(documentIds: readonly DocumentId[]): Promise<void> {
     if (documentIds.length === 0) return;
@@ -442,7 +442,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     if (!resolved.ok) return resolved;
     if (
       resolved.value.uri !== input.destination.uri ||
-      resolved.value.adapter.name !== input.destination.adapter.name ||
+      resolved.value.scheme !== input.destination.scheme ||
       resolved.value.workScopeId !== input.destination.workScopeId
     ) {
       return Err({ code: "stale_target", uri: input.destination.uri });
@@ -493,10 +493,6 @@ interface PlannedCopy {
   contents: Map<string, CopiedContent>;
 }
 
-function unsupportedSource(uri: string): Result<never, ContextError> {
-  return Err({ code: "invalid_operation", uri, message: "This source cannot be copied" });
-}
-
 /**
  * A selection copies through its outermost roots: a root inside another selected folder, or
  * one selected twice, is already in that copy, and copying it again would give one source two
@@ -516,7 +512,7 @@ function outermostRoots(sources: readonly CopySourceHandoff[]): CopySourceHandof
 }
 
 function scopeOf(destination: CopyDestinationHandoff): ContextCommandScope {
-  return { scheme: destination.adapter.name as ContextScheme, workId: destination.workScopeId };
+  return { scheme: destination.scheme, workId: destination.workScopeId };
 }
 
 function receiptCommand(
@@ -529,6 +525,7 @@ function receiptCommand(
         uri: source.uri,
         view: source.view,
         expected: source.expected,
+        ...(source.copyId ? { copyId: source.copyId } : {}),
       }),
     ),
     destinationUri: input.destination.uri,
