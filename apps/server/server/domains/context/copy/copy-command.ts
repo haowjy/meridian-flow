@@ -138,7 +138,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       if (identityOf(snapshot.value) !== source.expected.nodeId) {
         return Err({ code: "stale_source", uri: source.uri });
       }
-      const documents = await prepareDocuments(input, source, snapshot.value);
+      const documents = await prepareDocuments(source, snapshot.value);
       if (!documents.ok) return documents;
       roots.push({ uri: source.uri, snapshot: snapshot.value, documents: documents.value });
     }
@@ -147,7 +147,11 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     if (destinationSourceId) sourceIds.add(destinationSourceId);
 
     const binaries = binariesOf(roots);
-    const duplicates: Array<{ documentId: string; storageUrl: string; key: string }> = [];
+    // The rows name these objects only if this operation commits, and a later binary may
+    // still fail: the release is registered before the first put and reads the keys put so far.
+    const putKeys: string[] = [];
+    if (binaries.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
+    const duplicates = new Map<string, string>();
     for (const file of binaries) {
       const duplicated = await prepareBinaryCopy({
         objectStore: deps.objectStore,
@@ -158,25 +162,13 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
         },
       });
       if (!duplicated.ok) return duplicated;
-      duplicates.push({
-        documentId: file.documentId,
-        storageUrl: duplicated.value.storageUrl,
-        key: duplicated.value.key,
-      });
+      putKeys.push(duplicated.value.key);
+      duplicates.set(file.documentId, duplicated.value.storageUrl);
     }
-    if (duplicates.length > 0) {
-      // The rows name these objects only if this operation commits.
-      deferUntilDrizzleRollback(() => deps.release.keys(duplicates.map(({ key }) => key)));
-    }
-    return Ok({
-      roots,
-      sourceIds: [...sourceIds],
-      binaries: new Map(duplicates.map(({ documentId, storageUrl }) => [documentId, storageUrl])),
-    });
+    return Ok({ roots, sourceIds: [...sourceIds], binaries: duplicates });
   }
 
   async function prepareDocuments(
-    _input: ContextCopyInput,
     source: CopySourceHandoff,
     snapshot: CopySourceEntry,
   ): Promise<Result<Map<string, PreparedDocument>, ContextError>> {
