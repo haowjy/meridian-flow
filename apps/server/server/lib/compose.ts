@@ -1000,7 +1000,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const childRunDriver = createChildRunDriver({
     backgroundTasks,
     orchestrator: { prepare: (input) => runner.prepare(input) },
-    repos: { executionReports: ports.threadRepos.executionReports },
+    repos: { executionReports: ports.threadRepos.executionReports, asks: ports.threadRepos.asks },
     // The live hub, not the bare journal writer: background lifecycle must reach
     // subscribers at append time, in append order. A notifier-relayed write lands
     // after later in-process appends and is dropped as stale by the WS cursor.
@@ -1012,6 +1012,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const childRunCoordinator = createChildRunCoordinator({
     driver: childRunDriver,
     delivery,
+    asks,
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
     modelUnavailable: (model) => agentModelUnavailableReasons(ports.gateway, model),

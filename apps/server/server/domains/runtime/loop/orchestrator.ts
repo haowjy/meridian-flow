@@ -111,6 +111,7 @@ import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-a
 import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
 import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
+import { openChildQuestionsInRequest } from "../spawn/child-question-binding.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { parentRetaskCorrelation } from "../spawn/retask-correlation.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
@@ -422,13 +423,32 @@ async function admitRunExecution(
   thread: Thread,
   executionTurnId: TurnId,
   adopted: readonly InboxMessage[] = [],
+  askContinuationId?: string,
 ): Promise<void> {
   if (thread.kind !== "subagent" && input.executionReport) {
     throw new Error("Execution report correlation requires a subagent thread");
   }
   if (thread.kind === "subagent") {
     if (!thread.ref) throw new Error("Subagent thread has no project handle");
+    const askingExecution = askContinuationId
+      ? await (async () => {
+          const ask = await deps.repos.asks.findById(askContinuationId);
+          return ask
+            ? deps.repos.executionReports.findByTurn(input.threadId, ask.askingTurnId)
+            : null;
+        })()
+      : null;
     const correlation = input.executionReport?.correlation ??
+      (askingExecution
+        ? {
+            callerThreadId: askingExecution.callerThreadId,
+            callerTurnId: askingExecution.callerTurnId,
+            toolCallId: askingExecution.toolCallId,
+            cardBlockId: askingExecution.cardBlockId,
+            origin: askingExecution.origin,
+            deliveryMode: "background_notification" as const,
+          }
+        : null) ??
       parentRetaskCorrelation(thread, adopted) ?? {
         callerThreadId: null,
         callerTurnId: null,
@@ -442,8 +462,8 @@ async function admitRunExecution(
       executionTurnId,
       handle: thread.ref,
       ...correlation,
-      agentSlug: input.executionReport?.agentSlug ?? null,
-      name: input.executionReport?.name ?? null,
+      agentSlug: input.executionReport?.agentSlug ?? askingExecution?.agentSlug ?? null,
+      name: input.executionReport?.name ?? askingExecution?.name ?? null,
     });
   }
 }
@@ -812,6 +832,7 @@ async function runDrainTurn(
                     setupThread,
                     reservedTurn.id,
                     selection.outstanding,
+                    control?.body.kind === "ask_resolved" ? control.body.askId : undefined,
                   );
               },
             },
@@ -2278,6 +2299,12 @@ async function executeLoop({
         // Every call it produces plans on that set as of now (C4); results persisting later join `credited`.
         credited.reset(requestCreditedIds);
         const planningBlockIds = credited.ids();
+        const boundChildQuestions = await openChildQuestionsInRequest({
+          turns: allTurns,
+          blocks: allBlocks,
+          creditedBlockIds: new Set(planningBlockIds),
+          asks: deps.repos.asks,
+        });
         thread = built.thread;
         const request = built.request;
         const gatewayCallId = crypto.randomUUID();
@@ -2681,6 +2708,7 @@ async function executeLoop({
                   blockSeqRef,
                   allTurns,
                   planningBlockIds,
+                  boundChildQuestions,
                   credited,
                   replyMutations: scope.reply,
                 },

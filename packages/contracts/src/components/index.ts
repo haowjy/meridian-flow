@@ -104,7 +104,7 @@ export const invocationCardPropsSchema = z.union([
     childThreadId: z.string(),
     execution: z.string(),
     terminalAt: z.string(),
-    outcome: z.enum(["succeeded", "failed", "cancelled"]),
+    outcome: z.enum(["succeeded", "asked", "failed", "cancelled"]),
   }),
   invocationCardBaseSchema.extend({
     terminalAt: z.string(),
@@ -125,7 +125,7 @@ export function buildInvocationCardContent(input: InvocationCardProps): Componen
   return { kind: "helper-result", props: input as unknown as JsonObject };
 }
 
-export const askToolInputSchema = z
+const newAskToolInputSchema = z
   .strictObject({
     question: z.string().min(1),
     options: z
@@ -151,5 +151,10 @@ export const askToolInputSchema = z
       });
     }
   });
+
+export const askToolInputSchema = z.union([
+  newAskToolInputSchema,
+  z.strictObject({ forward: z.string().min(1) }),
+]);
 
 export type AskToolInput = z.infer<typeof askToolInputSchema>;

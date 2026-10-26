@@ -328,7 +328,6 @@ export function messageTurnFor(
   position: number,
   workContext?: RenderedWorkContext,
 ): { turn: Turn; block: BlockUpsertedRow } {
-  const isChildNotification = message.provenance.kind === "child";
   // Production writer sends are persisted and adopted by id at enqueue; keep
   // this fallback's writer metadata aligned if an inbox writer turn is ever
   // materialized without that normal path.
@@ -337,13 +336,14 @@ export function messageTurnFor(
     threadId: message.threadId,
     position,
     prevTurnId,
-    role: isChildNotification ? "system" : "user",
+    role:
+      message.provenance.kind === "child" && "reportId" in message.provenance ? "system" : "user",
     // Writer provenance is the only human send; every other provenance
     // (agent/child/system) is a machine injection.
     origin: message.provenance.kind === "writer" ? "writer" : "system",
     status: "complete",
     metadata:
-      message.provenance.kind === "child"
+      message.provenance.kind === "child" && "reportId" in message.provenance
         ? childCompletionMetadata({
             handle: message.provenance.handle,
             outcome: message.provenance.outcome,
@@ -351,20 +351,28 @@ export function messageTurnFor(
             childThreadId: message.provenance.threadId,
             agentName: message.provenance.agentName,
           })
-        : message.body.kind === "work_context_refresh"
-          ? workUpdateMetadata()
-          : message.provenance.kind === "writer"
-            ? null
-            : inboxMessageMetadata(
-                message.provenance.kind === "agent" && message.provenance.sender
-                  ? {
-                      sender: {
-                        threadId: message.provenance.threadId,
-                        ...message.provenance.sender,
-                      },
-                    }
-                  : {},
-              ),
+        : message.provenance.kind === "child" && "ask" in message.provenance
+          ? inboxMessageMetadata({
+              childQuestion: {
+                ...message.provenance.ask,
+                childThreadId: message.provenance.threadId,
+                handle: message.provenance.handle,
+              },
+            })
+          : message.body.kind === "work_context_refresh"
+            ? workUpdateMetadata()
+            : message.provenance.kind === "writer"
+              ? null
+              : inboxMessageMetadata(
+                  message.provenance.kind === "agent" && message.provenance.sender
+                    ? {
+                        sender: {
+                          threadId: message.provenance.threadId,
+                          ...message.provenance.sender,
+                        },
+                      }
+                    : {},
+                ),
   });
   const text =
     message.body.kind === "work_context_refresh" && workContext

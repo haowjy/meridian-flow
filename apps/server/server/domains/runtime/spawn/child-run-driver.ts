@@ -8,11 +8,7 @@ import type {
 } from "@meridian/contracts/spawn";
 import type { BlockUpsertedRow, Thread, ThreadActivity } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type {
-  EventJournalWriter,
-  LiveEventWriter,
-  ThreadRepositories,
-} from "../../threads/index.js";
+import type { LiveEventWriter, ThreadRepositories } from "../../threads/index.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import type { PreparedRun, RunTurnPort } from "../loop/run-turn-port.js";
 import { appendSubagentActivityBestEffort } from "./activity-event.js";
@@ -43,7 +39,7 @@ export type PreparedChild = {
 export interface ChildRunDriverDeps {
   backgroundTasks: DetachedWorkTracker;
   orchestrator: RunTurnPort;
-  repos: Pick<ThreadRepositories, "executionReports">;
+  repos: Pick<ThreadRepositories, "executionReports" | "asks">;
   eventWriter: LiveEventWriter;
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   publisher: Pick<ReportPublisher, "publish">;
@@ -160,7 +156,15 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       childThreadId,
       eventSink: deps.eventSink,
     });
-    if (saved?.outcome) return savedReportToSpawnResult(saved);
+    if (saved?.outcome) {
+      const ask =
+        saved.outcome === "asked" && saved.terminalTurnId
+          ? (await deps.repos.asks.listByTurnIds([saved.terminalTurnId])).find(
+              (candidate) => candidate.status === "open",
+            )
+          : null;
+      return savedReportToSpawnResult(saved, ask);
+    }
     return {
       status: "error",
       error: meridianErrorFromSystem(

@@ -1,7 +1,7 @@
 /** Drizzle adapter for durable ask storage and deadline discovery. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { asks } from "@meridian/database/schema";
-import { and, asc, eq, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import type { AskRepository, StoredAsk } from "../../ports/ask-repository.js";
 import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
@@ -34,6 +34,15 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
       const [row] = await currentDrizzleDb(db).select().from(asks).where(eq(asks.id, id)).limit(1);
       return row ? storedAsk(row) : null;
     },
+    async listByIds(ids) {
+      if (ids.length === 0) return [];
+      return (
+        await currentDrizzleDb(db)
+          .select()
+          .from(asks)
+          .where(inArray(asks.id, [...ids]))
+      ).map(storedAsk);
+    },
     async findLiveByTurnForUpdate(turnId) {
       const [row] = await currentDrizzleDb(db)
         .select()
@@ -58,6 +67,37 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
         .where(and(eq(asks.threadId, threadId), inArray(asks.status, ["pending", "open"])))
         .limit(1);
       return row ? storedAsk(row) : null;
+    },
+    async listLiveByLineage(threadId) {
+      const rows = await currentDrizzleDb(db).execute(sql`
+        WITH RECURSIVE lineage AS (
+          SELECT id, 0 AS depth FROM threads WHERE id = ${threadId}
+          UNION ALL
+          SELECT child.id, lineage.depth + 1 FROM threads child
+          JOIN lineage ON child.parent_thread_id = lineage.id
+        )
+        SELECT asks.* FROM lineage
+        JOIN asks ON asks.thread_id = lineage.id
+        WHERE asks.status IN ('pending', 'open')
+        ORDER BY lineage.depth, asks.created_at, asks.id
+      `);
+      return rows.map((row) =>
+        storedAsk({
+          id: row.id as string,
+          threadId: row.thread_id as ThreadId,
+          askingTurnId: row.asking_turn_id as never,
+          executionId: row.execution_id as string,
+          toolCallId: row.tool_call_id as string,
+          kind: row.kind as never,
+          payload: row.payload as never,
+          deadlineAt: row.deadline_at as Date | null,
+          status: row.status as never,
+          resolution: row.resolution as never,
+          submissionId: row.submission_id as string | null,
+          createdAt: row.created_at as Date,
+          resolvedAt: row.resolved_at as Date | null,
+        }),
+      );
     },
     async listByThread(threadId) {
       const rows = await currentDrizzleDb(db)

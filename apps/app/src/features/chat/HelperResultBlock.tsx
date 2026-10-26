@@ -35,7 +35,7 @@ export function HelperResultBlock({ content, invocationResult, threadId }: Compo
           : "completed"
     : props.terminalAt === null
       ? "running"
-      : props.outcome === "succeeded"
+      : props.outcome === "succeeded" || props.outcome === "asked"
         ? "completed"
         : props.outcome
           ? "failed"

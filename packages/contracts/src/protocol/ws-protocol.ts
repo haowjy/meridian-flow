@@ -150,6 +150,7 @@ const messageProvenanceSchema: z.ZodType<import("../threads/index.js").MessagePr
     z.object({
       kind: z.literal("agent"),
       threadId: z.string().min(1),
+      boundAskId: z.string().min(1).optional(),
       notify: z.object({ turnId: z.string().min(1), toolCallId: z.string().min(1) }).optional(),
     }),
     z.object({
@@ -159,6 +160,18 @@ const messageProvenanceSchema: z.ZodType<import("../threads/index.js").MessagePr
       handle: z.string().min(1),
       outcome: z.enum(["succeeded", "failed", "cancelled"]),
       agentName: z.string().min(1),
+    }),
+    z.object({
+      kind: z.literal("child"),
+      threadId: z.string().min(1),
+      handle: z.string().min(1),
+      agentName: z.string().min(1),
+      ask: z.object({
+        id: z.string().min(1),
+        question: z.string().min(1),
+        options: z.array(z.string().min(1)),
+        recommended: z.string().min(1).optional(),
+      }),
     }),
     z.object({ kind: z.literal("system"), source: z.string().min(1) }),
   ],

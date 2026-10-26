@@ -61,6 +61,8 @@ export interface ThreadMessageChildInput extends ChildDriveInput {
   ref: string;
   /** Tool-call id; scopes the background enqueue's idempotency key. */
   toolCallId: string;
+  /** Question evidence from the model request that produced this message. */
+  boundAskId?: string;
   signal?: AbortSignal;
 }
 
@@ -99,6 +101,7 @@ export interface ChildRunCoordinatorDeps {
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   /** Producer-facing inbox: background thread_message enqueues here. */
   delivery: DeliveryProducer;
+  asks?: Pick<import("../asks/ask-service.js").AskService, "answerFromParent">;
   agentRevisions: Pick<
     AgentRevisionStore,
     "readThreadBinding" | "readRevision" | "readSource" | "readPackageDefinitions" | "bindThread"
@@ -387,6 +390,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       provenance: {
         kind: "agent",
         threadId: request.parentThread.id as ThreadId,
+        ...(request.boundAskId ? { boundAskId: request.boundAskId } : {}),
         sender: { ref: request.parentThread.ref, title: request.parentThread.title },
         ...(notifiesCaller
           ? { notify: { turnId: request.parentTurnId, toolCallId: request.toolCallId } }
@@ -414,6 +418,35 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     options: ChildRunOptions,
   ): Promise<ChildRunResult> {
     const background = options.mode === "background";
+    if (request.kind === "message" && request.boundAskId && deps.asks) {
+      const authorized = await authorizeThreadMessage({
+        callerThread: request.parentThread,
+        targetRef: request.ref,
+        mode: "background",
+        threads: deps.repos.threads,
+      });
+      if (!authorized.ok) return { status: "error", error: authorized.error };
+      const answered = await deps.asks.answerFromParent({
+        parentThreadId: request.parentThread.id as ThreadId,
+        childThreadId: authorized.target.id as ThreadId,
+        askId: request.boundAskId,
+        submissionId: `parent-message:${request.toolCallId}`,
+        text: request.prompt,
+      });
+      if (answered.ok) {
+        const binding = await deps.agentRevisions.readThreadBinding(authorized.target.id);
+        return {
+          status: "background",
+          handle: authorized.target.ref ?? "",
+          threadId: authorized.target.id,
+          agentSlug: binding?.revision?.slug ?? GENERIC_SUBAGENT_SLUG,
+          notifiesCaller: true,
+        };
+      }
+      // The exact question lost the race. Preserve its binding on the ordinary
+      // message; it must never be retargeted to a newer question.
+      return sendBackgroundMessage(request);
+    }
     if (request.kind === "message" && background) {
       return sendBackgroundMessage(request);
     }

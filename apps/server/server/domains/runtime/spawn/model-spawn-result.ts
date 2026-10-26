@@ -45,6 +45,10 @@ export function renderSpawnOutput(value: JsonValue): string {
     if (result.execution !== undefined) return backgroundRunCopy(result.handle);
     return result.notifiesCaller ? queuedNotifyCopy(result.handle) : queuedNoReplyCopy;
   }
+  if (result.status === "asked") {
+    const options = result.ask.options.join(", ");
+    return `@${result.handle} asks (ask ${result.ask.id}): ${result.ask.question} (options: ${options})`;
+  }
   const report = result.report;
   if (!report)
     return renderRefusal(result.status === "error" ? (result.error as JsonValue) : value);
@@ -62,5 +66,10 @@ export function renderSpawnOutput(value: JsonValue): string {
 
 function isSpawnResult(value: JsonValue): boolean {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  return value.status === "completed" || value.status === "error" || value.status === "background";
+  return (
+    value.status === "completed" ||
+    value.status === "asked" ||
+    value.status === "error" ||
+    value.status === "background"
+  );
 }

@@ -27,9 +27,12 @@ export type CreateAskInput = Omit<StoredAsk, "id" | "createdAt" | "resolvedAt"> 
 export interface AskRepository {
   create(input: CreateAskInput): Promise<StoredAsk>;
   findById(id: string): Promise<StoredAsk | null>;
+  listByIds(ids: readonly string[]): Promise<StoredAsk[]>;
   findLiveByTurnForUpdate(turnId: TurnId): Promise<StoredAsk | null>;
   findOpenByThread(threadId: ThreadId): Promise<StoredAsk | null>;
   findLiveByThread(threadId: ThreadId): Promise<StoredAsk | null>;
+  /** Live asks owned by this thread and every descendant, parent before child. */
+  listLiveByLineage(threadId: ThreadId): Promise<StoredAsk[]>;
   listByThread(threadId: ThreadId): Promise<StoredAsk[]>;
   listOpenDueBy(deadline: Date, limit: number): Promise<StoredAsk[]>;
   listByTurnIds(turnIds: readonly TurnId[]): Promise<StoredAsk[]>;

@@ -701,6 +701,13 @@
       "when": 1792962669749,
       "tag": "0105_ask_continuation",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1792973323557,
+      "tag": "0106_subagent_asked_outcome",
+      "breakpoints": true
     }
   ]
 }
