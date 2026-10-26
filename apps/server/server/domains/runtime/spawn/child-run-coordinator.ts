@@ -453,15 +453,24 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           }
         }
         if (!background) {
-          if (!answered.continuation)
-            throw new Error("Direct parent answer has no continuation identity");
           const prepared = await prepareForegroundMessage(request, authorized.target);
           if ("status" in prepared) return prepared;
-          const childRun = await driver.admit(prepared, {
-            ...request,
-            reportCorrelation: answered.continuation.correlation,
-          });
-          return driver.execute(childRun);
+          try {
+            const childRun = await driver.admitContinuation(prepared, request);
+            return driver.execute(childRun);
+          } catch (error) {
+            // The durable continuation remains queued. A concurrent runner owns
+            // it now, so foreground degrades to the same background result.
+            if (!(error instanceof TurnStartConflictError)) throw error;
+            const binding = await deps.agentRevisions.readThreadBinding(authorized.target.id);
+            return {
+              status: "background",
+              handle: authorized.target.ref ?? "",
+              threadId: authorized.target.id,
+              agentSlug: binding?.revision?.slug ?? GENERIC_SUBAGENT_SLUG,
+              notifiesCaller: true,
+            };
+          }
         }
         const binding = await deps.agentRevisions.readThreadBinding(authorized.target.id);
         return {

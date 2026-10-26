@@ -778,7 +778,10 @@ async function runDrainTurn(
         localTurns,
         inheritedTurns,
         inheritedBlocks,
-        executionAdmitted: selection.outstanding.length > 0 || !!input.replyTurnId,
+        executionAdmitted:
+          selection.outstanding.length > 0 ||
+          !!input.replyTurnId ||
+          control?.body.kind === "ask_resolved",
         // A start-time compaction hands the Retry's list on to the first assistant.
         carriedReservedFor: reservedTurn.role === "assistant" ? [] : retryReservedFor,
         askContinuation:
@@ -836,7 +839,11 @@ async function runDrainTurn(
                     reservedTurn.id,
                     preflight.evidence,
                   );
-                if (selection.outstanding.length > 0 || input.replyTurnId)
+                if (
+                  selection.outstanding.length > 0 ||
+                  input.replyTurnId ||
+                  control?.body.kind === "ask_resolved"
+                )
                   await admitRunExecution(
                     deps,
                     input,
