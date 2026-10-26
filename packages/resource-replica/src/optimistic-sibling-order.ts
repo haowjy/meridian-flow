@@ -4,7 +4,7 @@
  * projection.
  */
 import type { CatalogEntry, ContextSiblingPosition } from "@meridian/contracts/protocol";
-import { placementOps, placementShapesList } from "./placement-journal";
+import { placementOps } from "./placement-journal";
 import type { FolderNamespaceRecord, ParentRef, ResourceRecord } from "./resource-records";
 import { ownerListedInScope } from "./resource-work-authority";
 import { compareCatalogSiblings, compareDefaultSiblings, isManualParent } from "./sibling-order";
@@ -63,7 +63,6 @@ export function projectOptimisticSiblingOrder(input: {
   const ops = placementOps(input).filter(
     (op) =>
       op.intent.projectId === projectId &&
-      placementShapesList(op) &&
       entries.has(op.subject) &&
       (op.intent.desired.kind === "set-location" ||
         op.intent.desired.kind === "set-folder-location" ||

@@ -210,6 +210,7 @@ export class AccountResourceReplica {
    */
   private admitPlacement<T>(
     projectId: string,
+    subject: ResourceKey | null,
     describe: (view: {
       snapshot: ResourceProjectionSnapshot;
       placement: ResourcePlacement;
@@ -218,11 +219,15 @@ export class AccountResourceReplica {
   ): Promise<T> {
     this.requireOpen();
     return this.exclusive(`placement-admission/${encodeURIComponent(this.accountId)}`, async () => {
-      const snapshot = await this.metadata.readProjection(projectId);
+      const { highWater, ...snapshot } = await this.metadata.readPlacementAdmissionView(
+        projectId,
+        subject ?? undefined,
+      );
       const placement = resourcePlacementForSnapshot(projectId, snapshot);
       return commit(
         capturePlacementAdmission({
           snapshot,
+          highWater,
           placement,
           spec: describe({ snapshot, placement }),
         }),
@@ -294,6 +299,7 @@ export class AccountResourceReplica {
     const committed = destination
       ? await this.admitPlacement(
           projectId,
+          null,
           () => ({
             projectId,
             subject: documentId,
@@ -671,6 +677,7 @@ export class AccountResourceReplica {
       admitted =
         (await this.admitPlacement(
           projectId,
+          key,
           ({ snapshot, placement }) => {
             const record = snapshot.records.find((r) => r.resource.handle === key.handle);
             return {
@@ -728,6 +735,7 @@ export class AccountResourceReplica {
     this.requireOpen();
     return this.admitPlacement(
       projectId,
+      null,
       ({ placement }) => ({
         projectId,
         subject: folderId,
@@ -779,6 +787,7 @@ export class AccountResourceReplica {
     let undoable = false;
     const admitted = await this.admitPlacement(
       projectId,
+      key,
       ({ snapshot, placement }) => {
         const record = snapshot.records.find((r) => r.resource.handle === key.handle);
         return {

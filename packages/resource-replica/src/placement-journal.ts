@@ -30,24 +30,26 @@ export type PlacementOp = {
   /** The entry id the catalog and anchors name. */
   subject: string;
   intent: NamespaceIntent & { admission: PlacementAdmission };
-  /** The accepted operation whose canonical refresh is still outstanding for this identity. */
-  refreshing?: string;
 };
 
 /**
- * Whether the op still shapes the displayed list: unresolved, or accepted with the canonical
- * observation that covers it not yet installed. Past that point the catalog is the truth.
+ * Whether the intent still shapes the displayed list: unresolved, or accepted with the canonical
+ * observation that covers it not yet installed (`refreshing` is the operation the identity's
+ * refresh barrier waits on). Past that point the catalog is the truth.
  */
-export function placementShapesList(op: PlacementOp): boolean {
+function shapesList(intent: NamespaceIntent, refreshing: string | undefined): boolean {
   return (
-    placementUnresolved(op.intent.state) ||
-    (op.intent.state === "settled" &&
-      op.intent.operationId !== undefined &&
-      op.intent.operationId === op.refreshing)
+    placementUnresolved(intent.state) ||
+    (intent.state === "settled" &&
+      intent.operationId !== undefined &&
+      intent.operationId === refreshing)
   );
 }
 
-/** Every admitted intent in the snapshot, in admission order. */
+/**
+ * The admitted intents that still shape the list, in admission order. Settled history is skipped
+ * before anything is allocated or sorted, so the work follows what is in flight.
+ */
 export function placementOps(snapshot: {
   records: readonly ResourceRecord[];
   folders: readonly FolderNamespaceRecord[];
@@ -61,14 +63,8 @@ export function placementOps(snapshot: {
     refreshing: string | undefined,
   ) => {
     for (const intent of intents)
-      if (intent.admission)
-        ops.push({
-          kind,
-          handle,
-          subject,
-          intent: intent as PlacementOp["intent"],
-          ...(refreshing ? { refreshing } : {}),
-        });
+      if (intent.admission && shapesList(intent, refreshing))
+        ops.push({ kind, handle, subject, intent: intent as PlacementOp["intent"] });
   };
   for (const record of snapshot.records)
     add(
@@ -157,12 +153,15 @@ function scopeOf(
 
 /**
  * The admission record for a new placement. Call it under the account's admission lock with a
- * snapshot read inside that lock: the order is one past the highest ever admitted, and the
+ * snapshot read inside that lock: the order is one past the high-water mark, and the
  * predecessors are every unresolved intent whose scope overlaps (less those another predecessor
  * already waits on, unless this placement is anchored on them).
  */
 export function capturePlacementAdmission(input: {
+  /** The journals in flight; settled history is not needed (see `highWater`). */
   snapshot: { records: readonly ResourceRecord[]; folders: readonly FolderNamespaceRecord[] };
+  /** The highest admission order ever assigned, read atomically with the snapshot. */
+  highWater: number;
   placement: Pick<ResourcePlacement, "parentForFolder">;
   spec: PlacementSpec;
 }): PlacementAdmission {
@@ -192,7 +191,7 @@ export function capturePlacementAdmission(input: {
         ];
   });
   return {
-    order: (ops.at(-1)?.intent.admission.order ?? 0) + 1,
+    order: input.highWater + 1,
     scope,
     predecessors,
   };
