@@ -251,6 +251,8 @@ export interface OrchestratorDeps {
   headSeq(threadId: ThreadId): Promise<bigint>;
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
+  /** Cancels parked questions when a child invocation terminally owns its subtree. */
+  cancelSubtreeAsks?: (threadId: ThreadId) => Promise<void>;
   agentRevisions: Pick<
     AgentRevisionStore,
     "readThreadBinding" | "listInstallations" | "readSource" | "readRevision" | "recordInvokedSkill"

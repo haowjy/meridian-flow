@@ -1060,6 +1060,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     onRunSettled(threadId: ThreadId) {
       refreshSubagentActivity(threadId);
     },
+    cancelSubtreeAsks: (threadId: ThreadId) => asks.cancelForThreadLifecycle(threadId),
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
     shownLinks: ports.shownLinks,
