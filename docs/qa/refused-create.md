@@ -86,11 +86,11 @@ on a create-untitled POST (the server answers a typed 400 `bad_request`,
    `destination_missing`; the row is listed in Unfiled at its name (not under a folder),
    with the mark and no further POST. Move… to a live folder lands it.
 9. Working set: with `__refuse` set and `__delay` at `14000`, press New document, type,
-   "File it" to Manuscript. While the POST is held the document's route is in
-   `localStorage['meridian:working-set']` and the sync's PUT answers one 400 (server log
-   `error_status`, route `/api/projects/:projectId/working-set`); it is not retried on a
-   timer. After the refusal the route is gone from the stored snapshot, `pending` clears
-   and the next PUT is 200.
+   "File it" to Manuscript. While the POST is held and after the refusal, the stored
+   snapshot (`localStorage['meridian:working-set']`) has no route for the document, and the
+   server log has no 400 for `/api/projects/:projectId/working-set`: a local-only
+   document contributes no route. When the create lands, the projection clears `localOnly`
+   and the next report adds the route.
 10. A refused move's notice: stub the move request to fail (an `eval` that wraps
     `window.fetch` and posts `{}` to `/context/<scheme>/move`), Move… a server document to
     another folder, and read the sidebar notice "Couldn't move X." Rename X from another
