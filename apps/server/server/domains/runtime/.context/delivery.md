@@ -214,9 +214,11 @@ still follows the ordinary mid-run admission path: its complete turn, rich block
 inbox row, attachments and admission identity commit together, while run state
 keeps the bubble queued and no request adopts it. Resolution replaces that
 barrier with one internal `ask_resolved` inbox row, which reserves the next run
-start and adopts eligible queued messages. The row carries no public control body
-and materializes no transcript turn. Delivery rechecks this eligibility under the
-thread lock; SQL wake discovery only avoids wasted starts.
+start and adopts eligible queued messages only up to the first write-mode switch.
+The continuation yields at that switch; the following run applies it before
+adopting later messages. The row carries no public control body and materializes
+no transcript turn. Delivery rechecks this eligibility under the thread lock;
+SQL wake discovery only avoids wasted starts.
 
 `UserTurnAdmission` is the writer fence under the thread lock. Its sequence is
 **validate → record → enqueue**: replay/fingerprint identity is settled first,
