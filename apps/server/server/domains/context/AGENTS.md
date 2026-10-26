@@ -31,6 +31,10 @@ the storage seam; file access remains the responsibility of [file policy](../fil
   never seed a Y.Doc with an assumed Markdown schema.
 - A move writes no document content. Stable links re-spell on read, and every
   arrival settles ahead refs once against its final tree.
+- A Copy is one atomic command (`copy/`): it reads each source subtree and content cut
+  once, duplicates binary bytes before its transaction, names against hidden occupants
+  without revealing them, and rewrites refs inside the copied set to point at the copies.
+  Its typed refusals are recorded, and a replay answers the original result.
 - The catalog and ContextFS use the same tree view. Branch-hidden rows never
   escape that view; Apply and Discard reconcile tree changes inside their own
   completion transactions.
