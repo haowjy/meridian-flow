@@ -79,7 +79,6 @@ import {
   getInMemoryWorkContextStore,
   type InMemoryUnifiedContextStoreRegistry,
 } from "./support/in-memory-unified-context-stores.js";
-import { findForward } from "./tree/forwards.js";
 import type { HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 
 const PROJECT_CONTEXTFS_SCHEMES: readonly ProjectContextFsScheme[] =
@@ -269,7 +268,6 @@ function buildUnifiedContextPort(input: {
   commandTransaction?: ContextCommandTransaction;
   placements: AdapterAssembly["placements"];
   resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
-  resolveForward?: (documentId: string) => Promise<string | null>;
   operationReceipts?: ContextOperationReceipts;
   moveLinks?: ConstructorParameters<
     typeof import("./context/context-tree-mover.js").ContextTreeMover
@@ -389,7 +387,6 @@ function buildUnifiedContextPort(input: {
     parseOptions: { barePathDefault: "manuscript", schemes: UNIFIED_CONTEXT_SCHEMES },
     commandTransaction: input.commandTransaction,
     resolveDestinationFolder: input.resolveDestinationFolder,
-    ...(input.resolveForward ? { resolveForward: input.resolveForward } : {}),
     operationReceipts: input.operationReceipts,
     moveLinks: input.moveLinks,
   });
@@ -728,7 +725,6 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentCreation: options.documentSync,
         moveLinks: moveLinks(projectId, userId),
         resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
-        resolveForward: (id) => findForward(options.db, id, projectId as ProjectId),
         operationReceipts: new ContextOperationReceipts(
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),
@@ -745,7 +741,6 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentCreation: options.documentSync,
         moveLinks: moveLinks(projectId, userId),
         resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
-        resolveForward: (id) => findForward(options.db, id, projectId as ProjectId),
         operationReceipts: new ContextOperationReceipts(
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),

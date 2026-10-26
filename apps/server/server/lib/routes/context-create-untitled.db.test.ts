@@ -38,6 +38,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleContextCatalog } = await import(
       "../../domains/context/adapters/context-catalog.js"
     );
+    const { createDrizzleProjectContextAvailability } = await import(
+      "../../domains/context/adapters/project-context-availability.js"
+    );
     const { createDrizzleProjectWorkAuthorityResolver } = await import(
       "../../domains/projects/index.js"
     );
@@ -187,7 +190,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(
         answerHeldCreate({
-          port,
+          availability: createDrizzleProjectContextAvailability(db),
+          projectId,
+          userId: USER_ID,
           documentId: CROSS_SCHEME_DOCUMENT_ID,
           canEdit: async () => true,
         }),

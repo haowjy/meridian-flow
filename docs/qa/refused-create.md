@@ -128,6 +128,13 @@ Scratch. A deleted Work answers the replay 404 `work_missing` (a deleted Work re
 no authority, so its documents are not found) and the repair 409 `conflict`; both reach the
 same remint.
 
+An id held anywhere in the project answers from the row itself, not from the route's Work
+authority: a replay whose Work was deleted is answered `409 {status: "conflict"}` from the
+documents table, and a joined id is answered `joined` at the document its forward names. A
+create with an id the project holds nowhere still resolves the route normally, so a fresh
+create into a deleted Work is `404 work_missing` and a final refusal always means the server
+holds no such id.
+
 A create also takes `destination.position` (`{kind: "start" | "end" | "before" | "after",
 siblingId}`), resolved under the move lock: an anchor the server does not hold places the
 document last, a malformed position is a typed 400.

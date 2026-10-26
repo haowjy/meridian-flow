@@ -28,7 +28,6 @@ import type {
   ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
   ContextError,
-  ContextHeldUntitledDocument,
   ContextListing,
   ContextListOptions,
   ContextMoveOptions,
@@ -54,8 +53,6 @@ export interface ContextSourceBinding {
 
 export interface ContextPortRouterDeps {
   resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
-  /** The document a device's create id was forwarded to (a join), within this project. */
-  resolveForward?: (documentId: string) => Promise<string | null>;
   /** A chat's uploads by handle (`uploads://@c12/`): found, trashed, or no such chat. */
   resolveChatSource?: (
     ref: string,
@@ -219,21 +216,20 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
   /** The joined document at its current address, or null when no location of this port holds it. */
   async function joinedDocument(
     documentId: string,
-  ): Promise<Result<ContextHeldUntitledDocument | null, ContextError>> {
+  ): Promise<
+    Result<Extract<ContextCreateUntitledDocumentResult, { status: "joined" }> | null, ContextError>
+  > {
     const located = await locateDocument(documentId, { includeDeleted: true });
     if (!located.ok) return located;
     if (!located.value) return Ok(null);
     const { location, path } = located.value;
     return Ok({
-      answer: {
-        status: "joined",
-        documentId,
-        scheme: location.scheme,
-        path,
-        name: path.split("/").at(-1) ?? "",
-        ...(location.workScopeId ? { workId: location.workScopeId } : {}),
-      },
-      uri: uriFor(location.scheme, path, location.authority),
+      status: "joined",
+      documentId,
+      scheme: location.scheme,
+      path,
+      name: path.split("/").at(-1) ?? "",
+      ...(location.workScopeId ? { workId: location.workScopeId } : {}),
     });
   }
 
@@ -629,52 +625,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         adapter.createBoundDocument(path, bound, options),
       ),
 
-    async heldUntitledDocument(documentId) {
-      // A create that joined answers from its forward first.
-      const forwardedTo = await deps.resolveForward?.(documentId);
-      if (forwardedTo) {
-        const joined = await joinedDocument(forwardedTo);
-        if (!joined.ok || joined.value) return joined;
-      }
-      const located = await locateDocument(documentId);
-      if (!located.ok) return located;
-      if (!located.value) return Ok(null);
-      const { location, path } = located.value;
-      return Ok({
-        answer: {
-          status: "already-materialized",
-          documentId,
-          scheme: location.scheme,
-          path,
-          name: path.split("/").at(-1) ?? "",
-          ...(location.workScopeId ? { workId: location.workScopeId } : {}),
-        },
-        uri: uriFor(location.scheme, path, location.authority),
-      });
-    },
-
-    async heldFolder(folderId) {
-      for (const location of await sourceLocations()) {
-        const locationUri = uriFor(location.scheme, "", location.authority);
-        const found = await callAdapter(locationUri, () => location.adapter.locateFolder(folderId));
-        if (!found.ok) return found;
-        if (!found.value) continue;
-        if (found.value.status === "unreachable") return Ok({ conflict: true });
-        return Ok({
-          answer: {
-            status: "already-exists" as const,
-            folderId,
-            scheme: location.scheme,
-            path: found.value.path,
-            name: found.value.path.split("/").at(-1) ?? "",
-            ...(location.workScopeId ? { workId: location.workScopeId } : {}),
-          },
-          uri: uriFor(location.scheme, found.value.path, location.authority),
-        });
-      }
-      return Ok(null);
-    },
-
     async createUntitledDocument(
       homeUri,
       options,
@@ -685,7 +635,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const homeCreation = home.value.requireCreation("intake");
       if (!homeCreation.ok) return homeCreation;
 
-      // A replay never reaches here: the caller asks `heldUntitledDocument` first.
+      // A replay never reaches here: the route answers an id the project holds first.
       const placed = await createAtTarget(
         homeUri,
         home.value,
@@ -736,7 +686,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
               const joined = await joinedDocument(created.value.documentId);
               if (!joined.ok) return joined;
               return Ok(
-                joined.value?.answer ?? {
+                joined.value ?? {
                   status: "joined" as const,
                   documentId: created.value.documentId,
                   ...address,

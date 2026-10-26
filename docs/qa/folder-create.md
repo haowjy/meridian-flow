@@ -125,8 +125,10 @@ Work's Scratch (`created`), post the same body (`already-exists`), archive the W
 post the same body and a repair to Manuscript. Both answer 409 `{status: "conflict"}`, never
 403 `work_archived`; the device settles the refusal and keeps its folder. After `unarchive`
 the repair answers `already-exists` at the Work's Scratch. A deleted Work answers the replay
-404 `work_missing` and the repair 409 `conflict`. An id held by a document or a deleted
-folder also answers 409 `{status: "conflict"}`, before any destination work.
+409 `conflict` from the folders table, as it answers a document's replay; the route's Work
+authority is not consulted for a held id. A fresh create into a deleted Work is still
+`404 work_missing`. An id held by a document or a deleted folder also answers 409
+`{status: "conflict"}`, before any destination work.
 
 ## Deleting a folder only this device holds
 

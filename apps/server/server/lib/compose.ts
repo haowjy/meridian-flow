@@ -1508,6 +1508,10 @@ export function createInMemoryAppServices(): AppServices {
           })),
         };
       },
+      async held() {
+        // The in-memory app has no rows; its creates answer replays from their own store.
+        return null;
+      },
     },
     contextCatalogWakeHub: createContextCatalogWakeHub(),
     documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),

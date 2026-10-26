@@ -120,14 +120,15 @@ untyped 500, which the queue retries forever.
 
 A create has no operation receipt: the id the device minted is its receipt. The
 create-untitled and create-folder routes read it first (`answerHeldCreate` /
-`answerHeldFolder`, `ContextPort.heldUntitledDocument` / `heldFolder`), before any authority
-or Work-lifecycle check on the destination, so a replay of a create the server took is
-answered from what it holds, and a final refusal means the server holds no such id and the
-device may place the same id again. An id held where the writer can no longer edit (an
-archived Work) answers `409 {status:"conflict"}`; for a document the device mints a new
-identity, for a folder it settles the refusal and repairs the folder. An id held in a deleted Work is not found (a deleted Work resolves to no
-authority), so its replay is refused `404 work_missing`; its repair answers `conflict`, which
-reaches the same remint. Domain failures go through `contextErrorToHttp`, which types every code;
+`answerHeldFolder` query `ProjectContextAvailabilityPort.held`), before the route resolves
+its Work authority or checks lifecycle on the destination, so a replay of a create the
+server took is answered from what it holds, and a final refusal means the server holds no
+such id and the device may place the same id again. That lookup is an authority-free read
+of the project's documents or folders table by id, and of `document_forwards` for a joined
+document, so it also finds a tree under a deleted Work that the route itself can no longer
+resolve. An id held where the writer can no longer edit (an archived or deleted Work, a
+hidden or deleted row, a lost grant) answers `409 {status:"conflict"}`; for a document the
+device mints a new identity, for a folder it settles the refusal and repairs the folder. Domain failures go through `contextErrorToHttp`, which types every code;
 `stale_source`, `stale_target` and `io_error` are the retryable ones. The boundary stays per route rather
 than in the global error handler: typing every error there would make a 401
 final, and app code on other routes branches on the untyped `HttpResponseError`. Identity conflicts may name a renamed or relocated destination;

@@ -122,6 +122,8 @@ export {
   RegistrationInsideTransactionError,
 } from "./ports/link-ahead-registry.js";
 export type {
+  HeldContextNode,
+  HeldContextNodeAddress,
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,
 } from "./ports/project-context-availability.js";
@@ -154,6 +156,7 @@ export {
   scratchOwnerFor,
 } from "./scratch-owner.js";
 export { createDrizzleDocumentTrash } from "./tree/drizzle-document-trash.js";
+export { findForward } from "./tree/forwards.js";
 export { createHiddenNodeRepair, type HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 export {
   createDocumentRemoval,

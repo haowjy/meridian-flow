@@ -223,50 +223,6 @@ describe("context router owner resolution", () => {
   });
 });
 
-describe("context router untitled identity recovery", () => {
-  it("answers a held id from its canonical cross-scheme location without creating a row", async () => {
-    const requestedCreate = vi.fn();
-    const manuscript = {
-      name: "manuscript",
-      capabilities: { writable: true, searchable: true, creatable: true },
-      locateDocument: async () => Ok(null),
-      createUntitledDocument: requestedCreate,
-    } as unknown as ContextSchemeAdapter;
-    const scratch = {
-      name: "scratch",
-      capabilities: { writable: true, searchable: true, creatable: true },
-      locateDocument: async (documentId: string) =>
-        Ok({ documentId, path: "moved/Untitled 1.md", name: "Untitled 1.md" }),
-      createUntitledDocument: requestedCreate,
-    } as unknown as ContextSchemeAdapter;
-    const port = createContextPortRouter({
-      sources: new Map([
-        ["manuscript", { adapter: manuscript, authority: { kind: "contextual" } }],
-      ]),
-      workAuthorities: new Map([[testWorkHandle("w8"), authority("work-2", "w8")]]),
-      resolveWorkAdapters: () => new Map([["scratch", scratch]]),
-    });
-
-    await expect(
-      port.heldUntitledDocument("00000000-0000-4000-8000-000000000101"),
-    ).resolves.toEqual({
-      ok: true,
-      value: {
-        answer: {
-          status: "already-materialized",
-          documentId: "00000000-0000-4000-8000-000000000101",
-          scheme: "scratch",
-          workId: "work-2",
-          path: "moved/Untitled 1.md",
-          name: "Untitled 1.md",
-        },
-        uri: "scratch://@w8/moved/Untitled 1.md",
-      },
-    });
-    expect(requestedCreate).not.toHaveBeenCalled();
-  });
-});
-
 describe("context router scheme creation capabilities", () => {
   const workId = "00000000-0000-4000-8000-000000000001";
 

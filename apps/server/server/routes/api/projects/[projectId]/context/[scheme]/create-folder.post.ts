@@ -12,15 +12,24 @@ import type {
   ContextCreateDestination,
   CreateContextFolderResponse,
 } from "@meridian/contracts/protocol";
+import type { ProjectId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler, readBody, setResponseStatus } from "nitro/h3";
-import type { ContextPort } from "../../../../../../domains/context/index.js";
+import type {
+  ContextPort,
+  ProjectContextAvailabilityPort,
+} from "../../../../../../domains/context/index.js";
 import { withDurableIntentInterruptBoundary } from "../../../../../../shared/interrupt-boundary.js";
 import {
   canEditContextUri,
   createDestinationAccess,
   parseCreateDestination,
 } from "./_create-destination.js";
-import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
+import {
+  contextErrorToHttp,
+  requireProjectRouteContext,
+  resolveContextRouteFor,
+  toUri,
+} from "./_helpers.js";
 
 interface CreateFolderBody {
   folderId: string;
@@ -64,40 +73,56 @@ export async function createContextFolder(input: {
 }
 
 /**
- * The answer to a create the server already took, or null when it holds no such id. The id
- * is read before any authority over the create's destination, so a replay is answered by what
- * the server holds and not by who may create there now. Held where the writer can no longer
- * edit (an archived or deleted Work, a lost grant) the id is spent: a conflict, which leaves
- * the device's folder local and needing repair.
+ * The answer to a create the server already took, or null when the project holds no such id.
+ * The row is read by id, never through the route's Work authority, so a replay is answered by
+ * what the server holds and not by who may create there now. Held where the writer can no
+ * longer edit (an archived or deleted Work, a lost grant) the id is spent: a conflict, which
+ * leaves the device's folder local and needing repair.
  */
 export async function answerHeldFolder(input: {
-  port: ContextPort;
+  availability: ProjectContextAvailabilityPort;
+  projectId: string;
+  userId: string;
   folderId: string;
   /** Whether the writer can still edit where the held folder lives. */
   canEdit: (uri: string) => Promise<boolean>;
 }): Promise<CreateContextFolderResponse | null> {
-  const held = await input.port.heldFolder(input.folderId);
-  if (!held.ok) contextErrorToHttp(held.error);
-  if (!held.value) return null;
-  if ("conflict" in held.value) return { status: "conflict" };
-  if (!(await input.canEdit(held.value.uri))) return { status: "conflict" };
-  return held.value.answer;
+  const held = await input.availability.held(
+    { projectId: input.projectId as ProjectId, node: { kind: "folder", id: input.folderId } },
+    { userId: input.userId },
+  );
+  if (!held) return null;
+  if (held.kind === "unreachable" || !(await input.canEdit(held.address.uri)))
+    return { status: "conflict" };
+  return {
+    status: "already-exists",
+    folderId: held.address.id,
+    scheme: held.address.scheme,
+    path: held.address.path,
+    name: held.address.name,
+    ...(held.address.workId ? { workId: held.address.workId } : {}),
+  };
 }
 
 export default defineEventHandler((event) =>
   withDurableIntentInterruptBoundary(async () => {
-    const { app, userId, projectId, scheme, authority, port, container, edit } =
-      await resolveContextRoute(event, { recoverAcrossProject: true });
+    const context = await requireProjectRouteContext(event);
     const body = parseCreateFolderBody(await readBody(event));
+    // The held id is answered before the route: a destination in a deleted Work refuses the
+    // route, while a create the server took there must still answer.
     const held = await answerHeldFolder({
-      port,
+      availability: context.app.projectContextAvailability,
+      projectId: context.projectId,
+      userId: context.userId,
       folderId: body.folderId,
-      canEdit: canEditContextUri({ app, userId, projectId }),
+      canEdit: canEditContextUri(context),
     });
     if (held) {
       if (held.status === "conflict") setResponseStatus(event, 409);
       return held;
     }
+    const { app, userId, projectId, scheme, authority, port, container, edit } =
+      await resolveContextRouteFor(event, context, { recoverAcrossProject: true });
     const access = await createDestinationAccess({
       app,
       userId,
