@@ -153,3 +153,11 @@ then `Order C` with `{kind: "after", siblingId: <A>}`; the snapshot ranks read `
 server does not hold leaves the folder at the parent's arrival placement. Dropping a row on
 a collapsed pending folder's lower edge still sends the move with `position: after` and the
 folder as its anchored predecessor.
+
+## Routes into a refused folder
+
+Working-set routes name documents, never folders: a folder has no tab or route of its own.
+A document opened inside a refused folder carries its own document identity, so E1's route
+rule applies: the route follows the document back to Unfiled, its tab keeps the text and the
+mark, and it never reads "This destination is unavailable." The folder row itself simply
+lists in Unfiled with its mark until the writer repairs it.
