@@ -17,7 +17,7 @@ import type {
   Filetype,
 } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
-import type { BoundWrite, CopyIdentityMap } from "../../collab/index.js";
+import type { CopyIdentityMap } from "../../collab/index.js";
 import type { CopiedFrom } from "../document-metadata.js";
 import type { AdapterFault } from "./context-adapter.js";
 
@@ -56,10 +56,10 @@ export interface CopySourceFolder {
 
 export type CopySourceEntry = CopySourceFolder | CopySourceFile;
 
-/** Content for one copied document, bound for the address its copy landed at. */
+/** Content for one copied document, bound for the address its copy lands at. */
 export interface CopiedContent {
-  /** Null for a source with no text: its copy is an empty document. */
-  content: BoundWrite | null;
+  /** The copy's first Yjs state; null for a source with no text, whose copy is empty. */
+  state: Uint8Array | null;
   copiedFrom: CopiedFrom;
 }
 

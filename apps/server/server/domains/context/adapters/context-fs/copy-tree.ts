@@ -20,15 +20,12 @@ import {
   renderFilename,
   sameNamespaceName,
 } from "@meridian/contracts/protocol";
-import type { DocumentId } from "@meridian/contracts/runtime";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import {
-  type BoundWrite,
   type CopyIdentityMap,
   createCopyIdentityMap,
   type DocumentCreationAggregate,
   type MarkdownDocumentStore,
-  type SyncError,
 } from "../../../collab/index.js";
 import type { CopiedFrom } from "../../document-metadata.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
@@ -45,20 +42,12 @@ import {
 } from "../../ports/context-document-store.js";
 import { LIVE_TREE } from "../../tree/tree-view.js";
 
-/** Thrown inside the aggregate when the content seed fails; mapped to an adapter fault. */
-class CopiedContentFault extends Error {
-  constructor(readonly fault: AdapterFault) {
-    super("Copied content could not be written");
-  }
-}
-
 export interface CopyTreeDeps {
   store: ContextDocumentStore;
   documentCreation: DocumentCreationAggregate;
-  documentSync: Pick<MarkdownDocumentStore, "seedFromMarkdown" | "initializeEmptyDocument">;
+  documentSync: Pick<MarkdownDocumentStore, "installSeed" | "initializeEmptyDocument">;
   /** The canonical address of a scheme-relative path in this source. */
   holderUri(path: string): string;
-  syncFault(error: SyncError): AdapterFault;
 }
 
 type PlannedFolder = {
@@ -80,7 +69,8 @@ type PlannedFile = {
   extension: string;
   path: string;
   uri: string;
-  content: BoundWrite | null;
+  /** The copy's first Yjs state; null when the source has no text. */
+  state: Uint8Array | null;
   /** What the source read was; the row records it as `metadata.copiedFrom`. */
   copiedFrom: CopiedFrom | null;
 };
@@ -150,7 +140,7 @@ export async function insertCopiedTree(
     if (node.kind === "folder" || node.source.fileType !== null) continue;
     const content = await input.bind({ file: node.source, uri: node.uri, map: identity });
     if (!content.ok) return content;
-    node.content = content.value.content;
+    node.state = content.value.state;
     node.copiedFrom = content.value.copiedFrom;
   }
 
@@ -175,7 +165,6 @@ export async function insertCopiedTree(
     await batch.flush();
     return created;
   } catch (error) {
-    if (error instanceof CopiedContentFault) return Err(error.fault);
     if (error instanceof ContextEntryConflictError) {
       return Err({
         code: "conflict",
@@ -252,7 +241,7 @@ async function planLevel(
       extension,
       path,
       uri: deps.holderUri(path),
-      content: null,
+      state: null,
       copiedFrom: null,
     });
   }
@@ -374,14 +363,8 @@ async function insertCopiedDocument(
       return claimed?.document.id ?? null;
     },
     initializeContent: async (documentId) => {
-      if (node.content) {
-        const seeded = await deps.documentSync.seedFromMarkdown(documentId, node.content, {
-          type: "system",
-        });
-        if (!seeded.ok) throw new CopiedContentFault(deps.syncFault(seeded.error));
-        return;
-      }
-      await deps.documentSync.initializeEmptyDocument(documentId as DocumentId);
+      if (node.state) await deps.documentSync.installSeed(documentId, node.state);
+      else await deps.documentSync.initializeEmptyDocument(documentId);
     },
   });
   if (!created.created) return Err({ code: "conflict", occupantKind: "file" });

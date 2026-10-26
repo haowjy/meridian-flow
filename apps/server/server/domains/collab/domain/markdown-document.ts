@@ -162,6 +162,17 @@ export type MarkdownDocumentEngine = {
     content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
+  /**
+   * The first state of fresh bound content, built in memory with no database or document in
+   * reach: a bulk create encodes it before its transaction and installs it inside.
+   */
+  encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
+  /**
+   * Installs a seed from `encodeSeed` as the document's first state, in the caller's
+   * transaction; rooms hear of it after commit. False when the document already had state.
+   * It derives nothing: the caller refreshes the projection once its transaction commits.
+   */
+  installSeed(documentId: DocumentId, state: Uint8Array): Promise<boolean>;
   writeDocument(input: {
     documentId: DocumentId;
     content: BoundWrite;
@@ -461,6 +472,24 @@ export function createMarkdownDocumentEngine(
     if (!deps.deferUntilCommit?.(deliver)) await deliver();
   }
 
+  /** A document holding fresh bound content as its first state, written with the seed's origin. */
+  function seedDocOf(content: BoundWrite, origin: DocumentSeedOrigin): Y.Doc {
+    const doc = createCollabYDoc({ gc: false });
+    doc.transact(() => {
+      deps.model.insertBlocks(toDocHandle(doc), null, { blocks: [...content.blocks] });
+    }, yjsTransactionOrigin(origin));
+    return doc;
+  }
+
+  async function installSeed(documentId: DocumentId, state: Uint8Array): Promise<boolean> {
+    const seeded = await deps.initialDocumentSeeds.seedInitialDocument(documentId, state);
+    const deliver = () => deps.coordinator.deliver(documentId);
+    // An enclosing aggregate may still roll back after the checkpoint is written. Deliver to the
+    // rooms only after that durable boundary.
+    if (!deps.deferUntilCommit?.(deliver)) await deliver();
+    return seeded;
+  }
+
   async function repairDocumentAuthority(documentId: DocumentId): Promise<void> {
     const projection = await deps.initialDocumentSeeds.missingAuthorityProjection(documentId);
     if (projection === null) return;
@@ -550,29 +579,30 @@ export function createMarkdownDocumentEngine(
       if (!bound.value.fresh) {
         throw new Error("A seed takes a fresh write; this one was bound against a document");
       }
-      const seededDoc = createCollabYDoc({ gc: false });
-      seededDoc.transact(() => {
-        deps.model.insertBlocks(toDocHandle(seededDoc), null, { blocks: [...bound.value.blocks] });
-      }, yjsTransactionOrigin(origin));
+      const seededDoc = seedDocOf(bound.value, origin);
       const canonicalMarkdown = serializeForSchema(
         typedDocumentId,
         seededDoc,
         format.value.schemaType,
         await spelling(typedDocumentId, [seededDoc]),
       );
-      const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
-        typedDocumentId,
-        Y.encodeStateAsUpdate(seededDoc),
-      );
-      const deliver = () => deps.coordinator.deliver(typedDocumentId);
-      // An enclosing aggregate may still roll back after the checkpoint is
-      // written. Deliver to the rooms only after that durable boundary.
-      if (!deps.deferUntilCommit?.(deliver)) await deliver();
+      const seeded = await installSeed(typedDocumentId, Y.encodeStateAsUpdate(seededDoc));
       if (seeded) {
         await deps.afterWrite?.({ documentId: typedDocumentId, markdown: canonicalMarkdown });
       }
       return Ok(null);
     },
+
+    encodeSeed(content, origin) {
+      const doc = seedDocOf(content, origin);
+      try {
+        return Y.encodeStateAsUpdate(doc);
+      } finally {
+        doc.destroy();
+      }
+    },
+
+    installSeed,
 
     async writeDocument(input) {
       const result = await identityPreservingSet(input);

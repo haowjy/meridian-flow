@@ -282,7 +282,6 @@ export class ContextFS implements ContextSchemeAdapter {
       documentCreation,
       documentSync: deps.documentSync,
       holderUri: (path) => this.holderUri(path),
-      syncFault: (error) => this.syncFault(error),
       refuseReceive: () => this.placement.refuse("receive a copy"),
     });
     const branchTree = this.placement.branchTree;

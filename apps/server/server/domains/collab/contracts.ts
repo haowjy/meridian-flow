@@ -274,6 +274,10 @@ export type MarkdownDocumentStore = LinkBinder & {
     content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
+  /** A fresh write's first state, built in memory (see the engine's `encodeSeed`). */
+  encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
+  /** Installs `encodeSeed`'s state as a document's first, in the caller's transaction. */
+  installSeed(documentId: DocumentId, state: Uint8Array): Promise<boolean>;
   writeDocument(input: {
     documentId: DocumentId;
     content: BoundWrite;

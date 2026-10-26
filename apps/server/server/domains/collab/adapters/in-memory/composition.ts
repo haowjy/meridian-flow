@@ -201,6 +201,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
+      encodeSeed: runtime.markdownDocuments.encodeSeed,
+      installSeed: runtime.markdownDocuments.installSeed,
       writeDocument: runtime.markdownDocuments.writeDocument,
       withLiveDocument: runtime.markdownDocuments.withLiveDocument,
       writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
