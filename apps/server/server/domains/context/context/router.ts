@@ -28,6 +28,7 @@ import type {
   ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
   ContextError,
+  ContextHeldUntitledDocument,
   ContextListing,
   ContextListOptions,
   ContextMoveOptions,
@@ -155,13 +156,10 @@ function uriFor(scheme: ContextScheme, path: string, authority: CanonicalContext
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
   const { sources, parseOptions } = deps;
   /**
-   * The first source of this port that shows `documentId` in its reader's view: the
-   * contextual sources, No Work's, then every named Work's, each once.
+   * Every source this port can find an identity in: the contextual sources, No Work's, then
+   * every named Work's, each once.
    */
-  async function locateDocument(
-    documentId: string,
-    locateOptions?: { includeDeleted?: boolean },
-  ): Promise<Result<{ location: SourceLocation; path: string } | null, ContextError>> {
+  async function sourceLocations(): Promise<SourceLocation[]> {
     const locations: SourceLocation[] = [];
     const locationKeys = new Set<string>();
     const addLocation = (
@@ -191,7 +189,15 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         addLocation(scheme, authority, authority.workId, candidate);
       }
     }
-    for (const location of locations) {
+    return locations;
+  }
+
+  /** The first source of this port that shows `documentId` in its reader's view. */
+  async function locateDocument(
+    documentId: string,
+    locateOptions?: { includeDeleted?: boolean },
+  ): Promise<Result<{ location: SourceLocation; path: string } | null, ContextError>> {
+    for (const location of await sourceLocations()) {
       const locationUri = uriFor(location.scheme, "", location.authority);
       const found = await callAdapter(locationUri, () =>
         location.adapter.locateDocument(documentId, locateOptions),
@@ -211,22 +217,23 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return bindings;
   }
   /** The joined document at its current address, or null when no location of this port holds it. */
-  async function joinedAnswer(
+  async function joinedDocument(
     documentId: string,
-  ): Promise<
-    Result<Extract<ContextCreateUntitledDocumentResult, { status: "joined" }> | null, ContextError>
-  > {
+  ): Promise<Result<ContextHeldUntitledDocument | null, ContextError>> {
     const located = await locateDocument(documentId, { includeDeleted: true });
     if (!located.ok) return located;
     if (!located.value) return Ok(null);
     const { location, path } = located.value;
     return Ok({
-      status: "joined",
-      documentId,
-      scheme: location.scheme,
-      path,
-      name: path.split("/").at(-1) ?? "",
-      ...(location.workScopeId ? { workId: location.workScopeId } : {}),
+      answer: {
+        status: "joined",
+        documentId,
+        scheme: location.scheme,
+        path,
+        name: path.split("/").at(-1) ?? "",
+        ...(location.workScopeId ? { workId: location.workScopeId } : {}),
+      },
+      uri: uriFor(location.scheme, path, location.authority),
     });
   }
 
@@ -246,13 +253,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         folderPath: string;
         name?: string;
         expectFolderId?: string;
+        position?: NonNullable<ContextCreateUntitledDocumentOptions["destination"]>["position"];
       },
       ContextError
     >
   > {
     const destination = options.destination;
     if (!destination) return Ok({ resolved: home, folderPath: home.path });
-    const { parent, name } = destination;
+    const { parent, name, position } = destination;
     const joinUri = (base: string, segments: readonly string[]) =>
       segments.length === 0 ? base : [base.replace(/\/$/, ""), ...segments].join("/");
     let dirUri: string;
@@ -274,6 +282,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       resolved: resolved.value,
       folderPath: resolved.value.path,
       name,
+      ...(position ? { position } : {}),
       ...(parent.kind === "folder" && !parent.createFolders?.length
         ? { expectFolderId: parent.folderId }
         : {}),
@@ -294,6 +303,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       folderPath: string;
       name?: string;
       expectFolderId?: string;
+      position?: NonNullable<ContextCreateUntitledDocumentOptions["destination"]>["position"];
     }) => Promise<Result<T, ContextError>>,
   ): Promise<Result<{ created: T; resolved: MutationDispatch }, ContextError>> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -619,6 +629,52 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         adapter.createBoundDocument(path, bound, options),
       ),
 
+    async heldUntitledDocument(documentId) {
+      // A create that joined answers from its forward first.
+      const forwardedTo = await deps.resolveForward?.(documentId);
+      if (forwardedTo) {
+        const joined = await joinedDocument(forwardedTo);
+        if (!joined.ok || joined.value) return joined;
+      }
+      const located = await locateDocument(documentId);
+      if (!located.ok) return located;
+      if (!located.value) return Ok(null);
+      const { location, path } = located.value;
+      return Ok({
+        answer: {
+          status: "already-materialized",
+          documentId,
+          scheme: location.scheme,
+          path,
+          name: path.split("/").at(-1) ?? "",
+          ...(location.workScopeId ? { workId: location.workScopeId } : {}),
+        },
+        uri: uriFor(location.scheme, path, location.authority),
+      });
+    },
+
+    async heldFolder(folderId) {
+      for (const location of await sourceLocations()) {
+        const locationUri = uriFor(location.scheme, "", location.authority);
+        const found = await callAdapter(locationUri, () => location.adapter.locateFolder(folderId));
+        if (!found.ok) return found;
+        if (!found.value) continue;
+        if (found.value.status === "unreachable") return Ok({ conflict: true });
+        return Ok({
+          answer: {
+            status: "already-exists" as const,
+            folderId,
+            scheme: location.scheme,
+            path: found.value.path,
+            name: found.value.path.split("/").at(-1) ?? "",
+            ...(location.workScopeId ? { workId: location.workScopeId } : {}),
+          },
+          uri: uriFor(location.scheme, found.value.path, location.authority),
+        });
+      }
+      return Ok(null);
+    },
+
     async createUntitledDocument(
       homeUri,
       options,
@@ -629,79 +685,68 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const homeCreation = home.value.requireCreation("intake");
       if (!homeCreation.ok) return homeCreation;
 
-      // A create that joined answers from its forward first, under the target's authorization.
-      const forwardedTo = await deps.resolveForward?.(options.documentId);
-      if (forwardedTo) {
-        const joined = await joinedAnswer(forwardedTo);
-        if (!joined.ok || joined.value) {
-          return joined.ok ? Ok(joined.value as ContextCreateUntitledDocumentResult) : joined;
-        }
-      }
-
-      const located = await locateDocument(options.documentId);
-      if (!located.ok) return located;
-      if (located.value) {
-        const { location, path: foundPath } = located.value;
-        const locationUri = uriFor(location.scheme, "", location.authority);
-        const finalized = await callAdapter(locationUri, () =>
-          location.adapter.createUntitledDocument(foundPath, {
-            documentId: options.documentId,
-            origin: options.origin,
-          }),
-        );
-        if (!finalized.ok) return finalized;
-        return Ok({
-          status: "already-materialized",
-          documentId: finalized.value.documentId,
-          scheme: location.scheme,
-          path: finalized.value.path,
-          name: finalized.value.name,
-          ...(location.workScopeId ? { workId: location.workScopeId } : {}),
-        });
-      }
-
+      // A replay never reaches here: the caller asks `heldUntitledDocument` first.
       const placed = await createAtTarget(
         homeUri,
         home.value,
         options,
-        ({ resolved, folderPath, name, expectFolderId }) =>
-          callAdapter(resolved.canonical, () =>
+        async ({
+          resolved,
+          folderPath,
+          name,
+          expectFolderId,
+          position,
+        }): Promise<Result<ContextCreateUntitledDocumentResult, ContextError>> => {
+          const created = await callAdapter(resolved.canonical, () =>
             resolved.adapter.createUntitledDocument(folderPath, {
               documentId: options.documentId,
               origin: options.origin,
               ...(name !== undefined ? { name } : {}),
               ...(expectFolderId ? { expectFolderId } : {}),
+              ...(position ? { position } : {}),
             }),
-          ),
-      );
-      if (!placed.ok) return placed;
-      const { created, resolved } = placed.value;
-      const address = {
-        scheme: resolved.scheme,
-        path: created.path,
-        name: created.name,
-        ...(resolved.workScopeId ? { workId: resolved.workScopeId } : {}),
-      };
-      switch (created.status) {
-        case "created":
-          return Ok({ status: "created", documentId: created.documentId, ...address });
-        case "already-exists":
-          return Ok({
-            status: "already-materialized",
-            documentId: created.documentId,
-            ...address,
-          });
-        case "joined": {
-          if (created.name) {
-            return Ok({ status: "joined", documentId: created.documentId, ...address });
+          );
+          if (!created.ok) return created;
+          const address = {
+            scheme: resolved.scheme,
+            path: created.value.path,
+            name: created.value.name,
+            ...(resolved.workScopeId ? { workId: resolved.workScopeId } : {}),
+          };
+          switch (created.value.status) {
+            case "created":
+              return Ok({
+                status: "created" as const,
+                documentId: created.value.documentId,
+                ...address,
+              });
+            case "already-exists":
+              return Ok({
+                status: "already-materialized" as const,
+                documentId: created.value.documentId,
+                ...address,
+              });
+            case "joined": {
+              if (created.value.name)
+                return Ok({
+                  status: "joined" as const,
+                  documentId: created.value.documentId,
+                  ...address,
+                });
+              const joined = await joinedDocument(created.value.documentId);
+              if (!joined.ok) return joined;
+              return Ok(
+                joined.value?.answer ?? {
+                  status: "joined" as const,
+                  documentId: created.value.documentId,
+                  ...address,
+                },
+              );
+            }
           }
-          const joined = await joinedAnswer(created.documentId);
-          if (!joined.ok) return joined;
-          return joined.value
-            ? Ok(joined.value)
-            : Ok({ status: "joined", documentId: created.documentId, ...address });
-        }
-      }
+        },
+      );
+      return placed.ok ? Ok(placed.value.created) : placed;
     },
 
     async createFolder(homeUri, options): Promise<Result<ContextCreateFolderResult, ContextError>> {
@@ -713,13 +758,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         homeUri,
         home.value,
         options,
-        ({ resolved, folderPath, name, expectFolderId }) =>
+        ({ resolved, folderPath, name, expectFolderId, position }) =>
           callAdapter(resolved.canonical, () =>
             resolved.adapter.createFolder(folderPath, {
               folderId: options.folderId,
               origin: options.origin,
               name: name ?? options.destination.name,
               ...(expectFolderId ? { expectFolderId } : {}),
+              ...(position ? { position } : {}),
             }),
           ),
       );

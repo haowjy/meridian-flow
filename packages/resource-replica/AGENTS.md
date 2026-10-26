@@ -38,7 +38,9 @@ exports rather than implementation modules.
   against the request's identity (`namespaceRequestId`: a move's or delete's
   operation id, a create's document id, a folder create's folder id). Network
   failures remain replayable until receipt evidence exists. A refused create
-  leaves the document or folder local and repairable, never deleted. A folder
+  leaves the document or folder local and repairable, never deleted. Deleting a
+  document or folder the server never accepted keeps its content and place until
+  an Undo window closes (`cleanup.notBefore`, `localDeletion.notBefore`). A folder
   the server never accepted has `canonical: null`; read its place through
   `folderBaseLocation`, never `canonical` directly.
 - A confirmed deletion is versioned. Only strictly newer evidence can restore;

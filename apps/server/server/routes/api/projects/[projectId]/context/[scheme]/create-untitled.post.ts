@@ -3,6 +3,10 @@
  * `Untitled N` in the route's folder. With a `destination` (the writer's New file and a
  * link's Create) it lands at the typed name: a branch's hidden document there is unhidden
  * and the answer is `joined`; a visible node there leaves the create at the free name.
+ *
+ * The id is the create's receipt, read before any authority over the destination: a replay
+ * of a create the server took is answered from what it holds (see `answerHeldCreate`), so
+ * a final refusal always means the server holds no such id and the same id can be placed again.
  */
 import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
 import type {
@@ -10,10 +14,17 @@ import type {
   CreateUntitledContextDocumentAnswer,
 } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody, setResponseStatus } from "nitro/h3";
-import type { ContextPort } from "../../../../../../domains/context/index.js";
+import type {
+  ContextCreateUntitledDocumentResult,
+  ContextPort,
+} from "../../../../../../domains/context/index.js";
 import { parseContextMutationPath } from "../../../../../../lib/context-mutation-validation.js";
 import { withDurableIntentInterruptBoundary } from "../../../../../../shared/interrupt-boundary.js";
-import { createDestinationAccess, parseCreateDestination } from "./_create-destination.js";
+import {
+  canEditContextUri,
+  createDestinationAccess,
+  parseCreateDestination,
+} from "./_create-destination.js";
 import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
 interface CreateUntitledBody {
@@ -72,7 +83,12 @@ export async function createUntitledContextDocument(input: {
     if (result.error.code === "conflict") return { status: "conflict" as const };
     contextErrorToHttp(result.error);
   }
-  const value = result.value;
+  return createAnswer(result.value);
+}
+
+function createAnswer(
+  value: ContextCreateUntitledDocumentResult,
+): CreateUntitledContextDocumentAnswer {
   if (value.status === "joined") {
     return {
       status: "joined",
@@ -88,11 +104,40 @@ export async function createUntitledContextDocument(input: {
   return value;
 }
 
+/**
+ * The answer to a create the server already took, or null when it holds no such id. The id
+ * is read before any authority over the create's destination, so a replay is answered by
+ * what the server holds and not by who may create there now. Held where the writer can no
+ * longer edit (an archived or deleted Work, a lost grant) the id is spent: a conflict, which
+ * the device answers by minting another id for its document.
+ */
+export async function answerHeldCreate(input: {
+  port: ContextPort;
+  documentId: string;
+  /** Whether the writer can still edit where the held document lives. */
+  canEdit: (uri: string) => Promise<boolean>;
+}): Promise<CreateUntitledContextDocumentAnswer | null> {
+  const held = await input.port.heldUntitledDocument(input.documentId);
+  if (!held.ok) contextErrorToHttp(held.error);
+  if (!held.value) return null;
+  if (!(await input.canEdit(held.value.uri))) return { status: "conflict" };
+  return createAnswer(held.value.answer);
+}
+
 export default defineEventHandler((event) =>
   withDurableIntentInterruptBoundary(async () => {
     const { app, userId, projectId, scheme, workId, authority, port, container, edit } =
       await resolveContextRoute(event, { recoverAcrossProject: true });
     const body = parseCreateUntitledBody(await readBody(event));
+    const held = await answerHeldCreate({
+      port,
+      documentId: body.documentId,
+      canEdit: canEditContextUri({ app, userId, projectId }),
+    });
+    if (held) {
+      if (held.status === "conflict") setResponseStatus(event, 409);
+      return held;
+    }
     const access = body.destination
       ? await createDestinationAccess({ app, userId, projectId, destination: body.destination })
       : null;

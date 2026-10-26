@@ -2,16 +2,24 @@
  * Materializes a client-minted folder at the writer's destination, so the writer's next command
  * can name it before this answer arrives. A replay of the same id answers `already-exists`; a
  * visible name taken at the destination leaves the folder at the first free name.
+ *
+ * The id is the create's receipt, read before any authority over the destination: a replay
+ * of a create the server took is answered from what it holds (see `answerHeldFolder`), so a
+ * final refusal always means the server holds no such id and the same id can be placed again.
  */
 import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
 import type {
   ContextCreateDestination,
   CreateContextFolderResponse,
 } from "@meridian/contracts/protocol";
-import { createError, defineEventHandler, readBody } from "nitro/h3";
+import { createError, defineEventHandler, readBody, setResponseStatus } from "nitro/h3";
 import type { ContextPort } from "../../../../../../domains/context/index.js";
 import { withDurableIntentInterruptBoundary } from "../../../../../../shared/interrupt-boundary.js";
-import { createDestinationAccess, parseCreateDestination } from "./_create-destination.js";
+import {
+  canEditContextUri,
+  createDestinationAccess,
+  parseCreateDestination,
+} from "./_create-destination.js";
 import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
 interface CreateFolderBody {
@@ -55,11 +63,41 @@ export async function createContextFolder(input: {
   return result.value;
 }
 
+/**
+ * The answer to a create the server already took, or null when it holds no such id. The id
+ * is read before any authority over the create's destination, so a replay is answered by what
+ * the server holds and not by who may create there now. Held where the writer can no longer
+ * edit (an archived or deleted Work, a lost grant) the id is spent: a conflict, which leaves
+ * the device's folder local and needing repair.
+ */
+export async function answerHeldFolder(input: {
+  port: ContextPort;
+  folderId: string;
+  /** Whether the writer can still edit where the held folder lives. */
+  canEdit: (uri: string) => Promise<boolean>;
+}): Promise<CreateContextFolderResponse | null> {
+  const held = await input.port.heldFolder(input.folderId);
+  if (!held.ok) contextErrorToHttp(held.error);
+  if (!held.value) return null;
+  if ("conflict" in held.value) return { status: "conflict" };
+  if (!(await input.canEdit(held.value.uri))) return { status: "conflict" };
+  return held.value.answer;
+}
+
 export default defineEventHandler((event) =>
   withDurableIntentInterruptBoundary(async () => {
     const { app, userId, projectId, scheme, authority, port, container, edit } =
       await resolveContextRoute(event, { recoverAcrossProject: true });
     const body = parseCreateFolderBody(await readBody(event));
+    const held = await answerHeldFolder({
+      port,
+      folderId: body.folderId,
+      canEdit: canEditContextUri({ app, userId, projectId }),
+    });
+    if (held) {
+      if (held.status === "conflict") setResponseStatus(event, 409);
+      return held;
+    }
     const access = await createDestinationAccess({
       app,
       userId,

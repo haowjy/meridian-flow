@@ -169,6 +169,16 @@ export function validateResourceRecordUpdate(
     next: { handle: resource.handle, intents: next.intents },
     identityRevision: resource.identity.revision,
     localDeletionAllowed: resourceNeverAccepted(next),
+    revokedLocalDeletions: new Set(
+      previous?.intents
+        .filter(
+          (intent) =>
+            intent.state === "settled-locally" &&
+            previous.resource.obligations.cleanup?.obligationId === intent.intentId &&
+            resource.obligations.cleanup?.obligationId !== intent.intentId,
+        )
+        .map((intent) => intent.intentId),
+    ),
   });
   const oldRefresh = previous?.resource.obligations.canonicalRefresh;
   const nextRefresh = resource.obligations.canonicalRefresh;

@@ -113,6 +113,11 @@ export type ContextCreateDestination = {
   parent: ContextDestinationParent;
   /** The leaf name as the writer typed it. */
   name: string;
+  /**
+   * Where among the parent's children the new document goes; the server resolves it under the
+   * namespace lock a move uses. An anchor it can't find leaves the document at the parent's end.
+   */
+  position?: ContextSiblingPosition;
 };
 
 /**
@@ -125,16 +130,22 @@ export type CreateContextFolderRequest = {
   destination: ContextCreateDestination;
 };
 
-/** The folder at its address. `already-exists` answers a replay: the id is the identity. */
-export type CreateContextFolderResponse = {
-  status: "created" | "already-exists";
-  folderId: string;
-  scheme: ProjectContextTreeScheme;
-  path: string;
-  name: string;
-  /** Present only when the canonical location is Work-scoped. */
-  workId?: string | null;
-};
+/**
+ * The folder at its address. `already-exists` answers a replay: the id is the identity.
+ * `conflict` means the id is held where this create cannot use it (deleted, hidden, foreign,
+ * or a document's): the device's folder stays local and needs repair.
+ */
+export type CreateContextFolderResponse =
+  | {
+      status: "created" | "already-exists";
+      folderId: string;
+      scheme: ProjectContextTreeScheme;
+      path: string;
+      name: string;
+      /** Present only when the canonical location is Work-scoped. */
+      workId?: string | null;
+    }
+  | { status: "conflict" };
 
 export type CreateUntitledContextDocumentRequest = {
   documentId: string;

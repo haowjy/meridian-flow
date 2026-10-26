@@ -281,18 +281,37 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return parentId;
   }
 
-  async createFolderIfAbsent(input: { parentId: string | null; name: string; id: string }) {
-    const held = this.backing.folders.get(input.id);
+  async findFolderIdentity(
+    id: string,
+  ): Promise<{ status: "live"; path: readonly string[] } | { status: "unreachable" } | null> {
+    const held = this.backing.folders.get(id);
     if (held) {
-      if (held.contextSourceId !== this.sourceId || held.deletedAt !== null)
-        throw new ContextEntryConflictError("folder");
+      // Another source's folder is found by that source's own reader, not this one.
+      if (held.contextSourceId !== this.sourceId) return null;
+      if (held.deletedAt !== null) return { status: "unreachable" };
       return {
-        status: "already-exists" as const,
-        folderId: held.id,
+        status: "live",
         path: locationPath(this.backing, held.parentId, held.name).split("/"),
       };
     }
-    if (this.backing.documents.has(input.id)) throw new ContextEntryConflictError("folder");
+    const document = this.backing.documents.get(id);
+    return document?.contextSourceId === this.sourceId ? { status: "unreachable" } : null;
+  }
+
+  async createFolderIfAbsent(input: {
+    parentId: string | null;
+    name: string;
+    id: string;
+    position?: unknown;
+  }) {
+    const sameSource = await this.findFolderIdentity(input.id);
+    if (sameSource) {
+      if (sameSource.status === "unreachable") throw new ContextEntryConflictError("folder");
+      return { status: "already-exists" as const, folderId: input.id, path: sameSource.path };
+    }
+    // The catalog's entry-id space is global, and another source holding the id is final too.
+    if (this.backing.folders.has(input.id) || this.backing.documents.has(input.id))
+      throw new ContextEntryConflictError("folder");
     const name = await allocateFilename({ kind: "folder", name: input.name }, ({ filename }) =>
       Promise.resolve(
         this.findFolderRecord(input.parentId, filename) !== null ||

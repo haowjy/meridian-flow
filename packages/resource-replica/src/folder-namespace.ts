@@ -14,7 +14,7 @@ import {
   settleNamespaceIntent,
   validateNamespaceJournal,
 } from "./namespace-journal-policy";
-import { committedResourceDeletion } from "./resource-deletion";
+import { committedResourceDeletion, LOCAL_DELETION_UNDO_MS } from "./resource-deletion";
 import {
   intentOwnsDeletionAt,
   owningLocationIntent,
@@ -197,18 +197,29 @@ export function planFolderDeletion(input: {
   intentId: string;
   operationId: string;
   admission?: PlacementAdmission;
+  now?: number;
 }): FolderNamespaceWrite | null {
   const record = folderRecordFor(input);
   if (folderOwnsDeletion(record)) return null;
   if (record.canonical) resourceContextAuthority(record.canonical.scheme, record.canonical);
-  // A folder the server never accepted has nothing to delete there: deleting it is local.
+  // A folder the server never accepted has nothing to delete there: deleting it is local, and
+  // the writer keeps the same Undo window a server deletion has.
   const neverAccepted = folderNeverAccepted(record);
+  const now = input.now ?? Date.now();
   const superseded = supersedeRepairableNamespaceWork(record, record.projectId);
   return {
     expectedRevision: input.record?.revision ?? null,
     next: {
       ...record,
       revision: record.revision + 1,
+      ...(neverAccepted
+        ? {
+            localDeletion: {
+              obligationId: input.intentId,
+              notBefore: now + LOCAL_DELETION_UNDO_MS,
+            },
+          }
+        : {}),
       intents: [
         ...superseded.intents.map((intent) =>
           intent.state === "pending" && !intent.attempts.length
@@ -226,6 +237,54 @@ export function planFolderDeletion(input: {
           ...(input.admission ? { admission: input.admission } : {}),
           attempts: [],
           state: neverAccepted ? "settled-locally" : "pending",
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * Undo of a folder deletion that settled on this device inside its window: the deletion is
+ * superseded and the folder's last placement is queued again, with the children it kept. Null
+ * once the window has closed or when no such deletion is held.
+ */
+export function planFolderLocalDeletionUndo(
+  record: FolderNamespaceRecord,
+  input: { operationId: string; createIntentId: string; now: number },
+): FolderNamespaceWrite | null {
+  const deletion = record.intents.find(
+    (intent) =>
+      intent.operationId === input.operationId &&
+      intent.desired.kind === "delete" &&
+      intent.state === "settled-locally",
+  );
+  const window = record.localDeletion;
+  if (!deletion || window?.obligationId !== deletion.intentId || input.now >= window.notBefore)
+    return null;
+  const create = record.intents
+    .filter((intent) => intent.desired.kind === "set-folder-location")
+    .sort((left, right) => right.sequence - left.sequence)[0];
+  if (!create) return null;
+  const { localDeletion: _closed, ...withoutWindow } = record;
+  return {
+    expectedRevision: record.revision,
+    next: {
+      ...withoutWindow,
+      revision: record.revision + 1,
+      intents: [
+        ...record.intents.map((intent) =>
+          intent === deletion ? { ...intent, state: "superseded" as const } : intent,
+        ),
+        {
+          projectId: create.projectId,
+          handle: record.handle,
+          intentId: input.createIntentId,
+          sequence: Math.max(...record.intents.map((intent) => intent.sequence)) + 1,
+          identityRevision: 1,
+          desired: create.desired,
+          ...(create.admission ? { admission: create.admission } : {}),
+          attempts: [],
+          state: "pending",
         },
       ],
     },
@@ -400,7 +459,35 @@ export function validateFolderNamespaceUpdate(
     identityRevision: 1,
     terminal: Boolean(next.terminal),
     localDeletionAllowed: folderNeverAccepted(next),
+    // Undo of a local folder deletion clears its window; that deletion may become superseded.
+    revokedLocalDeletions: new Set(
+      previous?.intents
+        .filter(
+          (intent) =>
+            intent.state === "settled-locally" &&
+            previous.localDeletion?.obligationId === intent.intentId &&
+            next.localDeletion?.obligationId !== intent.intentId,
+        )
+        .map((intent) => intent.intentId),
+    ),
   });
+  if (
+    next.localDeletion &&
+    !next.intents.some(
+      (intent) =>
+        intent.intentId === next.localDeletion?.obligationId &&
+        intent.desired.kind === "delete" &&
+        intent.state === "settled-locally",
+    )
+  )
+    throw new Error("A local deletion window names its settled delete");
+  if (
+    !next.localDeletion &&
+    next.intents.some(
+      (intent) => intent.desired.kind === "delete" && intent.state === "settled-locally",
+    )
+  )
+    throw new Error("A settled local deletion keeps its Undo window");
   if (next.canonical) resourceContextAuthority(next.canonical.scheme, next.canonical);
   else if (
     next.canonicalParent ||
@@ -605,7 +692,11 @@ export function settleFolderNamespaceOutcome(
   // The answer is the folder's first place; the catalog's observation replaces it with parent,
   // rank and freshness once it lists the folder.
   const request = intent.attempts.at(-1)?.request;
-  if (outcome.kind === "create-folder" && request?.kind === "create-folder")
+  if (
+    outcome.kind === "create-folder" &&
+    outcome.result.status !== "conflict" &&
+    request?.kind === "create-folder"
+  )
     write.next.canonical = {
       scheme: outcome.result.scheme,
       path: displayedPath(outcome.result.path),

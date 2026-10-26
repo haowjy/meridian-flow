@@ -47,6 +47,7 @@ import type {
   AdapterFault,
   AdapterFileEntry,
   AdapterFileRef,
+  AdapterLocatedFolder,
   AdapterMoveResult,
   AdapterSearchHit,
   ContextBranchTreeAdapter,
@@ -590,6 +591,7 @@ export class ContextFS implements ContextSchemeAdapter {
       leaf,
       documentId: options.documentId as DocumentId,
       ...(options.expectFolderId ? { expectFolderId: options.expectFolderId } : {}),
+      ...(options.position ? { position: options.position } : {}),
       options: { origin: options.origin },
     });
     if (!created.ok) return created;
@@ -630,6 +632,16 @@ export class ContextFS implements ContextSchemeAdapter {
     return this.placement.writeBinary(path, options);
   }
 
+  async locateFolder(folderId: string): Promise<Result<AdapterLocatedFolder | null, AdapterFault>> {
+    const found = await this.store.findFolderIdentity(folderId);
+    if (!found) return Ok(null);
+    return Ok(
+      found.status === "unreachable"
+        ? { status: "unreachable" }
+        : { status: "live", path: found.path.join("/") },
+    );
+  }
+
   async createFolder(
     path: string,
     options: AdapterCreateFolderOptions,
@@ -647,6 +659,7 @@ export class ContextFS implements ContextSchemeAdapter {
         parentId,
         name: options.name,
         id: options.folderId,
+        ...(options.position ? { position: options.position } : {}),
       });
       return Ok({
         status: created.status,

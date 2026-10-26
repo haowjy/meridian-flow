@@ -5,7 +5,11 @@
  */
 
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
-import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
+import type {
+  ContextSiblingPosition,
+  DocumentFileType,
+  Filetype,
+} from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documentMarkdownProjections } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
@@ -13,6 +17,7 @@ import {
   currentDrizzleDb,
   runInDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
+import { isUuid } from "../../../../shared/uuid.js";
 import { renderFilename } from "../../context/paths.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
 import {
@@ -37,6 +42,7 @@ import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
 import { insertDocumentRow } from "../../tree/node-rows.js";
 import { createLiveFolder, ensureLiveFolderPath } from "../../tree/placement.js";
+import { placeLiveSibling } from "../../tree/sibling-order.js";
 import { loadFolderChains } from "../../tree/tree-addresses.js";
 import {
   createTreeReader,
@@ -211,21 +217,53 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     });
   }
 
-  async createFolderIfAbsent(input: { parentId: string | null; name: string; id: string }) {
+  private async folderPath(folderId: FolderId): Promise<string[]> {
+    return [...((await loadFolderChains(this.db, [folderId])).get(folderId) ?? [])]
+      .reverse()
+      .map((link) => link.name);
+  }
+
+  async findFolderIdentity(
+    id: string,
+  ): Promise<{ status: "live"; path: readonly string[] } | { status: "unreachable" } | null> {
+    if (!isUuid(id)) return null;
+    const folderId = id as FolderId;
+    const [held] = await loadFolderIdentityRows(this.db, [folderId]);
+    if (held) {
+      // Another source's folder is found by that source's own reader, not this one.
+      if (held.contextSourceId !== this.sourceId) return null;
+      if (held.deleted || held.hidden) return { status: "unreachable" };
+      const path = [...((await loadFolderChains(this.db, [folderId])).get(folderId) ?? [])]
+        .reverse()
+        .map((link) => link.name);
+      return { status: "live", path };
+    }
+    // Folder and document ids share the catalog's entry-id space.
+    const [document] = await loadDocumentIdentityRows(this.db, [folderId]);
+    return document?.contextSourceId === this.sourceId ? { status: "unreachable" } : null;
+  }
+
+  async createFolderIfAbsent(input: {
+    parentId: string | null;
+    name: string;
+    id: string;
+    position?: ContextSiblingPosition;
+  }) {
     const folderId = input.id as FolderId;
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
-      const pathOf = async (id: FolderId) =>
-        [...((await loadFolderChains(this.db, [id])).get(id) ?? [])]
-          .reverse()
-          .map((link) => link.name);
+      // The catalog's entry-id space is global: a live id in this source is a replay, while any
+      // other holder (another source, deleted, hidden, a document) can never become this folder.
       const [held] = await loadFolderIdentityRows(this.db, [folderId]);
       if (held) {
         if (held.contextSourceId !== this.sourceId || held.deleted || held.hidden)
           throw new ContextEntryConflictError("folder");
-        return { status: "already-exists" as const, folderId, path: await pathOf(folderId) };
+        return {
+          status: "already-exists" as const,
+          folderId,
+          path: await this.folderPath(folderId),
+        };
       }
-      // Folder and document ids share the catalog's entry-id space.
       const [document] = await loadDocumentIdentityRows(this.db, [folderId]);
       if (document) throw new ContextEntryConflictError("folder");
       await createLiveFolder(this.deps.db, {
@@ -234,8 +272,24 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         name: input.name,
         id: folderId,
       });
+      if (input.position) {
+        const placed = await placeLiveSibling(this.deps.db, {
+          node: { kind: "folder", id: folderId },
+          sourceId: this.sourceId,
+          parentId: input.parentId as FolderId | null,
+          position: input.position,
+          arrived: true,
+        });
+        if (placed === "stale-anchor")
+          await placeLiveSibling(this.deps.db, {
+            node: { kind: "folder", id: folderId },
+            sourceId: this.sourceId,
+            parentId: input.parentId as FolderId | null,
+            arrived: true,
+          });
+      }
       await this.deps.catalogMutations?.refreshSources([this.sourceId], [folderId]);
-      return { status: "created" as const, folderId, path: await pathOf(folderId) };
+      return { status: "created" as const, folderId, path: await this.folderPath(folderId) };
     });
   }
 
@@ -292,6 +346,24 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           toId: outcome.documentId,
           projectId: input.joinFrom.projectId,
         });
+      }
+      if (outcome.kind === "inserted" && input.position) {
+        // The insert took the parent's arrival rule; the writer's position replaces it. A
+        // sibling that is gone leaves the arrival placement, never fails the create.
+        const placed = await placeLiveSibling(this.deps.db, {
+          node: { kind: "document", id: outcome.documentId },
+          sourceId: this.sourceId,
+          parentId: input.folderId as FolderId | null,
+          position: input.position,
+          arrived: true,
+        });
+        if (placed === "stale-anchor")
+          await placeLiveSibling(this.deps.db, {
+            node: { kind: "document", id: outcome.documentId },
+            sourceId: this.sourceId,
+            parentId: input.folderId as FolderId | null,
+            arrived: true,
+          });
       }
       if (outcome.kind === "inserted") {
         await this.deps.catalogMutations?.refreshSources([this.sourceId]);

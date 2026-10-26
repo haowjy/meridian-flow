@@ -180,7 +180,7 @@ function requestFor(
   };
 }
 
-/** A create carries what a move would: the server resolves the parent by identity. */
+/** The create carries what a move would: the server resolves the parent and the position by identity. */
 export function createDestination(destination: ResourceDestination): ContextCreateDestination {
   return {
     parent: {
@@ -188,6 +188,7 @@ export function createDestination(destination: ResourceDestination): ContextCrea
       ...(destination.createFolders?.length ? { createFolders: destination.createFolders } : {}),
     },
     name: destination.name,
+    ...(destination.position ? { position: destination.position } : {}),
   };
 }
 
@@ -282,7 +283,9 @@ export function namespaceOutcomeMatches(
   }
   if (attempt.request.kind === "create-folder")
     return (
-      outcome.kind === "create-folder" && outcome.result.folderId === attempt.request.body.folderId
+      outcome.kind === "create-folder" &&
+      (outcome.result.status === "conflict" ||
+        outcome.result.folderId === attempt.request.body.folderId)
     );
   if (
     outcome.kind !== "operation" ||

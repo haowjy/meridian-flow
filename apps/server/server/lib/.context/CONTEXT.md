@@ -113,10 +113,21 @@ any bare Nitro `HTTPError` 4xx (one thrown without the envelope, such as a parse
 ownership `createError`) into a typed, non-retryable envelope with the same status,
 message and `data`. It leaves 401, 408 and 429 bare, so they stay
 uncertain and the client retries. A new route that queue replays needs the same wrapper.
-A request parser must refuse a malformed identifier itself: a non-UUID Work id or a chat
-owner on a scheme that has none is a 400 (`parseWorkId`, `destinationRootUri`), because a
-value that reaches the domain or the database fails as an untyped 500, which the queue
-retries forever. Domain failures go through `contextErrorToHttp`, which types every code;
+A request parser must refuse a malformed identifier itself: a non-UUID Work id, No Work's
+id as a Scratch owner, or a chat owner on a scheme that has none is a 400 (`parseWorkId`,
+`destinationRootUri`), because a value that reaches the domain or the database fails as an
+untyped 500, which the queue retries forever.
+
+A create has no operation receipt: the id the device minted is its receipt. The
+create-untitled and create-folder routes read it first (`answerHeldCreate` /
+`answerHeldFolder`, `ContextPort.heldUntitledDocument` / `heldFolder`), before any authority
+or Work-lifecycle check on the destination, so a replay of a create the server took is
+answered from what it holds, and a final refusal means the server holds no such id and the
+device may place the same id again. An id held where the writer can no longer edit (an
+archived Work) answers `409 {status:"conflict"}`; for a document the device mints a new
+identity, for a folder it settles the refusal and repairs the folder. An id held in a deleted Work is not found (a deleted Work resolves to no
+authority), so its replay is refused `404 work_missing`; its repair answers `conflict`, which
+reaches the same remint. Domain failures go through `contextErrorToHttp`, which types every code;
 `stale_source`, `stale_target` and `io_error` are the retryable ones. The boundary stays per route rather
 than in the global error handler: typing every error there would make a 401
 final, and app code on other routes branches on the untyped `HttpResponseError`. Identity conflicts may name a renamed or relocated destination;

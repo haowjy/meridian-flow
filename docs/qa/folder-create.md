@@ -77,10 +77,13 @@ stays until dismissed and covers the lowest tree rows; dismiss it before the nex
 6. Set `__refuse`, create a folder. One POST (still one after 35s and after a reload);
    the folder is `needs-repair` with a `refusal` outcome, listed in Unfiled with the mark.
    Clear `__refuse` and Delete the row: no POST, the delete is `settled-locally`, the
-   create `superseded`, and there is no Undo.
+   create `superseded`, and the notice reads "Deleted <name>" with Undo. Undo brings the
+   folder back in Unfiled with its mark and sends one more create; while `__refuse` is
+   still set it is refused again.
 7. Hold, create `Outer`, then a folder `Inner` inside it, and Delete `Inner` before `Outer`
-   lands. `Inner` was never sent: no POST for it, its create `cancelled`, no Undo. Only
-   `Outer` reaches the server.
+   lands. `Inner` was never sent: no POST for it, its create `cancelled`, and the delete
+   settles locally with Undo and no POST. Undo restores `Inner` under `Outer`; its create
+   waits for `Outer` and goes out after it. Only `Outer` and then `Inner` reach the server.
 8. Hold, create a folder and Delete it at once. The create was already sent, so it lands
    and the delete follows (`settled`, with an Undo toast); the server ends with no folder.
 9. Hold, create a folder and rename it. One create POST, then the move; the server shows
@@ -103,5 +106,13 @@ body to `/api/projects/<id>/context/unfiled/create-folder` with `./mf api`.
 | `uploads` root | 400 `invalid_uri` |
 | `folderId` held by a document, or by a deleted, hidden or foreign folder | 409 `conflict` |
 
-A replay of an accepted create answers `already-exists` and settles as accepted. A 401,
-408, 429, any 5xx and a network failure stay retryable.
+A replay of an accepted create answers `already-exists` and settles as accepted. The
+`folderId` is read before authority over the destination, so an id the server holds out of
+reach answers 409 `{status: "conflict"}` even when the destination's Work is archived or
+gone; the app settles it as a refusal, never a retry. A 401, 408, 429, any 5xx and a
+network failure stay retryable.
+
+A create also takes `destination.position` (`{kind: "start" | "end" | "before" | "after",
+siblingId}`), resolved under the same move lock and walk as a document create: an anchor
+the server does not hold leaves the folder at the parent's end, a malformed position is a
+typed 400.

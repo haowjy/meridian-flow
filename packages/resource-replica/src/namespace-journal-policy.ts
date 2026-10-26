@@ -29,7 +29,7 @@ export function namespaceIntentOutcome(
     case "create":
       return outcome.result.status === "conflict" ? "refused" : "accepted";
     case "create-folder":
-      return "accepted";
+      return outcome.result.status === "conflict" ? "refused" : "accepted";
     case "refusal":
       return "refused";
   }
@@ -163,9 +163,12 @@ export function validateNamespaceJournal(input: {
   next: Journal;
   identityRevision: number;
   localDeletionAllowed?: boolean;
+  /** Local deletions whose Undo cleared their cleanup in this write: they may become superseded. */
+  revokedLocalDeletions?: ReadonlySet<string>;
   terminal?: boolean;
 }): void {
   const { previous, next, identityRevision, localDeletionAllowed = false } = input;
+  const revoked = input.revokedLocalDeletions ?? new Set<string>();
   const previousMax = Math.max(0, ...(previous?.intents.map((intent) => intent.sequence) ?? []));
   const previousIds = new Set(previous?.intents.map((intent) => intent.intentId));
   const ids = new Set<string>();
@@ -252,7 +255,8 @@ export function validateNamespaceJournal(input: {
       } else if (attempt.outcome?.kind === "create-folder") {
         if (
           attempt.request.kind !== "create-folder" ||
-          attempt.outcome.result.folderId !== attempt.request.body.folderId
+          (attempt.outcome.result.status !== "conflict" &&
+            attempt.outcome.result.folderId !== attempt.request.body.folderId)
         )
           throw new Error("Create outcome does not match submitted identity");
       }
@@ -322,7 +326,8 @@ export function validateNamespaceJournal(input: {
         (previousIntent &&
           previousIntent.state !== "needs-repair" &&
           previousIntent.state !== "received" &&
-          previousIntent.state !== "superseded"))
+          previousIntent.state !== "superseded" &&
+          !revoked.has(intent.intentId)))
     )
       throw new Error("Only failed namespace work can be superseded");
     if (intent.state === "pending" && intent.attempts.length > 0)
@@ -345,7 +350,9 @@ export function validateNamespaceJournal(input: {
       throw new Error("Recorded namespace intention cannot be replaced");
     if (
       (oldIntent.state === "cancelled" || oldIntent.state === "settled-locally") &&
-      (intent.state !== oldIntent.state || intent.attempts.length > 0)
+      ((intent.state !== oldIntent.state &&
+        !(revoked.has(intent.intentId) && intent.state === "superseded")) ||
+        intent.attempts.length > 0)
     )
       throw new Error("Locally completed namespace work cannot restart");
     if (

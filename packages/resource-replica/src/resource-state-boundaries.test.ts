@@ -4,7 +4,11 @@
  * - One-shot exact-content reservation lifecycle
  */
 import { expect, it } from "vitest";
-import { planResourceDeletion } from "./resource-deletion";
+import {
+  LOCAL_DELETION_UNDO_MS,
+  planLocalDeletionUndo,
+  planResourceDeletion,
+} from "./resource-deletion";
 import { prepareNamespaceAttempt } from "./resource-namespace";
 import type { ResourceRecord } from "./resource-records";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
@@ -150,7 +154,7 @@ it("does not let reserved content change identity or restart after acknowledgeme
     const before = local();
     const create = before.intents[0];
     if (!create) throw new Error("fixture missing create");
-    const write = planResourceDeletion(before, "project", "delete");
+    const write = planResourceDeletion(before, "project", "delete", "operation", undefined, 1000);
     expect(write).not.toBeNull();
     if (!write) throw new Error("missing plan");
     expect(write.expectedRevision).toBe(1);
@@ -158,15 +162,40 @@ it("does not let reserved content change identity or restart after acknowledgeme
       ...before.resource,
       revision: 2,
       obligations: {
-        cleanup: { obligationId: "delete", exactDatabaseName: "original" },
+        ...before.resource.obligations,
+        cleanup: {
+          obligationId: "delete",
+          exactDatabaseName: "original",
+          notBefore: 1000 + LOCAL_DELETION_UNDO_MS,
+        },
       },
     });
     expect(write.next.intents.map(({ state }) => state)).toEqual(["cancelled", "settled-locally"]);
     expect(() => validateResourceRecordUpdate(before, write.next)).not.toThrow();
+    // Undo inside the window supersedes the deletion and sends the create again; after it, nothing.
+    const undo = planLocalDeletionUndo(write.next, {
+      operationId: "operation",
+      createIntentId: "again",
+      now: 1000 + LOCAL_DELETION_UNDO_MS - 1,
+    });
+    if (!undo) throw new Error("Undo inside the window was refused");
+    expect(() => validateResourceRecordUpdate(write.next, undo.next)).not.toThrow();
+    expect(undo.next.intents.map(({ state }) => state)).toEqual([
+      "cancelled",
+      "superseded",
+      "pending",
+    ]);
+    expect(undo.next.resource.obligations.cleanup).toBeUndefined();
+    expect(
+      planLocalDeletionUndo(write.next, {
+        operationId: "operation",
+        createIntentId: "again",
+        now: 1000 + LOCAL_DELETION_UNDO_MS,
+      }),
+    ).toBeNull();
     expect(planResourceDeletion(write.next, "project", "another-delete")).toBeNull();
     const revived = structuredClone(write.next);
     revived.resource.revision++;
-    revived.resource.obligations.createEligibility = { eligibleAt: 2 };
     revived.intents = [...revived.intents, { ...create, intentId: "new-create", sequence: 3 }];
     expect(() => validateResourceRecordUpdate(write.next, revived)).toThrow(
       "cannot retain executable namespace work",

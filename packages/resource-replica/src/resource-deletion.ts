@@ -10,19 +10,29 @@ import type {
   ResourceWrite,
 } from "./resource-records";
 
-/** The exact content of a document the server never held is cleaned up once its deletion settles. */
+/**
+ * How long a deleted document that exists only on this device can be brought back. The server
+ * keeps its own deletions in Trash; this device has no Trash, so the exact content waits out the
+ * window and is then cleaned up.
+ */
+export const LOCAL_DELETION_UNDO_MS = 10 * 60_000;
+
+/** The exact content of a document the server never held is cleaned up once the Undo window closes. */
 function locallyDeleted(
   resource: ResourceRecord["resource"],
   deletionIntentId: string,
+  now: number,
 ): ResourceRecord["resource"] {
   const next = { ...resource, revision: resource.revision + 1 };
   return resource.content.kind === "exact"
     ? {
         ...next,
         obligations: {
+          ...resource.obligations,
           cleanup: {
             obligationId: deletionIntentId,
             exactDatabaseName: resource.content.databaseName,
+            notBefore: now + LOCAL_DELETION_UNDO_MS,
           },
         },
       }
@@ -30,14 +40,68 @@ function locallyDeleted(
 }
 
 /** A queued delete of a document the server never accepted settles on this device. */
-export function settleDeletionLocally(record: ResourceRecord, intentId: string): ResourceWrite {
+export function settleDeletionLocally(
+  record: ResourceRecord,
+  intentId: string,
+  now = Date.now(),
+): ResourceWrite {
   return {
     expectedRevision: record.resource.revision,
     next: {
-      resource: locallyDeleted(record.resource, intentId),
+      resource: locallyDeleted(record.resource, intentId, now),
       intents: record.intents.map((intent) =>
         intent.intentId === intentId ? { ...intent, state: "settled-locally" } : intent,
       ),
+    },
+  };
+}
+
+/**
+ * Undo of a deletion that settled on this device, inside its window: the deletion is superseded
+ * and the document's create is sent again, since what the deletion cancelled cannot restart. Null
+ * once the window has closed (the content may already be cleaned up) or when no such deletion is held.
+ */
+export function planLocalDeletionUndo(
+  record: ResourceRecord,
+  input: { operationId: string; createIntentId: string; now: number },
+): ResourceWrite | null {
+  const deletion = record.intents.find(
+    (intent) =>
+      intent.operationId === input.operationId &&
+      intent.desired.kind === "delete" &&
+      intent.state === "settled-locally",
+  );
+  const { cleanup, ...obligations } = record.resource.obligations;
+  if (
+    !deletion ||
+    cleanup?.obligationId !== deletion.intentId ||
+    (cleanup.notBefore !== undefined && input.now >= cleanup.notBefore)
+  )
+    return null;
+  const create = record.intents
+    .filter((intent) => intent.desired.kind === "create")
+    .sort((left, right) => right.sequence - left.sequence)[0];
+  if (!create) return null;
+  return {
+    expectedRevision: record.resource.revision,
+    next: {
+      resource: { ...record.resource, revision: record.resource.revision + 1, obligations },
+      intents: [
+        ...record.intents.map((intent) =>
+          intent === deletion ? { ...intent, state: "superseded" as const } : intent,
+        ),
+        {
+          projectId: create.projectId,
+          handle: record.resource.handle,
+          intentId: input.createIntentId,
+          sequence: Math.max(...record.intents.map((intent) => intent.sequence)) + 1,
+          identityRevision: record.resource.identity.revision,
+          desired: create.desired,
+          ...(create.admission ? { admission: create.admission } : {}),
+          attempts: [],
+          state: "pending",
+        },
+      ],
     },
   };
 }
@@ -48,6 +112,7 @@ export function planResourceDeletion(
   intentId: string,
   operationId?: string,
   admission?: PlacementAdmission,
+  now = Date.now(),
 ): ResourceWrite | null {
   if (
     record.resource.lifecycle.kind === "terminal" ||
@@ -74,7 +139,7 @@ export function planResourceDeletion(
     expectedRevision: record.resource.revision,
     next: {
       resource: neverAccepted
-        ? locallyDeleted(record.resource, intentId)
+        ? locallyDeleted(record.resource, intentId, now)
         : { ...record.resource, revision: record.resource.revision + 1 },
       intents: [
         ...superseded.intents.map((intent) =>

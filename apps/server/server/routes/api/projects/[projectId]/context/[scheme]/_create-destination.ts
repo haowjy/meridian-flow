@@ -18,7 +18,10 @@ import {
 } from "../../../../../../domains/file-policy/index.js";
 import type { AppServices } from "../../../../../../lib/compose.js";
 import { throwContextWorkUnavailableHttpError } from "../../../../../../lib/context-error-http.js";
-import { parseDestinationParent } from "../../../../../../lib/context-move-route.js";
+import {
+  parseDestinationParent,
+  parseSiblingPosition,
+} from "../../../../../../lib/context-move-route.js";
 import { parseContextMutationName } from "../../../../../../lib/context-mutation-validation.js";
 import { toUri } from "./_helpers.js";
 
@@ -30,6 +33,7 @@ export function parseCreateDestination(raw: unknown): ContextCreateDestination {
   return {
     parent: parseDestinationParent(fields.parent),
     name: parseContextMutationName(fields.name, "destination.name"),
+    ...(fields.position === undefined ? {} : { position: parseSiblingPosition(fields.position) }),
   };
 }
 
@@ -109,6 +113,21 @@ async function destinationRootUri(
   return toUri(scheme, "", authority);
 }
 
+/** Whether the writer can still edit the context address `uri` names. */
+export function canEditContextUri(input: {
+  app: AppServices;
+  userId: string;
+  projectId: string;
+}): (uri: string) => Promise<boolean> {
+  const { app, userId, projectId } = input;
+  return async (uri: string) => {
+    const target = await containerOfUri(app, projectId, uri);
+    if (!target) return false;
+    const grant = await app.fileAccess.authorize({ accountId: userId as UserId }, target, "edit");
+    return !isFileAccessDenied(grant) && (await app.fileAccess.confirmEdit([grant])).length === 0;
+  };
+}
+
 /**
  * The access a typed destination adds to a create: its root's address and container for a
  * root-kind parent, and the check the port runs on the resolved address.
@@ -125,11 +144,9 @@ export async function createDestinationAccess(input: {
     parent.kind === "root" ? await destinationRootUri(app, projectId, parent) : undefined;
   const rootContainer =
     rootUri !== undefined ? await containerOfUri(app, projectId, rootUri) : null;
-  const authorizeDestination = async (uri: string) => {
-    const target = await containerOfUri(app, projectId, uri);
-    if (!target) return false;
-    const grant = await app.fileAccess.authorize({ accountId: userId as UserId }, target, "edit");
-    return !isFileAccessDenied(grant) && (await app.fileAccess.confirmEdit([grant])).length === 0;
+  return {
+    rootUri,
+    rootContainer,
+    authorizeDestination: canEditContextUri({ app, userId, projectId }),
   };
-  return { rootUri, rootContainer, authorizeDestination };
 }

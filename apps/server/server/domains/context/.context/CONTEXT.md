@@ -131,10 +131,13 @@ rooms retire.
 
 A device-minted folder ID is idempotent the same way (`createFolderIfAbsent`, the
 `create-folder` route): a replay finds the folder under its ID and answers
-`already-exists`. The folder takes the first free name at the destination and absorbs a
-hidden branch folder already there, so a create is never refused for a name. A destination
-that is gone is `destination_missing`, and an ID held by a deleted or foreign folder is a
-conflict, both typed and final.
+`already-exists`. The route reads the ID first (`heldFolder`), before any authority over
+the destination, so an ID held out of reach (deleted, hidden, foreign, a document's) is a
+final `409 conflict` even when the destination's Work is archived. The folder takes the
+first free name at the destination and absorbs a hidden branch folder already there, so a
+create is never refused for a name. A destination that is gone is `destination_missing`.
+A create carries `destination.position` like a document create, resolved under the move
+lock; an anchor the server does not hold leaves the folder at the parent's end.
 
 A hidden node with no active branch use is tombstoned, never left live. End of
 use locks and rechecks the complete namespace/document scope, releases its

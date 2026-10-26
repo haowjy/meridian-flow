@@ -131,6 +131,17 @@ export type ContextCreateUntitledDocumentResult =
       workId?: string;
     };
 
+/** What the server already holds under a create's client-minted id, and the address that holds it. */
+export interface ContextHeldUntitledDocument {
+  /** The create's replay answer: the document it joined, or where the id is materialized. */
+  answer: Extract<
+    ContextCreateUntitledDocumentResult,
+    { status: "joined" | "already-materialized" }
+  >;
+  /** The canonical URI of that document, for the caller to check its reach. */
+  uri: string;
+}
+
 export interface ContextCreateUntitledDocumentOptions {
   documentId: string;
   origin: WriteProvenance;
@@ -139,7 +150,11 @@ export interface ContextCreateUntitledDocumentOptions {
    * carries. The create joins a branch's hidden document waiting there. Without it the
    * create is nameless: `Untitled N` in the home URI's folder.
    */
-  destination?: { parent: NonNullable<MoveContextEntryRequest["destinationParent"]>; name: string };
+  destination?: {
+    parent: NonNullable<MoveContextEntryRequest["destinationParent"]>;
+    name: string;
+    position?: MoveContextEntryRequest["position"];
+  };
   /** Refuses a destination the caller may not edit; given the resolved destination URI. */
   authorizeDestination?: (uri: string) => Promise<boolean>;
 }
@@ -152,13 +167,19 @@ export interface AdapterCreateUntitledOptions {
   name?: string;
   /** The folder identity the destination named: a stale one is retried, never made again. */
   expectFolderId?: string;
+  /** Where among the folder's children a new document goes; it never moves one that exists. */
+  position?: MoveContextEntryRequest["position"];
 }
 
 export interface ContextCreateFolderOptions {
   folderId: string;
   origin: WriteProvenance;
   /** Where the writer put the folder; the same identity-based address a move carries. */
-  destination: { parent: NonNullable<MoveContextEntryRequest["destinationParent"]>; name: string };
+  destination: {
+    parent: NonNullable<MoveContextEntryRequest["destinationParent"]>;
+    name: string;
+    position?: MoveContextEntryRequest["position"];
+  };
   /** Refuses a destination the caller may not edit; given the resolved destination URI. */
   authorizeDestination?: (uri: string) => Promise<boolean>;
 }
@@ -173,6 +194,17 @@ export interface ContextCreateFolderResult {
   workId?: string;
 }
 
+/** What the server already holds under a create's client-minted folder id. */
+export type ContextHeldFolder =
+  | {
+      /** The create's replay answer: the folder id is materialized at this address. */
+      answer: ContextCreateFolderResult & { status: "already-exists" };
+      /** The canonical URI of that folder, for the caller to check its reach. */
+      uri: string;
+    }
+  /** The id is held where the caller cannot reach or reuse it: a typed final conflict. */
+  | { conflict: true };
+
 /** What the router hands an adapter: the destination resolved to a folder path and a leaf. */
 export interface AdapterCreateFolderOptions {
   folderId: string;
@@ -181,6 +213,8 @@ export interface AdapterCreateFolderOptions {
   name: string;
   /** The folder identity the destination named: a stale one is retried, never made again. */
   expectFolderId?: string;
+  /** Where among the folder's siblings a new folder goes. */
+  position?: MoveContextEntryRequest["position"];
 }
 
 interface BaseListEntry {
@@ -440,11 +474,29 @@ export interface ContextPort {
     documentId: string,
   ): Promise<Result<{ documentId: string; uri: string } | null, ContextError>>;
 
+  /**
+   * What this port already holds under a create's client-minted id: the document its create
+   * joined, else the place the id is materialized, else null. Read-only and unaware of the
+   * create's destination, so a replay is answered from what the server holds before anything
+   * asks whether the writer may still create there.
+   */
+  heldUntitledDocument(
+    documentId: string,
+  ): Promise<Result<ContextHeldUntitledDocument | null, ContextError>>;
+
   /** Allocate and persist an empty client-seeded document under a home directory URI. */
   createUntitledDocument(
     homeUri: string,
     options: ContextCreateUntitledDocumentOptions,
   ): Promise<Result<ContextCreateUntitledDocumentResult, ContextError>>;
+
+  /**
+   * What this port already holds under a create's client-minted folder id: the folder's place,
+   * an id held out of reach, or null. Read-only and unaware of the create's destination, so a
+   * replay is answered from what the server holds before anything asks where the writer may
+   * create now.
+   */
+  heldFolder(folderId: string): Promise<Result<ContextHeldFolder | null, ContextError>>;
 
   /** Create a folder under a device-minted id at the writer's destination. */
   createFolder(

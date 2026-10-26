@@ -78,7 +78,9 @@ document on this device with its text, listed in Unfiled with a failure mark
 [replica contract](../../../../../../packages/resource-replica/.context/CONTEXT.md)).
 A refused folder create does the same: the folder, and anything the writer put in it,
 is listed in Unfiled with a mark until each is placed or deleted. Deleting a folder
-the server never accepted settles on this device, with nothing to Undo.
+the server never accepted settles on this device inside the same Undo window a
+document gets (`localDeletion.notBefore`), taking its local children with it; one
+Undo restores the subtree.
 
 Folder deletion is another folder namespace intent (`planFolderDeletion`,
 `AccountResourceReplica.deleteFolder`), admitted by stable folder ID. Its delete

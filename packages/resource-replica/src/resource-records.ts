@@ -162,7 +162,12 @@ export type ResourceDescriptor = ResourceKey & {
       identityRevision: number;
       exactDatabaseName: string;
     };
-    cleanup?: { obligationId: string; exactDatabaseName: string };
+    cleanup?: {
+      obligationId: string;
+      exactDatabaseName: string;
+      /** A local deletion's Undo window: the content is kept until then (epoch ms). */
+      notBefore?: number;
+    };
   };
 };
 
@@ -326,6 +331,8 @@ export type FolderNamespaceRecord = ResourceKey & {
   /** Server namespace watermark of the canonical observation; absent for local identities. */
   observationVersion?: string;
   canonicalRefresh?: { operationId: string; observationVersion?: string };
+  /** A local deletion's Undo window: the folder, its place and its children stay recoverable until then (epoch ms). */
+  localDeletion?: { obligationId: string; notBefore: number };
   /** Exact-ID availability proves this folder is gone, never descendant document deletion. */
   terminal?: { generation: string };
   intents: readonly NamespaceIntent[];

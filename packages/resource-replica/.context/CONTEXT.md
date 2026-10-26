@@ -118,8 +118,11 @@ answer sets `canonical` from the answered path; a typed refusal leaves the recor
 (`create`), listed in Unfiled under the name last typed, as a refused document is. Later intentions
 queue behind the create like any placement, and its admission makes the folder a predecessor of
 whatever is put inside or after it. Deleting a folder the server never accepted
-(`folderNeverAccepted`: nothing it answered took it) settles locally. `folderListedLocally` keeps a
-row in the projection beside the catalog's until a catalog read observes the folder.
+(`folderNeverAccepted`: nothing it answered took it) settles locally with the same Undo
+window a document gets (`localDeletion.notBefore`); the replica settles every local
+folder and document under it under that one operation, so one Undo restores the subtree.
+`folderListedLocally` keeps a row in the projection beside the catalog's until a catalog
+read observes the folder.
 
 File and folder records share immutable journal validation, receipt matching,
 account-bound transport and the CAS replay loop. `owningLocationIntent` is the
@@ -303,10 +306,14 @@ resent and not woken by the 30-second retry; the document stays local (lifecycle
 exact content. Queued moves behind it are cancelled (`resolveRefusedLocationChain`) and the
 newest one is offered back as the repair destination (`namespaceRepairDestination`). The
 writer repairs it by placing it: `planResourceLocation` supersedes the refused create
-and files a new create under the same document id at the picked destination (no remint,
-since the server never held the id). Deleting it settles locally (`resourceNeverAccepted`:
+and files a new create under the same document id at the picked destination, with its
+sibling `position` (no remint: the create route answers an id it holds before it checks
+authority, so a final refusal means the server holds none; an id held where the writer can
+no longer edit answers `conflict`). Deleting it settles locally (`resourceNeverAccepted`:
 local, unplaced, every answered request refused), including a delete queued behind the
-in-flight create when the refusal arrives (`prepareNamespaceAttempt`). Only a create the
+in-flight create when the refusal arrives (`prepareNamespaceAttempt`). The local deletion keeps
+the exact content for `LOCAL_DELETION_UNDO_MS` (`cleanup.notBefore`); `planLocalDeletionUndo`
+supersedes it and sends the create again inside the window. Only a create the
 server answered `conflict` or `joined` is the runner's to repair (`createAwaitsRemint`): it
 is reminted under a new id and its queued work moves with it.
 

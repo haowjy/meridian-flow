@@ -224,7 +224,7 @@ describe("context router owner resolution", () => {
 });
 
 describe("context router untitled identity recovery", () => {
-  it("returns an existing document's canonical cross-scheme location without creating a row", async () => {
+  it("answers a held id from its canonical cross-scheme location without creating a row", async () => {
     const requestedCreate = vi.fn();
     const manuscript = {
       name: "manuscript",
@@ -237,13 +237,7 @@ describe("context router untitled identity recovery", () => {
       capabilities: { writable: true, searchable: true, creatable: true },
       locateDocument: async (documentId: string) =>
         Ok({ documentId, path: "moved/Untitled 1.md", name: "Untitled 1.md" }),
-      createUntitledDocument: async (_path: string, options: { documentId: string }) =>
-        Ok({
-          status: "already-exists" as const,
-          documentId: options.documentId,
-          path: "moved/Untitled 1.md",
-          name: "Untitled 1.md",
-        }),
+      createUntitledDocument: requestedCreate,
     } as unknown as ContextSchemeAdapter;
     const port = createContextPortRouter({
       sources: new Map([
@@ -254,19 +248,19 @@ describe("context router untitled identity recovery", () => {
     });
 
     await expect(
-      port.createUntitledDocument("manuscript://branches", {
-        documentId: "00000000-0000-4000-8000-000000000101",
-        origin: { type: "system" },
-      }),
+      port.heldUntitledDocument("00000000-0000-4000-8000-000000000101"),
     ).resolves.toEqual({
       ok: true,
       value: {
-        status: "already-materialized",
-        documentId: "00000000-0000-4000-8000-000000000101",
-        scheme: "scratch",
-        workId: "work-2",
-        path: "moved/Untitled 1.md",
-        name: "Untitled 1.md",
+        answer: {
+          status: "already-materialized",
+          documentId: "00000000-0000-4000-8000-000000000101",
+          scheme: "scratch",
+          workId: "work-2",
+          path: "moved/Untitled 1.md",
+          name: "Untitled 1.md",
+        },
+        uri: "scratch://@w8/moved/Untitled 1.md",
       },
     });
     expect(requestedCreate).not.toHaveBeenCalled();

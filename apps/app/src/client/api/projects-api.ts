@@ -377,6 +377,7 @@ export async function createContextFolder(
   init?: RequestInitOptions,
 ): Promise<CreateContextFolderResponse> {
   return postJson(urlFor(apiProjectContextCreateFolderPath(projectId, scheme, opts), init), body, {
+    acceptErrorResponse: acceptsContextConflict,
     headers: init?.headers,
     signal: init?.signal,
   });

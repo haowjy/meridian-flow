@@ -11,6 +11,7 @@
 import type { ProjectId } from "@meridian/contracts";
 import type {
   ContextParentOrderPolicy,
+  ContextSiblingPosition,
   DocumentFileType,
   Filetype,
 } from "@meridian/contracts/protocol";
@@ -64,6 +65,8 @@ export interface CreateDocumentInput {
   markdown: string;
   filetype: Filetype;
   provisionalName?: boolean;
+  /** Where among the folder's children a newly inserted row goes; a reveal keeps its place. */
+  position?: ContextSiblingPosition;
   /**
    * A device's create id this reveal forwards to the revealed document: written with the
    * reveal, before the catalog refresh that reads it, so a join and its forward commit together.
@@ -143,12 +146,25 @@ export interface ContextDocumentStore {
    * name. A replay answers `already-exists` with the folder's address now; an id a deleted
    * or foreign folder holds throws {@link ContextEntryConflictError}.
    */
-  createFolderIfAbsent(input: { parentId: string | null; name: string; id: string }): Promise<{
+  createFolderIfAbsent(input: {
+    parentId: string | null;
+    name: string;
+    id: string;
+    position?: ContextSiblingPosition;
+  }): Promise<{
     status: "created" | "already-exists";
     folderId: string;
     /** Source-relative path segments, the folder's own name last. */
     path: readonly string[];
   }>;
+  /**
+   * Any catalog row under `id`: a live folder of this source, an id held out of reach (deleted,
+   * hidden, another source's, or a document's), or null. One read answers a create replay and
+   * the create itself, so both agree on what "already held" means.
+   */
+  findFolderIdentity(
+    id: string,
+  ): Promise<{ status: "live"; path: readonly string[] } | { status: "unreachable" } | null>;
   /** What a live create at this path would reveal, holding nothing (§6.3 step 1). */
   findLiveCreateCandidate(
     dir: readonly string[],

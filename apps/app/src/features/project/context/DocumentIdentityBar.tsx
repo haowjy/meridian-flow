@@ -141,6 +141,8 @@ export function DocumentIdentityBar({
   const showChip =
     !reviewItemKey && !readOnly && location.provisional && location.scheme !== "uploads";
   const placementOpen = fieldOpen && showChip;
+  // Only a provisional placement can be repaired here.
+  const repairable = location.provisional && !readOnly;
   const manuscriptState = useManuscriptState(projectId, tab);
 
   const renderRow = (version: ReactNode, controls: ReactNode) => (
@@ -213,22 +215,12 @@ export function DocumentIdentityBar({
               <DraftReviewChip documentId={tab.documentId} />
             ) : null}
             <ManuscriptStateSlot state={manuscriptState} className="ml-1" />
-            {/* Only a provisional placement refusal offers repair here; list failures are passive. */}
-            {repair && !placementOpen ? (
-              location.provisional && !readOnly ? (
-                <button
-                  type="button"
-                  className="focus-ring flex min-w-0 items-center rounded-md"
-                  onClick={() => {
-                    setDismissedRepairId(null);
-                    setFieldOpen(true);
-                  }}
-                >
-                  <NamespaceFailureMark failure={repair.kind} labelled />
-                </button>
-              ) : (
-                <NamespaceFailureMark failure={repair.kind} message={passiveFailure} />
-              )
+            {/* List failures are passive: an icon whose tooltip says where to act. */}
+            {repair && !placementOpen && !repairable ? (
+              <NamespaceFailureMark
+                failure={repair.kind}
+                message={repair.kind === "create" ? undefined : passiveFailure}
+              />
             ) : null}
             <IdentityChipSlot
               projectId={projectId}
@@ -248,6 +240,23 @@ export function DocumentIdentityBar({
         ) : null}
         {controls}
       </div>
+      {/* A provisional placement refusal offers repair here, in words on a line of its own so a
+          narrow bar never cuts the sentence. */}
+      {repair && repairable && !placementOpen ? (
+        <button
+          type="button"
+          className={cn(
+            "focus-ring flex w-full min-w-0 pb-1 text-left",
+            variant === "header" ? "pl-2" : "px-4",
+          )}
+          onClick={() => {
+            setDismissedRepairId(null);
+            setFieldOpen(true);
+          }}
+        >
+          <NamespaceFailureMark failure={repair.kind} labelled />
+        </button>
+      ) : null}
       {notice}
       {reviewItemKey ? (
         <DraftReviewFailureNotices
