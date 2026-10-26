@@ -44,7 +44,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
     );
-    const { createUntitledContextDocument } = await import(
+    const { answerHeldCreate, createUntitledContextDocument } = await import(
       "../../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js"
     );
 
@@ -186,12 +186,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ status: "created", scheme: "manuscript" });
 
       await expect(
-        createUntitledContextDocument({
+        answerHeldCreate({
           port,
-          userId: USER_ID,
-          scheme: "scratch",
-          workId,
-          body: { documentId: CROSS_SCHEME_DOCUMENT_ID },
+          documentId: CROSS_SCHEME_DOCUMENT_ID,
+          canEdit: async () => true,
         }),
       ).resolves.toMatchObject({
         status: "already-materialized",

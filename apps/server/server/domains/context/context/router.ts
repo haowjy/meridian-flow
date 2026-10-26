@@ -27,6 +27,7 @@ import type {
   ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
   ContextError,
+  ContextHeldUntitledDocument,
   ContextListing,
   ContextListOptions,
   ContextMoveOptions,
@@ -210,22 +211,23 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return bindings;
   }
   /** The joined document at its current address, or null when no location of this port holds it. */
-  async function joinedAnswer(
+  async function joinedDocument(
     documentId: string,
-  ): Promise<
-    Result<Extract<ContextCreateUntitledDocumentResult, { status: "joined" }> | null, ContextError>
-  > {
+  ): Promise<Result<ContextHeldUntitledDocument | null, ContextError>> {
     const located = await locateDocument(documentId, { includeDeleted: true });
     if (!located.ok) return located;
     if (!located.value) return Ok(null);
     const { location, path } = located.value;
     return Ok({
-      status: "joined",
-      documentId,
-      scheme: location.scheme,
-      path,
-      name: path.split("/").at(-1) ?? "",
-      ...(location.workScopeId ? { workId: location.workScopeId } : {}),
+      answer: {
+        status: "joined",
+        documentId,
+        scheme: location.scheme,
+        path,
+        name: path.split("/").at(-1) ?? "",
+        ...(location.workScopeId ? { workId: location.workScopeId } : {}),
+      },
+      uri: uriFor(location.scheme, path, location.authority),
     });
   }
 
@@ -590,6 +592,30 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         adapter.createBoundDocument(path, bound, options),
       ),
 
+    async heldUntitledDocument(documentId) {
+      // A create that joined answers from its forward first.
+      const forwardedTo = await deps.resolveForward?.(documentId);
+      if (forwardedTo) {
+        const joined = await joinedDocument(forwardedTo);
+        if (!joined.ok || joined.value) return joined;
+      }
+      const located = await locateDocument(documentId);
+      if (!located.ok) return located;
+      if (!located.value) return Ok(null);
+      const { location, path } = located.value;
+      return Ok({
+        answer: {
+          status: "already-materialized",
+          documentId,
+          scheme: location.scheme,
+          path,
+          name: path.split("/").at(-1) ?? "",
+          ...(location.workScopeId ? { workId: location.workScopeId } : {}),
+        },
+        uri: uriFor(location.scheme, path, location.authority),
+      });
+    },
+
     async createUntitledDocument(
       homeUri,
       options,
@@ -600,37 +626,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const homeCreation = home.value.requireCreation("intake");
       if (!homeCreation.ok) return homeCreation;
 
-      // A create that joined answers from its forward first, under the target's authorization.
-      const forwardedTo = await deps.resolveForward?.(options.documentId);
-      if (forwardedTo) {
-        const joined = await joinedAnswer(forwardedTo);
-        if (!joined.ok || joined.value) {
-          return joined.ok ? Ok(joined.value as ContextCreateUntitledDocumentResult) : joined;
-        }
-      }
-
-      const located = await locateDocument(options.documentId);
-      if (!located.ok) return located;
-      if (located.value) {
-        const { location, path: foundPath } = located.value;
-        const locationUri = uriFor(location.scheme, "", location.authority);
-        const finalized = await callAdapter(locationUri, () =>
-          location.adapter.createUntitledDocument(foundPath, {
-            documentId: options.documentId,
-            origin: options.origin,
-          }),
-        );
-        if (!finalized.ok) return finalized;
-        return Ok({
-          status: "already-materialized",
-          documentId: finalized.value.documentId,
-          scheme: location.scheme,
-          path: finalized.value.path,
-          name: finalized.value.name,
-          ...(location.workScopeId ? { workId: location.workScopeId } : {}),
-        });
-      }
-
+      // A replay never reaches here: the caller asks `heldUntitledDocument` first.
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const target = await untitledTarget(homeUri, home.value, options);
         if (!target.ok) return target;
@@ -669,11 +665,15 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
             if (created.value.name) {
               return Ok({ status: "joined", documentId: created.value.documentId, ...address });
             }
-            const joined = await joinedAnswer(created.value.documentId);
+            const joined = await joinedDocument(created.value.documentId);
             if (!joined.ok) return joined;
-            return joined.value
-              ? Ok(joined.value)
-              : Ok({ status: "joined", documentId: created.value.documentId, ...address });
+            return Ok(
+              joined.value?.answer ?? {
+                status: "joined",
+                documentId: created.value.documentId,
+                ...address,
+              },
+            );
           }
         }
       }

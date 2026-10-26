@@ -131,6 +131,17 @@ export type ContextCreateUntitledDocumentResult =
       workId?: string;
     };
 
+/** What the server already holds under a create's client-minted id, and the address that holds it. */
+export interface ContextHeldUntitledDocument {
+  /** The create's replay answer: the document it joined, or where the id is materialized. */
+  answer: Extract<
+    ContextCreateUntitledDocumentResult,
+    { status: "joined" | "already-materialized" }
+  >;
+  /** The canonical URI of that document, for the caller to check its reach. */
+  uri: string;
+}
+
 export interface ContextCreateUntitledDocumentOptions {
   documentId: string;
   origin: WriteProvenance;
@@ -410,6 +421,16 @@ export interface ContextPort {
   locate(
     documentId: string,
   ): Promise<Result<{ documentId: string; uri: string } | null, ContextError>>;
+
+  /**
+   * What this port already holds under a create's client-minted id: the document its create
+   * joined, else the place the id is materialized, else null. Read-only and unaware of the
+   * create's destination, so a replay is answered from what the server holds before anything
+   * asks whether the writer may still create there.
+   */
+  heldUntitledDocument(
+    documentId: string,
+  ): Promise<Result<ContextHeldUntitledDocument | null, ContextError>>;
 
   /** Allocate and persist an empty client-seeded document under a home directory URI. */
   createUntitledDocument(

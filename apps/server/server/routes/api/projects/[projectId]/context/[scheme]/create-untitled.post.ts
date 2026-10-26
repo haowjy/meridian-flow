@@ -3,6 +3,10 @@
  * `Untitled N` in the route's folder. With a `destination` (the writer's New file and a
  * link's Create) it lands at the typed name: a branch's hidden document there is unhidden
  * and the answer is `joined`; a visible node there leaves the create at the free name.
+ *
+ * The id is the create's receipt, read before any authority over the destination: a replay
+ * of a create the server took is answered from what it holds (see `answerHeldCreate`), so
+ * a final refusal always means the server holds no such id and the same id can be placed again.
  */
 import {
   type CanonicalContextAuthority,
@@ -16,7 +20,10 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler, readBody, setResponseStatus } from "nitro/h3";
-import type { ContextPort } from "../../../../../../domains/context/index.js";
+import type {
+  ContextCreateUntitledDocumentResult,
+  ContextPort,
+} from "../../../../../../domains/context/index.js";
 import {
   type FileTarget,
   isFileAccessDenied,
@@ -140,6 +147,12 @@ async function destinationRootUri(
     else {
       const resolved = await app.workAuthorityResolver.byId(projectId, owner.workId);
       if (!resolved) throwContextWorkUnavailableHttpError("work_missing");
+      // No Work holds its files in `unfiled`, so it has no Scratch address to name.
+      if (resolved.workHandle === null)
+        throw createError({
+          statusCode: 400,
+          message: "Scratch belongs to a named Work or a chat",
+        });
       authority = resolved;
     }
   }
@@ -172,7 +185,12 @@ export async function createUntitledContextDocument(input: {
     if (result.error.code === "conflict") return { status: "conflict" as const };
     contextErrorToHttp(result.error);
   }
-  const value = result.value;
+  return createAnswer(result.value);
+}
+
+function createAnswer(
+  value: ContextCreateUntitledDocumentResult,
+): CreateUntitledContextDocumentAnswer {
   if (value.status === "joined") {
     return {
       status: "joined",
@@ -188,22 +206,51 @@ export async function createUntitledContextDocument(input: {
   return value;
 }
 
+/**
+ * The answer to a create the server already took, or null when it holds no such id. The id
+ * is read before any authority over the create's destination, so a replay is answered by
+ * what the server holds and not by who may create there now. Held where the writer can no
+ * longer edit (an archived or deleted Work, a lost grant) the id is spent: a conflict, which
+ * the device answers by minting another id for its document.
+ */
+export async function answerHeldCreate(input: {
+  port: ContextPort;
+  documentId: string;
+  /** Whether the writer can still edit where the held document lives. */
+  canEdit: (uri: string) => Promise<boolean>;
+}): Promise<CreateUntitledContextDocumentAnswer | null> {
+  const held = await input.port.heldUntitledDocument(input.documentId);
+  if (!held.ok) contextErrorToHttp(held.error);
+  if (!held.value) return null;
+  if (!(await input.canEdit(held.value.uri))) return { status: "conflict" };
+  return createAnswer(held.value.answer);
+}
+
 export default defineEventHandler((event) =>
   withDurableIntentInterruptBoundary(async () => {
     const { app, userId, projectId, scheme, workId, authority, port, container, edit } =
       await resolveContextRoute(event, { recoverAcrossProject: true });
     const body = parseCreateUntitledBody(await readBody(event));
-    const parent = body.destination?.parent;
-    const rootUri =
-      parent?.kind === "root" ? await destinationRootUri(app, projectId, parent) : undefined;
-    const rootContainer =
-      rootUri !== undefined ? await containerOfUri(app, projectId, rootUri) : null;
     const authorizeDestination = async (uri: string) => {
       const target = await containerOfUri(app, projectId, uri);
       if (!target) return false;
       const grant = await app.fileAccess.authorize({ accountId: userId as UserId }, target, "edit");
       return !isFileAccessDenied(grant) && (await app.fileAccess.confirmEdit([grant])).length === 0;
     };
+    const held = await answerHeldCreate({
+      port,
+      documentId: body.documentId,
+      canEdit: authorizeDestination,
+    });
+    if (held) {
+      if (held.status === "conflict") setResponseStatus(event, 409);
+      return held;
+    }
+    const parent = body.destination?.parent;
+    const rootUri =
+      parent?.kind === "root" ? await destinationRootUri(app, projectId, parent) : undefined;
+    const rootContainer =
+      rootUri !== undefined ? await containerOfUri(app, projectId, rootUri) : null;
     // The client minted the id, so this is a create into the route's folder, or the destination.
     const result = await edit([container, ...(rootContainer ? [rootContainer] : [])], () =>
       createUntitledContextDocument({
