@@ -249,7 +249,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await works.softDelete(work.id);
       });
       await deleteHasLock;
-      const commandDelete = deleteWorkTransition({ works, stopThreadRun: async () => {} }, work.id);
+      const commandDelete = deleteWorkTransition({ works, stopThreads: async () => {} }, work.id);
       await waitForLock("transactionid");
       releaseDelete();
       await concurrentDelete;

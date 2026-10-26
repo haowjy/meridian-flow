@@ -154,6 +154,7 @@ Ownership decides the scope:
 |---|---|
 | Stop on a chat | the whole subtree, whichever turn spawned it ("stop everything") |
 | Cancelling a turn, or Send now | only subtrees whose root that turn's execution spawned (`origin_turn_id`); a turn parked on its question is cancelled by withdrawing it |
+| Deleting a thread or Work (`stopThreads`: chat trash, Work delete, the work tool, receipt reversal) | each deleted thread's run and whole subtree, one lineage per topmost thread |
 | A child's terminal run | its whole subtree, before its claim is released |
 
 `asked` is non-terminal for the last rule, so descendants keep running and their

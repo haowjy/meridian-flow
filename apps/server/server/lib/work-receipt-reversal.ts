@@ -29,7 +29,7 @@ type WorkReceiptReversalDeps = {
   threads: Pick<ThreadRepository, "findById">;
   works: WorkRepository;
   workContextNotices: Pick<WorkContextNotices, "workChanged">;
-  stopThreadRun: (threadId: ThreadId) => Promise<void>;
+  stopThreads: (threadIds: readonly ThreadId[]) => Promise<void>;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 };
 
@@ -77,7 +77,7 @@ export async function reverseWorkReceipts(
   const ordered = orderReceipts(context.receipts, input.direction);
   try {
     return await runWorkLifecycleCommand(
-      { transaction: deps.transaction, stopThreadRun: deps.stopThreadRun },
+      { transaction: deps.transaction, stopThreads: deps.stopThreads },
       async () => {
         await lockReceiptState(deps, ordered);
         const plan = await planReceipts(deps, ordered, context.thread, input.direction);

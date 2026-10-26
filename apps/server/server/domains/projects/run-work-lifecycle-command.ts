@@ -7,7 +7,7 @@ type WorkLifecycleCommandResult<T> = { value: T; threadIdsToStop: readonly Threa
 export async function runWorkLifecycleCommand<T>(
   deps: {
     transaction<R>(operation: () => Promise<R>): Promise<R>;
-    stopThreadRun(threadId: ThreadId): Promise<void>;
+    stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   },
   operation: () => Promise<WorkLifecycleCommandResult<T>>,
 ): Promise<T> {
@@ -21,6 +21,6 @@ export async function runWorkLifecycleCommand<T>(
     }
   }
   if (!committed) throw new Error("Work lifecycle command did not complete");
-  await Promise.all(committed.threadIdsToStop.map(deps.stopThreadRun));
+  await deps.stopThreads(committed.threadIdsToStop);
   return committed.value;
 }

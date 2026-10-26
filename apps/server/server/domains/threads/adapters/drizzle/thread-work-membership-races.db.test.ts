@@ -116,7 +116,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const deletion = deleteWorkTransition(
           {
             works,
-            stopThreadRun: async () => {},
+            stopThreads: async () => {},
           },
           WORK_ID,
         ).then(
@@ -256,7 +256,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const deletion = deleteWorkTransition(
           {
             works,
-            stopThreadRun: async () => {},
+            stopThreads: async () => {},
           },
           TARGET_WORK_ID,
         ).then(

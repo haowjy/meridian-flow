@@ -576,6 +576,29 @@ export function createRunSessions(deps: {
       });
       return "cancelled";
     },
+    /**
+     * Ends deleted threads' work: each one's live execution and whole subagent subtree,
+     * one lineage per topmost thread (a deleted Work lists its threads' descendants too).
+     */
+    async stopThreads(threadIds: readonly ThreadId[]): Promise<void> {
+      const subtrees = await Promise.all(
+        threadIds.map((threadId) =>
+          deps.lineage.targets({ kind: "chat", threadId, execution: null }),
+        ),
+      );
+      const covered = new Set(subtrees.flat());
+      for (const threadId of threadIds) {
+        if (covered.has(threadId)) continue;
+        const turnId = await authority.readRunningTurnId(threadId);
+        const turn = turnId ? await deps.repos.turns.findById(turnId) : null;
+        const live = turn ? await authority.cancelExecution(threadId, turn.id) : false;
+        await cancelLineage({
+          kind: "chat",
+          threadId,
+          execution: live ? (turn?.executionId ?? null) : null,
+        });
+      }
+    },
   };
 }
 
