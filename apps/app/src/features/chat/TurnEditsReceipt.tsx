@@ -583,6 +583,17 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
       </span>
     );
   }
+  if (tree?.op === "copy") {
+    const source = documentDisplayName(tree.from);
+    const { place } = describeModelMove(tree.from, tree.to, names);
+    return (
+      <span className="min-w-0 truncate text-prose-foreground" data-turn-tree-line="copy">
+        <Trans>
+          Copied {source} to {place}
+        </Trans>
+      </span>
+    );
+  }
   if (tree?.op === "delete") {
     const name = documentDisplayName(tree.from);
     return (

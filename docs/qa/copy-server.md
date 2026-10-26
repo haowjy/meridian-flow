@@ -86,7 +86,9 @@ server only). The browser's Copy is a later slice. It is not a current pass clai
     copy.
 11. **The model's copy.** Send `write` `{command: "copy", path, from: {path}}` on the
     mock model for a document that links to itself: the copy's own link names the
-    copy, and its other links keep their targets.
+    copy, and its other links keep their targets. The turn's live lineage gives the
+    copy `tree: {op: "copy", from, to}`, which the chat receipt reads as
+    `Copied <source> to <name>`.
 12. **Arrival.** Write a link to an address that does not exist yet, then copy a
     document to that address: `link_ahead_refs.settled_document_id` is the copy.
 13. **Nested selection.** `./mf doc copy "manuscript://Book" "manuscript://Book/Ch1"

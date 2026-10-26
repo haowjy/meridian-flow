@@ -54,6 +54,11 @@
       "path": "apps/server/server/domains/collab/adapters/drizzle-document-derivations.ts",
       "forms": ["read", "write"],
       "reason": "Certified derive: projection and links of any row by id under its generation/location CAS"
+    },
+    {
+      "path": "apps/server/server/domains/collab/adapters/drizzle-turn-live-lineage.ts",
+      "forms": ["read"],
+      "reason": "Turn lineage: the created document's copiedFrom metadata by the id the turn's own create entry names, so a copy's receipt line can name its source; answers no visibility question"
     }
   ]
 }
