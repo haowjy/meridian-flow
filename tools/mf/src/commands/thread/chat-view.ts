@@ -215,10 +215,7 @@ export function chatSnapshot(
 ): { view: TranscriptView; cards: ChatCards } {
   const runState = viewOfLive(snapshot.liveState);
   const controls = durableControls(runState.record?.items ?? []);
-  const waiting = waitingWriterMessages(
-    runState,
-    snapshot.asks.some((ask) => ask.status === "open"),
-  );
+  const waiting = waitingWriterMessages(runState, snapshot.asks);
   const normalized = normalizeTurns({ turns });
   const cards = chatCards({
     threadId: snapshot.thread?.id ?? "",
