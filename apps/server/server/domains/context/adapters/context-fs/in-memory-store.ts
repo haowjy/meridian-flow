@@ -190,6 +190,10 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     this.backing = options.backing ?? createInMemoryContextDocumentStoreBacking();
   }
 
+  withCatalogBatch() {
+    return { store: this, flush: async () => {} };
+  }
+
   private nextTimestamp(): string {
     this.backing.clock.value += 1;
     return new Date(this.backing.clock.value * 1000).toISOString();

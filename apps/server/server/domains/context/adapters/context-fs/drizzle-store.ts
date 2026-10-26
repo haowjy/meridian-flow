@@ -99,6 +99,30 @@ export interface DrizzleContextDocumentStoreDeps {
   repair?: HiddenNodeRepair;
 }
 
+/**
+ * A catalog port that only records what a bulk insert refreshes; `flush` makes the one real
+ * refresh for all of it (`ContextDocumentStore.withCatalogBatch`).
+ */
+export function holdCatalogRefreshes(catalog: ContextCatalogMutationPort) {
+  const sourceIds = new Set<string>();
+  const invalidatedRootIds = new Set<string>();
+  const held: ContextCatalogMutationPort = {
+    async refreshSources(sources, roots = []) {
+      for (const id of sources) sourceIds.add(id);
+      for (const id of roots) invalidatedRootIds.add(id);
+      return "";
+    },
+  };
+  return {
+    held,
+    async flush() {
+      if (sourceIds.size > 0) {
+        await catalog.refreshSources([...sourceIds], [...invalidatedRootIds]);
+      }
+    },
+  };
+}
+
 export class DrizzleContextDocumentStore implements ContextDocumentStore {
   constructor(private readonly deps: DrizzleContextDocumentStoreDeps) {}
 
@@ -112,6 +136,16 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
 
   async contextSourceId(): Promise<string> {
     return this.sourceId;
+  }
+
+  withCatalogBatch() {
+    const { catalogMutations } = this.deps;
+    if (!catalogMutations) return { store: this, flush: async () => {} };
+    const { held, flush } = holdCatalogRefreshes(catalogMutations);
+    return {
+      store: new DrizzleContextDocumentStore({ ...this.deps, catalogMutations: held }),
+      flush,
+    };
   }
 
   async existingContextSourceId(): Promise<string> {

@@ -180,4 +180,10 @@ export interface ContextDocumentStore {
     claim?: LiveClaim,
   ): Promise<LiveDocumentCreation | null>;
   createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument>;
+  /**
+   * A view of this store whose catalog refreshes are held until `flush`, which makes the one
+   * refresh for them all. Each refresh reconciles the project's whole catalog scope, so a bulk
+   * insert in one transaction that refreshed per row would grow with the project, not the insert.
+   */
+  withCatalogBatch(): { store: ContextDocumentStore; flush(): Promise<void> };
 }

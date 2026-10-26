@@ -154,14 +154,16 @@ export async function insertCopiedTree(
     node.copiedFrom = content.value.copiedFrom;
   }
 
+  // The catalog reconciles the project's whole scope, so it is refreshed once, after the tree.
+  const batch = deps.store.withCatalogBatch();
   try {
-    const created = await insertLevel(deps, parent.value, minted);
+    const created = await insertLevel({ ...deps, store: batch.store }, parent.value, minted);
     if (!created.ok) return created;
     // The roots land as one run at the position, in the order they were selected.
     let position = input.position;
     for (const root of minted) {
       if (!position) break;
-      const placed = await deps.store.placeSibling({
+      const placed = await batch.store.placeSibling({
         kind: root.kind,
         id: root.id,
         parentId: parent.value,
@@ -170,6 +172,7 @@ export async function insertCopiedTree(
       if (placed === "stale-anchor") return Err({ code: "stale_target" });
       position = { kind: "after", siblingId: root.id };
     }
+    await batch.flush();
     return created;
   } catch (error) {
     if (error instanceof CopiedContentFault) return Err(error.fault);
