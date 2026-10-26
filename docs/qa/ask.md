@@ -141,3 +141,31 @@ The client lane fills these steps before the combined feature ships:
 - [ ] stale answer and zero-countdown “Continuing…” state
 
 Stop the owned stack with `pnpm dev --stop`.
+
+## Subagent questions
+
+Use fresh child runs for each case and inspect both chats after every step.
+
+1. Have a foreground child call `ask`. PASS: the parent call returns
+   `@child asks (ask …)` and the parent inbox has no duplicate. Answer with a
+   foreground `thread_message`. The child receives a `parent` tool result and
+   the original parent card finishes with the continuation's report.
+2. Have a background child ask. PASS: the durable question wakes an idle
+   parent. Answer from the child chat as the writer, then repeat by leaving the
+   question to its deadline. Both continuations report to the original card;
+   only the child chat is action-required.
+3. Forward an open child question with `ask({"forward":"$childAsk"})`. Answer
+   before the child deadline. PASS: the parent continuation waits for the child
+   and sees one enriched result with `relayed_to` and `report`.
+4. Repeat forwarding after forcing the child deadline first, and after answering
+   in the child chat. PASS: the parent's answer becomes an ordinary child
+   message and its result says `late: true`; it never answers a newer ask.
+5. Answer the child chat while its forwarded copy remains open. PASS: the
+   eventual forwarded answer is late. Repeat with three levels of children;
+   each parent owns one question and relays one level down.
+6. Race a parent answer with a writer answer in the child chat. PASS: one answer
+   wins. The losing parent text remains an ordinary queued message with its
+   original ask binding.
+7. Cancel the root while a descendant is parked on an ask. PASS: every open ask
+   in that subtree becomes cancelled, including children absent from the live
+   session map, and no continuation starts.
