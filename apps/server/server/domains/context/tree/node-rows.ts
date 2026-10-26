@@ -137,7 +137,7 @@ export function folderRowValues(
 export async function insertFolder(
   db: Database,
   at: { contextSourceId: ContextSourceId; parentId: FolderId | null; name: string },
-  options: { hidden: boolean; id?: FolderId; orderPolicy?: "default" | "manual" },
+  options: { hidden: boolean },
 ): Promise<FolderId> {
   const [row] = await currentDrizzleDb(db)
     .insert(folders)
