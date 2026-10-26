@@ -939,6 +939,7 @@ msgid "workReceipt.archived"
 msgstr ""
 
 #: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/subagent/SubagentMark.tsx
 msgid "Asked a question"
 msgstr ""
 
@@ -2726,6 +2727,10 @@ msgstr ""
 msgid "In a draft"
 msgstr ""
 
+#: src/features/chat/SubagentHeader.tsx
+msgid "In progress"
+msgstr ""
+
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "In the trash. Deleted by {actor} on {deleted}."
 msgstr ""
@@ -4136,7 +4141,6 @@ msgid "rule"
 msgstr ""
 
 #: src/features/chat/subagent/SubagentMark.tsx
-#: src/features/chat/SubagentHeader.tsx
 msgid "Running"
 msgstr "运行中"
 

@@ -71,11 +71,13 @@ export function SpawnReportCard({
     status:
       resolvedOutcome === "succeeded"
         ? "done"
-        : resolvedOutcome === "failed" || resolvedOutcome === "cancelled" || status === "failed"
-          ? "stopped"
-          : running
-            ? "running"
-            : "unknown",
+        : resolvedOutcome === "asked"
+          ? "asked"
+          : resolvedOutcome === "failed" || resolvedOutcome === "cancelled" || status === "failed"
+            ? "stopped"
+            : running
+              ? "running"
+              : "unknown",
     startedAt: startedAt ?? null,
     endedAt: terminalAt ?? null,
     liveTool: liveTool ?? null,
