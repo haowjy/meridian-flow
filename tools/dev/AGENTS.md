@@ -22,6 +22,11 @@ directory never imports application packages. The `./mf` CLI lives in
 - Secrets may reach the command sent to tmux, never stdout or
   `.meridian/dev-session.json`. Report `started` only after readiness and
   verified routes pass.
+- Dev stacks run on the private tmux server `meridian-dev`, named once in
+  `lib/dev-tmux-server.ts`, never on the default server, which holds the machine
+  owner's live shells. Attach with
+  `tmux -L meridian-dev attach -t <session>`. Cleanup readiness also lists panes
+  on the default server, read-only, so a shell parked there still blocks removal.
 - Stop and clean up by target. Never stop dev servers by pattern
   (`pkill -f "pnpm dev"`, `killall node` match every worktree's stack), never
   reset all Tailscale routes, and never infer staleness from a branch name.

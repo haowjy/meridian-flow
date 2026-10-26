@@ -726,8 +726,8 @@ rm -f auth.cookies
 ```
 
 3. Stop this worktree's dev stack through its owner. This removes its tmux
-   session and prunes its Portless and Tailscale routes without touching another
-   lane:
+   session on the private `meridian-dev` server and prunes its Portless and
+   Tailscale routes without touching another lane:
 
 ```bash
 pnpm dev:stop

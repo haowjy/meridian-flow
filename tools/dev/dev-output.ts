@@ -1,5 +1,6 @@
 import type { DevMode } from "./dev-mode";
 import type { ClientBuild } from "./dev-session-state";
+import { devTmuxCommand } from "./lib/dev-tmux-server";
 
 export interface DevOutputContext {
   headline: string;
@@ -10,7 +11,7 @@ export interface DevOutputContext {
 }
 
 function tmuxAttachCommand(sessionName: string): string {
-  return `tmux attach -t ${sessionName}`;
+  return devTmuxCommand(["attach", "-t", sessionName]);
 }
 
 export function printSessionInfo(context: DevOutputContext): void {

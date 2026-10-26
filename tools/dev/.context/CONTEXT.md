@@ -86,7 +86,11 @@ checkouts include their session slug and path hash, so equal commits cannot
 alias each other. Commands use Portless named mode, not its branch inference;
 session metadata retains the prefix used by a running stack across Git changes.
 `dev-session-state.ts` validates the checkout-bound launch record and discovers
-its live tmux session. Startup, `./mf`, and browser discovery use that active
+its live tmux session. Dev sessions live on the private `meridian-dev` tmux
+server, named once in `lib/dev-tmux-server.ts`; the default server holds the
+machine owner's live shells. `pnpm dev --stop` and `dev:stacks` still see
+sessions on the default server so a stack started before the move can be found
+and stopped. Startup, `./mf`, and browser discovery use that active
 identity, not current HEAD; Git derives only the next launch's identity. A
 single resolved `DevSessionPlan` supplies commands, ports and verification
 expectations. New/reused sessions share one readiness-and-publication pipeline.
@@ -147,7 +151,9 @@ Target-only `--force` permits managed dev-stack and Nx shutdown despite cwd
 occupants, then rechecks that only known shell/tmux executables remain before
 dropping the database and removing the checkout. It never signals those user
 shells/panes and prints their PIDs and tmux pane IDs so owners can `cd` out of
-the deleted directory. Unknown processes, unreadable attributed processes,
+the deleted directory. Pane liveness reads both `meridian-dev` and the default
+server (read-only): dev stacks live on the former, while a shell on the latter
+still blocks removal. Unknown processes, unreadable attributed processes,
 inspection failures, active work items and dirty state still block. Force does
 not bypass merge evidence, branch/HEAD revalidation or structural protections,
 and is rejected with `--auto`. Git worktree removal itself never uses `--force`.
