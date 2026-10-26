@@ -47,12 +47,11 @@ and says what it left out. The decision and its rejected alternatives are in the
   producer anchors a stand-in to it. A row's `identity` is the server turn id,
   or null for any row the server hasn't stated, judged by the input it arrived
   in, never an id's shape (local writer turns are recognized by `turn_local_`).
-- **Ask-blocked writer messages stay visible.** They remain `awaiting_run`
-  inbox rows until the continuation adopts them, so
-  `queuedWriterTurnStandIns` projects a missing row from the run-state summary.
-  The durable turn replaces it by id after adoption. The app and `./mf` pass an
-  open ask to `waitingWriterMessages` as a delivery barrier, so both mark the
-  projected row queued.
+- **Ask-blocked writer messages stay queued.** They remain `awaiting_run`
+  inbox rows until the continuation adopts them. `waitingWriterMessages`
+  derives queue membership from the run-state record and authoritative asks;
+  the app and `./mf` pass those same facts, so a local answer attempt cannot
+  change delivery classification.
 - **`controlSlot`** places a queued switch's notice before the stand-in for the
   run that will apply it when the record says it waits for the next run
   (`awaiting_run`), otherwise at the tail. A `waiting` switch, or one only this
@@ -495,11 +494,9 @@ resolved ask retires this device's attempt.
 - `openAsk(asks, turns)` is the ask that takes over the composer: open, on the
   chat's nearest assistant turn, and not being answered from this device. A
   failed attempt rides along so the takeover can offer Retry.
-- A `meridian.ask` frame also sets its asking turn's status (`askingTurnStatus`):
-  open makes it `awaiting_answer`, a resolution `complete` or `cancelled`. The
-  server's stream ends the asking run with a bare `RUN_FINISHED` and sends no
-  run frame for the resolution, so the ask frame is the live fact that agrees
-  with the snapshot.
+- The asking run's `RUN_FINISHED` result sets its turn to `awaiting_answer`.
+  Later `meridian.ask` resolution frames set it to `complete` or `cancelled`;
+  no run frame exists for that post-run transition.
 - `askReceipt(asks, turnId)` is the asking turn's receipt: the server's
   resolution, or this device's sending answer marked `pending`.
 - `answerAsk(ports, …)` is the one answer command. A Retry of the same answer

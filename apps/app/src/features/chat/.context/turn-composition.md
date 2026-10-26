@@ -60,9 +60,9 @@ Historical `meridian.block.upserted` replaces an already-loaded turn in place.
 If its target is absent, invalidate/refetch the durable snapshot rather than
 creating a synthetic streaming turn; an equal replacement is a
 reference-preserving no-op. `waitingWriterMessages` (`@meridian/thread-client`)
-projects writer rows still waiting. While an ask blocks delivery, `awaiting_run`
-messages are also queued: `queuedWriterTurnStandIns` draws any message the
-run-state record holds before its real transcript turn exists.
+projects queue membership from the run-state record and authoritative asks.
+While an ask blocks delivery, it keeps `awaiting_run` messages queued even when
+this device is sending an answer.
 
 An open ask takes over the composer (`ask/useAskTakeover.tsx`): the editor stays
 mounted and hidden, and text left in the own-answer field when the ask closes is

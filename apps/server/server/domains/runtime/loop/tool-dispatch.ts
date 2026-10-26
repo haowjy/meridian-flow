@@ -97,7 +97,7 @@ export type BatchDisposition =
   | { kind: "end"; cause: "success" }
   | { kind: "end"; cause: "asked"; askId: string };
 
-/** Reduce once per provider batch; ask-specific exclusivity joins this boundary in B2. */
+/** Reduce once per provider batch, rejecting competing batch-ending outcomes. */
 export function reduceToolBatch(outcomes: readonly ToolDispatchOutcome[]): BatchDisposition {
   let disposition: BatchDisposition = { kind: "continue" };
   for (const outcome of outcomes) {
