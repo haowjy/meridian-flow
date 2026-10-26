@@ -11,6 +11,7 @@
 import type { ProjectId } from "@meridian/contracts";
 import type {
   ContextParentOrderPolicy,
+  ContextSiblingPosition,
   DocumentFileType,
   Filetype,
 } from "@meridian/contracts/protocol";
@@ -138,6 +139,29 @@ export interface ContextDocumentStore {
    * throws {@link ContextEntryConflictError} when a document holds a segment's path.
    */
   ensureFolderPath(dir: readonly string[]): Promise<string | null>;
+  /**
+   * Insert one live folder under `parentId` unless a node already holds that name — a live
+   * folder, a live document's alias, or a hidden one — or the row id is taken. Never
+   * reveals: a hidden occupant makes the name taken, which is what a copy allocates around.
+   */
+  createFolderIfAbsent(input: {
+    parentId: string | null;
+    name: string;
+    /** A caller-minted identity (a copy mints the whole tree before writing it). */
+    id?: string;
+    /** The copied folder keeps its source's child ordering. */
+    orderPolicy?: ContextParentOrderPolicy;
+  }): Promise<string | null>;
+  /**
+   * Put a just-inserted node at an explicit sibling position (`stale-anchor` when the
+   * sibling it names is gone). A copy's first root takes the writer's edge drop this way.
+   */
+  placeSibling(input: {
+    kind: "file" | "folder";
+    id: string;
+    parentId: string | null;
+    position: ContextSiblingPosition;
+  }): Promise<"placed" | "stale-anchor">;
   /** What a live create at this path would reveal, holding nothing (§6.3 step 1). */
   findLiveCreateCandidate(
     dir: readonly string[],

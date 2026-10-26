@@ -1,4 +1,6 @@
 import {
+  type ContextParentOrderPolicy,
+  type ContextSiblingPosition,
   folderDocumentName,
   parseDocumentFilename,
   type RetractionCause,
@@ -278,6 +280,39 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     let parentId: string | null = null;
     for (const name of dir) parentId = (await this.createFolder(parentId, name)).id;
     return parentId;
+  }
+
+  async createFolderIfAbsent(input: {
+    parentId: string | null;
+    name: string;
+    id?: string;
+    orderPolicy?: ContextParentOrderPolicy;
+  }): Promise<string | null> {
+    const { parentId, name, id } = input;
+    if (hasOppositeEntry(this.backing, this.sourceId, parentId, name, "folder")) return null;
+    if (this.findFolderRecord(parentId, name)) return null;
+    if (id && this.backing.folders.has(id)) return null;
+    const folder: FolderRow = {
+      id: id ?? crypto.randomUUID(),
+      contextSourceId: this.sourceId,
+      parentId,
+      name,
+      deletedAt: null,
+      updatedAt: this.nextTimestamp(),
+    };
+    this.backing.folders.set(folder.id, folder);
+    claimLocation(this.backing, folder.contextSourceId, folder.parentId, folder.name);
+    return folder.id;
+  }
+
+  async placeSibling(_input: {
+    kind: "file" | "folder";
+    id: string;
+    parentId: string | null;
+    position: ContextSiblingPosition;
+  }): Promise<"placed" | "stale-anchor"> {
+    // The in-memory backing has no sibling ranks: a copy's position is a live-tree concern.
+    return "placed";
   }
 
   private async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {
