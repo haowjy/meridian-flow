@@ -10,8 +10,12 @@ import {
   parseUnifiedContextUri,
 } from "@meridian/contracts/context-uri";
 import type { ContextCreateDestination } from "@meridian/contracts/protocol";
-import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import type {
+  HeldContextNode,
+  ProjectContextAvailabilityPort,
+} from "../../../../../../domains/context/index.js";
 import {
   type FileTarget,
   isFileAccessDenied,
@@ -125,6 +129,40 @@ export function canEditContextUri(input: {
     if (!target) return false;
     const grant = await app.fileAccess.authorize({ accountId: userId as UserId }, target, "edit");
     return !isFileAccessDenied(grant) && (await app.fileAccess.confirmEdit([grant])).length === 0;
+  };
+}
+
+/**
+ * The answer to a create the server already took for `node`, or null when this project holds no
+ * such id. The row is read by id, never through the route's Work authority, so a replay is
+ * answered by what the server holds and not by who may create there now. Held where the writer
+ * can no longer edit (an archived or deleted Work, a lost grant) the id is spent: `conflict`,
+ * which the device settles as a refusal, never a retry. Each route spells its held answer.
+ */
+export async function answerHeldNode(input: {
+  availability: ProjectContextAvailabilityPort;
+  projectId: string;
+  userId: string;
+  node: { kind: "document"; id: DocumentId } | { kind: "folder"; id: string };
+  /** Whether the writer can still edit where the held node lives. */
+  canEdit: (uri: string) => Promise<boolean>;
+}): Promise<Extract<HeldContextNode, { kind: "held" }> | "conflict" | null> {
+  const held = await input.availability.held(
+    { projectId: input.projectId as ProjectId, node: input.node },
+    { userId: input.userId },
+  );
+  if (!held) return null;
+  if (held.kind === "unreachable" || !(await input.canEdit(held.address.uri))) return "conflict";
+  return held;
+}
+
+/** The address a held node answers with, as a create response spells it. */
+export function heldNodeAddress(held: Extract<HeldContextNode, { kind: "held" }>) {
+  return {
+    scheme: held.address.scheme,
+    path: held.address.path,
+    name: held.address.name,
+    ...(held.address.workId ? { workId: held.address.workId } : {}),
   };
 }
 

@@ -12,7 +12,6 @@ import type {
   ContextCreateDestination,
   CreateContextFolderResponse,
 } from "@meridian/contracts/protocol";
-import type { ProjectId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler, readBody, setResponseStatus } from "nitro/h3";
 import type {
   ContextPort,
@@ -20,8 +19,10 @@ import type {
 } from "../../../../../../domains/context/index.js";
 import { withDurableIntentInterruptBoundary } from "../../../../../../shared/interrupt-boundary.js";
 import {
+  answerHeldNode,
   canEditContextUri,
   createDestinationAccess,
+  heldNodeAddress,
   parseCreateDestination,
 } from "./_create-destination.js";
 import {
@@ -68,39 +69,33 @@ export async function createContextFolder(input: {
     destination,
     ...(input.authorizeDestination ? { authorizeDestination: input.authorizeDestination } : {}),
   });
-  if (!result.ok) contextErrorToHttp(result.error);
+  if (!result.ok) {
+    // A held id is the only conflict this route names, however the port found it.
+    if (result.error.code === "conflict") return { status: "conflict" };
+    contextErrorToHttp(result.error);
+  }
   return result.value;
 }
 
 /**
  * The answer to a create the server already took, or null when the project holds no such id.
- * The row is read by id, never through the route's Work authority, so a replay is answered by
- * what the server holds and not by who may create there now. Held where the writer can no
- * longer edit (an archived or deleted Work, a lost grant) the id is spent: a conflict, which
- * leaves the device's folder local and needing repair.
+ * Held where the writer can no longer edit, the id is spent: a conflict, which leaves the
+ * device's folder local and needing repair.
  */
 export async function answerHeldFolder(input: {
   availability: ProjectContextAvailabilityPort;
   projectId: string;
   userId: string;
   folderId: string;
-  /** Whether the writer can still edit where the held folder lives. */
   canEdit: (uri: string) => Promise<boolean>;
 }): Promise<CreateContextFolderResponse | null> {
-  const held = await input.availability.held(
-    { projectId: input.projectId as ProjectId, node: { kind: "folder", id: input.folderId } },
-    { userId: input.userId },
-  );
+  const held = await answerHeldNode({ ...input, node: { kind: "folder", id: input.folderId } });
   if (!held) return null;
-  if (held.kind === "unreachable" || !(await input.canEdit(held.address.uri)))
-    return { status: "conflict" };
+  if (held === "conflict") return { status: "conflict" };
   return {
     status: "already-exists",
     folderId: held.address.id,
-    scheme: held.address.scheme,
-    path: held.address.path,
-    name: held.address.name,
-    ...(held.address.workId ? { workId: held.address.workId } : {}),
+    ...heldNodeAddress(held),
   };
 }
 
@@ -129,8 +124,8 @@ export default defineEventHandler((event) =>
       projectId,
       destination: body.destination,
     });
-    return edit([container, ...(access.rootContainer ? [access.rootContainer] : [])], () =>
-      createContextFolder({
+    return edit([container, ...(access.rootContainer ? [access.rootContainer] : [])], async () => {
+      const result = await createContextFolder({
         port,
         userId,
         scheme,
@@ -138,7 +133,9 @@ export default defineEventHandler((event) =>
         body,
         ...(access.rootUri !== undefined ? { destinationRootUri: access.rootUri } : {}),
         authorizeDestination: access.authorizeDestination,
-      }),
-    );
+      });
+      if (result.status === "conflict") setResponseStatus(event, 409);
+      return result;
+    });
   }),
 );

@@ -13,7 +13,7 @@ import type {
   ContextCreateDestination,
   CreateUntitledContextDocumentAnswer,
 } from "@meridian/contracts/protocol";
-import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler, readBody, setResponseStatus } from "nitro/h3";
 import type {
   ContextCreateUntitledDocumentResult,
@@ -23,8 +23,10 @@ import type {
 import { parseContextMutationPath } from "../../../../../../lib/context-mutation-validation.js";
 import { withDurableIntentInterruptBoundary } from "../../../../../../shared/interrupt-boundary.js";
 import {
+  answerHeldNode,
   canEditContextUri,
   createDestinationAccess,
+  heldNodeAddress,
   parseCreateDestination,
 } from "./_create-destination.js";
 import {
@@ -113,36 +115,24 @@ function createAnswer(
 
 /**
  * The answer to a create the server already took, or null when the project holds no such id.
- * The row is read by id, never through the route's Work authority, so a replay is answered by
- * what the server holds and not by who may create there now. Held where the writer can no
- * longer edit (an archived or deleted Work, a lost grant) the id is spent: a conflict, which
- * the device answers by minting another id for its document. A forward names the id a join
- * replaced, so it answers `joined` at the current document.
+ * Held where the writer can no longer edit, the id is spent: a conflict, which the device
+ * answers by minting another id for its document. A forward names the id a join replaced, so it
+ * answers `joined` at the current document.
  */
 export async function answerHeldCreate(input: {
   availability: ProjectContextAvailabilityPort;
   projectId: string;
   userId: string;
   documentId: string;
-  /** Whether the writer can still edit where the held document lives. */
   canEdit: (uri: string) => Promise<boolean>;
 }): Promise<CreateUntitledContextDocumentAnswer | null> {
-  const held = await input.availability.held(
-    {
-      projectId: input.projectId as ProjectId,
-      node: { kind: "document", id: input.documentId as DocumentId },
-    },
-    { userId: input.userId },
-  );
+  const held = await answerHeldNode({
+    ...input,
+    node: { kind: "document", id: input.documentId as DocumentId },
+  });
   if (!held) return null;
-  if (held.kind === "unreachable" || !(await input.canEdit(held.address.uri)))
-    return { status: "conflict" };
-  const address = {
-    scheme: held.address.scheme,
-    path: held.address.path,
-    name: held.address.name,
-    ...(held.address.workId ? { workId: held.address.workId } : {}),
-  };
+  if (held === "conflict") return { status: "conflict" };
+  const address = heldNodeAddress(held);
   return held.forwarded
     ? { status: "joined", documentId: held.address.id, address }
     : { status: "already-materialized", documentId: held.address.id, ...address };
