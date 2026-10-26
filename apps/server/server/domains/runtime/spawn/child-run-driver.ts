@@ -49,7 +49,7 @@ export interface ChildRunDriverDeps {
   repos: Pick<ThreadRepositories, "executionReports" | "asks">;
   eventWriter: LiveEventWriter;
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
-  publisher: Pick<ReportPublisher, "publish" | "projectRunning">;
+  publisher: Pick<ReportPublisher, "publish">;
   eventSink: EventSink;
 }
 
@@ -112,7 +112,6 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       handle.executionTurnId,
     );
     if (!report) throw new Error("Admitted child run has no execution report");
-    await deps.publisher.projectRunning(prepared.child.id as ThreadId, handle.executionTurnId);
     return { prepared, handle, admittedAt: report.admittedAt };
   }
 
@@ -137,7 +136,6 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       handle.executionTurnId,
     );
     if (!report) throw new Error("Admitted child continuation has no execution report");
-    await deps.publisher.projectRunning(prepared.child.id as ThreadId, handle.executionTurnId);
     return { prepared, handle, admittedAt: report.admittedAt };
   }
 

@@ -345,7 +345,6 @@ describe("RunSession", () => {
       readActivity: async () => ({ children: [] }),
       eventSink: f.sink,
       publisher: {
-        async projectRunning() {},
         async publish() {
           return "published";
         },
