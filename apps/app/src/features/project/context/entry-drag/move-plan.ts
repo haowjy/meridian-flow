@@ -365,7 +365,7 @@ function planUndoGroup(view: PlacementView, effects: readonly MoveEffect[]): Mov
     const index = restorationCandidate(pending, working);
     const [effect] = pending.splice(index, 1);
     if (!effect) break;
-    const position = restorationPosition(effect, working);
+    const position = positionFromWitness(effect.previousPosition, working);
     insertWorking(working, effect.entry.id, position);
     rows.push({
       entry: effect.entry,
@@ -395,13 +395,6 @@ function restorationCandidate(effects: readonly MoveEffect[], working: readonly 
   if (start >= 0) return start;
   const end = effects.findIndex((effect) => !effect.previousPosition.beforeId);
   return end >= 0 ? end : 0;
-}
-
-function restorationPosition(
-  effect: MoveEffect,
-  working: readonly string[],
-): ContextSiblingPosition {
-  return positionFromWitness(effect.previousPosition, working);
 }
 
 /** Restore one removed row against the siblings that still exist now. */

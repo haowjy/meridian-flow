@@ -12,7 +12,6 @@ import {
   branchTreeChanges,
   branchTreeParentOrders,
   branchTreeRanks,
-  contextSources,
   documents,
   folders,
 } from "@meridian/database/schema";
@@ -20,49 +19,22 @@ import { compareDefaultSiblings } from "@meridian/resource-replica";
 import { and, asc, desc, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import {
+  branchRankOverrides,
+  effectiveParentPolicy,
+  type SiblingParent,
+  siblingParent,
+} from "./effective-order.js";
 import { visibleDocuments, visibleFolders } from "./tree-view-sql.js";
 
 type Sibling = { kind: "document" | "folder"; id: string; name: string; rank: string | null };
-type Parent = {
-  kind: "source" | "folder";
-  id: ContextSourceId | FolderId;
-  sourceId: ContextSourceId;
-  folderId: FolderId | null;
-};
+type Parent = SiblingParent;
 type ParentKey = Pick<Parent, "kind" | "id">;
 
-function parentOf(sourceId: ContextSourceId, folderId: FolderId | null): Parent {
-  return folderId === null
-    ? { kind: "source", id: sourceId, sourceId, folderId }
-    : { kind: "folder", id: folderId, sourceId, folderId };
-}
+const parentOf = siblingParent;
 
-async function parentPolicy(db: Database, branchId: BranchId, parent: Parent) {
-  const tx = currentDrizzleDb(db);
-  const [branch] = await tx
-    .select({ orderPolicy: branchTreeParentOrders.orderPolicy })
-    .from(branchTreeParentOrders)
-    .where(
-      and(
-        eq(branchTreeParentOrders.branchId, branchId),
-        eq(branchTreeParentOrders.parentKind, parent.kind),
-        eq(branchTreeParentOrders.parentId, parent.id),
-      ),
-    );
-  if (branch) return { policy: branch.orderPolicy, branchOwned: true } as const;
-  const [live] =
-    parent.kind === "source"
-      ? await tx
-          .select({ orderPolicy: contextSources.orderPolicy })
-          .from(contextSources)
-          .where(eq(contextSources.id, parent.sourceId))
-      : await tx
-          .select({ orderPolicy: folders.orderPolicy })
-          .from(folders)
-          .where(eq(folders.id, parent.folderId as FolderId));
-  if (!live) throw new Error("Branch sibling-order parent disappeared under its namespace lock");
-  return { policy: live.orderPolicy, branchOwned: false } as const;
-}
+const parentPolicy = (db: Database, branchId: BranchId, parent: Parent) =>
+  effectiveParentPolicy(db, branchId, parent);
 
 async function siblings(db: Database, branchId: BranchId, parent: Parent): Promise<Sibling[]> {
   const tx = currentDrizzleDb(db);
@@ -88,18 +60,9 @@ async function siblings(db: Database, branchId: BranchId, parent: Parent): Promi
           parent.folderId === null ? isNull(vf.parentId) : eq(vf.parentId, parent.folderId),
         ),
       ),
-    tx
-      .select({ nodeId: branchTreeRanks.nodeId, rank: branchTreeRanks.rank })
-      .from(branchTreeRanks)
-      .where(
-        and(
-          eq(branchTreeRanks.branchId, branchId),
-          eq(branchTreeRanks.parentKind, parent.kind),
-          eq(branchTreeRanks.parentId, parent.id),
-        ),
-      ),
+    branchRankOverrides(db, branchId, parent),
   ]);
-  const rankById = new Map(overrides.map((row) => [row.nodeId, row.rank]));
+  const rankById = overrides;
   return [
     ...folderRows.map((row) => ({
       kind: "folder" as const,
