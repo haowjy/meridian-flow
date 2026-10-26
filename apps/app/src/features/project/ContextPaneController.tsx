@@ -350,13 +350,10 @@ export function ContextViewerSurfaceController({
           },
           (error: unknown) => reportError(error),
         );
-      else {
-        if (tab.kind !== "new" && projection.tab.kind === "new")
-          contextRemoval.releaseNeverAcceptedRoute(projectId, tab);
+      else
         void reconcileResourceTab(projectId, projection.resourceHandle, projection.tab).catch(
           (error: unknown) => reportError(error),
         );
-      }
     }
   }, [
     activeContextPath,

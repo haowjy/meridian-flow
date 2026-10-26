@@ -105,6 +105,7 @@ export function contextTabFromFile(
                 ...(file.resourceOrigin ? { origin: "local-resource" as const } : {}),
               }
             : {}),
+          ...(file.resourceState === "local" ? { localOnly: true as const } : {}),
         }
       : {
           kind: "viewer" as const,
@@ -162,6 +163,7 @@ export function contextTabFromResource(
           ...(locallyCreated ? { origin: "local-resource" as const } : {}),
         }
       : {}),
+    ...(resource.lifecycle.kind === "local" ? { localOnly: true as const } : {}),
   };
 }
 

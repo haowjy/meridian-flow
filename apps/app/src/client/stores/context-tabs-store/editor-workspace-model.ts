@@ -91,6 +91,11 @@ export type ContextTab =
       resourceHandle?: string;
       /** Device provenance retained after a local document materializes. */
       origin?: "local-resource";
+      /**
+       * The replica knows the server holds no row for this document yet. A working-set route
+       * names only held documents: one for this tab makes the server refuse the whole snapshot.
+       */
+      localOnly?: true;
     } & TabOwner)
   | ({
       tabInstanceId?: string;
