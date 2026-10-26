@@ -1,11 +1,11 @@
 /** Destination resolution for upload admission. Organize owns all Context writes. */
 import { IMPORT_SCHEMES } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import type { ContextParentLocations } from "../../context/index.js";
+import type { ContextImportDestinationLookup } from "../../context/index.js";
 import { ImportError } from "../domain/manifest.js";
 import type { ImportDestination } from "../ports/import-tree-writer.js";
 export function createContextImportTreeWriter(
-  locations: ContextParentLocations,
+  locations: ContextImportDestinationLookup,
 ): ImportDestination {
   return {
     async destination(uri) {

@@ -1,6 +1,7 @@
 /** Object verification and durable DOCX conversion before an import generation is built. */
-import type { DocumentConverterPort } from "../../../context/corpus-import/index.js";
+
 import type { ObjectStorePort } from "../../../storage/index.js";
+import type { DocumentConverterPort } from "../../ports/document-converter.js";
 import type { ImportEntry, ImportEntryPatch } from "../../ports/import-repository.js";
 import { stagingKey } from "../staging-key.js";
 

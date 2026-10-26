@@ -1213,7 +1213,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     openImports: (userId) => listOpenImports(ports.db, userId),
     importOrganizer,
     organizeWake: ports.organizeWake,
-    imports: (projectId, userId) =>
+    imports: (projectId, _userId) =>
       createProductionImportService(
         {
           db: ports.db,
@@ -1222,7 +1222,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
           wake: ports.organizeWake,
         },
         projectId,
-        userId,
       ),
     contextCatalog: ports.contextCatalog,
     restoreRemovedDocuments: ports.restoreRemovedDocuments,

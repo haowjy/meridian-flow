@@ -6,9 +6,9 @@ import remarkGfm from "remark-gfm";
 import remarkStringify from "remark-stringify";
 import { unified } from "unified";
 import type {
-  ConvertedDocument,
-  CorpusImportFileKind,
+  DocumentConversion,
   DocumentConverterPort,
+  ImportConvertibleFileKind,
 } from "../ports/document-converter.js";
 
 const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -32,7 +32,7 @@ export function createMammothDocumentConverter(): DocumentConverterPort {
     .use(remarkGfm)
     .use(remarkStringify, { bullet: "-", fences: true, emphasis: "_", rule: "-" });
 
-  function classify(input: { filename: string; mimeType: string }): CorpusImportFileKind {
+  function classify(input: { filename: string; mimeType: string }): ImportConvertibleFileKind {
     const ext = extension(input.filename);
     const mime = cleanMimeType(input.mimeType);
     if (ext === "docx" || mime === DOCX_MIME_TYPE) return "docx";
@@ -44,7 +44,7 @@ export function createMammothDocumentConverter(): DocumentConverterPort {
 
   return {
     classify,
-    async convert(input): Promise<ConvertedDocument> {
+    async convert(input): Promise<DocumentConversion> {
       const kind = classify(input);
       if (kind === "markdown" || kind === "text") {
         return { markdown: Buffer.from(input.bytes).toString("utf8"), messages: [] };

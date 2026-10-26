@@ -4,13 +4,10 @@ import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import type { ImportLinkBinder, MarkdownDocumentStore } from "../../../collab/index.js";
-import type {
-  ContextImportRead,
-  ContextStagedCreation,
-  DocumentConverterPort,
-} from "../../../context/index.js";
+import type { ContextImportRead, ContextStagedCreation } from "../../../context/index.js";
 import type { ObjectStorePort } from "../../../storage/index.js";
 import { runOrganizeTransaction } from "../../adapters/drizzle-organize-lifecycle.js";
+import type { DocumentConverterPort } from "../../ports/document-converter.js";
 import type { ImportEntry, ImportRecord, ImportRepository } from "../../ports/import-repository.js";
 import type { OrganizeClaim, OrganizeQueue } from "../../ports/organize-queue.js";
 import { createLinkIndex, type ImportLinkCandidate } from "../link-index.js";

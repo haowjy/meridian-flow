@@ -1,13 +1,12 @@
-/** Upload service composition; organize attaches to the durable queue in the next phase. */
+/** Upload and organizer composition for the durable two-phase import. */
 import { IMPORT_SCHEMES } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import type { CollabDomain } from "../collab/index.js";
 import {
   type ContextCatalogMutationPort,
+  createDrizzleContextImportDestinationLookup,
   createDrizzleContextImportRead,
-  createDrizzleContextParentLocations,
   createDrizzleContextStagedCreation,
-  createMammothDocumentConverter,
   type DocumentArrivals,
   discardDrizzleContextStage,
   type LinkAheadRegistry,
@@ -17,6 +16,7 @@ import type { ObjectStorePort } from "../storage/index.js";
 import { createContextImportTreeWriter } from "./adapters/context-tree-writer.js";
 import { createDrizzleImportRepository } from "./adapters/drizzle-import-repository.js";
 import { createDrizzleOrganizeQueue } from "./adapters/drizzle-organize-queue.js";
+import { createMammothDocumentConverter } from "./adapters/mammoth-document-converter.js";
 import { sweepImportObjects } from "./domain/object-sweep.js";
 import { createImportOrganizer } from "./domain/organize/organizer.js";
 import { createImportAdmission } from "./domain/receive-admission.js";
@@ -99,14 +99,13 @@ export function createProductionImportOrganizer(deps: {
 export function createProductionImportService(
   deps: { db: Database; objects: ObjectStorePort; eventSink: EventSink; wake?: OrganizeWake },
   projectId: string,
-  userId: string,
 ): ImportService {
   return createImportUploadService({
     repository: createDrizzleImportRepository(deps.db),
     objects: deps.objects,
     admission: processAdmission,
     tree: createContextImportTreeWriter(
-      createDrizzleContextParentLocations(deps.db, { projectId, userId }, IMPORT_SCHEMES),
+      createDrizzleContextImportDestinationLookup(deps.db, projectId, IMPORT_SCHEMES),
     ),
     wake: deps.wake ?? { wake() {} },
     reportError: (cause) =>

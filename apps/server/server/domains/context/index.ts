@@ -51,7 +51,6 @@ export {
   createProjectContextDocumentStore,
   createWorkContextDocumentStore,
 } from "./context-source-provisioning.js";
-export * from "./corpus-import/index.js";
 export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";
 export { parseDocumentProperties } from "./document-properties.js";
@@ -86,13 +85,13 @@ export type {
   CreateDocumentInput,
 } from "./ports/context-document-store.js";
 export { ContextEntryConflictError } from "./ports/context-document-store.js";
+export type { ContextImportDestinationLookup } from "./ports/context-import-destination.js";
 export type {
   ContextImportArea,
   ContextImportDestination,
   ContextImportLinkCandidate,
   ContextImportRead,
 } from "./ports/context-import-read.js";
-export type { ContextParentLocations } from "./ports/context-parent-locations.js";
 export type {
   BinaryFileEntry,
   BinaryFileRef,
@@ -179,7 +178,7 @@ export {
 } from "./scratch-owner.js";
 export { createDrizzleDocumentTrash } from "./tree/drizzle-document-trash.js";
 export { createHiddenNodeRepair, type HiddenNodeRepair } from "./tree/hidden-node-repair.js";
-export { createDrizzleContextParentLocations } from "./tree/import-parent-locations.js";
+export { createDrizzleContextImportDestinationLookup } from "./tree/import-destination.js";
 export { createDrizzleContextImportRead } from "./tree/import-read.js";
 export {
   createDrizzleContextStagedCreation,
