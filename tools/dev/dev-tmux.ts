@@ -20,6 +20,7 @@ import {
   getExpectedServicesForMode,
   parsePortlessListOutput,
   resolveExpectedRouteUrls,
+  resolvePortlessProxyPort,
   validateExpectedRoutes,
 } from "./portless-routes";
 import { type CommandResult, TmuxSessionStore } from "./tmux-session-store";
@@ -40,10 +41,12 @@ function readPortlessState(
 ) {
   const result = store.run("pnpm", ["portless:list"]);
   const { mode, worktreePrefix } = plan.session;
+  const proxyPort = resolvePortlessProxyPort();
   const validation = validateExpectedRoutes({
     output: result.stdout,
     mode,
     worktreePrefix,
+    proxyPort,
     expectedPorts: plan.expectedPorts,
     ownsPid: (pid) => pidBelongsToCheckout(pid, repoRoot),
   });
@@ -52,8 +55,8 @@ function readPortlessState(
   return {
     healthy: validation.errors.length === 0,
     errors: validation.errors,
-    lines: formatDevRouteLines(result.stdout, mode, worktreePrefix, externalRoutes),
-    origins: resolveExpectedRouteUrls({ output: result.stdout, mode, worktreePrefix }),
+    lines: formatDevRouteLines(result.stdout, mode, worktreePrefix, externalRoutes, proxyPort),
+    origins: resolveExpectedRouteUrls({ output: result.stdout, mode, worktreePrefix, proxyPort }),
   };
 }
 
@@ -70,9 +73,10 @@ function waitForPortlessState(store: TmuxSessionStore, plan: DevSessionPlan, tim
 function checkRouteConflicts(store: TmuxSessionStore, plan: DevSessionPlan, force: boolean): void {
   const result = store.run("pnpm", ["portless:list"]);
   requireSuccess(result, "cannot inspect Portless routes");
+  const proxyPort = resolvePortlessProxyPort();
   const expected = new Set(
     getExpectedServicesForMode(plan.session.mode).map((service) =>
-      expectedServiceHost(service.name, plan.session.worktreePrefix),
+      expectedServiceHost(service.name, plan.session.worktreePrefix, proxyPort),
     ),
   );
   const conflicts = parsePortlessListOutput(result.stdout).routes.filter((route) =>

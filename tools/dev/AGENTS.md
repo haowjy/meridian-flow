@@ -9,6 +9,10 @@ directory never imports application packages. The `./mf` CLI lives in
 
 ## Rules
 
+- Portless's proxy port comes only from `resolvePortlessProxyPort` in
+  `portless-routes.ts`. Route expectations, readiness, the internal SSR API
+  origin and `./mf` all pass that value; never hard-code a port, and leave
+  default-443 URLs bare.
 - `DEV_DATABASES` in `lib/dev-env.ts` is the only database registry. Resolve
   worktree URLs through `applyDevEnvToProcess()` and administer databases
   through `lib/dev-db.ts`. Never regex-edit a URL, fall back to a shared

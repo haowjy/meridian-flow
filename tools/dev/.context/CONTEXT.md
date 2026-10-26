@@ -91,7 +91,7 @@ identity, not current HEAD; Git derives only the next launch's identity. A
 single resolved `DevSessionPlan` supplies commands, ports and verification
 expectations. New/reused sessions share one readiness-and-publication pipeline.
 
-Portless is the URL source of truth. `pnpm dev` reports `started` only after
+Portless is the URL source of truth. `resolvePortlessProxyPort` reads the port the running proxy recorded in `proxy.port` under `PORTLESS_STATE_DIR` (default `~/.portless`), falling back to `PORTLESS_PORT` before a proxy has written one. Every route expectation, readiness probe, internal SSR origin and `./mf` discovery uses that one value. Hosts carry the port only when it is not Portless's default 443, so default-port URLs stay bare. `pnpm dev` reports `started` only after
 expected routes, real HTTP readiness probes, and (when enabled) verified
 Tailscale bindings pass. Startup failures identify the repository-relative
 portless log. Tailscale cleanup probes target liveness and turns off individual
