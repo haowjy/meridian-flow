@@ -100,12 +100,13 @@ function AssistantTurnComponent({
         {items.map((item) => (
           <TurnItemView key={itemRenderKey(item)} item={item} threadId={resolvedThreadId} />
         ))}
+        {/* Deliveries under an asking reply arrived after its question, so they follow its receipt. */}
+        <AskReceipt threadId={resolvedThreadId} turnId={turn.id} />
         {deliveries.length ? (
           <div data-turn-item-kind="delivery">
             <DeliveryEventRows groups={deliveries} />
           </div>
         ) : null}
-        <AskReceipt threadId={resolvedThreadId} turnId={turn.id} />
 
         <TurnLineageReceipt
           threadId={resolvedThreadId}
