@@ -493,6 +493,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         nodes: remapCopiedBlocks({
           blocks: copied.nodes,
           sourceHolderUri: copied.copiedFrom.uri,
+          aheadSettlements: copied.aheadSettlements,
           map: createCopyIdentityMap({
             documents: [
               {

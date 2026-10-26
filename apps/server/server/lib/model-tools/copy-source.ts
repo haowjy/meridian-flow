@@ -16,6 +16,7 @@ import {
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
 import { documentPathKey } from "@meridian/contracts";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { copyBinaryDocument } from "../../domains/context/binary-copy.js";
 import type { CopiedFrom } from "../../domains/context/document-metadata.js";
 import type { BinaryFileRef, FileRef } from "../../domains/context/ports/context-port.js";
@@ -44,6 +45,8 @@ export interface CopiedSource {
   nodes: NonNullable<WriteOutcome["nodes"]>;
   /** The source's identity, so a whole-document copy can point its own links at the copy. */
   sourceDocumentId: string;
+  /** Where each `ahead:` ref in the source now settles; the remap reads it like a writer's Copy. */
+  aheadSettlements: ReadonlyMap<string, string>;
   copiedFrom: CopiedFrom;
 }
 
@@ -153,8 +156,31 @@ export async function readTrackedCopySource(
   return {
     nodes: [...(outcome.nodes ?? [])],
     sourceDocumentId: address.documentId,
+    aheadSettlements:
+      command === "copy" ? await aheadSettlementsOf(deps, address, grant, ctx) : new Map(),
     copiedFrom: { uri: address.uri, version, revision: outcome.revision },
   };
+}
+
+/**
+ * Where the source's settled `ahead:` refs point. The model's read returns blocks only, and the
+ * copy's remap needs these to point a self-link at the copy as a writer's Copy does, so it
+ * reads the same cut a writer's Copy reads. A source that vanished since the read has none.
+ */
+async function aheadSettlementsOf(
+  deps: ToolWiringDeps,
+  address: ResolvedDocumentAddress,
+  grant: FileGrant<"read">,
+  ctx: Pick<ToolHandlerContext, "threadId">,
+): Promise<ReadonlyMap<string, string>> {
+  const cut = await deps.documentSync.readEffectiveBlocks({
+    documentId: address.documentId as DocumentId,
+    threadId: ctx.threadId as ThreadId,
+    ...(grant.destination.kind === "draft"
+      ? { destination: "draft" as const, workId: grant.destination.workId }
+      : { destination: "live" as const }),
+  });
+  return cut.ok ? cut.value.aheadSettlements : new Map();
 }
 
 /** A binary file has no blocks, so a copy of one takes no selection (D49). */
