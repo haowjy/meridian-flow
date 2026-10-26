@@ -21,7 +21,10 @@ import {
 import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
 import { nextProjectSlug } from "../projects/adapters/project-repository/shared.js";
 import { lockContextSources } from "./adapters/context-fs/document-locations.js";
-import { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
+import {
+  DrizzleContextDocumentStore,
+  holdCatalogRefreshes,
+} from "./adapters/context-fs/drizzle-store.js";
 import { createDrizzleLineageScratchLifecycle } from "./adapters/lineage-scratch-lifecycle.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
 import type {
@@ -239,6 +242,24 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     private readonly arrivals?: DocumentArrivals,
     private readonly repair?: HiddenNodeRepair,
   ) {}
+
+  withCatalogBatch() {
+    if (!this.catalogMutations) return { store: this, flush: async () => {} };
+    const { held, flush } = holdCatalogRefreshes(this.catalogMutations);
+    return {
+      store: new SourceResolvedContextDocumentStore(
+        this.db,
+        this.ensureSourceId,
+        this.findSourceId,
+        this.workId,
+        held,
+        this.beforeWrite,
+        this.arrivals,
+        this.repair,
+      ),
+      flush,
+    };
+  }
 
   private async resolvedWorkId(): Promise<string | undefined> {
     return typeof this.workId === "function" ? this.workId() : this.workId;
