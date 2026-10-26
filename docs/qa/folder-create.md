@@ -120,7 +120,7 @@ typed 400.
 ## A replay is answered from the id the server holds
 
 The route reads `folderId` before any authority or Work-lifecycle check on the destination
-(`answerHeldFolder`, `ContextPort.heldFolder`). With `./mf api`: create a folder F in a
+(`answerHeldFolder`, `ProjectContextAvailabilityPort.held`). With `./mf api`: create a folder F in a
 Work's Scratch (`created`), post the same body (`already-exists`), archive the Work, then
 post the same body and a repair to Manuscript. Both answer 409 `{status: "conflict"}`, never
 403 `work_archived`; the device settles the refusal and keeps its folder. After `unarchive`
