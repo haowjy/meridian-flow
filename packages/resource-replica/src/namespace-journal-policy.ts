@@ -6,6 +6,7 @@ import {
   type NamespaceOutcome,
   namespaceRequestId,
   type ResourceDestination,
+  type ResourceLocation,
   type ResourceRecord,
 } from "./resource-records";
 
@@ -45,21 +46,24 @@ function everyAnsweredRequestRefused(intents: readonly NamespaceIntent[]): boole
 }
 
 /**
- * The server never accepted this document: it is local with no canonical place, and every request
- * the server answered refused it. Its deletion is local, and a refused first placement leaves it
- * only on this device.
+ * Nothing the server answered took this identity: it has no canonical place, and every request
+ * the server answered refused it. A folder is local by `canonical: null` alone; a document must
+ * also be lifecycle `local` (`resourceNeverAccepted`), since an acknowledged one may be waiting
+ * for the catalog read that proves its place.
  */
+export function neverAccepted(record: {
+  canonical: ResourceLocation | null;
+  intents: readonly NamespaceIntent[];
+}): boolean {
+  return record.canonical === null && everyAnsweredRequestRefused(record.intents);
+}
+
+/** The server never accepted this document: it exists only on this device. */
 export function resourceNeverAccepted(record: Pick<ResourceRecord, "resource" | "intents">) {
   return (
     record.resource.lifecycle.kind === "local" &&
-    record.resource.canonical === null &&
-    everyAnsweredRequestRefused(record.intents)
+    neverAccepted({ canonical: record.resource.canonical, intents: record.intents })
   );
-}
-
-/** A folder's `resourceNeverAccepted`: local, and nothing the server answered took it. */
-export function folderNeverAccepted(record: Pick<FolderNamespaceRecord, "canonical" | "intents">) {
-  return record.canonical === null && everyAnsweredRequestRefused(record.intents);
 }
 
 /** Both journals use this transition; effects belong to the identity's own layer. */

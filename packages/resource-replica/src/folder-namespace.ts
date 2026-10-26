@@ -7,9 +7,9 @@ import type {
 } from "@meridian/contracts/protocol";
 import { canonicalRefreshObservation, newerCanonicalObservation } from "./canonical-observation";
 import {
-  folderNeverAccepted,
   namespaceIntentOutcome,
   namespaceRepairDestination,
+  neverAccepted,
   resolveUnavailableNamespace,
   settleNamespaceIntent,
   validateNamespaceJournal,
@@ -204,7 +204,7 @@ export function planFolderDeletion(input: {
   if (record.canonical) resourceContextAuthority(record.canonical.scheme, record.canonical);
   // A folder the server never accepted has nothing to delete there: deleting it is local, and
   // the writer keeps the same Undo window a server deletion has.
-  const neverAccepted = folderNeverAccepted(record);
+  const localDeletion = neverAccepted(record);
   const now = input.now ?? Date.now();
   const superseded = supersedeRepairableNamespaceWork(record, record.projectId);
   return {
@@ -212,7 +212,7 @@ export function planFolderDeletion(input: {
     next: {
       ...record,
       revision: record.revision + 1,
-      ...(neverAccepted
+      ...(localDeletion
         ? {
             localDeletion: {
               obligationId: input.intentId,
@@ -236,7 +236,7 @@ export function planFolderDeletion(input: {
           desired: { kind: "delete" },
           ...(input.admission ? { admission: input.admission } : {}),
           attempts: [],
-          state: neverAccepted ? "settled-locally" : "pending",
+          state: localDeletion ? "settled-locally" : "pending",
         },
       ],
     },
@@ -458,7 +458,7 @@ export function validateFolderNamespaceUpdate(
     next,
     identityRevision: 1,
     terminal: Boolean(next.terminal),
-    localDeletionAllowed: folderNeverAccepted(next),
+    localDeletionAllowed: neverAccepted(next),
     // Undo of a local folder deletion clears its window; that deletion may become superseded.
     revokedLocalDeletions: new Set(
       previous?.intents
