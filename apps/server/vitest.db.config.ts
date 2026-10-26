@@ -65,7 +65,6 @@ const expectedSuites = [
   "apps/server/server/domains/context/adapters/drizzle-link-ahead-registry.db.test.ts",
   "apps/server/server/domains/context/adapters/context-catalog.db.test.ts",
   "apps/server/server/domains/context/create-join.db.test.ts",
-  "apps/server/server/domains/context/corpus-import/corpus-import.db.test.ts",
   "apps/server/server/domains/context/document-address.review.db.test.ts",
   "apps/server/server/domains/context/adapters/project-context-availability.db.test.ts",
   "apps/server/server/domains/context/document-link-resolution.db.test.ts",
