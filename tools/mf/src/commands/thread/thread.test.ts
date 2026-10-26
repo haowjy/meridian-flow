@@ -645,7 +645,7 @@ describe("thread send", () => {
   });
 });
 
-describe("thread view, cancel, events, respond", () => {
+describe("thread view, cancel, events, answer", () => {
   it("rejects an object-valued reply error instead of printing it as text", async () => {
     const snapshot = snapshotOf({ turns: [replyTurn("a1", 1, { status: "error" })] });
     wire.fail("snapshot", {
