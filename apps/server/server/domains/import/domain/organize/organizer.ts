@@ -174,21 +174,17 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     });
     if (!pending.length) return 0;
     const batch = [] as typeof pending;
+    const folders = [] as Parameters<ContextStagedCreation["stage"]>[2]["folders"][number][];
+    const documents = [] as Parameters<ContextStagedCreation["stage"]>[2]["documents"][number][];
     let bytes = 0;
     for (const node of pending) {
-      const size = node.kind === "folder" || node.kind === "binary" ? 0 : node.size;
-      if (batch.length && (batch.length >= BUILD_NODES || bytes + size > BUILD_BYTES)) break;
-      batch.push(node);
-      bytes += size;
-    }
-    const folders = batch.flatMap((node) =>
-      node.kind === "folder" && node.area
-        ? [{ id: node.id, parentId: node.parentId, area: node.area, name: node.name }]
-        : [],
-    );
-    const documents = [] as Parameters<ContextStagedCreation["stage"]>[2]["documents"][number][];
-    for (const node of batch) {
-      if (node.kind === "folder") continue;
+      if (batch.length >= BUILD_NODES) break;
+      if (node.kind === "folder") {
+        if (!node.area) throw new Error(`Import node has no area: ${node.id}`);
+        batch.push(node);
+        folders.push({ id: node.id, parentId: node.parentId, area: node.area, name: node.name });
+        continue;
+      }
       const entry = byId.get(node.id);
       if (entry?.kind !== "file" || !entry.receipt)
         throw new Error(`Import node has no receipt: ${node.id}`);
@@ -207,8 +203,9 @@ export function createImportOrganizer(deps: OrganizerDeps) {
           filename: node.filename,
         },
       };
+      let document: (typeof documents)[number];
       if (node.kind === "binary") {
-        documents.push({
+        document = {
           ...base,
           content: {
             kind: "binary",
@@ -216,59 +213,73 @@ export function createImportOrganizer(deps: OrganizerDeps) {
             mimeType: entry.receipt.facts.mimeType,
             sizeBytes: entry.receipt.receivedSize,
           },
-        });
-        continue;
+        };
+      } else {
+        const key = entry.convertedKey ?? entry.receipt.objectKey;
+        const text = await readText(deps.objects, key);
+        if (node.kind === "code") {
+          const content = deps.binder.bindPlannedCode(node.id as DocumentId, node.filetype, text);
+          const seed = await deps.documents.prepareSeed({
+            documentId: node.id as DocumentId,
+            projectId,
+            uri: uris.get(node.id) ?? "",
+            content,
+            origin: base.origin,
+          });
+          document = { ...base, content: { kind: "tracked", seed, aheadMints: [] } };
+        } else {
+          const source = selectedById.get(node.id);
+          if (!source) throw new Error(`Import note has no link candidate: ${node.id}`);
+          const root = roots.get(node.rootId);
+          const converted = convertNote(text, {
+            source,
+            index,
+            attachmentFolder: root?.settings.attachmentFolderPath ?? "",
+            aheadFolder: `${node.area}://`,
+          });
+          const bound = await deps.binder.bindPlannedMarkdown({
+            holder: {
+              documentId: node.id as DocumentId,
+              uri: uris.get(node.id) ?? "",
+              projectId,
+              filetype: node.filetype,
+            },
+            markdown: converted.template,
+            targets: converted.targets as ReadonlyMap<number, DocumentId>,
+            hrefs: respell(converted, uris),
+            planned,
+          });
+          const seed = await deps.documents.prepareSeed({
+            documentId: node.id as DocumentId,
+            projectId,
+            uri: uris.get(node.id) ?? "",
+            content: bound.content,
+            origin: base.origin,
+          });
+          document = {
+            ...base,
+            metadata: {
+              ...(converted.properties ? { properties: converted.properties } : {}),
+              ...(converted.aliases.length ? { aliases: converted.aliases } : {}),
+            },
+            content: { kind: "tracked", seed, aheadMints: bound.aheadMints },
+          };
+        }
       }
-      const key = entry.convertedKey ?? entry.receipt.objectKey;
-      const text = await readText(deps.objects, key);
-      if (node.kind === "code") {
-        const content = deps.binder.bindPlannedCode(node.id as DocumentId, node.filetype, text);
-        const seed = await deps.documents.prepareSeed({
-          documentId: node.id as DocumentId,
-          projectId,
-          uri: uris.get(node.id) ?? "",
-          content,
-          origin: base.origin,
-        });
-        documents.push({ ...base, content: { kind: "tracked", seed, aheadMints: [] } });
-        continue;
-      }
-      const source = selectedById.get(node.id);
-      if (!source) throw new Error(`Import note has no link candidate: ${node.id}`);
-      const root = roots.get(node.rootId);
-      const converted = convertNote(text, {
-        source,
-        index,
-        attachmentFolder: root?.settings.attachmentFolderPath ?? "",
-        aheadFolder: `${node.area}://`,
-      });
-      const bound = await deps.binder.bindPlannedMarkdown({
-        holder: {
-          documentId: node.id as DocumentId,
-          uri: uris.get(node.id) ?? "",
-          projectId,
-          filetype: node.filetype,
-        },
-        markdown: converted.template,
-        targets: converted.targets as ReadonlyMap<number, DocumentId>,
-        hrefs: respell(converted, uris),
-        planned,
-      });
-      const seed = await deps.documents.prepareSeed({
-        documentId: node.id as DocumentId,
-        projectId,
-        uri: uris.get(node.id) ?? "",
-        content: bound.content,
-        origin: base.origin,
-      });
-      documents.push({
-        ...base,
-        metadata: {
-          ...(converted.properties ? { properties: converted.properties } : {}),
-          ...(converted.aliases.length ? { aliases: converted.aliases } : {}),
-        },
-        content: { kind: "tracked", seed, aheadMints: bound.aheadMints },
-      });
+      const stagedBytes =
+        document.content.kind === "tracked"
+          ? document.content.seed.state.byteLength +
+            document.content.seed.stateVector.byteLength +
+            Buffer.byteLength(document.content.seed.markdown, "utf8") +
+            Buffer.byteLength(JSON.stringify(document.content.seed.attributionManifest), "utf8") +
+            Buffer.byteLength(JSON.stringify(document.content.aheadMints), "utf8")
+          : 0;
+      // A Yjs seed is indivisible. If one seed exceeds the batch cap, stage it alone;
+      // otherwise the import could never advance past that document.
+      if (batch.length && bytes + stagedBytes > BUILD_BYTES) break;
+      batch.push(node);
+      documents.push(document);
+      bytes += stagedBytes;
     }
     const result = await runOrganizeTransaction(
       deps.db,
