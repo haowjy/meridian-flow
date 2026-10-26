@@ -225,6 +225,10 @@ pnpm test:all       # unit + managed DB suites in one Vitest run (requires Postg
 
 Portless + tmux (not raw `localhost:3000`). See [AGENTS.md — Dev environment](AGENTS.md#dev-environment).
 
+Dev stacks run on the private tmux server `meridian-dev`, not the default one.
+Attach with `tmux -L meridian-dev attach -t <session>`; `pnpm dev` prints the
+exact command. The default server holds the machine owner's live shells.
+
 ```bash
 pnpm dev                  # start (tailscale serve by default)
 pnpm dev --no-tailscale   # local-only (no Tailscale exposure)
@@ -236,9 +240,10 @@ pnpm portless:list        # live localhost HTTPS URLs
 ```
 
 Restart terminates this worktree's owned tmux session, then owns its configured
-fixed ports. It logs each remaining holder by PID and command, sends SIGTERM,
-waits briefly, and sends SIGKILL to stragglers. An uninspectable bound port still
-aborts startup with diagnostics.
+fixed ports. It also stops a stack started before dev moved to `meridian-dev`,
+which still lives on the default server. It logs each remaining holder by PID
+and command, sends SIGTERM, waits briefly, and sends SIGKILL to stragglers. An
+uninspectable bound port still aborts startup with diagnostics.
 
 ## Workstation: wrapped ripgrep
 
