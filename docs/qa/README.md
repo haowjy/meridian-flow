@@ -168,6 +168,18 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    create into a locally dismissible refusal.
 10. Verify atomic reveal and complete documents with the notes-folder fixture under
    `apps/server/server/domains/import/__fixtures__/`, including properties and links.
+11. Verify order. In one project make a Knowledge Base folder with four documents and
+   reorder one of them (Move… > Change position, or a row-edge drag) so the folder is
+   manual; make a second folder with the same documents and leave it alone. Import 100+
+   files and a nested folder into each. In the default folder the arrivals list in name
+   order (folders first, numeric-aware); in the manual folder they sit after the last
+   existing row, with ranks above its largest (`select name, rank from documents where
+   folder_id = … order by rank collate "C"`), and the nested folder's own children stay
+   unranked. The pending root drawn while organizing is already in that slot. Then export
+   the project: each folder's entries stream in tree order, depth first, and a manual
+   folder's order survives. Drag a desktop file onto a row's edge and onto a folder: both
+   light the whole folder, the hint says "Import into <folder>", no insertion line draws,
+   and the file lands by the folder's rule, not at the edge.
 
 For the large gate, generate a 3,219-file/1,207-folder vault with
 `pnpm --filter @meridian/server exec tsx scripts/build-import-performance-fixture.ts <output-dir>`.
