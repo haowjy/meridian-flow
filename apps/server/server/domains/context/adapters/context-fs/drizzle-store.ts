@@ -7,11 +7,7 @@
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import {
-  branchTreeParentOrders,
-  branchTreeRanks,
-  documentMarkdownProjections,
-} from "@meridian/database/schema";
+import { documentMarkdownProjections } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -31,12 +27,16 @@ import {
 } from "../../ports/context-document-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { createLive, findLiveCreateCandidate } from "../../tree/creates.js";
+import {
+  branchRankOverrides,
+  effectiveParentPolicy,
+  siblingParent,
+} from "../../tree/effective-order.js";
 import { findForward, lastLocationOf, recordForward } from "../../tree/forwards.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
 import { insertDocumentRow } from "../../tree/node-rows.js";
 import { ensureLiveFolderPath } from "../../tree/placement.js";
-import { liveParentOrderPolicy } from "../../tree/sibling-order.js";
 import {
   createTreeReader,
   LIVE_TREE,
@@ -64,16 +64,6 @@ type DocumentRow = Pick<
   | "provisionalName"
   | "rank"
 >;
-
-function mapFolder(row: {
-  id: string;
-  parentId: string | null;
-  name: string;
-  rank: string | null;
-  orderPolicy: "default" | "manual";
-}): ContextFolder {
-  return { ...row };
-}
 
 function mapDocument(row: DocumentRow): ContextDocument {
   const isBinary = isStorageBackedDocument(row);
@@ -152,7 +142,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     });
     if (found.kind !== "found") return found;
     return found.node.kind === "folder"
-      ? { kind: "found", node: mapFolder(found.node.folder) }
+      ? { kind: "found", node: found.node.folder }
       : { kind: "not_found" };
   }
 
@@ -333,20 +323,13 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   }
 
   async parentOrderPolicy(view: TreeView, parentId: string | null) {
-    if (view.kind === "branch") {
-      const [override] = await this.db
-        .select({ orderPolicy: branchTreeParentOrders.orderPolicy })
-        .from(branchTreeParentOrders)
-        .where(
-          and(
-            eq(branchTreeParentOrders.branchId, view.branchId),
-            eq(branchTreeParentOrders.parentKind, parentId === null ? "source" : "folder"),
-            eq(branchTreeParentOrders.parentId, (parentId ?? this.sourceId) as never),
-          ),
-        );
-      if (override) return override.orderPolicy;
-    }
-    return liveParentOrderPolicy(this.db, this.sourceId, parentId as FolderId | null);
+    return (
+      await effectiveParentPolicy(
+        this.db,
+        view.kind === "branch" ? view.branchId : null,
+        siblingParent(this.sourceId, parentId as FolderId | null),
+      )
+    ).policy;
   }
 
   async listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]> {
@@ -368,25 +351,13 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       );
     const ranks =
       view.kind === "branch" && rows.length
-        ? new Map(
-            (
-              await this.db
-                .select({ id: branchTreeRanks.nodeId, rank: branchTreeRanks.rank })
-                .from(branchTreeRanks)
-                .where(
-                  and(
-                    eq(branchTreeRanks.branchId, view.branchId),
-                    eq(branchTreeRanks.nodeKind, "folder"),
-                    inArray(
-                      branchTreeRanks.nodeId,
-                      rows.map((row) => row.id),
-                    ),
-                  ),
-                )
-            ).map((row) => [row.id, row.rank]),
+        ? await branchRankOverrides(
+            this.db,
+            view.branchId,
+            siblingParent(this.sourceId, parentId as FolderId | null),
           )
         : null;
-    return rows.map((row) => mapFolder({ ...row, rank: ranks?.get(row.id) ?? row.rank }));
+    return rows.map((row) => ({ ...row, rank: ranks?.get(row.id) ?? row.rank }));
   }
 
   async listDocuments(view: TreeView, folderId: string | null): Promise<ContextDocument[]> {
@@ -402,22 +373,10 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       );
     const ranks =
       view.kind === "branch" && rows.length
-        ? new Map(
-            (
-              await this.db
-                .select({ id: branchTreeRanks.nodeId, rank: branchTreeRanks.rank })
-                .from(branchTreeRanks)
-                .where(
-                  and(
-                    eq(branchTreeRanks.branchId, view.branchId),
-                    eq(branchTreeRanks.nodeKind, "document"),
-                    inArray(
-                      branchTreeRanks.nodeId,
-                      rows.map((row) => row.id),
-                    ),
-                  ),
-                )
-            ).map((row) => [row.id, row.rank]),
+        ? await branchRankOverrides(
+            this.db,
+            view.branchId,
+            siblingParent(this.sourceId, folderId as FolderId | null),
           )
         : null;
     return rows.map((row) => mapDocument({ ...row, rank: ranks?.get(row.id) ?? row.rank }));
