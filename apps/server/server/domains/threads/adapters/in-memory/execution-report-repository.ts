@@ -113,6 +113,9 @@ export function createInMemoryExecutionReportRepository(
     async findByExecution(child, execution) {
       return find(child, execution);
     },
+    async findByContinuationAsk(askId) {
+      return [...rows.values()].find((row) => row.continuationAskId === askId) ?? null;
+    },
     async listLatestByChildren(childThreadIds) {
       const childIds = new Set(childThreadIds);
       const latest = new Map<string, SavedExecutionReport>();

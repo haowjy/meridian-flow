@@ -580,6 +580,7 @@ export const threadExecutionReports = pgTable(
       .$type<TurnId>()
       .primaryKey()
       .references(() => turns.id, { onDelete: "cascade" }),
+    continuationAskId: uuid("continuation_ask_id"),
     terminalTurnId: uuid("terminal_turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "cascade" }),
@@ -625,6 +626,9 @@ export const threadExecutionReports = pgTable(
     index("thread_execution_reports_pending")
       .on(table.executionTurnId)
       .where(sql`${table.publication} = 'pending'`),
+    uniqueIndex("thread_execution_reports_continuation_ask")
+      .on(table.continuationAskId)
+      .where(sql`${table.continuationAskId} IS NOT NULL`),
     check(
       "thread_execution_reports_origin_valid",
       sql`${table.origin} IN ('spawn','message','thread_run')`,

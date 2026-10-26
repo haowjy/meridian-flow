@@ -60,7 +60,11 @@ export interface ChildRunDriver {
     options: { background?: boolean; signal?: AbortSignal; origin: "spawn" | "message" },
   ): Promise<PreparedChild>;
   admit(prepared: PreparedChild, input: ChildDriveInput): Promise<AdmittedChildRun>;
-  admitContinuation(prepared: PreparedChild, input: ChildDriveInput): Promise<AdmittedChildRun>;
+  admitContinuation(
+    prepared: PreparedChild,
+    input: ChildDriveInput,
+    askId: string,
+  ): Promise<AdmittedChildRun>;
   execute(admitted: AdmittedChildRun): Promise<SpawnResult>;
   executeBackground(admitted: AdmittedChildRun): void;
   readSavedReport(childThreadId: ThreadId, executionTurnId: TurnId): Promise<SpawnResult | null>;
@@ -118,10 +122,12 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
   async function admitContinuation(
     prepared: PreparedChild,
     input: ChildDriveInput,
+    askId: string,
   ): Promise<AdmittedChildRun> {
     const handle = await deps.orchestrator.prepare({
       threadId: prepared.child.id as ThreadId,
       drain: true,
+      continuationAskId: askId,
       signal: prepared.signal,
       child: {
         parentThreadId: input.parentThread.id as ThreadId,

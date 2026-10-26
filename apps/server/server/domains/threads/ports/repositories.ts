@@ -176,6 +176,7 @@ export interface AdmitExecutionReportInput extends ExecutionReportCorrelation {
   handle: string;
   agentSlug?: string | null;
   name?: string | null;
+  continuationAskId?: string | null;
 }
 export interface FinalizeExecutionReportInput {
   terminalTurnId?: TurnId;
@@ -204,6 +205,7 @@ export interface ExecutionReportRepository {
     childThreadId: ThreadId,
     executionTurnId: TurnId,
   ): Promise<SavedExecutionReport | null>;
+  findByContinuationAsk(askId: string): Promise<SavedExecutionReport | null>;
   /** Latest admitted execution per child, ordered from report admission truth. */
   listLatestByChildren(childThreadIds: readonly ThreadId[]): Promise<LatestChildExecution[]>;
   listFinishedByChild(childThreadId: ThreadId): Promise<SavedExecutionReport[]>;

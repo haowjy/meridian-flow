@@ -456,7 +456,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           const prepared = await prepareForegroundMessage(request, authorized.target);
           if ("status" in prepared) return prepared;
           try {
-            const childRun = await driver.admitContinuation(prepared, request);
+            const childRun = await driver.admitContinuation(prepared, request, request.boundAskId);
             return driver.execute(childRun);
           } catch (error) {
             // The durable continuation remains queued. A concurrent runner owns

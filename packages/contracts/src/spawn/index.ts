@@ -96,6 +96,8 @@ export type SavedExecutionReport = {
   terminalTurnId: TurnId | null;
   childThreadId: ThreadId;
   executionTurnId: TurnId;
+  /** Resolved ask whose continuation this execution admits, when applicable. */
+  continuationAskId: string | null;
   /** Durable report-row creation time, which commits with run admission. */
   admittedAt: string;
   handle: string;

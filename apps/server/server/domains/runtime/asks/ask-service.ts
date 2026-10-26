@@ -318,16 +318,16 @@ export function createAskService(deps: {
       );
       if (!askingExecution) throw new Error("Child ask has no admitted execution report");
       const replayed = stored.status !== "open" && stored.submissionId === input.submissionId;
+      const replayedReport = replayed
+        ? await deps.repos.executionReports.findByContinuationAsk(stored.id)
+        : null;
       const result = await resolve({
         askId: stored.id,
         threadId: input.childThreadId,
         status: "answered",
         resolution: { kind: "parent", text: input.text },
         submissionId: input.submissionId,
-        // Every answer resumes through the same durable continuation admission.
-        // A foreground caller may claim and drive it immediately; otherwise the
-        // queued control wakes the child's ordinary drain runner.
-        continuation: { kind: "queue" },
+        continuation: input.delivery === "direct" ? { kind: "none" } : { kind: "queue" },
       });
       if (!result.ok) return result;
       return {
@@ -345,6 +345,7 @@ export function createAskService(deps: {
           name: askingExecution.name,
         },
         ...(replayed ? { replayed: true } : {}),
+        ...(replayedReport ? { replayedReport } : {}),
       };
     },
     async expireDue(now = new Date(), limit = 100) {
