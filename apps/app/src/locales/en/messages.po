@@ -3165,6 +3165,10 @@ msgstr "Loading chats"
 msgid "Loading document…"
 msgstr "Loading document…"
 
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Loading files…"
+msgstr "Loading files…"
+
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/rich-content/ImageBlock.tsx
 msgid "Loading image"

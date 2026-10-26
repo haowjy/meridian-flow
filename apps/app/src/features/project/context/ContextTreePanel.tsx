@@ -439,26 +439,31 @@ function SchemeSection({
         header={header}
         className={pane ? "flex min-h-0 flex-col" : undefined}
       >
-        {expanded && catalog && importedTree && env ? (
-          <TreeEnvProvider value={env}>
-            {/* Docked, the header stays put and the rows scroll under it. */}
-            <div className={pane ? "min-h-0 overflow-y-auto overflow-x-hidden pb-1" : undefined}>
-              <TreeGroup depth={1}>
-                <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
-              </TreeGroup>
-              {/* "No context files yet." is a claim about the tree, so it waits
-                for a RESOLVED tree. While the query is in flight with nothing
-                cached the pane body stays blank (no spinner) — prefetch at
-                mount makes that window nearly unhittable. */}
-              {isError ? (
-                <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
-              ) : importedTree.rows(importedTree.root.entryId).length === 0 && !creating ? (
-                <EmptyHint depth={1}>
-                  <Trans>No context files yet.</Trans>
-                </EmptyHint>
-              ) : null}
-            </div>
-          </TreeEnvProvider>
+        {expanded ? (
+          // Docked, the header stays put and the rows scroll under it.
+          <div className={pane ? "min-h-0 overflow-y-auto overflow-x-hidden pb-1" : undefined}>
+            {catalog && importedTree && env ? (
+              <TreeEnvProvider value={env}>
+                <TreeGroup depth={1}>
+                  <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
+                </TreeGroup>
+              </TreeEnvProvider>
+            ) : null}
+            {/* The status line never waits on rows: a load that is still running and a
+              load that failed both leave the pane empty, so the writer cannot tell
+              "nothing here" from "not here yet" unless this row says which. */}
+            {isError ? (
+              <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
+            ) : !isComplete || !importedTree ? (
+              <PaneHint depth={1} busy>
+                <Trans>Loading files…</Trans>
+              </PaneHint>
+            ) : importedTree.rows(importedTree.root.entryId).length === 0 && !creating ? (
+              <PaneHint depth={1}>
+                <Trans>No context files yet.</Trans>
+              </PaneHint>
+            ) : null}
+          </div>
         ) : null}
       </AreaDropRegion>
     </section>
@@ -470,11 +475,21 @@ function parentContextPath(path: string): string {
   return separator <= 0 ? "" : path.slice(0, separator);
 }
 
-function EmptyHint({ depth, children }: { depth: number; children: React.ReactNode }) {
+function PaneHint({
+  depth,
+  busy = false,
+  children,
+}: {
+  depth: number;
+  /** The tree is still loading; announce it instead of claiming the pane is empty. */
+  busy?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <p
       className="py-1.5 pr-2 text-xs text-ink-subtle"
       style={{ paddingLeft: rowPaddingLeft(depth) }}
+      {...(busy ? { role: "status", "aria-live": "polite" } : {})}
     >
       {children}
     </p>
