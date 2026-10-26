@@ -64,10 +64,18 @@ continuation: its report inherits the asked execution's invocation with the row'
 delivery mode and records `continuationAskId`. A plain question's row is
 acknowledged in that admission transaction; a forwarded one's after its relay.
 A forwarded parent that crashed mid-relay reruns with a new execution, so
-`findByContinuationAsk` returns the latest report for the ask. The foreground
-caller drives the continuation if its row is pending, else waits by ask id, outside
-any lock, until the latest report is terminal and no row for the ask is pending.
-It wakes on the child's committed thread events, and a replay waits the same way.
+`findByContinuationAsk` returns the latest report for the ask.
+
+Where a resolved ask's continuation stands is read in one place,
+`spawn/ask-continuation.ts`: `outstanding` while its row is pending, `admitted`
+once the row is gone and a continuation report exists, `cancelled` when the row is
+gone with no report (a lineage cancellation dropped it before anything ran it).
+The foreground caller drives the continuation if it is outstanding, then waits by
+ask id, outside any lock, until it is admitted with a terminal report or cancelled,
+which returns a cancelled result. It wakes on the child's committed thread events
+(dropping a row journals the child's run state), and a replay waits the same way.
+The report publisher uses the same reader: an asked invocation whose question
+resolved with its continuation cancelled ends cancelled, like a withdrawn question.
 
 ## Cards, reports, and activity
 
@@ -110,22 +118,42 @@ Terminal persistence precedes helper/Work cleanup.
 ## Lineage cancellation
 
 A parked child exists only in the database, so lifetime follows thread lineage,
-not live sessions. `TurnRunner.cancelLineage(scope)` is the one operation: it sets
-the durable `cancel_requested` flag on every target's live lease (heartbeats and
-batch adoption in any process honour it) and aborts local sessions, waits for this
-process's targets to settle, drops their queued non-writer inbox rows and their
-child notices to the owner, then cancels open asks (`cancelForThreadLifecycle`) and
-finalizes each parked invocation as cancelled through `report-publisher`
-(`settleCancelledAsk`: card, `agent.run_completed`, `spawn_status`). It repeats
-the abort while a target restarted on a notice. Runs in other processes stop at
-their next heartbeat; a notice they publish after the drop can still wake a parent.
+not live sessions. `TurnRunner`'s `cancelLineage(scope)` is the one operation, in
+this order:
+
+1. **Withdraw** (`spawn/lineage-cancellation.ts`): set the durable
+   `cancel_requested` flag on every target's live lease (heartbeats and batch
+   adoption in any process honour it), drop the targets' queued non-writer rows and
+   their child notices to the owner, and, for Stop, a cancelled turn or Send now,
+   drop the owner's continuation obligations (`ask_resolved` rows: a relay in
+   flight, an answer not yet continued). An owner row stays only when an execution
+   the command spared has adopted it; an adoption still in flight re-reads the rows
+   under the same thread lock and finds nothing.
+2. **Abort** the owner's execution the command cancelled and the targets' local
+   sessions. Withdrawing first means no aborted run's cleanup wake finds the
+   owner's continuation and replays its relay.
+3. **Wait** for this process's targets, bounded at 5 s so a tool that ignores its
+   abort can't hold Stop; then withdraw again (what the ending runs queued). The
+   abort repeats while a target restarted on a notice; such an aborted wake is not
+   logged as `wake.failed`.
+4. **Settle**: cancel open asks, the cancelled turn's own question after its
+   subtrees' (an open ask holds its thread's queue, so asks lift only once the
+   queues are empty), then finalize each parked invocation whose continuation is
+   cancelled through `report-publisher` (`settleCancelledAsk`: card,
+   `agent.run_completed`, `spawn_status`).
+
+Runs in other processes, or past the wait bound, stop at their next heartbeat
+(`DEFAULT_LEASE_TTL_MS / 3`, about 10 s); a notice they publish after the last
+withdrawal can still wake a parent. Stop decides the owner's execution from what
+the writer saw: a continuation that started after the client's last view (an
+answer followed at once by Stop) is spared, keeps its row and replies.
 
 Ownership decides the scope:
 
 | Trigger | Scope |
 |---|---|
 | Stop on a chat | the whole subtree, whichever turn spawned it ("stop everything") |
-| Cancelling a turn, or Send now | only subtrees whose root that turn's execution spawned (`origin_turn_id`) |
+| Cancelling a turn, or Send now | only subtrees whose root that turn's execution spawned (`origin_turn_id`); a turn parked on its question is cancelled by withdrawing it |
 | A child's terminal run | its whole subtree, before its claim is released |
 
 `asked` is non-terminal for the last rule, so descendants keep running and their

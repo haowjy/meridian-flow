@@ -13,6 +13,7 @@ import { latestRowAt } from "../loop/latest-row.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
 import {
   type InboxWorkSelection,
+  isAskResolved,
   next,
   prefixRows,
   type WriteModeSwitchMessage,
@@ -116,9 +117,7 @@ export function createDeliveryAdapter(
     const pendingBatch = await inbox.selectPending(threadId);
     const projection = await inbox.readPendingProjection(threadId);
     const boundIds = new Set(projection.run?.messageIds ?? []);
-    const continuation = pendingBatch.find(
-      (row) => row.intent === "control" && row.body.kind === "ask_resolved",
-    );
+    const continuation = pendingBatch.find(isAskResolved);
     const openAsk = continuation ? null : await deps.repos.asks.findOpenByThread(threadId);
     return {
       pendingBatch,

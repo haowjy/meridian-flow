@@ -22,6 +22,7 @@ import type { DetachedWorkTracker } from "../detached-work.js";
 import { NoPendingWakeError, type PreparedRun, type RunTurnPort } from "../loop/run-turn-port.js";
 import type { RuntimeDelivery } from "../loop/runtime-delivery.js";
 import { appendSubagentActivityBestEffort } from "./activity-event.js";
+import { readAskContinuation } from "./ask-continuation.js";
 import { savedReportToSpawnResult } from "./saved-report-outcome.js";
 
 export interface ChildDriveInput {
@@ -132,19 +133,13 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     return { prepared, handle, admittedAt: report.admittedAt };
   }
 
-  async function continuationPending(childThreadId: ThreadId, askId: string) {
-    return (await deps.delivery.selectPending(childThreadId)).some(
-      (row) => row.body.kind === "ask_resolved" && row.body.askId === askId,
-    );
-  }
-
   async function continueAnswered(
     prepared: PreparedChild,
     input: ChildDriveInput,
     askId: string,
   ): Promise<SpawnResult> {
     const childThreadId = prepared.child.id as ThreadId;
-    if (await continuationPending(childThreadId, askId)) {
+    if ((await continuation(childThreadId, askId)).kind === "outstanding") {
       let handle: PreparedRun | null = null;
       try {
         handle = await deps.orchestrator.prepare({
@@ -169,10 +164,18 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     return awaitContinuation(childThreadId, askId, prepared.signal);
   }
 
+  const continuation = (childThreadId: ThreadId, askId: string) =>
+    readAskContinuation(
+      { delivery: deps.delivery, executionReports: deps.repos.executionReports },
+      childThreadId,
+      askId,
+    );
+
   /**
-   * Waits outside any lock until the ask's latest continuation is terminal and its
-   * row is acknowledged: a forwarded child that crashed mid-relay reruns, and its
-   * stale-settled first attempt is not the answer.
+   * Waits outside any lock until the ask's obligation is done: its row acknowledged
+   * and its latest continuation terminal (a forwarded child that crashed mid-relay
+   * reruns, and its stale-settled first attempt is not the answer), or its row
+   * dropped before any continuation ran, which a cancellation does.
    */
   async function awaitContinuation(
     childThreadId: ThreadId,
@@ -184,9 +187,16 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     try {
       for (;;) {
         signal?.throwIfAborted();
-        const report = await deps.repos.executionReports.findByContinuationAsk(askId);
-        if (report?.outcome && !(await continuationPending(childThreadId, askId)))
-          return savedResult(report);
+        const state = await continuation(childThreadId, askId);
+        if (state.kind === "cancelled")
+          return {
+            status: "error",
+            error: meridianErrorFromSystem("spawn_cancelled", "Child run was cancelled"),
+            outcome: "cancelled",
+            partial: true,
+            reason: "cancelled",
+          };
+        if (state.kind === "admitted" && state.report.outcome) return savedResult(state.report);
         await changes.next(signal);
       }
     } finally {

@@ -203,3 +203,17 @@ scripts cannot interpolate the ids returned by an earlier tool call.
     plain child question and for a forwarded middle. PASS: the wake sweep admits a
     second continuation report for the same ask, acknowledges the row, emits no
     `wake.failed`, and a later writer message to that child still runs.
+13. Cancel during a relay. Have the root forward a background child's question
+    whose continuation holds a 35 s mock step, answer the root's copy, and once the
+    child continuation runs press Stop on the root. PASS: the root's `ask_resolved`
+    row is acknowledged, both turns end `cancelled`, and no root turn starts in the
+    next 10 s. Repeat with `./mf thread cancel "$root" --turn <relaying turn>`.
+    Then launch the answer and Stop together, Stop 0–100 ms later, at least ten
+    times. PASS each time: no turn stays streaming and no agent row stays pending.
+    When the child's ask is answered with no continuation report, its card and
+    `spawn_status` read cancelled, and a full restart starts no turn. A run whose
+    Stop request names no execution (it reached the server before the
+    continuation started) spares that continuation, which relays and replies.
+    Finally repeat step 7's turn cancel with a running 40 s leaf under the middle.
+    PASS: no root turn answers the withdrawn `@child asks` notice, and the root's
+    ask is the last one cancelled.

@@ -266,6 +266,18 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         .orderBy(asc(schema.turns.position), asc(table.executionTurnId));
       return rows.map(map);
     },
+    async findLatestFinishedByChild(childThreadId) {
+      const [row] = await currentDrizzleDb(db)
+        .select(reportSelection)
+        .from(table)
+        .innerJoin(schema.turns, eq(schema.turns.id, table.executionTurnId))
+        .where(
+          and(eq(table.childThreadId, childThreadId as never), sql`${table.outcome} IS NOT NULL`),
+        )
+        .orderBy(desc(schema.turns.position), desc(table.executionTurnId))
+        .limit(1);
+      return row ? map(row) : null;
+    },
     async listUnfinalized(limit, afterExecutionId) {
       if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
       return currentDrizzleDb(db)

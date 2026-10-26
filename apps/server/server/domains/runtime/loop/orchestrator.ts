@@ -169,7 +169,11 @@ import {
   recordReferenceEvidence,
 } from "./reference-context.js";
 import { prepareRequestContext } from "./request-preparation.js";
-import { createRunSessions } from "./run-session.js";
+import {
+  createRunSessions,
+  type LineageCancellation,
+  type RunSessionReports,
+} from "./run-session.js";
 import {
   type DrainRunLoopInput,
   isDrainRun,
@@ -253,9 +257,9 @@ export interface OrchestratorDeps {
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
   /** Ends a subtree across processes: Stop, turn cancel, and a child's terminal run. */
-  lineage?: import("./run-session.js").LineageCancellation;
+  lineage: LineageCancellation;
   /** Child invocation cards: running at admission, the saved report when the run ends. */
-  reports?: import("./run-session.js").RunSessionReports;
+  reports: RunSessionReports;
   agentRevisions: Pick<
     AgentRevisionStore,
     "readThreadBinding" | "listInstallations" | "readSource" | "readRevision" | "recordInvokedSkill"
