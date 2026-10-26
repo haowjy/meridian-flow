@@ -1,6 +1,8 @@
 /** Durable namespace attempt outcomes, independent from current canonical location. */
 import type { OwnerSlip } from "../context-uri.js";
 import type {
+  CopyContextEntriesResult,
+  CopyContextEntrySource,
   DeleteContextEntryRequest,
   DeleteContextEntryResult,
   MoveContextEntryRequest,
@@ -61,11 +63,29 @@ export type ContextOperationCommand =
       destinationParent?: MoveContextEntryRequest["destinationParent"];
       position?: MoveContextEntryRequest["position"];
     }
-  | { kind: "delete"; uri: string; expected: DeleteContextEntryRequest["expected"] };
+  | { kind: "delete"; uri: string; expected: DeleteContextEntryRequest["expected"] }
+  | {
+      kind: "copy";
+      /** Ordered roots by canonical address; the read view travels with each. */
+      sources: CopyContextEntryCommandSource[];
+      destinationUri: string;
+      destinationParent?: MoveContextEntryRequest["destinationParent"];
+      position?: MoveContextEntryRequest["position"];
+    };
+
+/**
+ * One root as the receipt remembers it. The client's state vector is deliberately absent:
+ * a replay after more typing carries a newer vector, and that is the same Copy.
+ */
+export type CopyContextEntryCommandSource = Pick<CopyContextEntrySource, "view"> & {
+  uri: string;
+  expected: CopyContextEntrySource["expected"];
+};
 
 export type ContextOperationValue = {
   move: ContextMoveResult;
   delete: DeleteContextEntryResult;
+  copy: CopyContextEntriesResult;
 };
 
 export type ContextOperationResult<K extends ContextOperationCommand["kind"]> =

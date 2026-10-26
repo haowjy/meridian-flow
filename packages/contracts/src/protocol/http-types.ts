@@ -328,6 +328,76 @@ export type MoveContextEntryResult =
   | MoveContextEntryConflict
   | MoveContextEntryRetry;
 
+/** Which version of a source Copy reads: what the writer's surface shows (D24, 2c). */
+export type CopyContextEntryView =
+  /** The live document; what a sidebar row shows. */
+  | { kind: "live" }
+  /** The draft a tab shows, read in the Work's branch as the given chat would read it. */
+  | { kind: "draft"; workId: WorkId; threadId: string };
+
+/** One selected root: what Copy copies, where it comes from, and how to read it. */
+export type CopyContextEntrySource = {
+  scheme: ProjectContextTreeScheme;
+  /** Scheme-relative root path: a file's path, or a folder's. */
+  path: string;
+  /** The identity the writer meant; a different one there is a gone source. */
+  expected: { kind: "file" | "folder"; nodeId: string };
+  /** Omitted or null selects explicit no-Work authority for Work-capable schemes. */
+  workId?: WorkId | null;
+  rootThreadId?: string | null;
+  /** Defaults to the live document. */
+  view?: CopyContextEntryView;
+  /**
+   * A source the writer holds open sends its Yjs state vector (base64). The copy waits —
+   * `stale_source`, retryable — until the document holds those updates.
+   */
+  stateVector?: string;
+};
+
+/**
+ * One drop: every selected root copied into one destination, atomically. `destinationParent`
+ * is the identity-based destination the writer chose; without it, `destinationFolderPath`
+ * names the folder path under `destinationScheme`.
+ */
+export type CopyContextEntriesRequest = {
+  operationId: string;
+  /** Ordered roots; the copies land in this order. */
+  sources: CopyContextEntrySource[];
+  destinationScheme: ProjectContextTreeScheme;
+  /** Scheme-relative parent folder; the empty string means the scheme root. */
+  destinationFolderPath: string;
+  destinationRootThreadId?: string | null;
+  destinationWorkId?: WorkId | null;
+  destinationParent?: ContextDestinationParent;
+  position?: ContextSiblingPosition;
+};
+
+/** One created identity in a copy's receipt; `copiedFrom` names the source it came from. */
+export type CopyContextEntryCreated = {
+  kind: "file" | "folder";
+  id: string;
+  /** Scheme-relative path the copy landed at, including its name. */
+  path: string;
+  name: string;
+  /** The source identity: a document id for a file, a folder id for a folder. */
+  copiedFrom: string;
+};
+
+/** Every identity one Copy created, roots first, then each root's subtree in order. */
+export const copyContextEntriesResultSchema = z.object({
+  status: z.literal("copied"),
+  entries: z.array(
+    z.object({
+      kind: z.enum(["file", "folder"]),
+      id: z.string().min(1),
+      path: z.string(),
+      name: z.string(),
+      copiedFrom: z.string().min(1),
+    }),
+  ),
+});
+export type CopyContextEntriesResult = z.infer<typeof copyContextEntriesResultSchema>;
+
 export function isProjectContextTreeScheme(value: unknown): value is ProjectContextTreeScheme {
   return (
     typeof value === "string" && (PROJECT_CONTEXT_TREE_SCHEMES as readonly string[]).includes(value)
