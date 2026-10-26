@@ -932,6 +932,10 @@ msgstr ""
 msgid "workReceipt.archived"
 msgstr ""
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Asked a question"
+msgstr ""
+
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
 msgstr "助手正在思考"
