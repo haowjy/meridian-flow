@@ -42,7 +42,16 @@ export type ContextError =
       unknownScheme?: string;
       slip?: OwnerSlip;
     }
-  | { code: "io_error"; uri: string; message: string };
+  | {
+      code: "io_error";
+      uri: string;
+      message: string;
+      /**
+       * `source_behind`: a Copy's source room has not received the edits the writer's client
+       * holds. Retryable like any `io_error`, and told apart so a replica bounds its retries.
+       */
+      reason?: "source_behind";
+    };
 
 export interface ContextMoveResult {
   movedNodeId?: string;

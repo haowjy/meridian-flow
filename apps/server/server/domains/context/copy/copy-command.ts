@@ -19,6 +19,7 @@
  * There is no Undo command: Copy's Undo is ordinary deletion of the created identities.
  */
 
+import { setTimeout as delay } from "node:timers/promises";
 import type {
   ContextOperationCommand,
   CopyContextEntriesResult,
@@ -49,6 +50,10 @@ import type {
 } from "../ports/context-copy.js";
 import type { ContextCopyRequest, ContextError, ContextScheme } from "../ports/context-port.js";
 
+/** How long a read waits for the room to receive the edits a client's vector names. */
+const SOURCE_CATCH_UP_MS = 2_000;
+const SOURCE_CATCH_UP_POLL_MS = 100;
+
 /** One selected root, already resolved to its adapter and read view by the route. */
 export interface CopySourceHandoff {
   /** Canonical address of the root. */
@@ -60,8 +65,11 @@ export interface CopySourceHandoff {
   workScopeId: string | null;
   view: CopyContextEntryView;
   expected: { kind: "file" | "folder"; nodeId: string };
-  /** The client's own Yjs state vector (base64), when it holds the source open. */
-  stateVector?: string;
+  /**
+   * The client's own Yjs state vector, when it holds this document open. Only a file source
+   * carries one; the cut compared against it is the view's room.
+   */
+  stateVector?: Uint8Array;
 }
 
 /** Where a copy lands: the destination parent, resolved to its adapter and path. */
@@ -180,7 +188,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     const documents = new Map<string, PreparedDocument>();
     if (snapshot.kind === "file") {
       if (snapshot.fileType === null) {
-        const prepared = await prepareDocument(source, snapshot);
+        const prepared = await prepareDocument(source, snapshot, source.stateVector);
         if (!prepared.ok) return prepared;
         documents.set(snapshot.documentId, prepared.value);
       }
@@ -202,48 +210,59 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     return Ok(documents);
   }
 
-  /** One document's frozen cut as the source surface shows it. */
+  /**
+   * One document's frozen cut as the source surface shows it. When the client holds the
+   * document open its vector is compared with the cut of the view's room, and the read waits
+   * a moment for edits still on their way: typing and a drop are seconds apart, not ordered.
+   */
   async function prepareDocument(
     source: CopySourceHandoff,
     file: CopySourceFile,
+    clientVector?: Uint8Array,
   ): Promise<Result<PreparedDocument, ContextError>> {
     const draft = source.view.kind === "draft" ? source.view : null;
-    const read = await deps.documentSync.readEffectiveBlocks(
-      draft
-        ? {
-            documentId: file.documentId as DocumentId,
-            threadId: draft.threadId,
-            destination: "draft",
-            workId: draft.workId,
-          }
-        : { documentId: file.documentId as DocumentId, destination: "live" },
-    );
-    if (!read.ok) {
-      return read.error.code === "not_found"
-        ? Err({ code: "not_found", uri: source.uri })
-        : Err({ code: "io_error", uri: source.uri, message: read.error.code });
-    }
-    if (source.stateVector && !draft) {
-      if (behind(decodeVector(source.stateVector), read.value.stateVector)) {
-        // The writer's own client has updates this cut lacks. Like any transient failure this
-        // is `io_error`: retryable, and never recorded, so the replica's replay under the same
-        // operation ID reads again instead of being handed the first answer forever.
+    const command = draft
+      ? {
+          documentId: file.documentId as DocumentId,
+          threadId: draft.threadId,
+          destination: "draft" as const,
+          workId: draft.workId,
+        }
+      : { documentId: file.documentId as DocumentId, destination: "live" as const };
+    const client = clientVector ? decodeStateVector(clientVector) : null;
+    const deadline = Date.now() + SOURCE_CATCH_UP_MS;
+    for (;;) {
+      const read = await deps.documentSync.readEffectiveBlocks(command);
+      if (!read.ok) {
+        return read.error.code === "not_found"
+          ? Err({ code: "not_found", uri: source.uri })
+          : Err({ code: "io_error", uri: source.uri, message: read.error.code });
+      }
+      if (client && behind(client, read.value.stateVector)) {
+        if (Date.now() < deadline) {
+          await delay(SOURCE_CATCH_UP_POLL_MS);
+          continue;
+        }
+        // Like any transient failure this is `io_error`: retryable, and never recorded, so a
+        // replay under the same operation ID reads again instead of being handed the first
+        // answer forever. The reason lets the replica stop after a bounded wait.
         return Err({
           code: "io_error",
           uri: source.uri,
           message: "The source has edits the server has not received yet",
+          reason: "source_behind",
         });
       }
+      return Ok({
+        file,
+        uri: file.uri,
+        holderUri: read.value.holderUri,
+        blocks: read.value.content,
+        aheadSettlements: read.value.aheadSettlements,
+        revision: read.value.revision,
+        version: draft ? "draft" : "live",
+      });
     }
-    return Ok({
-      file,
-      uri: file.uri,
-      holderUri: read.value.holderUri,
-      blocks: read.value.content,
-      aheadSettlements: read.value.aheadSettlements,
-      revision: read.value.revision,
-      version: draft ? "draft" : "live",
-    });
   }
 
   /** Under the locks: recheck the destination and every root, then insert the tree. */
@@ -488,14 +507,10 @@ function trimTrailingSlash(uri: string): string {
 }
 
 /** Whether the client's vector names updates this cut does not hold. */
-function behind(client: Uint8Array, server: Uint8Array): boolean {
+function behind(client: ReadonlyMap<number, number>, server: Uint8Array): boolean {
   const held = decodeStateVector(server);
-  for (const [clientId, clock] of decodeStateVector(client)) {
+  for (const [clientId, clock] of client) {
     if (clock > (held.get(clientId) ?? 0)) return true;
   }
   return false;
-}
-
-function decodeVector(value: string): Uint8Array {
-  return Uint8Array.from(Buffer.from(value, "base64"));
 }
