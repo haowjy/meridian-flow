@@ -20,6 +20,8 @@ export type LocalUpload = {
   stopAsked?: boolean;
   busy?: boolean;
   stopLost?: boolean;
+  /** Another tab holds the remaining files and announced itself within the presence window. */
+  remoteUntil?: number;
 };
 export type TrackedImport = {
   importId: string;
@@ -49,6 +51,9 @@ export class ImportCoordinator {
   private snapshot: ImportsSnapshot = { imports: [] };
   private timer?: ReturnType<typeof setTimeout>;
   private channel?: BroadcastChannel;
+  /** Import ids another tab announced it is uploading, with the end of their presence window. */
+  private holders = new Map<string, number>();
+  private presenceTimer?: ReturnType<typeof setInterval>;
   private lifetime = new AbortController();
   private polling: AbortSignal | null = null;
   private mutations = 0;
@@ -75,6 +80,23 @@ export class ImportCoordinator {
   private publish() {
     this.snapshot = { imports: [...this.records.values()].map((record) => record.view) };
     for (const listener of this.listeners) listener();
+  }
+  /** Upload presence lives with the File handles; the server's activity cannot tell tabs apart. */
+  private postHolders() {
+    if (!this.channel || !this.records.size) return;
+    const importIds = [...this.records.values()]
+      .filter((record) => record.held.size > 0)
+      .map((record) => record.view.importId);
+    this.channel.postMessage({ holders: importIds });
+  }
+  private syncHolders() {
+    const now = Date.now();
+    for (const [id, until] of this.holders) if (until <= now) this.holders.delete(id);
+    for (const record of this.records.values()) {
+      const until = record.held.size > 0 ? undefined : this.holders.get(record.view.importId);
+      if (record.view.local.remoteUntil !== until)
+        record.view = { ...record.view, local: { ...record.view.local, remoteUntil: until } };
+    }
   }
   private local(record: RecordState, patch: Partial<LocalUpload>) {
     record.view = { ...record.view, local: { ...record.view.local, ...patch } };
@@ -107,8 +129,11 @@ export class ImportCoordinator {
     this.publish();
   }
   private make(summary: ImportSummary): RecordState {
+    const holderUntil = this.holders.get(summary.importId);
+    const remoteUntil =
+      holderUntil !== undefined && holderUntil > Date.now() ? holderUntil : undefined;
     return {
-      view: { importId: summary.importId, summary, local: {} },
+      view: { importId: summary.importId, summary, local: remoteUntil ? { remoteUntil } : {} },
       controller: new AbortController(),
       held: new Map(),
       revision: 0,
@@ -119,17 +144,28 @@ export class ImportCoordinator {
   start() {
     this.lifetime = new AbortController();
     this.channel = new BroadcastChannel("meridian-imports");
-    this.channel.onmessage = () => {
+    this.channel.onmessage = (event) => {
+      const holders = event.data?.holders;
+      if (Array.isArray(holders)) {
+        for (const id of holders)
+          if (typeof id === "string") this.holders.set(id, Date.now() + 6000);
+        this.syncHolders();
+        this.publish();
+        return;
+      }
       void this.refresh();
     };
     const focus = () => {
       void this.refresh();
     };
     window.addEventListener("focus", focus);
+    this.channel.postMessage({ holders: [] });
+    this.presenceTimer = setInterval(() => this.postHolders(), 2000);
     void this.refresh();
     return () => {
       this.lifetime.abort();
       clearTimeout(this.timer);
+      clearInterval(this.presenceTimer);
       this.channel?.close();
       this.channel = undefined;
       window.removeEventListener("focus", focus);
@@ -187,6 +223,7 @@ export class ImportCoordinator {
         record.queue?.cancel();
         this.records.delete(id);
       }
+      this.syncHolders();
       this.publish();
     } catch {
       /* A failed background read cannot erase the last durable summary. */

@@ -30,8 +30,9 @@ const summary: ImportSummary = {
 };
 it("presents age, local ownership, preparation and all five root rules without drawing staged children", () => {
   const rows: [Partial<ImportSummary>, LocalUpload, number, string][] = [
-    [{}, {}, 59999, "elsewhere"],
-    [{}, {}, 60000, "paused"],
+    [{}, {}, 59999, "paused"],
+    [{}, { remoteUntil: 60000 }, 59999, "elsewhere"],
+    [{}, { remoteUntil: 60000 }, 60000, "paused"],
     [{}, { phase: "uploading" }, 90000, "uploading"],
     [{}, { phase: "stalled" }, 1, "stalled"],
     [{ state: "organizing" }, {}, 0, "organizing"],

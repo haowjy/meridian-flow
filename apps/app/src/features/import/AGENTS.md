@@ -8,15 +8,16 @@ routed exports have no pending rows. Documents are born complete.
 `ImportsProvider` at the authenticated root owns one account-lifetime coordinator;
 project `ImportProvider` owns only pick/drop doors. Navigation never stops an
 upload. File handles are private and ephemeral. The open list is server truth;
-BroadcastChannel only nudges refresh. Continue reads fresh detail and pairs
-awaiting and received entries by root name, kind and path. Size and modified
-time break ties between duplicate candidates; a changed awaiting file is sent
-as it is now and marked in `X-Import-Changed-Entries`. A received entry is
-never sent again: when its re-pick differs, or it is already marked changed,
-the browser hashes just that file and posts the hash, so an identical copy
-clears the mark and an edited file keeps it. Missing files stay awaiting until
-the writer chooses "Import without them". Starting an upload still never hashes
-or sniffs files.
+BroadcastChannel nudges refresh and carries upload-holder presence, so a tab
+without File handles says "Uploading in another window" only while another tab
+announces it holds them. Continue reads fresh detail and pairs awaiting and
+received entries by root name, kind and path. Size and modified time break ties
+between duplicate candidates; a changed awaiting file is sent as it is now and
+marked in `X-Import-Changed-Entries`. A received entry is never sent again:
+when its re-pick differs, or it is already marked changed, the browser hashes
+just that file and posts the hash, so an identical copy clears the mark and an
+edited file keeps it. Missing files stay awaiting until the writer chooses
+"Import without them". Starting an upload still never hashes or sniffs files.
 
 The browser mints the import id before reading; every create replay uses that id.
 Creation knowledge (`local`, `uncertain`, `created`), not the toast phase, decides

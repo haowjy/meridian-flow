@@ -42,7 +42,8 @@ export function toastState(summary: ImportSummary, local: LocalUpload, now: numb
   if (local.phase === "missing" || local.phase === "wrong-root" || local.phase === "stalled")
     return local.phase;
   if (local.phase === "uploading") return "uploading";
-  return now - Date.parse(summary.lastActivityAt) >= 60000 ? "paused" : "elsewhere";
+  // With no File handles here, a live holder in another tab is the only reason to say so.
+  return local.remoteUntil !== undefined && now < local.remoteUntil ? "elsewhere" : "paused";
 }
 /** What a deleted destination means for this card, in the tense of its state. */
 function fallbackNote(state: ToastState): string | undefined {
