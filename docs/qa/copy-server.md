@@ -3,7 +3,9 @@
 Named risks: a copy points a link or an image at the original when the target was
 copied with it, reveals a hidden draft document instead of naming around it, leaves
 a partial tree or a duplicated object behind when it fails, answers a retry with the
-first stale answer for ever, or scatters the roots of one drop. This recipe drives
+first stale answer for ever, scatters the roots of one drop, copies a root twice when a
+selection nests, or holds a lock that stalls every writer of the destination while a big
+tree is written. This recipe drives
 the server with `./mf` (`doc copy` shares no client code; it is evidence of the
 server only). The browser's Copy is a later slice. It is not a current pass claim.
 
@@ -41,8 +43,9 @@ server only). The browser's Copy is a later slice. It is not a current pass clai
    draft text and `metadata.copiedFrom.version` is `draft`. Copy without the flags:
    the live text, `live`. A folder with a draft view is refused (`invalid_operation`).
 4. **Fifty documents.** Copy a folder of 50 documents linking in a ring. All 50 land
-   in one transaction (about 5 s here), the ring closes inside the copy, and
-   concurrent copies into one folder get distinct names with no deadlock.
+   in one transaction (about 4 s here, most of it reading the sources before any
+   lock), the ring closes inside the copy, and concurrent copies into one folder get
+   distinct names with no deadlock.
 5. **Failure on the last child.** In a folder of two binaries delete the stored
    object of the one that sorts second (`/tmp/meridian-object-store/copies/…`), then
    copy the folder. The answer is `io_error` (retryable), no folder or document row
@@ -53,9 +56,13 @@ server only). The browser's Copy is a later slice. It is not a current pass clai
    resurrection. A refusal replays as the same refusal. The same `operationId` with
    another destination answers `operation_mismatch`.
 7. **Source not caught up.** POST a source with `stateVector` one client edit ahead of
-   the room: `io_error` ("The source has edits the server has not received yet"),
-   `retryable: true`, and no `context_operation_receipts` row. Resend the same
-   `operationId` with the room's own vector: it copies and the receipt appears.
+   the room: after a wait of about 2 s, `io_error` ("The source has edits the server has
+   not received yet") with `details.reason: "source_behind"`, `retryable: true`, and no
+   `context_operation_receipts` row. Resend the same `operationId` with the room's own
+   vector: it copies and the receipt appears. A vector that arrives within the wait (a
+   client reconnecting 800 ms after the request) copies on the first send. With
+   `view: draft` the vector is compared with the draft room. A `stateVector` on a folder
+   source and one that does not decode (`////////`) are `bad_request`.
 8. **Position and order.** Copy two roots with `--position after:<P1>` into a default
    parent holding `P1 P2 P3`: the order is `P1 root-1 root-2 P2 P3` and the parent
    is manual. Copy a root with no position into that manual parent: it lands last.
@@ -65,8 +72,10 @@ server only). The browser's Copy is a later slice. It is not a current pass clai
    subtree and into itself ("Can't go inside itself"), a path nothing holds and an
    identity another entry holds (`not_found`), a destination folder identity that was
    deleted or never existed (`destination_missing`), a destination path that is a
-   document (`conflict`), a path with `..` (`bad_request`). Each answer is typed and
-   non-retryable.
+   document (`conflict`), a path with `..` (`bad_request`), an uploads folder named by
+   identity as the destination (`bad_request`, the same out-only answer as by path),
+   and a draft view whose chat belongs to another project or does not exist
+   (`not_found`, "Chat not found"). Each answer is typed and non-retryable.
 10. **Other owners.** Copy a Work's Scratch folder into a project area, a project
     document into a Work's Scratch and into a chat's Scratch, an upload out into a
     Work's Scratch, and a chat lineage Scratch note out. A Work note's link to the
@@ -77,6 +86,28 @@ server only). The browser's Copy is a later slice. It is not a current pass clai
     copy, and its other links keep their targets.
 12. **Arrival.** Write a link to an address that does not exist yet, then copy a
     document to that address: `link_ahead_refs.settled_document_id` is the copy.
+13. **Nested selection.** `./mf doc copy "manuscript://Book" "manuscript://Book/Ch1"
+    --to kb://Nested` (and the child first, and a root named twice): one `Book` copy
+    holds `Ch1`, no stray `Nested/Ch1` exists, and a sibling's link to `Ch1` names the
+    copy inside the folder. Two roots that do not nest still copy separately.
+14. **The model's excerpt.** Send `write` `{command: "copy", path: "…/Excerpt", from:
+    {path: "…/Src#part-a"}}` for a source that links to itself: the excerpt's links
+    still name `Src`. Copying the whole document names the copy (step 11).
+15. **A big tree.** Copy 200 chapters of about 1,500 words, each linked to its
+    neighbours, into a new folder while a script puts a document into the destination
+    tree and into an unrelated source folder every second. Each of those puts waits
+    about a second at most (an idle put takes 0.1-0.3 s); on the previous code every
+    put waited as long as the copy took, 40 s or more. The 200 rows show one
+    transaction start, and `document_links` holds the copies' links when the copy
+    returns.
+16. **Cold rooms.** Restart the server and copy 40 documents that were never opened at
+    once into distinct folders: all 40 answer 200. (Before the reads moved out of the
+    transaction, ten or more of them held every pool connection and waited for one
+    more.)
+17. **A taken name.** While a copy prepares, create the folder or file it would take in
+    the destination: the copy lands under the next free name (`Book (2)`) and its
+    internal links name the copy. Only a temporary sleep between the plan and the lock
+    makes the race reproducible, so no step here reaches it without one.
 
 ## Cleanup
 

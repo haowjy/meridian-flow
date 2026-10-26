@@ -32,10 +32,11 @@ the storage seam; file access remains the responsibility of [file policy](../fil
 - A move writes no document content. Stable links re-spell on read, and every
   arrival settles ahead refs once against its final tree.
 - A Copy is one atomic command (`copy/`): it reads each source subtree and content cut
-  once, duplicates binary bytes before taking namespace locks, names against hidden
-  occupants without revealing them, and rewrites refs inside the copied set to point at the
-  copies. Its typed refusals are recorded, and a replay answers the original result; a
-  source not yet caught up to the client is retryable and records nothing.
+  once, then duplicates binary bytes, plans names against hidden occupants without revealing
+  them, and binds refs inside the copied set to point at the copies, all before any lock. It
+  locks only the destination namespace and inserts the plan in set-based statements. Its
+  typed refusals are recorded, and a replay answers the original result; a source not yet
+  caught up to the client is retryable (`source_behind`) and records nothing.
 - The catalog and ContextFS use the same tree view. Branch-hidden rows never
   escape that view; Apply and Discard reconcile tree changes inside their own
   completion transactions.
