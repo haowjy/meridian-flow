@@ -1620,10 +1620,6 @@ msgstr "Couldn't create a Work"
 msgid "Couldn’t create note"
 msgstr "Couldn’t create note"
 
-#: src/features/project/context/NamespaceFailureMark.tsx
-#~ msgid "Couldn't create this document. Try again."
-#~ msgstr "Couldn't create this document. Try again."
-
 #: src/features/project/context/IdentityPlacementField.tsx
 #: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't create this document. Try another place."
@@ -3093,15 +3089,6 @@ msgstr "More chats couldn't load."
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
 msgid "More composer controls"
 msgstr "More composer controls"
-
-#. placeholder {0}: entry.name
-#: src/features/project/context/EntryMovePicker.tsx
-#~ msgid "Move {0}"
-#~ msgstr "Move {0}"
-
-#: src/features/project/context/EntryMovePicker.tsx
-#~ msgid "Move {name}"
-#~ msgstr "Move {name}"
 
 #: src/features/project/context/EntryMovePicker.tsx
 msgid "Move {rowName}"
