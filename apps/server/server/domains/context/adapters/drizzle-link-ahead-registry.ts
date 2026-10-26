@@ -41,7 +41,7 @@ import type { DocumentCoordinates } from "../tree/tree-addresses.js";
 import { createTreeReader, LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import { assertNamespaceKeysHeld, lockNamespaceKeys } from "./context-fs/document-locations.js";
 import {
-  currentDocumentAddress,
+  loadDocumentAddresses,
   resolveCanonicalAddress,
   sameCoordinates,
   UnresolvableAddressError,
@@ -172,19 +172,39 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
   }
 
   async settleArrivals(documentIds: readonly DocumentId[]): Promise<number> {
-    let settled = 0;
-    for (const documentId of new Set(documentIds)) {
-      const address = await currentDocumentAddress(this.db, documentId);
-      // Every arrival calls this; the visibility read is paid only when a ref waits here.
-      if (
-        address &&
-        (await this.hasUnsettled(address)) &&
-        (await this.isLive(address, documentId))
-      ) {
-        settled += await this.settle(address, documentId);
-      }
-    }
-    return settled;
+    const addresses = (
+      await loadDocumentAddresses(currentDrizzleDb(this.db), {
+        ids: [...new Set(documentIds)],
+      })
+    ).filter((address) => !address.deleted && !address.hidden);
+    if (addresses.length === 0) return 0;
+    const arrivals = addresses.map((address) => ({
+      document_id: address.documentId,
+      project_id: address.projectId,
+      scheme: address.scheme,
+      work_id: address.workId,
+      root_thread_id: address.rootThreadId ?? null,
+      chat_thread_id: address.chatThreadId ?? null,
+      path: address.path,
+    }));
+    const [result] = await currentDrizzleDb(this.db).execute<{ count: number }>(sql`
+      with arrivals as (
+        select * from jsonb_to_recordset(${JSON.stringify(arrivals)}::jsonb) as a(
+          document_id uuid, project_id uuid, scheme text, work_id uuid,
+          root_thread_id uuid, chat_thread_id uuid, path text
+        )
+      ), settled as (
+        update link_ahead_refs r set settled_document_id = a.document_id, settled_at = now()
+        from arrivals a
+        where r.settled_document_id is null
+          and r.project_id = a.project_id and r.scheme = a.scheme
+          and r.work_id is not distinct from a.work_id
+          and r.root_thread_id is not distinct from a.root_thread_id
+          and r.chat_thread_id is not distinct from a.chat_thread_id
+          and md5(r.path) = md5(a.path) and r.path = a.path
+        returning r.ahead_id
+      ) select count(*)::integer as count from settled`);
+    return result?.count ?? 0;
   }
 
   async registerUnregistered(
@@ -245,26 +265,10 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     return { registered, next: pending.length === page.limit && last ? last : null };
   }
 
-  private async isLive(_address: Address, documentId: string): Promise<boolean> {
-    return (
-      (await createTreeReader(this.db).findById(LIVE_TREE, documentId as DocumentId)).kind ===
-      "found"
-    );
-  }
-
   private async liveDocumentAt(address: Address): Promise<DocumentId | null> {
     const occupants = await createTreeReader(this.db).occupantsAt(LIVE_TREE, [address]);
     const ids = [...occupants.values()][0] ?? [];
     return ids.length === 1 ? (ids[0] ?? null) : null;
-  }
-
-  private async hasUnsettled(address: Address): Promise<boolean> {
-    const [row] = await currentDrizzleDb(this.db)
-      .select({ id: linkAheadRefs.aheadId })
-      .from(linkAheadRefs)
-      .where(and(atAddress(address), isNull(linkAheadRefs.settledDocumentId)))
-      .limit(1);
-    return Boolean(row);
   }
 
   /** Compare-and-set on `settled_document_id IS NULL`; at most one settler wins a row. */

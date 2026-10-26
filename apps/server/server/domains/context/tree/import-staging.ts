@@ -263,20 +263,18 @@ export function createDrizzleContextStagedCreation(deps: {
         : [];
       await tx.execute(sql`insert into folders (id, context_source_id, parent_id, name, document_alias)
         select f.id, cs.id, f.parent_id, f.name, f.name from context_staged_folders f join context_sources cs
-          on cs.project_id = f.project_id and cs.slug = f.area and cs.work_id is null and cs.root_thread_id is null and cs.deleted_at is null
+          on cs.project_id = ${projectId} and cs.slug = f.area and cs.work_id is null and cs.root_thread_id is null and cs.deleted_at is null
         where f.staging_id = ${stagingId}`);
       await tx.execute(sql`insert into documents
         (id, context_source_id, folder_id, name, extension, file_type, metadata, storage_url, mime_type, size_bytes)
         select d.id, cs.id, d.parent_id, d.name, d.extension, d.filetype, d.metadata, d.storage_url, d.mime_type,
-          case when d.storage_url is null then octet_length(s.markdown) else d.size_bytes end
-        from context_staged_documents d join context_sources cs on cs.project_id = d.project_id and cs.slug = d.area
+          d.size_bytes
+        from context_staged_documents d join context_sources cs on cs.project_id = ${projectId} and cs.slug = d.area
           and cs.work_id is null and cs.root_thread_id is null and cs.deleted_at is null
-        left join collab_staged_states s on s.staging_id = d.staging_id and s.document_id = d.id
         where d.staging_id = ${stagingId}`);
       await tx.execute(sql`insert into document_markdown_projections (document_id, markdown)
-        select d.id, coalesce(s.markdown, '') from context_staged_documents d
-        left join collab_staged_states s on s.staging_id = d.staging_id and s.document_id = d.id
-        where d.staging_id = ${stagingId} and d.storage_url is null`);
+        select s.document_id, s.markdown from collab_staged_states s
+        where s.staging_id = ${stagingId}`);
       await tx.execute(sql`
         with recursive nodes as (
           select id, parent_id, area, name as filename from context_staged_folders where staging_id = ${stagingId}
