@@ -51,7 +51,8 @@ export type LiveOnlyCommand =
   | "take a whole-file write"
   | "create a file with text"
   | "create an untitled file"
-  | "make an empty folder";
+  | "make an empty folder"
+  | "receive a copy";
 
 export interface CreatePlacement {
   readonly kind: ContextPlacement["kind"];

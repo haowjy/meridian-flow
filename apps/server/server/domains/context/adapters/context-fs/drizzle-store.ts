@@ -5,7 +5,13 @@
  */
 
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
-import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
+import type {
+  ContextParentOrderPolicy,
+  ContextSiblingPosition,
+  DocumentFileType,
+  Filetype,
+} from "@meridian/contracts/protocol";
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documentMarkdownProjections } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
@@ -35,8 +41,9 @@ import {
 import { findForward, lastLocationOf, recordForward } from "../../tree/forwards.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
-import { insertDocumentRow } from "../../tree/node-rows.js";
+import { insertDocumentRow, insertFolder } from "../../tree/node-rows.js";
 import { ensureLiveFolderPath } from "../../tree/placement.js";
+import { placeLiveSibling } from "../../tree/sibling-order.js";
 import {
   createTreeReader,
   LIVE_TREE,
@@ -203,6 +210,61 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         await this.deps.catalogMutations?.refreshSources([this.sourceId], placed);
       }
       return folderId;
+    });
+  }
+
+  async createFolderIfAbsent(input: {
+    parentId: string | null;
+    name: string;
+    id?: string;
+    orderPolicy?: ContextParentOrderPolicy;
+  }): Promise<string | null> {
+    const typedParentId = input.parentId as FolderId | null;
+    return runInDrizzleTransaction(this.deps.db, async () => {
+      await lockContextSources(this.deps.db, [this.sourceId]);
+      // A live folder, a live document's alias, or hidden occupants: either makes the name
+      // taken. Never reveal — a copy allocates around a hidden occupant instead.
+      const found = await createTreeReader(this.deps.db).childAt(LIVE_TREE, {
+        contextSourceId: this.sourceId,
+        parentId: typedParentId,
+        filename: input.name,
+        as: "folder",
+      });
+      if (found.kind !== "not_found") return null;
+      const hidden = await loadHiddenFilenames(this.deps.db, this.sourceId, typedParentId);
+      if (hidden.includes(folderDocumentName(input.name))) return null;
+      const folderId = await insertFolder(
+        this.deps.db,
+        { contextSourceId: this.sourceId, parentId: typedParentId, name: input.name },
+        {
+          hidden: false,
+          ...(input.id ? { id: input.id as FolderId } : {}),
+          ...(input.orderPolicy ? { orderPolicy: input.orderPolicy } : {}),
+        },
+      );
+      await this.deps.catalogMutations?.refreshSources([this.sourceId], [folderId]);
+      return folderId;
+    });
+  }
+
+  async placeSibling(input: {
+    kind: "file" | "folder";
+    id: string;
+    parentId: string | null;
+    position: ContextSiblingPosition;
+  }): Promise<"placed" | "stale-anchor"> {
+    return runInDrizzleTransaction(this.deps.db, async () => {
+      await lockContextSources(this.deps.db, [this.sourceId]);
+      return placeLiveSibling(this.deps.db, {
+        node:
+          input.kind === "folder"
+            ? ({ kind: "folder", id: input.id } as const)
+            : ({ kind: "document", id: input.id } as const),
+        sourceId: this.sourceId,
+        parentId: input.parentId as FolderId | null,
+        position: input.position,
+        arrived: false,
+      });
     });
   }
 

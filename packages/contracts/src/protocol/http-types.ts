@@ -345,6 +345,8 @@ export type CopyContextEntrySource = {
   /** Omitted or null selects explicit no-Work authority for Work-capable schemes. */
   workId?: WorkId | null;
   rootThreadId?: string | null;
+  /** An `uploads` source names the chat that owns it. */
+  chatRef?: string | null;
   /** Defaults to the live document. */
   view?: CopyContextEntryView;
   /**
