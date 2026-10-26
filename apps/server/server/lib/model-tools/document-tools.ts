@@ -486,8 +486,9 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     }
 
     if (parsed.command === "copy" && copied) {
-      // The copy's new identity is known now: its own links name the copy, not the original
-      // (`collab/domain/copied-blocks.ts`, the one remap a writer Copy also uses).
+      // The copy's new identity is known now: a whole document's own links name the copy, not
+      // the original (`collab/domain/copied-blocks.ts`, the one remap a writer Copy also uses).
+      // A selection is not the copied set: its links to the whole source keep naming it.
       copied = {
         ...copied,
         nodes: remapCopiedBlocks({
@@ -495,14 +496,16 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           sourceHolderUri: copied.copiedFrom.uri,
           aheadSettlements: copied.aheadSettlements,
           map: createCopyIdentityMap({
-            documents: [
-              {
-                sourceDocumentId: copied.sourceDocumentId,
-                sourceUri: copied.copiedFrom.uri,
-                documentId: address.documentId,
-                uri: address.uri,
-              },
-            ],
+            documents: copied.wholeDocument
+              ? [
+                  {
+                    sourceDocumentId: copied.sourceDocumentId,
+                    sourceUri: copied.copiedFrom.uri,
+                    documentId: address.documentId,
+                    uri: address.uri,
+                  },
+                ]
+              : [],
             folders: [],
           }),
         }),
