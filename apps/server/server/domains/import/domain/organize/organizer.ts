@@ -111,9 +111,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       await deps.repository.update(locked.id, {
         placement: tree.placement,
         placementGeneration: locked.placementGeneration + 1,
-        destinationUri: tree.placement.destinations[0]?.uri ?? locked.destinationUri,
-        folderId: tree.placement.destinations[0]?.folderId ?? null,
-        fellBack: tree.placement.destinations.some((row) => row.fellBack),
+        fellBack: locked.fellBack || tree.placement.destinations.some((row) => row.fellBack),
         claimsWithoutProgress: rebuilt,
       });
       await deps.repository.transitionEntries(locked.id, ["prepared"], {
@@ -385,7 +383,12 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       const changedDestinations = await context.read.destinations({
         destinationUri: changed.destinationUri,
         folderId: changed.folderId,
-        areas: ["manuscript", "kb", "unfiled"],
+        areas: [
+          parsed.value.scheme as "manuscript" | "kb" | "unfiled",
+          "manuscript",
+          "kb",
+          "unfiled",
+        ],
       });
       await resetGeneration(
         claim,

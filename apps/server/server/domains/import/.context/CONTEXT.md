@@ -76,6 +76,10 @@ Its identity graph preserves folder-note relocation and export-marker routing.
 Name allocation belongs to Context. The header stores nullable placement facts and
 a generation (initially zero); entries can become `prepared` and retain a
 `converted_key` for DOCX Markdown. Counts distinguish prepared from organized.
+The header's destination URI and folder identity are the immutable selection. Each
+placement generation derives its effective destinations from that identity; the
+summary reads the selected area's effective placement. Once any generation falls
+back, the import retains that outcome for its completion notice.
 The repository projects nullable storage columns into one verified `FileReceipt`
 at its boundary. Entries expose immutable `selection` separately; folders and
 unreadable items have no receipt. Placement records destinations (including fallback),

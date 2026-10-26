@@ -5,6 +5,7 @@ import type {
   ImportSkipsInput,
   ImportSummary,
 } from "@meridian/contracts";
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ObjectStorePort } from "../../storage/index.js";
 import type { ImportEntry, ImportRecord, ImportRepository } from "../ports/import-repository.js";
 import type { ImportDestination } from "../ports/import-tree-writer.js";
@@ -267,6 +268,12 @@ export async function importSummary(
   record: ImportRecord,
 ): Promise<ImportSummary> {
   const root = record.roots.length === 1 ? record.roots[0] : null;
+  const selected = parseContextUri(record.destinationUri);
+  const effective = selected.ok
+    ? record.placement?.destinations.find(
+        (destination) => destination.area === selected.value.scheme,
+      )
+    : undefined;
   return {
     importId: record.id,
     projectId: record.projectId as string,
@@ -277,8 +284,8 @@ export async function importSummary(
       count: record.counts.files,
     },
     destination: {
-      folderUri: record.destinationUri,
-      folderId: record.folderId,
+      folderUri: effective?.uri ?? record.destinationUri,
+      folderId: effective?.folderId ?? record.folderId,
       fellBack: record.fellBack,
     },
     root:

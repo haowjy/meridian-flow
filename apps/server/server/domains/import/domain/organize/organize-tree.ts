@@ -102,9 +102,13 @@ export async function buildOrganizedTree(input: {
   const destinations = new Map(
     input.destinations.map((destination) => [destination.area, destination]),
   );
-  const topLevelNames: Record<string, string> = {};
+  const parentKey = (area: string, id: string | null) => JSON.stringify([area, id]);
+  const occupied = new Map<
+    string,
+    { files: Set<string>; folders: Set<string>; folderAliases: Set<string> }
+  >();
   for (const destination of input.destinations) {
-    const occupied = {
+    occupied.set(parentKey(destination.area, destination.folderId), {
       files: new Set(
         destination.children.flatMap((child) =>
           child.kind === "file" ? [renderFilename(child.name, child.extension)] : [],
@@ -118,26 +122,38 @@ export async function buildOrganizedTree(input: {
           child.kind === "folder" ? [folderDocumentName(child.name)] : [],
         ),
       ),
-    };
-    for (const node of nodes.filter(
-      (node) =>
-        node.state === "planned" &&
-        node.area === destination.area &&
-        (!node.parentId || !plannedFolders.has(node.parentId)),
-    )) {
-      const filename = await allocateFilename(
-        { ...node, kind: node.kind === "folder" ? "folder" : "file" },
-        occupied,
-      );
-      node.name = node.extension ? filename.slice(0, -(node.extension.length + 1)) : filename;
-      node.filename = filename;
-      topLevelNames[node.id] = node.name;
-      if (node.kind === "folder") {
-        occupied.folders.add(node.name);
-        occupied.folderAliases.add(folderDocumentName(node.name));
-      } else occupied.files.add(filename);
+    });
+  }
+  for (const node of nodes) {
+    if (node.state === "planned" && node.kind === "folder" && node.area)
+      occupied.set(parentKey(node.area, node.id), {
+        files: new Set(),
+        folders: new Set(),
+        folderAliases: new Set(),
+      });
+  }
+  const topLevelNames: Record<string, string> = {};
+  for (const node of nodes) {
+    if (node.state !== "planned" || !node.area) continue;
+    const topLevel = !node.parentId || !plannedFolders.has(node.parentId);
+    if (topLevel) {
+      const destination = destinations.get(node.area);
+      if (!destination) throw new Error(`Import tree has no destination for ${node.area}`);
       node.parentId = destination.folderId;
     }
+    const siblings = occupied.get(parentKey(node.area, node.parentId));
+    if (!siblings) throw new Error(`Import tree has no sibling group for ${node.id}`);
+    const filename = await allocateFilename(
+      { ...node, kind: node.kind === "folder" ? "folder" : "file" },
+      siblings,
+    );
+    node.name = node.extension ? filename.slice(0, -(node.extension.length + 1)) : filename;
+    node.filename = filename;
+    if (topLevel) topLevelNames[node.id] = node.name;
+    if (node.kind === "folder") {
+      siblings.folders.add(node.name);
+      siblings.folderAliases.add(folderDocumentName(node.name));
+    } else siblings.files.add(filename);
   }
   if (nodes.some((node) => node.state === "planned" && !node.area))
     throw new Error("Import tree has a node without an area");
