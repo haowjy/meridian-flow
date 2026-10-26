@@ -116,8 +116,17 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     return result.kind === "committed" ? result.value : "stale";
   }
 
-  async function prepareBuild(record: ImportRecord, tree: OrganizedTree, read: ContextImportRead) {
+  /** Everything a generation's batches share, loaded once: link index, entries, and the nodes still to stage. */
+  async function prepareBuild(
+    record: ImportRecord,
+    tree: OrganizedTree,
+    entries: readonly ImportEntry[],
+    read: ContextImportRead,
+  ) {
     const uris = uriMap(tree);
+    const staged = new Set(
+      entries.filter((entry) => entry.state === "prepared").map((entry) => entry.id),
+    );
     const planned = new Set(
       tree.nodes
         .filter((node) => node.state === "planned" && node.kind !== "folder")
@@ -146,6 +155,8 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     return {
       uris,
       planned,
+      entriesById: new Map(entries.map((entry) => [entry.id, entry])),
+      pending: tree.nodes.filter((node) => node.state === "planned" && !staged.has(node.id)),
       index: createLinkIndex(selected, existing),
       selectedById: new Map(selected.map((candidate) => [candidate.id, candidate])),
       roots: new Map(
@@ -154,34 +165,28 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     };
   }
 
+  /** Stages the next batch of `build.pending` from `offset`; returns how many nodes it consumed. */
   async function buildBatch(
     claim: OrganizeClaim,
     record: ImportRecord,
-    entries: readonly ImportEntry[],
-    tree: OrganizedTree,
     build: Awaited<ReturnType<typeof prepareBuild>>,
-    preparedIds: Set<string>,
+    offset: number,
   ): Promise<number> {
-    const byId = new Map(entries.map((entry) => [entry.id, entry]));
     const projectId = record.projectId;
     if (!projectId) throw new Error("Import project is unavailable");
-    const { index, planned, roots, selectedById, uris } = build;
-    const pending = tree.nodes.filter((node) => {
-      return node.state === "planned" && !preparedIds.has(node.id);
-    });
-    if (!pending.length) return 0;
+    const { entriesById, index, pending, planned, roots, selectedById, uris } = build;
     const batch = [] as typeof pending;
     const folders = [] as Parameters<ContextStagedCreation["stage"]>[2]["folders"][number][];
     const documents = [] as Parameters<ContextStagedCreation["stage"]>[2]["documents"][number][];
     let bytes = 0;
-    for (const node of pending) {
-      if (batch.length >= BUILD_NODES) break;
+    for (const node of pending.slice(offset, offset + BUILD_NODES)) {
       if (node.kind === "folder") {
         if (!node.area) throw new Error(`Import node has no area: ${node.id}`);
         batch.push(node);
         folders.push({ id: node.id, parentId: node.parentId, area: node.area, name: node.name });
         continue;
       }
+      const entry = entriesById.get(node.id);
       if (entry?.kind !== "file" || !entry.receipt)
         throw new Error(`Import node has no receipt: ${node.id}`);
       if (!node.area) throw new Error(`Import node has no area: ${node.id}`);
@@ -297,9 +302,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         return batch.length;
       },
     );
-    if (result.kind !== "committed") return 0;
-    for (const node of batch) preparedIds.add(node.id);
-    return result.value;
+    return result.kind === "committed" ? result.value : 0;
   }
 
   async function organize(claim: OrganizeClaim, signal: AbortSignal): Promise<number> {
@@ -340,13 +343,10 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       const reset = await resetGeneration(claim, tree);
       return reset === "reset" ? 1 : 0;
     }
-    const build = await prepareBuild(record, tree, context.read);
+    const build = await prepareBuild(record, tree, durableEntries, context.read);
     let built = 0;
-    const preparedIds = new Set(
-      durableEntries.filter((entry) => entry.state === "prepared").map((entry) => entry.id),
-    );
-    while (!signal.aborted) {
-      const batch = await buildBatch(claim, record, durableEntries, tree, build, preparedIds);
+    while (!signal.aborted && built < build.pending.length) {
+      const batch = await buildBatch(claim, record, build, built);
       if (!batch) break;
       built += batch;
     }
