@@ -155,7 +155,7 @@ alias can point at the deleted branch), and a remote-tracking candidate must
 still exist upstream and still contain the commit when planning checks it (a
 branch that moved is refreshed once), so a deleted or reset integration branch
 cannot be cited. PR evidence rests on
-GitHub's merge record rather than a local ref. Cleanup executes one run at a
+GitHub's merge record rather than a local ref. Worktree deletion executes one run at a
 time per repository: a second run refuses while one is executing, because two
 runs' containment refs can be each other's branches, and a stale lock refuses
 too rather than risking two owners; an interrupted run can leave a stale lock
@@ -186,6 +186,51 @@ still applies.
 
 The `./mf` CLI is [`tools/mf`](../../mf/.context/CONTEXT.md). It reads this
 directory's Portless route contract (see [`AGENTS.md`](../AGENTS.md)).
+
+### Missing-checkout sessions
+
+`lib/worktree-cleanup-orphans.ts` discovers from tmux rather than Git alone, so
+unregistered/deleted worktrees remain visible. `pnpm dev` runs this sweep before
+start/reuse, but not for `--print` or `--stop`. The independent `--orphans` cleanup
+mode requires confirmation or `--yes` and supports `--dry-run`; it needs no PR,
+branch-merge evidence, database access, or Meridian work-item discovery.
+
+A candidate must have a managed session name with the SHA-256 path hash from
+`session-identity.ts`, a missing session creation directory, and every pane cwd
+still under that directory. A registered locked checkout is protected.
+Unregistered candidates must be immediate children of the primary checkout's
+sibling `<repo>.worktrees/` directory; arbitrary missing paths do not prove repo
+ownership. Existing directories, dangling symlinks, and inspection failures are
+not deletion evidence.
+
+Git discovery uses the canonical `runGit` boundary, ignoring inherited `GIT_*`
+repository overrides. Discovery and execution use the same session authorization
+rules. Before each shutdown phase, execution rechecks repository/lock/path
+ownership and all remaining panes against the original plan: original panes may
+exit during TERM, but newly added or relocated panes refuse teardown.
+
+`owned-process-tree.ts` captures same-user descendants, sends SIGTERM, and extends
+the owned set during the bounded grace period through still-valid captured
+ancestors. Captured detached/reparented children stay owned by PID, UID, start time
+and command; an unobserved process never becomes owned by cwd alone. After the
+fully authorized exact tmux session is closed, survivors are quiesced with
+SIGSTOP and repeated descendant censuses until the stopped set is stable, then
+force-killed. Quiescence must follow session closure because tmux resumes stopped
+pane leaders. On refusal/error, this invocation's paused survivors receive
+SIGCONT; processes already stopped by someone else are not resumed. Zombies count
+as exited. A final identity/descendant census always runs before tmux teardown,
+even if signaling/logging crossed the grace deadline. A present PID whose
+UID/start/command identity changed refuses cleanup, rather than being silently
+dropped; this includes exec during shutdown. A fresh
+plan may authorize its replacement only while session ownership remains provable.
+Resumption skips changed identities without stranding other matching survivors.
+Processes that fork and reparent before an identity or ancestry can be captured
+remain unprovable and are left alone.
+
+`portless-maintenance.ts` runs shared route pruning independently of teardown.
+Failures produce a warning and retry command, never a startup failure. Executing
+`--orphans` retries maintenance even when no sessions remain; dry-run/cancellation
+never touches routes. No branch, worktree, database, or work-item state is deleted.
 
 ## Migration and observability helpers
 
