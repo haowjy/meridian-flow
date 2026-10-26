@@ -2175,8 +2175,8 @@ async function executeLoop({
           return yieldExit();
 
         // A cancel from another process has no local abort; the lease flag is the
-        // only signal. Read it before acting so the interrupt's next turn starts
-        // from a clean, already-released run.
+        // only signal. Read it before acting so the next admitted run starts
+        // from a clean, already-released lease.
         const status = await deps.runClaim.read(input.threadId);
         if (status.kind === "awake" && status.cancelRequested) leaseCancelled = true;
         if (isCancelled()) {
@@ -2518,8 +2518,8 @@ async function executeLoop({
         }
 
         // blockSeq is the turn-scoped display order. It starts at the blocks
-        // already stored for this assistant turn and is handed to interrupt/tool
-        // collaborators so later blocks remain contiguous.
+        // already stored for this assistant turn and is handed to persistence and
+        // tool collaborators so later blocks remain contiguous.
         let blockSeq = allBlocks.filter(
           (b) => (b.turnId as string) === (currentTurn.id as string),
         ).length;
