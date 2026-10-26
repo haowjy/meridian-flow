@@ -53,6 +53,12 @@ checks around database waits roll back an expired receive's transaction.
 
 ## Commands and cleanup
 
+Continue reports its re-picked received entries at `POST .../picked` with a
+SHA-256 per entry. The server compares each hash with the receipt and sets or
+clears `changed_after_pick`; it never reads or stores those bytes again. Only a
+received entry is compared, and a reason other than `changed_after_pick` is left
+alone.
+
 Stop cancels and acknowledges uploading, organizing, or failed imports before
 reveal. A non-null `revealed_at` refuses with `import_finished`; finished imports
 refuse too. Publication and the finished transition commit with the reveal. A failed import can Retry or Stop; only

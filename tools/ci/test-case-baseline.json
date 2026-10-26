@@ -86,7 +86,7 @@
     "apps/app/src/features/export/ExportProjectDialog.test.tsx": 2,
     "apps/app/src/features/import/import-node-id.test.ts": 1,
     "apps/app/src/features/import/manifest.test.ts": 2,
-    "apps/app/src/features/import/match-awaiting.test.ts": 1,
+    "apps/app/src/features/import/match-continue.test.ts": 1,
     "apps/app/src/features/import/read-selection.test.ts": 7,
     "apps/app/src/features/import/toast-presentation.test.ts": 1,
     "apps/app/src/features/import/uploader.test.ts": 2,

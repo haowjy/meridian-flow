@@ -108,6 +108,14 @@ export function fakeImportServer() {
       }
       return update(id);
     },
+    async picked(_project, id, input) {
+      const detail = read(id);
+      for (const item of input.entries) {
+        const entry = detail.entries.find((entry) => entry.entryId === item.entryId);
+        if (entry?.state === "received") entry.reason = null;
+      }
+      return update(id);
+    },
     async stop(_project, id) {
       const detail = read(id);
       if (detail.state === "finished" || revealed.has(id))

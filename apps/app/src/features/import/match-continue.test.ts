@@ -2,7 +2,7 @@
 import { expect, it } from "vitest";
 import { fakeImportServer } from "./fake-import-server";
 import { buildSelection } from "./manifest";
-import { matchAwaiting } from "./match-awaiting";
+import { matchContinue } from "./match-continue";
 import type { Selection } from "./selection";
 
 const selection = (name: string, files: File[]): Selection => ({
@@ -36,13 +36,13 @@ it("pairs only awaiting files, marks changes, and leaves missing or wrong-root f
     new File(["new text"], "b.md", { lastModified: 20 }),
     new File(["extra"], "new.md"),
   ]);
-  const match = matchAwaiting(detail, picked);
+  const match = matchContinue(detail, picked);
   expect([...match.held.keys()]).toEqual([1]);
   expect(match.held.get(1)?.changed).toBe(true);
   expect(match.missing).toEqual([2]);
   expect((await server.api.detail("p", "i")).entries[2].state).toBe("awaiting");
   expect(
-    matchAwaiting(
+    matchContinue(
       detail,
       selection(
         "Wrong",
@@ -50,13 +50,13 @@ it("pairs only awaiting files, marks changes, and leaves missing or wrong-root f
       ),
     ).held.size,
   ).toBe(0);
-  expect(matchAwaiting(detail, selection("Wrong", [])).wrongRoot).toBe(true);
+  expect(matchContinue(detail, selection("Wrong", [])).wrongRoot).toBe(true);
   const duplicate = {
     ...detail,
     roots: [...detail.roots, { ...detail.roots[0], rootId: 1 }],
     entries: [detail.entries[1], { ...detail.entries[1], entryId: 9, rootId: 1 }],
   };
   expect(
-    matchAwaiting(duplicate, selection("Book", [original.roots[0].files[1].file])).held.size,
+    matchContinue(duplicate, selection("Book", [original.roots[0].files[1].file])).held.size,
   ).toBe(0);
 });

@@ -2,6 +2,7 @@
 import type {
   ImportDetail,
   ImportFilesResult,
+  ImportPickedInput,
   ImportRefusalCode,
   ImportSelection,
   ImportSkipsInput,
@@ -111,6 +112,19 @@ export function skipImportFiles(
   signal?: AbortSignal,
 ) {
   return request<ImportSummary>(`${importsPath(projectId, importId)}/skips`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    signal,
+  });
+}
+export function markPickedImportFiles(
+  projectId: string,
+  importId: string,
+  input: ImportPickedInput,
+  signal?: AbortSignal,
+) {
+  return request<ImportSummary>(`${importsPath(projectId, importId)}/picked`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),

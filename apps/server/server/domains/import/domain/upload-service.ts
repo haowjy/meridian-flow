@@ -2,6 +2,7 @@
 import type {
   ImportDetail,
   ImportFilesResult,
+  ImportPickedInput,
   ImportSkipsInput,
   ImportSummary,
 } from "@meridian/contracts";
@@ -182,6 +183,36 @@ export function createImportUploadService(deps: {
           if (ids.length)
             await repo.transitionEntries(id, ["awaiting"], { state: "skipped", reason }, ids);
         }
+        await complete(record);
+      });
+      return after(id, projectId);
+    },
+    async picked(id: string, projectId: string, input: ImportPickedInput) {
+      await repo.transaction(async () => {
+        const record = await requireRecord(id, projectId, true);
+        uploading(record);
+        const entries = new Map(
+          (
+            await repo.fileEntries(
+              id,
+              input.entries.map((item) => item.entryId),
+            )
+          ).map((entry) => [entry.entryId, entry]),
+        );
+        for (const item of input.entries)
+          if (!entries.has(item.entryId)) throw new ImportError(404, "entry_not_found");
+        const hashes = new Map(input.entries.map((item) => [item.entryId, item.sha256]));
+        const patches: { id: string; patch: { reason: "changed_after_pick" | null } }[] = [];
+        for (const [entryId, sha256] of hashes) {
+          const entry = entries.get(entryId);
+          // Only a received entry has bytes to compare; a later pick cannot overwrite them.
+          if (!entry?.receipt) continue;
+          // Another reason (a kept DOCX) is not this command's to clear.
+          if (entry.reason !== null && entry.reason !== "changed_after_pick") continue;
+          const reason = entry.receipt.sha256 === sha256 ? null : "changed_after_pick";
+          if (reason !== entry.reason) patches.push({ id: entry.id, patch: { reason } });
+        }
+        if (patches.length) await repo.updateEntries(id, patches);
         await complete(record);
       });
       return after(id, projectId);

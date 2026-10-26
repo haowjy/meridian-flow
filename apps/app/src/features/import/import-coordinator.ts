@@ -5,7 +5,7 @@ import { ImportRequestError } from "@/client/api/imports-api";
 import type { ImportDestination } from "./destination";
 import type { ImportApi } from "./import-api-port";
 import { buildSelection, type HeldFile } from "./manifest";
-import { matchAwaiting } from "./match-awaiting";
+import { matchContinue, type PickedReceived } from "./match-continue";
 import { type PendingRootMemory, pendingRoot } from "./pending-roots";
 import { refusalSentence } from "./reason-copy";
 import type { Selection } from "./selection";
@@ -397,10 +397,37 @@ export class ImportCoordinator {
       if (this.current(record)) this.local(record, { busy: false });
     }
   }
-  private async sendAwaiting(record: RecordState) {
+  /** Hash only the re-picked received files, then tell the server which receipts they match. */
+  private async reconcilePicked(record: RecordState, files: readonly PickedReceived[]) {
+    const entries: { entryId: number; sha256: string }[] = [];
+    for (const { entryId, file } of files) {
+      const signal = record.controller.signal;
+      signal.throwIfAborted();
+      const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+      signal.throwIfAborted();
+      entries.push({
+        entryId,
+        sha256: [...new Uint8Array(digest)]
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join(""),
+      });
+    }
+    if (!entries.length) return;
+    this.install(
+      record,
+      await this.api.picked(
+        record.view.summary.projectId,
+        record.view.importId,
+        { entries },
+        record.controller.signal,
+      ),
+    );
+  }
+  private async sendAwaiting(record: RecordState, picked: readonly PickedReceived[] = []) {
     this.cancelUpload(record);
     const detail = await this.fresh(record);
     if (detail?.state !== "uploading") return;
+    if (picked.length) await this.reconcilePicked(record, picked);
     const awaiting = new Set(
       detail.entries.filter((entry) => entry.state === "awaiting").map((entry) => entry.entryId),
     );
@@ -495,7 +522,7 @@ export class ImportCoordinator {
       this.cancelUpload(record);
       const detail = await this.fresh(record);
       if (detail?.state !== "uploading") return;
-      const match = matchAwaiting(detail, selection);
+      const match = matchContinue(detail, selection);
       record.held = match.held;
       if (match.wrongRoot) this.local(record, { phase: "wrong-root" });
       else {
@@ -503,7 +530,7 @@ export class ImportCoordinator {
           missing: match.missing,
           phase: match.missing.length ? "missing" : undefined,
         });
-        await this.sendAwaiting(record);
+        await this.sendAwaiting(record, match.received);
       }
     });
   }

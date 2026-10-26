@@ -114,6 +114,16 @@ export interface ImportFilesResult {
 export interface ImportSkipsInput {
   entries: { entryId: number; reason: "unreadable" | "not_found" }[];
 }
+/**
+ * POST /imports/:id/picked reports files Continue matched to entries that are
+ * already received. The browser hashes only files whose size or modified time
+ * differs from the entry's recorded pick, and entries already marked changed,
+ * so an identical copy clears the mark and an edited file gains it. Received
+ * bytes are never sent again.
+ */
+export interface ImportPickedInput {
+  entries: { entryId: number; sha256: string }[];
+}
 /** Stable refusal codes, with bounded numeric parameters carried separately. */
 export type ImportRefusalCode =
   | "import_not_found"
