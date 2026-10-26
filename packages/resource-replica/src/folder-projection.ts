@@ -276,7 +276,8 @@ export function createResourcePlacement(
     }
     projected = [...projectedById.values()];
     // One qualified-home index installs real rows before navigation-only gaps.
-    const homeKey = (sourceId: string, path: string) => JSON.stringify([sourceId, path]);
+    // The length prefix keeps (sourceId, path) pairs distinct without a JSON round trip per row.
+    const homeKey = (sourceId: string, path: string) => `${sourceId.length}:${sourceId}${path}`;
     const homes = new Map(
       projected.flatMap((row) =>
         row.kind === "folder" ? [[homeKey(row.sourceId, row.path.join("/")), row] as const] : [],
