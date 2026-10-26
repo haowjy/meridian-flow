@@ -160,7 +160,12 @@ export type ResourceDescriptor = ResourceKey & {
       identityRevision: number;
       exactDatabaseName: string;
     };
-    cleanup?: { obligationId: string; exactDatabaseName: string };
+    cleanup?: {
+      obligationId: string;
+      exactDatabaseName: string;
+      /** A local deletion's Undo window: the content is kept until then (epoch ms). */
+      notBefore?: number;
+    };
   };
 };
 

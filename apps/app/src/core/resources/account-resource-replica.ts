@@ -14,6 +14,7 @@ import {
   planCachedSessionAdoption,
   planFolderDeletion,
   planFolderLocation,
+  planLocalDeletionUndo,
   planResourceDeletion,
   planResourceLocation,
   publishResourceTerminal,
@@ -784,7 +785,7 @@ export class AccountResourceReplica {
 
   async deleteDocument(projectId: string, key: ResourceKey): Promise<{ operationId?: string }> {
     const operationId = crypto.randomUUID();
-    let undoable = false;
+    let planned = false;
     const admitted = await this.admitPlacement(
       projectId,
       key,
@@ -806,15 +807,51 @@ export class AccountResourceReplica {
             operationId,
             admission,
           );
-          undoable =
-            write?.next.intents.some(
-              (intent) => intent.operationId === operationId && intent.state !== "settled-locally",
-            ) ?? false;
+          planned = write !== null;
           return write;
         }),
     );
     this.reconciler.schedule(key);
-    return admitted === "committed" && undoable ? { operationId } : {};
+    return admitted === "committed" && planned ? { operationId } : {};
+  }
+
+  /**
+   * Undo of a deletion that settled on this device because the server never held the document:
+   * it comes back with its text while the Undo window is open (`LOCAL_DELETION_UNDO_MS`). False
+   * once the window has closed. Runs under the lock that cleanup holds while it clears the
+   * content, so Undo never revives a document whose text was just cleared.
+   */
+  async restoreLocalDeletion(projectId: string, operationId: string): Promise<boolean> {
+    this.requireOpen();
+    const { records } = await this.metadata.readProjection(projectId);
+    const record = records.find((candidate) =>
+      candidate.intents.some(
+        (intent) => intent.operationId === operationId && intent.desired.kind === "delete",
+      ),
+    );
+    if (!record) return false;
+    const key = { handle: record.resource.handle };
+    for (let busy = 0; busy < 20; busy += 1) {
+      const result = await this.lock.run(key, async () => {
+        let restored = false;
+        await this.commitPlan(key, (current) => {
+          const write = planLocalDeletionUndo(current, {
+            operationId,
+            createIntentId: crypto.randomUUID(),
+            now: Date.now(),
+          });
+          restored = write !== null;
+          return write;
+        });
+        return restored;
+      });
+      if (result.kind === "acquired") {
+        if (result.value) this.reconciler.schedule(key);
+        return result.value;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return false;
   }
 
   private async commitPlan(

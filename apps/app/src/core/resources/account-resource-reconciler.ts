@@ -316,6 +316,8 @@ export class AccountResourceReconciler {
           intent.intentId === cleanup?.obligationId,
       );
       if (!record || !cleanup || !deletion) return false;
+      // A local deletion's content waits out its Undo window; the 30 s retry finds it due.
+      if (cleanup.notBefore !== undefined && Date.now() < cleanup.notBefore) return false;
       await content.clearExactContent({
         projectId: deletion.projectId,
         key,
