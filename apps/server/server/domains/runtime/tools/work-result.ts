@@ -55,6 +55,23 @@ export function renderWorkResult(value: JsonValue, input: JsonObject): string {
   if (command === "show" && isObject(value) && isObject(value.work)) {
     return renderShow(value as unknown as WorkShowResult, verbose);
   }
+  if (
+    command === "write_mode" &&
+    isObject(value) &&
+    (value.mode === "direct" || value.mode === "draft")
+  ) {
+    return `AI write mode will change to ${value.mode} from the next reply.`;
+  }
+  if (
+    command === "switch" &&
+    isObject(value) &&
+    (typeof value.handle === "string" || value.handle === null) &&
+    typeof value.name === "string"
+  ) {
+    return value.handle === null
+      ? "This chat is now in No Work."
+      : `This chat is now in ${value.handle} (${value.name}).`;
+  }
   if (isObject(value) && typeof value.name === "string" && command in DONE) {
     const work = value as unknown as ModelWork;
     return `${DONE[command]?.(workRef(work))}\n${workLines(work, verbose, LIST_GOAL_LENGTH)}`;

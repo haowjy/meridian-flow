@@ -87,6 +87,7 @@ export type ChatDelivery = {
   childThreadId: string | null;
   agentName: string | null;
   title: string | null;
+  sender: DeliveryEvent["sender"] | null;
   outcome: string | null;
   /** The notification's text; empty for an attachment-only message. */
   message: string;
@@ -334,6 +335,16 @@ function chatRow(row: ViewRow, view: TranscriptView, limits: { full: boolean }):
     if (limits.full) out.workReceipts = assistant.workReceipts;
     if (assistant.hiddenToolCallIds.length) out.hiddenToolCalls = assistant.hiddenToolCallIds;
   }
+  if (row.kind === "delivery")
+    out.items = [
+      {
+        kind: "delivery",
+        groups: row.deliveries.map((group) => ({
+          id: group.id,
+          events: group.events.map(chatDelivery),
+        })),
+      },
+    ];
   if (row.response)
     out.response = { parts: row.response.parts.map((part) => part.id), stats: row.response.stats };
   if (row.kind === "compaction") out.compaction = readCompactionFacts(turn);
@@ -355,6 +366,7 @@ function chatDelivery(event: DeliveryEvent): ChatDelivery {
     childThreadId: event.childThreadId ?? null,
     agentName: event.agentName ?? null,
     title: event.title ?? null,
+    sender: event.sender ?? null,
     outcome: event.subagentUpdate?.outcome ?? null,
     message: event.message,
   };
@@ -551,14 +563,24 @@ function rowLines(row: ChatRow): string[] {
       case "delivery":
         for (const group of item.groups)
           lines.push(
-            ...indent(
-              `delivery:${group.id} ${group.events.map((event) => `${event.agentName ?? "message"}${event.outcome ? ` ${event.outcome}` : ""}${event.childThreadId ? ` [${event.childThreadId}]` : ""}${event.message && !event.outcome ? ` ${oneLine(event.message)}` : ""}`).join("; ")}`,
-            ),
+            ...indent(`delivery:${group.id} ${group.events.map(deliveryLine).join("; ")}`),
           );
         break;
     }
   });
   return lines;
+}
+
+function deliveryLine(event: ChatDelivery): string {
+  const sender = event.sender;
+  const senderName = sender
+    ? sender.title?.trim()
+      ? sender.ref
+        ? `${sender.title.trim()} (${sender.ref})`
+        : sender.title.trim()
+      : sender.ref
+    : null;
+  return `${senderName ? `from ${senderName}:` : (event.agentName ?? "message")}${event.outcome ? ` ${event.outcome}` : ""}${event.childThreadId ? ` [${event.childThreadId}]` : ""}${event.message && !event.outcome ? ` ${oneLine(event.message)}` : ""}`;
 }
 
 /** One card as a line: its copy key, where it sits, its action and its occurrence key. */
