@@ -26,6 +26,10 @@ active work directory.
    }
    ```
 
+   `./mf thread send` exits 6 with `outcome: "unproven"` when the otherwise
+   successful reply ends by asking the question. This is expected: the answer,
+   and therefore the final continuation, is not proven yet.
+
 4. Run `./mf thread view "$chat" --json --full`. Save the open ask id as
    `$ask`. PASS: the asking turn is `awaiting_answer`, the ask is `open`, the
    chat is asleep and action-required, and no tool-result block exists yet.
@@ -59,16 +63,38 @@ without `recommended`; the result is `{"answer":null,"timed_out":true}`.
 
 ## Queue barrier
 
-While an ask is open, send a writer message from a second `./mf` process. PASS:
-the bubble and pending run-state item persist, but no complete transcript turn
-or active-lineage change is materialized. Answer the ask. PASS: one continuation
-adopts the continuation row and queued message together. Its first model request
-orders the ask tool use, tool result, then queued writer message, and produces
-exactly one reply; the message is acknowledged exactly once.
+The takeover replaces the browser composer, so use a second `./mf` process for
+every queued-message step below.
 
-Queue a write-mode switch and a message during the ask. PASS: the continuation
-still starts first. The existing switch rule yields at the continuation's first
-boundary, and the following run applies the switch.
+1. While an ask is open, send a writer message with `--no-wait`. PASS: its full
+   durable writer turn and pending run-state item exist, and the browser shows
+   the bubble as queued, but no model request adopts it. Answer the ask. PASS:
+   one continuation adopts the continuation row and queued message together.
+   Its first model request orders the ask tool use, tool result, then queued
+   writer message, and produces exactly one reply; the message is acknowledged
+   exactly once.
+2. Repeat with
+   `./mf thread send "$chat" 'Use this chapter' --ref 'manuscript://Chapter 1' --no-wait`.
+   PASS: before and after adoption the durable writer turn retains separate text
+   and reference blocks, including document identity; the continuation receives
+   the reference and its prepared read result rather than flattened link text.
+3. On a fresh ask, queue a referenced message and run
+   `./mf thread queue hand-back "$chat" --all --full --json`. PASS: `handedBack`
+   contains the complete text and reference blocks, the queued bubble disappears,
+   and answering the ask does not adopt the handed-back message.
+4. Start the ask in draft mode. Queue a switch to direct mode, then send a
+   message. The switch can be queued directly with:
+
+   ```sh
+   switch_id=$(node -e 'console.log(crypto.randomUUID())')
+   ./mf api POST "/api/threads/$chat/controls" \
+     --data "{\"id\":\"$switch_id\",\"control\":{\"kind\":\"write_mode\",\"mode\":\"direct\"}}"
+   ```
+
+   Answer the ask. PASS: the continuation starts first without the later
+   message and yields at its first boundary. The next run applies the
+   direct-mode switch before adopting the message; its assistant turn records
+   direct mode. Repeat with the modes reversed.
 
 ## Restart and crash windows
 
