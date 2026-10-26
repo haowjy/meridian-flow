@@ -1621,10 +1621,11 @@ msgid "Couldn’t create note"
 msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
-msgid "Couldn't create this document. Try again."
-msgstr ""
+#~ msgid "Couldn't create this document. Try again."
+#~ msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
+#: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't create this document. Try another place."
 msgstr ""
 
@@ -3093,8 +3094,17 @@ msgstr ""
 msgid "More composer controls"
 msgstr ""
 
+#. placeholder {0}: entry.name
 #: src/features/project/context/EntryMovePicker.tsx
-msgid "Move {name}"
+#~ msgid "Move {0}"
+#~ msgstr ""
+
+#: src/features/project/context/EntryMovePicker.tsx
+#~ msgid "Move {name}"
+#~ msgstr ""
+
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move {rowName}"
 msgstr ""
 
 #: src/features/project/context/entry-drag/use-entry-list.tsx
