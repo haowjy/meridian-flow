@@ -1620,6 +1620,14 @@ msgstr ""
 msgid "Couldn’t create note"
 msgstr ""
 
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Couldn't create this document. Try again."
+msgstr ""
+
+#: src/features/project/context/IdentityPlacementField.tsx
+msgid "Couldn't create this document. Try another place."
+msgstr ""
+
 #: src/features/project/context/use-create-entry-form.ts
 msgid "Couldn't create this file."
 msgstr ""
