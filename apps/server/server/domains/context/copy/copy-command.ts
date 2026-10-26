@@ -13,8 +13,9 @@
  *    the address it will have through `collab/domain/copied-blocks.ts` — one identity map
  *    across the whole selection, so a link between two roots names both copies.
  *
- * A refusal is typed and recorded on the receipt, so a replay reads the same answer; an
- * infrastructure failure records nothing and stays retryable under the same operation ID.
+ * A refusal is typed and recorded on the receipt, so a replay reads the same answer. An
+ * infrastructure failure, or a source whose room has not yet received the client's edits,
+ * records nothing and stays retryable under the same operation ID.
  * There is no Undo command: Copy's Undo is ordinary deletion of the created identities.
  */
 
@@ -220,8 +221,14 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     }
     if (source.stateVector && !draft) {
       if (behind(decodeVector(source.stateVector), read.value.stateVector)) {
-        // The writer's own client has updates this cut lacks; the replica replays.
-        return Err({ code: "stale_source", uri: source.uri });
+        // The writer's own client has updates this cut lacks. Like any transient failure this
+        // is `io_error`: retryable, and never recorded, so the replica's replay under the same
+        // operation ID reads again instead of being handed the first answer forever.
+        return Err({
+          code: "io_error",
+          uri: source.uri,
+          message: "The source has edits the server has not received yet",
+        });
       }
     }
     return Ok({
