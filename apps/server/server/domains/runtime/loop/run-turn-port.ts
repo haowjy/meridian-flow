@@ -27,8 +27,6 @@ interface RunTurnBase {
     origin: "spawn" | "message";
     sender: { ref: string | null; title: string | null };
   };
-  /** Forwarded-answer ownership recorded atomically with child report admission. */
-  relayAdmission?: { forwardedAskId: string; childAskId: string };
   onCurrentTurnChanged?: (turn: CurrentTurn) => void;
 }
 
@@ -50,8 +48,6 @@ export interface WriterRunTurnInput extends RunTurnBase {
  */
 export interface DrainRunTurnInput extends RunTurnBase {
   drain: true;
-  /** Exact resolved ask whose continuation this execution admits directly. */
-  continuationAskId?: string;
   /** Client-minted id for an explicit no-input reply Retry. */
   replyTurnId?: TurnId;
   /** The failed reply a Retry re-answers; its first reservation records it as `metadata.retryOf`. */

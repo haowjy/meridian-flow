@@ -45,6 +45,12 @@ type RunSession = {
   completion: Promise<void>;
 };
 
+/** Child invocation cards: running at admission, the saved report when the run ends. */
+export type RunSessionReports = {
+  projectRunning(threadId: ThreadId, executionTurnId: TurnId): Promise<void>;
+  publish(threadId: ThreadId, executionTurnId: TurnId): Promise<unknown>;
+};
+
 export function createRunSessions(deps: {
   shutdown: { started: boolean };
   backgroundTasks: DetachedWorkTracker;
@@ -75,7 +81,7 @@ export function createRunSessions(deps: {
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
   cancelSubtreeAsks?: (threadId: ThreadId) => Promise<void>;
-  projectRunning?: (threadId: ThreadId, executionTurnId: TurnId) => Promise<void>;
+  reports?: RunSessionReports;
 }) {
   const running = new Map<ThreadId, RunSession>();
   const shutdown = deps.shutdown;
@@ -214,7 +220,11 @@ export function createRunSessions(deps: {
         },
       });
       session.currentTurn = loop.currentTurn;
-      await deps.projectRunning?.(threadId, loop.currentTurn.id);
+      const executionTurnId = loop.currentTurn.id;
+      // A projection, not an obligation: the terminal publication replaces the card.
+      await deps.reports
+        ?.projectRunning(threadId, executionTurnId)
+        .catch((error) => observe(threadId, "report.project_running_failed", error));
       if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
       preparedRun = true;
       const snapshotFloorNextSeq = ((await deps.headSeq(threadId)) + 1n).toString();
@@ -248,6 +258,10 @@ export function createRunSessions(deps: {
           observe(threadId, "terminal_fallback.failed", error);
           outcome = { status: "failed", error };
         }
+        // Every run publishes its own report; the sweep only repairs a failure here.
+        await deps.reports
+          ?.publish(threadId, executionTurnId)
+          .catch((error) => observe(threadId, "report.publish_failed", error));
         const asked = outcome.status !== "failed" && outcome.turn.status === "awaiting_answer";
         if (input.child && !asked) {
           try {

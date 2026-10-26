@@ -820,6 +820,11 @@ export function createDeliveryAdapter(
               throw new Error("Scoped delivery cannot enqueue another thread");
             return enqueue(draft);
           },
+          enqueueWithoutWake(draft) {
+            if (draft.threadId !== threadId)
+              throw new Error("Scoped delivery cannot enqueue another thread");
+            return inbox.enqueue(draft);
+          },
         }),
       ),
     adoptBatch: async (lease, prepare, options) => {

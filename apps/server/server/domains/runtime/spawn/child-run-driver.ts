@@ -1,18 +1,27 @@
-/** Child-run coordination: admit, drive, release, then publish saved terminal truth. */
+/**
+ * Child-run coordination: admit, drive, and read saved terminal truth. A resolved
+ * ask's continuation is found by its ask id, whoever runs it; the run session
+ * publishes every report.
+ */
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   ExecutionReportCorrelation,
+  SavedExecutionReport,
   SpawnResult,
   TreeBudget,
 } from "@meridian/contracts/spawn";
 import type { BlockUpsertedRow, Thread, ThreadActivity } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { LiveEventWriter, ThreadRepositories } from "../../threads/index.js";
+import {
+  type LiveEventWriter,
+  type ThreadRepositories,
+  TurnStartConflictError,
+} from "../../threads/index.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
-import type { PreparedRun, RunTurnPort } from "../loop/run-turn-port.js";
+import { NoPendingWakeError, type PreparedRun, type RunTurnPort } from "../loop/run-turn-port.js";
+import type { RuntimeDelivery } from "../loop/runtime-delivery.js";
 import { appendSubagentActivityBestEffort } from "./activity-event.js";
-import type { ReportPublisher } from "./report-publisher.js";
 import { savedReportToSpawnResult } from "./saved-report-outcome.js";
 
 export interface ChildDriveInput {
@@ -22,7 +31,6 @@ export interface ChildDriveInput {
   budget: TreeBudget;
   /** Original parent invocation, including the retained running card. */
   reportCorrelation?: ExecutionReportCorrelation;
-  relayAdmission?: { forwardedAskId: string; childAskId: string };
 }
 
 export type PreparedChild = {
@@ -47,9 +55,12 @@ export interface ChildRunDriverDeps {
   backgroundTasks: DetachedWorkTracker;
   orchestrator: RunTurnPort;
   repos: Pick<ThreadRepositories, "executionReports" | "asks">;
+  /** Pending rows show whether an ask's continuation obligation is still open. */
+  delivery: Pick<RuntimeDelivery, "selectPending">;
+  /** Calls `onChange` after each committed event on the thread, in any process. */
+  watchThread(threadId: ThreadId, onChange: () => void): Promise<() => void>;
   eventWriter: LiveEventWriter;
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
-  publisher: Pick<ReportPublisher, "publish">;
   eventSink: EventSink;
 }
 
@@ -60,14 +71,17 @@ export interface ChildRunDriver {
     options: { background?: boolean; signal?: AbortSignal; origin: "spawn" | "message" },
   ): Promise<PreparedChild>;
   admit(prepared: PreparedChild, input: ChildDriveInput): Promise<AdmittedChildRun>;
-  admitContinuation(
+  /**
+   * The answered ask's continuation report: drives it when its row is still
+   * pending, otherwise waits for whoever runs it. Replays the same way.
+   */
+  continueAnswered(
     prepared: PreparedChild,
     input: ChildDriveInput,
     askId: string,
-  ): Promise<AdmittedChildRun>;
+  ): Promise<SpawnResult>;
   execute(admitted: AdmittedChildRun): Promise<SpawnResult>;
   executeBackground(admitted: AdmittedChildRun): void;
-  readSavedReport(childThreadId: ThreadId, executionTurnId: TurnId): Promise<SpawnResult | null>;
 }
 
 export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
@@ -109,7 +123,6 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
         agentSlug: prepared.resolvedSlug,
         name: prepared.name ?? null,
       },
-      ...(input.relayAdmission ? { relayAdmission: input.relayAdmission } : {}),
     });
     const report = await deps.repos.executionReports.findByExecution(
       prepared.child.id as ThreadId,
@@ -119,30 +132,78 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     return { prepared, handle, admittedAt: report.admittedAt };
   }
 
-  async function admitContinuation(
+  async function continuationPending(childThreadId: ThreadId, askId: string) {
+    return (await deps.delivery.selectPending(childThreadId)).some(
+      (row) => row.body.kind === "ask_resolved" && row.body.askId === askId,
+    );
+  }
+
+  async function continueAnswered(
     prepared: PreparedChild,
     input: ChildDriveInput,
     askId: string,
-  ): Promise<AdmittedChildRun> {
-    const handle = await deps.orchestrator.prepare({
-      threadId: prepared.child.id as ThreadId,
-      drain: true,
-      continuationAskId: askId,
-      signal: prepared.signal,
-      child: {
-        parentThreadId: input.parentThread.id as ThreadId,
-        background: prepared.background,
-        origin: prepared.origin,
-      },
-      treeBudget: input.budget,
-      ...(input.relayAdmission ? { relayAdmission: input.relayAdmission } : {}),
-    });
-    const report = await deps.repos.executionReports.findByExecution(
-      prepared.child.id as ThreadId,
-      handle.executionTurnId,
-    );
-    if (!report) throw new Error("Admitted child continuation has no execution report");
-    return { prepared, handle, admittedAt: report.admittedAt };
+  ): Promise<SpawnResult> {
+    const childThreadId = prepared.child.id as ThreadId;
+    if (await continuationPending(childThreadId, askId)) {
+      let handle: PreparedRun | null = null;
+      try {
+        handle = await deps.orchestrator.prepare({
+          threadId: childThreadId,
+          drain: true,
+          signal: prepared.signal,
+          child: {
+            parentThreadId: input.parentThread.id as ThreadId,
+            background: false,
+            origin: prepared.origin,
+            sender: { ref: input.parentThread.ref, title: input.parentThread.title },
+          },
+          treeBudget: input.budget,
+        });
+      } catch (error) {
+        // Another runner (the wake sweep, or a crashed caller's recovery) took it.
+        if (!(error instanceof TurnStartConflictError) && !(error instanceof NoPendingWakeError))
+          throw error;
+      }
+      if (handle) await handle.execute();
+    }
+    return awaitContinuation(childThreadId, askId, prepared.signal);
+  }
+
+  /**
+   * Waits outside any lock until the ask's latest continuation is terminal and its
+   * row is acknowledged: a forwarded child that crashed mid-relay reruns, and its
+   * stale-settled first attempt is not the answer.
+   */
+  async function awaitContinuation(
+    childThreadId: ThreadId,
+    askId: string,
+    signal?: AbortSignal,
+  ): Promise<SpawnResult> {
+    const changes = changeLatch();
+    const unwatch = await deps.watchThread(childThreadId, changes.notify);
+    try {
+      for (;;) {
+        signal?.throwIfAborted();
+        const report = await deps.repos.executionReports.findByContinuationAsk(askId);
+        if (report?.outcome && !(await continuationPending(childThreadId, askId)))
+          return savedResult(report);
+        await changes.next(signal);
+      }
+    } finally {
+      unwatch();
+    }
+  }
+
+  async function savedResult(saved: SavedExecutionReport): Promise<SpawnResult> {
+    // The historical question, whatever its status: an answer to a question that
+    // already resolved becomes an ordinary message, never a newer question's answer.
+    const ask =
+      saved.outcome === "asked" && saved.terminalTurnId
+        ? (await deps.repos.asks.listByTurnIds([saved.terminalTurnId])).find(
+            (candidate) => candidate.kind === "question",
+          )
+        : null;
+    return savedReportToSpawnResult(saved, ask);
   }
 
   function observeCleanupFailure(prepared: PreparedChild, name: string, error: unknown): void {
@@ -163,13 +224,6 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       childThreadId,
       handle.executionTurnId,
     );
-    if (saved?.outcome) {
-      try {
-        await deps.publisher.publish(childThreadId, handle.executionTurnId);
-      } catch (error) {
-        observeCleanupFailure(prepared, "child.publication_failed", error);
-      }
-    }
     await appendSubagentActivityBestEffort({
       eventWriter: deps.eventWriter,
       readActivity: deps.readActivity,
@@ -177,15 +231,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       childThreadId,
       eventSink: deps.eventSink,
     });
-    if (saved?.outcome) {
-      const ask =
-        saved.outcome === "asked" && saved.terminalTurnId
-          ? (await deps.repos.asks.listByTurnIds([saved.terminalTurnId])).find(
-              (candidate) => candidate.status === "open",
-            )
-          : null;
-      return savedReportToSpawnResult(saved, ask);
-    }
+    if (saved?.outcome) return savedResult(saved);
     return {
       status: "error",
       error: meridianErrorFromSystem(
@@ -211,20 +257,31 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     );
   }
 
-  async function readSavedReport(
-    childThreadId: ThreadId,
-    executionTurnId: TurnId,
-  ): Promise<SpawnResult | null> {
-    const saved = await deps.repos.executionReports.findByExecution(childThreadId, executionTurnId);
-    if (!saved?.outcome) return null;
-    const ask =
-      saved.outcome === "asked" && saved.terminalTurnId
-        ? (await deps.repos.asks.listByTurnIds([saved.terminalTurnId])).find(
-            (candidate) => candidate.status === "open",
-          )
-        : null;
-    return savedReportToSpawnResult(saved, ask);
-  }
+  return { register, admit, continueAnswered, execute, executeBackground };
+}
 
-  return { register, admit, admitContinuation, execute, executeBackground, readSavedReport };
+/** A wake-up flag: `next` returns at once if anything changed since the last call. */
+function changeLatch() {
+  let changed = false;
+  let wake: (() => void) | null = null;
+  return {
+    notify() {
+      changed = true;
+      wake?.();
+    },
+    async next(signal?: AbortSignal) {
+      if (!changed)
+        await new Promise<void>((resolve, reject) => {
+          if (signal?.aborted) return reject(signal.reason);
+          const aborted = () => reject(signal?.reason);
+          wake = () => {
+            signal?.removeEventListener("abort", aborted);
+            resolve();
+          };
+          signal?.addEventListener("abort", aborted, { once: true });
+        });
+      changed = false;
+      wake = null;
+    },
+  };
 }

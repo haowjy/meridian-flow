@@ -28,7 +28,12 @@ const notice = (id: string) => row(id, "notice", { kind: "text", text: id });
 const control = (id: string, body: ControlBody) => row(id, "control", body);
 const S = () => control("S", { kind: "write_mode", mode: "draft" });
 const C = () => control("C", { kind: "compact" });
-const A = () => row("A", "control", { kind: "ask_resolved", askId: "ask" });
+const A = () =>
+  row("A", "control", {
+    kind: "ask_resolved",
+    askId: "ask",
+    delivery: "background_notification",
+  });
 
 function describeSelection(selection: ReturnType<typeof next>) {
   switch (selection.kind) {

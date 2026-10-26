@@ -161,7 +161,7 @@ export const threads = pgTable(
     ),
     check(
       "threads_spawn_status_valid",
-      sql`${table.spawnStatus} IS NULL OR ${table.spawnStatus} IN ('running', 'succeeded', 'failed', 'cancelled')`,
+      sql`${table.spawnStatus} IS NULL OR ${table.spawnStatus} IN ('running', 'asked', 'succeeded', 'failed', 'cancelled')`,
     ),
   ],
 );
@@ -626,7 +626,7 @@ export const threadExecutionReports = pgTable(
     index("thread_execution_reports_pending")
       .on(table.executionTurnId)
       .where(sql`${table.publication} = 'pending'`),
-    uniqueIndex("thread_execution_reports_continuation_ask")
+    index("thread_execution_reports_continuation_ask")
       .on(table.continuationAskId)
       .where(sql`${table.continuationAskId} IS NOT NULL`),
     check(

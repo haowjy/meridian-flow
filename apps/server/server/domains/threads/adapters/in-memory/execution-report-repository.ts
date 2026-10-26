@@ -114,7 +114,16 @@ export function createInMemoryExecutionReportRepository(
       return find(child, execution);
     },
     async findByContinuationAsk(askId) {
-      return [...rows.values()].find((row) => row.continuationAskId === askId) ?? null;
+      return (
+        [...rows.values()]
+          .filter((row) => row.continuationAskId === askId)
+          .sort(
+            (a, b) =>
+              a.admittedAt.localeCompare(b.admittedAt) ||
+              a.executionTurnId.localeCompare(b.executionTurnId),
+          )
+          .at(-1) ?? null
+      );
     },
     async listLatestByChildren(childThreadIds) {
       const childIds = new Set(childThreadIds);

@@ -10,12 +10,12 @@
  */
 
 import type { ControlBody } from "@meridian/contracts/threads";
-import type { InboxMessage } from "./ports.js";
+import type { AskResolvedBody, InboxMessage } from "./ports.js";
 
 export type ControlMessage = InboxMessage & { intent: "control"; body: ControlBody };
 export type AskResolvedMessage = InboxMessage & {
   intent: "control";
-  body: { kind: "ask_resolved"; askId: string };
+  body: AskResolvedBody;
 };
 export type WriteModeSwitchMessage = InboxMessage & {
   intent: "control";

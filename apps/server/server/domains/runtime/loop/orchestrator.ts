@@ -76,6 +76,7 @@ import type {
   JsonValue,
   ModelResponseReceivedRow,
   OrchestratorEvent,
+  QuestionAskPayload,
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
@@ -89,13 +90,13 @@ import type {
   BlockRepository,
   LiveEventWriter,
   ModelResponseRepository,
+  StoredAsk,
   ThreadRepositories,
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
 import {
   agentRequestMetadata,
-  askToolResult,
   loadThreadConversationContext,
   readThreadActivity,
   ThreadConversationContextError,
@@ -159,7 +160,7 @@ import {
 } from "./partial-tool-activity.js";
 import { missingToolRefusal, type ToolPolicy } from "./permissions/index.js";
 import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "./persistence.js";
-import type { InboxMessage, RunClaim, ThreadPhase } from "./ports.js";
+import type { AskResolvedBody, InboxMessage, RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
 import {
   loadReferenceReads,
@@ -253,8 +254,8 @@ export interface OrchestratorDeps {
   onRunSettled?: (threadId: ThreadId) => void;
   /** Cancels parked questions when a child invocation terminally owns its subtree. */
   cancelSubtreeAsks?: (threadId: ThreadId) => Promise<void>;
-  /** Ordered invocation-card projection after any report-bearing admission. */
-  projectRunning?: (threadId: ThreadId, executionTurnId: TurnId) => Promise<void>;
+  /** Child invocation cards: running at admission, the saved report when the run ends. */
+  reports?: import("./run-session.js").RunSessionReports;
   agentRevisions: Pick<
     AgentRevisionStore,
     "readThreadBinding" | "listInstallations" | "readSource" | "readRevision" | "recordInvokedSkill"
@@ -422,64 +423,69 @@ function applyResponseToTurnSnapshot(turn: Turn, response: ModelResponseReceived
   };
 }
 
+/** The resolved ask a drain run continues, from its one durable `ask_resolved` row. */
+type AskContinuation = { ask: StoredAsk; delivery: AskResolvedBody["delivery"] };
+
+const THREAD_RUN_CORRELATION = {
+  callerThreadId: null,
+  callerTurnId: null,
+  toolCallId: null,
+  cardBlockId: null,
+  origin: "thread_run" as const,
+  deliveryMode: "none" as const,
+};
+
+function isForwardedAsk(ask: StoredAsk): boolean {
+  return ask.kind === "question" && !!(ask.payload as QuestionAskPayload).forwardedFrom;
+}
+
 async function admitRunExecution(
   deps: OrchestratorDeps,
   input: RunLoopInput,
   thread: Thread,
   executionTurnId: TurnId,
-  adopted: readonly InboxMessage[] = [],
-  askContinuationId?: string,
+  adopted: readonly InboxMessage[],
+  continuation: AskContinuation | null,
 ): Promise<void> {
   if (thread.kind !== "subagent" && input.executionReport) {
     throw new Error("Execution report correlation requires a subagent thread");
   }
-  if (thread.kind === "subagent") {
-    if (!thread.ref) throw new Error("Subagent thread has no project handle");
-    const askingExecution = askContinuationId
-      ? await (async () => {
-          const ask = await deps.repos.asks.findById(askContinuationId);
-          return ask
-            ? deps.repos.executionReports.findByTurn(input.threadId, ask.askingTurnId)
-            : null;
-        })()
-      : null;
-    const correlation = input.executionReport?.correlation ??
-      (askingExecution
-        ? {
-            callerThreadId: askingExecution.callerThreadId,
-            callerTurnId: askingExecution.callerTurnId,
-            toolCallId: askingExecution.toolCallId,
-            cardBlockId: askingExecution.cardBlockId,
-            origin: askingExecution.origin,
-            deliveryMode: "background_notification" as const,
+  if (thread.kind !== "subagent") return;
+  if (!thread.ref) throw new Error("Subagent thread has no project handle");
+  // A continuation belongs to the asked execution's invocation; the row says
+  // whether a waiting parent call or a notification delivers its report.
+  const asking = continuation
+    ? await deps.repos.executionReports.findByTurn(input.threadId, continuation.ask.askingTurnId)
+    : null;
+  const inherited =
+    asking && continuation
+      ? asking.deliveryMode === "none"
+        ? THREAD_RUN_CORRELATION
+        : {
+            callerThreadId: asking.callerThreadId,
+            callerTurnId: asking.callerTurnId,
+            toolCallId: asking.toolCallId,
+            cardBlockId: asking.cardBlockId,
+            origin: asking.origin,
+            deliveryMode: continuation.delivery,
           }
-        : null) ??
-      parentRetaskCorrelation(thread, adopted) ?? {
-        callerThreadId: null,
-        callerTurnId: null,
-        toolCallId: null,
-        cardBlockId: null,
-        origin: "thread_run" as const,
-        deliveryMode: "none" as const,
-      };
-    const admitted = await deps.repos.executionReports.admit({
-      childThreadId: input.threadId,
-      executionTurnId,
-      handle: thread.ref,
-      ...correlation,
-      agentSlug: input.executionReport?.agentSlug ?? askingExecution?.agentSlug ?? null,
-      name: input.executionReport?.name ?? askingExecution?.name ?? null,
-      continuationAskId: askContinuationId ?? null,
-    });
-    if (input.relayAdmission) {
-      await deps.repos.asks.recordRelayOnce(input.relayAdmission.forwardedAskId, {
-        childAskId: input.relayAdmission.childAskId,
-        mode: "foreground",
-        childExecutionId: admitted.executionTurnId,
-        result: null,
-      });
-    }
-  }
+      : null;
+  const correlation =
+    input.executionReport?.correlation ??
+    inherited ??
+    parentRetaskCorrelation(thread, adopted) ??
+    THREAD_RUN_CORRELATION;
+  await deps.repos.executionReports.admit({
+    childThreadId: input.threadId,
+    executionTurnId,
+    handle: thread.ref,
+    ...correlation,
+    agentSlug: input.executionReport?.agentSlug ?? asking?.agentSlug ?? null,
+    name: input.executionReport?.name ?? asking?.name ?? null,
+    continuationAskId: continuation?.ask.id ?? null,
+  });
+  if (asking?.origin === "spawn")
+    await deps.repos.threads.updateSpawnLifecycle(input.threadId, { spawnStatus: "running" });
 }
 
 /** Commit initial history before handing the session its lazy model loop. */
@@ -586,24 +592,29 @@ async function runDrainTurn(
       if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
       const batch = selection.batch;
       const control = selection.next.kind === "control" ? selection.next.control : null;
-      const askContinuationId =
-        input.continuationAskId ??
-        (control?.body.kind === "ask_resolved" ? control.body.askId : undefined);
-      if (askContinuationId) {
-        const ask = await deps.repos.asks.findById(askContinuationId);
-        if (
-          !ask ||
-          ask.threadId !== input.threadId ||
-          ask.status === "open" ||
-          ask.status === "pending"
-        )
-          throw new Error("Ask continuation is not backed by a resolved ask");
-      }
+      const continuationControl = control?.body.kind === "ask_resolved" ? control.body : null;
+      const continuationAsk = continuationControl
+        ? await deps.repos.asks.findById(continuationControl.askId)
+        : null;
+      if (
+        continuationControl &&
+        (!continuationAsk ||
+          continuationAsk.threadId !== input.threadId ||
+          continuationAsk.status === "open" ||
+          continuationAsk.status === "pending")
+      )
+        throw new Error("Ask continuation is not backed by a resolved ask");
+      const continuation: AskContinuation | null =
+        continuationControl && continuationAsk
+          ? { ask: continuationAsk, delivery: continuationControl.delivery }
+          : null;
+      // A forwarded ask's obligation is its relay, so its row outlives admission.
+      const relayAsk = continuation && isForwardedAsk(continuation.ask) ? continuation.ask : null;
       const requestControl =
         control?.body.kind === "ask_resolved"
           ? null
           : (control as import("./next-inbox-work.js").ControlMessage | null);
-      if (selection.next.kind === "none" && !input.replyTurnId && !askContinuationId) return null;
+      if (selection.next.kind === "none" && !input.replyTurnId) return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
       // Decide what this boundary forgets before anything is built over the history: the request, the
@@ -787,13 +798,11 @@ async function runDrainTurn(
         inheritedTurns,
         inheritedBlocks,
         executionAdmitted:
-          selection.outstanding.length > 0 || !!input.replyTurnId || !!askContinuationId,
+          selection.outstanding.length > 0 || !!input.replyTurnId || !!continuation,
         // A start-time compaction hands the Retry's list on to the first assistant.
         carriedReservedFor: reservedTurn.role === "assistant" ? [] : retryReservedFor,
-        askContinuation: askContinuationId
-          ? await deps.repos.asks.findById(askContinuationId)
-          : null,
-        askContinuationControlId: control?.body.kind === "ask_resolved" ? control.id : null,
+        relayAsk,
+        relayControlId: relayAsk && control ? control.id : null,
       };
       const events = [
         ...(skillBody
@@ -809,7 +818,10 @@ async function runDrainTurn(
       return {
         value,
         turnId: reservedTurn.id,
-        completedControlIds: control?.body.kind === "compact" ? [control.id] : [],
+        completedControlIds:
+          control && (control.body.kind === "compact" || (continuation && !relayAsk))
+            ? [control.id]
+            : [],
         turnKind: currentTurnKind(reservedTurn),
         messageIds: [...batch.map(({ id }) => id)],
         ...(preparationError === null ? {} : { preparationFailure: preparationError }),
@@ -844,14 +856,14 @@ async function runDrainTurn(
                     reservedTurn.id,
                     preflight.evidence,
                   );
-                if (selection.outstanding.length > 0 || input.replyTurnId || askContinuationId)
+                if (selection.outstanding.length > 0 || input.replyTurnId || continuation)
                   await admitRunExecution(
                     deps,
                     input,
                     setupThread,
                     reservedTurn.id,
                     selection.outstanding,
-                    askContinuationId,
+                    continuation,
                   );
               },
             },
@@ -874,8 +886,8 @@ async function runDrainTurn(
     localTurns,
     inheritedTurns,
     inheritedBlocks,
-    askContinuation,
-    askContinuationControlId,
+    relayAsk,
+    relayControlId,
   } = setup;
   setup.skillBodies.committed(skillBody ? [skillBody.turn] : []);
   return {
@@ -888,22 +900,18 @@ async function runDrainTurn(
       if (preparationError) throw new RequestPreparationError(preparationError);
       if (!preflight && reservedTurn.role !== "system")
         throw new Error("Request context is unavailable after preparation failed");
-      const relayed =
-        askContinuation?.kind === "question" &&
-        "forwardedFrom" in askContinuation.payload &&
-        askContinuation.payload.forwardedFrom
-          ? await relayForwardedAsk({
-              deps,
-              input,
-              parentThread: setup.thread,
-              parentTurnId: reservedTurn.id,
-              ask: askContinuation,
-              treeBudget,
-            })
-          : false;
-      if (askContinuationControlId) {
+      // The relay rewrites the forwarded ask's tool result before the first request.
+      const relayed = !!relayAsk;
+      if (relayAsk && relayControlId) {
+        await deps.childRunCoordinator.relayForwardedAnswer({
+          parentThread: setup.thread,
+          parentTurnId: reservedTurn.id,
+          ask: relayAsk,
+          budget: treeBudget,
+          signal: input.signal,
+        });
         await deps.delivery.withThreadLock(input.threadId, (producer) =>
-          producer.acknowledge([askContinuationControlId]),
+          producer.acknowledge([relayControlId]),
         );
       }
       return executeLoop({
@@ -932,128 +940,6 @@ async function runDrainTurn(
       });
     },
   };
-}
-
-/** Relays a forwarded answer after parent admission and before its first model request. */
-async function relayForwardedAsk(input: {
-  deps: OrchestratorDeps;
-  input: DrainRunLoopInput;
-  parentThread: Thread;
-  parentTurnId: TurnId;
-  ask: import("../../threads/index.js").StoredAsk;
-  treeBudget: TreeBudget;
-}): Promise<boolean> {
-  const forwarded =
-    input.ask.kind === "question"
-      ? (input.ask.payload as import("@meridian/contracts/threads").QuestionAskPayload)
-          .forwardedFrom
-      : undefined;
-  if (!forwarded) return false;
-  const base = askToolResult(input.ask);
-  const answer = base.answer;
-  const text = typeof answer === "string" ? answer : answer === null ? "Skipped" : String(answer);
-  if (input.ask.relay && input.ask.relay.result !== null) return true;
-  let child: import("@meridian/contracts/spawn").SpawnResult;
-  if (input.ask.relay?.mode === "foreground") {
-    if (!input.ask.relay.childExecutionId)
-      throw new Error("Foreground relay admission has no child execution");
-    const childAsk = await input.deps.repos.asks.findById(forwarded.askId);
-    if (!childAsk) throw new Error("Forwarded child ask disappeared");
-    child = await waitForSavedChildReport(
-      input.deps.childRunCoordinator,
-      childAsk.threadId,
-      input.ask.relay.childExecutionId as TurnId,
-      input.input.signal,
-    );
-  } else {
-    const started = await input.deps.childRunCoordinator.runChild(
-      {
-        kind: "message",
-        parentThread: input.parentThread,
-        parentTurnId: input.parentTurnId,
-        ref: forwarded.handle,
-        prompt: text,
-        toolCallId: `forwarded-ask:${input.ask.id}`,
-        boundAskId: forwarded.askId,
-        relayAdmission: { forwardedAskId: input.ask.id, childAskId: forwarded.askId },
-        budget: input.treeBudget,
-        signal: input.input.signal,
-      },
-      { mode: "foreground" },
-    );
-    if ("issues" in started) throw new Error("Forwarded child message was refused");
-    child = started;
-  }
-  const result =
-    child.status === "background"
-      ? { ...base, relayed_to: `@${forwarded.handle}`, late: true }
-      : {
-          ...base,
-          relayed_to: `@${forwarded.handle}`,
-          report: child.status === "completed" ? child.report : child,
-        };
-  const blocks = await input.deps.repos.blocks.listByTurn(input.ask.askingTurnId);
-  const prior = blocks.find((block) => {
-    if (block.blockType !== "tool_result" || !isJsonRecord(block.content)) return false;
-    return block.content.toolCallId === input.ask.toolCallId;
-  });
-  if (!prior) throw new Error("Forwarded ask result block is unavailable");
-  const block = contentForBlockInput({
-    id: prior.id,
-    turnId: prior.turnId as TurnId,
-    blockType: "tool_result",
-    sequence: prior.sequence,
-    content: {
-      toolCallId: input.ask.toolCallId,
-      output: result,
-      result,
-      isError: false,
-    },
-    status: "complete",
-  });
-  await persistAndAppendEvents(input.deps, input.ask.threadId, async () => {
-    if (child.status === "background")
-      await input.deps.repos.asks.recordRelayOnce(input.ask.id, {
-        childAskId: forwarded.askId,
-        mode: "late",
-        messageId: `thread-message:forwarded-ask:${input.ask.id}`,
-        result,
-      });
-    else await input.deps.repos.asks.completeRelay(input.ask.id, result);
-    return {
-      result: undefined,
-      events: [{ type: "block.updated" as const, block }],
-    };
-  });
-  return true;
-}
-
-async function waitForSavedChildReport(
-  coordinator: ChildRunCoordinator,
-  childThreadId: ThreadId,
-  executionTurnId: TurnId,
-  signal?: AbortSignal,
-): Promise<import("@meridian/contracts/spawn").SpawnResult> {
-  for (;;) {
-    if (signal?.aborted) throw signal.reason;
-    const report = await coordinator.readSavedReport(childThreadId, executionTurnId);
-    if (report) return report;
-    await new Promise<void>((resolve, reject) => {
-      const aborted = () => {
-        clearTimeout(timer);
-        reject(signal?.reason);
-      };
-      const timer = setTimeout(() => {
-        signal?.removeEventListener("abort", aborted);
-        resolve();
-      }, 100);
-      signal?.addEventListener("abort", aborted, { once: true });
-    });
-  }
-}
-
-function isJsonRecord(value: JsonValue): value is Record<string, JsonValue> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -2078,7 +1964,7 @@ async function executeLoop({
           (!executionSelector ||
             !(await deps.repos.executionReports.findByExecution(thread.id, executionSelector)))
         ) {
-          await admitRunExecution(deps, input, thread, turn.id, adopted);
+          await admitRunExecution(deps, input, thread, turn.id, adopted, null);
           executionSelector = turn.id;
         }
       },

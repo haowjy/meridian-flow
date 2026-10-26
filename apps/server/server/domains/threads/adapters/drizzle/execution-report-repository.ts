@@ -153,7 +153,11 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         card: card ?? null,
       });
       const values = reportIdentity(input);
-      await currentDrizzleDb(db).insert(table).values(values).onConflictDoNothing();
+      // A replayed admission of the same execution is a no-op; any other conflict is a bug.
+      await currentDrizzleDb(db)
+        .insert(table)
+        .values(values)
+        .onConflictDoNothing({ target: table.executionTurnId });
       const row = await find(input.childThreadId, input.executionTurnId);
       if (!row) throw new Error("Execution report admission did not persist");
       const report = map(row);
@@ -226,6 +230,7 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         .select(reportSelection)
         .from(table)
         .where(eq(table.continuationAskId, askId))
+        .orderBy(desc(table.createdAt), desc(table.executionTurnId))
         .limit(1);
       return row ? map(row) : null;
     },

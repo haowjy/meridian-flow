@@ -1,8 +1,9 @@
 /**
  * Durable ask resolution, split into claim, tool-result, and continuation owners.
- * Permission asks extend the typed tool-result plan with savepoint execution;
- * child answers extend the continuation plan with direct admission. Neither
- * path changes the ask-first claim and thread-lock ordering.
+ * Every resolution that continues writes one `ask_resolved` inbox row, the
+ * continuation's only identity; a parent's foreground answer marks it `direct`.
+ * Permission asks extend the typed tool-result plan with savepoint execution.
+ * No path changes the ask-first claim and thread-lock ordering.
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
@@ -18,6 +19,7 @@ import { askToolResult, threadAsk } from "../../threads/domain/ask.js";
 import type { LiveEventWriter, StoredAsk, ThreadRepositories } from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
+import type { AskResolvedBody } from "../loop/ports.js";
 import type { DeliveryProducer, DeliveryTransaction } from "../loop/runtime-delivery.js";
 
 export type AskAnswerResult =
@@ -32,7 +34,14 @@ export type AskToolResult = {
   isError: boolean;
 };
 
-export type AskContinuationPlan = { kind: "queue" } | { kind: "none" };
+/**
+ * How the continuation reports back, and the forwarded ask whose relay this
+ * answer is: the relay record commits with the answer that creates its obligation.
+ */
+export type AskContinuationPlan = {
+  delivery: AskResolvedBody["delivery"];
+  relayFor?: string;
+};
 
 export type AskResolutionPlan =
   | {
@@ -43,7 +52,6 @@ export type AskResolutionPlan =
   | {
       kind: "cancel";
       toolResult: AskToolResultPlan;
-      continuation: { kind: "none" };
     };
 
 type AskClaim = { kind: "claimed"; ask: StoredAsk } | { kind: "finished"; result: AskAnswerResult };
@@ -56,25 +64,20 @@ export interface AskService {
     submissionId: string;
     answer: AskAnswer;
   }): Promise<AskAnswerResult>;
-  /** Resolves exactly the ask named by a parent message; never searches for a newer ask. */
+  /**
+   * Resolves exactly the ask named by a parent message; never searches for a newer
+   * ask. `replayed`: this submission had already answered it.
+   */
   answerFromParent(input: {
     parentThreadId: ThreadId;
     childThreadId: ThreadId;
     askId: string;
     submissionId: string;
     text: string;
-    delivery: "direct" | "background";
-  }): Promise<
-    AskAnswerResult & {
-      continuation?: {
-        correlation: import("@meridian/contracts/spawn").ExecutionReportCorrelation;
-        agentSlug: string | null;
-        name: string | null;
-      };
-      replayed?: boolean;
-      replayedReport?: import("@meridian/contracts/spawn").SavedExecutionReport;
-    }
-  >;
+    delivery: AskResolvedBody["delivery"];
+    /** The parent's forwarded ask this answer relays. */
+    relayFor?: string;
+  }): Promise<AskAnswerResult & { replayed?: boolean }>;
   expireDue(now?: Date, limit?: number): Promise<number>;
   cancelOpen(threadId: ThreadId, askId: string): Promise<AskAnswerResult>;
   /** Joins a thread lifecycle transaction; claims the ask before its thread lock. */
@@ -95,18 +98,13 @@ function questionResolution(
   return null;
 }
 
-function resolutionPlan(resolution: AskResolution): AskResolutionPlan {
+function resolutionPlan(
+  resolution: AskResolution,
+  continuation: AskContinuationPlan,
+): AskResolutionPlan {
   return resolution.kind === "cancelled"
-    ? {
-        kind: "cancel",
-        toolResult: { kind: "from_resolution" },
-        continuation: { kind: "none" },
-      }
-    : {
-        kind: "resume",
-        toolResult: { kind: "from_resolution" },
-        continuation: { kind: "queue" },
-      };
+    ? { kind: "cancel", toolResult: { kind: "from_resolution" } }
+    : { kind: "resume", toolResult: { kind: "from_resolution" }, continuation };
 }
 
 export function createAskService(deps: {
@@ -229,21 +227,23 @@ export function createAskService(deps: {
     ask: StoredAsk,
     plan: AskContinuationPlan,
   ) {
-    switch (plan.kind) {
-      case "none":
-        return;
-      case "queue":
-        await producer.enqueue({
-          threadId: ask.threadId,
-          intent: "control",
-          provenance: { kind: "system", source: "ask" },
-          body: { kind: "ask_resolved", askId: ask.id },
-          idempotencyKey: `ask-resolved:${ask.id}`,
-        });
-        return;
-      default:
-        plan satisfies never;
-    }
+    const draft = {
+      threadId: ask.threadId,
+      intent: "control" as const,
+      provenance: { kind: "system" as const, source: "ask" as const },
+      body: { kind: "ask_resolved" as const, askId: ask.id, delivery: plan.delivery },
+      idempotencyKey: `ask-resolved:${ask.id}`,
+    };
+    // A direct continuation is driven by the waiting parent call; the wake sweep
+    // still finds the row if that caller dies first.
+    if (plan.delivery === "direct") await producer.enqueueWithoutWake(draft);
+    else await producer.enqueue(draft);
+    if (plan.relayFor)
+      await deps.repos.asks.recordRelayOnce(plan.relayFor, {
+        childAskId: ask.id,
+        mode: "foreground",
+        result: null,
+      });
   }
 
   async function resolve(input: {
@@ -258,8 +258,10 @@ export function createAskService(deps: {
     return deps.repos.transaction(async () => {
       const claimed = await claim(input);
       if (claimed.kind === "finished") return claimed.result;
-      const plan = resolutionPlan(input.resolution);
-      if (input.continuation && plan.kind === "resume") plan.continuation = input.continuation;
+      const plan = resolutionPlan(
+        input.resolution,
+        input.continuation ?? { delivery: "background_notification" },
+      );
       // The conditional ask claim precedes the thread lock for every resolver.
       return deps.delivery.withThreadLock(input.threadId, async (producer) => {
         await writeToolResult({
@@ -268,7 +270,8 @@ export function createAskService(deps: {
           plan,
           claimLive: input.claimLive,
         });
-        await continueResolution(producer, claimed.ask, plan.continuation);
+        if (plan.kind === "resume")
+          await continueResolution(producer, claimed.ask, plan.continuation);
         return { ok: true, ask: threadAsk(claimed.ask) };
       });
     });
@@ -312,41 +315,19 @@ export function createAskService(deps: {
         };
       }
       if (!input.text.trim()) return { ok: false, code: "invalid_answer", ask: threadAsk(stored) };
-      const askingExecution = await deps.repos.executionReports.findByTurn(
-        input.childThreadId,
-        stored.askingTurnId,
-      );
-      if (!askingExecution) throw new Error("Child ask has no admitted execution report");
       const replayed = stored.status !== "open" && stored.submissionId === input.submissionId;
-      const replayedReport = replayed
-        ? await deps.repos.executionReports.findByContinuationAsk(stored.id)
-        : null;
       const result = await resolve({
         askId: stored.id,
         threadId: input.childThreadId,
         status: "answered",
         resolution: { kind: "parent", text: input.text },
         submissionId: input.submissionId,
-        continuation: input.delivery === "direct" ? { kind: "none" } : { kind: "queue" },
-      });
-      if (!result.ok) return result;
-      return {
-        ...result,
         continuation: {
-          correlation: {
-            callerThreadId: askingExecution.callerThreadId,
-            callerTurnId: askingExecution.callerTurnId,
-            toolCallId: askingExecution.toolCallId,
-            cardBlockId: askingExecution.cardBlockId,
-            origin: askingExecution.origin,
-            deliveryMode: input.delivery === "direct" ? "direct" : "background_notification",
-          },
-          agentSlug: askingExecution.agentSlug,
-          name: askingExecution.name,
+          delivery: input.delivery,
+          ...(input.relayFor ? { relayFor: input.relayFor } : {}),
         },
-        ...(replayed ? { replayed: true } : {}),
-        ...(replayedReport ? { replayedReport } : {}),
-      };
+      });
+      return result.ok && replayed ? { ...result, replayed: true } : result;
     },
     async expireDue(now = new Date(), limit = 100) {
       const due = await deps.repos.asks.listOpenDueBy(now, limit);

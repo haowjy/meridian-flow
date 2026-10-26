@@ -50,16 +50,24 @@ to a newer question.
 `ask({forward})` copies an open direct child's question. The parent's admitted
 continuation relays its answer before the first model request and replaces the
 provisional ask result with the child report, or with `late: true` when the
-child question had already resolved. Relay state is stored on the forwarded
-ask; the continuation receipt stays unacknowledged until relay and result
-replacement finish. Direct and queued answers enter one continuation admission;
-the resolved ask id is stored on its execution report, inherited report
-correlation is admitted, and the card projects to running. A relay records the
-exact child execution in that turn-start transaction. Waiting and result
-enrichment happen afterward, outside locks; replay reads the execution bound to
-that ask rather than selecting a later child report. The child driver exposes
-admission separately from execution/report reading so ordinary calls and relay
-recovery use one machine.
+child question had already resolved (`spawn/forwarded-ask-relay.ts`). The relay
+record lives on the forwarded ask and commits with the child's answer; the
+parent's continuation row stays unacknowledged until the result is written, so a
+crash replays the same relay call.
+
+A continuation has one identity: the `ask_resolved {askId, delivery}` row the
+answer transaction writes. `delivery` is `direct` only for a parent's foreground
+answer (including the relay), and that row is enqueued without a wake so the
+waiting call drives it with its own signal and tree budget; every other answer is
+`background_notification`. The drain run that selects the row admits the
+continuation: its report inherits the asked execution's invocation with the row's
+delivery mode and records `continuationAskId`. A plain question's row is
+acknowledged in that admission transaction; a forwarded one's after its relay.
+A forwarded parent that crashed mid-relay reruns with a new execution, so
+`findByContinuationAsk` returns the latest report for the ask. The foreground
+caller drives the continuation if its row is pending, else waits by ask id, outside
+any lock, until the latest report is terminal and no row for the ask is pending.
+It wakes on the child's committed thread events, and a replay waits the same way.
 
 ## Cards, reports, and activity
 
