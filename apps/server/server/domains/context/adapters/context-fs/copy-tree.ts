@@ -91,7 +91,7 @@ export interface CopyTreeInput {
   /** Scheme-relative destination folder. */
   dir: readonly string[];
   roots: readonly CopySourceEntry[];
-  /** An explicit sibling position for the first root. */
+  /** An explicit sibling position for the run of roots: the first lands there, the rest follow. */
   position?: ContextSiblingPosition;
   bind(input: {
     file: CopySourceFile;
@@ -157,15 +157,18 @@ export async function insertCopiedTree(
   try {
     const created = await insertLevel(deps, parent.value, minted);
     if (!created.ok) return created;
-    const first = minted[0];
-    if (input.position && first) {
+    // The roots land as one run at the position, in the order they were selected.
+    let position = input.position;
+    for (const root of minted) {
+      if (!position) break;
       const placed = await deps.store.placeSibling({
-        kind: first.kind === "folder" ? "folder" : "file",
-        id: first.id,
+        kind: root.kind,
+        id: root.id,
         parentId: parent.value,
-        position: input.position,
+        position,
       });
       if (placed === "stale-anchor") return Err({ code: "stale_target" });
+      position = { kind: "after", siblingId: root.id };
     }
     return created;
   } catch (error) {

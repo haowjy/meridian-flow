@@ -371,6 +371,7 @@ export type CopyContextEntriesRequest = {
   destinationRootThreadId?: string | null;
   destinationWorkId?: WorkId | null;
   destinationParent?: ContextDestinationParent;
+  /** Where the roots land: the first there, the rest after it in order. Omitted appends. */
   position?: ContextSiblingPosition;
 };
 
