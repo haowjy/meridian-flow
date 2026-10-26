@@ -66,7 +66,7 @@ export interface AskService {
   }): Promise<AskAnswerResult>;
   /**
    * Resolves exactly the ask named by a parent message; never searches for a newer
-   * ask. `replayed`: this submission had already answered it.
+   * ask. A replay of the same submission answers ok without a second continuation.
    */
   answerFromParent(input: {
     parentThreadId: ThreadId;
@@ -77,7 +77,7 @@ export interface AskService {
     delivery: AskResolvedBody["delivery"];
     /** The parent's forwarded ask this answer relays. */
     relayFor?: string;
-  }): Promise<AskAnswerResult & { replayed?: boolean }>;
+  }): Promise<AskAnswerResult>;
   expireDue(now?: Date, limit?: number): Promise<number>;
   cancelOpen(threadId: ThreadId, askId: string): Promise<AskAnswerResult>;
   /** Joins a thread lifecycle transaction; claims the ask before its thread lock. */
@@ -327,7 +327,8 @@ export function createAskService(deps: {
           ...(input.relayFor ? { relayFor: input.relayFor } : {}),
         },
       });
-      return result.ok && replayed ? { ...result, replayed: true } : result;
+      if (result.ok && !replayed) await testHook("ask.parentAnswer.afterCommit");
+      return result;
     },
     async expireDue(now = new Date(), limit = 100) {
       const due = await deps.repos.asks.listOpenDueBy(now, limit);
