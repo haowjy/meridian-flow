@@ -468,6 +468,11 @@ export type EffectiveBlocksRead = VersionedDocumentRead<
   /** Canonical address the cut's links spell from; null for a chat with no holder. */
   holderUri: string | null;
   stateVector: Uint8Array;
+  /**
+   * The document each `ahead:` ref in this cut now settles to. A ref minted before its target
+   * existed still reads as its target, so a copy has to remap it like a `doc:` ref.
+   */
+  aheadSettlements: ReadonlyMap<string, string>;
 };
 
 export type DraftPeerShadowAccess = {

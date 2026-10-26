@@ -91,6 +91,7 @@ export const docCopyCommand: CommandSpec = {
       to,
       stringOption(ctx, "work"),
       stringOption(ctx, "chat"),
+      { allowRoot: true },
     );
     const position = stringOption(ctx, "position");
     const result = await session.request(

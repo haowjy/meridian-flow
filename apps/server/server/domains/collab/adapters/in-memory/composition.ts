@@ -293,6 +293,8 @@ function createInMemoryDraftPeerStub(
           revision: versioned(doc, scope, () => null).revision,
           holderUri: scope.holder.uri,
           stateVector: Y.encodeStateVector(doc),
+          // The in-memory link scopes never settle an ahead ref.
+          aheadSettlements: new Map<string, string>(),
         });
       }),
     readEffectiveHashlines: (input) =>
