@@ -55,6 +55,9 @@ function noopChildRunCoordinator(): ChildRunCoordinator {
     async runChild() {
       throw new Error("Test child run coordinator not configured");
     },
+    async readSavedReport() {
+      return null;
+    },
   };
 }
 

@@ -14,7 +14,8 @@ export type AskRelay = {
   mode: "foreground" | "late";
   childExecutionId?: string;
   messageId?: string;
-  result: JsonValue;
+  /** Null while an admitted foreground child execution is still running. */
+  result: JsonValue | null;
 };
 
 export type StoredAsk = {
@@ -53,6 +54,7 @@ export interface AskRepository {
   listOpenDueBy(deadline: Date, limit: number): Promise<StoredAsk[]>;
   listByTurnIds(turnIds: readonly TurnId[]): Promise<StoredAsk[]>;
   recordRelayOnce(id: string, relay: AskRelay): Promise<StoredAsk>;
+  completeRelay(id: string, result: JsonValue): Promise<StoredAsk>;
   openPending(id: string, turnId: TurnId, deadline: Date): Promise<StoredAsk | null>;
   cancelPendingByTurn(turnId: TurnId): Promise<StoredAsk[]>;
   resolveOpen(input: {

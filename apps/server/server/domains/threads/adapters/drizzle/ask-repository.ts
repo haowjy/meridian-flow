@@ -142,6 +142,21 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
         throw new Error("Forwarded ask already has a different relay");
       return stored;
     },
+    async completeRelay(id, result) {
+      const [existing] = await currentDrizzleDb(db)
+        .select()
+        .from(asks)
+        .where(eq(asks.id, id))
+        .limit(1);
+      if (!existing?.relay) throw new Error("Forwarded ask has no admitted relay to complete");
+      const [row] = await currentDrizzleDb(db)
+        .update(asks)
+        .set({ relay: { ...(existing.relay as AskRelay), result } })
+        .where(eq(asks.id, id))
+        .returning();
+      if (!row) throw new Error("Forwarded ask disappeared while completing its relay");
+      return storedAsk(row);
+    },
     async openPending(id, turnId, deadline) {
       const [row] = await currentDrizzleDb(db)
         .update(asks)

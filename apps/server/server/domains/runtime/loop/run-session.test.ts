@@ -295,9 +295,7 @@ describe("RunSession", () => {
       vi.useRealTimers();
     }
   });
-  it.each([
-    true,
-  ])("commits child admission and releases before publication B (card failure: %s)", async (failCard) => {
+  it("records relay admission before execution and replays the exact repaired report", async () => {
     const f = await fixture();
     const { createChildRunDriver } = await import("../spawn/child-run-driver.js");
     const { createDefaultTreeBudget } = await import("@meridian/contracts/spawn");
@@ -319,9 +317,25 @@ describe("RunSession", () => {
     });
     const readBinding = f.deps.agentRevisions.readThreadBinding;
     f.deps.agentRevisions.readThreadBinding = () => readBinding(f.thread.id);
-    let published!: () => void;
-    const publication = new Promise<void>((resolve) => {
-      published = resolve;
+    const forwardedAsk = await f.deps.repos.asks.create({
+      threadId: f.thread.id,
+      askingTurnId: parentTurn.id,
+      executionId: "parent-execution",
+      toolCallId: "forwarded-ask",
+      kind: "question",
+      payload: {
+        question: "Choose",
+        options: [{ label: "Left" }],
+        forwardedFrom: {
+          threadId: child.id,
+          askId: "child-ask",
+          handle: child.ref ?? "p1",
+        },
+      },
+      deadlineAt: null,
+      status: "answered",
+      resolution: { kind: "text", text: "Left" },
+      submissionId: "writer-answer",
     });
     const driver = createChildRunDriver({
       backgroundTasks: f.backgroundTasks,
@@ -331,48 +345,57 @@ describe("RunSession", () => {
       readActivity: async () => ({ children: [] }),
       eventSink: f.sink,
       publisher: {
-        async publish(threadId, execution) {
-          expect(await f.deps.runClaim.holder(threadId)).toBeNull();
-          expect(f.runtime.getRunningTurn(threadId)).toBeNull();
-          expect(
-            await f.deps.repos.executionReports.findByExecution(threadId, execution),
-          ).toMatchObject({ outcome: "succeeded" });
-          published();
+        async projectRunning() {},
+        async publish() {
           return "published";
         },
       },
     });
     const prepared = await driver.register(child, "general", { background: true, origin: "spawn" });
-    const execution = await driver.driveBackground(
-      prepared,
-      {
-        parentThread: f.thread,
-        parentTurnId: parentTurn.id,
-        prompt: "child",
-        budget: createDefaultTreeBudget(),
-        reportCorrelation: {
-          callerThreadId: f.thread.id,
-          callerTurnId: parentTurn.id,
-          toolCallId: "spawn",
-          cardBlockId: null,
-          origin: "spawn",
-          deliveryMode: "background_notification",
-        },
+    const admitted = await driver.admit(prepared, {
+      parentThread: f.thread,
+      parentTurnId: parentTurn.id,
+      prompt: "child",
+      budget: createDefaultTreeBudget(),
+      reportCorrelation: {
+        callerThreadId: f.thread.id,
+        callerTurnId: parentTurn.id,
+        toolCallId: "spawn",
+        cardBlockId: null,
+        origin: "spawn",
+        deliveryMode: "background_notification",
       },
-      async (execution) => {
-        expect(f.calls()).toBe(0);
-        expect(
-          await f.deps.repos.executionReports.findByExecution(child.id, execution),
-        ).toMatchObject({ outcome: null });
-        expect(await f.deps.repos.turns.findById(execution)).toMatchObject({ status: "streaming" });
-        if (failCard) throw new Error("card binding unavailable");
+      relayAdmission: { forwardedAskId: forwardedAsk.id, childAskId: "child-ask" },
+    });
+    const execution = admitted.handle.executionTurnId;
+    expect(await f.deps.repos.asks.findById(forwardedAsk.id)).toMatchObject({
+      relay: {
+        childAskId: "child-ask",
+        mode: "foreground",
+        childExecutionId: execution,
+        result: null,
       },
-    );
-    expect(execution).toBeTruthy();
-    await publication;
-    expect(
-      f.sink.events.filter((event) => event.name === "child.admission_callback_failed"),
-    ).toHaveLength(failCard ? 1 : 0);
+    });
+    expect(await driver.readSavedReport(child.id, execution)).toBeNull();
+
+    await f.deps.repos.executionReports.finalizeOnce({
+      childThreadId: child.id,
+      executionTurnId: execution,
+      outcome: "failed",
+      reason: "orphaned",
+      source: "empty",
+      summary: "",
+    });
+    const replayed = await driver.readSavedReport(child.id, execution);
+    expect(replayed).toMatchObject({
+      status: "error",
+      execution,
+      reason: "orphaned",
+    });
+    await f.deps.repos.asks.completeRelay(forwardedAsk.id, replayed ?? null);
+    expect(await f.deps.repos.asks.findById(forwardedAsk.id)).toMatchObject({
+      relay: { childExecutionId: execution, result: { execution } },
+    });
   });
 
   it.each([

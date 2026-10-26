@@ -458,7 +458,7 @@ async function admitRunExecution(
         origin: "thread_run" as const,
         deliveryMode: "none" as const,
       };
-    await deps.repos.executionReports.admit({
+    const admitted = await deps.repos.executionReports.admit({
       childThreadId: input.threadId,
       executionTurnId,
       handle: thread.ref,
@@ -466,6 +466,14 @@ async function admitRunExecution(
       agentSlug: input.executionReport?.agentSlug ?? askingExecution?.agentSlug ?? null,
       name: input.executionReport?.name ?? askingExecution?.name ?? null,
     });
+    if (input.relayAdmission) {
+      await deps.repos.asks.recordRelayOnce(input.relayAdmission.forwardedAskId, {
+        childAskId: input.relayAdmission.childAskId,
+        mode: "foreground",
+        childExecutionId: admitted.executionTurnId,
+        result: null,
+      });
+    }
   }
 }
 
@@ -932,25 +940,41 @@ async function relayForwardedAsk(input: {
           .forwardedFrom
       : undefined;
   if (!forwarded) return false;
-  if (input.ask.relay) return true;
   const base = askToolResult(input.ask);
   const answer = base.answer;
   const text = typeof answer === "string" ? answer : answer === null ? "Skipped" : String(answer);
-  const child = await input.deps.childRunCoordinator.runChild(
-    {
-      kind: "message",
-      parentThread: input.parentThread,
-      parentTurnId: input.parentTurnId,
-      ref: forwarded.handle,
-      prompt: text,
-      toolCallId: `forwarded-ask:${input.ask.id}`,
-      boundAskId: forwarded.askId,
-      budget: input.treeBudget,
-      signal: input.input.signal,
-    },
-    { mode: "foreground" },
-  );
-  if ("issues" in child) throw new Error("Forwarded child message was refused");
+  if (input.ask.relay && input.ask.relay.result !== null) return true;
+  let child: import("@meridian/contracts/spawn").SpawnResult;
+  if (input.ask.relay?.mode === "foreground") {
+    if (!input.ask.relay.childExecutionId)
+      throw new Error("Foreground relay admission has no child execution");
+    const childAsk = await input.deps.repos.asks.findById(forwarded.askId);
+    if (!childAsk) throw new Error("Forwarded child ask disappeared");
+    child = await waitForSavedChildReport(
+      input.deps.childRunCoordinator,
+      childAsk.threadId,
+      input.ask.relay.childExecutionId as TurnId,
+      input.input.signal,
+    );
+  } else {
+    const started = await input.deps.childRunCoordinator.runChild(
+      {
+        kind: "message",
+        parentThread: input.parentThread,
+        parentTurnId: input.parentTurnId,
+        ref: forwarded.handle,
+        prompt: text,
+        toolCallId: `forwarded-ask:${input.ask.id}`,
+        boundAskId: forwarded.askId,
+        relayAdmission: { forwardedAskId: input.ask.id, childAskId: forwarded.askId },
+        budget: input.treeBudget,
+        signal: input.input.signal,
+      },
+      { mode: "foreground" },
+    );
+    if ("issues" in started) throw new Error("Forwarded child message was refused");
+    child = started;
+  }
   const result =
     child.status === "background"
       ? { ...base, relayed_to: `@${forwarded.handle}`, late: true }
@@ -979,22 +1003,44 @@ async function relayForwardedAsk(input: {
     status: "complete",
   });
   await persistAndAppendEvents(input.deps, input.ask.threadId, async () => {
-    await input.deps.repos.asks.recordRelayOnce(input.ask.id, {
-      childAskId: forwarded.askId,
-      mode: child.status === "background" ? "late" : "foreground",
-      ...(child.status === "background"
-        ? { messageId: `thread-message:forwarded-ask:${input.ask.id}` }
-        : "execution" in child && child.execution
-          ? { childExecutionId: child.execution }
-          : {}),
-      result,
-    });
+    if (child.status === "background")
+      await input.deps.repos.asks.recordRelayOnce(input.ask.id, {
+        childAskId: forwarded.askId,
+        mode: "late",
+        messageId: `thread-message:forwarded-ask:${input.ask.id}`,
+        result,
+      });
+    else await input.deps.repos.asks.completeRelay(input.ask.id, result);
     return {
       result: undefined,
       events: [{ type: "block.updated" as const, block }],
     };
   });
   return true;
+}
+
+async function waitForSavedChildReport(
+  coordinator: ChildRunCoordinator,
+  childThreadId: ThreadId,
+  executionTurnId: TurnId,
+  signal?: AbortSignal,
+): Promise<import("@meridian/contracts/spawn").SpawnResult> {
+  for (;;) {
+    if (signal?.aborted) throw signal.reason;
+    const report = await coordinator.readSavedReport(childThreadId, executionTurnId);
+    if (report) return report;
+    await new Promise<void>((resolve, reject) => {
+      const aborted = () => {
+        clearTimeout(timer);
+        reject(signal?.reason);
+      };
+      const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", aborted);
+        resolve();
+      }, 100);
+      signal?.addEventListener("abort", aborted, { once: true });
+    });
+  }
 }
 
 function isJsonRecord(value: JsonValue): value is Record<string, JsonValue> {

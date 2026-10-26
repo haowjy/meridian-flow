@@ -52,7 +52,11 @@ continuation relays its answer before the first model request and replaces the
 provisional ask result with the child report, or with `late: true` when the
 child question had already resolved. Relay state is stored on the forwarded
 ask; the continuation receipt stays unacknowledged until relay and result
-replacement finish.
+replacement finish. Foreground relay admission stores the exact child execution
+on that ask in the child turn-start transaction. Waiting and result enrichment
+happen afterward, outside locks; replay reads the stored execution rather than
+admitting another child run. The child driver exposes admission separately from
+execution/report reading so ordinary calls and relay recovery use one machine.
 
 ## Cards, reports, and activity
 
@@ -60,7 +64,9 @@ Cards retain the bound Agent identity, parent turn, child thread, delivery mode,
 and nullable execution until admission binds the first committed reservation.
 Terminal cards carry outcome and terminal time. Pre-admission failures have no
 child/execution link. Publication preserves the original card block identity
-and never carries report body. Foreground calls return the exact terminal
+and never carries report body. The same turn-position guard projects an asked
+card to running at continuation admission and to its terminal outcome later.
+Foreground calls return the exact terminal
 report; background spawn returns after admission; `thread_report` reads the
 latest durable report.
 
