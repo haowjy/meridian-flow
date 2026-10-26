@@ -42,6 +42,7 @@ function setup(filetype = "typescript") {
     coordinator,
     initialDocumentSeeds: {
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
+      seedInitialDocuments: async () => {},
       missingAuthorityProjection: async () => null,
     },
     parseStored: createUnboundParser({ codec: mdxCodec({ schema }), schema }),

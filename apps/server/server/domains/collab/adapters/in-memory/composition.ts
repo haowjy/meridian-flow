@@ -80,6 +80,10 @@ export function createInMemoryCollabDomain(): CollabDomain {
     agentCoordinator: coordinator,
     initialDocumentSeeds: {
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
+      async seedInitialDocuments(seeds) {
+        for (const { documentId, state } of seeds)
+          await journal.seedInitialDocument(documentId, state);
+      },
       async missingAuthorityProjection(documentId) {
         const snapshot = await journal.read(documentId);
         return snapshot.checkpoint || snapshot.updates.length > 0 ? null : "";
@@ -202,7 +206,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       encodeSeed: runtime.markdownDocuments.encodeSeed,
-      installSeed: runtime.markdownDocuments.installSeed,
+      installSeeds: runtime.markdownDocuments.installSeeds,
       writeDocument: runtime.markdownDocuments.writeDocument,
       withLiveDocument: runtime.markdownDocuments.withLiveDocument,
       writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,

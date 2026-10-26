@@ -40,7 +40,7 @@ export function scopeMarkdownEngine(
     // None spells a link: a seed is encoded from bound blocks, and the repair reads its
     // projection with links unbound.
     encodeSeed: engine.encodeSeed,
-    installSeed: engine.installSeed,
+    installSeeds: engine.installSeeds,
     initializeEmptyDocument: engine.initializeEmptyDocument,
     repairDocumentAuthority: engine.repairDocumentAuthority,
     // The lease spells nothing; the held write spells as the document it admits.

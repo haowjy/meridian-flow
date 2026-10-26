@@ -6,12 +6,10 @@
 
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
 import type {
-  ContextParentOrderPolicy,
   ContextSiblingPosition,
   DocumentFileType,
   Filetype,
 } from "@meridian/contracts/protocol";
-import { folderDocumentName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documentMarkdownProjections } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
@@ -41,9 +39,9 @@ import {
 import { findForward, lastLocationOf, recordForward } from "../../tree/forwards.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
-import { insertDocumentRow, insertFolder } from "../../tree/node-rows.js";
+import { insertNewTree, type NewTreeNode } from "../../tree/new-tree.js";
+import { insertDocumentRow } from "../../tree/node-rows.js";
 import { ensureLiveFolderPath } from "../../tree/placement.js";
-import { placeLiveSibling } from "../../tree/sibling-order.js";
 import {
   createTreeReader,
   LIVE_TREE,
@@ -99,30 +97,6 @@ export interface DrizzleContextDocumentStoreDeps {
   repair?: HiddenNodeRepair;
 }
 
-/**
- * A catalog port that only records what a bulk insert refreshes; `flush` makes the one real
- * refresh for all of it (`ContextDocumentStore.withCatalogBatch`).
- */
-export function holdCatalogRefreshes(catalog: ContextCatalogMutationPort) {
-  const sourceIds = new Set<string>();
-  const invalidatedRootIds = new Set<string>();
-  const held: ContextCatalogMutationPort = {
-    async refreshSources(sources, roots = []) {
-      for (const id of sources) sourceIds.add(id);
-      for (const id of roots) invalidatedRootIds.add(id);
-      return "";
-    },
-  };
-  return {
-    held,
-    async flush() {
-      if (sourceIds.size > 0) {
-        await catalog.refreshSources([...sourceIds], [...invalidatedRootIds]);
-      }
-    },
-  };
-}
-
 export class DrizzleContextDocumentStore implements ContextDocumentStore {
   constructor(private readonly deps: DrizzleContextDocumentStoreDeps) {}
 
@@ -136,16 +110,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
 
   async contextSourceId(): Promise<string> {
     return this.sourceId;
-  }
-
-  withCatalogBatch() {
-    const { catalogMutations } = this.deps;
-    if (!catalogMutations) return { store: this, flush: async () => {} };
-    const { held, flush } = holdCatalogRefreshes(catalogMutations);
-    return {
-      store: new DrizzleContextDocumentStore({ ...this.deps, catalogMutations: held }),
-      flush,
-    };
   }
 
   async existingContextSourceId(): Promise<string> {
@@ -247,58 +211,26 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     });
   }
 
-  async createFolderIfAbsent(input: {
+  async insertNewTree(input: {
     parentId: string | null;
-    name: string;
-    id?: string;
-    orderPolicy?: ContextParentOrderPolicy;
-  }): Promise<string | null> {
-    const typedParentId = input.parentId as FolderId | null;
+    roots: readonly NewTreeNode[];
+    position?: ContextSiblingPosition;
+  }): Promise<"inserted" | "stale-anchor"> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
-      // A live folder, a live document's alias, or hidden occupants: either makes the name
-      // taken. Never reveal — a copy allocates around a hidden occupant instead.
-      const found = await createTreeReader(this.deps.db).childAt(LIVE_TREE, {
-        contextSourceId: this.sourceId,
-        parentId: typedParentId,
-        filename: input.name,
-        as: "folder",
-      });
-      if (found.kind !== "not_found") return null;
-      const hidden = await loadHiddenFilenames(this.deps.db, this.sourceId, typedParentId);
-      if (hidden.includes(folderDocumentName(input.name))) return null;
-      const folderId = await insertFolder(
-        this.deps.db,
-        { contextSourceId: this.sourceId, parentId: typedParentId, name: input.name },
-        {
-          hidden: false,
-          ...(input.id ? { id: input.id as FolderId } : {}),
-          ...(input.orderPolicy ? { orderPolicy: input.orderPolicy } : {}),
-        },
-      );
-      await this.deps.catalogMutations?.refreshSources([this.sourceId], [folderId]);
-      return folderId;
-    });
-  }
-
-  async placeSibling(input: {
-    kind: "file" | "folder";
-    id: string;
-    parentId: string | null;
-    position: ContextSiblingPosition;
-  }): Promise<"placed" | "stale-anchor"> {
-    return runInDrizzleTransaction(this.deps.db, async () => {
-      await lockContextSources(this.deps.db, [this.sourceId]);
-      return placeLiveSibling(this.deps.db, {
-        node:
-          input.kind === "folder"
-            ? ({ kind: "folder", id: input.id } as const)
-            : ({ kind: "document", id: input.id } as const),
+      const inserted = await insertNewTree(this.deps.db, {
         sourceId: this.sourceId,
         parentId: input.parentId as FolderId | null,
-        position: input.position,
-        arrived: false,
+        roots: input.roots,
+        ...(input.position ? { position: input.position } : {}),
       });
+      if (inserted === "stale-anchor") return inserted;
+      // The catalog reconciles the project's whole scope, so one refresh covers the tree.
+      await this.deps.catalogMutations?.refreshSources([this.sourceId], inserted.folderIds);
+      // An upload's arrival publishes with its live identity; a tracked document's waits for
+      // its content, in the creation aggregate that called this.
+      await this.deps.arrivals?.settle(inserted.binaryIds);
+      return "inserted";
     });
   }
 

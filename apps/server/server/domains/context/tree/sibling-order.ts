@@ -192,12 +192,17 @@ async function liveRankedNode(
   return row ?? null;
 }
 
+function notMoving(column: string, movingId: string | undefined): SQL {
+  return movingId ? sql`AND ${sql.raw(column)} <> ${movingId}::uuid` : sql``;
+}
+
 async function liveRankBoundary(
   db: Database,
   input: {
     sourceId: ContextSourceId;
     parentId: FolderId | null;
-    movingId: string;
+    /** The node being placed, which is not its own neighbour; none when nothing is moving. */
+    movingId?: string;
     direction: "before" | "after";
     anchor?: RankedNode;
   },
@@ -214,18 +219,34 @@ async function liveRankBoundary(
       (SELECT d.id, d.rank FROM documents d
        WHERE d.context_source_id = ${input.sourceId}
          AND ${parentPredicate(sql.raw("d.folder_id"), input.parentId)}
-         AND d.id <> ${input.movingId}::uuid
+         ${notMoving("d.id", input.movingId)}
          AND d.deleted_at IS NULL AND NOT d.hidden AND d.rank IS NOT NULL
          ${relation} ORDER BY ${order} LIMIT 1)
       UNION ALL
       (SELECT f.id, f.rank FROM folders f
        WHERE f.context_source_id = ${input.sourceId}
          AND ${parentPredicate(sql.raw("f.parent_id"), input.parentId)}
-         AND f.id <> ${input.movingId}::uuid
+         ${notMoving("f.id", input.movingId)}
          AND f.deleted_at IS NULL AND NOT f.hidden AND f.rank IS NOT NULL
          ${relation} ORDER BY ${order} LIMIT 1)
     ) boundary ORDER BY ${order} LIMIT 1`);
   return row ?? null;
+}
+
+/**
+ * The ranks a run of `count` arrivals takes in a parent, in arrival order: nothing in a
+ * default-ordered parent, which sorts by name, and the keys after its last sibling in a
+ * manual one. The same keys `count` single arrivals in a row would take.
+ */
+export async function arrivalRanks(
+  db: Database,
+  input: { sourceId: ContextSourceId; parentId: FolderId | null; count: number },
+): Promise<(string | null)[]> {
+  if ((await liveParentOrderPolicy(db, input.sourceId, input.parentId)) === "default") {
+    return Array.from({ length: input.count }, () => null);
+  }
+  const last = await liveRankBoundary(db, { ...input, direction: "before" });
+  return generateNKeysBetween(last?.rank ?? null, null, input.count);
 }
 
 /** Apply an explicit reorder, or the destination parent's ordinary arrival rule. */

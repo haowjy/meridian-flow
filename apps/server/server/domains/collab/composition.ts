@@ -177,7 +177,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const persistence = createDrizzleCollabPersistence(deps.db);
   const documentCreation = createDocumentCreationAggregate({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
-    onArrival: (id) => deps.arrivals?.settle([id]) ?? Promise.resolve(0),
+    onArrivals: (ids) => deps.arrivals?.settle(ids) ?? Promise.resolve(0),
   });
   const hocuspocusBinding = createHocuspocusBinding(deps.eventSink);
   const liveCoordinator = createHocuspocusCoordinator({
@@ -622,7 +622,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       encodeSeed: runtime.markdownDocuments.encodeSeed,
-      installSeed: runtime.markdownDocuments.installSeed,
+      installSeeds: runtime.markdownDocuments.installSeeds,
       writeDocument: runtime.markdownDocuments.writeDocument,
       withLiveDocument: runtime.markdownDocuments.withLiveDocument,
       writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,

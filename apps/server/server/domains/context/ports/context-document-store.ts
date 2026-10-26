@@ -17,6 +17,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 import type { LiveClaim, LiveCreateCandidate } from "../tree/hidden-node-types.js";
+import type { NewTreeNode } from "../tree/new-tree.js";
 import type { PathResolution, TreeView } from "../tree/tree-view.js";
 
 /** Opposite-kind occupancy is a normal namespace conflict, not a storage failure. */
@@ -140,28 +141,17 @@ export interface ContextDocumentStore {
    */
   ensureFolderPath(dir: readonly string[]): Promise<string | null>;
   /**
-   * Insert one live folder under `parentId` unless a node already holds that name — a live
-   * folder, a live document's alias, or a hidden one — or the row id is taken. Never
-   * reveals: a hidden occupant makes the name taken, which is what a copy allocates around.
+   * Insert a tree of new live nodes under `parentId`, in the caller's transaction and namespace
+   * lock, in set-based statements: a Copy's result, minted before it is written. The caller has
+   * proven that no live or hidden node holds a root's name, so nothing is checked per node. The
+   * roots arrive as a run by the parent's ordinary rule, then move to `position` when one is
+   * given (`stale-anchor` when the sibling it names is gone).
    */
-  createFolderIfAbsent(input: {
+  insertNewTree(input: {
     parentId: string | null;
-    name: string;
-    /** A caller-minted identity (a copy mints the whole tree before writing it). */
-    id?: string;
-    /** The copied folder keeps its source's child ordering. */
-    orderPolicy?: ContextParentOrderPolicy;
-  }): Promise<string | null>;
-  /**
-   * Put a just-inserted node at an explicit sibling position (`stale-anchor` when the
-   * sibling it names is gone). A copy's first root takes the writer's edge drop this way.
-   */
-  placeSibling(input: {
-    kind: "file" | "folder";
-    id: string;
-    parentId: string | null;
-    position: ContextSiblingPosition;
-  }): Promise<"placed" | "stale-anchor">;
+    roots: readonly NewTreeNode[];
+    position?: ContextSiblingPosition;
+  }): Promise<"inserted" | "stale-anchor">;
   /** What a live create at this path would reveal, holding nothing (§6.3 step 1). */
   findLiveCreateCandidate(
     dir: readonly string[],
@@ -180,10 +170,4 @@ export interface ContextDocumentStore {
     claim?: LiveClaim,
   ): Promise<LiveDocumentCreation | null>;
   createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument>;
-  /**
-   * A view of this store whose catalog refreshes are held until `flush`, which makes the one
-   * refresh for them all. Each refresh reconciles the project's whole catalog scope, so a bulk
-   * insert in one transaction that refreshed per row would grow with the project, not the insert.
-   */
-  withCatalogBatch(): { store: ContextDocumentStore; flush(): Promise<void> };
 }

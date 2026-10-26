@@ -16,10 +16,10 @@
  * whole old→new map before anything is written.
  */
 
+import type { DocumentId, FolderId } from "@meridian/contracts";
 import {
   allocateFilename,
   type ContextSiblingPosition,
-  type Filetype,
   type NamespaceNameClaim,
   renderFilename,
   sameNamespaceName,
@@ -30,7 +30,6 @@ import {
   type DocumentCreationAggregate,
   type MarkdownDocumentStore,
 } from "../../../collab/index.js";
-import type { CopiedFrom } from "../../document-metadata.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import type {
   CopiedContent,
@@ -45,12 +44,13 @@ import {
   type ContextDocumentStore,
   ContextEntryConflictError,
 } from "../../ports/context-document-store.js";
+import type { NewTreeNode } from "../../tree/new-tree.js";
 import { LIVE_TREE } from "../../tree/tree-view.js";
 
 export interface CopyTreeDeps {
   store: ContextDocumentStore;
   documentCreation: DocumentCreationAggregate;
-  documentSync: Pick<MarkdownDocumentStore, "installSeed" | "initializeEmptyDocument">;
+  documentSync: Pick<MarkdownDocumentStore, "installSeeds">;
   /** The canonical address of a scheme-relative path in this source. */
   holderUri(path: string): string;
 }
@@ -116,35 +116,32 @@ export async function insertCopiedTree(
 ): Promise<Result<CopyOutcome, AdapterFault>> {
   const parent = await ensureDestinationParent(deps, input.dir);
   if (!parent.ok) return parent;
-  const { plan } = input;
+  const { plan, contents } = input;
   if (!(await planHolds(deps, input.dir, parent.value, plan))) return Ok({ kind: "replan" });
-  const minted = plan.roots;
 
-  // The catalog reconciles the project's whole scope, so it is refreshed once, after the tree.
-  const batch = deps.store.withCatalogBatch();
+  const tree = toNewTree(plan.roots, contents);
+  if (!tree.ok) return tree;
+  let stale = false;
   try {
-    const created = await insertLevel(
-      { ...deps, store: batch.store },
-      parent.value,
-      minted,
-      input.contents,
-    );
-    if (!created.ok) return created;
-    // The roots land as one run at the position, in the order they were selected.
-    let position = input.position;
-    for (const root of minted) {
-      if (!position) break;
-      const placed = await batch.store.placeSibling({
-        kind: root.kind,
-        id: root.id,
-        parentId: parent.value,
-        position,
-      });
-      if (placed === "stale-anchor") return Err({ code: "stale_target" });
-      position = { kind: "after", siblingId: root.id };
-    }
-    await batch.flush();
-    return Ok({ kind: "copied", entries: created.value });
+    // Rows, then each tracked document's first state, then its arrival: one unit.
+    await deps.documentCreation.createDocumentsAtomically({
+      persistIdentities: async () => {
+        const inserted = await deps.store.insertNewTree({
+          parentId: parent.value,
+          roots: tree.value.roots,
+          ...(input.position ? { position: input.position } : {}),
+        });
+        stale = inserted === "stale-anchor";
+        return stale ? null : plan.documents.map((document) => document.id as DocumentId);
+      },
+      initializeContent: (documentIds) =>
+        deps.documentSync.installSeeds(
+          documentIds.map((documentId) => ({
+            documentId,
+            state: tree.value.states.get(documentId) ?? null,
+          })),
+        ),
+    });
   } catch (error) {
     if (error instanceof ContextEntryConflictError) {
       return Err({
@@ -154,6 +151,109 @@ export async function insertCopiedTree(
     }
     throw error;
   }
+  if (stale) return Err({ code: "stale_target" });
+  return Ok({ kind: "copied", entries: entriesOf(plan.roots) });
+}
+
+/**
+ * The plan as the rows to insert, with each tracked document's first state by new id. A
+ * binary's row points at the object the copy duplicated before this transaction.
+ */
+function toNewTree(
+  roots: readonly PlannedCopyNode[],
+  contents: ReadonlyMap<string, CopiedContent>,
+): Result<{ roots: NewTreeNode[]; states: Map<string, Uint8Array | null> }, AdapterFault> {
+  const states = new Map<string, Uint8Array | null>();
+  const convert = (node: PlannedCopyNode): Result<NewTreeNode, AdapterFault> => {
+    if (node.kind === "folder") {
+      const children: NewTreeNode[] = [];
+      for (const child of node.children) {
+        const converted = convert(child);
+        if (!converted.ok) return converted;
+        children.push(converted.value);
+      }
+      return Ok({
+        kind: "folder",
+        id: node.id as FolderId,
+        name: node.name,
+        orderPolicy: node.source.orderPolicy,
+        children,
+      });
+    }
+    const row = {
+      kind: "document" as const,
+      id: node.id as DocumentId,
+      name: node.name,
+      extension: node.extension,
+      path: node.path,
+    };
+    const { source } = node;
+    if (source.fileType !== null) {
+      if (!source.storageUrl) {
+        return Err({
+          code: "io_error",
+          message: `Copied binary ${source.path} has no stored object`,
+        });
+      }
+      return Ok({
+        ...row,
+        node: {
+          kind: "binary",
+          fileType: source.fileType,
+          storageUrl: source.storageUrl,
+          // A binary row normally carries its type; an old row that lost it copies as opaque bytes.
+          mimeType: source.mimeType ?? "application/octet-stream",
+          sizeBytes: source.sizeBytes ?? 0,
+          // A binary has no drafts or revisions, so its copy always records the live file.
+          metadata: { copiedFrom: { uri: source.uri, version: "live", revision: null } },
+        },
+      });
+    }
+    const content = contents.get(source.documentId);
+    if (!content) throw new Error(`No content was bound for ${source.path}`);
+    states.set(node.id, content.state);
+    return Ok({
+      ...row,
+      node: {
+        kind: "tracked",
+        filetype: source.filetype,
+        metadata: { copiedFrom: content.copiedFrom },
+      },
+    });
+  };
+  const converted: NewTreeNode[] = [];
+  for (const root of roots) {
+    const node = convert(root);
+    if (!node.ok) return node;
+    converted.push(node.value);
+  }
+  return Ok({ roots: converted, states });
+}
+
+/** The identities a copy created, each folder before what it holds. */
+function entriesOf(nodes: readonly PlannedCopyNode[]): CopyCreatedEntry[] {
+  return nodes.flatMap((node): CopyCreatedEntry[] =>
+    node.kind === "folder"
+      ? [
+          {
+            kind: "folder",
+            id: node.id,
+            path: node.path,
+            name: node.name,
+            copiedFrom: node.source.folderId,
+          },
+          ...entriesOf(node.children),
+        ]
+      : [
+          {
+            kind: "file",
+            id: node.id,
+            path: node.path,
+            name: renderFilename(node.name, node.extension),
+            copiedFrom: node.source.documentId,
+          },
+        ],
+  );
 }
 
 /**
@@ -297,139 +397,4 @@ async function occupantClaims(
     // a hidden folder's rendered name and a hidden document's alias both compare as names.
     ...hidden.map((filename) => ({ kind: "document" as const, filename })),
   ];
-}
-
-async function insertLevel(
-  deps: CopyTreeDeps,
-  parentId: string | null,
-  nodes: readonly PlannedCopyNode[],
-  contents: ReadonlyMap<string, CopiedContent>,
-): Promise<Result<CopyCreatedEntry[], AdapterFault>> {
-  const created: CopyCreatedEntry[] = [];
-  for (const node of nodes) {
-    if (node.kind === "folder") {
-      const folderId = await deps.store.createFolderIfAbsent({
-        parentId,
-        name: node.name,
-        id: node.id,
-        orderPolicy: node.source.orderPolicy,
-      });
-      if (!folderId) return Err({ code: "conflict", occupantKind: "file" });
-      created.push({
-        kind: "folder",
-        id: folderId,
-        path: node.path,
-        name: node.name,
-        copiedFrom: node.source.folderId,
-      });
-      const children = await insertLevel(deps, folderId, node.children, contents);
-      if (!children.ok) return children;
-      created.push(...children.value);
-      continue;
-    }
-
-    const rendered = renderFilename(node.name, node.extension);
-    if (node.source.fileType !== null) {
-      const binary = await insertCopiedBinary(deps, parentId, node);
-      if (!binary.ok) return binary;
-      created.push({
-        kind: "file",
-        id: binary.value,
-        path: node.path,
-        name: rendered,
-        copiedFrom: node.source.documentId,
-      });
-      continue;
-    }
-
-    const content = contents.get(node.source.documentId);
-    if (!content) throw new Error(`No content was bound for ${node.source.path}`);
-    const documentId = await insertCopiedDocument(deps, parentId, node, content);
-    if (!documentId.ok) return documentId;
-    created.push({
-      kind: "file",
-      id: documentId.value,
-      path: node.path,
-      name: rendered,
-      copiedFrom: node.source.documentId,
-    });
-  }
-  return Ok(created);
-}
-
-/**
- * One copied tracked document: its identity, then its content or an empty authority, in the
- * creation aggregate's transaction. The claim is `none`: a hidden occupant is never revealed,
- * and if one appeared at this name the copy fails rather than adopting it.
- */
-async function insertCopiedDocument(
-  deps: CopyTreeDeps,
-  parentId: string | null,
-  node: PlannedCopyFile,
-  content: CopiedContent,
-): Promise<Result<string, AdapterFault>> {
-  const filetype: Filetype = node.source.filetype;
-  const created = await deps.documentCreation.createDocumentAtomically({
-    persistIdentity: async () => {
-      const claimed = await deps.store.createDocumentRecordIfAbsent(
-        {
-          id: node.id,
-          folderId: parentId,
-          name: node.name,
-          extension: node.extension,
-          markdown: "",
-          filetype,
-          metadata: { copiedFrom: content.copiedFrom },
-        },
-        { kind: "none" },
-      );
-      return claimed?.document.id ?? null;
-    },
-    initializeContent: async (documentId) => {
-      if (content.state) await deps.documentSync.installSeed(documentId, content.state);
-      else await deps.documentSync.initializeEmptyDocument(documentId);
-    },
-  });
-  if (!created.created) return Err({ code: "conflict", occupantKind: "file" });
-  return Ok(node.id);
-}
-
-/** One copied binary: the row points at the object the copy duplicated before this transaction. */
-async function insertCopiedBinary(
-  deps: CopyTreeDeps,
-  parentId: string | null,
-  node: PlannedCopyFile,
-): Promise<Result<string, AdapterFault>> {
-  if (!node.source.fileType || !node.source.storageUrl) {
-    return Err({
-      code: "io_error",
-      message: `Copied binary ${node.source.path} has no stored object`,
-    });
-  }
-  const { fileType, storageUrl, mimeType, sizeBytes } = node.source;
-  try {
-    const document = await deps.store.createBinaryDocument({
-      id: node.id,
-      folderId: parentId,
-      name: node.name,
-      extension: node.extension,
-      fileType,
-      storageUrl,
-      // A binary row normally carries its type; an old row that lost it copies as opaque bytes.
-      mimeType: mimeType ?? "application/octet-stream",
-      sizeBytes: sizeBytes ?? 0,
-      metadata: { copiedFrom: copiedFromProvenance(node) },
-    });
-    return Ok(document.id);
-  } catch (error) {
-    if (error instanceof ContextEntryConflictError) {
-      return Err({ code: "conflict", occupantKind: error.occupantKind ?? "file" });
-    }
-    throw error;
-  }
-}
-
-function copiedFromProvenance(node: PlannedCopyFile): CopiedFrom {
-  // A binary has no drafts or revisions, so its copy always records the live file.
-  return { uri: node.source.uri, version: "live", revision: null };
 }
