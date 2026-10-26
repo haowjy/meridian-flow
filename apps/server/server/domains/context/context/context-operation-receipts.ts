@@ -13,6 +13,11 @@ class RejectedOperation<K extends ContextOperationCommand["kind"]> extends Error
   }
 }
 
+/** The address a command mismatch names: the entry a delete names, else the destination. */
+function commandAddress(command: ContextOperationCommand): string {
+  return command.kind === "delete" ? command.uri : command.destinationUri;
+}
+
 export class ContextOperationReceipts {
   constructor(private readonly store: ContextOperationReceiptStore) {}
 
@@ -33,7 +38,7 @@ export class ContextOperationReceipts {
             ok: false,
             error: {
               code: "operation_mismatch",
-              uri: "sourceUri" in command ? command.sourceUri : command.uri,
+              uri: commandAddress(command as ContextOperationCommand),
             },
           };
         return previous.result as ContextOperationResult<K>;
