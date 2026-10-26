@@ -247,13 +247,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         folderPath: string;
         name?: string;
         expectFolderId?: string;
+        position?: NonNullable<ContextCreateUntitledDocumentOptions["destination"]>["position"];
       },
       ContextError
     >
   > {
     const destination = options.destination;
     if (!destination) return Ok({ resolved: home, folderPath: home.path });
-    const { parent, name } = destination;
+    const { parent, name, position } = destination;
     const joinUri = (base: string, segments: readonly string[]) =>
       segments.length === 0 ? base : [base.replace(/\/$/, ""), ...segments].join("/");
     let dirUri: string;
@@ -275,6 +276,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       resolved: resolved.value,
       folderPath: resolved.value.path,
       name,
+      ...(position ? { position } : {}),
       ...(parent.kind === "folder" && !parent.createFolders?.length
         ? { expectFolderId: parent.folderId }
         : {}),
@@ -630,7 +632,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const target = await untitledTarget(homeUri, home.value, options);
         if (!target.ok) return target;
-        const { resolved, folderPath, name, expectFolderId } = target.value;
+        const { resolved, folderPath, name, expectFolderId, position } = target.value;
         const entryCreation = resolved.requireCreation("entry");
         if (!entryCreation.ok) return entryCreation;
         const created = await callAdapter(resolved.canonical, () =>
@@ -639,6 +641,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
             origin: options.origin,
             ...(name !== undefined ? { name } : {}),
             ...(expectFolderId ? { expectFolderId } : {}),
+            ...(position ? { position } : {}),
           }),
         );
         if (!created.ok) {

@@ -177,7 +177,7 @@ function requestFor(
   };
 }
 
-/** The create carries what a move would: the server resolves the parent by identity. */
+/** The create carries what a move would: the server resolves the parent and the position by identity. */
 function createDestination(destination: ResourceDestination): CreateUntitledDestination {
   return {
     parent: {
@@ -185,6 +185,7 @@ function createDestination(destination: ResourceDestination): CreateUntitledDest
       ...(destination.createFolders?.length ? { createFolders: destination.createFolders } : {}),
     },
     name: destination.name,
+    ...(destination.position ? { position: destination.position } : {}),
   };
 }
 

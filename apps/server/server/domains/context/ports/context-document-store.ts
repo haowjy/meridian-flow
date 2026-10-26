@@ -11,6 +11,7 @@
 import type { ProjectId } from "@meridian/contracts";
 import type {
   ContextParentOrderPolicy,
+  ContextSiblingPosition,
   DocumentFileType,
   Filetype,
 } from "@meridian/contracts/protocol";
@@ -64,6 +65,8 @@ export interface CreateDocumentInput {
   markdown: string;
   filetype: Filetype;
   provisionalName?: boolean;
+  /** Where among the folder's children a newly inserted row goes; a reveal keeps its place. */
+  position?: ContextSiblingPosition;
   /**
    * A device's create id this reveal forwards to the revealed document: written with the
    * reveal, before the catalog refresh that reads it, so a join and its forward commit together.

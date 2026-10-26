@@ -30,7 +30,10 @@ import {
 } from "../../../../../../domains/file-policy/index.js";
 import type { AppServices } from "../../../../../../lib/compose.js";
 import { throwContextWorkUnavailableHttpError } from "../../../../../../lib/context-error-http.js";
-import { parseDestinationParent } from "../../../../../../lib/context-move-route.js";
+import {
+  parseDestinationParent,
+  parseSiblingPosition,
+} from "../../../../../../lib/context-move-route.js";
 import {
   parseContextMutationName,
   parseContextMutationPath,
@@ -68,6 +71,7 @@ export function parseCreateUntitledBody(raw: unknown): CreateUntitledBody {
     destination = {
       parent: parseDestinationParent(raw.parent),
       name: parseContextMutationName(raw.name, "destination.name"),
+      ...(raw.position === undefined ? {} : { position: parseSiblingPosition(raw.position) }),
     };
   }
   return {

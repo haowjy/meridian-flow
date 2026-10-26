@@ -150,7 +150,11 @@ export interface ContextCreateUntitledDocumentOptions {
    * carries. The create joins a branch's hidden document waiting there. Without it the
    * create is nameless: `Untitled N` in the home URI's folder.
    */
-  destination?: { parent: NonNullable<MoveContextEntryRequest["destinationParent"]>; name: string };
+  destination?: {
+    parent: NonNullable<MoveContextEntryRequest["destinationParent"]>;
+    name: string;
+    position?: MoveContextEntryRequest["position"];
+  };
   /** Refuses a destination the caller may not edit; given the resolved destination URI. */
   authorizeDestination?: (uri: string) => Promise<boolean>;
 }
@@ -163,6 +167,8 @@ export interface AdapterCreateUntitledOptions {
   name?: string;
   /** The folder identity the destination named: a stale one is retried, never made again. */
   expectFolderId?: string;
+  /** Where among the folder's children a new document goes; it never moves one that exists. */
+  position?: MoveContextEntryRequest["position"];
 }
 
 interface BaseListEntry {

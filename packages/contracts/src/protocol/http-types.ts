@@ -113,6 +113,11 @@ export type CreateUntitledDestination = {
   parent: ContextDestinationParent;
   /** The leaf filename as the writer typed it. */
   name: string;
+  /**
+   * Where among the parent's children the new document goes; the server resolves it under the
+   * namespace lock a move uses. An anchor it can't find leaves the document at the parent's end.
+   */
+  position?: ContextSiblingPosition;
 };
 
 export type CreateUntitledContextDocumentRequest = {

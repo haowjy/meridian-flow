@@ -255,6 +255,13 @@ export async function placeLiveSibling(
     rows = await siblings(db, input.sourceId, input.parentId);
     if (!rows.some((row) => row.id === input.node.id))
       throw new Error("Moved node is absent from its committed parent");
+    // A missing anchor must not turn the parent manual on its way to being refused.
+    const anchorId = "siblingId" in input.position ? input.position.siblingId : null;
+    if (
+      anchorId !== null &&
+      (anchorId === input.node.id || !rows.some((row) => row.id === anchorId))
+    )
+      return "stale-anchor";
     rows = await promote(db, input.sourceId, input.parentId, rows);
     parentPolicy = "manual";
   }

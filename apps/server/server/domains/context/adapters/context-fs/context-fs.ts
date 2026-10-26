@@ -588,6 +588,7 @@ export class ContextFS implements ContextSchemeAdapter {
       leaf,
       documentId: options.documentId as DocumentId,
       ...(options.expectFolderId ? { expectFolderId: options.expectFolderId } : {}),
+      ...(options.position ? { position: options.position } : {}),
       options: { origin: options.origin },
     });
     if (!created.ok) return created;

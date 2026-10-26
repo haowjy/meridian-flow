@@ -37,6 +37,7 @@ import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
 import { insertDocumentRow } from "../../tree/node-rows.js";
 import { ensureLiveFolderPath } from "../../tree/placement.js";
+import { placeLiveSibling } from "../../tree/sibling-order.js";
 import {
   createTreeReader,
   LIVE_TREE,
@@ -259,6 +260,24 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           toId: outcome.documentId,
           projectId: input.joinFrom.projectId,
         });
+      }
+      if (outcome.kind === "inserted" && input.position) {
+        // The insert took the parent's arrival rule; the writer's position replaces it. A
+        // sibling that is gone leaves the arrival placement, never fails the create.
+        const placed = await placeLiveSibling(this.deps.db, {
+          node: { kind: "document", id: outcome.documentId },
+          sourceId: this.sourceId,
+          parentId: input.folderId as FolderId | null,
+          position: input.position,
+          arrived: true,
+        });
+        if (placed === "stale-anchor")
+          await placeLiveSibling(this.deps.db, {
+            node: { kind: "document", id: outcome.documentId },
+            sourceId: this.sourceId,
+            parentId: input.folderId as FolderId | null,
+            arrived: true,
+          });
       }
       if (outcome.kind === "inserted") {
         await this.deps.catalogMutations?.refreshSources([this.sourceId]);
