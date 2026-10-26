@@ -1,9 +1,10 @@
 /** Adds only pending folder roots; catalogs remain the sole owner of every real node. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { isManualParent } from "@meridian/resource-replica";
 import { useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useImportsSnapshot, useOptionalImports } from "./ImportProvider";
-import { type ImportedTree, plainTree, type TreeRow } from "./tree-rows";
+import { type ImportedTree, type PendingRow, plainTree, withPendingRoots } from "./tree-rows";
 export function useImportedTree(
   catalog: CatalogContextView | null,
   scheme: ProjectContextTreeScheme,
@@ -14,7 +15,7 @@ export function useImportedTree(
   return useMemo(() => {
     if (!catalog) return null;
     const tree = plainTree(catalog);
-    const pending = new Map<string, TreeRow[]>();
+    const pending = new Map<string, PendingRow[]>();
     for (const { importId, summary, local } of snapshot.imports) {
       if (
         summary.projectId !== projectId ||
@@ -42,7 +43,16 @@ export function useImportedTree(
     }
     return {
       root: tree.root,
-      rows: (parentId) => [...tree.rows(parentId), ...(pending.get(parentId) ?? [])],
+      rows: (parentId) => {
+        const roots = pending.get(parentId);
+        return roots
+          ? withPendingRoots(
+              tree.rows(parentId),
+              roots,
+              isManualParent(catalog.normalized.entries.get(parentId)),
+            )
+          : tree.rows(parentId);
+      },
     };
   }, [catalog, scheme, projectId, snapshot, coordinator]);
 }

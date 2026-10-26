@@ -3,6 +3,7 @@
  * classification or document capabilities, so navigation and namespace actions
  * need the catalog variant. Document lookup stays on the canonical catalog.
  */
+import { compareDefaultSiblings } from "@meridian/resource-replica";
 import type {
   CatalogContextView,
   CatalogDirectory,
@@ -59,4 +60,27 @@ export function plainTree(catalog: CatalogContextView): ImportedTree {
       return rows;
     },
   };
+}
+
+/**
+ * A pending root sits where its folder will land: the end of a manual parent, its slot in
+ * default order otherwise, so the row does not jump when the import is revealed.
+ */
+export function withPendingRoots(
+  rows: readonly TreeRow[],
+  pending: readonly PendingRow[],
+  manual: boolean,
+): readonly TreeRow[] {
+  if (manual) return [...rows, ...pending];
+  const placed = [...rows];
+  const order = (row: TreeRow) => ({
+    kind: rowKind(row) === "dir" ? ("folder" as const) : ("file" as const),
+    name: rowName(row),
+    identity: rowId(row),
+  });
+  for (const root of pending) {
+    const at = placed.findIndex((row) => compareDefaultSiblings(order(row), order(root)) > 0);
+    placed.splice(at < 0 ? placed.length : at, 0, root);
+  }
+  return placed;
 }
