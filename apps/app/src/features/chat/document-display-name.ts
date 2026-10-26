@@ -115,13 +115,16 @@ export function moveDestinationName(from: string, to: string, names?: OwnerNames
   ).place;
 }
 
-/** A move between two locations: `rename` when only the name changes, and where it lands. */
+/**
+ * A move between two locations: `rename` when only the name changes, `reorder` when nothing the
+ * path shows changes (a position among siblings), and where it lands.
+ */
 export function describeMove(
   source: ParsedContextLocation,
   destination: ParsedContextLocation,
   name = documentTitleFromUri(destination.path) ?? t`Untitled document`,
   names: OwnerNames = noOwnerNames,
-): { kind: "rename" | "move"; place: string } {
+): { kind: "rename" | "move" | "reorder"; place: string } {
   const path = `${folderOf(destination.path)}${name}`;
   const otherArea =
     destination.scheme !== null &&
@@ -132,9 +135,10 @@ export function describeMove(
       kind: "move",
       place: `${areaName(destination.scheme, destination.owner, names)}/${path}`,
     };
-  return folderOf(source.path) === folderOf(destination.path)
-    ? { kind: "rename", place: name }
-    : { kind: "move", place: path };
+  if (folderOf(source.path) !== folderOf(destination.path)) return { kind: "move", place: path };
+  return source.path === destination.path
+    ? { kind: "reorder", place: name }
+    : { kind: "rename", place: name };
 }
 
 /**

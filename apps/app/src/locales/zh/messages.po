@@ -424,6 +424,10 @@ msgid "{name} was removed when the reply that created it didn't finish, so this 
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
+msgid "{name}: changing position"
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
 msgid "{name}: Deleted"
 msgstr ""
 
@@ -541,6 +545,10 @@ msgstr ""
 msgid "{work} is renaming this to {place}."
 msgstr ""
 
+#: src/features/draft-review/tree-line.ts
+msgid "{work} is reordering this."
+msgstr ""
+
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "<0.1 s"
 msgstr "<0.1 秒"
@@ -582,6 +590,10 @@ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
 msgid "A chat is renaming this to {place}."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "A chat is reordering this."
 msgstr ""
 
 #: src/features/chat/DeletedChatCard.tsx
@@ -3647,6 +3659,10 @@ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
 msgid "Pending rename"
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "Pending reorder"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
