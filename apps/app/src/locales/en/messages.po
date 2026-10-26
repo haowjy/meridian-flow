@@ -939,6 +939,7 @@ msgid "workReceipt.archived"
 msgstr "Archived Work {name}"
 
 #: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/subagent/SubagentMark.tsx
 msgid "Asked a question"
 msgstr "Asked a question"
 
@@ -2726,6 +2727,10 @@ msgstr "Images need a project before they can be uploaded."
 msgid "In a draft"
 msgstr "In a draft"
 
+#: src/features/chat/SubagentHeader.tsx
+msgid "In progress"
+msgstr "In progress"
+
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "In the trash. Deleted by {actor} on {deleted}."
 msgstr "In the trash. Deleted by {actor} on {deleted}."
@@ -4136,7 +4141,6 @@ msgid "rule"
 msgstr "rule"
 
 #: src/features/chat/subagent/SubagentMark.tsx
-#: src/features/chat/SubagentHeader.tsx
 msgid "Running"
 msgstr "Running"
 
