@@ -105,22 +105,18 @@ export function projectResourceLocation(
   const placement = placementDestination(projectId, record);
   if (placement) {
     const location = destinationLocation(placement, lookup);
-    if (location) return { ...location, provisional: false };
+    if (location)
+      return {
+        ...location,
+        // The editor's nameless create invites a home until the writer names it. A server-held
+        // document's provisional name is the catalog's.
+        provisional:
+          record.resource.canonical === null &&
+          record.resource.materialization?.kind === "untitled" &&
+          record.resource.materialization.unnamed === true,
+      };
   }
-  if (record.resource.canonical)
-    return {
-      ...record.resource.canonical,
-      // The editor's nameless create invites a home until the writer places it; a named first
-      // placement, or any later one, is the writer's own choice.
-      provisional: !record.intents.some(
-        (intent) =>
-          intent.projectId === projectId &&
-          (intent.desired.kind === "set-location" ||
-            intent.desired.kind === "set-folder-location") &&
-          intent.desired.destination !== undefined &&
-          intent.state !== "cancelled",
-      ),
-    };
+  if (record.resource.canonical) return { ...record.resource.canonical, provisional: false };
   const materialization = record.resource.materialization;
   if (!materialization) return null;
   const folder = materialization.folderPath.split("/").filter(Boolean).join("/");
@@ -130,7 +126,7 @@ export function projectResourceLocation(
     path: `/${[folder, name].filter(Boolean).join("/")}`,
     name,
     workId: null,
-    provisional: true,
+    provisional: materialization.kind === "untitled" && materialization.unnamed === true,
   };
 }
 

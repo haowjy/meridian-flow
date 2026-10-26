@@ -1,4 +1,8 @@
-import type { ResourceProjectionSnapshot, ResourceRecord } from "@meridian/resource-replica";
+import {
+  type ResourceProjectionSnapshot,
+  type ResourceRecord,
+  untitledDestination,
+} from "@meridian/resource-replica";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type ContextTab, useContextTabsStore } from "@/client/stores";
 import { validateEditorWorkspaceTabs } from "./browser-editor-tab-validation";
@@ -187,7 +191,11 @@ function localPlacement(): ResourceRecord {
         intentId: "create",
         sequence: 1,
         identityRevision: 1,
-        desired: { kind: "set-location", typedName: "Untitled" },
+        desired: {
+          kind: "set-location",
+          typedName: "Untitled",
+          destination: untitledDestination("", "Untitled"),
+        },
         attempts: [],
         state: "pending",
       },

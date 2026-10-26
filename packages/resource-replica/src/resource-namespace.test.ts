@@ -23,6 +23,7 @@ import type {
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
+import { untitledDestination } from "./resource-records";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
 import { planResourceLocation } from "./resource-state";
 
@@ -38,6 +39,7 @@ function local(): ResourceRecord {
         kind: "untitled",
         folderPath: "drafts",
         provisionalName: "Untitled",
+        unnamed: true,
       },
       canonical: null,
       lifecycle: { kind: "local" },
@@ -51,7 +53,11 @@ function local(): ResourceRecord {
         intentId: "create",
         sequence: 1,
         identityRevision: 1,
-        desired: { kind: "set-location", typedName: "Untitled" },
+        desired: {
+          kind: "set-location",
+          typedName: "Untitled",
+          destination: untitledDestination("drafts", "Untitled"),
+        },
         attempts: [],
         state: "pending",
       },

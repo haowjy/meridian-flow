@@ -11,6 +11,7 @@ import {
 } from "./resource-deletion";
 import { prepareNamespaceAttempt } from "./resource-namespace";
 import type { ResourceRecord } from "./resource-records";
+import { untitledDestination } from "./resource-records";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
 import { resourceContextAuthority, resourceWorkAuthorityFor } from "./resource-work-authority";
 
@@ -27,7 +28,12 @@ function reserved(): ResourceRecord {
         initialization: "reserved",
       },
       classification: { editable: true, filetype: "markdown", schemaType: "document" },
-      materialization: { kind: "untitled", folderPath: "", provisionalName: "Untitled" },
+      materialization: {
+        kind: "untitled",
+        folderPath: "",
+        provisionalName: "Untitled",
+        unnamed: true,
+      },
       canonical: null,
       lifecycle: { kind: "local" },
       aliases: {},
@@ -40,7 +46,11 @@ function reserved(): ResourceRecord {
         intentId: "create",
         sequence: 1,
         identityRevision: 1,
-        desired: { kind: "set-location", typedName: "Untitled" },
+        desired: {
+          kind: "set-location",
+          typedName: "Untitled",
+          destination: untitledDestination("", "Untitled"),
+        },
         attempts: [],
         state: "pending",
       },
@@ -131,7 +141,12 @@ it("does not let reserved content change identity or restart after acknowledgeme
         identity: { documentId: "document", revision: 1 },
         content: { kind: "exact", databaseName: "original", schema: null },
         classification: { editable: true, filetype: "markdown", schemaType: "document" },
-        materialization: { kind: "untitled", folderPath: "", provisionalName: "Untitled" },
+        materialization: {
+          kind: "untitled",
+          folderPath: "",
+          provisionalName: "Untitled",
+          unnamed: true,
+        },
         canonical: null,
         lifecycle: { kind: "local" },
         aliases: {},
@@ -144,7 +159,11 @@ it("does not let reserved content change identity or restart after acknowledgeme
           intentId: "create",
           sequence: 1,
           identityRevision: 1,
-          desired: { kind: "set-location", typedName: "Untitled" },
+          desired: {
+            kind: "set-location",
+            typedName: "Untitled",
+            destination: untitledDestination("", "Untitled"),
+          },
           attempts: [],
           state: "pending",
         },

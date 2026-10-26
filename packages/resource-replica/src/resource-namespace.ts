@@ -12,13 +12,13 @@ import type {
 } from "@meridian/contracts/protocol";
 import { canonicalRefreshObservation } from "./canonical-observation";
 import {
-  namespaceIntentOutcome,
   resolveUnavailableNamespace,
   resourceNeverAccepted,
   settleNamespaceIntent,
 } from "./namespace-journal-policy";
 import type { PlacementVerdict } from "./placement-journal";
 import { committedResourceDeletion, settleDeletionLocally } from "./resource-deletion";
+import { namespaceIntentOutcome } from "./resource-intent-policy";
 import { followedJoin, pendingJoinTarget } from "./resource-join";
 import type {
   DestinationParentLookup,
@@ -164,8 +164,9 @@ function requestFor(
 
 /**
  * What the server makes of a document it holds no row for. The placement says where it goes; the
- * resource says what it is (an untitled document, or a copy), so a new kind of first materialization
- * adds a branch here and no placement, projection, repair or Undo branch anywhere else.
+ * resource says what it is (an untitled document the server names), so a new kind of
+ * single-document materialization adds a branch here and no placement, projection, repair or Undo
+ * branch anywhere else. Copy's multi-root journal is a separate decision.
  */
 function materializationRequest(
   record: ResourceRecord,
@@ -184,11 +185,12 @@ function materializationRequest(
     kind: "create",
     body: {
       documentId: resource.identity.documentId,
-      ...(intent.desired.destination
-        ? { destination: createDestination(intent.desired.destination) }
-        : materialization.folderPath
+      // The server names a nameless create itself, so it takes the folder path and picks the name.
+      ...(materialization.kind === "untitled" && materialization.unnamed
+        ? materialization.folderPath
           ? { folderPath: normalizedPath(materialization.folderPath) }
-          : {}),
+          : {}
+        : { destination: createDestination(intent.desired.destination) }),
     },
   };
 }
@@ -248,7 +250,7 @@ export function prepareNamespaceAttempt(
   }
   if (
     intent.desired.kind === "set-location" &&
-    intent.desired.destination &&
+    record.resource.canonical !== null &&
     !destinationParentLocation(intent.desired.destination.parent, lookup)
   )
     return {
@@ -714,19 +716,22 @@ export function reconcileResourceNamespace(input: {
     read: () => input.metadata.readResource(input.key),
     commit: (write: ResourceWrite) => input.metadata.commitResource(write),
     prepare: async (record, ids) => {
-      const intent = activeNamespaceIntent(record);
-      const parent =
-        intent?.desired.kind === "set-location" ? intent.desired.destination?.parent : null;
-      const observed =
-        parent?.kind === "folder"
-          ? await input.transport.lookupIdentity(intent!.projectId, {
-              kind: "folder",
-              id: parent.folderId,
-            })
-          : null;
-      return prepareNamespaceAttempt(record, ids, () =>
-        observed?.kind === "available" ? observed.location : null,
-      );
+      // A move resolves its parent by id now; a create names its parent in the request and the
+      // server answers a destination it cannot find.
+      const intent = record.resource.canonical !== null ? activeNamespaceIntent(record) : null;
+      if (intent?.desired.kind === "set-location") {
+        const parent = intent.desired.destination.parent;
+        if (parent.kind === "folder") {
+          const observed = await input.transport.lookupIdentity(intent.projectId, {
+            kind: "folder",
+            id: parent.folderId,
+          });
+          return prepareNamespaceAttempt(record, ids, () =>
+            observed.kind === "available" ? observed.location : null,
+          );
+        }
+      }
+      return prepareNamespaceAttempt(record, ids);
     },
     repair: (record, intentId) => ({
       expectedRevision: record.resource.revision,

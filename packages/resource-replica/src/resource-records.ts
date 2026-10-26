@@ -81,9 +81,11 @@ export type ResourceDestination = Readonly<{
 export type DestinationParentLookup = (folderId: string) => ResourceLocation | null;
 
 /**
- * How the server first makes an identity it does not hold yet. Placement (`set-location`) says
- * where it goes; this says what the server makes there, so a new kind of first materialization
- * (Copy) adds an arm here and nowhere else.
+ * How the server first makes a document identity it does not hold yet, while the writer's first
+ * placement of that one document carries the request. Placement says where it goes; this says
+ * what the server makes there, so a new kind of single-document materialization adds an arm here
+ * and nowhere else. Copy is not one: one Copy names several roots and answers with an operation
+ * receipt, so its client journal is a separate decision (see `design-e2-folder-create.md`).
  */
 export type DocumentMaterialization = {
   kind: "untitled";
@@ -91,7 +93,23 @@ export type DocumentMaterialization = {
   folderPath: string;
   /** The row's name until the server names the document. */
   provisionalName: string;
+  /**
+   * The editor's nameless create: the writer has not chosen a name or place, so the document
+   * keeps inviting a home until the catalog publishes the server's `provisionalName`. A writer
+   * placement clears it; the server chooses where this create lands.
+   */
+  unnamed?: true;
 };
+
+/** The home a document the writer has not placed lands at, as its first placement names it. */
+export function untitledDestination(folderPath: string, name: string): ResourceDestination {
+  const createFolders = folderPath.split("/").filter(Boolean);
+  return {
+    parent: { kind: "root", scheme: "unfiled", owner: { workId: null } },
+    ...(createFolders.length ? { createFolders } : {}),
+    name,
+  };
+}
 
 /** Resolve only canonical observations when preparing immutable transport evidence. */
 export function destinationParentLocation(
@@ -137,9 +155,9 @@ export type ResourceDescriptor = ResourceKey & {
   classification: CatalogFileClassification;
   /**
    * How the server first materializes this identity, while it holds no such document: an untitled
-   * document, or (from Copy) a copy of a source. Placement is separate and always a location
-   * intent, so a refused first placement is repaired by placing it again, not by a new request
-   * kind. Absent for a document installed from the catalog.
+   * document. Placement is separate and always a location intent, so a refused first placement is
+   * repaired by placing it again, not by a new request kind. Absent for a document installed from
+   * the catalog.
    */
   materialization?: DocumentMaterialization;
   canonical: ResourceLocation | null;
@@ -293,10 +311,10 @@ export type NamespaceIntent = ResourceKey & {
         /** Original input; canonical destination is only for display and comparison. */
         typedName: string;
         /**
-         * Where the writer put the document. Absent only for the editor's nameless create: the
-         * server materializes it wherever its untitled create lands (`materialization.folderPath`).
+         * Where the writer put the document. The editor's nameless create names its materialized
+         * home (`untitledDestination`) until the writer places it somewhere else.
          */
-        destination?: ResourceDestination;
+        destination: ResourceDestination;
       }
     | {
         kind: "set-folder-location";

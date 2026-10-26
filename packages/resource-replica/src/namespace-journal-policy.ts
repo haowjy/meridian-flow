@@ -141,9 +141,7 @@ export function namespaceRepairDestination(
     failed,
   );
   if (latest.desired.kind === "set-location")
-    return latest.desired.destination
-      ? { ...latest.desired.destination, name: latest.desired.typedName }
-      : null;
+    return { ...latest.desired.destination, name: latest.desired.typedName };
   return latest.desired.kind === "set-folder-location" ? latest.desired.destination : null;
 }
 

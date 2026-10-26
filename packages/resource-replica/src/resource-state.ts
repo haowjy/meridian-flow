@@ -14,6 +14,7 @@ import type {
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
+import { untitledDestination } from "./resource-records";
 
 function nextSequence(record: ResourceRecord): number {
   return Math.max(0, ...record.intents.map((intent) => intent.sequence)) + 1;
@@ -32,6 +33,8 @@ export function reserveResourceDocument(input: {
   destination?: { value: ResourceDestination; eligibleAt: number };
   admission?: PlacementAdmission;
 }): ResourceWrite {
+  const folderPath = input.folderPath ?? "";
+  const provisionalName = input.provisionalName ?? "Untitled";
   const resource: ResourceDescriptor = {
     handle: input.handle,
     revision: 1,
@@ -45,8 +48,9 @@ export function reserveResourceDocument(input: {
     classification: { editable: true, filetype: "markdown", schemaType: "document" },
     materialization: {
       kind: "untitled",
-      folderPath: input.folderPath ?? "",
-      provisionalName: input.provisionalName ?? "Untitled",
+      folderPath,
+      provisionalName,
+      ...(input.destination ? {} : { unnamed: true as const }),
     },
     canonical: null,
     lifecycle: { kind: "local" },
@@ -62,8 +66,8 @@ export function reserveResourceDocument(input: {
     identityRevision: 1,
     desired: {
       kind: "set-location",
-      typedName: input.provisionalName ?? "Untitled",
-      ...(input.destination ? { destination: input.destination.value } : {}),
+      typedName: provisionalName,
+      destination: input.destination?.value ?? untitledDestination(folderPath, provisionalName),
     },
     attempts: [],
     state: "pending",
@@ -120,7 +124,7 @@ export function planResourceLocation(input: {
   // Compute the optimistic name once, retaining the input for server dispatch.
   const stored = storedFilename(
     input.destination.name,
-    (latest?.desired.kind === "set-location" ? latest.desired.destination?.name : undefined) ??
+    (latest?.desired.kind === "set-location" ? latest.desired.destination.name : undefined) ??
       record.resource.canonical?.name,
   );
   const destination = stored.ok ? { ...input.destination, name: stored.name } : input.destination;
@@ -152,12 +156,23 @@ export function planResourceLocation(input: {
     attempts: [],
     state: "pending",
   };
+  const materialization = record.resource.materialization;
   return {
     expectedRevision: record.resource.revision,
     next: {
       resource: {
         ...record.resource,
         revision: record.resource.revision + 1,
+        // A writer placement names the document: the local row stops inviting a home.
+        ...(materialization?.kind === "untitled" && materialization.unnamed
+          ? {
+              materialization: {
+                kind: materialization.kind,
+                folderPath: materialization.folderPath,
+                provisionalName: materialization.provisionalName,
+              },
+            }
+          : {}),
         obligations: record.resource.obligations.createEligibility
           ? {
               ...record.resource.obligations,

@@ -19,6 +19,7 @@ import {
   reconcileResourceNamespace,
   recordFolderNamespaceOutcome,
   settleFolderNamespaceOutcome,
+  untitledDestination,
 } from "@meridian/resource-replica";
 import Dexie from "dexie";
 import { afterEach, expect, it, vi } from "vitest";
@@ -67,7 +68,11 @@ function resource(handle = "doc", revision = 1): ResourceRecord {
         intentId: `create-${handle}`,
         sequence: 1,
         identityRevision: 1,
-        desired: { kind: "set-location", typedName: "Untitled" },
+        desired: {
+          kind: "set-location",
+          typedName: "Untitled",
+          destination: untitledDestination("", "Untitled"),
+        },
         attempts: [],
         state: "pending",
       },

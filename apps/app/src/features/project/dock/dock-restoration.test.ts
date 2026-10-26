@@ -10,6 +10,7 @@ import {
   emptyCatalogView,
   type ResourceProjectionSnapshot,
   type ResourceRecord,
+  untitledDestination,
 } from "@meridian/resource-replica";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ContextTab } from "@/client/stores";
@@ -132,7 +133,12 @@ function localRecord(): ResourceRecord {
       identity: { documentId: "doc", revision: 1 },
       content: { kind: "exact", databaseName: "local", schema: null },
       classification: { editable: true, filetype: "markdown", schemaType: "document" },
-      materialization: { kind: "untitled", folderPath: "", provisionalName: "Untitled" },
+      materialization: {
+        kind: "untitled",
+        folderPath: "",
+        provisionalName: "Untitled",
+        unnamed: true,
+      },
       canonical: null,
       lifecycle: { kind: "local" },
       aliases: {},
@@ -145,7 +151,11 @@ function localRecord(): ResourceRecord {
         intentId: "create",
         sequence: 1,
         identityRevision: 1,
-        desired: { kind: "set-location", typedName: "Untitled" },
+        desired: {
+          kind: "set-location",
+          typedName: "Untitled",
+          destination: untitledDestination("", "Untitled"),
+        },
         attempts: [],
         state: "pending",
       },
