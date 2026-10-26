@@ -36,14 +36,19 @@ export function next(
   retry = false,
 ): InboxWorkSelection {
   const continuation = pending.find(isAskResolved);
-  if (continuation)
+  if (continuation) {
+    const queuedSwitch = pending.find(isWriteModeSwitch);
+    const rows = pending.filter(
+      (row) => row.intent !== "control" && (!queuedSwitch || row.seq < queuedSwitch.seq),
+    );
     return at === "run_start"
       ? {
           kind: "control",
           control: continuation,
-          rows: pending.filter((row) => row.intent !== "control"),
+          rows,
         }
       : { kind: "none" };
+  }
   const queuedSwitch = pending.find(isWriteModeSwitch);
   if (queuedSwitch && at === "run_start" && retry) return { kind: "switch", control: queuedSwitch };
   if (queuedSwitch && pending.some((row) => row.intent === "message" && row.seq > queuedSwitch.seq))
@@ -81,8 +86,11 @@ function isWriteModeSwitch(row: InboxMessage): row is WriteModeSwitchMessage {
   return row.intent === "control" && row.body.kind === "write_mode";
 }
 
-/** Materialization takes every waiting non-command row; a queued switch is not a boundary for it. */
+/** Prefix materialization cannot move a row across the write-mode boundary that governs it. */
 export function prefixRows(eligible: readonly InboxMessage[]): InboxWorkSelection {
-  const rows = eligible.filter((row) => row.intent !== "control");
+  const queuedSwitch = eligible.find(isWriteModeSwitch);
+  const rows = eligible.filter(
+    (row) => row.intent !== "control" && (!queuedSwitch || row.seq < queuedSwitch.seq),
+  );
   return rows.length > 0 ? { kind: "batch", rows } : { kind: "none" };
 }

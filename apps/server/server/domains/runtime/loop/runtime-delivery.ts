@@ -101,6 +101,8 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
 };
 export type DeliverySelectionFields = {
   batch: InboxMessage[];
+  /** Pending messages beyond this boundary; a fresh run must exclude their persisted turns. */
+  deferred: InboxMessage[];
   continueTask?: boolean;
   outstanding: InboxMessage[];
   workContext?: import("./work-context.js").RenderedWorkContext;

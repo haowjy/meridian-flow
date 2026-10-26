@@ -576,10 +576,11 @@ async function runDrainTurn(
         },
       );
       const forgotten = new Set(forgetting.forget);
+      const deferred = new Set(selection.deferred.map((message) => message.id));
       const stays = <T extends { id: string }>(turns: readonly T[]) =>
-        turns.filter((turn) => !forgotten.has(turn.id));
+        turns.filter((turn) => !forgotten.has(turn.id) && !deferred.has(turn.id));
       const staysBlocks = (blocks: readonly Block[]) =>
-        blocks.filter((block) => !forgotten.has(block.turnId));
+        blocks.filter((block) => !forgotten.has(block.turnId) && !deferred.has(block.turnId));
       // `priorTurns` is the graph (the leaf, positions, known ids); `localTurns` the conversation.
       const { priorTurns, prevTurnId } = ctx;
       const localTurns = stays(ctx.localTurns);

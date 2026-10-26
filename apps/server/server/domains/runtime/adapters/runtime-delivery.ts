@@ -83,8 +83,6 @@ export function createDeliveryAdapter(
     retry = false,
   ): Promise<SelectedDelivery<DeliverySelection | DeliveryBoundarySelection>> {
     const { pendingBatch, boundIds, eligible, eligibilityKey } = await eligiblePending(threadId);
-    // Materialization puts every waiting non-command row into the graph in seq
-    // order; it is not a request boundary, so a queued switch never yields it.
     const nextWork: InboxWorkSelection =
       at === "prefix" ? prefixRows(eligible) : next(eligible, at, retry);
     const control = at === "run_start" && nextWork.kind === "control" ? nextWork.control : null;
@@ -98,6 +96,9 @@ export function createDeliveryAdapter(
     if (!thread) throw new Error(`Thread not found: ${threadId}`);
     const selectionFields = {
       batch: work.batch,
+      deferred: pendingBatch.filter(
+        (row) => row.intent === "message" && !boundIds.has(row.id) && !selectedIds.has(row.id),
+      ),
       outstanding: pendingBatch.filter(
         (row) => row.intent === "message" && (boundIds.has(row.id) || selectedIds.has(row.id)),
       ),
@@ -126,10 +127,7 @@ export function createDeliveryAdapter(
       eligible: openAsk
         ? []
         : continuation
-          ? pendingBatch.filter(
-              (row) =>
-                row.id === continuation.id || (row.intent !== "control" && !boundIds.has(row.id)),
-            )
+          ? pendingBatch.filter((row) => row.id === continuation.id || !boundIds.has(row.id))
           : pendingBatch.filter((row) => !boundIds.has(row.id)),
     };
   }
