@@ -10,7 +10,8 @@ import {
 import {
   type ExpectedServiceName,
   expectedPortlessName,
-  expectedServiceHost,
+  expectedServiceOrigin,
+  resolvePortlessProxyPort,
 } from "./portless-routes";
 
 const logPath = "logs/portless.log";
@@ -53,6 +54,7 @@ const DEV_SERVICES: ReadonlyArray<DevServiceSpec> = [
 const PORTLESS_ENV_KEYS = [
   "PORTLESS_LAN",
   "PORTLESS_HTTPS",
+  "PORTLESS_PORT",
   "PORTLESS_TLD",
   "PORTLESS_WILDCARD",
   "PORTLESS_SYNC_HOSTS",
@@ -226,8 +228,11 @@ function renderPortlessCommand({
   })} 2>&1 | tee ${logPath}`;
 }
 
-export function resolveInternalApiOrigin(worktreePrefix?: string): string {
-  return `https://${expectedServiceHost("server", worktreePrefix)}`;
+export function resolveInternalApiOrigin(
+  worktreePrefix?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return expectedServiceOrigin("server", worktreePrefix, resolvePortlessProxyPort(env));
 }
 
 export function createDevSessionCommand({
@@ -245,7 +250,7 @@ export function createDevSessionCommand({
   worktreePrefix?: string;
   force?: boolean;
 }): DevSessionCommand {
-  const internalApiOrigin = resolveInternalApiOrigin(worktreePrefix);
+  const internalApiOrigin = resolveInternalApiOrigin(worktreePrefix, env);
   return {
     executable: renderPortlessCommand({
       mode,
