@@ -56,6 +56,7 @@ export {
   RebindThreadWorkError,
   type RebindThreadWorkInput,
   rebindThreadWork,
+  switchThreadWork,
 } from "./domain/rebind-thread-work.js";
 export {
   projectThreadActivity,

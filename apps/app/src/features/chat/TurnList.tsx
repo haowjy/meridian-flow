@@ -25,6 +25,7 @@ import { ForkPointRule, InheritedSourceHeader } from "./derivation/InheritedMark
 import type { InheritedView } from "./derivation/inherited-view";
 import { ThreadReferenceChip } from "./derivation/ThreadReferenceChip";
 import type { HandoffBrief } from "./derivation/useHandoffBrief";
+import { DeliveryEventRows } from "./subagent/DeliveryEventRows";
 import { QueuedControlRows } from "./thread-controls/QueuedControlRows";
 import type { QueuedControl } from "./thread-controls/thread-controls";
 import type { ThreadControls } from "./thread-controls/useThreadControls";
@@ -522,6 +523,8 @@ const TranscriptRow = memo(function TranscriptRow({
         onRetry={brief?.retry}
       />
     );
+  } else if (row.kind === "delivery") {
+    content = <DeliveryEventRows groups={row.deliveries} />;
   } else if (writer) {
     content = (
       <UserTurn

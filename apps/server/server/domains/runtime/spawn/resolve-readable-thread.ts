@@ -1,4 +1,4 @@
-/** Shared connection authority for conversation reads and background messages. */
+/** Connection authority for reading another conversation's history or files. */
 
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/errors";
 import { parseThreadRef, type Thread } from "@meridian/contracts/threads";

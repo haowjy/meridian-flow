@@ -98,9 +98,18 @@ function DeliveryGroupRow({ group }: { group: DeliveryGroup }) {
 
 function DeliveryEventRow(event: DeliveryEvent) {
   if (!event.subagentUpdate) {
+    const sender = event.sender;
+    const senderName = sender
+      ? sender.title?.trim()
+        ? sender.ref
+          ? `${sender.title.trim()} (${sender.ref})`
+          : sender.title.trim()
+        : sender.ref
+      : null;
     return (
       <ActivityRow Icon={MessageSquareText}>
         <span className="whitespace-pre-wrap text-foreground">
+          {senderName ? <Trans>From {senderName}: </Trans> : null}
           {event.message || <Trans>Shared an attachment</Trans>}
         </span>
       </ActivityRow>

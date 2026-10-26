@@ -445,6 +445,7 @@
     "tools/dev/lib/port-lifecycle.test.ts": 6,
     "tools/dev/lib/worktree-cleanup-eligibility.test.ts": 13,
     "tools/dev/lib/worktree-cleanup-lock.test.ts": 2,
+    "tools/dev/lib/worktree-cleanup-orphans.test.ts": 8,
     "tools/dev/lib/worktree-cleanup-readiness.test.ts": 14,
     "tools/dev/lib/worktree-cleanup.test.ts": 14,
     "tools/dev/migration-lint.test.ts": 8,

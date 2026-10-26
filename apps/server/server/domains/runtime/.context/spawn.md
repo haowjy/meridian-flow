@@ -24,13 +24,15 @@ persist on the child binding; the Agent definition is not mutated. An additive
 
 ## `thread_message`
 
-Background delivery resolves the project/user ref, requires same lineage or the
-single direct handoff/source edge, and enqueues one agent-provenance message
-through `RuntimeDelivery`; it does not drive the target. Foreground delivery
+Background delivery resolves the project/user ref and may address any live chat
+owned by that user in the project. It enqueues one agent-provenance message,
+including the sender chat's title and handle, through `RuntimeDelivery`; it does
+not drive the target. Foreground delivery
 requires the target to be in the caller's subtree and returns its terminal
-report. It loads the target's frozen binding without re-resolving configuration,
-so a message cannot escalate model, tools, prompt, or overlay. Bad, unrelated,
-busy, or binding-less targets return typed model-correctable failures.
+report, preventing waits on ancestors or unrelated chats. It loads the target's
+frozen binding without re-resolving configuration, so a message cannot escalate
+model, tools, prompt, or overlay. Bad, busy, or binding-less targets return typed
+model-correctable failures.
 
 A parent re-task carries notification correlation and publishes the same
 completion notice as a background spawn; other background messages promise no

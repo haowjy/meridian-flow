@@ -167,6 +167,31 @@ item is a skip reason, mark it done before `--auto`; auto cleanup then runs four
 actions (stop dev, drop database, remove worktree, delete branch) rather than the
 targeted path's optional fifth `meridian work done` action.
 
+### Orphan dev sessions
+
+Deleting a checkout directly can leave its tmux terminal session and dev servers
+running. `pnpm dev` cleans up these abandoned stacks before starting or reusing a
+stack. `--print` and `--stop` never sweep other checkouts. To inspect the cleanup
+plan before stopping anything:
+
+```bash
+pnpm dev:prune-worktrees -- --orphans --dry-run
+pnpm dev:prune-worktrees -- --orphans          # confirm interactively; --yes skips the prompt
+```
+
+Only sessions created by the dev launcher qualify: their names include a hash of
+the checkout path, that path must be missing, and every terminal pane must still
+point inside it. Live checkouts, locked Git registrations, other repositories,
+and unrelated terminals are left alone. Branches, databases and work items are
+never deleted. A refusal means ownership could not be proved; inspect the
+reported session and PID before retrying, rather than killing by name or path.
+
+Portless maps local HTTPS names to dev servers. Cleanup also removes its stale
+routes; a route-maintenance failure warns without undoing process cleanup.
+Rerun `--orphans --yes` to retry that maintenance even when no sessions remain.
+Dry-run and cancelled plans never change routes. The detailed ownership and
+shutdown contracts are in [the dev-tool context](tools/dev/.context/CONTEXT.md).
+
 Details: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md), [packages/database/README.md](packages/database/README.md).
 
 ## Git hooks (lefthook)

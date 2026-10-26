@@ -3,6 +3,7 @@ import { execFile, execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import readline from "node:readline/promises";
+import { prunePortlessRoutes } from "./lib/portless-maintenance";
 import {
   buildCleanupContext,
   type CleanupAction,
@@ -35,6 +36,7 @@ import {
   validateCleanupEligibility,
 } from "./lib/worktree-cleanup-eligibility";
 import { acquireCleanupLock, type CleanupLock } from "./lib/worktree-cleanup-lock";
+import { collectOrphanDevSessions, stopOrphanDevSessions } from "./lib/worktree-cleanup-orphans";
 import {
   type AutoCleanupReadinessDecision,
   autoCleanupReadinessKey,
@@ -43,7 +45,7 @@ import {
 } from "./lib/worktree-cleanup-readiness";
 
 interface CliOptions {
-  readonly mode: "auto" | "target" | "help";
+  readonly mode: "auto" | "target" | "orphans" | "help";
   readonly target?: string;
   readonly manuallyVerified?: string;
   readonly dryRun: boolean;
@@ -54,12 +56,14 @@ interface CliOptions {
 const USAGE = `Usage:
   pnpm dev:prune-worktrees -- --target <value> [--manually-verified <reason>] [--force] [--dry-run] [--yes]
   pnpm dev:prune-worktrees -- --auto --acknowledge-batch-risk [--dry-run] [--yes]
+  pnpm dev:prune-worktrees -- --orphans [--dry-run] [--yes]
   pnpm dev:prune-worktrees -- -h|--help
 
 Target values may be a Meridian work id, worktree path, local branch name, or PR number (123 or #123).
 --force permits shells/tmux in the target directory after stopping its managed dev stack and Nx daemon.
 It never kills those shells/panes, discards changes, or bypasses merge proof. Other live processes still block.
-Batch cleanup via --auto is advanced and not yet trusted for routine use.`;
+Batch cleanup via --auto is advanced and not yet trusted for routine use.
+--orphans stops managed dev sessions for missing checkouts; it never deletes branches or databases.`;
 
 const AUTO_NOTICE = `Batch cleanup via --auto is advanced and not yet trusted for routine use.
 Clean up one lane at a time with --target <work-id|path|branch|pr>.
@@ -67,6 +71,7 @@ To proceed anyway, add --acknowledge-batch-risk.`;
 
 function parseArgs(argv: readonly string[]): CliOptions {
   let auto = false;
+  let orphans = false;
   let acknowledgeBatchRisk = false;
   let target: string | undefined;
   let manuallyVerified: string | undefined;
@@ -80,6 +85,10 @@ function parseArgs(argv: readonly string[]): CliOptions {
     if (arg === "-h" || arg === "--help") return { mode: "help", dryRun, yes, force };
     if (arg === "--force") {
       force = true;
+      continue;
+    }
+    if (arg === "--orphans") {
+      orphans = true;
       continue;
     }
     if (arg === "--auto") {
@@ -117,7 +126,11 @@ function parseArgs(argv: readonly string[]): CliOptions {
   }
 
   if (auto && target) throw new Error(`Use either --auto or --target, not both.\n\n${USAGE}`);
-  if (!auto && !target) throw new Error(`Missing --auto or --target.\n\n${USAGE}`);
+  if (orphans && (auto || target || manuallyVerified || acknowledgeBatchRisk || force)) {
+    throw new Error(`--orphans cannot be combined with worktree cleanup options.\n\n${USAGE}`);
+  }
+  if (orphans) return { mode: "orphans", dryRun, yes, force };
+  if (!auto && !target) throw new Error(`Missing --auto, --target, or --orphans.\n\n${USAGE}`);
   if (acknowledgeBatchRisk && !auto) {
     throw new Error(`--acknowledge-batch-risk requires --auto.\n\n${USAGE}`);
   }
@@ -209,13 +222,11 @@ function printPlan(plan: CleanupPlan, force: boolean): void {
   }
 }
 
-async function confirm(plan: CleanupPlan, yes: boolean): Promise<boolean> {
+async function confirm(description: string, yes: boolean): Promise<boolean> {
   if (yes) return true;
   const rl = readline.createInterface({ input, output });
   try {
-    const answer = await rl.question(
-      `\nProceed with cleanup of ${plan.targets.length} worktree(s)? [y/N] `,
-    );
+    const answer = await rl.question(`\nProceed with cleanup of ${description}? [y/N] `);
     return ["y", "yes"].includes(answer.trim().toLowerCase());
   } finally {
     rl.close();
@@ -904,6 +915,37 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (options.mode === "orphans") {
+    const cwd = process.cwd();
+    const orphans = collectOrphanDevSessions(cwd);
+    if (orphans.length === 0) {
+      console.log("No orphan dev sessions found.");
+      if (!options.dryRun) prunePortlessRoutes(cwd);
+      return;
+    }
+    console.log(`Orphan dev session cleanup plan (${orphans.length} sessions):`);
+    for (const orphan of orphans) {
+      console.log(`\n- session: ${orphan.sessionName} (${orphan.sessionId})`);
+      console.log(`  missing checkout: ${orphan.worktreePath}`);
+      console.log(`  pane PIDs: ${orphan.panePids.join(", ")}`);
+      console.log(
+        "  actions: terminate owned process trees; kill tmux session; force-kill survivors; prune portless routes",
+      );
+    }
+    if (options.dryRun) {
+      console.log("\nDry run only; no changes made.");
+      return;
+    }
+    if (!(await confirm(`${orphans.length} orphan dev session(s)`, options.yes))) {
+      console.log("Aborted. No changes made.");
+      return;
+    }
+    await stopOrphanDevSessions(cwd, orphans);
+    prunePortlessRoutes(cwd);
+    console.log("\nOrphan dev session cleanup complete.");
+    return;
+  }
+
   let plan: CleanupPlan;
   try {
     plan = await buildPlan(options, process.cwd());
@@ -925,7 +967,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (!(await confirm(plan, options.yes))) {
+  if (!(await confirm(`${plan.targets.length} worktree(s)`, options.yes))) {
     console.log("Aborted. No changes made.");
     return;
   }
