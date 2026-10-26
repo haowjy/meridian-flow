@@ -197,11 +197,14 @@ async function liveRankBoundary(
   input: {
     sourceId: ContextSourceId;
     parentId: FolderId | null;
-    movingId: string;
+    /** Excluded from the search; absent when no row of the caller's is ranked yet. */
+    movingId?: string;
     direction: "before" | "after";
     anchor?: RankedNode;
   },
 ): Promise<RankedNode | null> {
+  const notMoving = (alias: string) =>
+    input.movingId ? sql`AND ${sql.raw(alias)}.id <> ${input.movingId}::uuid` : sql``;
   const relation = input.anchor
     ? input.direction === "before"
       ? sql`AND (rank COLLATE "C" < ${input.anchor.rank} OR (rank = ${input.anchor.rank} AND id < ${input.anchor.id}::uuid))`
@@ -214,14 +217,14 @@ async function liveRankBoundary(
       (SELECT d.id, d.rank FROM documents d
        WHERE d.context_source_id = ${input.sourceId}
          AND ${parentPredicate(sql.raw("d.folder_id"), input.parentId)}
-         AND d.id <> ${input.movingId}::uuid
+         ${notMoving("d")}
          AND d.deleted_at IS NULL AND NOT d.hidden AND d.rank IS NOT NULL
          ${relation} ORDER BY ${order} LIMIT 1)
       UNION ALL
       (SELECT f.id, f.rank FROM folders f
        WHERE f.context_source_id = ${input.sourceId}
          AND ${parentPredicate(sql.raw("f.parent_id"), input.parentId)}
-         AND f.id <> ${input.movingId}::uuid
+         ${notMoving("f")}
          AND f.deleted_at IS NULL AND NOT f.hidden AND f.rank IS NOT NULL
          ${relation} ORDER BY ${order} LIMIT 1)
     ) boundary ORDER BY ${order} LIMIT 1`);
@@ -324,6 +327,46 @@ export async function placeLiveSibling(
     generateKeyBetween(before, after),
   );
   return "placed";
+}
+
+/**
+ * Places rows that arrived together under one parent, as `placeLiveSibling` would one by one
+ * with `arrived: true`: a default parent keeps them unranked; a manual parent appends them in
+ * default order after its last rank. One allocation and one write per table, so a reveal of
+ * thousands of rows stays set-wise. The rows must already be inserted unranked, under the
+ * caller's namespace lock. `name` is the displayed filename.
+ */
+export type ArrivedBatch = {
+  sourceId: ContextSourceId;
+  parentId: FolderId | null;
+  nodes: { kind: "document" | "folder"; id: string; name: string }[];
+};
+
+export async function placeArrivedBatch(db: Database, input: ArrivedBatch): Promise<void> {
+  if (input.nodes.length === 0) return;
+  if ((await liveParentOrderPolicy(db, input.sourceId, input.parentId)) === "default") return;
+  const last = await liveRankBoundary(db, { ...input, direction: "before" });
+  const ordered = [...input.nodes].sort((left, right) =>
+    compareDefaultSiblings(
+      { kind: left.kind === "folder" ? "folder" : "file", name: left.name, identity: left.id },
+      { kind: right.kind === "folder" ? "folder" : "file", name: right.name, identity: right.id },
+    ),
+  );
+  const ranks = generateNKeysBetween(last?.rank ?? null, null, ordered.length);
+  const tx = currentDrizzleDb(db);
+  for (const [kind, table] of [
+    ["folder", sql.raw("folders")],
+    ["document", sql.raw("documents")],
+  ] as const) {
+    const rows = ordered.flatMap((node, index) =>
+      node.kind === kind ? [{ id: node.id, rank: ranks[index] }] : [],
+    );
+    if (rows.length === 0) continue;
+    await tx.execute(sql`
+      UPDATE ${table} t SET rank = x.rank
+      FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS x(id uuid, rank text)
+      WHERE t.id = x.id`);
+  }
 }
 
 /** Reconcile a branch-relative placement against the siblings that are live at Apply time. */

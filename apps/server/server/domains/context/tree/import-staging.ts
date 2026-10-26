@@ -1,5 +1,6 @@
 /** Private Context batches and a set-wise reveal under one union of namespace locks. */
 import type { AheadMint } from "@meridian/agent-edit/integration";
+import type { ContextSourceId, FolderId } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
@@ -20,6 +21,7 @@ import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { ContextStagedCreation } from "../ports/context-staged-creation.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
 import type { AheadRegistration, LinkAheadRegistry } from "../ports/link-ahead-registry.js";
+import { type ArrivedBatch, placeArrivedBatch } from "./sibling-order.js";
 import {
   createTreeReader,
   LIVE_TREE,
@@ -272,6 +274,27 @@ export function createDrizzleContextStagedCreation(deps: {
         from context_staged_documents d join context_sources cs on cs.project_id = ${projectId} and cs.slug = d.area
           and cs.work_id is null and cs.root_thread_id is null and cs.deleted_at is null
         where d.staging_id = ${stagingId}`);
+      // Only the stage's top level arrives in an existing parent; everything beneath it is a
+      // new default-order folder. The rows go in unranked, then take the parent's arrival rule.
+      const arrivals = new Map<string, ArrivedBatch>();
+      for (const row of top) {
+        const sourceId = sourceOf.get(row.area);
+        // An area provisioned just above is empty and default-ordered.
+        if (!sourceId) continue;
+        const key = parentKey(row.area, row.parentId);
+        const batch = arrivals.get(key) ?? {
+          sourceId: sourceId as ContextSourceId,
+          parentId: row.parentId as FolderId | null,
+          nodes: [],
+        };
+        batch.nodes.push(
+          row.kind === "folder"
+            ? { kind: "folder", id: row.id, name: row.name }
+            : { kind: "document", id: row.id, name: renderFilename(row.name, row.extension) },
+        );
+        arrivals.set(key, batch);
+      }
+      for (const batch of arrivals.values()) await placeArrivedBatch(db, batch);
       await tx.execute(sql`insert into document_markdown_projections (document_id, markdown)
         select s.document_id, s.markdown from collab_staged_states s
         where s.staging_id = ${stagingId}`);

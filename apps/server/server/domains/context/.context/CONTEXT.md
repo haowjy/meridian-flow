@@ -292,3 +292,5 @@ no `results://` scheme. Neither Recent list lives here: chat Recent reads
 ## Import staging
 
 `context_staged_folders` and `context_staged_documents` are private generation-tagged rows. Catalog, ContextFS, address lookup, link resolution, and tree readers do not read them. Reveal validates the whole placement, locks Works before namespace keys, inserts the generation set-wise, settles membership and arrivals, then publishes one catalog refresh. A changed destination refuses the generation rather than revealing a partial tree.
+
+The reveal inserts rows unranked, then places the stage's top level like any other arrival (`placeArrivedBatch` in `tree/sibling-order.ts`): a default destination leaves them unranked, a manual one appends them after its last rank in default order, with server-minted ranks under the namespace lock it already holds. Everything below the top level sits in new default-order folders. A write path that inserts `folders` or `documents` rows must place them this way; setting `rank` by hand bypasses the allocator.
