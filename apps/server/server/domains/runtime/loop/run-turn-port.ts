@@ -27,6 +27,8 @@ interface RunTurnBase {
     origin: "spawn" | "message";
     sender: { ref: string | null; title: string | null };
   };
+  /** Forwarded-answer ownership recorded atomically with child report admission. */
+  relayAdmission?: { forwardedAskId: string; childAskId: string };
   onCurrentTurnChanged?: (turn: CurrentTurn) => void;
 }
 

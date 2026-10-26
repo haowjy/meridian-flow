@@ -116,6 +116,7 @@ export interface ChildRunCoordinatorDeps {
 
 export interface ChildRunCoordinator {
   runChild(request: ChildRunRequest, options: ChildRunOptions): Promise<ChildRunResult>;
+  readSavedReport(childThreadId: ThreadId, executionTurnId: TurnId): Promise<SpawnResult | null>;
 }
 
 export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildRunCoordinator {
@@ -440,24 +441,27 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           if (answered.replayedReport) {
             return savedReportToSpawnResult(answered.replayedReport);
           }
-          const binding = await deps.agentRevisions.readThreadBinding(authorized.target.id);
-          return {
-            status: "background",
-            handle: authorized.target.ref ?? "",
-            threadId: authorized.target.id,
-            agentSlug: binding?.revision?.slug ?? GENERIC_SUBAGENT_SLUG,
-            notifiesCaller: true,
-          };
+          if (background) {
+            const binding = await deps.agentRevisions.readThreadBinding(authorized.target.id);
+            return {
+              status: "background",
+              handle: authorized.target.ref ?? "",
+              threadId: authorized.target.id,
+              agentSlug: binding?.revision?.slug ?? GENERIC_SUBAGENT_SLUG,
+              notifiesCaller: true,
+            };
+          }
         }
         if (!background) {
           if (!answered.continuation)
             throw new Error("Direct parent answer has no continuation identity");
           const prepared = await prepareForegroundMessage(request, authorized.target);
           if ("status" in prepared) return prepared;
-          return driver.drive(prepared, {
+          const childRun = await driver.admit(prepared, {
             ...request,
             reportCorrelation: answered.continuation.correlation,
           });
+          return driver.execute(childRun);
         }
         const binding = await deps.agentRevisions.readThreadBinding(authorized.target.id);
         return {
@@ -523,10 +527,12 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         request.reportCorrelation = { ...request.reportCorrelation, cardBlockId: runCard.id };
       }
       try {
-        const execution = await driver.driveBackground(prepared, request, onAdmitted);
+        const childRun = await driver.admit(prepared, request);
+        await onAdmitted(childRun.handle.executionTurnId, childRun.admittedAt);
+        driver.executeBackground(childRun);
         return {
           status: "background",
-          execution,
+          execution: childRun.handle.executionTurnId,
           handle: prepared.handle,
           threadId: prepared.child.id,
           agentSlug: prepared.resolvedSlug,
@@ -554,7 +560,9 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       if (request.reportCorrelation && runCard) {
         request.reportCorrelation = { ...request.reportCorrelation, cardBlockId: runCard.id };
       }
-      return await driver.drive(prepared, request, onAdmitted);
+      const childRun = await driver.admit(prepared, request);
+      await onAdmitted(childRun.handle.executionTurnId, childRun.admittedAt);
+      return await driver.execute(childRun);
     } catch (error) {
       if (!admitted) {
         await persistInvocationCard(
@@ -576,7 +584,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
   }
 
-  return { runChild };
+  return { runChild, readSavedReport: driver.readSavedReport };
 }
 
 function readableFailureReason(error: unknown): string {

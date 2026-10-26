@@ -15,6 +15,7 @@ import { invocationAgentName, invocationCardProps } from "./spawn-output.js";
 export type PublicationOutcome = "published" | "parked" | "already";
 
 export interface ReportPublisher {
+  projectRunning(childThreadId: ThreadId, executionTurnId: TurnId): Promise<void>;
   publish(childThreadId: ThreadId, executionTurnId: TurnId): Promise<PublicationOutcome>;
   sweep(limit: number): Promise<number>;
 }
@@ -26,6 +27,81 @@ export function createReportPublisher(deps: {
   eventSink: EventSink;
 }): ReportPublisher {
   let cursor: TurnId | undefined;
+
+  async function cardProjection(
+    report: SavedExecutionReport,
+    state: "running" | "terminal",
+  ): Promise<OrchestratorEvent | null> {
+    if (!report.cardBlockId || !report.callerTurnId) return null;
+    if (!report.toolCallId || report.deliveryMode === "none")
+      throw new Error("Card-bearing report has incomplete invocation correlation");
+    const card = await deps.repos.blocks.findById(report.cardBlockId);
+    if (!card) return null;
+    if (card.turnId !== report.callerTurnId || card.blockType !== "custom")
+      throw new Error("Execution report card no longer belongs to its caller turn");
+    const priorProps = parseInvocationCard(card.content);
+    if (state === "running" && priorProps?.outcome !== "asked") return null;
+    const projectedExecution =
+      priorProps?.childThreadId === report.childThreadId ? priorProps.execution : null;
+    const [projectedTurn, reportTurn, child] = await Promise.all([
+      projectedExecution ? deps.repos.turns.findById(projectedExecution) : null,
+      deps.repos.turns.findById(report.executionTurnId),
+      deps.repos.threads.findById(report.childThreadId),
+    ]);
+    if (projectedTurn && reportTurn && projectedTurn.position > reportTurn.position) return null;
+    const agentName = invocationAgentName(
+      report.agentSlug ?? GENERIC_SUBAGENT_SLUG,
+      child?.agentName,
+    );
+    return {
+      type: "block.updated",
+      block: contentForBlockInput({
+        id: card.id,
+        turnId: card.turnId,
+        blockType: "custom",
+        sequence: card.sequence,
+        content: buildInvocationCardContent(
+          invocationCardProps({
+            agent: report.agentSlug ?? undefined,
+            agentName,
+            name: report.name ?? undefined,
+            correlation: {
+              parentTurnId: report.callerTurnId,
+              toolCallId: report.toolCallId,
+              deliveryMode: report.deliveryMode,
+            },
+            childThreadId: report.childThreadId,
+            execution: report.executionTurnId,
+            startedAt: report.admittedAt,
+            terminalAt: state === "terminal" ? report.terminalAt : null,
+            ...(state === "terminal" && report.outcome ? { outcome: report.outcome } : {}),
+            fromThreadId: priorProps?.fromThreadId,
+            fromThreadRef: priorProps?.fromThreadRef,
+            fromThreadTitle: priorProps?.fromThreadTitle,
+          }),
+        ),
+        status: "complete",
+      }),
+    };
+  }
+
+  async function projectRunning(childThreadId: ThreadId, executionTurnId: TurnId): Promise<void> {
+    const report = await deps.repos.executionReports.findByExecution(
+      childThreadId,
+      executionTurnId,
+    );
+    if (!report || report.outcome !== null || !report.callerThreadId) return;
+    await deps.delivery.withThreadLock(report.callerThreadId, async () => {
+      await deps.repos.transaction(async () => {
+        const event = await cardProjection(report, "running");
+        if (event)
+          await persistAndAppendEvents(deps, report.callerThreadId as ThreadId, async () => ({
+            result: null,
+            events: [event],
+          }));
+      });
+    });
+  }
 
   async function publish(childThreadId: ThreadId, executionTurnId: TurnId) {
     const selected = await deps.repos.executionReports.findByExecution(
@@ -76,59 +152,8 @@ export function createReportPublisher(deps: {
           throw new Error("Asked execution report has no open question");
         }
         const events: OrchestratorEvent[] = [];
-        if (report.cardBlockId && report.callerTurnId) {
-          if (!report.toolCallId || report.deliveryMode === "none") {
-            throw new Error("Card-bearing report has incomplete invocation correlation");
-          }
-          const card = await deps.repos.blocks.findById(report.cardBlockId);
-          if (card) {
-            if (card.turnId !== report.callerTurnId || card.blockType !== "custom") {
-              throw new Error("Execution report card no longer belongs to its caller turn");
-            }
-            const priorProps = parseInvocationCard(card.content);
-            const projectedExecution =
-              priorProps?.childThreadId === report.childThreadId ? priorProps.execution : null;
-            const [projectedTurn, reportTurn] = await Promise.all([
-              projectedExecution ? deps.repos.turns.findById(projectedExecution) : null,
-              deps.repos.turns.findById(report.executionTurnId),
-            ]);
-            const isNewerProjection =
-              projectedTurn !== null &&
-              reportTurn !== null &&
-              projectedTurn.position > reportTurn.position;
-            if (!isNewerProjection)
-              events.push({
-                type: "block.updated",
-                block: contentForBlockInput({
-                  id: card.id,
-                  turnId: card.turnId,
-                  blockType: "custom",
-                  sequence: card.sequence,
-                  content: buildInvocationCardContent(
-                    invocationCardProps({
-                      agent: report.agentSlug ?? undefined,
-                      agentName,
-                      name: report.name ?? undefined,
-                      correlation: {
-                        parentTurnId: report.callerTurnId,
-                        toolCallId: report.toolCallId,
-                        deliveryMode: report.deliveryMode,
-                      },
-                      childThreadId: report.childThreadId,
-                      execution: report.executionTurnId,
-                      startedAt: report.admittedAt,
-                      terminalAt: report.terminalAt,
-                      outcome: report.outcome,
-                      fromThreadId: priorProps?.fromThreadId,
-                      fromThreadRef: priorProps?.fromThreadRef,
-                      fromThreadTitle: priorProps?.fromThreadTitle,
-                    }),
-                  ),
-                  status: "complete",
-                }),
-              });
-          }
-        }
+        const cardEvent = await cardProjection(report, "terminal");
+        if (cardEvent) events.push(cardEvent);
         if (report.outcome !== "asked") {
           events.push({
             type: "agent.run_completed",
@@ -217,7 +242,7 @@ export function createReportPublisher(deps: {
     return candidates.length;
   }
 
-  return { publish, sweep };
+  return { projectRunning, publish, sweep };
 }
 
 function questionText(

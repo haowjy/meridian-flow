@@ -1497,6 +1497,13 @@ export function createInMemoryRepositories(
         asks.set(id, updated);
         return { ...updated };
       },
+      async completeRelay(id, result) {
+        const row = asks.get(id);
+        if (!row?.relay) throw new Error("Forwarded ask has no admitted relay to complete");
+        const updated = { ...row, relay: { ...row.relay, result } };
+        asks.set(id, updated);
+        return { ...updated };
+      },
       async openPending(id, turnId, deadline) {
         const ask = asks.get(id);
         if (!ask || ask.askingTurnId !== turnId || ask.status !== "pending") return null;
