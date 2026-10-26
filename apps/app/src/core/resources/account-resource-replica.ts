@@ -295,6 +295,7 @@ export class AccountResourceReplica {
       ? await this.admitPlacement(
           projectId,
           () => ({
+            projectId,
             subject: documentId,
             source: null,
             destination: destination.parent,
@@ -673,6 +674,7 @@ export class AccountResourceReplica {
           ({ snapshot, placement }) => {
             const record = snapshot.records.find((r) => r.resource.handle === key.handle);
             return {
+              projectId,
               subject: record?.resource.identity.documentId ?? key.handle,
               source: record ? placement.parentForResource(record) : null,
               destination: destination.parent,
@@ -727,6 +729,7 @@ export class AccountResourceReplica {
     return this.admitPlacement(
       projectId,
       ({ placement }) => ({
+        projectId,
         subject: folderId,
         source: placement.parentForFolder(folderId),
         destination: destination?.parent ?? null,
@@ -779,6 +782,7 @@ export class AccountResourceReplica {
       ({ snapshot, placement }) => {
         const record = snapshot.records.find((r) => r.resource.handle === key.handle);
         return {
+          projectId,
           subject: record?.resource.identity.documentId ?? key.handle,
           source: record ? placement.parentForResource(record) : null,
           destination: null,
