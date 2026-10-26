@@ -105,8 +105,8 @@ export class AccountResourceReconciler {
   private readonly reruns = new Map<string, () => void>();
   private readonly observedResourceRevisions = new Map<string, number>();
   private readonly observedFolderRevisions = new Map<string, number>();
-  /** Handles holding a placement behind predecessors, woken whenever any journal changes. */
-  private readonly waiting = new Map<string, () => void>();
+  /** Handles holding a placement behind predecessors, woken when a journal they wait on changes. */
+  private readonly waiting = new Map<string, { rerun: () => void; on: ReadonlySet<string> }>();
   private stopHints: (() => void) | null = null;
   private retryTimer: number | null = null;
 
@@ -141,23 +141,24 @@ export class AccountResourceReconciler {
     records: readonly ResourceRecord[],
     folders: readonly FolderNamespaceRecord[],
   ): void {
-    let changed = false;
+    const changed = new Set<string>();
     for (const record of records) {
       const { handle, revision } = record.resource;
       if (this.observedResourceRevisions.get(handle) === revision) continue;
       this.observedResourceRevisions.set(handle, revision);
-      changed = true;
+      changed.add(handle);
       this.ports.content.reconcileMetadata(record);
       this.schedule(record.resource);
     }
     for (const folder of folders) {
       if (this.observedFolderRevisions.get(folder.handle) === folder.revision) continue;
       this.observedFolderRevisions.set(folder.handle, folder.revision);
-      changed = true;
+      changed.add(folder.handle);
       if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
     }
-    // Any journal change, from any tab, may resolve a predecessor someone is waiting on.
-    if (changed) for (const rerun of [...this.waiting.values()]) rerun();
+    // A change from any tab may resolve a predecessor; only its waiters look again.
+    for (const { rerun, on } of [...this.waiting.values()])
+      if ([...on].some((handle) => changed.has(handle))) rerun();
   }
 
   schedule(key: ResourceKey): void {
@@ -254,7 +255,7 @@ export class AccountResourceReconciler {
     return async (intent: NamespaceIntent): Promise<PlacementVerdict> => {
       const predecessors = intent.admission?.predecessors ?? [];
       if (predecessors.length === 0) return "go";
-      this.waiting.set(id, rerun);
+      this.waiting.set(id, { rerun, on: new Set(predecessors.map((ref) => ref.handle)) });
       const found = new Map<number, NamespaceIntent | undefined>();
       for (const ref of predecessors) {
         const journal =

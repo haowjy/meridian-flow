@@ -163,8 +163,12 @@ Each placement-bearing intent (move, reorder, delete, create with a destination)
 a sequence `order`, conflict `scope` keys (subject; the sibling sequences it leaves and joins; its
 anchor; the destination's folder ancestry) and `predecessors`, the intents still unresolved at that
 moment with an overlapping scope. The lock covers reading the snapshot and committing the intent, so
-two tabs cannot assign contradictory order; the order is one past the highest in the journal, so it
-survives reload with no counter to lose.
+two tabs cannot assign contradictory order. Admission reads only what is in flight (indexed on
+intent state and outstanding refresh, `readPlacementAdmissionView`) plus the admission high-water
+mark, an index maximum read inside that lock; settled history is never scanned, and projection skips
+it before allocating or sorting. A predecessor reference names the admission `order`, the placement's
+logical identity, and resolves to the newest intent carrying it, so a remint's replacements stay
+waited on. Project area roots are qualified by project in the scope; the User area is shared.
 
 Three consumers read that record and nothing else:
 
@@ -185,9 +189,7 @@ with its operation id, and dependents keep waiting on it. A new operation is nev
 response was lost.
 
 Exact replay of one client's intents is guaranteed. Its predicted final list under arbitrary peer
-changes is not: the server resolves each command against the current list. A create that is reminted
-after a conflict keeps its admission; third parties' predecessor references to the reminted
-dependents' old intent ids then read as cancelled (resolved), a known gap.
+changes is not: the server resolves each command against the current list.
 
 The `parent` is a picked folder identity or qualified area root. Linked creation alone
 captures the deepest existing identity and missing folder names beneath it.

@@ -73,6 +73,13 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
         // Checkpoints are reacquirable; content identities and offline journals survive.
         await transaction.table("catalogs").clear();
       });
+    // Placement admission reads only journals with work in flight, found through these indexes
+    // (state, admission order, outstanding canonical refresh) instead of the account's history.
+    this.database.version(3).stores({
+      resources: "handle,obligations.canonicalRefresh.operationId",
+      intents: "intentId,handle,projectId,state,admission.order",
+      folders: "handle,projectId,canonicalRefresh.operationId",
+    });
     this.resources = this.database.table("resources");
     this.intents = this.database.table("intents");
     this.catalogs = this.database.table("catalogs");
@@ -197,6 +204,63 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
   readProjection(projectId: string): Promise<ResourceProjectionSnapshot> {
     return this.run(async () =>
       this.projectSnapshot(await this.readAccountProjection(), projectId),
+    );
+  }
+
+  /**
+   * What admitting a placement reads: the journals that still shape the list (unresolved intents,
+   * or an accepted move awaiting its canonical refresh), the optional subject's own record, the
+   * project's catalogs, and the highest admission order ever assigned. Settled history is not read.
+   * Call it inside the placement admission lock, which makes the high-water mark atomic with the
+   * commit that follows.
+   */
+  readPlacementAdmissionView(
+    projectId: string,
+    subject?: ResourceKey,
+  ): Promise<ResourceProjectionSnapshot & { highWater: number }> {
+    return this.run(() =>
+      this.database.transaction(
+        "r",
+        this.resources,
+        this.intents,
+        this.catalogs,
+        this.folders,
+        async () => {
+          const unresolved = await this.intents
+            .where("state")
+            .anyOf("pending", "submitted", "received")
+            .toArray();
+          const refreshing = await this.resources
+            .where("obligations.canonicalRefresh.operationId")
+            .aboveOrEqual("")
+            .toArray();
+          const handles = new Set([
+            ...unresolved.map((intent) => intent.handle),
+            ...refreshing.map((resource) => resource.handle),
+            ...(subject ? [subject.handle] : []),
+          ]);
+          const records: ResourceRecord[] = [];
+          for (const handle of handles) {
+            const resource = await this.resources.get(handle);
+            if (resource) records.push(await this.record(resource));
+          }
+          const folders = await this.folders.toArray();
+          const [lastFile, catalogs] = await Promise.all([
+            this.intents.orderBy("admission.order").last(),
+            this.catalogs.where("projectId").equals(projectId).toArray(),
+          ]);
+          const highWater = Math.max(
+            lastFile?.admission?.order ?? 0,
+            ...folders.flatMap((folder) => folder.intents.map((i) => i.admission?.order ?? 0)),
+          );
+          return {
+            records,
+            folders,
+            catalogs: catalogs.map(({ key: _key, ...checkpoint }) => checkpoint),
+            highWater,
+          };
+        },
+      ),
     );
   }
 
