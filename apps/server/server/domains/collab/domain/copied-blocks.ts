@@ -142,7 +142,14 @@ function remappedAttrs(
     if (parsed?.kind === "ahead") {
       const settled = aheadSettlements?.get(identity);
       const target = settled ? map.documents.get(settled) : undefined;
-      return target ? documentAttrs(target, suffix, attrs.title) : null;
+      if (target) return documentAttrs(target, suffix, attrs.title);
+      // An ahead ref settles only on a document. A folder may have arrived at its address
+      // since it was minted (a writer links a folder before creating it), and the copy of
+      // that folder is what the link now names.
+      const address =
+        occurrence.kind === "link" ? resolveDocumentHref(attrs.href, sourceHolderUri) : null;
+      const folder = address ? map.foldersAt.get(address.uri) : undefined;
+      return folder ? folderAttrs(folder, suffix, attrs.title) : null;
     }
     return null;
   }

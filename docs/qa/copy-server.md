@@ -19,9 +19,10 @@ server only). The browser's Copy is a later slice. It is not a current pass clai
 2. Seed with `./mf doc put` (angle brackets around any address with a space):
    `manuscript://Book/Chapter 1` linking `<Chapter 2>` (not yet written, so it mints
    an ahead ref), `<manuscript://Outside/Sheet>`, an external URL and an image of
-   `manuscript://Book/Art/cover.png`; `Chapter 2` linking back to `Chapter 1` and to
-   `Part/Inner`. Make the image with `./mf doc copy "uploads://@c1/cover.png" --to
-   "manuscript://Book/Art"`, and the empty folders with `./mf api POST
+   `manuscript://Book/Art/cover.png`; `Chapter 2` linking back to `Chapter 1`, to
+   `Part/Inner`, and to `<Empty/Deep>` (also before that folder exists). Make the image with
+   `./mf doc copy "uploads://@c1/cover.png" --to "manuscript://Book/Art"`, and the
+   empty folders with `./mf api POST
    .../context/manuscript/create --data '{"type":"folder","path":"Book/Empty/Deep"}'`.
 3. A Work in draft mode with a chat bound to it (`./mf thread create --work w1`).
 
@@ -29,10 +30,12 @@ server only). The browser's Copy is a later slice. It is not a current pass clai
 
 1. **Rich folder.** `./mf doc copy "manuscript://Book" --to "kb://Dest"`. Every
    created identity prints, empty folders included. In the copy, `Chapter 1` links
-   to the copy of `Chapter 2` (the settled ahead ref), `Chapter 2` to the copies of
-   `Chapter 1` and `Inner`, both still to the original `Outside/Sheet`, and the image
-   to the copy of `cover.png` (`document_links`: `doc:` and `asset:` keys). The
-   source's links are unchanged.
+   to the copy of `Chapter 2` (the settled ahead ref) and still to the original
+   `Outside/Sheet`, and the image to the copy of `cover.png` (`document_links`:
+   `doc:` and `asset:` keys). `Chapter 2` links to the copies of `Chapter 1` and
+   `Inner`, and its `<Empty/Deep>` — an ahead ref minted before that folder existed —
+   reads as the copy's folder ref `Empty/Deep/` (folder refs have no `document_links`
+   row). The source's links are unchanged.
 2. **Hidden occupant.** A draft-mode chat creates `kb://Hidden/Sheet` and
    `kb://Hidden/Vault/Note` (`./mf thread send <chat> go --mock @script.json`, a
    `write` create each). Copy a live `Sheet` and a live `Vault` folder into
