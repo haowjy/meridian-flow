@@ -145,8 +145,59 @@ lowers its deletion version.
 `unexecutable-after-terminal` history survives revival. `publishResourceTerminal` and
 its cleanup acknowledgement are no-ops at or below `revivedFrom`'s generation.
 
-Folder and document destinations store `{ parent: ParentRef, createFolders?: string[], name }`, where a
-parent is a picked folder identity or qualified area root. Linked creation alone
+Folder and document destinations store `{ parent: ParentRef, createFolders?: string[], name,
+position? }`, where `position` is one of start, end, before a sibling identity, or after a sibling
+identity. The destination parent remains explicit: an anchor that moves cannot retarget the command.
+The server resolves this intent and mints the stored rank under the namespace lock. A parent owns an
+explicit default/manual order policy; ranks affect display only for manual parents.
+`sibling-order.ts` is the one comparator: the catalog projection, folder projection and the
+server's tree readers and `ls` all import it, so the tree, Move… and the model see one order. Ranks
+compare bytewise there and `COLLATE "C"` in SQL; a locale collator would order them differently on
+each side. Don't add a surface-local sort.
+Canonical ranks and folder child-order policy are retained with canonical identity metadata as
+checkpoints reload or temporarily disappear. Synthetic ranks are projection-only: transport sends the
+relative position, and a newer catalog observation replaces the prediction.
+
+### Placement journal (`placement-journal.ts`)
+
+A position reads the list earlier placements produced ("put B after A" means after A *as moved*), so
+placements across file and folder journals have a causal order that no single entry's journal holds.
+Each placement-bearing intent (move, reorder, delete, create with a destination) carries a
+`PlacementAdmission`, written once under the account's cross-tab admission lock and immutable after:
+a sequence `order`, conflict `scope` keys (subject; the sibling sequences it leaves and joins; its
+anchor; the destination's folder ancestry) and `predecessors`, the intents still unresolved at that
+moment with an overlapping scope. The lock covers reading the snapshot and committing the intent, so
+two tabs cannot assign contradictory order. Admission reads only what is in flight: unresolved intents and the
+accepted one an outstanding canonical refresh waits on, found by index
+(`readPlacementAdmissionView`), never a handle's whole journal. The high-water mark is a stored
+counter raised in the commit that stores an admitted intent, so it is read inside that lock without
+a scan. Folder records (embedded histories, needed for parent resolution) and the reactive account
+projection still load complete journals, which Undo and receipts read. A predecessor reference names the admission `order`, the placement's
+logical identity, and resolves to the newest intent carrying it, so a remint's replacements stay
+waited on. Project area roots are qualified by project in the scope; the User area is shared.
+
+Three consumers read that record and nothing else:
+
+- **Projection** folds every unresolved placement in `order` over canonical state: membership,
+  parent-policy promotion and sequence position together (`optimistic-sibling-order.ts`). An accepted
+  placement leaves the fold when its canonical refresh installs.
+- **Dispatch** sends an intent only after every predecessor is resolved (`placementDispatchVerdict`).
+  Unrelated intents share no scope and never wait on each other. A predecessor that never took effect
+  (refused, cancelled) while this intent's position was anchored on its subject sends this intent to
+  typed repair instead of executing it against a different list.
+- **Undo** is a compensating placement batch. It asks which operation owns a subject's placement
+  (the newest live placement intent; after a receipt, the canonical `locationVersion`), never whether
+  a sibling gap still looks the same.
+
+Transport waits are bounded (`NAMESPACE_REQUEST_DEADLINE_MS`), but a deadline ends only the wait: the
+attempt stays `submitted`, the next pass reads its receipt or re-sends the identical recorded request
+with its operation id, and dependents keep waiting on it. A new operation is never minted because a
+response was lost.
+
+Exact replay of one client's intents is guaranteed. Its predicted final list under arbitrary peer
+changes is not: the server resolves each command against the current list.
+
+The `parent` is a picked folder identity or qualified area root. Linked creation alone
 captures the deepest existing identity and missing folder names beneath it.
 Projection appends that suffix to the anchor's current home and reuses navigation-only
 ancestor completion until real catalog identities arrive. Preparation carries both

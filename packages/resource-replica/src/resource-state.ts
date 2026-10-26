@@ -4,6 +4,7 @@ import { newerCanonicalObservation } from "./canonical-observation";
 import { owningLocationIntent, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type {
   NamespaceIntent,
+  PlacementAdmission,
   ResourceDescriptor,
   ResourceDestination,
   ResourceRecord,
@@ -25,6 +26,7 @@ export function reserveResourceDocument(input: {
   provisionalName?: string;
   /** A named create is dispatchable at once: the writer chose where it goes. */
   destination?: { value: ResourceDestination; eligibleAt: number };
+  admission?: PlacementAdmission;
 }): ResourceWrite {
   const resource: ResourceDescriptor = {
     handle: input.handle,
@@ -47,6 +49,7 @@ export function reserveResourceDocument(input: {
     handle: input.handle,
     intentId: input.intentId,
     sequence: 1,
+    ...(input.admission ? { admission: input.admission } : {}),
     identityRevision: 1,
     desired: {
       kind: "create",
@@ -90,6 +93,7 @@ export function planResourceLocation(input: {
   projectId: string;
   intentId: string;
   eligibleAt: number;
+  admission?: PlacementAdmission;
   operationId?: string;
   destination: ResourceDestination;
   typedName?: string;
@@ -110,8 +114,11 @@ export function planResourceLocation(input: {
   );
   const destination = stored.ok ? { ...input.destination, name: stored.name } : input.destination;
   const superseded = supersedeRepairableNamespaceWork(record, input.projectId);
+  // A position reads the list as the placements before it left it, so the same words after other
+  // placements are a different command; only a plain destination can be a duplicate.
   if (
     !superseded.repaired &&
+    !destination.position &&
     latest?.desired.kind === "set-location" &&
     latest.state === "pending" &&
     latest.desired.typedName === (input.typedName ?? input.destination.name) &&
@@ -123,6 +130,7 @@ export function planResourceLocation(input: {
     handle: record.resource.handle,
     intentId: input.intentId,
     sequence: nextSequence(record),
+    ...(input.admission ? { admission: input.admission } : {}),
     identityRevision: record.resource.identity.revision,
     desired: {
       kind: "set-location",
@@ -200,6 +208,8 @@ export function remintCreateConflict(input: {
     sequence: nextSequence(record),
     identityRevision,
     desired: conflicted.desired,
+    // The retry stands where the conflicted create stood in the account's causal order.
+    ...(conflicted.admission ? { admission: conflicted.admission } : {}),
     attempts: [],
     state: "pending",
   };

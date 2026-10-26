@@ -48,6 +48,8 @@ export interface ContextMoveResult {
   /** Scheme-relative path durably committed by the tree mutation. */
   destinationPath: string;
   destinationUri?: string;
+  /** Per-entry namespace mutation revision produced by this exact operation. */
+  locationVersion?: string;
 }
 
 export type ContextOperationCommand =
@@ -57,6 +59,7 @@ export type ContextOperationCommand =
       destinationUri: string;
       expected: MoveContextEntryRequest["expected"];
       destinationParent?: MoveContextEntryRequest["destinationParent"];
+      position?: MoveContextEntryRequest["position"];
     }
   | { kind: "delete"; uri: string; expected: DeleteContextEntryRequest["expected"] };
 

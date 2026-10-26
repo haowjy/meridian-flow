@@ -265,8 +265,17 @@ export type ContextDestinationParent = {
     }
 );
 
+/** Relative position within one explicit destination parent. The server resolves it under lock. */
+export type ContextSiblingPosition =
+  | { kind: "before" | "after"; siblingId: string }
+  | { kind: "start" | "end" };
+
+/** Whether a parent's children follow default name order or stored sibling ranks. */
+export type ContextParentOrderPolicy = "default" | "manual";
+
 export type MoveContextEntryRequest = {
   destinationParent?: ContextDestinationParent;
+  position?: ContextSiblingPosition;
   operationId: string;
   path: string;
   expected: { kind: "file" | "folder"; nodeId: string };

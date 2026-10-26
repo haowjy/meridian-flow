@@ -5,6 +5,7 @@
  * mutation.
  */
 import type {
+  ContextSiblingPosition,
   DeleteContextEntryResult,
   Filetype,
   RetractionCause,
@@ -56,6 +57,7 @@ interface PreparedContextMoveBase {
   expectedTarget: ContextTargetExpectation;
   /** Explicit opt-in to replace an occupied file target. Directories are never overwritten. */
   overwrite: boolean;
+  position?: ContextSiblingPosition;
 }
 
 type PreparedFileMove = PreparedContextMoveBase & {
@@ -97,6 +99,7 @@ export interface ContextTreeMutationResult {
   movedNodeId: string;
   /** Actual free path claimed by the move. */
   destinationPath: string;
+  locationVersion?: string;
   linkUpdate?: { links: number; documents: number };
 }
 

@@ -1,6 +1,9 @@
 /** Folder placement and recursive deletion share the account namespace journal, without document content. */
 
-import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
+import type {
+  ContextOperationReceipt,
+  ContextParentOrderPolicy,
+} from "@meridian/contracts/protocol";
 import { canonicalRefreshObservation, newerCanonicalObservation } from "./canonical-observation";
 import {
   namespaceIntentOutcome,
@@ -18,6 +21,7 @@ import {
 import {
   activeNamespaceIntent,
   type NamespaceAttemptIds,
+  type NamespaceGate,
   type NamespaceReconcileResult,
   namespaceAttemptWithOutcome,
   namespaceOutcomeMatches,
@@ -34,6 +38,7 @@ import type {
   NamespaceOutcome,
   NamespaceRequest,
   ParentRef,
+  PlacementAdmission,
   ResourceDestination,
   ResourceKey,
   ResourceLocation,
@@ -114,6 +119,7 @@ export function planFolderDeletion(input: {
   sourceObservationVersion?: string;
   intentId: string;
   operationId: string;
+  admission?: PlacementAdmission;
 }): FolderNamespaceWrite | null {
   const previous = input.record ?? null;
   if (
@@ -155,6 +161,7 @@ export function planFolderDeletion(input: {
           sequence: Math.max(0, ...record.intents.map((intent) => intent.sequence)) + 1,
           identityRevision: 1,
           desired: { kind: "delete" },
+          ...(input.admission ? { admission: input.admission } : {}),
           attempts: [],
           state: "pending",
         },
@@ -174,6 +181,7 @@ export function planFolderLocation(input: {
   sourceObservationVersion?: string;
   intentId: string;
   operationId: string;
+  admission?: PlacementAdmission;
   destination: ResourceDestination;
   typedName?: string;
 }): FolderNamespaceWrite | null {
@@ -218,6 +226,7 @@ export function planFolderLocation(input: {
     destination.scheme === record.canonical.scheme &&
     sameOwner(destination, record.canonical) &&
     destination.path === record.canonical.path &&
+    !input.destination.position &&
     !superseded.repaired
   )
     return null;
@@ -227,6 +236,7 @@ export function planFolderLocation(input: {
     intentId: input.intentId,
     operationId: input.operationId,
     sequence: Math.max(0, ...record.intents.map((item) => item.sequence)) + 1,
+    ...(input.admission ? { admission: input.admission } : {}),
     identityRevision: 1,
     desired: {
       kind: "set-folder-location",
@@ -400,6 +410,7 @@ export function prepareFolderNamespaceAttempt(
       ),
       ...owners.body,
       ...(intent.desired.typedName !== source.name ? { newName: intent.desired.typedName } : {}),
+      ...(destination.position ? { position: destination.position } : {}),
     },
   };
   return replaceIntent(record, intent.intentId, (current) => ({
@@ -535,6 +546,9 @@ export function installFolderCanonicalRefresh(
   location: ResourceLocation,
   parent: ParentRef,
   observationVersion: string,
+  rank?: string | null,
+  orderPolicy?: ContextParentOrderPolicy,
+  locationVersion?: string,
 ): FolderNamespaceWrite | null {
   if (record.canonicalRefresh?.operationId !== operationId) return null;
   const { newer, completes } = canonicalRefreshObservation(
@@ -553,7 +567,16 @@ export function installFolderCanonicalRefresh(
     next: {
       ...(newer ? present : base),
       revision: record.revision + 1,
-      ...(newer ? { canonical: location, canonicalParent: parent, observationVersion } : {}),
+      ...(newer
+        ? {
+            canonical: location,
+            canonicalParent: parent,
+            canonicalRank: rank,
+            canonicalLocationVersion: locationVersion,
+            canonicalOrderPolicy: orderPolicy,
+            observationVersion,
+          }
+        : {}),
     },
   };
 }
@@ -572,6 +595,9 @@ export function installFolderNamespaceAvailability(
       availability.location,
       availability.parent,
       availability.observationVersion,
+      availability.rank,
+      availability.orderPolicy,
+      availability.locationVersion,
     );
   const { canonicalRefresh: _completed, ...rest } = record;
   if (
@@ -601,6 +627,7 @@ export function reconcileFolderNamespace(input: {
   transport: ResourceNamespaceTransport;
   lock: ResourceNamespaceLock;
   newAttemptIds: () => NamespaceAttemptIds;
+  gate?: NamespaceGate;
   now?: () => number;
 }): Promise<NamespaceReconcileResult> {
   return reconcileNamespaceJournal({
@@ -640,6 +667,8 @@ export function reconcileFolderNamespace(input: {
         observed?.kind === "available" ? observed.location : null,
       );
     },
+    repair: (record, intentId) =>
+      replaceIntent(record, intentId, (current) => ({ ...current, state: "needs-repair" })),
     recordOutcome: recordFolderNamespaceOutcome,
     settle: (record: FolderNamespaceRecord) => settleFolderNamespaceOutcome(record, input.now?.()),
     // A changed source path must reach the server for an authoritative, identity-bound

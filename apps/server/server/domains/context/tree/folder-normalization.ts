@@ -14,6 +14,8 @@ import type { Database } from "@meridian/database";
 import {
   branchTreeChanges,
   branchTreeFolders,
+  branchTreeParentOrders,
+  branchTreeRanks,
   documents,
   folders,
 } from "@meridian/database/schema";
@@ -111,6 +113,38 @@ async function fold(db: Database, hidden: FolderId, into: FolderId): Promise<voi
     WHERE folder_id = ${hidden}::uuid
     ON CONFLICT DO NOTHING`);
   await tx.delete(branchTreeFolders).where(eq(branchTreeFolders.folderId, hidden));
+  await tx.execute(sql`
+    INSERT INTO branch_tree_parent_orders
+      (branch_id, parent_kind, parent_id, order_policy, created_at, updated_at)
+    SELECT branch_id, parent_kind, ${into}::uuid, order_policy, created_at, now()
+    FROM branch_tree_parent_orders
+    WHERE parent_kind = 'folder' AND parent_id = ${hidden}::uuid
+    ON CONFLICT (branch_id, parent_kind, parent_id)
+    DO UPDATE SET order_policy = EXCLUDED.order_policy, updated_at = now()`);
+  await tx
+    .delete(branchTreeParentOrders)
+    .where(
+      and(
+        eq(branchTreeParentOrders.parentKind, "folder"),
+        eq(branchTreeParentOrders.parentId, hidden),
+      ),
+    );
+  await tx
+    .update(branchTreeRanks)
+    .set({ parentId: into, updatedAt: now })
+    .where(and(eq(branchTreeRanks.parentKind, "folder"), eq(branchTreeRanks.parentId, hidden)));
+  await tx.execute(sql`
+    INSERT INTO branch_tree_ranks
+      (branch_id, parent_kind, parent_id, node_kind, node_id, rank, created_at, updated_at)
+    SELECT branch_id, parent_kind, parent_id, node_kind, ${into}::uuid, rank, created_at, now()
+    FROM branch_tree_ranks
+    WHERE node_kind = 'folder' AND node_id = ${hidden}::uuid
+    ON CONFLICT (branch_id, node_kind, node_id)
+    DO UPDATE SET parent_kind = EXCLUDED.parent_kind, parent_id = EXCLUDED.parent_id,
+      rank = EXCLUDED.rank, updated_at = now()`);
+  await tx
+    .delete(branchTreeRanks)
+    .where(and(eq(branchTreeRanks.nodeKind, "folder"), eq(branchTreeRanks.nodeId, hidden)));
   await tx.update(folders).set({ absorbedInto: into }).where(eq(folders.id, hidden));
   await tombstoneFolders(db, [hidden]);
   await normalizeNames(db, [

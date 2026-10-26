@@ -38,6 +38,7 @@ import { renderFilename } from "../context/paths.js";
 import type { BinaryNode, TrackedNode } from "./hidden-node-types.js";
 import { normalizeNames } from "./name-normalization.js";
 import { bumpLocationVersions, claimDocumentLocation } from "./node-locations.js";
+import { placeLiveSibling } from "./sibling-order.js";
 import type { DocumentSlot } from "./tree-view-sql.js";
 
 /** A document's source-relative path from its folder names and stored name. */
@@ -98,6 +99,12 @@ export async function insertDocumentRow(
       renderFilename(slot.name, slot.extension),
     );
     await normalizeNames(db, [{ kind: "document", id: row.id }]);
+    await placeLiveSibling(db, {
+      node: { kind: "document", id: row.id },
+      sourceId: slot.contextSourceId,
+      parentId: slot.folderId,
+      arrived: true,
+    });
   }
   return row.id;
 }
@@ -118,6 +125,13 @@ export async function insertFolder(
     })
     .returning({ id: folders.id });
   if (!row) throw new Error(`Folder ${at.name} was not inserted`);
+  if (!options.hidden)
+    await placeLiveSibling(db, {
+      node: { kind: "folder", id: row.id },
+      sourceId: at.contextSourceId,
+      parentId: at.parentId,
+      arrived: true,
+    });
   return row.id;
 }
 

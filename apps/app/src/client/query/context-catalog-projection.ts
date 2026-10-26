@@ -78,7 +78,8 @@ export function refusedMoveDestination(
   destination: ResourceDestination | undefined,
   current: ParentRef | null,
 ): ResourceDestination | undefined {
-  return destination && JSON.stringify(destination.parent) !== JSON.stringify(current)
+  return destination &&
+    (destination.position || JSON.stringify(destination.parent) !== JSON.stringify(current))
     ? destination
     : undefined;
 }

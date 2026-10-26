@@ -326,6 +326,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         value: {
           movedNodeId: DOC_ROLLBACK_SOURCE_ID,
           destinationPath: "rollback-target",
+          locationVersion: "1",
           linkUpdate: { links: 0, documents: 0 },
         },
       });

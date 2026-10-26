@@ -29,3 +29,11 @@ which persistence or lock boundary dominates.
 (#975). Measure ordinary typing with the memoized general walk alone; if it
 is sufficient, delete `isPlainProseFastPath` and its duplicate root/anchor and
 delete checks. Preserve committed-prefix validation under the draft row hold.
+
+## Turn tree lines: a move out and back reads as a position change
+
+`turn-live-lineage.ts` keeps a tree line whose `to` equals `from` so a rank-only
+model move reads "Changed the position of X". A turn that moves a document to
+another folder and back lands on the same path, so it reads the same way
+although the model never reordered anything. Telling the two apart needs the
+entry's rank or sibling neighbours in the turn's tree entries, not only paths.

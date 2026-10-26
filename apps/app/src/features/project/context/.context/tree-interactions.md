@@ -114,7 +114,10 @@ Writer deletion has no confirmation step. One project-scoped owner keeps the sho
 Undo windows for all mounted tree surfaces, while delete progress remains derived from the
 namespace journal. Undo waits for a pending intent, reads the delete receipt, and restores the
 receipt's named removals. The catalog stream makes restored identities visible again. A local
-document that never reached the server and an empty folder deletion have no Undo window.
+file restoration then replays the deletion-time sibling witnesses through `moveRows`, so a manual
+parent regains the file's former position and remains manual; it is skipped when the writer admitted
+a newer placement of the restored file meanwhile (`placementTakenSince`). A local document that never reached
+the server and an empty folder deletion have no Undo window.
 
 ## Downlinks
 
@@ -176,7 +179,11 @@ Move… follows Rename in the shared action specification, including phone actio
 the current parent for a new move. A retry opens at the refused destination
 when it still resolves (matching owner and full path), otherwise at the
 current parent with the refusal message. It disables files and the moved folder's subtree, and offers no
-commit at the area list. The current parent reads "Already in <folder>".
+commit at the area list. In the current parent the action is "Change position in <folder>", which
+opens the places among its siblings in place of the tree (`DrillAction.choices`): the top, after each
+sibling, the bottom, read from the replica's complete sibling order (`childrenAt`, not what a search
+shows), without the place it already holds. It reads "Already in <folder>" only when the entry has no
+siblings. The phone uses the same picker; it has no drag.
 A taken name never refuses: the row arrives at the next free name (predicted
 from the destination's rows, decided by the server) through `setLocation` for
 files and `setFolderLocation` for folders. Before the click, the destination's
@@ -193,7 +200,11 @@ contains rows with their authoritative `ParentRef`; hover prediction and
 `moveRows` (`entry-drag/execute-move.ts`) places, remembers each operation for
 its row's link-update note and returns the result to the project-owned notice
 surface. Root authority resolution lives in `move-entry.ts`; arrival naming is
-`arrivals` in `execute-move.ts`, over `context-entry-name.ts`.
+`arrivals` in `execute-move.ts`, over `context-entry-name.ts`. A positional
+destination makes a same-parent placement a reorder rather than "already there";
+the subject is removed from name occupancy, so keeping its name cannot collide
+with itself. Cross-parent placement without a position appends when the server
+says the destination parent is manual.
 
 The chat's Scratch renders one owner-bound `TreeEnvProvider` and `TreeChildren`
 per real catalog. Earlier notes is a navigation disclosure outside the second
@@ -265,7 +276,7 @@ that surface, Dismiss, or the project changing, so Undo is never a race.
 `MoveNoticesProvider` keeps each surface's latest move, as data, whether or
 not the list that made it is still on screen. Undo shows only while it has
 something to put back: the provider watches the replica and retires Undo once
-every moved row was renamed, moved again or deleted (only after the move has
+every moved row was renamed, moved again, reordered or deleted (only after the move has
 shown in the replica, which can trail the placement by a moment); the message
 stays until dismissed. A row the server refuses goes back with its failure mark,
 and the notice stops saying it moved: "Couldn't move chapter-3." without Undo,
@@ -273,6 +284,9 @@ or "Moved 2 items to Act 2. Couldn't move chapter-3." when the rest landed.
 Refused means the replica settled that move's own operation (`MoveEffect.operationId`)
 as needs-repair (`moveSettlement`); a row the writer changed since supersedes that
 intent, so it only loses Undo.
+Freshness uses the move receipt's per-entry `locationVersion` after its server observation fence,
+not the catalog's scope-wide observation version; unrelated namespace edits therefore do not retire
+Undo, while a same-entry peer change does even if it later returns to the same rank.
 
 Each surface's window is in one phase, and the phase decides what shows:
 
@@ -304,9 +318,15 @@ Placement is optimistic, exactly as for Move…: each placement's operation is
 remembered, so the row's link-update note follows its receipt and a later server
 refusal lands on the row as its failure mark. A row the replica won't admit is
 named in the notice, and Undo still covers the rows that moved. Undo returns
-each row to its previous parent (the next free name there if its own was taken
-since, read from the replica's placement with `childrenAt`), skips a row renamed
-or moved again since, or gone (the writer's newer choice), and reads the replica as it
+each row to its previous parent and sibling position (the next free name there if its own was taken
+since, read from the replica's placement with `childrenAt`). The reverse placement
+leaves that parent manually ordered. Undo is a compensating placement batch: it
+skips a row whose placement another operation owns now (`placementStillOwned`:
+a newer live placement of that row in the journal, or after the receipt is
+covered by the catalog, a different `locationVersion`), never because a sibling
+gap looks different, so rows moved together can all be undone before any is
+acknowledged. The compensation is admitted after the originals and projects at
+once. It reads the replica as it
 is when pressed, not as it was at the drop. Verdicts likewise resolve each
 dragged row by identity from the replica's placement graph (rows another list
 dragged included), so a peer's rename or move during the drag can't slip a
@@ -316,7 +336,23 @@ never change.
 
 Targets: a folder row is its folder; a file row hands its drop to its folder (or
 the area); an area header, and in Work Files the whole Scratch group, is the
-catalog's top level. Every target names its catalog root, so a list showing
+catalog's top level. A row's top and bottom bands are sibling edges, before or
+after that row in its actual parent (`RowEdges` in `tree-drop.tsx`): a third of a
+file row, a quarter of a folder row, whose centre keeps moving rows into it. An
+open folder has no bottom edge, because its bottom borders its own first child;
+"after" it is the next sibling's top edge, drawn below its subtree. Each event
+resolves to one target, and an edge claims its event even when it would change
+nothing, so the folder region under it never takes over. One element holds one
+target at a time; crossing from one edge or the centre to another releases the
+first, and its spring, at once. The target key and the route's cached verdict
+key (`treeDropTargetKey`) include the edge and its anchor. An accepted edge draws
+an `InsertionLine` at the row's indentation instead of the folder fill, and the
+hint names the neighbour ("Move before Chapter 3"). `planMove` reads neighbours
+from the parent's complete sibling sequence, so a row a search hides still
+counts: an edge is quiet when every carried row would end where it is, or when
+the anchor is itself carried. Several rows land together in screen order (the
+first takes the edge, each next one goes after the one before). Edges don't
+spring. Every target names its catalog root, so a list showing
 several catalogs (Scratch and its earlier notes) resolves the right one. The
 scope counts hovered elements per target and the innermost target claims each
 event; `DropRegion` lights the folder row and everything open under it as one

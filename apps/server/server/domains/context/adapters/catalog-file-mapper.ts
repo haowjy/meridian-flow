@@ -33,6 +33,8 @@ export type CatalogFileRow = {
   mimeType: string | null;
   metadata: unknown;
   provisionalName: boolean;
+  rank: string | null;
+  locationVersion?: bigint;
   /** Ids a device's create forwarded into this document (a join). */
   joinedFrom?: readonly string[];
 };
@@ -108,6 +110,9 @@ export function mapAuthoritativeFile(input: {
   return {
     kind: "file",
     observationVersion: input.observationVersion,
+    ...(document.locationVersion !== undefined
+      ? { locationVersion: document.locationVersion.toString() }
+      : {}),
     entryId: document.id,
     scope,
     sourceId: document.contextSourceId,
@@ -128,6 +133,7 @@ export function mapAuthoritativeFile(input: {
     ),
     ...persistedClassification,
     provisionalName: document.provisionalName,
+    rank: document.rank,
     ...(input.upload
       ? {
           upload: {

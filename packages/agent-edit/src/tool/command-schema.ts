@@ -194,6 +194,16 @@ const NAMESPACE_BRANCHES = {
       "Move or rename the whole document at `from.path` to `path`. Its identity, content and history stay the same. Links to it follow the move, so don't edit them.",
     fields: {
       from: z.object({ path: SOURCE_PATH }).strict().describe("The document to move."),
+      position: z
+        .discriminatedUnion("kind", [
+          z.object({ kind: z.literal("start") }).strict(),
+          z.object({ kind: z.literal("end") }).strict(),
+          z.object({ kind: z.enum(["before", "after"]), sibling: SOURCE_PATH }).strict(),
+        ])
+        .optional()
+        .describe(
+          "Position among the destination folder's children. Before/after names a sibling path; omit to use normal move placement.",
+        ),
     },
   },
   delete: {

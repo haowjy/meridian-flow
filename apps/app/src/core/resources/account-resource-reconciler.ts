@@ -2,13 +2,19 @@
  * Account-scoped background reconciliation of resource metadata: one runner per handle that
  * dispatches namespace work, follows joins and reminted creates, adopts sessions and cleans up
  * deleted content. Retry triggers and projection observations feed it; the replica composes it.
+ * Runners are independent: a placement waits only for the predecessors its journal admission
+ * names (`placementDispatchVerdict`), so unrelated work never queues behind a held request.
  */
 import {
   acknowledgeLocalResourceCleanup,
   type FolderNamespaceRecord,
   folderNeedsBackgroundReconciliation,
   joinReservation,
+  latestAdmittedPlacement,
+  type NamespaceIntent,
+  type PlacementVerdict,
   pendingJoinTarget,
+  placementDispatchVerdict,
   type ResourceKey,
   type ResourceNamespaceLock,
   type ResourceRecord,
@@ -99,6 +105,8 @@ export class AccountResourceReconciler {
   private readonly reruns = new Map<string, () => void>();
   private readonly observedResourceRevisions = new Map<string, number>();
   private readonly observedFolderRevisions = new Map<string, number>();
+  /** Handles holding a placement behind predecessors, woken when a journal they wait on changes. */
+  private readonly waiting = new Map<string, { rerun: () => void; on: ReadonlySet<string> }>();
   private stopHints: (() => void) | null = null;
   private retryTimer: number | null = null;
 
@@ -133,18 +141,24 @@ export class AccountResourceReconciler {
     records: readonly ResourceRecord[],
     folders: readonly FolderNamespaceRecord[],
   ): void {
+    const changed = new Set<string>();
     for (const record of records) {
       const { handle, revision } = record.resource;
       if (this.observedResourceRevisions.get(handle) === revision) continue;
       this.observedResourceRevisions.set(handle, revision);
+      changed.add(handle);
       this.ports.content.reconcileMetadata(record);
       this.schedule(record.resource);
     }
     for (const folder of folders) {
       if (this.observedFolderRevisions.get(folder.handle) === folder.revision) continue;
       this.observedFolderRevisions.set(folder.handle, folder.revision);
+      changed.add(folder.handle);
       if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
     }
+    // A change from any tab may resolve a predecessor; only its waiters look again.
+    for (const { rerun, on } of [...this.waiting.values()])
+      if ([...on].some((handle) => changed.has(handle))) rerun();
   }
 
   schedule(key: ResourceKey): void {
@@ -167,12 +181,10 @@ export class AccountResourceReconciler {
     void this.ports.metadata
       .readProjection("")
       .then(({ records, folders }) => {
-        for (const record of records) {
+        for (const record of records)
           if (resourceNeedsBackgroundReconciliation(record)) this.schedule(record.resource);
-        }
-        for (const folder of folders) {
+        for (const folder of folders)
           if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
-        }
       })
       .catch(() => undefined);
   };
@@ -185,6 +197,7 @@ export class AccountResourceReconciler {
       this.reruns.set(id, rerun);
       return;
     }
+    this.waiting.delete(id);
     const runner = start()
       .catch(() => undefined)
       .finally(() => {
@@ -206,6 +219,7 @@ export class AccountResourceReconciler {
         transport,
         lock,
         newAttemptIds,
+        gate: this.gate(key, () => this.scheduleFolder(key)),
       });
       if (result !== "progressed") return;
     }
@@ -220,6 +234,7 @@ export class AccountResourceReconciler {
         transport,
         lock,
         newAttemptIds,
+        gate: this.gate(key, () => this.schedule(key)),
       });
       if (namespace === "needs-join" && (await this.commitIdentity(key, (c) => this.planJoin(c))))
         continue;
@@ -229,6 +244,33 @@ export class AccountResourceReconciler {
       const cleanup = await this.reconcileLocalCleanup(key);
       if (namespace !== "progressed" && adopted !== "adopted" && !cleanup) return;
     }
+  }
+
+  /**
+   * Holds a placement behind its predecessors. The handle is registered as waiting before the
+   * predecessors are read, so a change that lands while reading still wakes it.
+   */
+  private gate(key: ResourceKey, rerun: () => void) {
+    const id = encodeURIComponent(key.handle);
+    return async (intent: NamespaceIntent): Promise<PlacementVerdict> => {
+      const predecessors = intent.admission?.predecessors ?? [];
+      if (predecessors.length === 0) return "go";
+      this.waiting.set(id, { rerun, on: new Set(predecessors.map((ref) => ref.handle)) });
+      const found = new Map<number, NamespaceIntent | undefined>();
+      for (const ref of predecessors) {
+        const journal =
+          ref.kind === "folder"
+            ? await this.ports.metadata.readFolder({ handle: ref.handle })
+            : await this.ports.metadata.readResource({ handle: ref.handle });
+        found.set(
+          ref.order,
+          journal ? latestAdmittedPlacement(journal.intents, ref.order) : undefined,
+        );
+      }
+      const verdict = placementDispatchVerdict(intent, (ref) => found.get(ref.order));
+      if (verdict !== "wait") this.waiting.delete(id);
+      return verdict;
+    };
   }
 
   /** Returns whether a plan applied or a conflict was settled, so the runner takes another pass. */

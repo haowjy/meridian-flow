@@ -81,6 +81,9 @@ export function planFolderCatalogInstallation(input: {
         canonical: location,
         observationVersion: entry.observationVersion,
         canonicalParent: catalogEntryParent(entry, location),
+        canonicalRank: entry.rank,
+        canonicalLocationVersion: entry.locationVersion,
+        canonicalOrderPolicy: entry.orderPolicy,
         intents: [],
       },
     });
@@ -99,6 +102,9 @@ export function planFolderCatalogInstallation(input: {
         location,
         catalogEntryParent(entry, location),
         entry.observationVersion,
+        entry.rank,
+        entry.orderPolicy,
+        entry.locationVersion,
       );
       if (write) writes.push(write);
       continue;
@@ -117,6 +123,9 @@ export function planFolderCatalogInstallation(input: {
         canonical: location,
         observationVersion: entry.observationVersion,
         canonicalParent: catalogEntryParent(entry, location),
+        canonicalRank: entry.rank,
+        canonicalLocationVersion: entry.locationVersion,
+        canonicalOrderPolicy: entry.orderPolicy,
       },
     });
   }

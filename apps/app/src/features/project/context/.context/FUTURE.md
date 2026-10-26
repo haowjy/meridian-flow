@@ -65,3 +65,16 @@ For `document-delete-undo.tsx` and `shell/SurfaceNotice.tsx`.
 - A restore that lands at another name says so only through `announce()`, so a
   sighted writer learns the new name by scanning the tree. Keep the card open for
   a moment with "Restored at ‹location›" if that confuses anyone.
+
+## Row-edge drops
+
+- **An open folder that is last in its parent has no drag edge after it.** An open
+  folder has no bottom edge (that border belongs to its first child), and no
+  next sibling exists to supply a top edge. Move…'s bottom position and
+  collapsing the folder cover it. A trailing drop strip below the last row of
+  each folder would close the gap.
+- **Undo freshness is client evidence only.** `placementStillOwned` and the
+  receipt's `locationVersion` decide whether Undo still applies. A peer move
+  between that check and the commit resolves against the current list on the
+  server. A server-checked expected placement version would make Undo exact; it
+  needs a causal version on every placement result.

@@ -26,6 +26,8 @@ import {
 import Dexie, { liveQuery, type Table } from "dexie";
 
 type StoredCatalog = ResourceCatalogCheckpoint & { key: string };
+/** Account-wide counters kept beside the journals; `placementHighWater` is the highest admission order assigned. */
+type StoredMeta = { key: "placementHighWater"; value: number };
 type AccountProjectionSnapshot = {
   records: readonly ResourceRecord[];
   folders: readonly FolderNamespaceRecord[];
@@ -47,6 +49,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
   private readonly intents: Table<NamespaceIntent, string>;
   private readonly catalogs: Table<StoredCatalog, string>;
   private readonly folders: Table<FolderNamespaceRecord, string>;
+  private readonly meta: Table<StoredMeta, string>;
   private readonly operations = new Set<Promise<unknown>>();
   private readonly projectionListeners = new Map<symbol, ProjectionListener>();
   private projectionStop: (() => void) | null = null;
@@ -73,10 +76,38 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
         // Checkpoints are reacquirable; content identities and offline journals survive.
         await transaction.table("catalogs").clear();
       });
+    // Placement admission reads only journals with work in flight, found through these indexes
+    // (state, admission order, outstanding canonical refresh) instead of the account's history.
+    this.database.version(3).stores({
+      resources: "handle,obligations.canonicalRefresh.operationId",
+      intents: "intentId,handle,projectId,state,admission.order",
+      folders: "handle,projectId,canonicalRefresh.operationId",
+    });
+    // The admission high-water mark is one stored counter, raised in the commit that stores an
+    // admitted intent, so admitting never scans the history that produced it. `operationId` finds
+    // the accepted intent a canonical refresh still waits on.
+    this.database
+      .version(4)
+      .stores({
+        intents: "intentId,handle,projectId,state,admission.order,operationId",
+        meta: "key",
+      })
+      .upgrade(async (transaction) => {
+        let highest = 0;
+        await transaction.table("intents").each((intent: NamespaceIntent) => {
+          highest = Math.max(highest, intent.admission?.order ?? 0);
+        });
+        await transaction.table("folders").each((folder: FolderNamespaceRecord) => {
+          for (const intent of folder.intents)
+            highest = Math.max(highest, intent.admission?.order ?? 0);
+        });
+        await transaction.table("meta").put({ key: "placementHighWater", value: highest });
+      });
     this.resources = this.database.table("resources");
     this.intents = this.database.table("intents");
     this.catalogs = this.database.table("catalogs");
     this.folders = this.database.table("folders");
+    this.meta = this.database.table("meta");
     this.database.on("versionchange", () => {
       this.beginClose();
       try {
@@ -200,6 +231,78 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
     );
   }
 
+  /**
+   * What admitting a placement reads: for the journals that still shape the list, only their
+   * unresolved intents and the accepted one a canonical refresh waits on (found through indexes,
+   * so a handle's settled history is never loaded); the optional subject's resource; every folder
+   * record, which parent resolution needs; the project's catalogs; and the stored high-water
+   * mark. Call it inside the placement admission lock, which makes the mark atomic with the
+   * commit that follows.
+   */
+  readPlacementAdmissionView(
+    projectId: string,
+    subject?: ResourceKey,
+  ): Promise<ResourceProjectionSnapshot & { highWater: number }> {
+    return this.run(() =>
+      this.database.transaction(
+        "r",
+        this.resources,
+        this.intents,
+        this.catalogs,
+        this.folders,
+        this.meta,
+        async () => {
+          const shaping = await this.intents
+            .where("state")
+            .anyOf("pending", "submitted", "received")
+            .toArray();
+          const refreshing = await this.resources
+            .where("obligations.canonicalRefresh.operationId")
+            .aboveOrEqual("")
+            .toArray();
+          for (const resource of refreshing) {
+            const operationId = resource.obligations.canonicalRefresh?.operationId;
+            if (!operationId) continue;
+            shaping.push(
+              ...(await this.intents.where("operationId").equals(operationId).toArray()),
+            );
+          }
+          const handles = new Set([
+            ...shaping.map((intent) => intent.handle),
+            ...(subject ? [subject.handle] : []),
+          ]);
+          const records = this.records(
+            (await this.resources.bulkGet([...handles])).filter(
+              (resource) => resource !== undefined,
+            ),
+            shaping,
+          );
+          const [folders, catalogs, highWater] = await Promise.all([
+            this.folders.toArray(),
+            this.catalogs.where("projectId").equals(projectId).toArray(),
+            this.meta.get("placementHighWater"),
+          ]);
+          return {
+            records,
+            folders,
+            catalogs: catalogs.map(({ key: _key, ...checkpoint }) => checkpoint),
+            highWater: highWater?.value ?? 0,
+          };
+        },
+      ),
+    );
+  }
+
+  /** Raises the stored mark to the highest admission order among intents this commit stores. */
+  private async raiseHighWater(intents: Iterable<NamespaceIntent>): Promise<void> {
+    let highest = 0;
+    for (const intent of intents) highest = Math.max(highest, intent.admission?.order ?? 0);
+    if (highest === 0) return;
+    const current = await this.meta.get("placementHighWater");
+    if (highest > (current?.value ?? 0))
+      await this.meta.put({ key: "placementHighWater", value: highest });
+  }
+
   private async isCurrent(writes: readonly ResourceWrite[]): Promise<boolean> {
     const keys = new Set<string>();
     const intentKeys = new Set<string>();
@@ -235,13 +338,14 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
     for (const { next } of writes) {
       await this.resources.put(next.resource);
       await this.intents.bulkPut([...next.intents]);
+      await this.raiseHighWater(next.intents);
     }
   }
 
   async commitResource(input: ResourceWrite) {
     const write = structuredClone(input);
     return this.run(() =>
-      this.database.transaction("rw", this.resources, this.intents, async () => {
+      this.database.transaction("rw", this.resources, this.intents, this.meta, async () => {
         if (!(await this.isCurrent([write]))) return "stale" as const;
         await this.putResources([write]);
         return "committed" as const;
@@ -276,28 +380,36 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
   async commitFolder(input: FolderNamespaceWrite) {
     const write = structuredClone(input);
     return this.run(() =>
-      this.database.transaction("rw", this.folders, this.resources, this.intents, async () => {
-        if (!(await this.foldersAreCurrent([write]))) return "stale" as const;
-        const previous = (await this.folders.get(write.next.handle)) ?? null;
-        const receipt = folderDeletionSettlement(previous, write.next);
-        if (receipt) {
-          const records = this.records(
-            await this.resources.toArray(),
-            await this.intents.toArray(),
-          );
-          const byHandle = new Map(records.map((record) => [record.resource.handle, record]));
-          const descendants = planFolderDeletionResources(receipt, records);
-          for (const descendant of descendants) {
-            validateResourceRecordUpdate(
-              byHandle.get(descendant.next.resource.handle) ?? null,
-              descendant.next,
+      this.database.transaction(
+        "rw",
+        this.folders,
+        this.resources,
+        this.intents,
+        this.meta,
+        async () => {
+          if (!(await this.foldersAreCurrent([write]))) return "stale" as const;
+          const previous = (await this.folders.get(write.next.handle)) ?? null;
+          const receipt = folderDeletionSettlement(previous, write.next);
+          if (receipt) {
+            const records = this.records(
+              await this.resources.toArray(),
+              await this.intents.toArray(),
             );
+            const byHandle = new Map(records.map((record) => [record.resource.handle, record]));
+            const descendants = planFolderDeletionResources(receipt, records);
+            for (const descendant of descendants) {
+              validateResourceRecordUpdate(
+                byHandle.get(descendant.next.resource.handle) ?? null,
+                descendant.next,
+              );
+            }
+            await this.resources.bulkPut(descendants.map((write) => write.next.resource));
           }
-          await this.resources.bulkPut(descendants.map((write) => write.next.resource));
-        }
-        await this.folders.put(write.next);
-        return "committed" as const;
-      }),
+          await this.folders.put(write.next);
+          await this.raiseHighWater(write.next.intents);
+          return "committed" as const;
+        },
+      ),
     );
   }
 
@@ -320,6 +432,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
         this.resources,
         this.intents,
         this.folders,
+        this.meta,
         async () => {
           if (!catalogScopeBelongsToProject(input.next.projectId, input.next.scope))
             throw new Error("Catalog scope belongs to another project");
@@ -335,6 +448,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
             throw new Error("Invalid catalog revision");
           await this.putResources(input.resources);
           await this.folders.bulkPut(input.folders.map(({ next }) => next));
+          await this.raiseHighWater(input.folders.flatMap(({ next }) => next.intents));
           await this.catalogs.put({
             ...input.next,
             key,

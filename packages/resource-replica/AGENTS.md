@@ -18,6 +18,10 @@ exports rather than implementation modules.
 - Canonical `observationVersion` is server freshness. Availability generations
   and local CAS revisions are different fences. Replace canonical evidence only
   for strictly newer observations; a move receipt is historical evidence.
+- Placement order is one admitted record, not three reconstructions: each placement intent carries an
+  immutable `PlacementAdmission` (order, conflict scope, predecessors), and projection, dispatch and
+  Undo all read it (`placement-journal.ts`). Never infer order from adjacency, latest-per-entry or a
+  scheduler queue.
 - Namespace intents and receipts are immutable evidence. Accepted, refused,
   superseded, and terminal outcomes must not be confused with current
   placement or deletion ownership.

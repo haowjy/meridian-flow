@@ -82,6 +82,7 @@ type BranchTreeCommand = {
   documentId: DocumentId;
   changedBy: BranchChangeAuthor;
   record(change: RecordedBranchTreeChange): Promise<void>;
+  position?: import("@meridian/contracts/protocol").ContextSiblingPosition;
 };
 
 export interface BranchTreeCommands {
@@ -307,6 +308,7 @@ function branchTreeCommands(
             branch,
             documentId: command.documentId,
             ...target,
+            ...(command.position ? { position: command.position } : {}),
             changedBy: command.changedBy,
           });
           if (!moved.ok)

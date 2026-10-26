@@ -25,6 +25,9 @@ const effect = (id: string): MoveEffect => ({
   previousName: `${id}-before`,
   before: folder("book"),
   after: folder("act"),
+  previousPosition: {},
+  action: "move",
+  operationId: `operation-${id}`,
 });
 
 it("returns only rows still where and as the drop left them", () => {
@@ -39,6 +42,7 @@ it("returns only rows still where and as the drop left them", () => {
       identity: { documentId: "server-id" },
       aliases: { "local-id": { introducedAtIdentityRevision: 1 } },
     },
+    intents: [],
   } as unknown as ResourceRecord;
   const remintedEffect: MoveEffect = {
     entry: { kind: "file", id: "local-id" },
@@ -46,6 +50,9 @@ it("returns only rows still where and as the drop left them", () => {
     previousName: "created-before",
     before: folder("book"),
     after: folder("act"),
+    previousPosition: {},
+    action: "move",
+    operationId: "operation-created",
   };
   const view = {
     records: [reminted],
@@ -55,19 +62,99 @@ it("returns only rows still where and as the drop left them", () => {
       resourceLocation: (record: ResourceRecord) =>
         record === reminted ? { name: "created" } : null,
       parentForResource: (record: ResourceRecord) => (record === reminted ? folder("act") : null),
+      childrenAt: () => [],
     },
   } as unknown as PlacementView;
   expect(
     planUndo(view, [effect("a"), effect("b"), effect("c"), effect("gone"), remintedEffect]),
   ).toEqual([
-    { entry: effect("a").entry, name: "a-before", before: folder("act"), after: folder("book") },
+    {
+      entry: effect("a").entry,
+      name: "a-before",
+      before: folder("act"),
+      after: folder("book"),
+      position: { kind: "end" },
+    },
     {
       entry: remintedEffect.entry,
       name: "created-before",
       before: folder("act"),
       after: folder("book"),
+      position: { kind: "end" },
     },
   ]);
+
+  const carried = [
+    { ...effect("a"), previousPosition: { beforeId: "b" } },
+    { ...effect("b"), previousPosition: { afterId: "a", beforeId: "c" } },
+    { ...effect("c"), previousPosition: { afterId: "b" } },
+  ];
+  const carriedView = {
+    ...view,
+    placement: {
+      ...view.placement,
+      folderLocation: (id: string) => ({ name: id }),
+      parentForFolder: () => folder("act"),
+      childrenAt: () =>
+        ["c", "a", "b"].map((id) => ({ kind: "folder", entryId: id, name: id }) as CatalogEntry),
+    },
+  } as unknown as PlacementView;
+  expect(planUndo(carriedView, carried).map((row) => row.position)).toEqual([
+    { kind: "start" },
+    { kind: "after", siblingId: "a" },
+    { kind: "after", siblingId: "b" },
+  ]);
+
+  const rankIntent = {
+    handle: "a",
+    projectId: "p",
+    intentId: "intent",
+    operationId: "operation",
+    sequence: 1,
+    identityRevision: 1,
+    desired: {
+      kind: "set-folder-location" as const,
+      typedName: "a",
+      destination: { parent: folder("act"), name: "a", position: { kind: "start" as const } },
+    },
+    attempts: [
+      {
+        attemptId: "attempt",
+        request: {} as never,
+        outcome: {
+          kind: "operation" as const,
+          receipt: {
+            operationId: "operation",
+            observationVersion: "10",
+            command: {} as never,
+            result: {
+              ok: true as const,
+              value: { destinationPath: "Act/a", locationVersion: "4" },
+            },
+          },
+        },
+      },
+    ],
+    state: "settled" as const,
+  };
+  const rankedView = {
+    ...view,
+    folders: [
+      {
+        folderId: "a",
+        canonicalLocationVersion: "4",
+        observationVersion: "11",
+        intents: [rankIntent],
+      },
+    ],
+  } as unknown as PlacementView;
+  const rankedEffect = { ...effect("a"), operationId: "operation" };
+  expect(planUndo(rankedView, [rankedEffect])).toHaveLength(1);
+  const peerRankedView = {
+    ...rankedView,
+    folders: [{ ...rankedView.folders?.[0], canonicalLocationVersion: "5" }],
+  } as PlacementView;
+  expect(planUndo(peerRankedView, [rankedEffect])).toEqual([]);
 });
 
 it("reports a refused row and keeps the rest to undo", async () => {
@@ -90,7 +177,9 @@ it("reports a refused row and keeps the rest to undo", async () => {
   );
   expect(result.moved.map((moved) => moved.entry.id)).toEqual(["a"]);
   expect(result.moved[0]).toMatchObject({ before: folder("book"), after: folder("act") });
-  expect(result.failed).toEqual([{ entry: { kind: "folder", id: "b" }, name: "b" }]);
+  expect(result.failed).toEqual([
+    { entry: { kind: "folder", id: "b" }, name: "b", action: "move" },
+  ]);
 });
 
 it("gives rows arriving under one name in the same drop distinct free names", async () => {

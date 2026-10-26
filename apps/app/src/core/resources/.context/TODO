@@ -1,0 +1,20 @@
+# Resource storage must-do
+
+## Placement reads that still load whole journals
+
+Admission reads only in-flight intents (`readPlacementAdmissionView`, the
+`state` and `operationId` indexes, a stored high-water counter). Two readers
+still load every intent a handle ever stored:
+
+- The reactive account projection and `commitPlan` read full per-handle
+  journals. Receipts, Undo and identity checks read settled intents there
+  (`intents[0].projectId`, a settled create, `settledAt`). Move those readers to
+  on-demand journal reads, then trim the projection to unresolved intents.
+- Folder records load whole for parent resolution because their intents are
+  embedded in the record. Store folder intents beside the record, indexed like
+  files.
+
+Cost grows with a handle's lifetime of moves, so a long-lived chapter slows
+every projection. A probe with 10, 1,000 and 10,000 settled intents on one
+handle loads 10,001 intents through these readers
+(`work/drag-anywhere/evidence/reorder-history-scan/` in the docs repo).
