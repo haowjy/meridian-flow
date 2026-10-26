@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_TMUX_SERVER, DEV_TMUX_SERVER } from "./dev-tmux-server";
 
 const PRESERVABLE_EXECUTABLES = new Set([
   "bash",
@@ -46,26 +47,22 @@ interface TmuxPane {
   readonly cwd: string;
 }
 
-function tmuxSocketPath(): string | undefined {
-  const tmuxSocket = process.env.TMUX?.split(",", 1)[0];
-  if (tmuxSocket) return tmuxSocket;
+/**
+ * Dev stacks live on their own server. The default server is still read, never
+ * written, so a legacy stack or a user shell parked in a worktree keeps
+ * blocking removal.
+ */
+const TMUX_SERVERS = [DEFAULT_TMUX_SERVER, DEV_TMUX_SERVER];
+
+function tmuxSocketPath(server: string): string | undefined {
   const uid = process.getuid?.();
-  return uid === undefined
-    ? undefined
-    : path.join(process.env.TMUX_TMPDIR || "/tmp", `tmux-${uid}`, "default");
+  if (uid === undefined) return undefined;
+  // tmux falls back to TMPDIR when TMUX_TMPDIR is unset.
+  const tmpdir = process.env.TMUX_TMPDIR || process.env.TMPDIR || "/tmp";
+  return path.join(tmpdir, `tmux-${uid}`, server);
 }
 
 function tmuxServerIsLive(socketPath: string): boolean {
-  const tmuxPid = Number(process.env.TMUX?.split(",", 3)[1]);
-  if (Number.isSafeInteger(tmuxPid) && tmuxPid > 0) {
-    try {
-      process.kill(tmuxPid, 0);
-      return true;
-    } catch {
-      // The recorded server PID is no longer alive; check the kernel socket table.
-    }
-  }
-
   try {
     return fs
       .readFileSync("/proc/net/unix", "utf8")
@@ -258,13 +255,16 @@ function currentUserProcessCwds(): {
   return { entries, hiddenEntries, failures };
 }
 
-function tmuxPanes(cwd: string): {
+function tmuxPanesOnServer(
+  cwd: string,
+  server: string,
+): {
   readonly entries: readonly TmuxPane[];
   readonly failures: readonly string[];
 } {
   const result = spawnSync(
     "tmux",
-    ["list-panes", "-a", "-F", "#{session_name}\t#{pane_id}\t#{pane_current_path}"],
+    ["-L", server, "list-panes", "-a", "-F", "#{session_name}\t#{pane_id}\t#{pane_current_path}"],
     {
       cwd,
       encoding: "utf8",
@@ -276,20 +276,17 @@ function tmuxPanes(cwd: string): {
     return { entries: [], failures: [] };
   }
   if (result.status !== 0) {
-    const socketPath = tmuxSocketPath();
-    if (socketPath) {
-      try {
-        fs.statSync(socketPath);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT" && !tmuxServerIsLive(socketPath)) {
-          return { entries: [], failures: [] };
-        }
-      }
-    }
+    const socketPath = tmuxSocketPath(server);
+    // A stale socket file is not a server; only a live socket makes the
+    // failed query an inspection failure.
+    if (socketPath && !tmuxServerIsLive(socketPath)) return { entries: [], failures: [] };
     const detail = `${result.stderr ?? ""}`.trim();
+    const label = `'${server}'`;
     return {
       entries: [],
-      failures: [`could not inspect tmux dev sessions${detail ? `: ${detail}` : ""}`],
+      failures: [
+        `could not inspect tmux panes on the ${label} server${detail ? `: ${detail}` : ""}`,
+      ],
     };
   }
 
@@ -302,6 +299,20 @@ function tmuxPanes(cwd: string): {
     })
     .filter((entry): entry is TmuxPane => entry !== undefined);
   return { entries, failures: [] };
+}
+
+function tmuxPanes(cwd: string): {
+  readonly entries: readonly TmuxPane[];
+  readonly failures: readonly string[];
+} {
+  const entries: TmuxPane[] = [];
+  const failures: string[] = [];
+  for (const server of TMUX_SERVERS) {
+    const result = tmuxPanesOnServer(cwd, server);
+    entries.push(...result.entries);
+    failures.push(...result.failures);
+  }
+  return { entries, failures };
 }
 
 function collectLivenessSnapshot(cwd: string): LivenessSnapshot {

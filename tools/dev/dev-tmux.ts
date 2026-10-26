@@ -9,6 +9,7 @@ import { createDevSessionPlan, type DevSessionPlan } from "./dev-session-plan";
 import { readDevSessionState, writeDevSessionMetadata } from "./dev-session-state";
 import { applyDevEnvToProcess, resolveCheckoutSessionIdentity, runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
+import { DEFAULT_TMUX_SERVER, devTmuxCommand } from "./lib/dev-tmux-server";
 import { releaseFixedPorts } from "./lib/port-lifecycle";
 import { pidBelongsToCheckout, processWorkingDirectory } from "./lib/route-ownership";
 import { TailscaleDevLifecycle } from "./lib/tailscale-lifecycle";
@@ -94,12 +95,17 @@ function checkRouteConflicts(store: TmuxSessionStore, plan: DevSessionPlan, forc
     );
 }
 
-function teardownSessions(store: TmuxSessionStore, names: string[]): void {
+function teardownSessions(
+  stores: readonly [TmuxSessionStore, ...TmuxSessionStore[]],
+  names: string[],
+): void {
   for (const name of new Set(names)) {
-    if (store.sessionExists(name))
-      requireSuccess(store.killSession(name), `failed to kill tmux session '${name}'`);
+    for (const store of stores) {
+      if (store.sessionExists(name))
+        requireSuccess(store.killSession(name), `failed to kill tmux session '${name}'`);
+    }
   }
-  const prune = store.run("pnpm", ["exec", "portless", "prune"]);
+  const prune = stores[0].run("pnpm", ["exec", "portless", "prune"]);
   if (prune.status !== 0 && prune.stderr.trim())
     console.warn(`portless prune warning: ${prune.stderr.trim()}`);
 }
@@ -141,8 +147,19 @@ function printDryRun(plan: DevSessionPlan, launchCommand: string): void {
     console.log(
       `shared port: ${entry.service}=backend:${entry.appBackendPort},${entry.externalMode}:${entry.externalHttpsPort}`,
     );
-  console.log(`tmux new-session -d -s ${plan.session.sessionName} -c ${repoRoot}`);
-  console.log(`tmux send-keys -t ${plan.session.sessionName}:0 -- ${launchCommand} C-m`);
+  console.log(
+    devTmuxCommand(["new-session", "-d", "-s", plan.session.sessionName, "-c", repoRoot]),
+  );
+  console.log(
+    devTmuxCommand([
+      "send-keys",
+      "-t",
+      `${plan.session.sessionName}:0`,
+      "--",
+      launchCommand,
+      "C-m",
+    ]),
+  );
 }
 
 async function verifyAndPublish({
@@ -209,6 +226,8 @@ async function verifyAndPublish({
 
 async function main(): Promise<void> {
   const store = new TmuxSessionStore(repoRoot);
+  // Stacks started before dev moved to its own tmux server still live here.
+  const legacyStore = new TmuxSessionStore(repoRoot, DEFAULT_TMUX_SERVER);
   const tailscale = new TailscaleDevLifecycle();
   const options = parseDevCliOptions({ argv: process.argv.slice(2) });
   const identity = resolveCheckoutSessionIdentity(repoRoot);
@@ -256,7 +275,7 @@ async function main(): Promise<void> {
       previousRoutes: previous?.externalRoutes,
       sharedPorts: plan.sharedPorts,
     });
-    teardownSessions(store, sessionNames);
+    teardownSessions([store, legacyStore], sessionNames);
     console.log(`stopped · ${session.sessionName}`);
     return;
   }
@@ -268,7 +287,7 @@ async function main(): Promise<void> {
         previousRoutes: previous?.externalRoutes,
         sharedPorts: plan.sharedPorts,
       });
-      teardownSessions(store, sessionNames);
+      teardownSessions([store, legacyStore], sessionNames);
       await releaseBackendPorts(plan);
     }
     await tailscale.pruneStaleRoutes();
