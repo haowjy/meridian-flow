@@ -28,9 +28,9 @@ import { useChatContextNavigation, useChatContextRoutability } from "./ChatConte
 import { type ChangeRevealRequest, useChangeReveal } from "./conversation-reveal";
 import { DocumentName } from "./DocumentName";
 import {
+  describeModelMove,
   documentDisplayName,
   documentLocationName,
-  moveDestinationName,
   type OwnerNames,
 } from "./document-display-name";
 import { useOwnerNames } from "./owner-names";
@@ -568,11 +568,17 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
   const tree = document.tree;
   if (tree?.op === "move") {
     const source = documentDisplayName(tree.from);
-    const destination = moveDestinationName(tree.from, tree.to, names);
+    const { kind, place } = describeModelMove(tree.from, tree.to, names);
+    if (kind === "reorder")
+      return (
+        <span className="min-w-0 truncate text-prose-foreground" data-turn-tree-line="move">
+          <Trans>Changed the position of {source}</Trans>
+        </span>
+      );
     return (
       <span className="min-w-0 truncate text-prose-foreground" data-turn-tree-line="move">
         <Trans>
-          Moved {source} to {destination}
+          Moved {source} to {place}
         </Trans>
       </span>
     );

@@ -1200,6 +1200,11 @@ msgstr "Changed 1 Work"
 msgid "Changed since"
 msgstr "Changed since"
 
+#: src/features/chat/command-descriptor.ts
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed the position of {source}"
+msgstr "Changed the position of {source}"
+
 #: src/features/project/mobile/MobileChangeSheet.tsx
 msgid "Changes"
 msgstr "Changes"
@@ -1219,6 +1224,10 @@ msgstr "Changes in {name}"
 #: src/features/project/work/WorkChanges.tsx
 msgid "Changes to review"
 msgstr "Changes to review"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Changing the position of {source}…"
+msgstr "Changing the position of {source}…"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Changing work"
@@ -3158,8 +3167,12 @@ msgid "Moved {source} to"
 msgstr "Moved {source} to"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Moved {source} to {destination}"
-msgstr "Moved {source} to {destination}"
+#~ msgid "Moved {source} to {destination}"
+#~ msgstr "Moved {source} to {destination}"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Moved {source} to {place}"
+msgstr "Moved {source} to {place}"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Moved a document"
