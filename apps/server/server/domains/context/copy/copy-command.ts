@@ -32,7 +32,10 @@ import type {
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { PMNode } from "@meridian/markup";
 import { decodeStateVector } from "yjs";
-import { deferUntilDrizzleRollback } from "../../../shared/drizzle-transaction.js";
+import {
+  deferUntilDrizzleCommit,
+  deferUntilDrizzleRollback,
+} from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { CollabDomain } from "../../collab/index.js";
 import type { ObjectRelease, ObjectStorePort } from "../../storage/index.js";
@@ -55,6 +58,8 @@ import type { ContextCopyRequest, ContextError, ContextScheme } from "../ports/c
 /** How long a read waits for the room to receive the edits a client's vector names. */
 const SOURCE_CATCH_UP_MS = 2_000;
 const SOURCE_CATCH_UP_POLL_MS = 100;
+/** Derivations in flight at once after a copy: each takes a pool connection, and the pool is shared. */
+const DERIVE_CONCURRENCY = 4;
 
 /** One selected root, already resolved to its adapter and read view by the route. */
 export interface CopySourceHandoff {
@@ -86,7 +91,10 @@ export interface CopyDestinationHandoff {
 }
 
 export interface ContextCopyCommandDeps {
-  documentSync: Pick<CollabDomain, "readEffectiveBlocks" | "bindCopiedBlocks">;
+  documentSync: Pick<
+    CollabDomain,
+    "readEffectiveBlocks" | "bindCopiedBlocks" | "encodeSeed" | "refreshDocumentProjection"
+  >;
   objectStore: ObjectStorePort;
   release: Pick<ObjectRelease, "keys">;
 }
@@ -331,17 +339,20 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
           return Err({ code: "io_error", message: `No content was read for ${file.path}` });
         }
         return Ok({
-          content:
+          state:
             source.blocks.length === 0
               ? null
-              : deps.documentSync.bindCopiedBlocks({
-                  uri,
-                  filetype: file.filetype,
-                  sourceHolderUri: source.holderUri,
-                  blocks: source.blocks,
-                  aheadSettlements: source.aheadSettlements,
-                  map,
-                }),
+              : deps.documentSync.encodeSeed(
+                  deps.documentSync.bindCopiedBlocks({
+                    uri,
+                    filetype: file.filetype,
+                    sourceHolderUri: source.holderUri,
+                    blocks: source.blocks,
+                    aheadSettlements: source.aheadSettlements,
+                    map,
+                  }),
+                  { type: "system" },
+                ),
           copiedFrom: { uri: source.uri, version: source.version, revision: source.revision },
         });
       },
@@ -354,7 +365,31 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       });
     }
     if (!inserted.ok) return Err(adapterFaultToContextError(inserted.error, dest.uri));
+    await deriveAfterCommit(
+      inserted.value.flatMap((entry) =>
+        entry.kind === "file" && documents.has(entry.copiedFrom) ? [entry.id as DocumentId] : [],
+      ),
+    );
     return Ok({ status: "copied", entries: inserted.value.map(toEntry) });
+  }
+
+  /**
+   * Derive the new documents' projections and link rows once the locks are released: the
+   * derivation reads committed rows, so nothing about it needs the namespace held. A failure
+   * is logged by the refresher and the stale sweep recovers the document.
+   */
+  async function deriveAfterCommit(documentIds: readonly DocumentId[]): Promise<void> {
+    if (documentIds.length === 0) return;
+    const derive = async () => {
+      const queue = [...documentIds];
+      const worker = async () => {
+        for (let id = queue.shift(); id; id = queue.shift()) {
+          await deps.documentSync.refreshDocumentProjection({ documentId: id });
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(DERIVE_CONCURRENCY, queue.length) }, worker));
+    };
+    if (!deferUntilDrizzleCommit(derive)) await derive();
   }
 
   async function resolvedDestination(
