@@ -127,3 +127,18 @@ post the same body and a repair to Manuscript. Both answer 409 `{status: "confli
 the repair answers `already-exists` at the Work's Scratch. A deleted Work answers the replay
 404 `work_missing` and the repair 409 `conflict`. An id held by a document or a deleted
 folder also answers 409 `{status: "conflict"}`, before any destination work.
+
+## Deleting a folder only this device holds
+
+A never-accepted folder's delete settles on this device, and it keeps the same ten-minute
+Undo window a document's local delete has (`localDeletion.notBefore`,
+`LOCAL_DELETION_UNDO_MS`). One operation settles every local folder and document under it,
+so a pending child's create stops with the parent and one Undo restores the subtree:
+
+- Refuse a folder create (`__refuse`), delete the row, then Undo: the folder returns in
+  Unfiled with its mark and sends one create; refused again while `__refuse` is set.
+- Hold a folder's create, create a child folder inside it, then delete the child: no POST
+  for the child, the delete settles locally and offers Undo; Undo restores the child, whose
+  create waits for the parent and goes out only after the parent lands.
+- A child document that was already refused restores with the parent and keeps its mark; it
+  is not re-sent by the Undo.
