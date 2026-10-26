@@ -170,7 +170,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
 
   return createCollabFacade({
     importBinder: runtime.importBinder,
-    lifecycle: { dispose: () => {} },
+    lifecycle: { dispose: async () => {} },
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
       primeReservedNamespaceIndex,

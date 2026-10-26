@@ -288,7 +288,8 @@ export function validateNamespaceJournal(input: {
       intent.identityRevision !== oldIntent.identityRevision ||
       intent.operationId !== oldIntent.operationId ||
       (oldIntent.settledAt !== undefined && intent.settledAt !== oldIntent.settledAt) ||
-      JSON.stringify(intent.desired) !== JSON.stringify(oldIntent.desired)
+      JSON.stringify(intent.desired) !== JSON.stringify(oldIntent.desired) ||
+      JSON.stringify(intent.admission) !== JSON.stringify(oldIntent.admission)
     )
       throw new Error("Recorded namespace intention cannot be replaced");
     if (

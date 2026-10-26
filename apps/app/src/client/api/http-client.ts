@@ -28,6 +28,28 @@ export class HttpResponseError extends Error {
   }
 }
 
+/** A successful HTTP exchange whose body cannot prove the requested result. */
+export class InvalidResponseError extends HttpResponseError {
+  readonly code = "malformed_response";
+  constructor(response: Response) {
+    super("Unexpected server response.", response.status, undefined, response.headers);
+  }
+}
+
+type JsonSchema<T> = {
+  safeParse(value: unknown): { success: true; data: T } | { success: false };
+};
+
+type JsonOptions<T> = { headers?: HeadersInit; signal?: AbortSignal; schema?: JsonSchema<T> };
+
+function decodeResponse<T>(payload: unknown, response: Response, schema?: JsonSchema<T>): T {
+  const value = deserializeTransport(payload);
+  if (!schema) return value as T;
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) throw new InvalidResponseError(response);
+  return parsed.data;
+}
+
 /** The headers of the response a request failed with; undefined when it got none. */
 export function httpErrorHeaders(error: unknown): Headers | undefined {
   if (error instanceof HttpResponseError) return error.headers;
@@ -84,10 +106,7 @@ export function errorMessageFromPayload(payload: unknown, status: number): strin
   return `Request failed: ${status}`;
 }
 
-export async function getJson<T>(
-  url: string,
-  init?: { headers?: HeadersInit; signal?: AbortSignal },
-): Promise<T> {
+export async function getJson<T>(url: string, init?: JsonOptions<T>): Promise<T> {
   const requestInit: RequestInit = { method: "GET" };
   if (init?.headers) {
     requestInit.headers = init.headers;
@@ -103,10 +122,10 @@ export async function getJson<T>(
     throw errorFromResponse(payload, response);
   }
 
-  return deserializeTransport<T>(payload as T);
+  return decodeResponse(payload, response, init?.schema);
 }
 
-export type PostJsonOptions = {
+export type PostJsonOptions<T = unknown> = JsonOptions<T> & {
   /** Extra headers to merge with the default Content-Type. */
   headers?: HeadersInit;
   /** Accept only recognized domain outcomes carried by non-2xx responses. */
@@ -120,7 +139,7 @@ export type PostJsonOptions = {
 export async function postJson<T>(
   url: string,
   body: unknown,
-  options?: PostJsonOptions,
+  options?: PostJsonOptions<T>,
 ): Promise<T> {
   const response = await fetch(url, {
     method: "POST",
@@ -137,13 +156,13 @@ export async function postJson<T>(
     throw errorFromResponse(payload, response);
   }
 
-  return deserializeTransport<T>(payload as T);
+  return decodeResponse(payload, response, options?.schema);
 }
 
 export async function putJson<T>(
   url: string,
   body: unknown,
-  options?: PostJsonOptions,
+  options?: PostJsonOptions<T>,
 ): Promise<T> {
   const response = await fetch(url, {
     method: "PUT",
@@ -160,13 +179,13 @@ export async function putJson<T>(
     throw errorFromResponse(payload, response);
   }
 
-  return deserializeTransport<T>(payload as T);
+  return decodeResponse(payload, response, options?.schema);
 }
 
 export async function patchJson<T>(
   url: string,
   body: unknown,
-  options?: PostJsonOptions,
+  options?: PostJsonOptions<T>,
 ): Promise<T> {
   const response = await fetch(url, {
     method: "PATCH",
@@ -183,7 +202,7 @@ export async function patchJson<T>(
     throw errorFromResponse(payload, response);
   }
 
-  return deserializeTransport<T>(payload as T);
+  return decodeResponse(payload, response, options?.schema);
 }
 
 export async function deleteRequest(url: string, init?: { signal?: AbortSignal }): Promise<void> {
@@ -196,9 +215,9 @@ export async function deleteRequest(url: string, init?: { signal?: AbortSignal }
   }
 }
 
-export async function deleteJson<T>(url: string, options?: { signal?: AbortSignal }): Promise<T> {
+export async function deleteJson<T>(url: string, options?: JsonOptions<T>): Promise<T> {
   const response = await fetch(url, { method: "DELETE", signal: options?.signal });
   const payload = await readResponsePayload(response);
   if (!response.ok) throw errorFromResponse(payload, response);
-  return deserializeTransport<T>(payload as T);
+  return decodeResponse(payload, response, options?.schema);
 }

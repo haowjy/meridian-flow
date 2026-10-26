@@ -534,7 +534,7 @@ export type CollabLifecycle = {
    * Drops debounced live-to-draft pulls and projection runs that haven't started; running
    * ones finish.
    */
-  dispose(): void;
+  dispose(): Promise<void>;
 };
 
 export type CollabDomain = CollabTransport &

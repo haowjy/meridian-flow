@@ -156,6 +156,11 @@ msgstr ""
 msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr ""
 
+#. placeholder {0}: moved.length
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "{0, plural, one {Reordered # item.} other {Reordered # items.}}"
+msgstr ""
+
 #. placeholder {0}: others.length
 #: src/features/editor/DocumentDraftHint.tsx
 msgid "{0, plural, other {# Works have drafts for this}}"
@@ -459,6 +464,10 @@ msgid "{name} was removed when the reply that created it didn't finish, so this 
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
+msgid "{name}: changing position"
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
 msgid "{name}: Deleted"
 msgstr ""
 
@@ -580,6 +589,10 @@ msgstr ""
 msgid "{work} is renaming this to {place}."
 msgstr ""
 
+#: src/features/draft-review/tree-line.ts
+msgid "{work} is reordering this."
+msgstr ""
+
 #: src/components/app/ToastRegion.tsx
 msgid "+{hidden} more"
 msgstr ""
@@ -625,6 +638,10 @@ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
 msgid "A chat is renaming this to {place}."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "A chat is reordering this."
 msgstr ""
 
 #: src/features/chat/DeletedChatCard.tsx
@@ -989,6 +1006,7 @@ msgstr ""
 msgid "Back"
 msgstr ""
 
+#. placeholder {0}: choosing.label
 #. placeholder {0}: folder.title ?? folder.name
 #: src/components/app/DrillInMenu.tsx
 msgid "Back from {0}"
@@ -1212,6 +1230,11 @@ msgstr ""
 msgid "Change"
 msgstr ""
 
+#. placeholder {0}: folder.name
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Change position in {0}"
+msgstr ""
+
 #: src/components/app/composer/ComposerReferenceMenu.tsx
 msgid "Change reference"
 msgstr ""
@@ -1254,6 +1277,11 @@ msgstr ""
 msgid "Changed since"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed the position of {source}"
+msgstr ""
+
 #: src/features/project/mobile/MobileChangeSheet.tsx
 msgid "Changes"
 msgstr ""
@@ -1272,6 +1300,10 @@ msgstr ""
 
 #: src/features/project/work/WorkChanges.tsx
 msgid "Changes to review"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Changing the position of {source}…"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
@@ -1309,6 +1341,10 @@ msgstr ""
 
 #: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "Chat deleted"
+msgstr ""
+
+#: src/features/chat/chat-card-copy.ts
+msgid "Chat updates disconnected"
 msgstr ""
 
 #: src/features/project/chat-index/ChatIndex.tsx
@@ -1927,6 +1963,11 @@ msgstr ""
 msgid "Couldn't rename. Use Rename in the file list to try again."
 msgstr ""
 
+#. placeholder {0}: lost.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Couldn't reorder {0}."
+msgstr ""
+
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
 msgid "Couldn't restore {0}."
@@ -1940,6 +1981,11 @@ msgstr ""
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
 msgid "Couldn't restore {0}. Try again."
+msgstr ""
+
+#. placeholder {0}: lost.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Couldn't restore {0}'s position."
 msgstr ""
 
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
@@ -3276,6 +3322,15 @@ msgstr ""
 msgid "Move {name}"
 msgstr ""
 
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move after {sibling}"
+msgstr ""
+
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+msgid "Move before {sibling}"
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Move column left"
 msgstr ""
@@ -3309,8 +3364,16 @@ msgstr ""
 msgid "Move to {destinationName}"
 msgstr ""
 
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move to the bottom of {folderName}"
+msgstr ""
+
 #: src/features/chat/UserTurn.tsx
 msgid "Move to the message box"
+msgstr ""
+
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move to the top of {folderName}"
 msgstr ""
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
@@ -3341,7 +3404,11 @@ msgid "Moved {source} to"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Moved {source} to {destination}"
+#~ msgid "Moved {source} to {destination}"
+#~ msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Moved {source} to {place}"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -3355,11 +3422,6 @@ msgstr ""
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Moved since"
 msgstr ""
-
-#. placeholder {0}: folder ?? ""
-#: src/features/project/context/LinkUpdateNote.tsx
-#~ msgid "Moved to {0}"
-#~ msgstr ""
 
 #. placeholder {0}: documentLocationName(landing.landedAt, names)
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -3878,6 +3940,10 @@ msgstr ""
 msgid "Pending rename"
 msgstr ""
 
+#: src/features/draft-review/tree-line.ts
+msgid "Pending reorder"
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "photo"
 msgstr ""
@@ -4086,9 +4152,16 @@ msgstr ""
 msgid "Reference a file"
 msgstr ""
 
-#: src/components/app/ConnectionBanner.tsx
 #: src/features/editor/SchemaNotices.tsx
 msgid "Refresh"
+msgstr ""
+
+#: src/features/chat/ChatCards.tsx
+msgid "Reload"
+msgstr ""
+
+#: src/features/chat/ChatCards.tsx
+msgid "Reload to see the latest replies."
 msgstr ""
 
 #: src/features/billing/UsageCard.tsx
@@ -4165,6 +4238,11 @@ msgstr ""
 msgid "Reopens the documents you had open when you switch devices."
 msgstr "切换设备时，会重新打开你之前打开的文档。"
 
+#. placeholder {0}: first.name
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Reordered {0}."
+msgstr ""
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
 msgstr ""
@@ -4193,10 +4271,6 @@ msgstr ""
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize right rail"
 msgstr ""
-
-#: src/features/project/chat/ChatScratch.tsx
-#~ msgid "Resize Scratch"
-#~ msgstr ""
 
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize sidebar"
@@ -4498,8 +4572,8 @@ msgid "Sent a message to {line}"
 msgstr ""
 
 #: src/components/app/ConnectionBanner.tsx
-msgid "Session expired. Please refresh."
-msgstr ""
+#~ msgid "Session expired. Please refresh."
+#~ msgstr ""
 
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/PhoneSettings.tsx

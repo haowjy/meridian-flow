@@ -4,6 +4,7 @@ import type { CatalogEntry, CatalogFileEntry, CatalogScope } from "@meridian/con
 import { catalogEntryParent } from "./catalog-installation";
 import { projectFolderNeedsRepair } from "./folder-namespace";
 import { folderPlacementGraph } from "./folder-placement";
+import { projectOptimisticSiblingOrder } from "./optimistic-sibling-order";
 import { owningLocationIntent, placementDestination } from "./resource-intent-policy";
 import { projectResourceLocation } from "./resource-projection";
 import type {
@@ -20,6 +21,9 @@ import {
   resourceContextAuthority,
   resourceContextUri,
 } from "./resource-work-authority";
+import { compareCatalogSiblings, isManualParent } from "./sibling-order";
+
+type CatalogChild = Extract<CatalogEntry, { kind: "file" | "folder" }>;
 
 /** Supply all destination sources/parents, including other Work catalogs for cross-Work moves. */
 export function createResourcePlacement(
@@ -209,6 +213,8 @@ export function createResourcePlacement(
         path: location.path.split("/").filter(Boolean),
         uri: namespaceUri(location)!,
         hasChildren: false,
+        rank: folder.canonicalRank,
+        orderPolicy: folder.canonicalOrderPolicy,
       });
     }
     // Suppression is a result of the identity walk, before navigation gap completion.
@@ -271,6 +277,7 @@ export function createResourcePlacement(
         path,
         uri: requiredNamespaceUri(location),
         provisionalName: location.provisional,
+        rank: record.resource.canonicalRank,
         ...record.resource.classification,
       } satisfies CatalogFileEntry);
     }
@@ -323,7 +330,7 @@ export function createResourcePlacement(
     }
     const projectedIds = new Set(projected.map((entry) => entry.entryId));
     const foldersById = new Map(repairFolders.map((folder) => [folder.folderId, folder]));
-    return projected.map((entry): CatalogEntry => {
+    const placed = projected.map((entry): CatalogEntry => {
       if (entry.kind !== "file" && entry.kind !== "folder") return entry;
       const record = byDocument.get(entry.entryId);
       const folder = foldersById.get(entry.entryId);
@@ -353,6 +360,13 @@ export function createResourcePlacement(
       const parent = homes.get(homeKey(entry.sourceId, entry.path.slice(0, -1).join("/")));
       return { ...entry, parentId: parent?.entryId ?? entry.sourceId };
     });
+    return projectOptimisticSiblingOrder({
+      projectId,
+      canonical: rows,
+      projected: placed,
+      records,
+      folders: repairFolders,
+    });
   }
 
   function projectCatalog(
@@ -373,25 +387,34 @@ export function createResourcePlacement(
   const placedRows = new WeakMap<
     readonly ResourceRecord[],
     {
-      byParent: Map<string, CatalogEntry[]>;
+      byParent: Map<string, CatalogChild[]>;
       sources: Extract<CatalogEntry, { kind: "source" }>[];
     }
   >();
-  /** The files and folders a parent holds as placed, including pending moves and creates. */
+  /**
+   * The files and folders a parent holds as placed, including pending moves and creates,
+   * in the order the tree shows them.
+   */
   function childrenAt(
     parent: ParentRef,
     records: readonly ResourceRecord[],
   ): readonly CatalogEntry[] {
     let index = placedRows.get(records);
     if (!index) {
-      const byParent = new Map<string, CatalogEntry[]>();
+      const byParent = new Map<string, CatalogChild[]>();
       const sources: Extract<CatalogEntry, { kind: "source" }>[] = [];
+      const parents = new Map<string, CatalogEntry>();
       for (const row of projectCatalog(entries, records)) {
+        parents.set(row.entryId, row);
         if (row.kind === "source") sources.push(row);
         if (row.kind !== "file" && row.kind !== "folder") continue;
         const siblings = byParent.get(row.parentId);
         if (siblings) siblings.push(row);
         else byParent.set(row.parentId, [row]);
+      }
+      for (const [parentId, siblings] of byParent) {
+        const manual = isManualParent(parents.get(parentId));
+        siblings.sort((left, right) => compareCatalogSiblings(manual, left, right));
       }
       index = { byParent, sources };
       placedRows.set(records, index);

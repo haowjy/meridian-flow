@@ -72,8 +72,7 @@ it("a tombstoned draft document with released storage does not stop another docu
       control: "undo",
     });
   } finally {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+    await harness.dispose();
   }
 });
 
@@ -159,7 +158,6 @@ it("typing inside restored text leaves Redo unavailable and does not delete the 
     ).toMatchObject({ status: "expired", acceptedParts: 0 });
     expect(await view.draftMarkdown(documentDraft.id)).toBe("Alpha Be!ta.\n\nBlue.\n");
   } finally {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+    await harness.dispose();
   }
 });

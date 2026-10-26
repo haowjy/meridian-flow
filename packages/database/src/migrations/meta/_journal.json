@@ -684,22 +684,43 @@
     {
       "idx": 97,
       "version": "7",
-      "when": 1792955891151,
-      "tag": "0103_import_schema",
+      "when": 1792958261213,
+      "tag": "0103_sibling_order",
       "breakpoints": true
     },
     {
       "idx": 98,
       "version": "7",
-      "when": 1792955900949,
-      "tag": "0104_import_indexes",
+      "when": 1792958728912,
+      "tag": "0104_branch_sibling_ranks",
       "breakpoints": true
     },
     {
       "idx": 99,
       "version": "7",
-      "when": 1792955905436,
-      "tag": "0105_import_staging",
+      "when": 1792965445492,
+      "tag": "0105_sibling_rank_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1793036378116,
+      "tag": "0106_import_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1793036403538,
+      "tag": "0107_import_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1793036408861,
+      "tag": "0108_import_staging",
       "breakpoints": true
     }
   ]

@@ -157,8 +157,7 @@ describe("model document stack", () => {
       ).toMatchObject({ status: "reversed" });
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
     } finally {
-      harness.cancelScheduledPulls();
-      harness.destroyWarmState();
+      await harness.dispose();
     }
   });
   it.each([
@@ -220,8 +219,7 @@ describe("model document stack", () => {
       expect(await view.draftMarkdown(draftId)).toBe("Alpha Azure.\n\nBlue.\n");
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
     } finally {
-      harness.cancelScheduledPulls();
-      harness.destroyWarmState();
+      await harness.dispose();
     }
   });
   it("reverts applied text in a mixed count and reapplies an applied Undo through Redo", async () => {
@@ -366,8 +364,7 @@ describe("model document stack", () => {
       });
       expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
     } finally {
-      harness.cancelScheduledPulls();
-      harness.destroyWarmState();
+      await harness.dispose();
     }
   });
   it.each([
@@ -450,8 +447,7 @@ describe("model document stack", () => {
         schedule === "rollback" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Silver.\n\nBlue.\n",
       );
     } finally {
-      harness.cancelScheduledPulls();
-      harness.destroyWarmState();
+      await harness.dispose();
     }
   });
 });
@@ -523,8 +519,7 @@ it.each([
     expect(await view.draftMarkdown(draftId)).toBe(expected);
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
   } finally {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+    await harness.dispose();
   }
 });
 
@@ -551,7 +546,6 @@ it("model inverse receipts echo only changed blocks and their immediate context"
       expect(JSON.stringify(result.result)).not.toContain("Far 9.");
     }
   } finally {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+    await harness.dispose();
   }
 });

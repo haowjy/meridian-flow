@@ -19,6 +19,7 @@ import {
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { SpelledLinkFact } from "@meridian/markup/links";
+import { compareCatalogSiblings } from "@meridian/resource-replica";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
@@ -662,11 +663,40 @@ export class ContextFS implements ContextSchemeAdapter {
           documents.filter((doc) => doc.fileType === null).map((doc) => doc.id),
         )
       : new Map<string, string>();
-    const entries: AdapterFileEntry[] = folders.map((folder) => ({
-      path: joinPath(path, folder.name),
-      kind: "directory" as const,
-    }));
-    for (const doc of documents) {
+    const orderPolicy = await this.store.parentOrderPolicy(view, folderId);
+    const siblings = [
+      ...folders.map((folder) => ({
+        order: {
+          kind: "folder" as const,
+          name: folder.name,
+          rank: folder.rank,
+          entryId: folder.id,
+        },
+        folder,
+      })),
+      ...documents.map((document) => ({
+        order: {
+          kind: "file" as const,
+          name: renderFilename(document.name, document.extension),
+          rank: document.rank,
+          entryId: document.id,
+        },
+        document,
+      })),
+    ].sort((left, right) =>
+      compareCatalogSiblings(orderPolicy === "manual", left.order, right.order),
+    );
+    const entries: AdapterFileEntry[] = [];
+    for (const sibling of siblings) {
+      if ("folder" in sibling) {
+        entries.push({
+          path: joinPath(path, sibling.folder.name),
+          kind: "directory",
+          folderId: sibling.folder.id,
+        });
+        continue;
+      }
+      const doc = sibling.document;
       const trackedSchema =
         doc.fileType === null
           ? trackedSchemaForPersistedFiletype(doc.filetype ?? DEFAULT_EDITABLE_FILETYPE)
@@ -885,6 +915,7 @@ export class ContextFS implements ContextSchemeAdapter {
         destinationPath: prepared.destinationPath,
         expectedTarget: prepared.expectedTarget,
         overwrite: prepared.overwrite,
+        position: prepared.position,
         graduateProvisionalName:
           "graduateProvisionalName" in prepared && prepared.graduateProvisionalName === true,
         destinationFiletype: destinationFiletype.value,
@@ -893,6 +924,9 @@ export class ContextFS implements ContextSchemeAdapter {
       return Ok({
         movedNodeId: committed.value.movedNodeId,
         ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
+        ...(committed.value.locationVersion
+          ? { locationVersion: committed.value.locationVersion }
+          : {}),
         path: committed.value.destinationPath,
       });
     }
@@ -907,11 +941,15 @@ export class ContextFS implements ContextSchemeAdapter {
       destinationPath: prepared.destinationPath,
       expectedTarget: prepared.expectedTarget,
       overwrite: prepared.overwrite,
+      position: prepared.position,
     });
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
       movedNodeId: committed.value.movedNodeId,
       ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
+      ...(committed.value.locationVersion
+        ? { locationVersion: committed.value.locationVersion }
+        : {}),
       path: committed.value.destinationPath,
     });
   }

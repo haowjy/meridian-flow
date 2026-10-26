@@ -96,8 +96,7 @@ it("failed-response rollback targets the response, is per-part and terminal on r
       skips: [{ cause: "rolled_back" }],
     });
   } finally {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+    await harness.dispose();
   }
 });
 
@@ -182,8 +181,7 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
       control: "view_change",
     });
   } finally {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+    await harness.dispose();
   }
 });
 
@@ -289,8 +287,7 @@ it.each([
       ).toBe(true);
     }
   } finally {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+    await harness.dispose();
   }
 });
 
@@ -384,7 +381,6 @@ it.each(
       command === "redo" ? "Alpha Gamma.\n\nBlue.\n" : "Alpha Beta.\n\nBlue.\n",
     );
   } finally {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+    await harness.dispose();
   }
 });

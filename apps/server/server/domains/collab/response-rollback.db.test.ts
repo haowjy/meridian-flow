@@ -145,8 +145,7 @@ it.each(
     ).toHaveLength(edited ? 1 : 2);
     expect((await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID))?.control).not.toBe("redo");
   } finally {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+    await harness.dispose();
   }
 });
 
@@ -274,7 +273,6 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
       await db.select().from(schema.documentEdits).where(eq(schema.documentEdits.kind, "rollback")),
     ).toHaveLength(2);
   } finally {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+    await harness.dispose();
   }
 });

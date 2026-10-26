@@ -2,7 +2,8 @@
  * DrillInMenu — a dropdown that browses a folder tree in place and ends in
  * actions. A folder opens inside the same menu, with a "‹ folder" row on top to
  * step back out; there are no flyouts or root heading. A divider separates
- * the tree from the actions.
+ * the tree from the actions. An action with choices opens them the same way,
+ * in place of the tree.
  *
  * Document paths and placement menus supply a tree and actions. This component
  * owns only drill state; picking an entry and running an action belong to the caller.
@@ -58,6 +59,8 @@ export type DrillAction = {
   disabled?: boolean;
   /** A warning under the label: what the action will also do (rows arriving renamed). */
   note?: string | null;
+  /** Selecting the action opens these in place of the tree, with a back row; `onSelect` is unused. */
+  choices?: readonly DrillAction[];
 };
 
 export type DrillInMenuProps = {
@@ -152,11 +155,79 @@ export function DrillInMenuBody({
     focusFirstRow();
   };
   const isHere = (id: string) => id === exitedId || hereIds.includes(id);
+  const [choosingKey, setChoosingKey] = useState<string | null>(null);
 
   const folder = trail.at(-1) ?? null;
   const entries = tree.children(folder?.id ?? null);
   const currentActions = actions?.(trail) ?? [];
+  const choosing = currentActions.find((action) => action.key === choosingKey && action.choices);
   const noteId = useId();
+  const choose = (key: string | null) => {
+    setChoosingKey(key);
+    focusFirstRow();
+  };
+
+  const actionItem = (action: DrillAction) => (
+    <Fragment key={action.key}>
+      <DropdownMenuItem
+        disabled={action.disabled}
+        aria-describedby={action.note ? `${noteId}-${action.key}` : undefined}
+        onSelect={(event) => {
+          event.preventDefault();
+          if (action.choices) choose(action.key);
+          else action.onSelect();
+        }}
+      >
+        <action.icon aria-hidden />
+        {action.label}
+        {action.choices ? <ChevronRight className="ml-auto" aria-hidden /> : null}
+      </DropdownMenuItem>
+      {action.note ? (
+        <p
+          id={`${noteId}-${action.key}`}
+          className="mx-1 mb-1 rounded-sm border border-warning-border bg-warning-bg px-2 py-1 text-xs text-warning-foreground"
+        >
+          {action.note}
+        </p>
+      ) : null}
+    </Fragment>
+  );
+
+  if (choosing?.choices) {
+    return (
+      <DropdownMenuContent
+        ref={contentRef}
+        align="start"
+        className="w-64 max-w-[calc(100vw-1rem)]"
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            choose(null);
+          }
+        }}
+        onCloseAutoFocus={onCloseAutoFocus}
+        onEscapeKeyDown={onEscapeKeyDown}
+      >
+        {caption ? <p className="px-2 py-1.5 text-xs text-muted-foreground">{caption}</p> : null}
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault();
+            choose(null);
+          }}
+          aria-label={t`Back from ${choosing.label}`}
+        >
+          <ChevronLeft aria-hidden />
+          <span className="min-w-0 flex-1 truncate font-medium">{choosing.label}</span>
+        </DropdownMenuItem>
+        {status ? (
+          <div role="alert" className="px-2 py-1.5 text-xs text-destructive">
+            {status}
+          </div>
+        ) : null}
+        {choosing.choices.map(actionItem)}
+      </DropdownMenuContent>
+    );
+  }
 
   return (
     <DropdownMenuContent
@@ -215,29 +286,7 @@ export function DrillInMenuBody({
         </div>
       ) : null}
       {currentActions.length > 0 ? <DropdownMenuSeparator /> : null}
-      {currentActions.map((action) => (
-        <Fragment key={action.key}>
-          <DropdownMenuItem
-            disabled={action.disabled}
-            aria-describedby={action.note ? `${noteId}-${action.key}` : undefined}
-            onSelect={(event) => {
-              event.preventDefault();
-              action.onSelect();
-            }}
-          >
-            <action.icon aria-hidden />
-            {action.label}
-          </DropdownMenuItem>
-          {action.note ? (
-            <p
-              id={`${noteId}-${action.key}`}
-              className="mx-1 mb-1 rounded-sm border border-warning-border bg-warning-bg px-2 py-1 text-xs text-warning-foreground"
-            >
-              {action.note}
-            </p>
-          ) : null}
-        </Fragment>
-      ))}
+      {currentActions.map(actionItem)}
     </DropdownMenuContent>
   );
 }

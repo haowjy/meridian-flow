@@ -52,8 +52,7 @@ export function createThreadRuntimeService(deps: {
   }
 
   async function liveState(threadId: ThreadId, userId: UserId): Promise<ThreadLiveState> {
-    const thread = await requireOwnedThread(threadId, userId);
-    const headSeq = thread.nextSeq;
+    await requireOwnedThread(threadId, userId);
     return {
       threadId,
       status: await deps.statusReader.read(threadId),
@@ -66,7 +65,6 @@ export function createThreadRuntimeService(deps: {
         threadId,
       ),
       runState: await deps.readRunState(threadId),
-      resumeAfterSeq: headSeq.toString(),
     };
   }
 

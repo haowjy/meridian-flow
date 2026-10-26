@@ -42,7 +42,7 @@ import { dragEntry } from "./entry-drag/entry";
 import { useEntryRow } from "./entry-drag/use-entry-row";
 import { LinkUpdateNote } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
-import { DropRegion } from "./tree-drop/DropRegion";
+import { DropRegion, InsertionLine } from "./tree-drop/DropRegion";
 import { type TreeDropTarget, useTreeDropTarget } from "./tree-drop/tree-drop";
 import { useCreateEntryForm } from "./use-create-entry-form";
 import {
@@ -145,7 +145,13 @@ export function TreeChildren({
           child.origin === "import" ? (
             <PendingTreeRow key={child.id} row={child} depth={depth} />
           ) : child.node.kind === "dir" ? (
-            <DirRow key={rowId(child)} dir={child.node} depth={depth} siblings={siblings} />
+            <DirRow
+              key={rowId(child)}
+              dir={child.node}
+              depth={depth}
+              siblings={siblings}
+              parent={parent}
+            />
           ) : (
             <FileRow
               key={rowId(child)}
@@ -161,6 +167,9 @@ export function TreeChildren({
 }
 
 type DropFolder = NonNullable<TreeDropTarget["folder"]>;
+
+/** The `mx-2` every row sits inside its region with. */
+const ROW_INSET_PX = 8;
 
 export function rowPaddingLeft(depth: number): number {
   return depth * 16;
@@ -194,14 +203,22 @@ export function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
   );
 }
 
+// Edge bands, as a share of the row's height. A file's centre only re-files it
+// into its own folder, so its edges get more room than a folder's, whose centre
+// moves rows into it.
+const FILE_EDGE_BAND = 1 / 3;
+const FOLDER_EDGE_BAND = 1 / 4;
+
 function DirRow({
   dir,
   depth,
   siblings,
+  parent,
 }: {
   dir: Extract<ContextNode, { kind: "dir" }>;
   depth: number;
   siblings: readonly ContextEntrySibling[];
+  parent: DropFolder | null;
 }) {
   const env = useTreeEnv();
   const folder: DropFolder = {
@@ -227,9 +244,13 @@ function DirRow({
     siblings,
   });
   const isOpen = env.isExpanded(dir.entryId);
+  // An open folder's bottom borders its first child, so "after" it is the next sibling's top edge.
   const drop = useTreeDropTarget(
     { scheme: env.scheme, catalogRootId: env.catalog.root.entryId, folder },
-    { reveal: () => !env.isExpanded(dir.entryId) && env.toggleEntry(dir.entryId) },
+    {
+      reveal: () => !env.isExpanded(dir.entryId) && env.toggleEntry(dir.entryId),
+      edges: { folder: parent, siblingId: dir.entryId, band: FOLDER_EDGE_BAND, after: !isOpen },
+    },
   );
   const movable = interaction.actions.includes("move");
   const entry = useMemo(() => dragEntry(dir, movable), [dir, movable]);
@@ -246,6 +267,8 @@ function DirRow({
 
   return (
     <DropRegion state={drop.dropState}>
+      {/* The region spans the subtree, so "after" lands below everything shown inside. */}
+      <InsertionLine edge={drop.edge} inset={ROW_INSET_PX + rowPaddingLeft(depth)} />
       <EntryInteractionShell interaction={interaction}>
         {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
         <div
@@ -344,12 +367,11 @@ function FileRow({
   parent: DropFolder | null;
 }) {
   const env = useTreeEnv();
-  // A file is not a drop target of its own: it hands the drop to its folder (or the area).
-  const { dropProps } = useTreeDropTarget({
-    scheme: env.scheme,
-    catalogRootId: env.catalog.root.entryId,
-    folder: parent,
-  });
+  // A file is not a drop target of its own: its centre hands the drop to its folder (or the area).
+  const drop = useTreeDropTarget(
+    { scheme: env.scheme, catalogRootId: env.catalog.root.entryId, folder: parent },
+    { edges: { folder: parent, siblingId: file.entryId, band: FILE_EDGE_BAND, after: true } },
+  );
   const interaction = useEntryInteraction({
     projectId: env.projectId,
     node: file,
@@ -380,10 +402,11 @@ function FileRow({
         onClick={row.activate(select)}
         onKeyDown={activateOnKey(row.activate(select))}
         {...row.rowProps}
-        {...dropProps}
-        className={cn("focus-ring", contextTreeFileRowClassName(active, row.selected))}
+        {...drop.dropProps}
+        className={cn("focus-ring relative", contextTreeFileRowClassName(active, row.selected))}
         style={{ paddingLeft: rowPaddingLeft(depth) }}
       >
+        <InsertionLine edge={drop.edge} inset={rowPaddingLeft(depth)} />
         <span className="h-7 w-4 shrink-0" aria-hidden />
         <RowIcon icon={fileKindIcon(file)} />
         <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">

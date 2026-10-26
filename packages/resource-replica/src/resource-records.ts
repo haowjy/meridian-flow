@@ -4,6 +4,8 @@ import type {
   CatalogFileClassification,
   CatalogScope,
   ContextOperationReceipt,
+  ContextParentOrderPolicy,
+  ContextSiblingPosition,
   CreateUntitledContextDocumentAnswer,
   CreateUntitledContextDocumentRequest,
   DeleteContextEntryRequest,
@@ -72,6 +74,7 @@ export type ResourceDestination = Readonly<{
   parent: ParentRef;
   createFolders?: string[];
   name: string;
+  position?: ContextSiblingPosition;
 }>;
 export type DestinationParentLookup = (folderId: string) => ResourceLocation | null;
 
@@ -120,6 +123,10 @@ export type ResourceDescriptor = ResourceKey & {
   canonical: ResourceLocation | null;
   /** Parent identity from the same canonical observation; absent until observed. */
   canonicalParent?: ParentRef;
+  /** Sibling rank from the same canonical observation; meaningful when its parent is manual. */
+  canonicalRank?: string | null;
+  /** Per-entry namespace mutation revision from the same canonical observation. */
+  canonicalLocationVersion?: string;
   /** Server namespace watermark of the canonical observation; absent for local identities. */
   observationVersion?: string;
   lifecycle:
@@ -195,12 +202,40 @@ export type NamespaceAttempt = {
   };
 }[NamespaceRequest["kind"]];
 
+/**
+ * A placement a later one waits on, named by its admission `order` in the journal of `kind` under
+ * `handle`. The order is the placement's logical identity: a remint replaces its intent but the
+ * replacement inherits the admission, so the reference follows it (`latestAdmittedPlacement`).
+ */
+export type PlacementPredecessor = {
+  kind: "resource" | "folder";
+  handle: string;
+  order: number;
+  /** The later intent's position names this predecessor's subject, so a failure changes its premise. */
+  anchor?: true;
+};
+
+/**
+ * Where a placement stands in the account's causal order. Written once with the intent, under the
+ * account's cross-tab admission lock, and never revised: dispatch, projection and Undo all read it.
+ */
+export type PlacementAdmission = {
+  /** Account-wide admission sequence, comparable across file and folder journals. */
+  order: number;
+  /** Conflict keys: the subject, the sibling sequences it leaves and joins, its anchor and destination ancestry. */
+  scope: readonly string[];
+  /** Intents still unresolved at admission whose scope overlaps; they dispatch first. */
+  predecessors: readonly PlacementPredecessor[];
+};
+
 export type NamespaceIntent = ResourceKey & {
   projectId: string;
   intentId: string;
   /** Caller-issued id lets surfaces correlate settlement before background dispatch. */
   operationId?: string;
   sequence: number;
+  /** Placement ordering captured at admission; see `PlacementAdmission`. */
+  admission?: PlacementAdmission;
   identityRevision: number;
   desired:
     | {
@@ -255,6 +290,10 @@ export type FolderNamespaceRecord = ResourceKey & {
   canonical: ResourceLocation;
   /** Parent identity installed atomically with the canonical location. */
   canonicalParent?: ParentRef;
+  /** This folder's rank and child-order policy from the same canonical observation. */
+  canonicalRank?: string | null;
+  canonicalLocationVersion?: string;
+  canonicalOrderPolicy?: ContextParentOrderPolicy;
   /** Server namespace watermark of the canonical observation; absent for local identities. */
   observationVersion?: string;
   canonicalRefresh?: { operationId: string; observationVersion?: string };
@@ -323,7 +362,15 @@ export type NamespaceOutcome =
   | { kind: "refusal"; operationId: string; error: MeridianError };
 
 export type NamespaceIdentityAvailability =
-  | { kind: "available"; location: ResourceLocation; parent: ParentRef; observationVersion: string }
+  | {
+      kind: "available";
+      location: ResourceLocation;
+      parent: ParentRef;
+      observationVersion: string;
+      locationVersion?: string;
+      rank?: string | null;
+      orderPolicy?: ContextParentOrderPolicy;
+    }
   | { kind: "deleted"; generation: string; observationVersion: string }
   | { kind: "unavailable" };
 

@@ -27,6 +27,11 @@ import {
 } from "../../ports/context-document-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { createLive, findLiveCreateCandidate } from "../../tree/creates.js";
+import {
+  branchRankOverrides,
+  effectiveParentPolicy,
+  siblingParent,
+} from "../../tree/effective-order.js";
 import { findForward, lastLocationOf, recordForward } from "../../tree/forwards.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
@@ -58,11 +63,8 @@ type DocumentRow = Pick<
   | "updatedAt"
   | "provisionalName"
   | "metadata"
+  | "rank"
 >;
-
-function mapFolder(row: { id: string; parentId: string | null; name: string }): ContextFolder {
-  return { id: row.id, parentId: row.parentId, name: row.name };
-}
 
 function mapDocument(row: DocumentRow): ContextDocument {
   const isBinary = isStorageBackedDocument(row);
@@ -79,6 +81,7 @@ function mapDocument(row: DocumentRow): ContextDocument {
     updatedAt: row.updatedAt.toISOString(),
     provisionalName: row.provisionalName,
     metadata: row.metadata,
+    rank: row.rank,
   };
 }
 
@@ -141,7 +144,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     });
     if (found.kind !== "found") return found;
     return found.node.kind === "folder"
-      ? { kind: "found", node: mapFolder(found.node.folder) }
+      ? { kind: "found", node: found.node.folder }
       : { kind: "not_found" };
   }
 
@@ -321,10 +324,26 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return new Map(rows.map((row) => [row.documentId, row.markdown]));
   }
 
+  async parentOrderPolicy(view: TreeView, parentId: string | null) {
+    return (
+      await effectiveParentPolicy(
+        this.db,
+        view.kind === "branch" ? view.branchId : null,
+        siblingParent(this.sourceId, parentId as FolderId | null),
+      )
+    ).policy;
+  }
+
   async listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]> {
     const vf = visibleFolders(view);
     const rows = await this.db
-      .select({ id: vf.id, parentId: vf.parentId, name: vf.name })
+      .select({
+        id: vf.id,
+        parentId: vf.parentId,
+        name: vf.name,
+        rank: vf.rank,
+        orderPolicy: vf.orderPolicy,
+      })
       .from(vf)
       .where(
         and(
@@ -332,7 +351,15 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           parentId === null ? isNull(vf.parentId) : eq(vf.parentId, parentId as FolderId),
         ),
       );
-    return rows.map(mapFolder);
+    const ranks =
+      view.kind === "branch" && rows.length
+        ? await branchRankOverrides(
+            this.db,
+            view.branchId,
+            siblingParent(this.sourceId, parentId as FolderId | null),
+          )
+        : null;
+    return rows.map((row) => ({ ...row, rank: ranks?.get(row.id) ?? row.rank }));
   }
 
   async listDocuments(view: TreeView, folderId: string | null): Promise<ContextDocument[]> {
@@ -346,7 +373,15 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           folderId === null ? isNull(vd.folderId) : eq(vd.folderId, folderId as FolderId),
         ),
       );
-    return rows.map(mapDocument);
+    const ranks =
+      view.kind === "branch" && rows.length
+        ? await branchRankOverrides(
+            this.db,
+            view.branchId,
+            siblingParent(this.sourceId, folderId as FolderId | null),
+          )
+        : null;
+    return rows.map((row) => mapDocument({ ...row, rank: ranks?.get(row.id) ?? row.rank }));
   }
 }
 

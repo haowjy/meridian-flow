@@ -29,6 +29,7 @@ const API_ROUTE_OWNERSHIP = [
   { owner: "server", path: "/api/works", match: "family" },
   { owner: "server", path: "/api/documents", match: "family" },
   { owner: "server", path: "/api/debug", match: "family" },
+  { owner: "server", path: "/api/diagnostics/failures", match: "exact" },
   { owner: "server", path: "/api/object-store", match: "family" },
   { owner: "server", path: "/ws/yjs", match: "exact" },
 ] as const satisfies readonly ApiRouteOwnershipRule[];

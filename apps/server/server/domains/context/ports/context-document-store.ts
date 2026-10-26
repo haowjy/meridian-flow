@@ -9,7 +9,11 @@
  * `parentId`/`folderId` of `null` denotes the source root.
  */
 import type { ProjectId } from "@meridian/contracts";
-import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
+import type {
+  ContextParentOrderPolicy,
+  DocumentFileType,
+  Filetype,
+} from "@meridian/contracts/protocol";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 import type { LiveClaim, LiveCreateCandidate } from "../tree/hidden-node-types.js";
 import type { PathResolution, TreeView } from "../tree/tree-view.js";
@@ -26,6 +30,8 @@ export interface ContextFolder {
   id: string;
   parentId: string | null;
   name: string;
+  rank?: string | null;
+  orderPolicy?: ContextParentOrderPolicy;
 }
 
 export interface ContextDocument {
@@ -42,6 +48,7 @@ export interface ContextDocument {
   provisionalName: boolean;
   /** `documents.metadata` as stored; read through `document-metadata.ts`. */
   metadata: unknown;
+  rank?: string | null;
 }
 
 export interface LocatedContextDocument {
@@ -125,6 +132,7 @@ export interface ContextDocumentStore {
     documentId: string,
   ): Promise<{ path: string; name: string; deleted: boolean } | null>;
   readProjections(ids: string[]): Promise<Map<string, string>>;
+  parentOrderPolicy(view: TreeView, parentId: string | null): Promise<"default" | "manual">;
   listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]>;
   listDocuments(view: TreeView, folderId: string | null): Promise<ContextDocument[]>;
   /**

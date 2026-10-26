@@ -8,7 +8,10 @@ export const threadSnapshotSchema = z.object({
   threadId: z.string(),
   thread: threadSchema,
   turns: z.array(turnSchema),
-  liveState: threadLiveStateSchema,
+  liveState: threadLiveStateSchema.extend({
+    /** The last frame materialized by this snapshot; joins resume strictly after it. */
+    resumeAfterSeq: z.string().regex(/^(0|[1-9]\d*)$/),
+  }),
   nextSeq: z.string().regex(/^(0|[1-9]\d*)$/),
   actionRequired: z.boolean(),
   threadUsage: z.object({

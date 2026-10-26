@@ -4,6 +4,7 @@
  * `--json`), and the outcome maps onto exit codes. The lifecycle (intent, post, classifying the
  * answer) is the package's; nothing here decides what a server answer means.
  */
+import type { FailureOccurrence } from "@meridian/contracts/failures";
 import {
   createHandBackOperation,
   type FrozenRequest,
@@ -63,17 +64,26 @@ export function ambiguousError(
   threadId: string,
   request: FrozenRequest,
   replayCommand: string,
+  occurrence?: FailureOccurrence,
 ): CliError {
   const replay = `${replayCommand} --replay '${JSON.stringify(request.body)}'`;
   return new CliError("unavailable", `${label} answer lost`, {
     hint: `The ${label} may have landed. Replay the same request, not a new press: ${replay}`,
     details: { threadId, request: request.body },
+    occurrence,
   });
 }
 
 /** The error a definite refusal exits with (1). */
-export function refusedError(label: string, status: number): CliError {
-  return new CliError("http_error", `${label} refused (HTTP ${status})`, { httpStatus: status });
+export function refusedError(
+  label: string,
+  status: number,
+  occurrence?: FailureOccurrence,
+): CliError {
+  return new CliError("http_error", `${label} refused (HTTP ${status})`, {
+    httpStatus: status,
+    occurrence,
+  });
 }
 
 type Input =
@@ -103,9 +113,16 @@ export async function runHandBack(options: {
     command.kind === "stop"
       ? command.body
       : { requestId: command.requestId, ids: [...command.ids] };
+  let failure: FailureOccurrence | undefined;
   const operation: HandBackOperation = createHandBackOperation({
     threadId,
     ports: {
+      failureLog: {
+        record(record) {
+          if (record.phase === "recorded")
+            failure = { occurrenceId: record.occurrenceId, failure: record.failure };
+        },
+      },
       http: sessionHttp(session),
       runState: viewRunStatePort(
         (change) => {
@@ -140,9 +157,9 @@ export async function runHandBack(options: {
     case "confirmed":
       return outcome;
     case "refused":
-      throw refusedError(label, outcome.status);
+      throw refusedError(label, outcome.status, failure);
     case "ambiguous":
-      throw ambiguousError(label, threadId, outcome.request, replayCommand);
+      throw ambiguousError(label, threadId, outcome.request, replayCommand, failure);
     default:
       throw new CliError("protocol", `${label} could not be recorded (${outcome.kind})`);
   }

@@ -8,9 +8,9 @@
  * wording, selection and the notice belong to the caller.
  */
 
-import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import {
   type ParentRef,
+  placementParentKey,
   type ResourceDestination,
   type ResourcePlacement,
   type ResourceRecord,
@@ -24,7 +24,13 @@ import {
 } from "../context-entry-name";
 import { renameOperationLifecycle } from "../rename-operation-lifecycle";
 import type { EntryRef } from "./entry";
-import { type MoveEffect, type MoveRow, planUndo } from "./move-plan";
+import {
+  type MoveEffect,
+  type MoveRow,
+  planUndo,
+  sameParent,
+  siblingPositionWitness,
+} from "./move-plan";
 
 export type MoveContext = {
   resources: AccountResourceReplica;
@@ -34,13 +40,14 @@ export type MoveContext = {
 /** The replica's placement, which names what every parent holds; no list needs to be on screen. */
 export type NamingView = {
   records: readonly ResourceRecord[];
+  folders?: Awaited<ReturnType<AccountResourceReplica["readProjection"]>>["folders"];
   placement: Pick<ResourcePlacement, "childrenAt">;
 };
 
 export type MoveResult = {
   moved: readonly MoveEffect[];
   /** Rows the replica would not admit. */
-  failed: readonly { entry: EntryRef; name: string }[];
+  failed: readonly { entry: EntryRef; name: string; action: "move" | "reorder" }[];
 };
 
 type Arrival = {
@@ -48,6 +55,7 @@ type Arrival = {
   name: string;
   /** The name the writer asked for (a Move… retry keeps a refused rename); the row's own otherwise. */
   typed?: string;
+  before?: ParentRef;
   after: ParentRef;
 };
 
@@ -75,18 +83,32 @@ async function placeEntry(
  * though the replica has not caught up (two `Notes` folders become
  * `Notes (2)` and `Notes (3)`), and a row that fails reserves nothing.
  */
-function arrivals(view: NamingView) {
+function arrivals(view: NamingView, rows: readonly Arrival[]) {
   const byParent = new Map<string, NameOccupancy>();
+  const staying = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (!row.before || !sameParent(row.before, row.after)) continue;
+    const key = placementParentKey(row.after);
+    const entries = staying.get(key) ?? new Set<string>();
+    entries.add(row.entry.id);
+    staying.set(key, entries);
+  }
   const occupancy = (parent: ParentRef) => {
-    const key = parentKey(parent);
+    const key = placementParentKey(parent);
     let occupied = byParent.get(key);
     if (!occupied) {
       occupied = nameOccupancy(
-        view.placement.childrenAt(parent, view.records).map((row) => ({
-          entryId: row.entryId,
-          name: row.name,
-          kind: row.kind === "folder" ? "dir" : "file",
-        })),
+        view.placement.childrenAt(parent, view.records).flatMap((row) =>
+          staying.get(key)?.has(row.entryId)
+            ? []
+            : [
+                {
+                  entryId: row.entryId,
+                  name: row.name,
+                  kind: row.kind === "folder" ? ("dir" as const) : ("file" as const),
+                },
+              ],
+        ),
       );
       byParent.set(key, occupied);
     }
@@ -108,13 +130,6 @@ function arrivals(view: NamingView) {
   };
 }
 
-/** One key per parent `sameParent` treats as equal. */
-function parentKey(parent: ParentRef): string {
-  if (parent.kind === "folder") return `folder:${parent.folderId}`;
-  if (isProjectScopedScheme(parent.scheme)) return `root:${parent.scheme}`;
-  return `root:${parent.scheme}:${parent.owner.workId ?? ""}:${parent.owner.rootThreadId ?? ""}`;
-}
-
 /**
  * The rows a move would rename on arrival, for the warning shown before it
  * happens. It predicts exactly as `moveRows` places, as if every row arrives.
@@ -123,7 +138,7 @@ export function renamesOnArrival(
   rows: readonly Arrival[],
   view: NamingView,
 ): { name: string; as: string }[] {
-  const names = arrivals(view);
+  const names = arrivals(view, rows);
   return rows.flatMap((row) => {
     const as = names.name(row);
     names.reserve(row, as);
@@ -135,6 +150,7 @@ async function currentView(context: MoveContext) {
   const snapshot = await context.resources.readProjection(context.projectId);
   return {
     records: snapshot.records,
+    folders: snapshot.folders,
     placement: resourcePlacementForSnapshot(context.projectId, snapshot),
   };
 }
@@ -146,17 +162,20 @@ export async function moveRows(
   view?: NamingView,
 ): Promise<MoveResult> {
   const { resources, projectId } = context;
-  const names = arrivals(view ?? (await currentView(context)));
+  const current = view ?? (await currentView(context));
+  const names = arrivals(current, rows);
   const moved: MoveEffect[] = [];
-  const failed: { entry: EntryRef; name: string }[] = [];
+  const failed: { entry: EntryRef; name: string; action: "move" | "reorder" }[] = [];
   for (const row of rows) {
     const name = names.name(row);
+    const action = sameParent(row.before, row.after) && row.position ? "reorder" : "move";
+    const previousPosition = siblingPositionWitness(current, row.before, row.entry.id);
     try {
       const operationId = await placeEntry(
         resources,
         projectId,
         row.entry,
-        { parent: row.after, name },
+        { parent: row.after, name, ...(row.position ? { position: row.position } : {}) },
         row.typed ?? row.name,
       );
       names.reserve(row, name);
@@ -168,10 +187,12 @@ export async function moveRows(
         previousName: row.name,
         before: row.before,
         after: row.after,
+        previousPosition,
+        action,
         ...(operationId ? { operationId } : {}),
       });
     } catch {
-      failed.push({ entry: row.entry, name: row.name });
+      failed.push({ entry: row.entry, name: row.name, action });
     }
   }
   return { moved, failed };

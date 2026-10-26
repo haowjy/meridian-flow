@@ -1398,7 +1398,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       deliveredEvents,
     }),
     pollTrails: () => trailDelivery.drain(),
-    /** Stops debounced live pulls (scheduled by AI live commits) leaking into later tests. */
+    /** Stop producers and join their work before test reset or pool shutdown. */
+    async dispose() {
+      await Promise.all([draftPulls.shutdown(), draftEffects.dispose()]);
+      this.destroyWarmState();
+    },
+    /** Cancels future pulls while a race fixture keeps the rest of its runtime active. */
     cancelScheduledPulls: () => {
       draftPulls.cancelScheduledPulls();
     },

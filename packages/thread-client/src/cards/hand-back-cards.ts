@@ -22,7 +22,7 @@ export function handBackCards(
       // The card goes when the reply it targeted ends.
       if (running !== entry.request.seenExecutionId) continue;
       cards.push({
-        key: `${entry.request.seenExecutionId}:${entry.attempt}`,
+        key: occurrenceKey(entry),
         failure: classifyCommandFailure({ kind: entry.status === "refused" ? "refused" : "lost" }),
         copy: "send-now-failed",
         action: entry.status === "refused" ? "dismiss" : "try_again",

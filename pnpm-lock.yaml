@@ -437,6 +437,9 @@ importers:
       '@meridian/prosemirror-schema':
         specifier: workspace:*
         version: link:../../packages/prosemirror-schema
+      '@meridian/resource-replica':
+        specifier: workspace:*
+        version: link:../../packages/resource-replica
       '@meridian/thread-client':
         specifier: workspace:*
         version: link:../../packages/thread-client
@@ -461,6 +464,9 @@ importers:
       file-type:
         specifier: 22.1.1
         version: 22.1.1
+      fractional-indexing:
+        specifier: ^4.0.0
+        version: 4.0.0
       jsonrepair:
         specifier: 'catalog:'
         version: 3.14.1
@@ -537,9 +543,6 @@ importers:
       '@hocuspocus/provider':
         specifier: 4.3.0
         version: 4.3.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
-      '@meridian/resource-replica':
-        specifier: workspace:*
-        version: link:../../packages/resource-replica
       '@types/busboy':
         specifier: ^1.5.5
         version: 1.5.5
@@ -4571,6 +4574,10 @@ packages:
   form-data@4.0.6:
     resolution: {integrity: sha512-vKatAh4SlVfgbv+YtmhiRjhEMJsYpsG1Y2rMQtR+SVSbytsSD1YGzDIcrAJmdFec88u/+VoGmxnl+80gL1tRCQ==}
     engines: {node: '>= 6'}
+
+  fractional-indexing@4.0.0:
+    resolution: {integrity: sha512-Nr2P1Yyaj2sy1Qdt/wI3GcByxrUdbSKg5+cGvw8f18hT2SkQt6V72iOjBpk7IO3UkzBsdlGRs2a4z6dLrJprgw==}
+    engines: {node: ^14.13.1 || >=16.0.0}
 
   framer-motion@12.42.0:
     resolution: {integrity: sha512-wp7EJnfWaaEScVygKv3e20udoRz+LbtxScsuTkakAxfXmt+ReC6WyPW2nINRAGvd+hG9odwcjBLyOTPjH5pBRA==}
@@ -10291,6 +10298,8 @@ snapshots:
       es-set-tostringtag: 2.1.0
       hasown: 2.0.4
       mime-types: 2.1.35
+
+  fractional-indexing@4.0.0: {}
 
   framer-motion@12.42.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
     dependencies:

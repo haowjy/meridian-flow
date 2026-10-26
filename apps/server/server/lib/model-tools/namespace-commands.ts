@@ -47,6 +47,33 @@ type MoveInput = Extract<WriteToolInput, { command: "move" }>;
 type DeleteInput = Extract<WriteToolInput, { command: "delete" }>;
 export type NamespaceInput = MoveInput | DeleteInput;
 
+async function siblingPosition(
+  call: ToolCall,
+  input: MoveInput,
+): Promise<
+  import("@meridian/contracts/protocol").ContextSiblingPosition | WriteToolErrorOutput | undefined
+> {
+  if (!input.position) return undefined;
+  if (input.position.kind === "start" || input.position.kind === "end")
+    return { kind: input.position.kind };
+  const sibling = await call.context.port.stat(input.position.sibling);
+  if (!sibling.ok && sibling.error.code !== "not_found")
+    return namespaceContextRefusal("move", sibling.error, { path: input.position.sibling });
+  const documentId = sibling.ok ? sibling.value.documentId : undefined;
+  if (documentId) return { kind: input.position.kind, siblingId: documentId };
+  const trimmed = input.position.sibling.replace(/\/+$/, "");
+  const name = trimmed.slice(trimmed.lastIndexOf("/") + 1);
+  const listed = await call.context.port.list(trimmed.slice(0, trimmed.length - name.length));
+  if (!listed.ok)
+    return namespaceContextRefusal("move", listed.error, { path: input.position.sibling });
+  const folder = listed.value.entries.find(
+    (entry) => entry.kind === "directory" && entry.uri.replace(/\/+$/, "") === trimmed,
+  );
+  if (!folder?.folderId)
+    return namespaceRefusal("move", "document_unresolved", { path: input.position.sibling });
+  return { kind: input.position.kind, siblingId: folder.folderId };
+}
+
 /** The document a move or delete acts on, as the model named it. */
 function sourcePath(input: NamespaceInput): string {
   return input.command === "move" ? input.from.path : input.path;
@@ -129,6 +156,8 @@ async function commitLive(
   const history = deps.documentSync.treeHistory();
   const before = await history.liveState(source.documentId);
   const wantedAt = input.command === "move" ? await canonicalPath(call, input.path) : undefined;
+  const position = input.command === "move" ? await siblingPosition(call, input) : undefined;
+  if (position && "output" in position) return position;
   if (!before?.living)
     return namespaceRefusal(input.command, "stale_location", { path: source.uri });
   const origin = {
@@ -176,6 +205,7 @@ async function commitLive(
   const moved = await port.commitWriterLocation(source.uri, input.path, {
     expected: { kind: "file", nodeId: source.documentId },
     origin,
+    ...(position ? { position } : {}),
     inTransaction: async (result: ContextMoveResult) => {
       const wanted = wantedAt ? parseContextUri(wantedAt) : null;
       const landedAt = result.destinationUri
@@ -225,6 +255,8 @@ async function commitDrafted(
   const threadId = ctx.threadId as ThreadId;
   const turnId = ctx.turnId ? (ctx.turnId as TurnId) : undefined;
   const wantedAt = input.command === "move" ? await canonicalPath(call, input.path) : undefined;
+  const position = input.command === "move" ? await siblingPosition(call, input) : undefined;
+  if (position && "output" in position) return position;
   let recorded: string | undefined;
   const record = async (change: RecordedBranchTreeChange) => {
     const moved = change.after.moved;
@@ -266,7 +298,13 @@ async function commitDrafted(
   };
   const changed = await call.context.port.changeInBranch(
     input.command === "move"
-      ? { ...command, op: "move", sourceUri: source.uri, destinationUri: input.path }
+      ? {
+          ...command,
+          op: "move",
+          sourceUri: source.uri,
+          destinationUri: input.path,
+          ...(position ? { position } : {}),
+        }
       : { ...command, op: "delete", uri: source.uri },
   );
   if (!changed.ok)

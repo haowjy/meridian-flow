@@ -402,6 +402,10 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return (await this.readableSourceStore())?.listFolders(view, parentId) ?? [];
   }
 
+  async parentOrderPolicy(view: TreeView, parentId: string | null) {
+    return (await this.readableSourceStore())?.parentOrderPolicy(view, parentId) ?? "default";
+  }
+
   async listDocuments(view: TreeView, folderId: string | null) {
     return (await this.readableSourceStore())?.listDocuments(view, folderId) ?? [];
   }

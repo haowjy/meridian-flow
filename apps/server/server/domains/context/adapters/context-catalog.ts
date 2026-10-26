@@ -195,6 +195,7 @@ async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
       workHandle: works.handle,
       chatThreadId: contextSources.chatThreadId,
       ownerThreadRef: threads.ref,
+      orderPolicy: contextSources.orderPolicy,
     })
     .from(contextSources)
     .leftJoin(projects, eq(contextSources.projectId, projects.id))
@@ -255,7 +256,9 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
             parentId: vf.parentId,
             name: vf.name,
             description: vf.description,
-            sortOrder: vf.sortOrder,
+            rank: vf.rank,
+            locationVersion: vf.locationVersion,
+            orderPolicy: vf.orderPolicy,
             createdAt: vf.createdAt,
             updatedAt: vf.updatedAt,
           })
@@ -276,6 +279,8 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
             mimeType: vd.mimeType,
             metadata: vd.metadata,
             provisionalName: vd.provisionalName,
+            rank: vd.rank,
+            locationVersion: vd.locationVersion,
           })
           .from(vd)
           .where(inArray(vd.contextSourceId, sourceIds));
@@ -358,6 +363,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       scheme,
       name: source.name,
       uri: canonicalContextUri(scheme, "", authority),
+      orderPolicy: source.orderPolicy,
     });
     for (const folder of folderRows.filter((item) => item.contextSourceId === source.id)) {
       const path = pathForFolder(folder.id, source.id);
@@ -365,6 +371,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       entries.push({
         kind: "folder",
         observationVersion,
+        locationVersion: folder.locationVersion.toString(),
         entryId: folder.id,
         scope,
         sourceId: source.id,
@@ -373,6 +380,8 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
         path,
         uri: canonicalContextUri(scheme, path.join("/"), authority),
         hasChildren: (childCounts.get(folder.id) ?? 0) > 0,
+        rank: folder.rank,
+        orderPolicy: folder.orderPolicy,
       });
     }
     for (const document of documentRows.filter((item) => item.contextSourceId === source.id)) {

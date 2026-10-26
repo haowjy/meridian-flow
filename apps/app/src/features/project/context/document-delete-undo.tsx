@@ -2,7 +2,15 @@
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { NamespaceIntent, ResourceProjectionSnapshot } from "@meridian/resource-replica";
+import {
+  type NamespaceIntent,
+  type ParentRef,
+  placementTakenSince,
+  type ResourceProjectionSnapshot,
+  resourceIdentityIndex,
+  resourcePlacementForSnapshot,
+  resourceVisibleInProject,
+} from "@meridian/resource-replica";
 import { type QueryClient, queryOptions, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -17,6 +25,7 @@ import {
 import { getContextOperationReceipt, restoreContextDocuments } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { announce, announceError, getContextTabs } from "@/client/stores";
+import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { documentLocationName } from "../../chat/document-display-name";
 import { useDockDocumentStore } from "../dock/dock-document-store";
 import {
@@ -31,6 +40,13 @@ import {
   useOptionalRemovedNotices,
 } from "./account-feature-context";
 import type { DeleteTarget } from "./ContextEntryActions";
+import { moveRows, type NamingView } from "./entry-drag/execute-move";
+import {
+  positionFromWitness,
+  type SiblingPositionWitness,
+  sameParent,
+  siblingPositionWitness,
+} from "./entry-drag/move-plan";
 
 type RestoreFeedback =
   | { kind: "restoring" }
@@ -39,6 +55,7 @@ type RestoreFeedback =
 type DeleteWindow = {
   label: string;
   kind: "file" | "folder";
+  restorePlacement?: DeletedPlacement;
   /** "restoring" from the Undo click: the restore runs once the replica shows the delete landed. */
   feedback?: RestoreFeedback;
 };
@@ -66,6 +83,12 @@ type DeleteUndoContextValue = {
 };
 
 type RemovedDocument = { documentId: string; removal: { locationVersion: string } };
+
+type DeletedPlacement = {
+  documentId: string;
+  parent: ParentRef;
+  position: SiblingPositionWitness;
+};
 
 /** One removal of one document; a later delete of the same document is a different removal. */
 function removalKey({ documentId, removal }: RemovedDocument): string {
@@ -127,6 +150,121 @@ function ownDeletedDocumentIds(projectId: string, target: DeleteTarget): string[
       ? [tab.documentId]
       : [],
   );
+}
+
+async function captureDeletedPlacement(
+  resources: AccountResourceReplica,
+  projectId: string,
+  target: DeleteTarget,
+): Promise<DeletedPlacement | undefined> {
+  if (target.kind !== "file") return undefined;
+  const snapshot = await resources.readProjection(projectId);
+  const placement = resourcePlacementForSnapshot(projectId, snapshot);
+  const record = resourceIdentityIndex(snapshot.records).byDocumentId(target.documentId);
+  const parent = record ? placement.parentForResource(record) : null;
+  return record && parent
+    ? {
+        documentId: target.documentId,
+        parent,
+        position: siblingPositionWitness(
+          { records: snapshot.records, placement },
+          parent,
+          target.documentId,
+        ),
+      }
+    : undefined;
+}
+
+function restoredFileView(
+  snapshot: ResourceProjectionSnapshot,
+  projectId: string,
+  documentId: string,
+): { name: string; parent: ParentRef; view: NamingView } | null {
+  const record = resourceIdentityIndex(snapshot.records).byDocumentId(documentId);
+  if (!record || !resourceVisibleInProject(projectId, record, snapshot.catalogs)) return null;
+  const placement = resourcePlacementForSnapshot(projectId, snapshot);
+  const location = placement.resourceLocation(record);
+  const parent = placement.parentForResource(record);
+  return location && parent
+    ? {
+        name: location.name,
+        parent,
+        view: { records: snapshot.records, folders: snapshot.folders, placement },
+      }
+    : null;
+}
+
+async function waitForRestoredFile(
+  resources: AccountResourceReplica,
+  projectId: string,
+  documentId: string,
+  signal: AbortSignal,
+) {
+  const current = restoredFileView(
+    await resources.readProjection(projectId),
+    projectId,
+    documentId,
+  );
+  if (current) return current;
+  if (signal.aborted) throw signal.reason;
+  return new Promise<NonNullable<ReturnType<typeof restoredFileView>>>((resolve, reject) => {
+    const stop = resources.observeProjection(
+      projectId,
+      (snapshot) => {
+        const restored = restoredFileView(snapshot, projectId, documentId);
+        if (!restored) return;
+        cleanup();
+        resolve(restored);
+      },
+      (error) => {
+        cleanup();
+        reject(error);
+      },
+    );
+    const abort = () => {
+      cleanup();
+      reject(signal.reason);
+    };
+    function cleanup() {
+      signal.removeEventListener("abort", abort);
+      stop();
+    }
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+async function restoreDeletedPosition(
+  resources: AccountResourceReplica,
+  projectId: string,
+  deleted: DeletedPlacement,
+  deleteOperationId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const restored = await waitForRestoredFile(resources, projectId, deleted.documentId, signal);
+  if (!sameParent(restored.parent, deleted.parent)) return;
+  // Seeing the row again does not mean the restoration still owns it: a placement the writer
+  // admitted after the delete is newer than the position this Undo would put back.
+  const journal = resourceIdentityIndex(restored.view.records).byDocumentId(deleted.documentId);
+  const deletion = journal?.intents.find((intent) => intent.operationId === deleteOperationId);
+  if (journal && deletion && placementTakenSince(journal.intents, deletion)) return;
+  const siblings = restored.view.placement
+    .childrenAt(deleted.parent, restored.view.records)
+    .map((entry) => entry.entryId)
+    .filter((entryId) => entryId !== deleted.documentId);
+  const result = await moveRows(
+    [
+      {
+        entry: { kind: "file", id: deleted.documentId },
+        name: restored.name,
+        before: restored.parent,
+        after: deleted.parent,
+        position: positionFromWitness(deleted.position, siblings),
+      },
+    ],
+    { resources, projectId },
+    restored.view,
+  );
+  if (result.failed.length > 0) throw new Error("Restored document position was refused");
 }
 
 export function DocumentDeleteUndoProvider({
@@ -216,6 +354,7 @@ export function DocumentDeleteUndoProvider({
         (() => undefined);
       void (async () => {
         try {
+          const restorePlacement = await captureDeletedPlacement(resources, projectId, target);
           const result =
             target.kind === "file"
               ? await (async () => {
@@ -230,6 +369,7 @@ export function DocumentDeleteUndoProvider({
           const window: DeleteWindow = {
             label: target.name,
             kind: target.kind === "file" ? "file" : "folder",
+            ...(restorePlacement ? { restorePlacement } : {}),
           };
           setWindows((current) =>
             new Map(current).set(operationId, { ...window, operationId, surface, shown: true }),
@@ -298,6 +438,23 @@ export function DocumentDeleteUndoProvider({
             });
             return;
           }
+          const placementResult = window.restorePlacement
+            ? response.documents.find(
+                (result) => result.documentId === window.restorePlacement?.documentId,
+              )
+            : undefined;
+          if (
+            window.restorePlacement &&
+            (placementResult?.outcome === "restored" ||
+              placementResult?.outcome === "already_living")
+          )
+            await restoreDeletedPosition(
+              resources,
+              projectId,
+              window.restorePlacement,
+              operationId,
+              owner.controller.signal,
+            );
           if (
             response.documents.some(
               (result) => result.outcome === "superseded" || result.outcome === "already_living",
@@ -329,7 +486,7 @@ export function DocumentDeleteUndoProvider({
         }
       })();
     },
-    [dismiss, projectId, queryClient, updateFeedback],
+    [dismiss, projectId, queryClient, resources, updateFeedback],
   );
 
   // Delete progress is read from the replica, never copied: a refused or local-only delete
