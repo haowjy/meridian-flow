@@ -119,8 +119,9 @@ export async function insertCopiedTree(
   const minted = planned.value;
 
   const identity = createCopyIdentityMap({
+    // Binaries are in the map too: an image inside the copied set must show its copy.
     documents: flatten(minted).flatMap((node) =>
-      node.kind === "file" && node.source.fileType === null
+      node.kind === "file"
         ? [
             {
               sourceDocumentId: node.source.documentId,
@@ -394,8 +395,6 @@ async function insertCopiedBinary(
     });
   }
   const { fileType, storageUrl, mimeType, sizeBytes } = node.source;
-  if (!fileType || !storageUrl)
-    return Err({ code: "io_error", message: "Copied binary lost its object" });
   try {
     const document = await deps.store.createBinaryDocument({
       id: node.id,
