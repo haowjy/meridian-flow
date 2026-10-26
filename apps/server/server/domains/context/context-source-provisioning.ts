@@ -21,10 +21,7 @@ import {
 import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
 import { nextProjectSlug } from "../projects/adapters/project-repository/shared.js";
 import { lockContextSources } from "./adapters/context-fs/document-locations.js";
-import {
-  DrizzleContextDocumentStore,
-  holdCatalogRefreshes,
-} from "./adapters/context-fs/drizzle-store.js";
+import { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 import { createDrizzleLineageScratchLifecycle } from "./adapters/lineage-scratch-lifecycle.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
 import type {
@@ -243,24 +240,6 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     private readonly repair?: HiddenNodeRepair,
   ) {}
 
-  withCatalogBatch() {
-    if (!this.catalogMutations) return { store: this, flush: async () => {} };
-    const { held, flush } = holdCatalogRefreshes(this.catalogMutations);
-    return {
-      store: new SourceResolvedContextDocumentStore(
-        this.db,
-        this.ensureSourceId,
-        this.findSourceId,
-        this.workId,
-        held,
-        this.beforeWrite,
-        this.arrivals,
-        this.repair,
-      ),
-      flush,
-    };
-  }
-
   private async resolvedWorkId(): Promise<string | undefined> {
     return typeof this.workId === "function" ? this.workId() : this.workId;
   }
@@ -359,12 +338,8 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return this.mutate((store) => store.ensureFolderPath(dir));
   }
 
-  async createFolderIfAbsent(input: Parameters<ContextDocumentStore["createFolderIfAbsent"]>[0]) {
-    return this.mutate((store) => store.createFolderIfAbsent(input));
-  }
-
-  async placeSibling(input: Parameters<ContextDocumentStore["placeSibling"]>[0]) {
-    return this.mutate((store) => store.placeSibling(input));
+  async insertNewTree(input: Parameters<ContextDocumentStore["insertNewTree"]>[0]) {
+    return this.mutate((store) => store.insertNewTree(input));
   }
 
   async findLiveCreateCandidate(dir: readonly string[], name: string, extension: string) {

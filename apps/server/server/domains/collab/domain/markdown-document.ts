@@ -168,11 +168,14 @@ export type MarkdownDocumentEngine = {
    */
   encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
   /**
-   * Installs a seed from `encodeSeed` as the document's first state, in the caller's
-   * transaction; rooms hear of it after commit. False when the document already had state.
-   * It derives nothing: the caller refreshes the projection once its transaction commits.
+   * Installs the first states of documents the caller's transaction just created, from
+   * `encodeSeed` (null for a document with no text): a bulk create's content, in a fixed
+   * number of statements. Rooms hear of it after commit. It derives nothing: the caller
+   * refreshes the projections once its transaction commits.
    */
-  installSeed(documentId: DocumentId, state: Uint8Array): Promise<boolean>;
+  installSeeds(
+    seeds: readonly { documentId: DocumentId; state: Uint8Array | null }[],
+  ): Promise<void>;
   writeDocument(input: {
     documentId: DocumentId;
     content: BoundWrite;
@@ -472,6 +475,16 @@ export function createMarkdownDocumentEngine(
     if (!deps.deferUntilCommit?.(deliver)) await deliver();
   }
 
+  /** What a document with no text starts from: no structs, the placeholder a first checkpoint replaces. */
+  function emptySeedState(): Uint8Array {
+    const doc = createCollabYDoc({ gc: false });
+    try {
+      return Y.encodeStateAsUpdate(doc);
+    } finally {
+      doc.destroy();
+    }
+  }
+
   /** A document holding fresh bound content as its first state, written with the seed's origin. */
   function seedDocOf(content: BoundWrite, origin: DocumentSeedOrigin): Y.Doc {
     const doc = createCollabYDoc({ gc: false });
@@ -602,7 +615,16 @@ export function createMarkdownDocumentEngine(
       }
     },
 
-    installSeed,
+    async installSeeds(seeds) {
+      const empty = emptySeedState();
+      await deps.initialDocumentSeeds.seedInitialDocuments(
+        seeds.map(({ documentId, state }) => ({ documentId, state: state ?? empty })),
+      );
+      const deliver = async () => {
+        await Promise.all(seeds.map(({ documentId }) => deps.coordinator.deliver(documentId)));
+      };
+      if (!deps.deferUntilCommit?.(deliver)) await deliver();
+    },
 
     async writeDocument(input) {
       const result = await identityPreservingSet(input);

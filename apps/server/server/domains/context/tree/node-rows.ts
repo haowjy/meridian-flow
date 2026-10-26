@@ -51,6 +51,32 @@ export async function lockDocuments(db: Database, ids: readonly string[]): Promi
   for (const id of [...new Set(ids)].sort()) await lockDocumentMutation(currentDrizzleDb(db), id);
 }
 
+/** The `documents` columns of a text or storage-backed row at `slot`. */
+export function documentRowValues(
+  slot: DocumentSlot,
+  node: TrackedNode | BinaryNode,
+  options: { hidden: boolean; id?: DocumentId; markdown?: string; provisionalName?: boolean },
+) {
+  return {
+    ...(options.id ? { id: options.id } : {}),
+    contextSourceId: slot.contextSourceId,
+    folderId: slot.folderId,
+    name: slot.name,
+    extension: slot.extension,
+    hidden: options.hidden,
+    ...(node.kind === "tracked"
+      ? { fileType: node.filetype, sizeBytes: Buffer.byteLength(options.markdown ?? "", "utf8") }
+      : {
+          fileType: node.fileType,
+          storageUrl: node.storageUrl,
+          mimeType: node.mimeType,
+          sizeBytes: node.sizeBytes,
+        }),
+    ...(options.provisionalName ? { provisionalName: true } : {}),
+    ...(node.metadata ? { metadata: node.metadata as JsonObject } : {}),
+  };
+}
+
 /**
  * A document row at `slot`: a text row with its Markdown projection (`markdown`, empty by
  * default; a hidden row's is always empty), or a storage-backed row. A visible row claims
@@ -67,24 +93,7 @@ export async function insertDocumentRow(
   const markdown = options.markdown ?? "";
   const [row] = await tx
     .insert(documents)
-    .values({
-      ...(options.id ? { id: options.id } : {}),
-      contextSourceId: slot.contextSourceId,
-      folderId: slot.folderId,
-      name: slot.name,
-      extension: slot.extension,
-      hidden: options.hidden,
-      ...(node.kind === "tracked"
-        ? { fileType: node.filetype, sizeBytes: Buffer.byteLength(markdown, "utf8") }
-        : {
-            fileType: node.fileType,
-            storageUrl: node.storageUrl,
-            mimeType: node.mimeType,
-            sizeBytes: node.sizeBytes,
-          }),
-      ...(options.provisionalName ? { provisionalName: true } : {}),
-      ...(node.metadata ? { metadata: node.metadata as JsonObject } : {}),
-    })
+    .values(documentRowValues(slot, node, options))
     .onConflictDoNothing()
     .returning({ id: documents.id });
   if (!row) return null;
@@ -109,6 +118,22 @@ export async function insertDocumentRow(
   return row.id;
 }
 
+/** The `folders` columns of a folder at `at`. */
+export function folderRowValues(
+  at: { contextSourceId: ContextSourceId; parentId: FolderId | null; name: string },
+  options: { hidden: boolean; id?: FolderId; orderPolicy?: "default" | "manual" },
+) {
+  return {
+    ...(options.id ? { id: options.id } : {}),
+    contextSourceId: at.contextSourceId,
+    parentId: at.parentId,
+    name: at.name,
+    documentAlias: folderDocumentName(at.name),
+    hidden: options.hidden,
+    ...(options.orderPolicy ? { orderPolicy: options.orderPolicy } : {}),
+  };
+}
+
 export async function insertFolder(
   db: Database,
   at: { contextSourceId: ContextSourceId; parentId: FolderId | null; name: string },
@@ -116,15 +141,7 @@ export async function insertFolder(
 ): Promise<FolderId> {
   const [row] = await currentDrizzleDb(db)
     .insert(folders)
-    .values({
-      ...(options.id ? { id: options.id } : {}),
-      contextSourceId: at.contextSourceId,
-      parentId: at.parentId,
-      name: at.name,
-      documentAlias: folderDocumentName(at.name),
-      hidden: options.hidden,
-      ...(options.orderPolicy ? { orderPolicy: options.orderPolicy } : {}),
-    })
+    .values(folderRowValues(at, options))
     .returning({ id: folders.id });
   if (!row) throw new Error(`Folder ${at.name} was not inserted`);
   if (!options.hidden)
