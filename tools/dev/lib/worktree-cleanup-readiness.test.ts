@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
+import { DEV_TMUX_SERVER } from "./dev-tmux-server";
 import {
   collectAutoCleanupReadiness,
   decideAutoCleanupReadiness,
@@ -171,42 +172,22 @@ describe("decideAutoCleanupReadiness", () => {
     }
   });
 
-  it("still blocks when a tmux socket exists but the query fails", () => {
-    const repo = temporaryRepository();
-    const socketPath = path.join(os.tmpdir(), `meridian-tmux-socket-${process.pid}`);
-    const previousTmux = process.env.TMUX;
-    try {
-      fs.writeFileSync(socketPath, "not a tmux socket");
-      process.env.TMUX = `${socketPath},1,0`;
-      expect(inspectAutoCleanupReadiness(repo, [])).toMatchObject({
-        ready: false,
-        reasons: expect.arrayContaining([
-          expect.stringMatching(/^could not inspect tmux dev sessions/),
-        ]),
-      });
-    } finally {
-      if (previousTmux === undefined) delete process.env.TMUX;
-      else process.env.TMUX = previousTmux;
-      fs.rmSync(socketPath, { force: true });
-      fs.rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
   it("still blocks when a live tmux server has lost its socket", () => {
     const repo = temporaryRepository();
     const tmuxTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "meridian-tmux-"));
-    const socketPath = path.join(tmuxTmpDir, `tmux-${process.getuid?.()}`, "default");
+    const socketPath = path.join(tmuxTmpDir, `tmux-${process.getuid?.()}`, DEV_TMUX_SERVER);
     const previousTmux = process.env.TMUX;
     const previousTmuxTmpDir = process.env.TMUX_TMPDIR;
     let serverPid: number | undefined;
     try {
       const env = { ...process.env, TMUX: "", TMUX_TMPDIR: tmuxTmpDir };
-      const start = spawnSync("tmux", ["new-session", "-d", "-s", "meridian-readiness"], {
-        cwd: os.tmpdir(),
-        env,
-      });
+      const start = spawnSync(
+        "tmux",
+        ["-L", DEV_TMUX_SERVER, "new-session", "-d", "-s", "meridian-readiness"],
+        { cwd: os.tmpdir(), env },
+      );
       if (start.status !== 0) throw new Error("could not start isolated tmux server");
-      const pid = spawnSync("tmux", ["display-message", "-p", "#{pid}"], {
+      const pid = spawnSync("tmux", ["-L", DEV_TMUX_SERVER, "display-message", "-p", "#{pid}"], {
         env,
         encoding: "utf8",
       });
@@ -218,7 +199,9 @@ describe("decideAutoCleanupReadiness", () => {
       expect(inspectAutoCleanupReadiness(repo, [])).toMatchObject({
         ready: false,
         reasons: expect.arrayContaining([
-          expect.stringMatching(/^could not inspect tmux dev sessions/),
+          expect.stringMatching(
+            new RegExp(`^could not inspect tmux panes on the '${DEV_TMUX_SERVER}' server`),
+          ),
         ]),
       });
     } finally {
