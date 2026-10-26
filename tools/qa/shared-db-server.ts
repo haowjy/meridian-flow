@@ -27,7 +27,11 @@ import postgres from "postgres";
 import { isLocalDevPostgres } from "../dev/lib/dev-db";
 import { loadMainEnvFile, resolveCurrentRepoRoot, resolveDevLogDir } from "../dev/lib/dev-env";
 import { resolveCheckoutPortlessPrefix } from "../dev/portless-prefix";
-import { expectedPortlessName } from "../dev/portless-routes";
+import {
+  expectedPortlessName,
+  expectedServiceOrigin,
+  resolvePortlessProxyPort,
+} from "../dev/portless-routes";
 
 const SERVER_SUFFIX = ".server.meridian";
 const SERVE_SERVER = "--serve-server";
@@ -77,11 +81,14 @@ async function launch(): Promise<void> {
   const appName = expectedPortlessName("app", prefix);
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const [key, value] of Object.entries(loadMainEnvFile(repoRoot))) env[key] ??= value;
+  const proxyPort = resolvePortlessProxyPort(env);
+  const serverOrigin = expectedServiceOrigin("server", prefix, proxyPort);
+  const appOrigin = expectedServiceOrigin("app", prefix, proxyPort);
   Object.assign(env, {
     DATABASE_URL: databaseUrl,
     SHARED_DB_SERVER_URL: databaseUrl,
     SHARED_DB_SERVER_PREFIX: prefix,
-    MERIDIAN_API_ORIGIN: `https://${serverName}.localhost`,
+    MERIDIAN_API_ORIGIN: serverOrigin,
     NODE_ENV: "development",
     APP_DEBUG: env.APP_DEBUG ?? "1",
     // Its own event mirror, so each process's events stay attributable.
@@ -119,8 +126,8 @@ async function launch(): Promise<void> {
   }
   process.on("SIGINT", () => stopAll("SIGINT"));
   process.on("SIGTERM", () => stopAll("SIGTERM"));
-  console.log(`shared-db-server: server https://${serverName}.localhost`);
-  console.log(`shared-db-server: tab    https://${appName}.localhost`);
+  console.log(`shared-db-server: server ${serverOrigin}`);
+  console.log(`shared-db-server: tab    ${appOrigin}`);
 }
 
 function moduleFrom<T>(packageDir: string, specifier: string): Promise<T> {
