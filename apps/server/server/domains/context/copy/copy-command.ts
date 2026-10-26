@@ -108,15 +108,18 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   async function copy(
     input: ContextCopyInput,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
+    // The receipt keeps the selection as the writer made it, so a replay is matched against
+    // what was sent; the copy works from its outermost roots.
+    const selected = { ...input, sources: outermostRoots(input.sources) };
     return input.environment.receipts.execute(
       input.request.operationId,
       receiptCommand(input),
       async () => {
-        const prepared = await prepare(input);
+        const prepared = await prepare(selected);
         if (!prepared.ok) return prepared;
         return input.environment.commandTransaction.run(
-          () => write(input, prepared.value),
-          scopesOf(input),
+          () => write(selected, prepared.value),
+          scopesOf(selected),
           { sourceIds: prepared.value.sourceIds },
         );
       },
@@ -361,6 +364,24 @@ interface PreparedCopy {
 
 function unsupportedSource(uri: string): Result<never, ContextError> {
   return Err({ code: "invalid_operation", uri, message: "This source cannot be copied" });
+}
+
+/**
+ * A selection copies through its outermost roots: a root inside another selected folder, or
+ * one selected twice, is already in that copy, and copying it again would give one source two
+ * targets and send the folder's internal links to the stray copy.
+ */
+function outermostRoots(sources: readonly CopySourceHandoff[]): CopySourceHandoff[] {
+  const uriOf = (source: CopySourceHandoff) => trimTrailingSlash(source.uri);
+  return sources.filter((source, index) => {
+    const uri = uriOf(source);
+    return !sources.some(
+      (other, otherIndex) =>
+        otherIndex !== index &&
+        ((other.expected.kind === "folder" && uri.startsWith(`${uriOf(other)}/`)) ||
+          (uriOf(other) === uri && otherIndex < index)),
+    );
+  });
 }
 
 function scopesOf(input: ContextCopyInput): ContextCommandScope[] {
