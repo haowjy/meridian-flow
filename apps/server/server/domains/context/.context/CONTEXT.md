@@ -219,6 +219,9 @@ one source's tree contributes.
   the room again. Recording it as `stale_source` would hand the first answer to every
   replay. The check is skipped for draft views and ignored for binaries; no real draft tab
   has sent a vector yet, so K2 should confirm the draft room's vector against one first.
+- The insert holds the namespace locks for the whole tree, about 130 ms per tracked document
+  on a dev stack (50 documents took 6.5 s), the cost of a plain create each time. A folder of
+  hundreds keeps other writers of those namespaces waiting for as long.
 - A document that exists only in a Work's draft is not in the live tree, so it cannot be a
   source yet (`not_found`).
 - There is no Undo command: Copy's Undo is ordinary deletion of the identities the receipt
