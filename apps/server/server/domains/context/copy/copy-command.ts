@@ -84,8 +84,6 @@ export interface CopySourceHandoff {
   copy: ContextCopyAdapter;
   /** Scheme-relative path of the root. */
   path: string;
-  /** The Work whose lifecycle and namespace this end belongs to; null for no Work. */
-  workScopeId: string | null;
   view: CopyContextEntryView;
   expected: { kind: "file" | "folder"; nodeId: string };
   /** The device-minted identity for this root's copy; descendants are server-minted. */

@@ -70,7 +70,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
     for (const source of request.sources) {
       const resolved = await deps.resolve(source.uri);
       if (!resolved.ok) return resolved;
-      const { adapter, workScopeId, canonical, path } = resolved.value;
+      const { adapter, canonical, path } = resolved.value;
       const copy = adapter.copy;
       if (!copy) {
         return Err({
@@ -83,7 +83,6 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
         uri: canonical,
         copy,
         path,
-        workScopeId,
         view: source.view ?? { kind: "live" },
         expected: source.expected,
         ...(source.copyId ? { copyId: source.copyId } : {}),
