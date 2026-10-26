@@ -154,6 +154,35 @@ export interface AdapterCreateUntitledOptions {
   expectFolderId?: string;
 }
 
+export interface ContextCreateFolderOptions {
+  folderId: string;
+  origin: WriteProvenance;
+  /** Where the writer put the folder; the same identity-based address a move carries. */
+  destination: { parent: NonNullable<MoveContextEntryRequest["destinationParent"]>; name: string };
+  /** Refuses a destination the caller may not edit; given the resolved destination URI. */
+  authorizeDestination?: (uri: string) => Promise<boolean>;
+}
+
+export interface ContextCreateFolderResult {
+  /** `already-exists` answers a replay of the same id. */
+  status: "created" | "already-exists";
+  folderId: string;
+  scheme: ContextScheme;
+  path: string;
+  name: string;
+  workId?: string;
+}
+
+/** What the router hands an adapter: the destination resolved to a folder path and a leaf. */
+export interface AdapterCreateFolderOptions {
+  folderId: string;
+  origin: WriteProvenance;
+  /** The typed folder name; a taken one yields to the first free name. */
+  name: string;
+  /** The folder identity the destination named: a stale one is retried, never made again. */
+  expectFolderId?: string;
+}
+
 interface BaseListEntry {
   uri: string;
   title?: string | null;
@@ -416,6 +445,12 @@ export interface ContextPort {
     homeUri: string,
     options: ContextCreateUntitledDocumentOptions,
   ): Promise<Result<ContextCreateUntitledDocumentResult, ContextError>>;
+
+  /** Create a folder under a device-minted id at the writer's destination. */
+  createFolder(
+    homeUri: string,
+    options: ContextCreateFolderOptions,
+  ): Promise<Result<ContextCreateFolderResult, ContextError>>;
 
   /** Ensure a tracked text document row and empty Yjs document exist without replacing content. */
   ensureTrackedDocument(

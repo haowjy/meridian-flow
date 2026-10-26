@@ -36,7 +36,8 @@ import { findForward, lastLocationOf, recordForward } from "../../tree/forwards.
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
 import { insertDocumentRow } from "../../tree/node-rows.js";
-import { ensureLiveFolderPath } from "../../tree/placement.js";
+import { createLiveFolder, ensureLiveFolderPath } from "../../tree/placement.js";
+import { loadFolderChains } from "../../tree/tree-addresses.js";
 import {
   createTreeReader,
   LIVE_TREE,
@@ -46,7 +47,11 @@ import {
   visibleDocuments,
   visibleFolders,
 } from "../../tree/tree-view.js";
-import { loadDocumentIdentityRows, loadHiddenFilenames } from "../../tree/tree-view-sql.js";
+import {
+  loadDocumentIdentityRows,
+  loadFolderIdentityRows,
+  loadHiddenFilenames,
+} from "../../tree/tree-view-sql.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
 import { hasOppositeContextEntry, lockContextSources } from "./document-locations.js";
 
@@ -203,6 +208,31 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         await this.deps.catalogMutations?.refreshSources([this.sourceId], placed);
       }
       return folderId;
+    });
+  }
+
+  async createFolderIfAbsent(input: { parentId: string | null; name: string; id: string }) {
+    const folderId = input.id as FolderId;
+    return runInDrizzleTransaction(this.deps.db, async () => {
+      await lockContextSources(this.deps.db, [this.sourceId]);
+      const pathOf = async (id: FolderId) =>
+        [...((await loadFolderChains(this.db, [id])).get(id) ?? [])]
+          .reverse()
+          .map((link) => link.name);
+      const [held] = await loadFolderIdentityRows(this.db, [folderId]);
+      if (held) {
+        if (held.contextSourceId !== this.sourceId || held.deleted || held.hidden)
+          throw new ContextEntryConflictError("folder");
+        return { status: "already-exists" as const, folderId, path: await pathOf(folderId) };
+      }
+      await createLiveFolder(this.deps.db, {
+        contextSourceId: this.sourceId,
+        parentId: input.parentId as FolderId | null,
+        name: input.name,
+        id: folderId,
+      });
+      await this.deps.catalogMutations?.refreshSources([this.sourceId], [folderId]);
+      return { status: "created" as const, folderId, path: await pathOf(folderId) };
     });
   }
 

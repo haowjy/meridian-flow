@@ -338,6 +338,10 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return this.mutate((store) => store.ensureFolderPath(dir));
   }
 
+  async createFolderIfAbsent(input: { parentId: string | null; name: string; id: string }) {
+    return this.mutate((store) => store.createFolderIfAbsent(input));
+  }
+
   async findLiveCreateCandidate(dir: readonly string[], name: string, extension: string) {
     return (
       (await this.readableSourceStore())?.findLiveCreateCandidate(dir, name, extension) ?? {

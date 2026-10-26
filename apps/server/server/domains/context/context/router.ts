@@ -21,6 +21,7 @@ import type { AdapterFault, ContextSchemeAdapter } from "../ports/context-adapte
 import type { ContextCommandTransaction } from "../ports/context-command-transaction.js";
 import type {
   ContextBinaryWriteResult,
+  ContextCreateFolderResult,
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentOptions,
   ContextCreateUntitledDocumentResult,
@@ -234,10 +235,10 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
    * address, or a scheme root) under the missing-folder suffix, and the typed leaf. The
    * caller's authority over the resolved address is rechecked here.
    */
-  async function untitledTarget(
+  async function createTarget(
     homeUri: string,
     home: MutationDispatch,
-    options: ContextCreateUntitledDocumentOptions,
+    options: Pick<ContextCreateUntitledDocumentOptions, "destination" | "authorizeDestination">,
   ): Promise<
     Result<
       {
@@ -277,6 +278,34 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         ? { expectFolderId: parent.folderId }
         : {}),
     });
+  }
+
+  /**
+   * A create at the writer's destination, run again when the destination folder moved since it
+   * was named (`stale_target`): the adapter never creates under a different folder than the one
+   * the writer picked.
+   */
+  async function createAtTarget<T>(
+    homeUri: string,
+    home: MutationDispatch,
+    options: Pick<ContextCreateUntitledDocumentOptions, "destination" | "authorizeDestination">,
+    create: (target: {
+      resolved: MutationDispatch;
+      folderPath: string;
+      name?: string;
+      expectFolderId?: string;
+    }) => Promise<Result<T, ContextError>>,
+  ): Promise<Result<{ created: T; resolved: MutationDispatch }, ContextError>> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const target = await createTarget(homeUri, home, options);
+      if (!target.ok) return target;
+      const entryCreation = target.value.resolved.requireCreation("entry");
+      if (!entryCreation.ok) return entryCreation;
+      const created = await create(target.value);
+      if (created.ok) return Ok({ created: created.value, resolved: target.value.resolved });
+      if (created.error.code !== "stale_target" || !target.value.expectFolderId) return created;
+    }
+    return Err({ code: "conflict", uri: homeUri });
   }
 
   const treeMover = new ContextTreeMover(
@@ -631,53 +660,76 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         });
       }
 
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const target = await untitledTarget(homeUri, home.value, options);
-        if (!target.ok) return target;
-        const { resolved, folderPath, name, expectFolderId } = target.value;
-        const entryCreation = resolved.requireCreation("entry");
-        if (!entryCreation.ok) return entryCreation;
-        const created = await callAdapter(resolved.canonical, () =>
-          resolved.adapter.createUntitledDocument(folderPath, {
-            documentId: options.documentId,
-            origin: options.origin,
-            ...(name !== undefined ? { name } : {}),
-            ...(expectFolderId ? { expectFolderId } : {}),
-          }),
-        );
-        if (!created.ok) {
-          // The destination folder moved since it was named: name it again.
-          if (created.error.code === "stale_target" && expectFolderId) continue;
-          return created;
-        }
-        const address = {
-          scheme: resolved.scheme,
-          path: created.value.path,
-          name: created.value.name,
-          ...(resolved.workScopeId ? { workId: resolved.workScopeId } : {}),
-        };
-        switch (created.value.status) {
-          case "created":
-            return Ok({ status: "created", documentId: created.value.documentId, ...address });
-          case "already-exists":
-            return Ok({
-              status: "already-materialized",
-              documentId: created.value.documentId,
-              ...address,
-            });
-          case "joined": {
-            if (created.value.name) {
-              return Ok({ status: "joined", documentId: created.value.documentId, ...address });
-            }
-            const joined = await joinedAnswer(created.value.documentId);
-            if (!joined.ok) return joined;
-            return joined.value
-              ? Ok(joined.value)
-              : Ok({ status: "joined", documentId: created.value.documentId, ...address });
+      const placed = await createAtTarget(
+        homeUri,
+        home.value,
+        options,
+        ({ resolved, folderPath, name, expectFolderId }) =>
+          callAdapter(resolved.canonical, () =>
+            resolved.adapter.createUntitledDocument(folderPath, {
+              documentId: options.documentId,
+              origin: options.origin,
+              ...(name !== undefined ? { name } : {}),
+              ...(expectFolderId ? { expectFolderId } : {}),
+            }),
+          ),
+      );
+      if (!placed.ok) return placed;
+      const { created, resolved } = placed.value;
+      const address = {
+        scheme: resolved.scheme,
+        path: created.path,
+        name: created.name,
+        ...(resolved.workScopeId ? { workId: resolved.workScopeId } : {}),
+      };
+      switch (created.status) {
+        case "created":
+          return Ok({ status: "created", documentId: created.documentId, ...address });
+        case "already-exists":
+          return Ok({
+            status: "already-materialized",
+            documentId: created.documentId,
+            ...address,
+          });
+        case "joined": {
+          if (created.name) {
+            return Ok({ status: "joined", documentId: created.documentId, ...address });
           }
+          const joined = await joinedAnswer(created.documentId);
+          if (!joined.ok) return joined;
+          return joined.value
+            ? Ok(joined.value)
+            : Ok({ status: "joined", documentId: created.documentId, ...address });
         }
       }
-      return Err({ code: "conflict", uri: homeUri });
+    },
+
+    async createFolder(homeUri, options): Promise<Result<ContextCreateFolderResult, ContextError>> {
+      const home = await resolveMutation(homeUri, options.origin);
+      if (!home.ok) return home;
+      const homeCreation = home.value.requireCreation("intake");
+      if (!homeCreation.ok) return homeCreation;
+      const placed = await createAtTarget(
+        homeUri,
+        home.value,
+        options,
+        ({ resolved, folderPath, name, expectFolderId }) =>
+          callAdapter(resolved.canonical, () =>
+            resolved.adapter.createFolder(folderPath, {
+              folderId: options.folderId,
+              origin: options.origin,
+              name: name ?? options.destination.name,
+              ...(expectFolderId ? { expectFolderId } : {}),
+            }),
+          ),
+      );
+      if (!placed.ok) return placed;
+      const { created, resolved } = placed.value;
+      return Ok({
+        ...created,
+        scheme: resolved.scheme,
+        ...(resolved.workScopeId ? { workId: resolved.workScopeId } : {}),
+      });
     },
 
     async locate(documentId) {

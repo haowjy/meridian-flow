@@ -1,4 +1,5 @@
 import {
+  allocateFilename,
   folderDocumentName,
   parseDocumentFilename,
   type RetractionCause,
@@ -278,6 +279,40 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     let parentId: string | null = null;
     for (const name of dir) parentId = (await this.createFolder(parentId, name)).id;
     return parentId;
+  }
+
+  async createFolderIfAbsent(input: { parentId: string | null; name: string; id: string }) {
+    const held = this.backing.folders.get(input.id);
+    if (held) {
+      if (held.contextSourceId !== this.sourceId || held.deletedAt !== null)
+        throw new ContextEntryConflictError("folder");
+      return {
+        status: "already-exists" as const,
+        folderId: held.id,
+        path: locationPath(this.backing, held.parentId, held.name).split("/"),
+      };
+    }
+    const name = await allocateFilename({ kind: "folder", name: input.name }, ({ filename }) =>
+      Promise.resolve(
+        this.findFolderRecord(input.parentId, filename) !== null ||
+          hasOppositeEntry(this.backing, this.sourceId, input.parentId, filename, "folder"),
+      ),
+    );
+    const folder: FolderRow = {
+      id: input.id,
+      contextSourceId: this.sourceId,
+      parentId: input.parentId,
+      name,
+      deletedAt: null,
+      updatedAt: this.nextTimestamp(),
+    };
+    this.backing.folders.set(folder.id, folder);
+    claimLocation(this.backing, folder.contextSourceId, folder.parentId, folder.name);
+    return {
+      status: "created" as const,
+      folderId: folder.id,
+      path: locationPath(this.backing, folder.parentId, folder.name).split("/"),
+    };
   }
 
   private async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {

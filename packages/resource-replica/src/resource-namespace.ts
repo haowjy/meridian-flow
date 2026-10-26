@@ -5,9 +5,9 @@ import {
   parseContextUri,
 } from "@meridian/contracts/context-uri";
 import type {
+  ContextCreateDestination,
   ContextOperationReceipt,
   CreateUntitledContextDocumentResponse,
-  CreateUntitledDestination,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { canonicalRefreshObservation } from "./canonical-observation";
@@ -178,7 +178,7 @@ function requestFor(
 }
 
 /** The create carries what a move would: the server resolves the parent by identity. */
-function createDestination(destination: ResourceDestination): CreateUntitledDestination {
+function createDestination(destination: ResourceDestination): ContextCreateDestination {
   return {
     parent: {
       ...destination.parent,

@@ -42,6 +42,7 @@ import {
   type ResultAwareCommandExecutor,
 } from "../../context/result-aware-command-executor.js";
 import type {
+  AdapterCreatedFolder,
   AdapterDeleteResult,
   AdapterFault,
   AdapterFileEntry,
@@ -62,6 +63,7 @@ import {
   ContextEntryConflictError,
 } from "../../ports/context-document-store.js";
 import type {
+  AdapterCreateFolderOptions,
   AdapterCreateUntitledOptions,
   ContextListOptions,
   ContextScheme,
@@ -626,6 +628,33 @@ export class ContextFS implements ContextSchemeAdapter {
     options: ContextWriteBinaryOptions,
   ): Promise<Result<{ documentId: string; placement: "live" | "draft" }, AdapterFault>> {
     return this.placement.writeBinary(path, options);
+  }
+
+  async createFolder(
+    path: string,
+    options: AdapterCreateFolderOptions,
+  ): Promise<Result<AdapterCreatedFolder, AdapterFault>> {
+    const refused = this.placement.refuse("make an empty folder");
+    if (refused) return Err(refused);
+    if (!isUuid(options.folderId)) {
+      return Err({ code: "invalid_operation", message: "folderId must be a UUID" });
+    }
+    return this.commandExecutor.run(async () => {
+      const parentId = await this.store.ensureFolderPath(path.split("/").filter(Boolean));
+      if (options.expectFolderId !== undefined && parentId !== options.expectFolderId)
+        return Err({ code: "stale_target" });
+      const created = await this.store.createFolderIfAbsent({
+        parentId,
+        name: options.name,
+        id: options.folderId,
+      });
+      return Ok({
+        status: created.status,
+        folderId: created.folderId,
+        path: created.path.join("/"),
+        name: created.path.at(-1) ?? options.name,
+      });
+    });
   }
 
   async mkdir(path: string, _options?: ContextWriteOptions): Promise<Result<void, AdapterFault>> {
