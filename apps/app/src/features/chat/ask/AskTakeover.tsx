@@ -140,7 +140,7 @@ function QuestionTakeover({
   onAnswer: (answer: AskAnswer) => void;
 }) {
   const titleId = useId();
-  const { question, options, recommended } = ask.payload;
+  const { options, recommended } = ask.payload;
   const sendText = () => {
     const answer = text.trim();
     if (answer) onAnswer({ kind: "text", text: answer });
