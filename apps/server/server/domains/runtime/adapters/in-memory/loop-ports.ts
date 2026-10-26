@@ -372,6 +372,13 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       return liveLease(threadId)?.turnId ?? null;
     },
 
+    async requestCancel(threadIds) {
+      for (const threadId of threadIds) {
+        const row = liveLease(threadId);
+        if (row) row.cancelRequested = true;
+      }
+    },
+
     async cancelExecution(threadId, turnId) {
       const row = liveLease(threadId);
       if (!row?.boundTurnIds.has(turnId)) return false;

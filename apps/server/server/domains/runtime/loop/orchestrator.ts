@@ -252,8 +252,8 @@ export interface OrchestratorDeps {
   headSeq(threadId: ThreadId): Promise<bigint>;
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
-  /** Cancels parked questions when a child invocation terminally owns its subtree. */
-  cancelSubtreeAsks?: (threadId: ThreadId) => Promise<void>;
+  /** Ends a subtree across processes: Stop, turn cancel, and a child's terminal run. */
+  lineage?: import("./run-session.js").LineageCancellation;
   /** Child invocation cards: running at admission, the saved report when the run ends. */
   reports?: import("./run-session.js").RunSessionReports;
   agentRevisions: Pick<

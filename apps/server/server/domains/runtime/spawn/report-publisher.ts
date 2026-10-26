@@ -1,4 +1,8 @@
-/** Parent-first publication B for immutable child execution reports. */
+/**
+ * Parent-first publication B for immutable child execution reports. An asked
+ * report whose question was cancelled projects as a cancelled invocation: the
+ * report stays immutable, the card and spawn status stop waiting on it.
+ */
 
 import { GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
 import { buildInvocationCardContent, parseInvocationCard } from "@meridian/contracts/components";
@@ -6,7 +10,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { LiveEventWriter, ThreadRepositories } from "../../threads/index.js";
+import type { LiveEventWriter, StoredAsk, ThreadRepositories } from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
@@ -17,6 +21,8 @@ export type PublicationOutcome = "published" | "parked" | "already";
 export interface ReportPublisher {
   projectRunning(childThreadId: ThreadId, executionTurnId: TurnId): Promise<void>;
   publish(childThreadId: ThreadId, executionTurnId: TurnId): Promise<PublicationOutcome>;
+  /** Finalizes a child parked on a question that was cancelled; a no-op otherwise. */
+  settleCancelledAsk(childThreadId: ThreadId): Promise<void>;
   sweep(limit: number): Promise<number>;
 }
 
@@ -28,9 +34,27 @@ export function createReportPublisher(deps: {
 }): ReportPublisher {
   let cursor: TurnId | undefined;
 
+  /** The asked report's question; `cancelled` when that question was withdrawn. */
+  async function askedQuestion(report: SavedExecutionReport) {
+    if (report.outcome !== "asked" || !report.terminalTurnId) return null;
+    const ask = (await deps.repos.asks.listByTurnIds([report.terminalTurnId])).find(
+      (candidate) => candidate.kind === "question",
+    );
+    if (!ask) throw new Error("Asked execution report has no historical question");
+    return ask;
+  }
+
+  /** What the invocation shows for this report: a withdrawn question ends it cancelled. */
+  function projectedTerminal(report: SavedExecutionReport, ask: StoredAsk | null) {
+    return ask?.status === "cancelled"
+      ? { outcome: "cancelled" as const, terminalAt: ask.resolvedAt?.toISOString() ?? null }
+      : { outcome: report.outcome, terminalAt: report.terminalAt };
+  }
+
   async function cardProjection(
     report: SavedExecutionReport,
     state: "running" | "terminal",
+    terminal: { outcome: SavedExecutionReport["outcome"]; terminalAt: string | null } = report,
   ): Promise<OrchestratorEvent | null> {
     if (!report.cardBlockId || !report.callerTurnId) return null;
     if (!report.toolCallId || report.deliveryMode === "none")
@@ -73,8 +97,8 @@ export function createReportPublisher(deps: {
             childThreadId: report.childThreadId,
             execution: report.executionTurnId,
             startedAt: report.admittedAt,
-            terminalAt: state === "terminal" ? report.terminalAt : null,
-            ...(state === "terminal" && report.outcome ? { outcome: report.outcome } : {}),
+            terminalAt: state === "terminal" ? terminal.terminalAt : null,
+            ...(state === "terminal" && terminal.outcome ? { outcome: terminal.outcome } : {}),
             fromThreadId: priorProps?.fromThreadId,
             fromThreadRef: priorProps?.fromThreadRef,
             fromThreadTitle: priorProps?.fromThreadTitle,
@@ -142,30 +166,9 @@ export function createReportPublisher(deps: {
           child?.agentName,
         );
 
-        const asked =
-          report.outcome === "asked" && report.terminalTurnId
-            ? (await deps.repos.asks.listByTurnIds([report.terminalTurnId])).find(
-                (candidate) => candidate.kind === "question",
-              )
-            : null;
-        if (report.outcome === "asked" && !asked) {
-          throw new Error("Asked execution report has no historical question");
-        }
+        const asked = await askedQuestion(report);
         const actionableAsk = asked?.status === "open" ? asked : null;
-        const events: OrchestratorEvent[] = [];
-        const cardEvent = await cardProjection(report, "terminal");
-        if (cardEvent) events.push(cardEvent);
-        if (report.outcome !== "asked") {
-          events.push({
-            type: "agent.run_completed",
-            parentThreadId: callerThreadId,
-            parentTurnId: report.callerTurnId,
-            childThreadId: report.childThreadId,
-            execution: report.executionTurnId,
-            handle: report.handle,
-            outcome: report.outcome,
-          });
-        }
+        const events = await terminalEvents(report, asked, callerThreadId);
         await persistAndAppendEvents(deps, callerThreadId, async () => ({
           result: null,
           events,
@@ -220,6 +223,55 @@ export function createReportPublisher(deps: {
     );
   }
 
+  async function terminalEvents(
+    report: SavedExecutionReport,
+    asked: StoredAsk | null,
+    callerThreadId: ThreadId,
+  ): Promise<OrchestratorEvent[]> {
+    const terminal = projectedTerminal(report, asked);
+    const events: OrchestratorEvent[] = [];
+    const cardEvent = await cardProjection(report, "terminal", terminal);
+    if (cardEvent) events.push(cardEvent);
+    if (terminal.outcome && terminal.outcome !== "asked") {
+      events.push({
+        type: "agent.run_completed",
+        parentThreadId: callerThreadId,
+        parentTurnId: report.callerTurnId,
+        childThreadId: report.childThreadId,
+        execution: report.executionTurnId,
+        handle: report.handle,
+        outcome: terminal.outcome,
+      });
+    }
+    return events;
+  }
+
+  async function settleCancelledAsk(childThreadId: ThreadId): Promise<void> {
+    const report = (await deps.repos.executionReports.listFinishedByChild(childThreadId)).at(-1);
+    if (report?.outcome !== "asked") return;
+    const asked = await askedQuestion(report);
+    if (asked?.status !== "cancelled") return;
+    if (report.origin === "spawn")
+      await deps.repos.threads.updateSpawnLifecycle(childThreadId, { spawnStatus: "cancelled" });
+    // An unpublished asked report takes the same projection through its obligation.
+    if (report.publication === "pending") {
+      await publish(childThreadId, report.executionTurnId);
+      return;
+    }
+    const callerThreadId = report.callerThreadId;
+    if (!callerThreadId) return;
+    await deps.delivery.withThreadLock(callerThreadId, async () => {
+      await deps.repos.transaction(async () => {
+        const events = await terminalEvents(report, asked, callerThreadId);
+        if (events.length > 0)
+          await persistAndAppendEvents(deps, callerThreadId, async () => ({
+            result: null,
+            events,
+          }));
+      });
+    });
+  }
+
   async function sweep(limit: number): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit < 1)
       throw new Error("Publication limit must be positive");
@@ -248,7 +300,7 @@ export function createReportPublisher(deps: {
     return candidates.length;
   }
 
-  return { projectRunning, publish, sweep };
+  return { projectRunning, publish, settleCancelledAsk, sweep };
 }
 
 function questionText(

@@ -105,7 +105,29 @@ and tool denials remain monotone through nested generic children.
 Maximum spawn depth is operator-configured at tree creation. Child creation,
 Agent binding, and Work membership are one transaction. A child starts with an
 unfrozen prompt; ordinary preparation adds its persona and report instruction.
-Terminal persistence precedes helper/Work cleanup, and a child terminal run
-aborts its descendants and cancels their parked asks through database lineage.
-`asked` is non-terminal for this lifetime rule, so descendants keep running and
-their notifications wait behind the question barrier.
+Terminal persistence precedes helper/Work cleanup.
+
+## Lineage cancellation
+
+A parked child exists only in the database, so lifetime follows thread lineage,
+not live sessions. `TurnRunner.cancelLineage(scope)` is the one operation: it sets
+the durable `cancel_requested` flag on every target's live lease (heartbeats and
+batch adoption in any process honour it) and aborts local sessions, waits for this
+process's targets to settle, drops their queued non-writer inbox rows and their
+child notices to the owner, then cancels open asks (`cancelForThreadLifecycle`) and
+finalizes each parked invocation as cancelled through `report-publisher`
+(`settleCancelledAsk`: card, `agent.run_completed`, `spawn_status`). It repeats
+the abort while a target restarted on a notice. Runs in other processes stop at
+their next heartbeat; a notice they publish after the drop can still wake a parent.
+
+Ownership decides the scope:
+
+| Trigger | Scope |
+|---|---|
+| Stop on a chat | the whole subtree, whichever turn spawned it ("stop everything") |
+| Cancelling a turn, or Send now | only subtrees whose root that turn's execution spawned (`origin_turn_id`) |
+| A child's terminal run | its whole subtree, before its claim is released |
+
+`asked` is non-terminal for the last rule, so descendants keep running and their
+notifications wait behind the question barrier. Foreground children always follow
+their caller's abort signal.

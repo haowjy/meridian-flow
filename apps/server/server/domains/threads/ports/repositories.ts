@@ -303,6 +303,12 @@ export interface ThreadRepository {
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
   /** Direct live children of `threadId`, ordered by `(createdAt, id)`. */
   listChildren(threadId: ThreadId): Promise<ThreadChild[]>;
+  /**
+   * Subagent ids below `threadId`, parents before children, trashed ones included
+   * (a trashed child can still be running). With `spawnedByTurnId`, only the
+   * subtrees whose root the execution that reserved that turn spawned.
+   */
+  listSubtreeIds(threadId: ThreadId, spawnedByTurnId?: TurnId): Promise<ThreadId[]>;
   /** Bounded newest-first spawn/derivation children; derivations attach to the cutoff owner. */
   listLineageChildren(input: {
     rootThreadId: ThreadId;

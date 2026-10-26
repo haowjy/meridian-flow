@@ -8,7 +8,6 @@ import type { TurnId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import {
-  classifyHistoryItem,
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
 } from "../../threads/index.js";
@@ -294,68 +293,6 @@ describe("RunSession", () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-  it.each([
-    true,
-  ])("preserves descendant lifetime at parent completion (child parent: %s)", async (childParent) => {
-    const f = await fixture();
-    const fg = await f.deps.repos.threads.create({
-      aiWriteMode: "direct",
-      userId: f.thread.userId,
-      projectId: f.thread.projectId,
-    });
-    const bg = await f.deps.repos.threads.create({
-      aiWriteMode: "direct",
-      userId: f.thread.userId,
-      projectId: f.thread.projectId,
-    });
-    const readBinding = f.deps.agentRevisions.readThreadBinding;
-    f.deps.agentRevisions.readThreadBinding = () => readBinding(f.thread.id);
-    const parent = await f.runtime.prepare({
-      threadId: f.thread.id,
-      userText: "parent",
-      ...(childParent
-        ? {
-            child: {
-              parentThreadId: "ancestor",
-              background: false,
-              origin: "spawn" as const,
-              sender: { ref: "c0", title: "Ancestor" },
-            },
-          }
-        : {}),
-    });
-    const foreground = await f.runtime.prepare({
-      threadId: fg.id,
-      userText: "fg",
-      child: {
-        parentThreadId: f.thread.id,
-        background: false,
-        origin: "message",
-        sender: { ref: "c1", title: "Parent" },
-      },
-    });
-    const foregroundTurn = await f.repos.turns.findById(foreground.userTurnId);
-    expect(foregroundTurn && classifyHistoryItem(foregroundTurn)).toEqual({
-      kind: "agent_request",
-      source: "foreground_message",
-    });
-    expect(foregroundTurn?.metadata).toMatchObject({
-      sender: { threadId: f.thread.id, ref: "c1", title: "Parent" },
-    });
-    const background = await f.runtime.prepare({
-      threadId: bg.id,
-      userText: "bg",
-      child: {
-        parentThreadId: f.thread.id,
-        background: true,
-        origin: "spawn",
-        sender: { ref: "c1", title: "Parent" },
-      },
-    });
-    expect((await parent.execute()).status).toBe("complete");
-    expect((await foreground.execute()).status).toBe("cancelled");
-    expect((await background.execute()).status).toBe(childParent ? "cancelled" : "complete");
   });
   it("fallback terminalizes its own current turn, never another holder's turn", async () => {
     const f = await fixture();

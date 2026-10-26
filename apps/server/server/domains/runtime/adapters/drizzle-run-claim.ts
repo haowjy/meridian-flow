@@ -244,6 +244,19 @@ export function createDrizzleRunClaim(
       return row?.turnId ?? null;
     },
 
+    async requestCancel(threadIds) {
+      if (threadIds.length === 0) return;
+      await db_()
+        .update(schema.threadRunLeases)
+        .set({ cancelRequested: true })
+        .where(
+          and(
+            inArray(schema.threadRunLeases.threadId, threadIds as string[]),
+            gt(schema.threadRunLeases.expiresAt, new Date()),
+          ),
+        );
+    },
+
     async cancelExecution(threadId, turnId) {
       return runInDrizzleTransaction(db, async () => {
         const rows = await db_()

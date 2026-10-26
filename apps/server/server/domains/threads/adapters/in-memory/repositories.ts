@@ -399,6 +399,28 @@ export function createInMemoryRepositories(
           siblingCount: nodes.filter((node) => node.upThreadId === thread.upThreadId).length,
         }));
     },
+    async listSubtreeIds(threadId, spawnedByTurnId) {
+      const cancelled = spawnedByTurnId ? turns.get(spawnedByTurnId) : null;
+      const spawnedBy = (turnId: string | null | undefined) => {
+        if (!spawnedByTurnId) return true;
+        if (turnId === spawnedByTurnId) return true;
+        const turn = turnId ? turns.get(turnId) : null;
+        return !!cancelled?.executionId && turn?.executionId === cancelled.executionId;
+      };
+      const result: ThreadId[] = [];
+      let level = [...threads.values()].filter(
+        (thread) => thread.parentThreadId === threadId && spawnedBy(thread.originTurnId),
+      );
+      while (level.length > 0) {
+        level.sort((a, b) => a.id.localeCompare(b.id));
+        result.push(...level.map((thread) => thread.id as ThreadId));
+        const parents = new Set(level.map((thread) => thread.id));
+        level = [...threads.values()].filter(
+          (thread) => thread.parentThreadId && parents.has(thread.parentThreadId),
+        );
+      }
+      return result;
+    },
     async listChildren(threadId) {
       return [...threads.values()]
         .filter(
