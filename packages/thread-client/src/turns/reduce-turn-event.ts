@@ -948,7 +948,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           }
           const ask = parsed.data;
           store.receiveAsk(threadId, ask);
-          // The asking turn's status follows its ask, as the snapshot's does.
+          // Resolution finishes the asking turn; RUN_FINISHED owns awaiting_answer.
           const next = askingTurnStatus(ask);
           const turn = turnById(store, threadId, ask.turnId);
           if (next && turn && turn.status !== next.status && next.from.includes(turn.status))

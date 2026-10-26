@@ -123,18 +123,16 @@ export function markAskAnswer(
 }
 
 /**
- * The asking turn's status while its ask is in this lifecycle state, and which held status it
- * replaces. The asking run's finish carries `awaiting_answer`; later ask frames own transitions
- * after that run has ended, when no run event can carry the resolved status.
+ * The asking turn's terminal status after its ask resolves, and which held status it replaces.
+ * The asking run's finish alone writes `awaiting_answer`; ask frames own only the later transition.
  */
 export function askingTurnStatus(
   ask: ThreadAsk,
 ): { status: TurnStatus; from: readonly TurnStatus[] } | null {
   switch (ask.status) {
     case "pending":
-      return null;
     case "open":
-      return { status: "awaiting_answer", from: ["pending", "streaming"] };
+      return null;
     case "answered":
     case "expired":
       return { status: "complete", from: ["awaiting_answer"] };
