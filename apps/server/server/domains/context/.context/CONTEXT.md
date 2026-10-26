@@ -177,51 +177,74 @@ one source's tree contributes.
   tracked document's content is read once as a frozen cut (`readEffectiveBlocks`: the live
   document, or the draft a tab shows when the source names that view). The listing is a
   series of committed reads, not one database snapshot; a folder moved while it runs lands
-  on one side of it. A binary's bytes are duplicated before any namespace lock is taken
-  (`prepareBinaryCopy`, D24). The receipt's transaction is already open then, so the
-  connection is held while bytes move. Each put key is registered for release before the
-  next put, so any later failure or refusal frees the objects already put. A process crash
-  between a put and the rollback still leaks them (the model copy tool leaks the same way;
-  one storage sweep would cover both).
+  on one side of it. A selection collapses to its outermost roots first: a root inside
+  another selected folder, or selected twice, is already in that copy. Everything slow
+  happens before the receipt's transaction opens: the reads, a binary's duplicated bytes
+  (`prepareBinaryCopy`, D24), the plan, and the binding. A source room that is not open
+  loads through a second connection, so a transaction held across the reads would starve
+  the pool. Each put key is released if no transaction commits to name its object (a
+  refusal, a retryable failure, a replay that never reads it). A process crash between a put
+  and the rollback still leaks it (the model copy tool leaks the same way; one storage sweep
+  would cover both).
 - The operation receipt (`kind: "copy"`) owns the transaction. Inside it the command
-  transaction takes every source and destination Work and namespace, re-resolves an
-  identity destination, and rechecks every root by identity (`peekSource`); then the
-  destination adapter names and inserts the tree (`copyInto`).
-- Names are allocated against live occupants, hidden occupants (taken, never revealed) and
-  the rest of the batch. Every identity is minted before any content is bound, so one
-  old→new map binds links between roots through `collab/domain/copied-blocks.ts`: links
-  inside the copied set name the copies (a settled `ahead:` ref and an image or link to a
-  copied binary included), everything else keeps its target. The model's `copy` tool calls
-  the same `remapCopiedBlocks`, with the same settled-ahead map read from the same cut, so a
-  document it copies and a document a writer copies point their links alike.
+  transaction takes the destination's Work and namespace, and nothing else: the sources are
+  a frozen cut, so their namespaces are not locked and a source deleted mid-copy is a copy
+  of what the writer saw. The command re-resolves an identity destination, then the
+  destination adapter inserts the plan (`copyInto`).
+- Names are the destination namespace's, so its adapter plans them (`planCopy`): allocated
+  against live occupants, hidden occupants (taken, never revealed) and the rest of the batch,
+  from a lock-free read of the destination parent. Only the roots meet existing occupants.
+  The plan mints every identity before any content is bound, so one old→new map binds links
+  between roots through `collab/domain/copied-blocks.ts`: links inside the copied set name
+  the copies (a settled `ahead:` ref and an image or link to a copied binary included),
+  everything else keeps its target. The model's `copy` tool calls the same
+  `remapCopiedBlocks`, with the same settled-ahead map read from the same cut, so a document
+  it copies and a document a writer copies point their links alike. The model remaps a
+  document onto its own copy only when it copied the whole document, never an excerpt.
+  Under the lock `copyInto` re-reads the parent and confirms the roots would take the same
+  names; if a concurrent write took one, it inserts nothing and answers `replan`, and the
+  command plans and binds again under the lock (a second plan cannot move).
 - A copied folder keeps its source's order policy and its children arrive in source order,
   so a manual folder's visible order survives. Roots arrive by the destination parent's own
   rule (the end of a manual parent, name order in a default one). An explicit position
   places the roots as one run: the first there, each next one after the previous, so a
   default parent becomes manual exactly as a reorder makes it.
-- Content is a `BoundWrite` from `bindCopiedBlocks` (fresh holder: it lands only in an empty
-  document) inserted through the creation aggregate with claim `none`, so a racing hidden
-  occupant fails the create instead of being revealed, and arrival settles ahead refs
-  pointing at the copy's new address. The live create path (`createBoundDocument`) is not
-  used because it reveals a hidden document at the path. `metadata.copiedFrom` records the
-  source URI, the version read and that version's revision; folder provenance lives in the
-  receipt.
+- Content is bound for the address each copy will have (`bindCopiedBlocks`, a fresh holder,
+  so it lands only in an empty document) and encoded to its first Yjs state
+  (`encodeSeed`) outside the lock. The insert is set-based, because nothing below a root can
+  meet an occupant: `ContextDocumentStore.insertNewTree` writes folders, documents,
+  projections and claimed locations in one statement per batch of 500 (`tree/new-tree.ts`),
+  `InitialDocumentSeeds.seedInitialDocuments` writes the heads and seed checkpoints, and the
+  creation aggregate (`createDocumentsAtomically`) settles every arrival once, so ahead refs
+  pointing at a copy's new address settle. The per-node checks of a single create (occupancy,
+  hidden candidate, hidden-name yield) are skipped on purpose: they are what makes a
+  create cost fifteen statements, and the plan has already allocated around every name.
+  Projections and link rows are derived after the transaction commits, four documents at a
+  time (`refreshDocumentProjection`); a derivation that fails is logged and the stale sweep
+  recovers it. `metadata.copiedFrom` records the source URI, the version read and that
+  version's revision; folder provenance lives in the receipt.
 - Refusals are typed and recorded on the receipt, so a replay under the same operation ID
   answers the same result: `not_found` or `stale_source` for a gone or changed source,
   `destination_missing` or `stale_target` for a destination that moved, `invalid_operation`
   for a folder into its own subtree ("Can't go inside itself", the drag hint's words), an
   unsupported source (a draft view of a folder), the source root, or a draft placement
-  destination. Uploads as the destination and a malformed path are refused by the route
-  before the domain runs, typed and unrecorded.
-- A client-held live source sends its Yjs state vector; when the cut lacks updates it names,
-  the answer is `io_error` ("The source has edits the server has not received yet"):
-  retryable and never recorded, so the replica's replay under the same operation ID reads
-  the room again. Recording it as `stale_source` would hand the first answer to every
-  replay. The check is skipped for draft views and ignored for binaries; no real draft tab
-  has sent a vector yet, so K2 should confirm the draft room's vector against one first.
-- The insert holds the namespace locks for the whole tree, about 130 ms per tracked document
-  on a dev stack (50 documents took 6.5 s), the cost of a plain create each time. A folder of
-  hundreds keeps other writers of those namespaces waiting for as long.
+  destination. Uploads as the destination (by path or by folder identity), a malformed path
+  or state vector, a vector sent for a folder, and a draft view whose chat is not in the
+  project are refused by the route before the domain runs, typed and unrecorded.
+- A client-held source sends its Yjs state vector with a document source (a folder source
+  with a vector is a 400). The vector is compared with the room of the view being read, live
+  or draft. When the cut lacks updates it names, the read waits up to 2 s for the room to
+  catch up, then answers `io_error` with `reason: "source_behind"` ("The source has edits the
+  server has not received yet"): retryable and never recorded, so the replica's replay under
+  the same operation ID reads the room again, and distinct from a transport failure so the
+  replica can stop after a bounded wait. Recording it as `stale_source` would hand the first
+  answer to every replay. No real draft tab has sent a vector yet, so K2 should confirm the
+  draft room's vector against one first.
+- Lock hold grows with the statements, not with a round trip per document: 200 linked
+  chapters of about 1,500 words hold the destination namespace for about 0.3 s in a fresh
+  project. What is left is the catalog reconcile (`refreshSources`), which reads the whole
+  project scope on every write and runs twice when the destination folder is also created,
+  and the head lock it takes (see `FUTURE.md`).
 - A document that exists only in a Work's draft is not in the live tree, so it cannot be a
   source yet (`not_found`).
 - There is no Undo command: Copy's Undo is ordinary deletion of the identities the receipt

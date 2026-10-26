@@ -43,5 +43,21 @@ draft-mode chat's copy would need a branch create, which is E2's replica intent 
 document that exists only in a Work's draft cannot be a source for the same reason: the
 listing reads the live tree.
 
-The state-vector check does not run for draft views. Before K2 sends a vector for a draft
-tab, compare the draft room's vector (`drafts.copyDraft`) against a real tab's.
+The state-vector check compares against the draft room for a draft view, but only against
+vectors a probe built. Before K2 sends one for a draft tab, compare the draft room's vector
+(`drafts.copyDraft`) against a real tab's.
+
+## Copy: preparation cost and the catalog reconcile
+
+A 200-document copy spends most of its time before the lock: reading each document's room
+one after another takes about 18 ms each. Reading four at a time would cut it, at the price of
+more pool connections per copy; measure under concurrent copies first.
+
+`ContextCatalogMutationPort.refreshSources` reconciles the whole project scope against the
+stored catalog on every write and holds the catalog head lock to the end of the transaction,
+so every write in a project waits behind every other and each write costs more as the
+project grows (on a dev stack a `doc put` took about 130 ms in a project of 200 documents and
+over a second in one of 4,400). A copy into a folder that does not exist yet pays it twice,
+once to create the folder path and once for the tree. Refreshing only the invalidated roots,
+and as late in the transaction as possible, would make a write's cost independent of the
+project and shorten the head-lock hold.
