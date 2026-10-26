@@ -39,4 +39,9 @@ The server Copy command exists (`copy/`); the browser's Copy intent does not. K2
 copied root as a create-shaped replica record, so it may want client-minted root identities
 for optimistic projection: the command mints every identity itself today, and the receipt
 carries them. Copy also refuses a draft placement destination (`invalid_operation`): a
-draft-mode chat's copy would need a branch create, which is E2's replica intent work.
+draft-mode chat's copy would need a branch create, which is E2's replica intent work. A
+document that exists only in a Work's draft cannot be a source for the same reason: the
+listing reads the live tree.
+
+The state-vector check does not run for draft views. Before K2 sends a vector for a draft
+tab, compare the draft room's vector (`drafts.copyDraft`) against a real tab's.

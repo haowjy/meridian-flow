@@ -167,14 +167,22 @@ stays deleted.
 
 A Copy is one atomic command per drop: ordered roots (documents and folders) into one
 destination folder, with an optional sibling position.
-`POST /api/projects/:projectId/context/copy` and `./mf doc copy` drive
-`copy/copy-command.ts`; the browser's Copy intent is not built yet.
+`POST /api/projects/:projectId/context/copy` and `./mf doc copy` drive it; the browser's
+Copy intent is not built yet. The pieces: `copy/copy-port.ts` resolves the request's
+addresses to adapters, `copy/copy-command.ts` reads, duplicates and orchestrates, and
+`adapters/context-fs/copy-adapter.ts` (source read) with `copy-tree.ts` (insertion) is what
+one source's tree contributes.
 
-- Each source tree is read once (`ContextCopyAdapter.snapshotSource`, live view) and each
-  tracked document's content once as a frozen cut (`readEffectiveBlocks`: the live document,
-  or the draft a tab shows when the source names that view). A binary's bytes are duplicated
-  before any namespace lock is taken (`prepareBinaryCopy`, D24), and their keys are released
-  if the rows never commit.
+- Each source tree is listed once (`ContextCopyAdapter.snapshotSource`, live tree) and each
+  tracked document's content is read once as a frozen cut (`readEffectiveBlocks`: the live
+  document, or the draft a tab shows when the source names that view). The listing is a
+  series of committed reads, not one database snapshot; a folder moved while it runs lands
+  on one side of it. A binary's bytes are duplicated before any namespace lock is taken
+  (`prepareBinaryCopy`, D24). The receipt's transaction is already open then, so the
+  connection is held while bytes move. Each put key is registered for release before the
+  next put, so any later failure or refusal frees the objects already put. A process crash
+  between a put and the rollback still leaks them (the model copy tool leaks the same way;
+  one storage sweep would cover both).
 - The operation receipt (`kind: "copy"`) owns the transaction. Inside it the command
   transaction takes every source and destination Work and namespace, re-resolves an
   identity destination, and rechecks every root by identity (`peekSource`); then the
@@ -182,22 +190,37 @@ destination folder, with an optional sibling position.
 - Names are allocated against live occupants, hidden occupants (taken, never revealed) and
   the rest of the batch. Every identity is minted before any content is bound, so one
   old→new map binds links between roots through `collab/domain/copied-blocks.ts`: links
-  inside the copied set name the copies (a settled `ahead:` ref included), everything else
-  keeps its target. A copied folder keeps its source's order policy and its children arrive
-  in source order, so a manual folder's visible order survives; its root arrival follows the
-  destination parent's own rule plus any explicit position.
+  inside the copied set name the copies (a settled `ahead:` ref and an image or link to a
+  copied binary included), everything else keeps its target. The model's `copy` tool calls
+  the same `remapCopiedBlocks`, with the same settled-ahead map read from the same cut, so a
+  document it copies and a document a writer copies point their links alike.
+- A copied folder keeps its source's order policy and its children arrive in source order,
+  so a manual folder's visible order survives. Roots arrive by the destination parent's own
+  rule (the end of a manual parent, name order in a default one). An explicit position
+  places the roots as one run: the first there, each next one after the previous, so a
+  default parent becomes manual exactly as a reorder makes it.
 - Content is a `BoundWrite` from `bindCopiedBlocks` (fresh holder: it lands only in an empty
   document) inserted through the creation aggregate with claim `none`, so a racing hidden
-  occupant fails the create instead of being revealed. `metadata.copiedFrom` records the
+  occupant fails the create instead of being revealed, and arrival settles ahead refs
+  pointing at the copy's new address. The live create path (`createBoundDocument`) is not
+  used because it reveals a hidden document at the path. `metadata.copiedFrom` records the
   source URI, the version read and that version's revision; folder provenance lives in the
   receipt.
 - Refusals are typed and recorded on the receipt, so a replay under the same operation ID
   answers the same result: `not_found` or `stale_source` for a gone or changed source,
   `destination_missing` or `stale_target` for a destination that moved, `invalid_operation`
-  for an uploads destination, a folder into its own subtree ("Can't copy a folder into
-  itself"), an unsupported source (a draft view of a folder, a state vector off a binary),
-  or a draft placement destination. A client-held source's state vector that the cut lacks
-  answers `stale_source`, which is retryable.
+  for a folder into its own subtree ("Can't go inside itself", the drag hint's words), an
+  unsupported source (a draft view of a folder), the source root, or a draft placement
+  destination. Uploads as the destination and a malformed path are refused by the route
+  before the domain runs, typed and unrecorded.
+- A client-held live source sends its Yjs state vector; when the cut lacks updates it names,
+  the answer is `io_error` ("The source has edits the server has not received yet"):
+  retryable and never recorded, so the replica's replay under the same operation ID reads
+  the room again. Recording it as `stale_source` would hand the first answer to every
+  replay. The check is skipped for draft views and ignored for binaries; no real draft tab
+  has sent a vector yet, so K2 should confirm the draft room's vector against one first.
+- A document that exists only in a Work's draft is not in the live tree, so it cannot be a
+  source yet (`not_found`).
 - There is no Undo command: Copy's Undo is ordinary deletion of the identities the receipt
   lists.
 
