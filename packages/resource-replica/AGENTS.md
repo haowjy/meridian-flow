@@ -34,9 +34,11 @@ exports rather than implementation modules.
 - Dispatch captures destination parent identity and typed filename. Receipts
   match identity and creation suffix, never a stale path; requests never
   retarget after submission.
-- Typed non-retryable HTTP refusals settle attempts against the submitted
-  operation id. Network failures remain replayable until receipt evidence
-  exists.
+- Typed non-retryable HTTP refusals settle an attempt of any request kind
+  against the request's identity (`namespaceRequestId`: a move's or delete's
+  operation id, a create's document id). Network failures remain replayable
+  until receipt evidence exists. A refused create leaves the document local and
+  repairable, never deleted.
 - A confirmed deletion is versioned. Only strictly newer evidence can restore;
   stale catalog pages, exact-ID presence where disallowed, and scoped absence
   never revive or authorize purge.

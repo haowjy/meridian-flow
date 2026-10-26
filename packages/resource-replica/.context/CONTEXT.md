@@ -278,8 +278,23 @@ concurrent commands but are not server freshness.
 
 Typed non-retryable HTTP 4xx refusals settle a namespace attempt when route intake
 rejects before any server receipt exists: persist the refusal against the
-submitted operation id and never invent a receipt. Bare HTTP or network failures
-still need receipt evidence and stay replayable.
+submitted request's identity (`namespaceRequestId`) and never invent a receipt.
+Bare HTTP or network failures still need receipt evidence and stay replayable.
+The journal accepts a refusal on every request kind, so a request kind added later
+(folder create, Copy) settles the same way and only has to say what its identity is.
+
+A refused create is the first placement refused. The intent is `needs-repair`, never
+resent and not woken by the 30-second retry; the document stays local (lifecycle
+`local`, no canonical place), shown in Unfiled at its provisional name with its text and
+exact content. Queued moves behind it are cancelled (`resolveRefusedLocationChain`) and the
+newest one is offered back as the repair destination (`namespaceRepairDestination`). The
+writer repairs it by placing it: `planResourceLocation` supersedes the refused create
+and files a new create under the same document id at the picked destination (no remint,
+since the server never held the id). Deleting it settles locally (`resourceNeverAccepted`:
+local, unplaced, every answered request refused), including a delete queued behind the
+in-flight create when the refusal arrives (`prepareNamespaceAttempt`). Only a create the
+server answered `conflict` or `joined` is the runner's to repair (`createAwaitsRemint`): it
+is reminted under a new id and its queued work moves with it.
 
 Folder deletion shares the folder namespace journal. Only a delete receipt's exact
 document IDs authorize atomic descendant terminalization with the folder

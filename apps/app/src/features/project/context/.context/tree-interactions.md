@@ -151,6 +151,12 @@ failure already there on mount, a remount, or one that lands while another input
 active leaves only the mark; blur dismisses the field without retrying and Enter
 retries.
 
+A document whose create the server refused sits in Unfiled with its text and the same mark
+(`namespaceFailure: "create"`, "Couldn't create this document. Try again."). Its row menu
+repairs it like any row: Move… or Rename files it with a new create under the same id,
+Delete drops it on this device. A refused named create (New file in a folder, a link's
+Create) is listed at its name, not under a folder of the refused destination.
+
 The move's receipt carries `linkUpdate.links`. `setLocation` and `setFolderLocation`
 return the operation id issued at admission; the account-owned lifecycle watches
 its journal receipt and `LinkUpdateNote` shows "Updated N links" on its own line

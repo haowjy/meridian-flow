@@ -59,14 +59,17 @@ Web Lock adapter serializes only short account/resource reconciliation sections;
 missing lock support blocks dispatch. Neither adapter owns retry scheduling or UI
 cache invalidation.
 
-A typed, non-retryable 4xx settles a failed move or delete as refused at once.
-Any other HTTP failure settles only through the operation receipt read after it;
-a bare 4xx with no receipt stays uncertain and replays, so a 401 from an expired
-session or a proxy error never discards the writer's change. The server routes
+A typed, non-retryable 4xx settles a failed move, delete or create as refused at once.
+Any other HTTP failure settles only through the operation receipt read after it
+(a create has none, so it replays under its document id); a bare 4xx with no receipt
+stays uncertain and replays, so a 401 from an expired session or a proxy error never
+discards the writer's change. The server routes
 therefore send deterministic refusals typed
 ([route contract](../../../../../server/server/lib/.context/CONTEXT.md)): fix an
-untyped refusal there, not by settling bare 4xx here. A refused create does not
-settle yet ([#1071](https://github.com/haowjy/meridian-flow/issues/1071)).
+untyped refusal there, not by settling bare 4xx here. A refused create leaves the
+document on this device with its text, listed in Unfiled with a failure mark
+(`namespaceFailure: "create"`); placing or deleting it repairs it (see the
+[replica contract](../../../../../../packages/resource-replica/.context/CONTEXT.md)).
 
 Folder deletion is another folder namespace intent (`planFolderDeletion`,
 `AccountResourceReplica.deleteFolder`), admitted by stable folder ID. Its delete
