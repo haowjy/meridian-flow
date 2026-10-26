@@ -202,7 +202,8 @@ one source's tree contributes.
   another source, or a document's — makes the insert a typed `conflict`; a duplicate id
   within one request is a 400. The plan mints every identity before any content is bound,
   so one old→new map binds links between roots through `collab/domain/copied-blocks.ts`: links inside the copied set name
-  the copies (a settled `ahead:` ref and an image or link to a copied binary included),
+  the copies (a settled `ahead:` ref, an unsettled one whose address now holds a copied
+  folder, and an image or link to a copied binary included),
   everything else keeps its target. The model's `copy` tool calls the same
   `remapCopiedBlocks`, with the same settled-ahead map read from the same cut, so a document
   it copies and a document a writer copies point their links alike. The model remaps a
