@@ -63,7 +63,7 @@ export function placementOps(snapshot: {
     refreshing: string | undefined,
   ) => {
     for (const intent of intents)
-      if (intent.admission && shapesList(intent, refreshing))
+      if (shapesList(intent, refreshing) && intent.admission)
         ops.push({ kind, handle, subject, intent: intent as PlacementOp["intent"] });
   };
   for (const record of snapshot.records)
