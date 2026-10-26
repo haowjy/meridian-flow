@@ -37,6 +37,7 @@ function map(row: ExecutionReportRow): SavedExecutionReport {
   return {
     childThreadId: row.childThreadId,
     executionTurnId: row.executionTurnId,
+    continuationAskId: row.continuationAskId,
     admittedAt: row.createdAt.toISOString(),
     terminalTurnId: row.terminalTurnId,
     handle: row.handle,
@@ -218,6 +219,14 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
     },
     async findByExecution(childThreadId, executionTurnId) {
       const row = await find(childThreadId, executionTurnId);
+      return row ? map(row) : null;
+    },
+    async findByContinuationAsk(askId) {
+      const [row] = await currentDrizzleDb(db)
+        .select(reportSelection)
+        .from(table)
+        .where(eq(table.continuationAskId, askId))
+        .limit(1);
       return row ? map(row) : null;
     },
     async listLatestByChildren(childThreadIds) {

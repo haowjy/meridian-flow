@@ -50,6 +50,8 @@ export interface WriterRunTurnInput extends RunTurnBase {
  */
 export interface DrainRunTurnInput extends RunTurnBase {
   drain: true;
+  /** Exact resolved ask whose continuation this execution admits directly. */
+  continuationAskId?: string;
   /** Client-minted id for an explicit no-input reply Retry. */
   replyTurnId?: TurnId;
   /** The failed reply a Retry re-answers; its first reservation records it as `metadata.retryOf`. */

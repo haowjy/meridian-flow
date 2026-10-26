@@ -469,6 +469,7 @@ async function admitRunExecution(
       ...correlation,
       agentSlug: input.executionReport?.agentSlug ?? askingExecution?.agentSlug ?? null,
       name: input.executionReport?.name ?? askingExecution?.name ?? null,
+      continuationAskId: askContinuationId ?? null,
     });
     if (input.relayAdmission) {
       await deps.repos.asks.recordRelayOnce(input.relayAdmission.forwardedAskId, {
@@ -585,8 +586,11 @@ async function runDrainTurn(
       if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
       const batch = selection.batch;
       const control = selection.next.kind === "control" ? selection.next.control : null;
-      if (control?.body.kind === "ask_resolved") {
-        const ask = await deps.repos.asks.findById(control.body.askId);
+      const askContinuationId =
+        input.continuationAskId ??
+        (control?.body.kind === "ask_resolved" ? control.body.askId : undefined);
+      if (askContinuationId) {
+        const ask = await deps.repos.asks.findById(askContinuationId);
         if (
           !ask ||
           ask.threadId !== input.threadId ||
@@ -599,7 +603,7 @@ async function runDrainTurn(
         control?.body.kind === "ask_resolved"
           ? null
           : (control as import("./next-inbox-work.js").ControlMessage | null);
-      if (selection.next.kind === "none" && !input.replyTurnId) return null;
+      if (selection.next.kind === "none" && !input.replyTurnId && !askContinuationId) return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
       // Decide what this boundary forgets before anything is built over the history: the request, the
@@ -783,15 +787,12 @@ async function runDrainTurn(
         inheritedTurns,
         inheritedBlocks,
         executionAdmitted:
-          selection.outstanding.length > 0 ||
-          !!input.replyTurnId ||
-          control?.body.kind === "ask_resolved",
+          selection.outstanding.length > 0 || !!input.replyTurnId || !!askContinuationId,
         // A start-time compaction hands the Retry's list on to the first assistant.
         carriedReservedFor: reservedTurn.role === "assistant" ? [] : retryReservedFor,
-        askContinuation:
-          control?.body.kind === "ask_resolved"
-            ? await deps.repos.asks.findById(control.body.askId)
-            : null,
+        askContinuation: askContinuationId
+          ? await deps.repos.asks.findById(askContinuationId)
+          : null,
         askContinuationControlId: control?.body.kind === "ask_resolved" ? control.id : null,
       };
       const events = [
@@ -843,18 +844,14 @@ async function runDrainTurn(
                     reservedTurn.id,
                     preflight.evidence,
                   );
-                if (
-                  selection.outstanding.length > 0 ||
-                  input.replyTurnId ||
-                  control?.body.kind === "ask_resolved"
-                )
+                if (selection.outstanding.length > 0 || input.replyTurnId || askContinuationId)
                   await admitRunExecution(
                     deps,
                     input,
                     setupThread,
                     reservedTurn.id,
                     selection.outstanding,
-                    control?.body.kind === "ask_resolved" ? control.body.askId : undefined,
+                    askContinuationId,
                   );
               },
             },
