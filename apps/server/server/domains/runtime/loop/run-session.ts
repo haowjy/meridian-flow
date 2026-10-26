@@ -74,6 +74,7 @@ export function createRunSessions(deps: {
   wakeIfRunnable(threadId: ThreadId): Promise<void>;
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
+  cancelSubtreeAsks?: (threadId: ThreadId) => Promise<void>;
 }) {
   const running = new Map<ThreadId, RunSession>();
   const shutdown = deps.shutdown;
@@ -134,12 +135,13 @@ export function createRunSessions(deps: {
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let preparedRun = false;
     let setupMayWake = false;
-    async function cleanup() {
+    async function cleanup(preserveDescendants = false) {
       clearInterval(heartbeat);
       parentSignal?.removeEventListener("abort", abort);
       running.delete(threadId);
-      // A child invocation bounds its whole subtree; a primary may detach background children.
-      abortChildrenOf(threadId, !!input.child);
+      // An asked child is parked, not terminal: its descendants keep running
+      // and their notifications remain ordered behind its ask barrier.
+      if (!preserveDescendants) abortChildrenOf(threadId, !!input.child);
       let claimReleased = !lease;
       let wakeAfterRelease = false;
       try {
@@ -244,7 +246,15 @@ export function createRunSessions(deps: {
           observe(threadId, "terminal_fallback.failed", error);
           outcome = { status: "failed", error };
         }
-        await cleanup();
+        const asked = outcome.status !== "failed" && outcome.turn.status === "awaiting_answer";
+        if (input.child && !asked) {
+          try {
+            await deps.cancelSubtreeAsks?.(threadId);
+          } catch (error) {
+            observe(threadId, "subtree_asks.cancel_failed", error);
+          }
+        }
+        await cleanup(asked);
         return outcome;
       }
       return {
