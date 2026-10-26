@@ -32,9 +32,20 @@ export type { ThreadPhase, ThreadStatus };
 /** A named fragment of model-visible context carried by a `context` body. */
 export type ContextPart = { source: string; text: string };
 
+/**
+ * The durable continuation obligation of a resolved ask. `delivery` is how the
+ * continuation's report reaches the parent: `direct` when a foreground parent call
+ * waits on it, `background_notification` otherwise.
+ */
+export type AskResolvedBody = {
+  kind: "ask_resolved";
+  askId: string;
+  delivery: "direct" | "background_notification";
+};
+
 export type MessageBody =
   | ControlBody
-  | { kind: "ask_resolved"; askId: string }
+  | AskResolvedBody
   | { kind: "text"; text: string }
   | { kind: "context"; parts: ContextPart[] }
   | { kind: "work_context_refresh" };

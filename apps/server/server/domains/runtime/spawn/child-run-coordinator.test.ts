@@ -51,6 +51,8 @@ function stubOrchestrator(
   records: RecordedTurn[],
   repos: ReturnType<typeof createInMemoryRepositories>,
   authority = createInMemoryRunClaim(),
+  /** The run session publishes each report as its run ends. */
+  publish: (threadId: ThreadId, executionTurnId: TurnId) => Promise<unknown> = async () => {},
 ): RunTurnPort {
   let counter = 0;
   return {
@@ -124,6 +126,7 @@ function stubOrchestrator(
             await repos.threads.updateSpawnLifecycle(input.threadId, { spawnStatus: "succeeded" });
           }
           await authority.release(lease);
+          await publish(input.threadId, assistantTurnId);
           return { status: "complete", turn: assistant };
         },
       };
@@ -248,7 +251,14 @@ async function fixture(
     );
   const inbox = createInMemoryInbox();
   const runStarter = createInMemoryRunStarter();
+  let publisher!: ReturnType<typeof createReportPublisher>;
+  const reports = {
+    projectRunning: (threadId: ThreadId, execution: TurnId) =>
+      publisher.projectRunning(threadId, execution),
+    publish: (threadId: ThreadId, execution: TurnId) => publisher.publish(threadId, execution),
+  };
   const runtimeHarness = createRuntimeHarness({
+    reports,
     repos,
     eventWriter,
     agentRevisions: revisions,
@@ -260,7 +270,7 @@ async function fixture(
     schedulePostCommit: (task) => task(),
   });
   const delivery = runtimeHarness.delivery;
-  const publisher = createReportPublisher({ repos, eventWriter, delivery, eventSink });
+  publisher = createReportPublisher({ repos, eventWriter, delivery, eventSink });
 
   const driver = createChildRunDriver({
     backgroundTasks: runtimeHarness.backgroundTasks,
@@ -270,16 +280,19 @@ async function fixture(
         : (options.orchestrator ??
           (options.realRuntime
             ? runtimeHarness.orchestrator
-            : stubOrchestrator(turns, repos, runClaim))),
+            : stubOrchestrator(turns, repos, runClaim, reports.publish))),
     repos: { executionReports: repos.executionReports, asks: repos.asks },
     eventWriter,
     readActivity,
-    publisher,
+    delivery,
+    // No test here waits on an answered ask's continuation.
+    watchThread: async () => () => {},
     eventSink,
   });
   const coreCoordinator = createChildRunCoordinator({
     driver,
     delivery,
+    relayRepos: repos,
     repos: {
       threads: repos.threads,
       turns: repos.turns,

@@ -9,12 +9,16 @@ import type {
   JsonValue,
 } from "@meridian/contracts/threads";
 
+/**
+ * A forwarded ask's hand-off to its child. `foreground`: the relay answered the
+ * child's open ask, so its continuation is found by `childAskId`. `late`: the
+ * child had already resolved, so the answer went as an ordinary message.
+ */
 export type AskRelay = {
   childAskId: string;
   mode: "foreground" | "late";
-  childExecutionId?: string;
   messageId?: string;
-  /** Null while an admitted foreground child execution is still running. */
+  /** Null until the parent's tool result carries the child's report. */
   result: JsonValue | null;
 };
 

@@ -705,22 +705,8 @@
     {
       "idx": 100,
       "version": "7",
-      "when": 1792973323557,
-      "tag": "0106_subagent_asked_outcome",
-      "breakpoints": true
-    },
-    {
-      "idx": 101,
-      "version": "7",
-      "when": 1792973965155,
-      "tag": "0107_forwarded_ask_relay",
-      "breakpoints": true
-    },
-    {
-      "idx": 102,
-      "version": "7",
-      "when": 1792979339683,
-      "tag": "0108_execution_report_continuation_ask",
+      "when": 1792983724648,
+      "tag": "0106_subagent_asks",
       "breakpoints": true
     }
   ]

@@ -15,7 +15,7 @@ export type ThreadKind = z.infer<typeof ThreadKind>;
 export const OriginType = z.enum(["spawn", "handoff", "fork"]);
 export type OriginType = z.infer<typeof OriginType>;
 
-export const SpawnStatus = z.enum(["running", "succeeded", "failed", "cancelled"]);
+export const SpawnStatus = z.enum(["running", "asked", "succeeded", "failed", "cancelled"]);
 export type SpawnStatus = z.infer<typeof SpawnStatus>;
 
 export const TurnRole = z.enum(["user", "assistant", "system", "compaction"]);

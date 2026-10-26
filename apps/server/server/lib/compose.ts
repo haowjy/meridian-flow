@@ -1006,13 +1006,22 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     // after later in-process appends and is dropped as stale by the WS cursor.
     eventWriter: threadEventHub,
     readActivity,
-    publisher: reportPublisher,
+    delivery,
+    async watchThread(threadId, onChange) {
+      const { unsubscribe } = await threadEventHub.catchupAndSubscribe(
+        threadId,
+        await threadEventHub.headSeq(threadId),
+        onChange,
+      );
+      return unsubscribe;
+    },
     eventSink: ports.eventSink,
   });
   const childRunCoordinator = createChildRunCoordinator({
     driver: childRunDriver,
     delivery,
     asks,
+    relayRepos: ports.threadRepos,
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
     modelUnavailable: (model) => agentModelUnavailableReasons(ports.gateway, model),
@@ -1061,7 +1070,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       refreshSubagentActivity(threadId);
     },
     cancelSubtreeAsks: (threadId: ThreadId) => asks.cancelForThreadLifecycle(threadId),
-    projectRunning: reportPublisher.projectRunning,
+    reports: { projectRunning: reportPublisher.projectRunning, publish: reportPublisher.publish },
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
     shownLinks: ports.shownLinks,

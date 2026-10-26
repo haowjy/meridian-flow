@@ -205,6 +205,10 @@ export interface ExecutionReportRepository {
     childThreadId: ThreadId,
     executionTurnId: TurnId,
   ): Promise<SavedExecutionReport | null>;
+  /**
+   * The latest execution admitted as this ask's continuation. A forwarded parent
+   * that crashed mid-relay reruns its continuation, so an ask can have several.
+   */
   findByContinuationAsk(askId: string): Promise<SavedExecutionReport | null>;
   /** Latest admitted execution per child, ordered from report admission truth. */
   listLatestByChildren(childThreadIds: readonly ThreadId[]): Promise<LatestChildExecution[]>;

@@ -326,7 +326,7 @@ export async function finalizeExecution(
           ...content,
           costMillicredits: Number(cost),
         });
-        if (admitted.origin === "spawn" && outcome !== "asked") {
+        if (admitted.origin === "spawn") {
           await deps.repos.threads.updateSpawnLifecycle(input.threadId, { spawnStatus: outcome });
         }
       },

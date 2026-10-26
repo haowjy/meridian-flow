@@ -25,9 +25,13 @@ import { type InvalidArgumentsResult, renderInvalidArguments } from "../tools/in
 import { appendSubagentActivity } from "./activity-event.js";
 import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
+import {
+  type ForwardedRelayDeps,
+  type ForwardedRelayInput,
+  relayForwardedAnswer,
+} from "./forwarded-ask-relay.js";
 import { resolveChildInvocation } from "./resolve-child-invocation.js";
 import { resolveReadableThread } from "./resolve-readable-thread.js";
-import { savedReportToSpawnResult } from "./saved-report-outcome.js";
 import {
   invocationAgentName,
   invocationCardProps,
@@ -64,6 +68,8 @@ export interface ThreadMessageChildInput extends ChildDriveInput {
   toolCallId: string;
   /** Question evidence from the model request that produced this message. */
   boundAskId?: string;
+  /** The parent's forwarded ask this message relays; recorded with the answer. */
+  relayFor?: string;
   signal?: AbortSignal;
 }
 
@@ -103,6 +109,8 @@ export interface ChildRunCoordinatorDeps {
   /** Producer-facing inbox: background thread_message enqueues here. */
   delivery: DeliveryProducer;
   asks?: Pick<import("../asks/ask-service.js").AskService, "answerFromParent">;
+  /** The forwarded ask's tool result is rewritten in place under the parent's journal. */
+  relayRepos: ForwardedRelayDeps["repos"];
   agentRevisions: Pick<
     AgentRevisionStore,
     "readThreadBinding" | "readRevision" | "readSource" | "readPackageDefinitions" | "bindThread"
@@ -116,7 +124,8 @@ export interface ChildRunCoordinatorDeps {
 
 export interface ChildRunCoordinator {
   runChild(request: ChildRunRequest, options: ChildRunOptions): Promise<ChildRunResult>;
-  readSavedReport(childThreadId: ThreadId, executionTurnId: TurnId): Promise<SpawnResult | null>;
+  /** Relays a resolved forwarded ask to its child before the parent's first request. */
+  relayForwardedAnswer(input: ForwardedRelayInput): Promise<void>;
 }
 
 export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildRunCoordinator {
@@ -381,11 +390,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     const target = authorized.target;
     const notifiesCaller =
       target.kind === "subagent" && target.parentThreadId === request.parentThread.id;
-    const agentSlug =
-      target.kind === "subagent"
-        ? ((await deps.agentRevisions.readThreadBinding(target.id))?.revision?.slug ??
-          GENERIC_SUBAGENT_SLUG)
-        : target.kind;
     await deps.delivery.enqueue({
       threadId: target.id as ThreadId,
       intent: "message",
@@ -405,6 +409,15 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     // and no activity frame fires from this call. The woken process emits the
     // start and terminal frames when it acquires and releases its lease, so the
     // strip shows the target `awake` for the whole run.
+    return backgroundResult(target, notifiesCaller);
+  }
+
+  async function backgroundResult(target: Thread, notifiesCaller: boolean): Promise<SpawnResult> {
+    const agentSlug =
+      target.kind === "subagent"
+        ? ((await deps.agentRevisions.readThreadBinding(target.id))?.revision?.slug ??
+          GENERIC_SUBAGENT_SLUG)
+        : target.kind;
     return {
       status: "background",
       handle: target.ref ?? "",
@@ -434,56 +447,16 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         askId: request.boundAskId,
         submissionId: `parent-message:${request.toolCallId}`,
         text: request.prompt,
-        delivery: background ? "background" : "direct",
+        delivery: background ? "background_notification" : "direct",
+        ...(request.relayFor ? { relayFor: request.relayFor } : {}),
       });
-      if (answered.ok) {
-        if (answered.replayed) {
-          if (answered.replayedReport) {
-            return savedReportToSpawnResult(answered.replayedReport);
-          }
-          if (background) {
-            const binding = await deps.agentRevisions.readThreadBinding(authorized.target.id);
-            return {
-              status: "background",
-              handle: authorized.target.ref ?? "",
-              threadId: authorized.target.id,
-              agentSlug: binding?.revision?.slug ?? GENERIC_SUBAGENT_SLUG,
-              notifiesCaller: true,
-            };
-          }
-        }
-        if (!background) {
-          const prepared = await prepareForegroundMessage(request, authorized.target);
-          if ("status" in prepared) return prepared;
-          try {
-            const childRun = await driver.admitContinuation(prepared, request, request.boundAskId);
-            return driver.execute(childRun);
-          } catch (error) {
-            // The durable continuation remains queued. A concurrent runner owns
-            // it now, so foreground degrades to the same background result.
-            if (!(error instanceof TurnStartConflictError)) throw error;
-            const binding = await deps.agentRevisions.readThreadBinding(authorized.target.id);
-            return {
-              status: "background",
-              handle: authorized.target.ref ?? "",
-              threadId: authorized.target.id,
-              agentSlug: binding?.revision?.slug ?? GENERIC_SUBAGENT_SLUG,
-              notifiesCaller: true,
-            };
-          }
-        }
-        const binding = await deps.agentRevisions.readThreadBinding(authorized.target.id);
-        return {
-          status: "background",
-          handle: authorized.target.ref ?? "",
-          threadId: authorized.target.id,
-          agentSlug: binding?.revision?.slug ?? GENERIC_SUBAGENT_SLUG,
-          notifiesCaller: true,
-        };
-      }
       // The exact question lost the race. Preserve its binding on the ordinary
       // message; it must never be retargeted to a newer question.
-      return sendBackgroundMessage(request);
+      if (!answered.ok) return sendBackgroundMessage(request);
+      if (background) return backgroundResult(authorized.target, true);
+      const prepared = await prepareForegroundMessage(request, authorized.target);
+      if ("status" in prepared) return prepared;
+      return driver.continueAnswered(prepared, request, request.boundAskId);
     }
     if (request.kind === "message" && background) {
       return sendBackgroundMessage(request);
@@ -593,7 +566,14 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
   }
 
-  return { runChild, readSavedReport: driver.readSavedReport };
+  return {
+    runChild,
+    relayForwardedAnswer: (input) =>
+      relayForwardedAnswer(
+        { repos: deps.relayRepos, eventWriter: deps.eventWriter, runChild },
+        input,
+      ),
+  };
 }
 
 function readableFailureReason(error: unknown): string {

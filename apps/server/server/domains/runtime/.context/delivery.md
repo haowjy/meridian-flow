@@ -218,9 +218,12 @@ start and adopts eligible queued messages only up to the first write-mode switch
 The continuation yields at that switch; the following run applies it before
 adopting later messages. The row carries no public control body and materializes
 no transcript turn. Delivery rechecks this eligibility under the thread lock;
-SQL wake discovery only avoids wasted starts. For a forwarded ask, admission
-leaves the row unacknowledged until the parent's relay result exists. A crash
-therefore replays the relay instead of starting a model request without it.
+SQL wake discovery only avoids wasted starts. The row carries the continuation's
+report delivery (`direct` or `background_notification`); a `direct` row is enqueued
+without a wake because its parent call drives it. A plain question's row is
+acknowledged in its admission transaction. For a forwarded ask, admission leaves the
+row unacknowledged until the parent's relay result exists, so a crash replays the
+relay instead of starting a model request without it.
 
 `UserTurnAdmission` is the writer fence under the thread lock. Its sequence is
 **validate → record → enqueue**: replay/fingerprint identity is settled first,

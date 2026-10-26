@@ -1495,7 +1495,6 @@ export function createInMemoryRepositories(
           row.relay &&
           (row.relay.childAskId !== relay.childAskId ||
             row.relay.mode !== relay.mode ||
-            row.relay.childExecutionId !== relay.childExecutionId ||
             row.relay.messageId !== relay.messageId)
         )
           throw new Error("Forwarded ask already has a different relay");

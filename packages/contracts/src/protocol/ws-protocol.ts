@@ -125,7 +125,7 @@ const threadActivityNodeSchema: z.ZodType<import("../threads/index.js").ThreadAc
     ref: z.string().min(1).nullable(),
     title: z.string().nullable(),
     agentName: z.string().nullable(),
-    spawnStatus: z.enum(["running", "succeeded", "failed", "cancelled"]).nullable(),
+    spawnStatus: z.enum(["running", "asked", "succeeded", "failed", "cancelled"]).nullable(),
     status: threadStatusSchema,
     deliveryMode: z.enum(["direct", "background_notification"]).nullable(),
     runStartedAt: z.string().nullable(),
