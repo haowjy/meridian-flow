@@ -1,22 +1,57 @@
 /** Latest writer commands supersede repair blockers and safe queued namespace work. */
 import { newerCanonicalObservation } from "./canonical-observation";
-import type { NamespaceIntent, ResourceDestination, ResourceRecord } from "./resource-records";
+import type {
+  NamespaceIntent,
+  NamespaceOutcome,
+  ResourceDestination,
+  ResourceRecord,
+} from "./resource-records";
+
+/** Semantic settlement is distinct from immutable transport evidence. Terminal always absorbs it. */
+export type NamespaceIntentOutcome =
+  | "accepted"
+  | "refused"
+  | "superseded"
+  | "unexecutable-after-terminal";
+
+export function namespaceIntentOutcome(
+  outcome: NamespaceOutcome,
+  terminal = false,
+): NamespaceIntentOutcome {
+  if (terminal) return "unexecutable-after-terminal";
+  switch (outcome.kind) {
+    case "operation":
+      return outcome.receipt.result.ok ? "accepted" : "refused";
+    case "create":
+      return outcome.result.status === "conflict" ? "refused" : "accepted";
+    case "create-folder":
+      return outcome.result.status === "conflict" ? "refused" : "accepted";
+    case "refusal":
+      return "refused";
+  }
+}
 
 /**
  * Who repairs a failed placement. A materialization the server answered `conflict` or `joined` is
  * the runner's: the answer is about the id, so it materializes under a new one (`remintCreateConflict`).
- * Every other failure is the writer's: the server answered about the request, and only the writer
- * can change it. Answered for a recorded outcome, before or after its settlement.
+ * A refused request is the writer's: the server answered about the request, and only the writer
+ * can change it. `null` when the outcome needs no repair. Answered for a recorded outcome, before
+ * or after its settlement.
  */
 export type NamespaceRepairOwner = "remint" | "writer";
 
 export function namespaceRepairOwner(intent: NamespaceIntent): NamespaceRepairOwner | null {
   if (intent.state !== "received" && intent.state !== "needs-repair") return null;
   const outcome = intent.attempts.at(-1)?.outcome;
-  return outcome?.kind === "create" &&
+  // The client sends a placement to repair without a server answer when its premise moved
+  // (its identity was reminted, or its destination parent no longer resolves).
+  if (!outcome) return intent.state === "needs-repair" ? "writer" : null;
+  if (
+    outcome.kind === "create" &&
     (outcome.result.status === "conflict" || outcome.result.status === "joined")
-    ? "remint"
-    : "writer";
+  )
+    return "remint";
+  return namespaceIntentOutcome(outcome) === "refused" ? "writer" : null;
 }
 
 /** A settled failure only the writer can repair: a refused placement or delete. */
