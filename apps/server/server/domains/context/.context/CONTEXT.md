@@ -163,6 +163,44 @@ Work deletion soft-deletes its owned sources, documents, and folders marked
 `deletedByWorkId`; restore clears only those, so separately deleted content
 stays deleted.
 
+## Copy
+
+A Copy is one atomic command per drop: ordered roots (documents and folders) into one
+destination folder, with an optional sibling position.
+`POST /api/projects/:projectId/context/copy` and `./mf doc copy` drive
+`copy/copy-command.ts`; the browser's Copy intent is not built yet.
+
+- Each source tree is read once (`ContextCopyAdapter.snapshotSource`, live view) and each
+  tracked document's content once as a frozen cut (`readEffectiveBlocks`: the live document,
+  or the draft a tab shows when the source names that view). A binary's bytes are duplicated
+  before any namespace lock is taken (`prepareBinaryCopy`, D24), and their keys are released
+  if the rows never commit.
+- The operation receipt (`kind: "copy"`) owns the transaction. Inside it the command
+  transaction takes every source and destination Work and namespace, re-resolves an
+  identity destination, and rechecks every root by identity (`peekSource`); then the
+  destination adapter names and inserts the tree (`copyInto`).
+- Names are allocated against live occupants, hidden occupants (taken, never revealed) and
+  the rest of the batch. Every identity is minted before any content is bound, so one
+  old→new map binds links between roots through `collab/domain/copied-blocks.ts`: links
+  inside the copied set name the copies (a settled `ahead:` ref included), everything else
+  keeps its target. A copied folder keeps its source's order policy and its children arrive
+  in source order, so a manual folder's visible order survives; its root arrival follows the
+  destination parent's own rule plus any explicit position.
+- Content is a `BoundWrite` from `bindCopiedBlocks` (fresh holder: it lands only in an empty
+  document) inserted through the creation aggregate with claim `none`, so a racing hidden
+  occupant fails the create instead of being revealed. `metadata.copiedFrom` records the
+  source URI, the version read and that version's revision; folder provenance lives in the
+  receipt.
+- Refusals are typed and recorded on the receipt, so a replay under the same operation ID
+  answers the same result: `not_found` or `stale_source` for a gone or changed source,
+  `destination_missing` or `stale_target` for a destination that moved, `invalid_operation`
+  for an uploads destination, a folder into its own subtree ("Can't copy a folder into
+  itself"), an unsupported source (a draft view of a folder, a state vector off a binary),
+  or a draft placement destination. A client-held source's state vector that the cut lacks
+  answers `stale_source`, which is retryable.
+- There is no Undo command: Copy's Undo is ordinary deletion of the identities the receipt
+  lists.
+
 ## Catalog and publication
 
 The catalog is a live tree view, not a second visibility policy. Branch-hidden
