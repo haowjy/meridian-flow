@@ -1,9 +1,11 @@
 /** Immutable ordered namespace journal contracts, shared by file and folder records. */
-import { intentOwnsDeletion, namespaceRepairOwner } from "./resource-intent-policy";
 import {
-  type FolderNamespaceRecord,
+  intentOwnsDeletion,
+  namespaceIntentOutcome,
+  namespaceRepairOwner,
+} from "./resource-intent-policy";
+import {
   type NamespaceIntent,
-  type NamespaceOutcome,
   namespaceRequestId,
   type ResourceDestination,
   type ResourceLocation,
@@ -18,23 +20,6 @@ export type NamespaceIntentOutcome =
   | "refused"
   | "superseded"
   | "unexecutable-after-terminal";
-
-export function namespaceIntentOutcome(
-  outcome: NamespaceOutcome,
-  terminal = false,
-): NamespaceIntentOutcome {
-  if (terminal) return "unexecutable-after-terminal";
-  switch (outcome.kind) {
-    case "operation":
-      return outcome.receipt.result.ok ? "accepted" : "refused";
-    case "create":
-      return outcome.result.status === "conflict" ? "refused" : "accepted";
-    case "create-folder":
-      return outcome.result.status === "conflict" ? "refused" : "accepted";
-    case "refusal":
-      return "refused";
-  }
-}
 
 /** Every request the server answered refused it (a request with no answer yet may still land). */
 function everyAnsweredRequestRefused(intents: readonly NamespaceIntent[]): boolean {
@@ -160,6 +145,64 @@ export function namespaceRepairDestination(
       ? { ...latest.desired.destination, name: latest.desired.typedName }
       : null;
   return latest.desired.kind === "set-folder-location" ? latest.desired.destination : null;
+}
+
+/**
+ * The Undo window a deletion that settled on this device leaves open: its obligation id and the
+ * time it closes.
+ */
+export type LocalDeletionWindow = { obligationId: string; notBefore?: number };
+
+/**
+ * Undo of a deletion that settled on this device, inside its window: the deletion is superseded
+ * and the identity's latest placement is queued again, since what the deletion cancelled cannot
+ * restart. Null once the window has closed (the content may already be cleaned up) or when no
+ * such deletion is held. Each journal clears its own window field around this.
+ */
+export function undoLocalDeletion(input: {
+  intents: readonly NamespaceIntent[];
+  window: LocalDeletionWindow | null | undefined;
+  operationId: string;
+  createIntentId: string;
+  identityRevision: number;
+  now: number;
+}): NamespaceIntent[] | null {
+  const deletion = input.intents.find(
+    (intent) =>
+      intent.operationId === input.operationId &&
+      intent.desired.kind === "delete" &&
+      intent.state === "settled-locally",
+  );
+  const window = input.window;
+  if (
+    !deletion ||
+    window?.obligationId !== deletion.intentId ||
+    (window.notBefore !== undefined && input.now >= window.notBefore)
+  )
+    return null;
+  const placement = input.intents
+    .filter(
+      (intent) =>
+        intent.desired.kind === "set-location" || intent.desired.kind === "set-folder-location",
+    )
+    .sort((left, right) => right.sequence - left.sequence)[0];
+  if (!placement) return null;
+  return [
+    ...input.intents.map((intent) =>
+      intent === deletion ? { ...intent, state: "superseded" as const } : intent,
+    ),
+    {
+      projectId: placement.projectId,
+      handle: placement.handle,
+      intentId: input.createIntentId,
+      sequence: Math.max(...input.intents.map((intent) => intent.sequence)) + 1,
+      identityRevision: input.identityRevision,
+      desired: placement.desired,
+      ...(placement.admission ? { admission: placement.admission } : {}),
+      attempts: [],
+      state: "pending",
+    },
+  ];
 }
 
 export function validateNamespaceJournal(input: {

@@ -7,16 +7,17 @@ import type {
 } from "@meridian/contracts/protocol";
 import { canonicalRefreshObservation, newerCanonicalObservation } from "./canonical-observation";
 import {
-  namespaceIntentOutcome,
   namespaceRepairDestination,
   neverAccepted,
   resolveUnavailableNamespace,
   settleNamespaceIntent,
+  undoLocalDeletion,
   validateNamespaceJournal,
 } from "./namespace-journal-policy";
 import { committedResourceDeletion, LOCAL_DELETION_UNDO_MS } from "./resource-deletion";
 import {
   intentOwnsDeletionAt,
+  namespaceIntentOutcome,
   owningLocationIntent,
   supersedeRepairableNamespaceWork,
 } from "./resource-intent-policy";
@@ -252,42 +253,19 @@ export function planFolderLocalDeletionUndo(
   record: FolderNamespaceRecord,
   input: { operationId: string; createIntentId: string; now: number },
 ): FolderNamespaceWrite | null {
-  const deletion = record.intents.find(
-    (intent) =>
-      intent.operationId === input.operationId &&
-      intent.desired.kind === "delete" &&
-      intent.state === "settled-locally",
-  );
-  const window = record.localDeletion;
-  if (!deletion || window?.obligationId !== deletion.intentId || input.now >= window.notBefore)
-    return null;
-  const create = record.intents
-    .filter((intent) => intent.desired.kind === "set-folder-location")
-    .sort((left, right) => right.sequence - left.sequence)[0];
-  if (!create) return null;
+  const intents = undoLocalDeletion({
+    intents: record.intents,
+    window: record.localDeletion,
+    operationId: input.operationId,
+    createIntentId: input.createIntentId,
+    identityRevision: 1,
+    now: input.now,
+  });
+  if (!intents) return null;
   const { localDeletion: _closed, ...withoutWindow } = record;
   return {
     expectedRevision: record.revision,
-    next: {
-      ...withoutWindow,
-      revision: record.revision + 1,
-      intents: [
-        ...record.intents.map((intent) =>
-          intent === deletion ? { ...intent, state: "superseded" as const } : intent,
-        ),
-        {
-          projectId: create.projectId,
-          handle: record.handle,
-          intentId: input.createIntentId,
-          sequence: Math.max(...record.intents.map((intent) => intent.sequence)) + 1,
-          identityRevision: 1,
-          desired: create.desired,
-          ...(create.admission ? { admission: create.admission } : {}),
-          attempts: [],
-          state: "pending",
-        },
-      ],
-    },
+    next: { ...withoutWindow, revision: record.revision + 1, intents },
   };
 }
 

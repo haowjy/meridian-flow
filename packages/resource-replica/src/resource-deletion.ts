@@ -1,7 +1,7 @@
 /** Local deletion records cleanup work; server-backed deletion still needs terminal authority. */
 
 import { newerCanonicalObservation } from "./canonical-observation";
-import { resourceNeverAccepted } from "./namespace-journal-policy";
+import { resourceNeverAccepted, undoLocalDeletion } from "./namespace-journal-policy";
 import { intentOwnsDeletionAt, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type {
   NamespaceIntent,
@@ -66,43 +66,21 @@ export function planLocalDeletionUndo(
   record: ResourceRecord,
   input: { operationId: string; createIntentId: string; now: number },
 ): ResourceWrite | null {
-  const deletion = record.intents.find(
-    (intent) =>
-      intent.operationId === input.operationId &&
-      intent.desired.kind === "delete" &&
-      intent.state === "settled-locally",
-  );
   const { cleanup, ...obligations } = record.resource.obligations;
-  if (
-    !deletion ||
-    cleanup?.obligationId !== deletion.intentId ||
-    (cleanup.notBefore !== undefined && input.now >= cleanup.notBefore)
-  )
-    return null;
-  const placement = record.intents
-    .filter((intent) => intent.desired.kind === "set-location")
-    .sort((left, right) => right.sequence - left.sequence)[0];
-  if (!placement) return null;
+  const intents = undoLocalDeletion({
+    intents: record.intents,
+    window: cleanup,
+    operationId: input.operationId,
+    createIntentId: input.createIntentId,
+    identityRevision: record.resource.identity.revision,
+    now: input.now,
+  });
+  if (!intents) return null;
   return {
     expectedRevision: record.resource.revision,
     next: {
       resource: { ...record.resource, revision: record.resource.revision + 1, obligations },
-      intents: [
-        ...record.intents.map((intent) =>
-          intent === deletion ? { ...intent, state: "superseded" as const } : intent,
-        ),
-        {
-          projectId: placement.projectId,
-          handle: record.resource.handle,
-          intentId: input.createIntentId,
-          sequence: Math.max(...record.intents.map((intent) => intent.sequence)) + 1,
-          identityRevision: record.resource.identity.revision,
-          desired: placement.desired,
-          ...(placement.admission ? { admission: placement.admission } : {}),
-          attempts: [],
-          state: "pending",
-        },
-      ],
+      intents,
     },
   };
 }
