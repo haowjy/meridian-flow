@@ -1,6 +1,7 @@
 /** Local deletion records cleanup work; server-backed deletion still needs terminal authority. */
 
 import { newerCanonicalObservation } from "./canonical-observation";
+import { resourceNeverAccepted } from "./namespace-journal-policy";
 import { intentOwnsDeletionAt, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type {
   NamespaceIntent,
@@ -8,6 +9,38 @@ import type {
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
+
+/** The exact content of a document the server never held is cleaned up once its deletion settles. */
+function locallyDeleted(
+  resource: ResourceRecord["resource"],
+  deletionIntentId: string,
+): ResourceRecord["resource"] {
+  const next = { ...resource, revision: resource.revision + 1 };
+  return resource.content.kind === "exact"
+    ? {
+        ...next,
+        obligations: {
+          cleanup: {
+            obligationId: deletionIntentId,
+            exactDatabaseName: resource.content.databaseName,
+          },
+        },
+      }
+    : next;
+}
+
+/** A queued delete of a document the server never accepted settles on this device. */
+export function settleDeletionLocally(record: ResourceRecord, intentId: string): ResourceWrite {
+  return {
+    expectedRevision: record.resource.revision,
+    next: {
+      resource: locallyDeleted(record.resource, intentId),
+      intents: record.intents.map((intent) =>
+        intent.intentId === intentId ? { ...intent, state: "settled-locally" } : intent,
+      ),
+    },
+  };
+}
 
 export function planResourceDeletion(
   record: ResourceRecord,
@@ -23,10 +56,7 @@ export function planResourceDeletion(
     )
   )
     return null;
-  const neverSubmitted =
-    record.resource.lifecycle.kind === "local" &&
-    record.resource.canonical === null &&
-    record.intents.every((intent) => intent.attempts.length === 0);
+  const neverAccepted = resourceNeverAccepted(record);
   const superseded = supersedeRepairableNamespaceWork(record, projectId);
   const deletion: NamespaceIntent = {
     projectId,
@@ -38,25 +68,14 @@ export function planResourceDeletion(
     ...(admission ? { admission } : {}),
     ...(operationId ? { operationId } : {}),
     attempts: [],
-    state: neverSubmitted ? "settled-locally" : "pending",
+    state: neverAccepted ? "settled-locally" : "pending",
   };
   return {
     expectedRevision: record.resource.revision,
     next: {
-      resource: {
-        ...record.resource,
-        revision: record.resource.revision + 1,
-        ...(neverSubmitted && record.resource.content.kind === "exact"
-          ? {
-              obligations: {
-                cleanup: {
-                  obligationId: intentId,
-                  exactDatabaseName: record.resource.content.databaseName,
-                },
-              },
-            }
-          : {}),
-      },
+      resource: neverAccepted
+        ? locallyDeleted(record.resource, intentId)
+        : { ...record.resource, revision: record.resource.revision + 1 },
       intents: [
         ...superseded.intents.map((intent) =>
           !superseded.repaired &&

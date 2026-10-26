@@ -1,6 +1,6 @@
 /** Journal invariants shared by storage adapters; attempts are immutable once submitted. */
 import { newerCanonicalObservation } from "./canonical-observation";
-import { validateNamespaceJournal } from "./namespace-journal-policy";
+import { resourceNeverAccepted, validateNamespaceJournal } from "./namespace-journal-policy";
 import type { ResourceRecord } from "./resource-records";
 
 export function validateResourceRecordUpdate(
@@ -168,10 +168,7 @@ export function validateResourceRecordUpdate(
     previous: previous ? { handle: previous.resource.handle, intents: previous.intents } : null,
     next: { handle: resource.handle, intents: next.intents },
     identityRevision: resource.identity.revision,
-    localDeletionAllowed:
-      resource.lifecycle.kind === "local" &&
-      resource.canonical === null &&
-      !next.intents.some((item) => item.attempts.length > 0),
+    localDeletionAllowed: resourceNeverAccepted(next),
   });
   const oldRefresh = previous?.resource.obligations.canonicalRefresh;
   const nextRefresh = resource.obligations.canonicalRefresh;

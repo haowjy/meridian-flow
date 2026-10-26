@@ -1,6 +1,12 @@
 /** Immutable ordered namespace journal contracts, shared by file and folder records. */
-import { intentOwnsDeletion } from "./resource-intent-policy";
-import type { NamespaceIntent, NamespaceOutcome, ResourceDestination } from "./resource-records";
+import { createAwaitsRemint, intentOwnsDeletion } from "./resource-intent-policy";
+import {
+  type NamespaceIntent,
+  type NamespaceOutcome,
+  namespaceRequestId,
+  type ResourceDestination,
+  type ResourceRecord,
+} from "./resource-records";
 
 type Journal = { handle: string; intents: readonly NamespaceIntent[] };
 
@@ -23,6 +29,23 @@ export function namespaceIntentOutcome(
   )
     ? "accepted"
     : "refused";
+}
+
+/**
+ * The server never accepted this document: it is local with no canonical place, and every request
+ * the server answered refused it (a request with no answer yet may still land). Its deletion is
+ * local, and a refused first placement leaves it only on this device.
+ */
+export function resourceNeverAccepted(record: Pick<ResourceRecord, "resource" | "intents">) {
+  return (
+    record.resource.lifecycle.kind === "local" &&
+    record.resource.canonical === null &&
+    record.intents.every((intent) =>
+      intent.attempts.every(
+        (attempt) => attempt.outcome && namespaceIntentOutcome(attempt.outcome) === "refused",
+      ),
+    )
+  );
 }
 
 /** Both journals use this transition; effects belong to the identity's own layer. */
@@ -61,10 +84,15 @@ export function resolveUnavailableNamespace(
   );
 }
 
+/**
+ * `intent` is queued placement work that rides on `earlier`: a later move of the same identity, or
+ * a move queued behind its first placement (a create). Both end with what refused `earlier`.
+ */
 function followsLocationIntent(intent: NamespaceIntent, earlier: NamespaceIntent): boolean {
+  const follower = earlier.desired.kind === "create" ? "set-location" : earlier.desired.kind;
   return (
-    (earlier.desired.kind === "set-location" || earlier.desired.kind === "set-folder-location") &&
-    intent.desired.kind === earlier.desired.kind &&
+    (follower === "set-location" || follower === "set-folder-location") &&
+    intent.desired.kind === follower &&
     intent.identityRevision === earlier.identityRevision &&
     intent.sequence > earlier.sequence
   );
@@ -75,8 +103,10 @@ export function resolveRefusedLocationChain(
   intents: readonly NamespaceIntent[],
   failed: NamespaceIntent,
 ): NamespaceIntent[] {
+  // The runner remints this create; the work queued behind it moves to the new identity.
+  if (createAwaitsRemint(failed)) return [...intents];
   const deleted =
-    (failed.desired.kind === "set-location" || failed.desired.kind === "set-folder-location") &&
+    failed.desired.kind !== "delete" &&
     intents.some(
       (intent) =>
         intent.sequence > failed.sequence &&
@@ -110,6 +140,7 @@ export function namespaceRepairDestination(
   );
   if (latest.desired.kind === "set-location")
     return { ...latest.desired.destination, name: latest.desired.typedName };
+  if (latest.desired.kind === "create") return latest.desired.destination ?? null;
   return latest.desired.kind === "set-folder-location" ? latest.desired.destination : null;
 }
 
@@ -169,8 +200,7 @@ export function validateNamespaceJournal(input: {
         throw new Error("Namespace request Work authority is incomplete");
       if (
         attempt.outcome?.kind === "refusal" &&
-        (attempt.request.kind === "create" ||
-          attempt.outcome.operationId !== attempt.request.body.operationId ||
+        (attempt.outcome.operationId !== namespaceRequestId(attempt.request) ||
           attempt.outcome.error.retryable)
       )
         throw new Error("Namespace refusal does not match submitted request");

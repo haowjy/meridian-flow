@@ -14,10 +14,11 @@ import { canonicalRefreshObservation } from "./canonical-observation";
 import {
   namespaceIntentOutcome,
   resolveUnavailableNamespace,
+  resourceNeverAccepted,
   settleNamespaceIntent,
 } from "./namespace-journal-policy";
 import type { PlacementVerdict } from "./placement-journal";
-import { committedResourceDeletion } from "./resource-deletion";
+import { committedResourceDeletion, settleDeletionLocally } from "./resource-deletion";
 import { followedJoin, pendingJoinTarget } from "./resource-join";
 import type {
   DestinationParentLookup,
@@ -35,7 +36,7 @@ import type {
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
-import { destinationParentLocation, sameOwner } from "./resource-records";
+import { destinationParentLocation, namespaceRequestId, sameOwner } from "./resource-records";
 import { moveOwnerFields, resourceContextAuthority } from "./resource-work-authority";
 
 type AttemptOf<Kind extends NamespaceRequest["kind"]> = Extract<
@@ -216,6 +217,9 @@ export function prepareNamespaceAttempt(
         intents: resolveUnavailableNamespace(record.intents, true),
       },
     };
+  // A delete queued behind a refused create has nothing on the server to delete.
+  if (intent.desired.kind === "delete" && resourceNeverAccepted(record))
+    return settleDeletionLocally(record, intent.intentId);
   if (intent.identityRevision !== record.resource.identity.revision) {
     return {
       expectedRevision: record.resource.revision,
@@ -261,6 +265,8 @@ export function namespaceOutcomeMatches(
   attempt: NamespaceAttempt,
   outcome: NamespaceOutcome,
 ): boolean {
+  if (outcome.kind === "refusal")
+    return outcome.operationId === namespaceRequestId(attempt.request) && !outcome.error.retryable;
   if (attempt.request.kind === "create") {
     return (
       outcome.kind === "create" &&
@@ -269,8 +275,6 @@ export function namespaceOutcomeMatches(
         outcome.result.documentId === attempt.request.body.documentId)
     );
   }
-  if (outcome.kind === "refusal")
-    return outcome.operationId === attempt.request.body.operationId && !outcome.error.retryable;
   if (
     outcome.kind !== "operation" ||
     outcome.receipt.operationId !== attempt.request.body.operationId ||
@@ -376,10 +380,9 @@ export function namespaceAttemptWithOutcome(
   attempt: NamespaceAttempt,
   outcome: NamespaceOutcome,
 ): NamespaceAttempt {
+  if (outcome.kind === "refusal") return { ...attempt, outcome };
   if (attemptIs(attempt, "create") && outcome.kind === "create")
     return { attemptId: attempt.attemptId, request: attempt.request, outcome };
-  if (outcome.kind === "refusal" && (attemptIs(attempt, "move") || attemptIs(attempt, "delete")))
-    return { ...attempt, outcome };
   if (
     attemptIs(attempt, "move") &&
     outcome.kind === "operation" &&

@@ -2,6 +2,26 @@
 import { newerCanonicalObservation } from "./canonical-observation";
 import type { NamespaceIntent, ResourceDestination, ResourceRecord } from "./resource-records";
 
+/**
+ * A create the server answered `conflict` or `joined` (the id is taken, or a branch's document
+ * stood there) is repaired by the runner under a new identity (`remintCreateConflict`). Every
+ * other failed intent, a refused create included, waits for the writer.
+ */
+export function createAwaitsRemint(intent: NamespaceIntent): boolean {
+  if (intent.desired.kind !== "create") return false;
+  if (intent.state !== "received" && intent.state !== "needs-repair") return false;
+  const outcome = intent.attempts.at(-1)?.outcome;
+  return (
+    outcome?.kind === "create" &&
+    (outcome.result.status === "conflict" || outcome.result.status === "joined")
+  );
+}
+
+/** A failed intent only the writer can repair: a refused create, move or delete. */
+export function awaitsWriterRepair(intent: NamespaceIntent): boolean {
+  return intent.state === "needs-repair" && !createAwaitsRemint(intent);
+}
+
 /** Work that can make progress without a new metadata revision. */
 export function resourceNeedsBackgroundReconciliation(record: ResourceRecord): boolean {
   if (record.resource.obligations.sessionAdoption || record.resource.obligations.cleanup)
@@ -11,31 +31,32 @@ export function resourceNeedsBackgroundReconciliation(record: ResourceRecord): b
       intent.state === "pending" ||
       intent.state === "submitted" ||
       intent.state === "received" ||
-      (intent.state === "needs-repair" && intent.desired.kind === "create"),
+      createAwaitsRemint(intent),
   );
 }
 
+/**
+ * The writer's next placement or delete retires what failed before it: each failed intent
+ * (a refused create too) is superseded and unsent work queued behind it is cancelled. A create
+ * the runner will remint is left alone, as is any unsent create (the new command rebuilds it).
+ */
 export function supersedeRepairableNamespaceWork(
   record: Pick<ResourceRecord, "intents">,
   projectId: string | null,
 ): { intents: NamespaceIntent[]; repaired: boolean } {
-  const repaired = record.intents.some(
-    (intent) =>
-      (projectId === null || intent.projectId === projectId) &&
-      intent.desired.kind !== "create" &&
-      intent.state === "needs-repair",
-  );
-  if (!repaired) return { intents: [...record.intents], repaired: false };
+  const inScope = (intent: NamespaceIntent) => projectId === null || intent.projectId === projectId;
+  const failed = (intent: NamespaceIntent) => inScope(intent) && awaitsWriterRepair(intent);
+  if (!record.intents.some(failed)) return { intents: [...record.intents], repaired: false };
   return {
     repaired: true,
     intents: record.intents.map((intent) => {
+      if (failed(intent)) return { ...intent, state: "superseded" };
       if (
-        (projectId !== null && intent.projectId !== projectId) ||
-        intent.desired.kind === "create"
+        inScope(intent) &&
+        intent.desired.kind !== "create" &&
+        intent.state === "pending" &&
+        intent.attempts.length === 0
       )
-        return intent;
-      if (intent.state === "needs-repair") return { ...intent, state: "superseded" };
-      if (intent.state === "pending" && intent.attempts.length === 0)
         return { ...intent, state: "cancelled" };
       return intent;
     }),

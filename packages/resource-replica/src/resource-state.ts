@@ -1,7 +1,12 @@
 /** Pure resource creation, placement, and conflict-remint decisions. */
 import { assertAvailabilityGeneration, storedFilename } from "@meridian/contracts/protocol";
 import { newerCanonicalObservation } from "./canonical-observation";
-import { owningLocationIntent, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
+import {
+  awaitsWriterRepair,
+  createAwaitsRemint,
+  owningLocationIntent,
+  supersedeRepairableNamespaceWork,
+} from "./resource-intent-policy";
 import type {
   NamespaceIntent,
   PlacementAdmission,
@@ -88,6 +93,10 @@ export function markResourceCreateEligible(
   };
 }
 
+/**
+ * Where the writer puts a document. One the server never accepted (its create was refused) has
+ * nothing to move: the placement becomes a new create under the same id, at the picked destination.
+ */
 export function planResourceLocation(input: {
   record: ResourceRecord;
   projectId: string;
@@ -125,6 +134,12 @@ export function planResourceLocation(input: {
     JSON.stringify(latest.desired.destination) === JSON.stringify(destination)
   )
     return null;
+  const refusedCreate = record.intents.some(
+    (intent) =>
+      intent.projectId === input.projectId &&
+      intent.desired.kind === "create" &&
+      awaitsWriterRepair(intent),
+  );
   const intent: NamespaceIntent = {
     projectId: input.projectId,
     handle: record.resource.handle,
@@ -132,11 +147,13 @@ export function planResourceLocation(input: {
     sequence: nextSequence(record),
     ...(input.admission ? { admission: input.admission } : {}),
     identityRevision: record.resource.identity.revision,
-    desired: {
-      kind: "set-location",
-      typedName: input.typedName ?? input.destination.name,
-      destination,
-    },
+    desired: refusedCreate
+      ? { kind: "create", folderPath: "", provisionalName: destination.name, destination }
+      : {
+          kind: "set-location",
+          typedName: input.typedName ?? input.destination.name,
+          destination,
+        },
     ...(input.operationId ? { operationId: input.operationId } : {}),
     attempts: [],
     state: "pending",
@@ -172,16 +189,9 @@ export function remintCreateConflict(input: {
   const { record } = input;
   const conflicted = [...record.intents]
     .sort((left, right) => right.sequence - left.sequence)
-    .find(
-      (intent) =>
-        (intent.state === "received" || intent.state === "needs-repair") &&
-        intent.desired.kind === "create",
-    );
-  const outcome = conflicted?.attempts.at(-1)?.outcome;
+    .find((intent) => intent.desired.kind === "create" && createAwaitsRemint(intent));
   if (
     !conflicted ||
-    outcome?.kind !== "create" ||
-    (outcome.result.status !== "conflict" && outcome.result.status !== "joined") ||
     record.resource.lifecycle.kind !== "local" ||
     record.resource.canonical !== null
   )

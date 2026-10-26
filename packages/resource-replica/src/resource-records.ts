@@ -187,18 +187,28 @@ export type NamespaceRequest =
       body: DeleteContextEntryRequest;
     };
 
+/**
+ * The identity a request is replayed under: a move's or delete's operation id, a create's document
+ * id (the server dedupes a create by it). A refusal names it, so a request kind added later must
+ * state its own identity here.
+ */
+export function namespaceRequestId(request: NamespaceRequest): string {
+  return request.kind === "create" ? request.body.documentId : request.body.operationId;
+}
+
+/** Every request kind can be refused; only its accepted answer differs. */
 export type NamespaceAttempt = {
   [Kind in NamespaceRequest["kind"]]: {
     attemptId: string;
     request: Extract<NamespaceRequest, { kind: Kind }>;
-    outcome?: Kind extends "create"
-      ? Extract<NamespaceOutcome, { kind: "create" }>
-      :
-          | Extract<NamespaceOutcome, { kind: "refusal" }>
-          | {
+    outcome?:
+      | Extract<NamespaceOutcome, { kind: "refusal" }>
+      | (Kind extends "create"
+          ? Extract<NamespaceOutcome, { kind: "create" }>
+          : {
               kind: "operation";
               receipt: Extract<ContextOperationReceipt, { command: { kind: Kind } }>;
-            };
+            });
   };
 }[NamespaceRequest["kind"]];
 
@@ -359,6 +369,7 @@ export interface ResourceMetadataStore {
 export type NamespaceOutcome =
   | { kind: "create"; result: CreateUntitledContextDocumentAnswer }
   | { kind: "operation"; receipt: ContextOperationReceipt }
+  /** A typed, non-retryable 4xx answering the request `operationId` names (`namespaceRequestId`). */
   | { kind: "refusal"; operationId: string; error: MeridianError };
 
 export type NamespaceIdentityAvailability =

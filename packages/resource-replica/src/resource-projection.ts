@@ -1,6 +1,10 @@
 /** Project visibility policy over account-global resources and installed catalogs. */
 import { namespaceRepairDestination } from "./namespace-journal-policy";
-import { intentOwnsDeletionAt, placementDestination } from "./resource-intent-policy";
+import {
+  awaitsWriterRepair,
+  intentOwnsDeletionAt,
+  placementDestination,
+} from "./resource-intent-policy";
 import {
   type DestinationParentLookup,
   destinationLocation,
@@ -58,24 +62,27 @@ export function projectResourceNeedsRepair(
   record: ResourceRecord,
 ): {
   intentId: string;
-  kind: "set-location" | "delete";
+  /** `create`: the server refused the document's first placement, so it exists only here. */
+  kind: "set-location" | "delete" | "create";
   name: string;
   destination?: ResourceDestination;
 } | null {
   const failed = record.intents.find(
-    (intent) => intent.projectId === projectId && intent.state === "needs-repair",
+    (intent) => intent.projectId === projectId && awaitsWriterRepair(intent),
   );
-  if (!failed || failed.desired.kind === "create" || failed.desired.kind === "set-folder-location")
-    return null;
+  if (!failed || failed.desired.kind === "set-folder-location") return null;
   const destination =
-    failed.desired.kind === "set-location"
-      ? (namespaceRepairDestination(record.intents, failed) ?? failed.desired.destination)
-      : undefined;
+    failed.desired.kind === "delete"
+      ? undefined
+      : (namespaceRepairDestination(record.intents, failed) ?? undefined);
   return {
     intentId: failed.intentId,
     kind: failed.desired.kind,
     ...(destination ? { destination } : {}),
-    name: destination?.name ?? record.resource.canonical?.name ?? "document",
+    // A nameless create has no name of the writer's to offer back.
+    name:
+      destination?.name ??
+      (failed.desired.kind === "create" ? "" : (record.resource.canonical?.name ?? "document")),
   };
 }
 
@@ -100,9 +107,9 @@ export function projectResourceLocation(
     if (location) return { ...location, provisional: false };
   }
 
-  const create = record.intents.find(
-    (intent) => intent.projectId === projectId && intent.desired.kind === "create",
-  )?.desired;
+  const create = record.intents
+    .filter((intent) => intent.projectId === projectId && intent.desired.kind === "create")
+    .at(-1)?.desired;
   // Refused filing returns a normal file to its accepted home, not a provisional reservation.
   const filed =
     create?.kind === "create" && create.destination
