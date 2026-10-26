@@ -1,6 +1,7 @@
 /** Immutable ordered namespace journal contracts, shared by file and folder records. */
 import { createAwaitsRemint, intentOwnsDeletion } from "./resource-intent-policy";
 import {
+  type FolderNamespaceRecord,
   type NamespaceIntent,
   type NamespaceOutcome,
   namespaceRequestId,
@@ -22,30 +23,43 @@ export function namespaceIntentOutcome(
   terminal = false,
 ): NamespaceIntentOutcome {
   if (terminal) return "unexecutable-after-terminal";
-  return (
-    outcome.kind === "operation"
-      ? outcome.receipt.result.ok
-      : outcome.kind === "create" && outcome.result.status !== "conflict"
-  )
-    ? "accepted"
-    : "refused";
+  switch (outcome.kind) {
+    case "operation":
+      return outcome.receipt.result.ok ? "accepted" : "refused";
+    case "create":
+      return outcome.result.status === "conflict" ? "refused" : "accepted";
+    case "create-folder":
+      return "accepted";
+    case "refusal":
+      return "refused";
+  }
+}
+
+/** Every request the server answered refused it (a request with no answer yet may still land). */
+function everyAnsweredRequestRefused(intents: readonly NamespaceIntent[]): boolean {
+  return intents.every((intent) =>
+    intent.attempts.every(
+      (attempt) => attempt.outcome && namespaceIntentOutcome(attempt.outcome) === "refused",
+    ),
+  );
 }
 
 /**
  * The server never accepted this document: it is local with no canonical place, and every request
- * the server answered refused it (a request with no answer yet may still land). Its deletion is
- * local, and a refused first placement leaves it only on this device.
+ * the server answered refused it. Its deletion is local, and a refused first placement leaves it
+ * only on this device.
  */
 export function resourceNeverAccepted(record: Pick<ResourceRecord, "resource" | "intents">) {
   return (
     record.resource.lifecycle.kind === "local" &&
     record.resource.canonical === null &&
-    record.intents.every((intent) =>
-      intent.attempts.every(
-        (attempt) => attempt.outcome && namespaceIntentOutcome(attempt.outcome) === "refused",
-      ),
-    )
+    everyAnsweredRequestRefused(record.intents)
   );
+}
+
+/** A folder's `resourceNeverAccepted`: local, and nothing the server answered took it. */
+export function folderNeverAccepted(record: Pick<FolderNamespaceRecord, "canonical" | "intents">) {
+  return record.canonical === null && everyAnsweredRequestRefused(record.intents);
 }
 
 /** Both journals use this transition; effects belong to the identity's own layer. */
@@ -208,6 +222,7 @@ export function validateNamespaceJournal(input: {
         const receipt = attempt.outcome.receipt;
         if (
           attempt.request.kind === "create" ||
+          attempt.request.kind === "create-folder" ||
           receipt.command.kind !== attempt.request.kind ||
           receipt.operationId !== attempt.request.body.operationId
         )
@@ -232,6 +247,12 @@ export function validateNamespaceJournal(input: {
           (attempt.outcome.result.status !== "conflict" &&
             attempt.outcome.result.status !== "joined" &&
             attempt.outcome.result.documentId !== attempt.request.body.documentId)
+        )
+          throw new Error("Create outcome does not match submitted identity");
+      } else if (attempt.outcome?.kind === "create-folder") {
+        if (
+          attempt.request.kind !== "create-folder" ||
+          attempt.outcome.result.folderId !== attempt.request.body.folderId
         )
           throw new Error("Create outcome does not match submitted identity");
       }

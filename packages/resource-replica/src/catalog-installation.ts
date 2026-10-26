@@ -27,7 +27,7 @@ export type CatalogObservationFence = Readonly<{
   /** Folder canonical state captured before HTTP; a refresh barrier is proven only by its operation id. */
   folders?: ReadonlyMap<
     string,
-    { revision: number; canonical: ResourceLocation; refreshOperationId?: string }
+    { revision: number; canonical: ResourceLocation | null; refreshOperationId?: string }
   >;
   /** Exact resource state captured before HTTP distinguishes local location changes from unrelated CAS. */
   resources?: ReadonlyMap<

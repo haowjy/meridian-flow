@@ -3,6 +3,7 @@ import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
 import {
   NAMESPACE_RECEIPT_NOTE_TTL_MS,
   type NamespaceIntent,
+  namespaceRequestId,
   type ResourceProjectionSnapshot,
   type ResourceRecord,
   resourceForDocumentIdentity,
@@ -25,10 +26,7 @@ export function operationLifecycle(
 ): Lifecycle {
   const matches = (intent: NamespaceIntent) =>
     intent.operationId === operationId ||
-    intent.attempts.some(
-      (attempt) =>
-        attempt.request.kind !== "create" && attempt.request.body.operationId === operationId,
-    );
+    intent.attempts.some((attempt) => namespaceRequestId(attempt.request) === operationId);
   const intent = intents
     .filter(matches)
     .reduce<NamespaceIntent | null>(

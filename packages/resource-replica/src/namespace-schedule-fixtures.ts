@@ -150,7 +150,7 @@ export function evidence(
   receiptless = true,
 ): NamespaceOutcome {
   const request = attempt.request;
-  assert(request.kind !== "create");
+  assert(request.kind === "move" || request.kind === "delete");
   if (refused && receiptless)
     return {
       kind: "refusal",

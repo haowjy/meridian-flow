@@ -16,7 +16,10 @@ function namespaceFailureMessage(
   folder: boolean,
   move: boolean,
 ): string {
-  if (failure === "create") return t`Couldn't create this document. Try again.`;
+  if (failure === "create")
+    return folder
+      ? t`Couldn't create this folder. Try again.`
+      : t`Couldn't create this document. Try again.`;
   if (failure === "delete")
     return folder
       ? t`Couldn't delete this folder. Try again.`

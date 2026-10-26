@@ -109,6 +109,18 @@ document id, classification or content database. The browser account owner
 implements `FolderNamespaceStore` alongside its file metadata; it must observe
 folder commits through that same projection owner, not a second cache writer.
 
+A folder made here is local until the server accepts it, as a new document is: its record has no
+`canonical` place (`canonical: null`) and its first intention is a `set-folder-location` placed
+under a device-minted folder id (`planFolderCreate`). Dispatch (`prepareFolderNamespaceAttempt`) turns
+a placement over a record with no canonical place into a `create-folder` request carrying the folder
+id and destination; `namespaceRequestId` is that folder id, so a replay is the same request. An accepted
+answer sets `canonical` from the answered path; a typed refusal leaves the record needing repair
+(`create`), listed in Unfiled under the name last typed, as a refused document is. Later intentions
+queue behind the create like any placement, and its admission makes the folder a predecessor of
+whatever is put inside or after it. Deleting a folder the server never accepted
+(`folderNeverAccepted`: nothing it answered took it) settles locally. `folderListedLocally` keeps a
+row in the projection beside the catalog's until a catalog read observes the folder.
+
 File and folder records share immutable journal validation, receipt matching,
 account-bound transport and the CAS replay loop. `owningLocationIntent` is the
 placement ownership rule for both projection and admission; superseded rejected
@@ -184,7 +196,9 @@ Three consumers read that record and nothing else:
 - **Dispatch** sends an intent only after every predecessor is resolved (`placementDispatchVerdict`).
   Unrelated intents share no scope and never wait on each other. A predecessor that never took effect
   (refused, cancelled) while this intent's position was anchored on its subject sends this intent to
-  typed repair instead of executing it against a different list.
+  typed repair instead of executing it against a different list. A pending folder create is a
+  predecessor of every intent that names the folder as its destination parent or position anchor;
+  if the create is refused, those intents settle to repair with it.
 - **Undo** is a compensating placement batch. It asks which operation owns a subject's placement
   (the newest live placement intent; after a receipt, the canonical `locationVersion`), never whether
   a sibling gap still looks the same.

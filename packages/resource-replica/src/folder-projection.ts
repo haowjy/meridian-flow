@@ -2,7 +2,7 @@
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { CatalogEntry, CatalogFileEntry, CatalogScope } from "@meridian/contracts/protocol";
 import { catalogEntryParent } from "./catalog-installation";
-import { projectFolderNeedsRepair } from "./folder-namespace";
+import { folderBaseLocation, folderListedLocally } from "./folder-namespace";
 import { folderPlacementGraph } from "./folder-placement";
 import { projectOptimisticSiblingOrder } from "./optimistic-sibling-order";
 import { owningLocationIntent, placementDestination } from "./resource-intent-policy";
@@ -77,7 +77,7 @@ export function createResourcePlacement(
     )
       nodes.push({
         id: folder.folderId,
-        canonical: folder.canonical,
+        canonical: folderBaseLocation(folder),
         parent: folder.canonicalParent,
         ancestryOnly: folder.intents.length === 0,
       });
@@ -178,11 +178,12 @@ export function createResourcePlacement(
       };
     });
     // Recovery belongs to the journal identity, not to current catalog membership.
-    // Retain a row (and a reachable ancestor chain) until the writer repairs it.
+    // Retain a row (and a reachable ancestor chain) until the writer repairs it; a folder created
+    // here is listed from its first command, before any catalog read has seen it.
     for (const folder of [...repairFolders].sort((a, b) => a.folderId.localeCompare(b.folderId))) {
       if (
         (folder.projectId !== null && folder.projectId !== projectId) ||
-        !projectFolderNeedsRepair(folder) ||
+        !folderListedLocally(folder) ||
         projected.some((row) => row.entryId === folder.folderId)
       )
         continue;

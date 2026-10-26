@@ -328,7 +328,7 @@ it("projects every nested placement/deletion schedule", () => {
       projectId: "p",
       handle: "A",
       folderId: "A",
-      source: record.canonical,
+      source: record.canonical ?? undefined,
       intentId: `i${++sequence}`,
       operationId: `o${sequence}`,
     });

@@ -79,12 +79,15 @@ function normalizedPath(path: string): string {
   return path.replace(/^\/+/, "");
 }
 
-function displayedPath(path: string): string {
+export function displayedPath(path: string): string {
   return `/${normalizedPath(path)}`;
 }
 
-function sameSource(location: ResourceLocation | null, request: NamespaceRequest): boolean {
-  if (!location || request.kind === "create") return request.kind === "create";
+function sameSource(
+  location: ResourceLocation | null,
+  request: Extract<NamespaceRequest, { kind: "move" | "delete" }>,
+): boolean {
+  if (!location) return false;
   return (
     location.scheme === request.scheme &&
     normalizedPath(location.path) === normalizedPath(request.body.path) &&
@@ -177,8 +180,8 @@ function requestFor(
   };
 }
 
-/** The create carries what a move would: the server resolves the parent by identity. */
-function createDestination(destination: ResourceDestination): ContextCreateDestination {
+/** A create carries what a move would: the server resolves the parent by identity. */
+export function createDestination(destination: ResourceDestination): ContextCreateDestination {
   return {
     parent: {
       ...destination.parent,
@@ -254,6 +257,8 @@ function unrecordedAttempt(attemptId: string, request: NamespaceRequest): Namesp
   switch (request.kind) {
     case "create":
       return { attemptId, request };
+    case "create-folder":
+      return { attemptId, request };
     case "move":
       return { attemptId, request };
     case "delete":
@@ -275,6 +280,10 @@ export function namespaceOutcomeMatches(
         outcome.result.documentId === attempt.request.body.documentId)
     );
   }
+  if (attempt.request.kind === "create-folder")
+    return (
+      outcome.kind === "create-folder" && outcome.result.folderId === attempt.request.body.folderId
+    );
   if (
     outcome.kind !== "operation" ||
     outcome.receipt.operationId !== attempt.request.body.operationId ||
@@ -382,6 +391,8 @@ export function namespaceAttemptWithOutcome(
 ): NamespaceAttempt {
   if (outcome.kind === "refusal") return { ...attempt, outcome };
   if (attemptIs(attempt, "create") && outcome.kind === "create")
+    return { attemptId: attempt.attemptId, request: attempt.request, outcome };
+  if (attemptIs(attempt, "create-folder") && outcome.kind === "create-folder")
     return { attemptId: attempt.attemptId, request: attempt.request, outcome };
   if (
     attemptIs(attempt, "move") &&
@@ -501,7 +512,7 @@ export function settleNamespaceOutcome(
         },
       };
     }
-  } else if (outcome.kind === "refusal") {
+  } else if (outcome.kind !== "operation") {
     repair = true;
   } else if (attemptIs(attempt, "move")) {
     const receipt = outcome.receipt;
@@ -664,7 +675,11 @@ function replayEligible(
       record.resource.aliases[attempt.request.body.documentId] !== undefined
     );
   if (intent.identityRevision !== record.resource.identity.revision) return false;
-  return sameSource(record.resource.canonical, attempt.request);
+  // A folder's request never rides a document's journal.
+  return (
+    attempt.request.kind !== "create-folder" &&
+    sameSource(record.resource.canonical, attempt.request)
+  );
 }
 
 /** Reconcile one resource through at most one network dispatch; CAS retries never redispatch. */
@@ -709,7 +724,9 @@ export function reconcileResourceNamespace(input: {
       if (!barrier) return null;
       const intent = record.intents.find((i) =>
         i.attempts.some(
-          (a) => a.request.kind !== "create" && a.request.body.operationId === barrier.operationId,
+          (a) =>
+            (a.request.kind === "move" || a.request.kind === "delete") &&
+            a.request.body.operationId === barrier.operationId,
         ),
       );
       if (!intent) return null;

@@ -6,6 +6,8 @@ import type {
   ContextOperationReceipt,
   ContextParentOrderPolicy,
   ContextSiblingPosition,
+  CreateContextFolderRequest,
+  CreateContextFolderResponse,
   CreateUntitledContextDocumentAnswer,
   CreateUntitledContextDocumentRequest,
   DeleteContextEntryRequest,
@@ -168,6 +170,12 @@ export type ResourceDescriptor = ResourceKey & {
 export type NamespaceRequest =
   | { kind: "create"; body: CreateUntitledContextDocumentRequest }
   | {
+      kind: "create-folder";
+      /** Owner of the destination parent when sent, so the answer's path becomes a full location. */
+      owner: ResourceOwner;
+      body: CreateContextFolderRequest;
+    }
+  | {
       kind: "move";
       scheme: ProjectContextTreeScheme;
       sourceWorkHandle: string | null;
@@ -189,11 +197,18 @@ export type NamespaceRequest =
 
 /**
  * The identity a request is replayed under: a move's or delete's operation id, a create's document
- * id (the server dedupes a create by it). A refusal names it, so a request kind added later must
- * state its own identity here.
+ * or folder id (the server dedupes a create by it). A refusal names it, so a request kind added
+ * later must state its own identity here.
  */
 export function namespaceRequestId(request: NamespaceRequest): string {
-  return request.kind === "create" ? request.body.documentId : request.body.operationId;
+  switch (request.kind) {
+    case "create":
+      return request.body.documentId;
+    case "create-folder":
+      return request.body.folderId;
+    default:
+      return request.body.operationId;
+  }
 }
 
 /** Every request kind can be refused; only its accepted answer differs. */
@@ -203,8 +218,8 @@ export type NamespaceAttempt = {
     request: Extract<NamespaceRequest, { kind: Kind }>;
     outcome?:
       | Extract<NamespaceOutcome, { kind: "refusal" }>
-      | (Kind extends "create"
-          ? Extract<NamespaceOutcome, { kind: "create" }>
+      | (Kind extends "create" | "create-folder"
+          ? Extract<NamespaceOutcome, { kind: Kind }>
           : {
               kind: "operation";
               receipt: Extract<ContextOperationReceipt, { command: { kind: Kind } }>;
@@ -291,13 +306,17 @@ export type ResourceRecord = {
   intents: readonly NamespaceIntent[];
 };
 
-/** A folder is namespace identity only: it never owns a document id, content or classification. */
+/**
+ * A folder is namespace identity only: it never owns a document id, content or classification.
+ * A folder the server has not accepted yet is local: no canonical place, only its create.
+ */
 export type FolderNamespaceRecord = ResourceKey & {
   /** Null for account-owned personal folders; command projects live on the intents. */
   projectId: string | null;
   folderId: string;
   revision: number;
-  canonical: ResourceLocation;
+  /** Null while the folder is local: its first placement has not been accepted. */
+  canonical: ResourceLocation | null;
   /** Parent identity installed atomically with the canonical location. */
   canonicalParent?: ParentRef;
   /** This folder's rank and child-order policy from the same canonical observation. */
@@ -368,6 +387,7 @@ export interface ResourceMetadataStore {
 /** Transport evidence is matched to its recorded attempt by journal policy before installation. */
 export type NamespaceOutcome =
   | { kind: "create"; result: CreateUntitledContextDocumentAnswer }
+  | { kind: "create-folder"; result: CreateContextFolderResponse }
   | { kind: "operation"; receipt: ContextOperationReceipt }
   /** A typed, non-retryable 4xx answering the request `operationId` names (`namespaceRequestId`). */
   | { kind: "refusal"; operationId: string; error: MeridianError };

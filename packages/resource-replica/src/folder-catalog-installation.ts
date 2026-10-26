@@ -92,6 +92,8 @@ export function planFolderCatalogInstallation(input: {
     if (record.projectId !== null && record.projectId !== input.projectId) continue;
     const entry = input.view.entries.get(record.folderId);
     const observed = input.fence.folders?.get(record.handle);
+    // A local folder gains its place from its own create's answer, never from a catalog read.
+    if (!record.canonical) continue;
     if (entry?.kind !== "folder" || !observed || observed.revision !== record.revision) continue;
     const location = catalogEntryLocation(input.view, entry);
     if (record.canonicalRefresh) {

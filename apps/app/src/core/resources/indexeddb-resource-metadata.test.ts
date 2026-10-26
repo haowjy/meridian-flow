@@ -7,6 +7,7 @@ import "fake-indexeddb/auto";
 import {
   type NamespaceOutcome,
   type NamespaceRequest,
+  namespaceRequestId,
   planFolderDeletion,
   planResourceDeletion,
   planResourceLocation,
@@ -502,10 +503,9 @@ it.each([
   await store.commitFolder(settled);
   expect((await store.readResource(key))?.resource.lifecycle.kind).toBe("terminal");
   const refusal = (request: NamespaceRequest): NamespaceOutcome => {
-    if (request.kind === "create") throw new Error("Unexpected create");
     return {
       kind: "refusal",
-      operationId: request.body.operationId,
+      operationId: namespaceRequestId(request),
       error: { code: "conflict", message: "Refused", source: "system", retryable: false },
     };
   };
