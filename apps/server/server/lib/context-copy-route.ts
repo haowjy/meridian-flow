@@ -33,6 +33,7 @@ import {
   requireProjectOwner,
   type WorkRepository,
 } from "../domains/projects/index.js";
+import type { ThreadRepository } from "../domains/threads/index.js";
 import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 import {
   type ContextLocator,
@@ -51,6 +52,7 @@ import { requireRequestId } from "./request-id.js";
 export interface ContextCopyRouteDeps {
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
   projectRepo: ProjectRepository;
+  threads: Pick<ThreadRepository, "findProjectIdByIdIncludingDeleted">;
   workRepo: WorkRepository;
   contextPorts: UnifiedContextPortFactory;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
@@ -230,12 +232,7 @@ function parseDestination(body: Record<string, unknown>): CopyDestinationLocator
   if (!isProjectContextTreeScheme(scheme)) {
     throw createError({ statusCode: 400, message: "Destination scheme is invalid" });
   }
-  if (scheme === "uploads") {
-    throw createError({
-      statusCode: 400,
-      message: "Uploads is out-only: files can be copied out of it, not into it",
-    });
-  }
+  if (scheme === "uploads") throw uploadsOutOnly();
   const path = parseContextMutationPath(body.destinationFolderPath, "destinationFolderPath", {
     allowRoot: true,
   });
@@ -258,6 +255,14 @@ function parseDestination(body: Record<string, unknown>): CopyDestinationLocator
     throw createError({ statusCode: 400, message: "`workId` is not valid for this scheme" });
   }
   return { scope: "project", scheme, path };
+}
+
+/** Uploads is where a chat's files arrive; nothing is copied into it, whichever way it is named. */
+function uploadsOutOnly() {
+  return createError({
+    statusCode: 400,
+    message: "Uploads is out-only: files can be copied out of it, not into it",
+  });
 }
 
 function parsePosition(raw: unknown): ContextSiblingPosition {
@@ -347,7 +352,15 @@ export async function handleContextCopyRequest(
     const resolved = await resolveLocator(source.locator);
     const workId = resolved.scope === "work" ? resolved.authority.workId : null;
     if (workId) workIds.add(workId);
-    if (source.view.kind === "draft") workIds.add(source.view.workId);
+    if (source.view.kind === "draft") {
+      // The chat names whose draft is read; a chat of another project (or none) is no chat here.
+      const owner = await deps.threads.findProjectIdByIdIncludingDeleted(
+        source.view.threadId as ThreadId,
+      );
+      if (owner !== input.projectId)
+        throw createError({ statusCode: 404, message: "Chat not found" });
+      workIds.add(source.view.workId);
+    }
     sources.push({
       uri: locatorUri(resolved),
       expected: source.expected,
@@ -389,6 +402,11 @@ export async function handleContextCopyRequest(
 
   const folderUri =
     destinationFolderId === null ? null : await resolveFolderUri(port, destinationFolderId);
+  // A folder named by identity can live in Uploads too, and is refused like the path form.
+  if (folderUri !== null) {
+    const parsed = parseUnifiedContextUri(folderUri);
+    if (parsed.ok && parsed.value.scheme === "uploads") throw uploadsOutOnly();
+  }
   const destinationUri =
     folderUri === null
       ? locatorUri(destinationLocator as ResolvedContextLocator)
