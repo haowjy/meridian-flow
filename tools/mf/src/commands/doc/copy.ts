@@ -14,7 +14,7 @@ import type { Session } from "../../core/session";
 import { jsonResponse } from "../../core/session";
 import { resolveProjectId, resolveWork } from "../project/resolve";
 import { resolveThreadId } from "../thread/resolve";
-import { PROJECT_OPTION, type ResolvedUri, resolveDocument, resolveUri } from "./uri";
+import { PROJECT_OPTION, type ResolvedUri, resolveUri } from "./uri";
 
 /** The read view every tracked source is copied through. */
 type SourceView = { kind: "live" } | { kind: "draft"; workId: string; threadId: string };
@@ -126,24 +126,6 @@ async function sourceIdentity(
   projectId: string,
   target: ResolvedUri,
 ): Promise<{ kind: "file" | "folder"; nodeId: string }> {
-  try {
-    const document = await resolveDocument(session, projectId, target);
-    return { kind: "file", nodeId: document.documentId };
-  } catch (error) {
-    if (!(error instanceof CliError) || error.code !== "not_found") throw error;
-  }
-  const folder = await lookupFolder(session, projectId, target);
-  if (folder) return { kind: "folder", nodeId: folder };
-  throw new CliError("not_found", `Nothing at ${target.uri} to copy`, {
-    hint: "A source is a document or a folder. Check it with `./mf doc read`.",
-  });
-}
-
-async function lookupFolder(
-  session: Session,
-  projectId: string,
-  target: ResolvedUri,
-): Promise<string | null> {
   const search = new URLSearchParams({ uri: target.uri, ...scopeQuery(target) });
   const found = await session.request(
     "GET",
@@ -151,7 +133,12 @@ async function lookupFolder(
     undefined,
     { decode: jsonResponse(catalogLookupResponse) },
   );
-  return found.entry?.kind === "folder" ? found.entry.entryId : null;
+  const entry = found.entry;
+  if (entry?.kind === "file") return { kind: "file", nodeId: entry.entryId };
+  if (entry?.kind === "folder") return { kind: "folder", nodeId: entry.entryId };
+  throw new CliError("not_found", `Nothing at ${target.uri} to copy`, {
+    hint: "A source is a document or a folder. Check it with `./mf doc read`.",
+  });
 }
 
 /** The catalog lookup route's scope, from the URI's owner. */

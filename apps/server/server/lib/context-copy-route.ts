@@ -5,6 +5,7 @@
  */
 
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import { parseHandle } from "@meridian/contracts/handles";
 import type {
   ContextDestinationParent,
   ContextSiblingPosition,
@@ -136,12 +137,13 @@ function parseSourceLocator(source: Record<string, unknown>): CopySourceLocator 
         message: "An uploads source names the chat it belongs to (`chatRef`)",
       });
     }
-    return {
-      scope: "chat",
-      scheme: "uploads",
-      chatRef: requireRequestId(source.chatRef, "sources[].chatRef"),
-      path,
-    };
+    if (typeof source.chatRef !== "string" || parseHandle(source.chatRef)?.kind !== "chat") {
+      throw createError({
+        statusCode: 400,
+        message: "`sources[].chatRef` must be a chat handle like c12",
+      });
+    }
+    return { scope: "chat", scheme: "uploads", chatRef: source.chatRef, path };
   }
   const workId = parseWorkId(source.workId, "sources[].workId");
   if (source.rootThreadId != null) {

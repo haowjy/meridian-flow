@@ -360,7 +360,7 @@ async function insertCopiedDocument(
           extension: node.extension,
           markdown: "",
           filetype,
-          metadata: { copiedFrom: node.copiedFrom ?? copiedFromProvenance(deps, node) },
+          metadata: { copiedFrom: node.copiedFrom ?? copiedFromProvenance(node) },
         },
         { kind: "none" },
       );
@@ -407,7 +407,7 @@ async function insertCopiedBinary(
       // A binary row normally carries its type; an old row that lost it copies as opaque bytes.
       mimeType: mimeType ?? "application/octet-stream",
       sizeBytes: sizeBytes ?? 0,
-      metadata: { copiedFrom: copiedFromProvenance(deps, node) },
+      metadata: { copiedFrom: copiedFromProvenance(node) },
     });
     return Ok(document.id);
   } catch (error) {
@@ -418,7 +418,7 @@ async function insertCopiedBinary(
   }
 }
 
-function copiedFromProvenance(deps: CopyTreeDeps, node: PlannedFile): CopiedFrom {
+function copiedFromProvenance(node: PlannedFile): CopiedFrom {
   // A binary has no drafts or revisions, so its copy always records the live file.
-  return { uri: deps.holderUri(node.source.path), version: "live", revision: null };
+  return { uri: node.source.uri, version: "live", revision: null };
 }
