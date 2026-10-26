@@ -24,6 +24,7 @@ import type {
   AgentEditAccess,
   CollabBranches,
   DocumentProjectionRefresher,
+  DraftPeerShadowAccess,
   ResponseWriteFinalizer,
 } from "../../domains/collab/index.js";
 import {
@@ -65,7 +66,10 @@ import type { AgentEditResponseWriteLifecycle } from "./response-write-lifecycle
 export interface ToolWiringDeps {
   threads: ThreadRepository;
   contextPorts: UnifiedContextPortFactory;
-  documentSync: AgentEditAccess & DocumentProjectionRefresher & ResponseWriteFinalizer;
+  documentSync: AgentEditAccess &
+    DocumentProjectionRefresher &
+    ResponseWriteFinalizer &
+    Pick<DraftPeerShadowAccess, "readEffectiveBlocks">;
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
   works: WorkRepository;
