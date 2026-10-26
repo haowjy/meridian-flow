@@ -1,7 +1,21 @@
 /** Persistence port for durable asks; lifecycle behavior is owned by the ask service in B2. */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { AskKind, AskPayload, AskResolution, AskStatus } from "@meridian/contracts/threads";
+import type {
+  AskKind,
+  AskPayload,
+  AskResolution,
+  AskStatus,
+  JsonValue,
+} from "@meridian/contracts/threads";
+
+export type AskRelay = {
+  childAskId: string;
+  mode: "foreground" | "late";
+  childExecutionId?: string;
+  messageId?: string;
+  result: JsonValue;
+};
 
 export type StoredAsk = {
   id: string;
@@ -15,13 +29,15 @@ export type StoredAsk = {
   status: AskStatus;
   resolution: AskResolution | null;
   submissionId: string | null;
+  relay: AskRelay | null;
   createdAt: Date;
   resolvedAt: Date | null;
 };
 
-export type CreateAskInput = Omit<StoredAsk, "id" | "createdAt" | "resolvedAt"> & {
+export type CreateAskInput = Omit<StoredAsk, "id" | "createdAt" | "resolvedAt" | "relay"> & {
   id?: string;
   resolvedAt?: Date | null;
+  relay?: AskRelay | null;
 };
 
 export interface AskRepository {
@@ -36,6 +52,7 @@ export interface AskRepository {
   listByThread(threadId: ThreadId): Promise<StoredAsk[]>;
   listOpenDueBy(deadline: Date, limit: number): Promise<StoredAsk[]>;
   listByTurnIds(turnIds: readonly TurnId[]): Promise<StoredAsk[]>;
+  recordRelayOnce(id: string, relay: AskRelay): Promise<StoredAsk>;
   openPending(id: string, turnId: TurnId, deadline: Date): Promise<StoredAsk | null>;
   cancelPendingByTurn(turnId: TurnId): Promise<StoredAsk[]>;
   resolveOpen(input: {

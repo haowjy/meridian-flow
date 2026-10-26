@@ -27,6 +27,7 @@ import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
 import { resolveChildInvocation } from "./resolve-child-invocation.js";
 import { resolveReadableThread } from "./resolve-readable-thread.js";
+import { savedReportToSpawnResult } from "./saved-report-outcome.js";
 import {
   invocationAgentName,
   invocationCardProps,
@@ -435,6 +436,19 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         delivery: background ? "background" : "direct",
       });
       if (answered.ok) {
+        if (answered.replayed) {
+          if (answered.replayedReport) {
+            return savedReportToSpawnResult(answered.replayedReport);
+          }
+          const binding = await deps.agentRevisions.readThreadBinding(authorized.target.id);
+          return {
+            status: "background",
+            handle: authorized.target.ref ?? "",
+            threadId: authorized.target.id,
+            agentSlug: binding?.revision?.slug ?? GENERIC_SUBAGENT_SLUG,
+            notifiesCaller: true,
+          };
+        }
         if (!background) {
           if (!answered.continuation)
             throw new Error("Direct parent answer has no continuation identity");

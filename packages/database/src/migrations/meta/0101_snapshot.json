@@ -1,6 +1,6 @@
 {
-  "id": "b9bd4a9e-470d-410f-9532-e6d6c346c3ae",
-  "prevId": "badeb17b-62d3-4fab-bd39-4647a670536e",
+  "id": "3ff0a59f-0b54-48fa-bef9-56390be56031",
+  "prevId": "e3d5b237-60c3-41ba-87df-8e0f0f1891a2",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1950,7 +1950,7 @@
         },
         "thread_execution_reports_outcome_valid": {
           "name": "thread_execution_reports_outcome_valid",
-          "value": "\"thread_execution_reports\".\"outcome\" IS NULL OR \"thread_execution_reports\".\"outcome\" IN ('succeeded','failed','cancelled')"
+          "value": "\"thread_execution_reports\".\"outcome\" IS NULL OR \"thread_execution_reports\".\"outcome\" IN ('succeeded','asked','failed','cancelled')"
         },
         "thread_execution_reports_source_valid": {
           "name": "thread_execution_reports_source_valid",
@@ -2312,7 +2312,7 @@
         },
         "thread_inbox_messages_body_valid": {
           "name": "thread_inbox_messages_body_valid",
-          "value": "(CASE WHEN \"thread_inbox_messages\".\"intent\" = 'control' THEN (\"thread_inbox_messages\".\"body\"->>'kind' = 'compact' OR (\"thread_inbox_messages\".\"body\"->>'kind' = 'write_mode' AND \"thread_inbox_messages\".\"body\"->>'mode' IN ('direct','draft'))) ELSE \"thread_inbox_messages\".\"body\"->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE"
+          "value": "(CASE WHEN \"thread_inbox_messages\".\"intent\" = 'control' THEN (\"thread_inbox_messages\".\"body\"->>'kind' IN ('compact','ask_resolved') OR (\"thread_inbox_messages\".\"body\"->>'kind' = 'write_mode' AND \"thread_inbox_messages\".\"body\"->>'mode' IN ('direct','draft'))) ELSE \"thread_inbox_messages\".\"body\"->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE"
         }
       },
       "isRLSEnabled": false
@@ -3651,7 +3651,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"turns\".\"status\" IN ('pending','streaming','waiting_interrupt')",
+          "where": "\"turns\".\"status\" IN ('pending','streaming','awaiting_answer')",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3811,7 +3811,7 @@
         },
         "turns_status_valid": {
           "name": "turns_status_valid",
-          "value": "\"turns\".\"status\" IN ('pending', 'streaming', 'waiting_interrupt', 'complete', 'cancelled', 'error')"
+          "value": "\"turns\".\"status\" IN ('pending', 'streaming', 'awaiting_answer', 'complete', 'cancelled', 'error')"
         },
         "turns_compaction_model_required": {
           "name": "turns_compaction_model_required",
@@ -5653,6 +5653,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "content_purged_at": {
+          "name": "content_purged_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "deletion_reason": {
           "name": "deletion_reason",
           "type": "text",
@@ -5692,6 +5698,28 @@
         }
       },
       "indexes": {
+        "documents_purge_candidates": {
+          "name": "documents_purge_candidates",
+          "columns": [
+            {
+              "expression": "deleted_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"documents\".\"content_purged_at\" IS NULL AND \"documents\".\"deleted_at\" IS NOT NULL AND \"documents\".\"deletion_reason\" = 'deleted' AND NOT \"documents\".\"hidden\" AND \"documents\".\"deleted_by_work_id\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "documents_deleted_by_work_idx": {
           "name": "documents_deleted_by_work_idx",
           "columns": [
@@ -7859,92 +7887,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.project_user_preferences": {
-      "name": "project_user_preferences",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "auto_resume_enabled": {
-          "name": "auto_resume_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "auto_resume_timeout_ms": {
-          "name": "auto_resume_timeout_ms",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 270000
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "project_user_preferences_user_id_users_id_fk": {
-          "name": "project_user_preferences_user_id_users_id_fk",
-          "tableFrom": "project_user_preferences",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_user_preferences_project_id_projects_id_fk": {
-          "name": "project_user_preferences_project_id_projects_id_fk",
-          "tableFrom": "project_user_preferences",
-          "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "project_user_preferences_pk": {
-          "name": "project_user_preferences_pk",
-          "columns": [
-            "user_id",
-            "project_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "project_user_preferences_auto_resume_timeout_check": {
-          "name": "project_user_preferences_auto_resume_timeout_check",
-          "value": "\"project_user_preferences\".\"auto_resume_timeout_ms\" > 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.turn_document_touches": {
       "name": "turn_document_touches",
       "schema": "",
@@ -8400,6 +8342,223 @@
       },
       "isRLSEnabled": false
     },
+    "public.asks": {
+      "name": "asks",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "asking_turn_id": {
+          "name": "asking_turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "execution_id": {
+          "name": "execution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tool_call_id": {
+          "name": "tool_call_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deadline_at": {
+          "name": "deadline_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "resolution": {
+          "name": "resolution",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "submission_id": {
+          "name": "submission_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "relay": {
+          "name": "relay",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "asks_open_deadline": {
+          "name": "asks_open_deadline",
+          "columns": [
+            {
+              "expression": "deadline_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"asks\".\"status\" = 'open' AND \"asks\".\"deadline_at\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "asks_thread_created": {
+          "name": "asks_thread_created",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "asks_one_live_per_thread": {
+          "name": "asks_one_live_per_thread",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"asks\".\"status\" IN ('pending', 'open')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "asks_thread_id_threads_id_fk": {
+          "name": "asks_thread_id_threads_id_fk",
+          "tableFrom": "asks",
+          "tableTo": "threads",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "asks_asking_turn_fk": {
+          "name": "asks_asking_turn_fk",
+          "tableFrom": "asks",
+          "tableTo": "turns",
+          "columnsFrom": [
+            "thread_id",
+            "asking_turn_id"
+          ],
+          "columnsTo": [
+            "thread_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "asks_turn_tool_call_unique": {
+          "name": "asks_turn_tool_call_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "asking_turn_id",
+            "tool_call_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "asks_kind_valid": {
+          "name": "asks_kind_valid",
+          "value": "\"asks\".\"kind\" IN ('question', 'permission')"
+        },
+        "asks_status_valid": {
+          "name": "asks_status_valid",
+          "value": "\"asks\".\"status\" IN ('pending', 'open', 'answered', 'expired', 'cancelled')"
+        },
+        "asks_resolution_coherent": {
+          "name": "asks_resolution_coherent",
+          "value": "(\"asks\".\"status\" IN ('pending', 'open') AND \"asks\".\"resolution\" IS NULL AND \"asks\".\"resolved_at\" IS NULL) OR (\"asks\".\"status\" IN ('answered', 'expired', 'cancelled') AND \"asks\".\"resolution\" IS NOT NULL AND \"asks\".\"resolved_at\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.user_preferences": {
       "name": "user_preferences",
       "schema": "",
@@ -8807,12 +8966,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "unapplied_by": {
-          "name": "unapplied_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "base_start": {
           "name": "base_start",
           "type": "jsonb",
@@ -8824,6 +8977,12 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
+        },
+        "unapplied_by": {
+          "name": "unapplied_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {

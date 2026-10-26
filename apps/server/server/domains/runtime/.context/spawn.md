@@ -38,6 +38,22 @@ A parent re-task carries notification correlation and publishes the same
 completion notice as a background spawn; other background messages promise no
 completion. The target's run owns wake and report admission.
 
+A child `ask` finalizes an immutable `asked` execution report without ending
+the child's lifetime. Background reports enqueue a structured question in the
+parent; foreground calls return the same question directly. Request assembly
+batch-loads the open questions present in that request. A `thread_message` to
+that child carries the exact ask id from this evidence. The bound-message path
+claims that ask before ordinary inbox delivery; losing the answer race turns
+the unchanged text into an ordinary background message rather than binding it
+to a newer question.
+
+`ask({forward})` copies an open direct child's question. The parent's admitted
+continuation relays its answer before the first model request and replaces the
+provisional ask result with the child report, or with `late: true` when the
+child question had already resolved. Relay state is stored on the forwarded
+ask; the continuation receipt stays unacknowledged until relay and result
+replacement finish.
+
 ## Cards, reports, and activity
 
 Cards retain the bound Agent identity, parent turn, child thread, delivery mode,
@@ -73,4 +89,4 @@ Maximum spawn depth is operator-configured at tree creation. Child creation,
 Agent binding, and Work membership are one transaction. A child starts with an
 unfrozen prompt; ordinary preparation adds its persona and report instruction.
 Terminal persistence precedes helper/Work cleanup, and a child terminal run
-aborts its descendants.
+aborts its descendants. `asked` is non-terminal for this lifetime rule.
