@@ -79,8 +79,9 @@ export interface ContextCopyAdapter {
   /** This adapter's context source, provisioned; the copy command locks it. */
   sourceId(): Promise<string | null>;
   /**
-   * The frozen source subtree at `path` in `view`: the folder with every descendant in the
-   * folder's visible order (empty folders included), or the one file there.
+   * The source subtree at `path`: the folder with every descendant in the folder's visible
+   * order (empty folders included), or the one file there. Read once; the copy works from
+   * this and never re-lists.
    */
   snapshotSource(path: string): Promise<Result<CopySourceEntry, AdapterFault>>;
   /**

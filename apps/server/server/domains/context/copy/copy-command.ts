@@ -27,6 +27,7 @@ import type {
   CopyContextEntryView,
 } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import type { PMNode } from "@meridian/markup";
 import { decodeStateVector } from "yjs";
 import { deferUntilDrizzleRollback } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -343,7 +344,7 @@ interface PreparedDocument {
   uri: string;
   /** The address its links spelled from. */
   holderUri: string | null;
-  blocks: readonly import("@meridian/markup").PMNode[];
+  blocks: readonly PMNode[];
   /** Where each `ahead:` ref in the cut points now. */
   aheadSettlements: ReadonlyMap<string, string>;
   revision: string | null;
@@ -454,7 +455,7 @@ function refuseInsideItself(
       return Err({
         code: "invalid_operation",
         uri: root.uri,
-        message: "Can't copy a folder into itself",
+        message: "Can't go inside itself",
       });
     }
   }
