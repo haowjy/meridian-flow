@@ -36,13 +36,7 @@ export async function prepareImportEntries(
     }
     let markdown: string;
     try {
-      markdown = (
-        await deps.converter.convert({
-          filename: entry.selection.path,
-          mimeType: entry.receipt.facts.mimeType,
-          bytes: original.value.bytes,
-        })
-      ).markdown;
+      markdown = await deps.converter.convert(original.value.bytes);
     } catch {
       patches.push({ id: entry.id, patch: { convertedKey: null, reason: "kept_as_file" } });
       continue;
