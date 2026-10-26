@@ -104,7 +104,20 @@ function placementFailed(state: NamespaceIntent["state"]): boolean {
   );
 }
 
+/**
+ * The conflict identity of a parent. A project's area roots exist once per project, so they are
+ * qualified by it; the User area is the account's own and shared by every project, as are folder,
+ * Work, lineage and chat ids, which are globally unique already.
+ */
+function conflictParentKey(parent: ParentRef, projectId: string): string {
+  const key = placementParentKey(parent);
+  return parent.kind === "root" && parent.scheme !== "user" && isProjectScopedScheme(parent.scheme)
+    ? `${projectId}/${key}`
+    : key;
+}
+
 export type PlacementSpec = {
+  projectId: string;
   /** The entry id placed, moved or deleted. */
   subject: string;
   /** Where it sits now, as the projection shows it; null for a new document. */
@@ -123,9 +136,9 @@ function scopeOf(
   parentOfFolder: (folderId: string) => ParentRef | null,
 ): string[] {
   const keys = new Set([`entry:${spec.subject}`]);
-  if (spec.source) keys.add(`parent:${placementParentKey(spec.source)}`);
+  if (spec.source) keys.add(`parent:${conflictParentKey(spec.source, spec.projectId)}`);
   if (spec.destination) {
-    keys.add(`parent:${placementParentKey(spec.destination)}`);
+    keys.add(`parent:${conflictParentKey(spec.destination, spec.projectId)}`);
     // Moving or deleting an ancestor changes what the destination means.
     const seen = new Set<string>();
     for (
