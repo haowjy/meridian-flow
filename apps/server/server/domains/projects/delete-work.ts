@@ -12,7 +12,7 @@ type LifecycleDeps = {
 
 type DeleteDeps = {
   works: WorkRepository;
-  stopThreadRun(threadId: ThreadId): Promise<void>;
+  stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
 };
 
 export type DeleteWorkTransition = { before: Work | null; after: Work | null; changed: boolean };
@@ -22,7 +22,7 @@ export async function deleteWorkTransition(
   workId: WorkId,
 ): Promise<DeleteWorkTransition> {
   return runWorkLifecycleCommand(
-    { transaction: deps.works.transaction, stopThreadRun: deps.stopThreadRun },
+    { transaction: deps.works.transaction, stopThreads: deps.stopThreads },
     async () => {
       const deletion = await deps.works.softDelete(workId);
       const { before, after } = deletion;

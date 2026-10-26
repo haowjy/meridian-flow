@@ -217,3 +217,9 @@ scripts cannot interpolate the ids returned by an earlier tool call.
     Finally repeat step 7's turn cancel with a running 40 s leaf under the middle.
     PASS: no root turn answers the withdrawn `@child asks` notice, and the root's
     ask is the last one cancelled.
+14. Deletion. In a chat bound to a fresh Work, spawn a background child with a
+    40 s mock step and a background child that asks, then delete the Work
+    (`./mf api DELETE /api/works/<id>`). PASS within about two seconds: the slow
+    child's report is `cancelled`, the asker's question is cancelled, both
+    `spawn_status` read cancelled, and no lease or agent row is left. Repeat by
+    trashing a No Work chat (`./mf api DELETE /api/threads/<id>`).

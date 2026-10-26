@@ -307,7 +307,8 @@ export type AppServices = {
   recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
   runner: TurnRunner;
-  stopThreadRun(threadId: ThreadId): Promise<void>;
+  /** Ends deleted threads' runs and subagent subtrees. */
+  stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   runStarter: RunStarter;
   delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
   asks: AskService;
@@ -793,10 +794,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   let publishReport:
     | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
     | undefined;
-  const stopThreadRun = async (threadId: ThreadId) => {
-    const turnId = await runClaim.readRunningTurnId(threadId);
-    if (turnId) await runner.cancel(threadId, turnId);
-  };
+  const stopThreads = (threadIds: readonly ThreadId[]) => runner.stopThreads(threadIds);
   const delivery = createDrizzleRuntimeDelivery(ports.db, {
     backgroundTasks,
     toolRegistry,
@@ -841,7 +839,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     notices: ports.notices,
     controls: delivery,
     transaction: ports.threadRepos.transaction,
-    stopThreadRun,
+    stopThreads,
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
     objectStore: ports.objectStore,
@@ -1181,7 +1179,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     recentDocuments: ports.recentDocuments,
     orchestrator,
     runner,
-    stopThreadRun,
+    stopThreads,
     runStarter,
     delivery,
     asks,
@@ -1708,8 +1706,9 @@ export function createInMemoryAppServices(): AppServices {
       async cancel() {
         return "not_found" as const;
       },
+      async stopThreads() {},
     },
-    async stopThreadRun() {},
+    async stopThreads() {},
     runStarter,
     delivery,
     recovery,

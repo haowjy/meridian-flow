@@ -282,7 +282,7 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
   unarchive: archiving(false),
   delete: onSelectedWork(async (deps, _thread, work) => {
     const transition = await deleteWorkTransition(
-      { works: deps.works, stopThreadRun: deps.stopThreadRun },
+      { works: deps.works, stopThreads: deps.stopThreads },
       work.id,
     );
     const before = transition.before ?? work;
