@@ -15,6 +15,7 @@ import type {
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import { decodeStateVector } from "yjs";
 import {
   type ContextPort,
   contextPortForProjectAuthorities,
@@ -68,7 +69,7 @@ interface ParsedCopySource {
   locator: CopySourceLocator;
   expected: { kind: "file" | "folder"; nodeId: string };
   view: CopyContextEntryView;
-  stateVector?: string;
+  stateVector?: Uint8Array;
 }
 
 interface ParsedCopy {
@@ -113,15 +114,39 @@ function parseSource(raw: unknown): ParsedCopySource {
     throw createError({ statusCode: 400, message: "Each source names its expected identity" });
   }
   const view = parseView(source.view);
-  if (typeof source.stateVector === "string" && source.stateVector.trim() === "") {
-    throw createError({ statusCode: 400, message: "`sources[].stateVector` must be base64" });
-  }
+  const stateVector = parseStateVector(source.stateVector, expected.kind);
   return {
     locator: parseSourceLocator(source),
     expected: { kind: expected.kind, nodeId: expected.nodeId },
     view,
-    ...(typeof source.stateVector === "string" ? { stateVector: source.stateVector } : {}),
+    ...(stateVector ? { stateVector } : {}),
   };
+}
+
+/**
+ * The client's vector is for the one room of the one document it holds open: a folder has no
+ * such room, and every child's room is a different Y.Doc. Decoding it here keeps a malformed
+ * vector a client error instead of a failure inside the command.
+ */
+function parseStateVector(raw: unknown, kind: "file" | "folder"): Uint8Array | undefined {
+  if (raw === undefined) return undefined;
+  if (kind === "folder") {
+    throw createError({
+      statusCode: 400,
+      message: "`sources[].stateVector` is for a document; a folder has no room of its own",
+    });
+  }
+  const bytes = typeof raw === "string" ? Uint8Array.from(Buffer.from(raw, "base64")) : null;
+  try {
+    if (!bytes || bytes.length === 0) throw new Error("empty");
+    decodeStateVector(bytes);
+    return bytes;
+  } catch {
+    throw createError({
+      statusCode: 400,
+      message: "`sources[].stateVector` must be a base64-encoded Yjs state vector",
+    });
+  }
 }
 
 function parseSourceLocator(source: Record<string, unknown>): CopySourceLocator {
@@ -262,7 +287,7 @@ interface ResolvedSource {
   uri: string;
   expected: { kind: "file" | "folder"; nodeId: string };
   view: CopyContextEntryView;
-  stateVector?: string;
+  stateVector?: Uint8Array;
   /** The file-policy target its read is granted on. */
   target: FileTarget;
   workId: string | null;

@@ -290,7 +290,8 @@ export interface ContextCopyRequest {
     uri: string;
     view?: CopyContextEntryView;
     expected: { kind: "file" | "folder"; nodeId: string };
-    stateVector?: string;
+    /** The client's own Yjs state vector for a file it holds open, decoded by the route. */
+    stateVector?: Uint8Array;
   }[];
   /** Canonical address of the destination parent folder. */
   destinationUri: string;

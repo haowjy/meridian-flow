@@ -350,8 +350,12 @@ export type CopyContextEntrySource = {
   /** Defaults to the live document. */
   view?: CopyContextEntryView;
   /**
-   * A source the writer holds open sends its Yjs state vector (base64). The copy waits —
-   * `stale_source`, retryable — until the document holds those updates.
+   * A document the writer holds open sends its Yjs state vector (base64) with the view that
+   * room is: the live room for a live view, the draft room for a draft view. A folder has no
+   * room of its own, and a vector on one is a 400, as is one that does not decode. The server
+   * waits about two seconds for the room to hold those updates; if it still does not, the
+   * answer is `io_error` (retryable, never recorded) with `details.reason` `source_behind`,
+   * and the same operation ID may be sent again.
    */
   stateVector?: string;
 };
