@@ -168,8 +168,12 @@ function ChatScreenLoaded({
         <div className="border-b border-destructive/30 bg-card px-4 py-2" data-derivation-failed>
           <div className="mx-auto max-w-3xl">
             <InlineErrorRow
-              message={derivationFailureCopy(derivation.intent.kind)}
-              onRetry={() => retryDerivation(threadId, derivationDeps)}
+              message={derivation.failure?.message ?? derivationFailureCopy(derivation.intent.kind)}
+              onRetry={
+                derivation.failure?.retryable === false
+                  ? undefined
+                  : () => retryDerivation(threadId, derivationDeps)
+              }
             />
           </div>
         </div>
