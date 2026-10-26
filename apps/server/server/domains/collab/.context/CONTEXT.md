@@ -578,7 +578,9 @@ fresh `BoundWrite` for a new holder through `domain/copied-blocks.ts`: identitie
 copied set (a settled ahead ref included) name the copy, a ref-less internal spelling is read
 from the source holder and either remapped or written absolute, and everything else keeps its
 target. It resolves no catalog and mints no ahead ref, so it is safe inside the copy's
-transaction — the one whole-document door that binds there rather than before it.
+transaction — the one whole-document door that binds there rather than before it. The
+model's `copy` tool runs the same `remapCopiedBlocks` over its own read's blocks, with the
+settlements from the same cut.
 
 A result's concurrent attribution reads only the room journal interval after its
 stored observation position through the rendered cut. A read uses the resolved
