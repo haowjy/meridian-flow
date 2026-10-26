@@ -61,7 +61,6 @@ export function createProductionImportOrganizer(deps: {
     } as const;
   };
   return createImportOrganizer({
-    db: deps.db,
     repository: createDrizzleImportRepository(deps.db),
     queue: createDrizzleOrganizeQueue(deps.db),
     objects: deps.objects,

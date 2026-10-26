@@ -66,6 +66,13 @@ export type ImportEntryPatch = Partial<
   Pick<ImportEntry, "state" | "reason" | "convertedKey" | "receipt">
 >;
 export interface ImportRepository {
+  organizeTransaction<T>(
+    fence: { importId: string; token: string; generation?: number },
+    run: (record: ImportRecord) => Promise<T>,
+  ): Promise<
+    | { kind: "committed"; value: T }
+    | { kind: "stale_owner" | "project_unavailable" }
+  >;
   transaction<T>(run: () => Promise<T>): Promise<T>;
   lockUser(userId: string): Promise<void>;
   lockIdentity(importId: string): Promise<void>;

@@ -3,7 +3,11 @@ import { IMPORT_NEEDS_LOOK_REASONS, type ImportCounts } from "@meridian/contract
 import type { Database } from "@meridian/database";
 import { importEntries, imports, projects } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
-import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  runInDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
+import { lockProjectLifecycleShared } from "../../../shared/project-lifecycle-lock.js";
 import type { FileReceipt } from "../domain/receipt.js";
 import type {
   ImportEntry,
@@ -77,6 +81,22 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
   const open = (userId: string) =>
     and(eq(imports.userId, userId), isNull(imports.acknowledgedAt), isNull(projects.deletedAt));
   return {
+    async organizeTransaction(fence, run) {
+      return runInDrizzleTransaction(db, async () => {
+        const database = currentDrizzleDb(db);
+        const [record] = await database.select().from(imports).where(eq(imports.id, fence.importId)).for("update");
+        if (record?.state !== "organizing" || record.leaseToken !== fence.token || record.leaseUntil === null ||
+          (fence.generation !== undefined && record.placementGeneration !== fence.generation))
+          return { kind: "stale_owner" as const };
+        const [lease] = await database.select({ current: sql<boolean>`${imports.leaseUntil} > clock_timestamp()` }).from(imports).where(eq(imports.id, fence.importId));
+        if (!lease?.current) return { kind: "stale_owner" as const };
+        if (!record.projectId) return { kind: "project_unavailable" as const };
+        await lockProjectLifecycleShared(db, record.projectId);
+        const [project] = await database.select({ id: projects.id }).from(projects).where(and(eq(projects.id, record.projectId), isNull(projects.deletedAt)));
+        if (!project) return { kind: "project_unavailable" as const };
+        return { kind: "committed" as const, value: await run(record as ImportRecord) };
+      });
+    },
     transaction: (run) => runInDrizzleTransaction(db, run),
     async lockUser(userId) {
       await tx().execute(

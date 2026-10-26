@@ -2,11 +2,9 @@
 import { isDeepStrictEqual } from "node:util";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { Database } from "@meridian/database";
 import type { ImportLinkBinder, MarkdownDocumentStore } from "../../../collab/index.js";
 import type { ContextImportRead, ContextStagedCreation } from "../../../context/index.js";
 import type { ObjectStorePort } from "../../../storage/index.js";
-import { runOrganizeTransaction } from "../../adapters/drizzle-organize-lifecycle.js";
 import type { DocumentConverterPort } from "../../ports/document-converter.js";
 import type { ImportEntry, ImportRecord, ImportRepository } from "../../ports/import-repository.js";
 import type { OrganizeClaim, OrganizeQueue } from "../../ports/organize-queue.js";
@@ -22,7 +20,6 @@ const BUILD_BYTES = 16 * 1024 * 1024;
 const MAX_REBUILT_GENERATIONS = 5;
 
 type OrganizerDeps = {
-  db: Database;
   repository: ImportRepository;
   queue: OrganizeQueue;
   objects: ObjectStorePort;
@@ -66,7 +63,7 @@ async function readText(objects: ObjectStorePort, key: string): Promise<string> 
 
 export function createImportOrganizer(deps: OrganizerDeps) {
   async function recordNoProgress(claim: OrganizeClaim): Promise<void> {
-    await runOrganizeTransaction(deps.db, claim, async (locked) => {
+    await deps.repository.organizeTransaction(claim, async (locked) => {
       const attempts = locked.claimsWithoutProgress + 1;
       const now = await deps.repository.now();
       await deps.repository.update(locked.id, {
@@ -88,7 +85,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     claim: OrganizeClaim,
     tree: OrganizedTree,
   ): Promise<"reset" | "failed" | "stale"> {
-    const result = await runOrganizeTransaction(deps.db, claim, async (locked) => {
+    const result = await deps.repository.organizeTransaction(claim, async (locked) => {
       const rebuilt =
         locked.placement === null ? locked.claimsWithoutProgress : locked.claimsWithoutProgress + 1;
       await deps.context(locked).staged.discardStaged(locked.id);
@@ -163,14 +160,14 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     entries: readonly ImportEntry[],
     tree: OrganizedTree,
     build: Awaited<ReturnType<typeof prepareBuild>>,
+    preparedIds: Set<string>,
   ): Promise<number> {
     const byId = new Map(entries.map((entry) => [entry.id, entry]));
     const projectId = record.projectId;
     if (!projectId) throw new Error("Import project is unavailable");
     const { index, planned, roots, selectedById, uris } = build;
     const pending = tree.nodes.filter((node) => {
-      const entry = byId.get(node.id);
-      return node.state === "planned" && entry?.state !== "prepared";
+      return node.state === "planned" && !preparedIds.has(node.id);
     });
     if (!pending.length) return 0;
     const batch = [] as typeof pending;
@@ -185,7 +182,6 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         folders.push({ id: node.id, parentId: node.parentId, area: node.area, name: node.name });
         continue;
       }
-      const entry = byId.get(node.id);
       if (entry?.kind !== "file" || !entry.receipt)
         throw new Error(`Import node has no receipt: ${node.id}`);
       if (!node.area) throw new Error(`Import node has no area: ${node.id}`);
@@ -281,8 +277,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       documents.push(document);
       bytes += stagedBytes;
     }
-    const result = await runOrganizeTransaction(
-      deps.db,
+    const result = await deps.repository.organizeTransaction(
       { ...claim, generation: record.placementGeneration },
       async (locked) => {
         await deps
@@ -302,7 +297,9 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         return batch.length;
       },
     );
-    return result.kind === "committed" ? result.value : 0;
+    if (result.kind !== "committed") return 0;
+    for (const node of batch) preparedIds.add(node.id);
+    return result.value;
   }
 
   async function organize(claim: OrganizeClaim, signal: AbortSignal): Promise<number> {
@@ -311,7 +308,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     const entries = await deps.repository.entries(record.id);
     const prepared = await prepareImportEntries(deps, { importId: record.id, entries });
     if (prepared.patches.length) {
-      const applied = await runOrganizeTransaction(deps.db, claim, async (locked) => {
+      const applied = await deps.repository.organizeTransaction(claim, async (locked) => {
         const now = await deps.repository.now();
         if (
           prepared.createdKeys.some((key) => stagingKeyTime(key) < now.getTime() - 60 * 60 * 1000)
@@ -345,16 +342,16 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     }
     const build = await prepareBuild(record, tree, context.read);
     let built = 0;
-    let currentEntries = durableEntries;
+    const preparedIds = new Set(
+      durableEntries.filter((entry) => entry.state === "prepared").map((entry) => entry.id),
+    );
     while (!signal.aborted) {
-      const batch = await buildBatch(claim, record, currentEntries, tree, build);
+      const batch = await buildBatch(claim, record, durableEntries, tree, build, preparedIds);
       if (!batch) break;
       built += batch;
-      currentEntries = await deps.repository.entries(record.id);
     }
     if (signal.aborted) return built;
-    const revealed = await runOrganizeTransaction(
-      deps.db,
+    const revealed = await deps.repository.organizeTransaction(
       { ...claim, generation: record.placementGeneration },
       async (locked) => {
         const result = await deps.context(locked).staged.commitStaged(locked.id, {

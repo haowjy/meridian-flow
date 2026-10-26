@@ -9,7 +9,6 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { createInMemoryObjectStore } from "../storage/index.js";
 import { createDrizzleImportRepository } from "./adapters/drizzle-import-repository.js";
-import { runOrganizeTransaction } from "./adapters/drizzle-organize-lifecycle.js";
 import { createDrizzleOrganizeQueue } from "./adapters/drizzle-organize-queue.js";
 import { sweepImportObjects } from "./domain/object-sweep.js";
 import { createImportAdmission } from "./domain/receive-admission.js";
@@ -377,7 +376,7 @@ describe.runIf(enabled)("durable upload", () => {
     await queue.release(first);
     expect(await repository.read(input.importId)).toMatchObject({ leaseToken: current.token });
     await expect(
-      runOrganizeTransaction(db, first, async () =>
+      repository.organizeTransaction(first, async () =>
         repository.update(input.importId, { fellBack: true }),
       ),
     ).resolves.toEqual({ kind: "stale_owner" });
