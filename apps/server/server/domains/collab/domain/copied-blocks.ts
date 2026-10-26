@@ -69,10 +69,12 @@ export function remapCopiedBlocks(input: {
   map: CopyIdentityMap;
   /** The source holder's address: a stored relative spelling was written against it. */
   sourceHolderUri: string | null;
+  /** Where each `ahead:` ref settles now, so a settled ref maps like a `doc:` one. */
+  aheadSettlements?: ReadonlyMap<string, string>;
 }): PMNode[] {
   const occurrences = walkLinkOccurrences(input.blocks);
   const attrs = occurrences.map((occurrence) =>
-    remappedAttrs(occurrence, input.map, input.sourceHolderUri),
+    remappedAttrs(occurrence, input.map, input.sourceHolderUri, input.aheadSettlements),
   );
   return rebuildOccurrences(input.blocks, occurrences, attrs);
 }
@@ -81,6 +83,7 @@ function remappedAttrs(
   occurrence: ReturnType<typeof walkLinkOccurrences>[number],
   map: CopyIdentityMap,
   sourceHolderUri: string | null,
+  aheadSettlements: ReadonlyMap<string, string> | undefined,
 ): OccurrenceAttrs | null {
   const { attrs } = occurrence;
   const suffix = splitDocumentHrefSuffix(attrs.href).suffix;
@@ -102,6 +105,13 @@ function remappedAttrs(
     if (parsed?.kind === "folder" && occurrence.kind === "link") {
       const target = map.folders.get(parsed.folderId);
       return target ? folderAttrs(target, suffix, attrs.title) : null;
+    }
+    // A ref minted before its target existed names that target once it arrives; the copy's
+    // own read resolved the settlement, so it can point at the copy like any other ref.
+    if (parsed?.kind === "ahead") {
+      const settled = aheadSettlements?.get(identity);
+      const target = settled ? map.documents.get(settled) : undefined;
+      return target ? documentAttrs(target, suffix, attrs.title) : null;
     }
     return null;
   }

@@ -46,11 +46,12 @@ export async function resolveUri(
   raw: string,
   workOverride?: string,
   chatOverride?: string,
+  options: { allowRoot?: boolean } = {},
 ): Promise<ResolvedUri> {
   const parsed = parseContextUri(raw);
   if (!parsed.ok) throw usageError(`Invalid URI ${raw}: ${parsed.error.reason}`);
   const { scheme, authority, path } = parsed.value;
-  if (!path) throw usageError(`URI ${raw} has no path`);
+  if (!path && !options.allowRoot) throw usageError(`URI ${raw} has no path`);
   let workId: string | null = null;
   let chatRef: string | null = null;
   let rootRef: string | null = null;
@@ -92,6 +93,13 @@ export async function resolveUri(
     }
   }
   const slash = path.lastIndexOf("/");
+  if (!path) {
+    const uri = formatParsedContextUri(scheme, "", ownerAuthority);
+    const chatId = chatRef === null ? null : await resolveThreadId(session, chatRef, projectId);
+    const rootThreadId =
+      rootRef === null ? null : await resolveThreadId(session, rootRef, projectId);
+    return { scheme, path: "", uri, workId, chatRef, chatId, rootThreadId };
+  }
   const parsedName = parseDocumentFilename(path.slice(slash + 1));
   if (!parsedName.ok) throw usageError(parsedName.error.message);
   const canonicalPath =

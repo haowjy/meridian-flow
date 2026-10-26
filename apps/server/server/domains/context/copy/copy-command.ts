@@ -237,6 +237,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       uri: file.uri,
       holderUri: read.value.holderUri,
       blocks: read.value.content,
+      aheadSettlements: read.value.aheadSettlements,
       revision: read.value.revision,
       version: draft ? "draft" : "live",
     });
@@ -291,6 +292,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
                   filetype: file.filetype,
                   sourceHolderUri: source.holderUri,
                   blocks: source.blocks,
+                  aheadSettlements: source.aheadSettlements,
                   map,
                 }),
           copiedFrom: { uri: source.uri, version: source.version, revision: source.revision },
@@ -343,6 +345,8 @@ interface PreparedDocument {
   /** The address its links spelled from. */
   holderUri: string | null;
   blocks: readonly import("@meridian/markup").PMNode[];
+  /** Where each `ahead:` ref in the cut points now. */
+  aheadSettlements: ReadonlyMap<string, string>;
   revision: string | null;
   version: "live" | "draft";
 }

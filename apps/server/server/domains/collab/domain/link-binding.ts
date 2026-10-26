@@ -114,6 +114,8 @@ export interface BindCopiedBlocksInput {
   sourceHolderUri: string | null;
   blocks: readonly PMNode[];
   map: CopyIdentityMap;
+  /** Where each `ahead:` ref settles now (`EffectiveBlocksRead.aheadSettlements`). */
+  aheadSettlements?: ReadonlyMap<string, string>;
 }
 
 export interface LinkBinder {
@@ -278,6 +280,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
         blocks: input.blocks,
         map: input.map,
         sourceHolderUri: input.sourceHolderUri,
+        ...(input.aheadSettlements ? { aheadSettlements: input.aheadSettlements } : {}),
       });
       // Stored hrefs are already what the wire shows; the pass-through scope keeps them.
       const markdown = deps.codec.serialize(blocks, {
