@@ -10,7 +10,7 @@ import {
 import type { LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { spelledLinks } from "@meridian/markup/links";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
   DraftPeerShadowAccess,
@@ -108,6 +108,18 @@ export function createEffectiveDocumentReader(input: {
           await viewOf(command),
         ),
       );
+    },
+    readEffectiveBlocks(command) {
+      return readEffective(command, async (handle) => {
+        const doc = unwrapDoc(handle);
+        const scope = await spelling(command, doc);
+        return {
+          content: [...input.model.projectBlocks(toDocHandle(doc))],
+          revision: documentRevision(doc, scope),
+          holderUri: scope.holder.uri,
+          stateVector: Y.encodeStateVector(doc),
+        };
+      });
     },
     readEffectiveHashlines(command) {
       return readEffective(command, async (handle): Promise<HashlineRead> => {

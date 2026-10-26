@@ -23,6 +23,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import { documentPathKey } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
+import { createCopyIdentityMap, remapCopiedBlocks } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
   type FileDestination,
@@ -482,6 +483,29 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           ? await removedPathError(deps, call, parsed.command, parsed.path, ctx.threadId)
           : null;
       return removed ?? address;
+    }
+
+    if (parsed.command === "copy" && copied) {
+      // The copy's new identity is known now: its own links name the copy, not the original
+      // (`collab/domain/copied-blocks.ts`, the one remap a writer Copy also uses).
+      copied = {
+        ...copied,
+        nodes: remapCopiedBlocks({
+          blocks: copied.nodes,
+          sourceHolderUri: copied.copiedFrom.uri,
+          map: createCopyIdentityMap({
+            documents: [
+              {
+                sourceDocumentId: copied.sourceDocumentId,
+                sourceUri: copied.copiedFrom.uri,
+                documentId: address.documentId,
+                uri: address.uri,
+              },
+            ],
+            folders: [],
+          }),
+        }),
+      };
     }
 
     let outcome = await writeUnderGrant(
