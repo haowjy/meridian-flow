@@ -509,7 +509,6 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
       },
     });
   });
-  if (!userTurn) throw new Error("Direct writer turn was blocked before placement");
   try {
     if (!reservedTurnId) throw new Error("Direct writer turn did not allocate its reservation ID");
     return await runDrainTurn(deps, { ...input, drain: true }, reservedTurnId);

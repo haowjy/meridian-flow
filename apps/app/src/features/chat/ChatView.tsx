@@ -34,7 +34,6 @@ import {
   isAwaitingExecution,
   isBusy,
   normalizeTurns,
-  queuedWriterTurnStandIns,
   switchState,
   type TurnFacts,
   usageBlockedMessages,
@@ -212,10 +211,6 @@ export function ChatView({
     () => new Set(queuedWriterItems.map((item) => item.id)),
     [queuedWriterItems],
   );
-  const queuedWriterTurns = useMemo(
-    () => queuedWriterTurnStandIns(threadId, storedTurns, queuedWriterItems),
-    [queuedWriterItems, storedTurns, threadId],
-  );
   const hiddenTurnIds = useMemo(() => hiddenWriterTurns(runState), [runState]);
   const usageBlocked = usageBlockedMessages(runState).length > 0;
   const switchAwaitsRun = useMemo(
@@ -238,10 +233,7 @@ export function ChatView({
         : null,
     [derivation?.state, intent, storedTurns, threadId],
   );
-  const standIns = useMemo(
-    () => [...localSeeds, ...replyStandIns, ...queuedWriterTurns],
-    [localSeeds, queuedWriterTurns, replyStandIns],
-  );
+  const standIns = useMemo(() => [...localSeeds, ...replyStandIns], [localSeeds, replyStandIns]);
   const awaitingSubagents = runningBackgroundSubagents.length > 0;
   // The effective sequence every later step reads (`normalizeTurns`): cards, rows, the running
   // reply and the answered controls all start from these facts and none re-derives them.

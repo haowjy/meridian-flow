@@ -33,7 +33,6 @@ import {
   normalizeTurns,
   type OpenAsk,
   openAsk,
-  queuedWriterTurnStandIns,
   type RowIdentity,
   receiveAsks,
   switchState,
@@ -220,10 +219,7 @@ export function chatSnapshot(
     runState,
     snapshot.asks.some((ask) => ask.status === "open"),
   );
-  const normalized = normalizeTurns({
-    turns,
-    standIns: queuedWriterTurnStandIns(snapshot.thread?.id ?? "", turns, waiting),
-  });
+  const normalized = normalizeTurns({ turns });
   const cards = chatCards({
     threadId: snapshot.thread?.id ?? "",
     turns: normalized,

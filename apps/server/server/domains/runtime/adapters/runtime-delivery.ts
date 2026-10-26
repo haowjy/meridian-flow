@@ -258,7 +258,6 @@ export function createDeliveryAdapter(
       }));
       await ack(threadId, work.ids);
     }
-    return selected.eligibilityKey === "free";
   }
   async function materializeIdle(threadId: ThreadId) {
     await deps.runClaim.withExclusiveThread(threadId, async () => {
