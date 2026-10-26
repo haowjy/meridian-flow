@@ -1,0 +1,1 @@
+ALTER TABLE "asks" ADD COLUMN IF NOT EXISTS "relay" jsonb;

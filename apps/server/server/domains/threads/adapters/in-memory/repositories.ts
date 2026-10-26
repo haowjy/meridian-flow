@@ -1417,6 +1417,7 @@ export function createInMemoryRepositories(
           ...input,
           id: input.id ?? crypto.randomUUID(),
           submissionId: input.submissionId ?? null,
+          relay: input.relay ?? null,
           createdAt: new Date(),
           resolvedAt: input.resolvedAt ?? null,
         };
@@ -1486,6 +1487,15 @@ export function createInMemoryRepositories(
       async listByTurnIds(turnIds) {
         const ids = new Set(turnIds);
         return [...asks.values()].filter((ask) => ids.has(ask.askingTurnId));
+      },
+      async recordRelayOnce(id, relay) {
+        const row = asks.get(id);
+        if (!row) throw new Error("Forwarded ask disappeared while recording its relay");
+        if (row.relay && JSON.stringify(row.relay) !== JSON.stringify(relay))
+          throw new Error("Forwarded ask already has a different relay");
+        const updated = { ...row, relay: row.relay ?? relay };
+        asks.set(id, updated);
+        return { ...updated };
       },
       async openPending(id, turnId, deadline) {
         const ask = asks.get(id);

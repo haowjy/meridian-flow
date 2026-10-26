@@ -1,8 +1,8 @@
 /** Drizzle adapter for durable ask storage and deadline discovery. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { asks } from "@meridian/database/schema";
-import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
-import type { AskRepository, StoredAsk } from "../../ports/ask-repository.js";
+import { and, asc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
+import type { AskRelay, AskRepository, StoredAsk } from "../../ports/ask-repository.js";
 import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
 function storedAsk(row: typeof asks.$inferSelect): StoredAsk {
@@ -18,6 +18,7 @@ function storedAsk(row: typeof asks.$inferSelect): StoredAsk {
     status: row.status,
     resolution: row.resolution,
     submissionId: row.submissionId,
+    relay: row.relay as AskRelay | null,
     createdAt: row.createdAt,
     resolvedAt: row.resolvedAt,
   };
@@ -94,6 +95,7 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
           status: row.status as never,
           resolution: row.resolution as never,
           submissionId: row.submission_id as string | null,
+          relay: row.relay as AskRelay | null,
           createdAt: row.created_at as Date,
           resolvedAt: row.resolved_at as Date | null,
         }),
@@ -125,6 +127,20 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
           .where(inArray(asks.askingTurnId, [...turnIds]))
           .orderBy(asc(asks.createdAt), asc(asks.id))
       ).map(storedAsk);
+    },
+    async recordRelayOnce(id, relay) {
+      const [row] = await currentDrizzleDb(db)
+        .update(asks)
+        .set({ relay })
+        .where(and(eq(asks.id, id), isNull(asks.relay)))
+        .returning();
+      const existing =
+        row ?? (await currentDrizzleDb(db).select().from(asks).where(eq(asks.id, id)).limit(1))[0];
+      if (!existing) throw new Error("Forwarded ask disappeared while recording its relay");
+      const stored = storedAsk(existing);
+      if (JSON.stringify(stored.relay) !== JSON.stringify(relay))
+        throw new Error("Forwarded ask already has a different relay");
+      return stored;
     },
     async openPending(id, turnId, deadline) {
       const [row] = await currentDrizzleDb(db)

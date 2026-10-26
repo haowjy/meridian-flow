@@ -71,6 +71,8 @@ export interface AskService {
         agentSlug: string | null;
         name: string | null;
       };
+      replayed?: boolean;
+      replayedReport?: import("@meridian/contracts/spawn").SavedExecutionReport;
     }
   >;
   expireDue(now?: Date, limit?: number): Promise<number>;
@@ -315,6 +317,12 @@ export function createAskService(deps: {
         stored.askingTurnId,
       );
       if (!askingExecution) throw new Error("Child ask has no admitted execution report");
+      const replayed = stored.status !== "open" && stored.submissionId === input.submissionId;
+      const replayedReport = replayed
+        ? (await deps.repos.executionReports.listFinishedByChild(input.childThreadId))
+            .filter((report) => report.executionTurnId !== askingExecution.executionTurnId)
+            .at(-1)
+        : undefined;
       const result = await resolve({
         askId: stored.id,
         threadId: input.childThreadId,
@@ -338,6 +346,8 @@ export function createAskService(deps: {
           agentSlug: askingExecution.agentSlug,
           name: askingExecution.name,
         },
+        ...(replayed ? { replayed: true } : {}),
+        ...(replayedReport ? { replayedReport } : {}),
       };
     },
     async expireDue(now = new Date(), limit = 100) {

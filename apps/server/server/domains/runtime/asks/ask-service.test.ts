@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { createInMemoryAppServices } from "../../../lib/compose.js";
+import type { SubagentThreadFactory } from "../../threads/index.js";
 
 const USER_ID = "writer";
 
@@ -94,12 +95,15 @@ describe("durable ask claims", () => {
       status: "streaming",
       executionId: "parent-execution",
     });
-    const child = await app.threadRepos.threads.create({
+    const child = await (
+      app.threadRepos.threads as unknown as SubagentThreadFactory
+    ).createSubagent({
       aiWriteMode: "direct",
       projectId: "project",
       userId: USER_ID,
-      kind: "subagent",
       parentThreadId: parent.id,
+      rootThreadId: parent.id,
+      originTurnId: parentTurn.id,
       spawnDepth: 1,
       title: "Child",
       spawnStatus: "running",
@@ -159,7 +163,120 @@ describe("durable ask claims", () => {
       /^(parent|option)$/,
     );
   });
+
+  it("recovers the admitted child report when a parent-answer replay follows a crash", async () => {
+    const { app, ask, child, parent, parentTurn, askingTurn } = await openChildQuestion();
+    const first = await app.asks.answerFromParent({
+      parentThreadId: parent.id,
+      childThreadId: child.id,
+      askId: ask.id,
+      submissionId: "relay-answer",
+      text: "Left",
+      delivery: "direct",
+    });
+    expect(first.ok).toBe(true);
+
+    const continuation = await app.threadRepos.turns.create({
+      threadId: child.id,
+      prevTurnId: askingTurn.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+      executionId: "continuation-execution",
+    });
+    await app.threadRepos.executionReports.admit({
+      childThreadId: child.id,
+      executionTurnId: continuation.id,
+      handle: child.ref ?? "c1",
+      callerThreadId: parent.id,
+      callerTurnId: parentTurn.id,
+      toolCallId: "spawn-call",
+      cardBlockId: null,
+      origin: "spawn",
+      deliveryMode: "direct",
+    });
+    await app.threadRepos.executionReports.finalizeOnce({
+      childThreadId: child.id,
+      executionTurnId: continuation.id,
+      outcome: "succeeded",
+      reason: null,
+      source: "final_assistant",
+      summary: "continued once",
+    });
+
+    const replay = await app.asks.answerFromParent({
+      parentThreadId: parent.id,
+      childThreadId: child.id,
+      askId: ask.id,
+      submissionId: "relay-answer",
+      text: "Left",
+      delivery: "direct",
+    });
+    expect(replay).toMatchObject({
+      ok: true,
+      replayed: true,
+      replayedReport: { executionTurnId: continuation.id, summary: "continued once" },
+    });
+  });
 });
+
+async function openChildQuestion() {
+  const app = createInMemoryAppServices();
+  const parent = await app.threadRepos.threads.create({
+    aiWriteMode: "direct",
+    projectId: "project",
+    userId: USER_ID,
+  });
+  const parentTurn = await app.threadRepos.turns.create({
+    threadId: parent.id,
+    role: "assistant",
+    origin: "assistant",
+    status: "streaming",
+    executionId: "parent-execution",
+  });
+  const child = await (app.threadRepos.threads as unknown as SubagentThreadFactory).createSubagent({
+    aiWriteMode: "direct",
+    projectId: "project",
+    userId: USER_ID,
+    parentThreadId: parent.id,
+    rootThreadId: parent.id,
+    originTurnId: parentTurn.id,
+    spawnDepth: 1,
+    title: "Child",
+    spawnStatus: "running",
+  });
+  const askingTurn = await app.threadRepos.turns.create({
+    threadId: child.id,
+    role: "assistant",
+    origin: "assistant",
+    status: "awaiting_answer",
+    executionId: "child-execution",
+  });
+  await app.threadRepos.executionReports.admit({
+    childThreadId: child.id,
+    executionTurnId: askingTurn.id,
+    handle: child.ref ?? "c1",
+    callerThreadId: parent.id,
+    callerTurnId: parentTurn.id,
+    toolCallId: "spawn-call",
+    cardBlockId: null,
+    origin: "spawn",
+    deliveryMode: "direct",
+  });
+  const ask = await app.threadRepos.asks.create({
+    threadId: child.id,
+    askingTurnId: askingTurn.id,
+    executionId: "child-execution",
+    toolCallId: "ask-call",
+    kind: "question",
+    payload: { question: "Choose", options: [{ label: "Left" }, { label: "Right" }] },
+    deadlineAt: new Date(Date.now() + 60_000),
+    status: "open",
+    resolution: null,
+    submissionId: null,
+  });
+  return { app, ask, child, parent, parentTurn, askingTurn };
+}
 
 function isAskResult(block: { blockType: string }) {
   return block.blockType === "tool_result";

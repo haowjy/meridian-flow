@@ -95,6 +95,7 @@ import type {
 } from "../../threads/index.js";
 import {
   agentRequestMetadata,
+  askToolResult,
   loadThreadConversationContext,
   readThreadActivity,
   ThreadConversationContextError,
@@ -772,6 +773,11 @@ async function runDrainTurn(
         executionAdmitted: selection.outstanding.length > 0 || !!input.replyTurnId,
         // A start-time compaction hands the Retry's list on to the first assistant.
         carriedReservedFor: reservedTurn.role === "assistant" ? [] : retryReservedFor,
+        askContinuation:
+          control?.body.kind === "ask_resolved"
+            ? await deps.repos.asks.findById(control.body.askId)
+            : null,
+        askContinuationControlId: control?.body.kind === "ask_resolved" ? control.id : null,
       };
       const events = [
         ...(skillBody
@@ -787,10 +793,7 @@ async function runDrainTurn(
       return {
         value,
         turnId: reservedTurn.id,
-        completedControlIds:
-          control?.body.kind === "compact" || control?.body.kind === "ask_resolved"
-            ? [control.id]
-            : [],
+        completedControlIds: control?.body.kind === "compact" ? [control.id] : [],
         turnKind: currentTurnKind(reservedTurn),
         messageIds: [...batch.map(({ id }) => id)],
         ...(preparationError === null ? {} : { preparationFailure: preparationError }),
@@ -855,6 +858,8 @@ async function runDrainTurn(
     localTurns,
     inheritedTurns,
     inheritedBlocks,
+    askContinuation,
+    askContinuationControlId,
   } = setup;
   setup.skillBodies.committed(skillBody ? [skillBody.turn] : []);
   return {
@@ -867,6 +872,24 @@ async function runDrainTurn(
       if (preparationError) throw new RequestPreparationError(preparationError);
       if (!preflight && reservedTurn.role !== "system")
         throw new Error("Request context is unavailable after preparation failed");
+      const relayed =
+        askContinuation?.kind === "question" &&
+        "forwardedFrom" in askContinuation.payload &&
+        askContinuation.payload.forwardedFrom
+          ? await relayForwardedAsk({
+              deps,
+              input,
+              parentThread: setup.thread,
+              parentTurnId: reservedTurn.id,
+              ask: askContinuation,
+              treeBudget,
+            })
+          : false;
+      if (askContinuationControlId) {
+        await deps.delivery.withThreadLock(input.threadId, (producer) =>
+          producer.acknowledge([askContinuationControlId]),
+        );
+      }
       return executeLoop({
         deps,
         input,
@@ -880,9 +903,11 @@ async function runDrainTurn(
           ...setup.controlTurns,
         ],
         inheritedBlocks,
-        initialContext: preflight?.assembled,
+        initialContext: relayed ? undefined : preflight?.assembled,
         initialContinuation: preflight?.continuation ?? { kind: "ordinary" },
-        initialCompaction: preflight?.compaction ?? { kind: "generate" },
+        initialCompaction: relayed
+          ? { kind: "generate" }
+          : (preflight?.compaction ?? { kind: "generate" }),
         initialExecutionAdmitted: setup.executionAdmitted,
         carriedReservedFor: setup.carriedReservedFor,
         treeBudget,
@@ -890,6 +915,90 @@ async function runDrainTurn(
       });
     },
   };
+}
+
+/** Relays a forwarded answer after parent admission and before its first model request. */
+async function relayForwardedAsk(input: {
+  deps: OrchestratorDeps;
+  input: DrainRunLoopInput;
+  parentThread: Thread;
+  parentTurnId: TurnId;
+  ask: import("../../threads/index.js").StoredAsk;
+  treeBudget: TreeBudget;
+}): Promise<boolean> {
+  const forwarded =
+    input.ask.kind === "question"
+      ? (input.ask.payload as import("@meridian/contracts/threads").QuestionAskPayload)
+          .forwardedFrom
+      : undefined;
+  if (!forwarded) return false;
+  if (input.ask.relay) return true;
+  const base = askToolResult(input.ask);
+  const answer = base.answer;
+  const text = typeof answer === "string" ? answer : answer === null ? "Skipped" : String(answer);
+  const child = await input.deps.childRunCoordinator.runChild(
+    {
+      kind: "message",
+      parentThread: input.parentThread,
+      parentTurnId: input.parentTurnId,
+      ref: forwarded.handle,
+      prompt: text,
+      toolCallId: `forwarded-ask:${input.ask.id}`,
+      boundAskId: forwarded.askId,
+      budget: input.treeBudget,
+      signal: input.input.signal,
+    },
+    { mode: "foreground" },
+  );
+  if ("issues" in child) throw new Error("Forwarded child message was refused");
+  const result =
+    child.status === "background"
+      ? { ...base, relayed_to: `@${forwarded.handle}`, late: true }
+      : {
+          ...base,
+          relayed_to: `@${forwarded.handle}`,
+          report: child.status === "completed" ? child.report : child,
+        };
+  const blocks = await input.deps.repos.blocks.listByTurn(input.ask.askingTurnId);
+  const prior = blocks.find((block) => {
+    if (block.blockType !== "tool_result" || !isJsonRecord(block.content)) return false;
+    return block.content.toolCallId === input.ask.toolCallId;
+  });
+  if (!prior) throw new Error("Forwarded ask result block is unavailable");
+  const block = contentForBlockInput({
+    id: prior.id,
+    turnId: prior.turnId as TurnId,
+    blockType: "tool_result",
+    sequence: prior.sequence,
+    content: {
+      toolCallId: input.ask.toolCallId,
+      output: result,
+      result,
+      isError: false,
+    },
+    status: "complete",
+  });
+  await persistAndAppendEvents(input.deps, input.ask.threadId, async () => {
+    await input.deps.repos.asks.recordRelayOnce(input.ask.id, {
+      childAskId: forwarded.askId,
+      mode: child.status === "background" ? "late" : "foreground",
+      ...(child.status === "background"
+        ? { messageId: `thread-message:forwarded-ask:${input.ask.id}` }
+        : "execution" in child && child.execution
+          ? { childExecutionId: child.execution }
+          : {}),
+      result,
+    });
+    return {
+      result: undefined,
+      events: [{ type: "block.updated" as const, block }],
+    };
+  });
+  return true;
+}
+
+function isJsonRecord(value: JsonValue): value is Record<string, JsonValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
