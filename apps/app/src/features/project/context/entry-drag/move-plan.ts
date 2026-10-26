@@ -150,6 +150,13 @@ function placeEntryRef({ records, placement }: PlacementView, ref: EntryRef): Pl
   return parent ? { ref, name: location.name, location, parent } : null;
 }
 
+/** The name `ref` carries now; null once the row is gone. */
+export function entryNameNow({ records, placement }: PlacementView, ref: EntryRef): string | null {
+  if (ref.kind === "folder") return placement.folderLocation(ref.id)?.name ?? null;
+  const record = recordFor(records, ref.id);
+  return (record && placement.resourceLocation(record)?.name) ?? null;
+}
+
 /** Whether `folderId` is `start` itself or sits above it. */
 function within(view: PlacementView, start: ParentRef | null, folderId: string): boolean {
   const seen = new Set<string>();
