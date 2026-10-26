@@ -461,6 +461,15 @@ export type EffectiveReadVersion =
   | { destination: "live"; workId?: never }
   | { destination: "draft"; workId: WorkId };
 
+/** A copy's source cut: the blocks, the revision they had, how they spelled, and its vector. */
+export type EffectiveBlocksRead = VersionedDocumentRead<
+  readonly import("@meridian/markup").PMNode[]
+> & {
+  /** Canonical address the cut's links spell from; null for a chat with no holder. */
+  holderUri: string | null;
+  stateVector: Uint8Array;
+};
+
 export type DraftPeerShadowAccess = {
   readEffectiveRevision(
     input: {
@@ -477,6 +486,18 @@ export type DraftPeerShadowAccess = {
       responseId?: string | null;
     } & EffectiveReadVersion,
   ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
+  /**
+   * One document's frozen cut for a copy: the blocks a whole-document write would see,
+   * the revision a `read` of that version reports, the holder those links spell from, and
+   * the Yjs state vector of the cut (what a client's own vector is compared against).
+   */
+  readEffectiveBlocks(
+    input: {
+      documentId: DocumentId;
+      threadId?: ThreadId | null;
+      responseId?: string | null;
+    } & EffectiveReadVersion,
+  ): Promise<Result<EffectiveBlocksRead, SyncError>>;
   /**
    * One hashline per block, and per block the ref-bearing links it spells
    * (`spelledLinks`), computed with the same scope in the same synchronous block.

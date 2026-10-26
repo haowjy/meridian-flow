@@ -8,7 +8,7 @@ import {
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { spelledLinks } from "@meridian/markup/links";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import { Ok } from "../../../../shared/result.js";
 import { createAllowAllFileAccess } from "../../../file-policy/index.js";
 import { createCheckpointService } from "../../checkpoints.js";
@@ -205,6 +205,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       withLiveDocument: runtime.markdownDocuments.withLiveDocument,
       writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
+      bindCopiedBlocks: runtime.linkBinder.bindCopiedBlocks,
       bindStatic: runtime.linkBinder.bindStatic,
     },
     projections: {
@@ -284,6 +285,16 @@ function createInMemoryDraftPeerStub(
     },
     async flushDraftLivePull() {},
     readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
+    readEffectiveBlocks: (input) =>
+      coordinator.withDocument(input.documentId, async (doc) => {
+        const scope = links.holder({ documentId: input.documentId, view: LIVE_VIEW });
+        return Ok({
+          content: [...model.projectBlocks(toDocHandle(doc))],
+          revision: versioned(doc, scope, () => null).revision,
+          holderUri: scope.holder.uri,
+          stateVector: Y.encodeStateVector(doc),
+        });
+      }),
     readEffectiveHashlines: (input) =>
       coordinator.withDocument(input.documentId, async (doc) => {
         const scope = links.holder({ documentId: input.documentId, view: LIVE_VIEW });

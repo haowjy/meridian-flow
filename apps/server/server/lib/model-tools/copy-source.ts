@@ -42,6 +42,8 @@ type CopySource = { path: string; in?: ReadSelection["in"]; version?: DocumentVe
 /** A tracked source read for a copy: its blocks and what `metadata.copiedFrom` records. */
 export interface CopiedSource {
   nodes: NonNullable<WriteOutcome["nodes"]>;
+  /** The source's identity, so a whole-document copy can point its own links at the copy. */
+  sourceDocumentId: string;
   copiedFrom: CopiedFrom;
 }
 
@@ -150,6 +152,7 @@ export async function readTrackedCopySource(
   const version = outcome.result.read?.version ?? grant.destination.kind;
   return {
     nodes: [...(outcome.nodes ?? [])],
+    sourceDocumentId: address.documentId,
     copiedFrom: { uri: address.uri, version, revision: outcome.revision },
   };
 }

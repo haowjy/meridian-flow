@@ -625,6 +625,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       withLiveDocument: runtime.markdownDocuments.withLiveDocument,
       writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
+      bindCopiedBlocks: runtime.linkBinder.bindCopiedBlocks,
       bindStatic: runtime.linkBinder.bindStatic,
     },
     projections: {
