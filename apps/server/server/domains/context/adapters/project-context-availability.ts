@@ -21,8 +21,7 @@ import {
   contextAvailabilityHeads,
   contextNamespaceObservationVersion,
   contextSources,
-  documents,
-  folders,
+  type folders,
   projects,
   threads,
   works,
@@ -35,6 +34,7 @@ import {
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { isUuid } from "../../../shared/uuid.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import type {
   HeldContextNode,
@@ -55,6 +55,7 @@ import {
   visibleDocuments,
   visibleFolders,
 } from "../tree/tree-view.js";
+import { loadDocumentIdentityRows, loadFolderIdentityRows } from "../tree/tree-view-sql.js";
 import {
   type CatalogFileRow,
   catalogSourceAuthority,
@@ -815,84 +816,80 @@ export async function resolveActiveFolderUri(
   );
 }
 
-/** Whether this project (or the writer's own User area) holds the row's source. */
-function heldInProject(row: HeldRow, projectId: string, userId: string): boolean {
-  return (
-    row.source?.projectId === projectId ||
-    row.work?.projectId === projectId ||
-    (row.source?.slug === "user" &&
-      row.sourceProject?.isPersonal === true &&
-      row.sourceProject.userId === userId)
-  );
-}
-
+/** Any row this project holds under an id, whatever its visibility, and the source that owns it. */
 type HeldRow = {
   /** The row's name as the catalog spells it (a document's filename, a folder's name). */
   name: string;
   parentId: string | null;
-  hidden: boolean;
-  deletedAt: Date | null;
-  source: typeof contextSources.$inferSelect | null;
+  heldOutOfReach: boolean;
+  source: typeof contextSources.$inferSelect;
   sourceProject: typeof projects.$inferSelect | null;
   work: typeof works.$inferSelect | null;
   ownerThreadRef: string | null;
 };
 
-/** Any row under this id, whatever its visibility: a replay must answer for deleted and hidden ones. */
-async function heldRow(
-  tx: Database,
-  node: { kind: "document"; id: DocumentId } | { kind: "folder"; id: string },
-): Promise<HeldRow | null> {
-  const source = {
-    source: contextSources,
-    sourceProject: projects,
-    work: works,
-    ownerThreadRef: threads.ref,
-  };
-  if (node.kind === "document") {
-    const [row] = await tx
-      .select({
-        name: documents.name,
-        extension: documents.extension,
-        parentId: documents.folderId,
-        hidden: documents.hidden,
-        deletedAt: documents.deletedAt,
-        ...source,
-      })
-      .from(documents)
-      .leftJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-      .leftJoin(projects, eq(contextSources.projectId, projects.id))
-      .leftJoin(works, eq(contextSources.workId, works.id))
-      .leftJoin(
-        threads,
-        eq(
-          threads.id,
-          sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`,
-        ),
-      )
-      .where(eq(documents.id, node.id))
-      .limit(1);
-    return row ? { ...row, name: renderFilename(row.name, row.extension) } : null;
-  }
+/** The source and owners that spell a node's address, read without any Work authority. */
+async function heldSource(tx: Database, contextSourceId: string) {
   const [row] = await tx
     .select({
-      name: folders.name,
-      parentId: folders.parentId,
-      hidden: folders.hidden,
-      deletedAt: folders.deletedAt,
-      ...source,
+      source: contextSources,
+      sourceProject: projects,
+      work: works,
+      ownerThreadRef: threads.ref,
     })
-    .from(folders)
-    .leftJoin(contextSources, eq(folders.contextSourceId, contextSources.id))
+    .from(contextSources)
     .leftJoin(projects, eq(contextSources.projectId, projects.id))
     .leftJoin(works, eq(contextSources.workId, works.id))
     .leftJoin(
       threads,
       eq(threads.id, sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`),
     )
-    .where(eq(folders.id, node.id))
+    .where(eq(contextSources.id, contextSourceId))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Any row under this id, whatever its visibility: a replay must answer for deleted and hidden
+ * ones. Reads the tree's own by-id row readers, so the hidden predicate has one owner.
+ */
+async function heldRow(
+  tx: Database,
+  node: { kind: "document"; id: DocumentId } | { kind: "folder"; id: string },
+): Promise<HeldRow | null> {
+  if (node.kind === "document") {
+    const [row] = await loadDocumentIdentityRows(tx, [node.id]);
+    if (!row) return null;
+    const source = await heldSource(tx, row.contextSourceId);
+    if (!source) return null;
+    return {
+      name: renderFilename(row.name, row.extension),
+      parentId: row.folderId,
+      heldOutOfReach: row.hidden || row.deleted,
+      ...source,
+    };
+  }
+  const [row] = await loadFolderIdentityRows(tx, [node.id]);
+  if (!row) return null;
+  const source = await heldSource(tx, row.contextSourceId);
+  if (!source) return null;
+  return {
+    name: row.name,
+    parentId: row.parentId,
+    heldOutOfReach: row.hidden || row.deleted,
+    ...source,
+  };
+}
+
+/** Whether this project (or the writer's own User area) holds the row's source. */
+function heldInProject(row: HeldRow, projectId: string, userId: string): boolean {
+  return (
+    row.source.projectId === projectId ||
+    row.work?.projectId === projectId ||
+    (row.source.slug === "user" &&
+      row.sourceProject?.isPersonal === true &&
+      row.sourceProject.userId === userId)
+  );
 }
 
 /**
@@ -908,6 +905,8 @@ async function resolveHeldContextNode(input: {
   userId: string;
   node: { kind: "document"; id: DocumentId } | { kind: "folder"; id: string };
 }): Promise<HeldContextNode | null> {
+  // An id that cannot name a row is held by no one; the create answers its own typed refusal.
+  if (!isUuid(input.node.id)) return null;
   const tx = currentDrizzleDb(input.db) as Database;
   // A joined create's id is spent on the document it forwarded to; answer as that document.
   const forwardedTo =
@@ -927,7 +926,7 @@ async function resolveHeldContextNode(input: {
       return { kind: "unreachable" };
     return forwardedTo ? { kind: "unreachable" } : null;
   }
-  if (!row.source || row.hidden || row.deletedAt) return { kind: "unreachable" };
+  if (row.heldOutOfReach) return { kind: "unreachable" };
   if (row.source.deletedAt || row.sourceProject?.deletedAt || row.work?.deletedAt)
     return { kind: "unreachable" };
   const foldersById = new Map(
@@ -941,7 +940,7 @@ async function resolveHeldContextNode(input: {
       sourceProject: row.sourceProject,
       work: row.work,
       ownerThreadRef: row.ownerThreadRef,
-      node: { parentId: row.parentId, deletedAt: row.deletedAt },
+      node: { parentId: row.parentId, deletedAt: null },
     },
     requestProjectId: input.projectId,
     actorUserId: input.userId,
