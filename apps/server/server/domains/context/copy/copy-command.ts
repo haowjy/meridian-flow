@@ -2,10 +2,12 @@
  * Copy: one atomic command per drop, for a selection of roots into one destination.
  *
  * The command reads each source tree once and each tracked document's content once, as the
- * version its surface shows (live, or a draft tab's draft). It then, in name order:
+ * version its surface shows (live, or a draft tab's draft). It then, in order:
  *
  * 1. duplicates every binary's object — bytes leave the database's reach before any row
- *    names them, and their keys are released if the transaction never commits (D24);
+ *    names them, and their keys are released if no transaction commits to name them (D24).
+ *    Steps 1 and the reads hold no transaction: a source room that is not open loads through a
+ *    second connection, so a transaction held across the read could starve the pool;
  * 2. opens the operation receipt's transaction and, inside it, the command transaction that
  *    takes the source and destination Works and namespaces;
  * 3. rechecks the destination and every root under those locks;
@@ -119,22 +121,32 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     // The receipt keeps the selection as the writer made it, so a replay is matched against
     // what was sent; the copy works from its outermost roots.
     const selected = { ...input, sources: outermostRoots(input.sources) };
-    return input.environment.receipts.execute(
-      input.request.operationId,
-      receiptCommand(input),
-      async () => {
-        const prepared = await prepare(selected);
+    const { receipts, commandTransaction } = input.environment;
+    // A replay has nothing to read: its answer is stored, and receipts are never deleted.
+    const replay = await receipts.lookup(input.request.operationId);
+    // Reading holds no transaction. A source room that is not open loads through a second
+    // connection, so Copies that each held one while reading would starve the pool they wait on.
+    const prepared = replay ? null : await prepare(selected);
+    let claimed = false;
+    try {
+      return await receipts.execute(input.request.operationId, receiptCommand(input), async () => {
+        claimed = true;
+        if (!prepared) throw new Error("A stored receipt vanished between its lookup and its use");
         if (!prepared.ok) return prepared;
-        return input.environment.commandTransaction.run(
-          () => write(selected, prepared.value),
-          scopesOf(selected),
-          { sourceIds: prepared.value.sourceIds },
-        );
-      },
-    );
+        // The rows name these objects only if this operation commits.
+        const { putKeys } = prepared.value;
+        if (putKeys.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
+        return commandTransaction.run(() => write(selected, prepared.value), scopesOf(selected), {
+          sourceIds: prepared.value.sourceIds,
+        });
+      });
+    } finally {
+      // A replay, a mismatch or a throw before the receipt's callback ran leaves them unclaimed.
+      if (!claimed && prepared?.ok) await deps.release.keys(prepared.value.putKeys);
+    }
   }
 
-  /** Read every source and put every binary's bytes before any namespace lock is taken. */
+  /** Read every source and put every binary's bytes before any transaction or lock is taken. */
   async function prepare(input: ContextCopyInput): Promise<Result<PreparedCopy, ContextError>> {
     const roots: PreparedRoot[] = [];
     const sourceIds = new Set<string>();
@@ -159,26 +171,39 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     const destinationSourceId = await input.destination.adapter.copy?.sourceId();
     if (destinationSourceId) sourceIds.add(destinationSourceId);
 
-    const binaries = binariesOf(roots);
-    // The rows name these objects only if this operation commits, and a later binary may
-    // still fail: the release is registered before the first put and reads the keys put so far.
-    const putKeys: string[] = [];
-    if (binaries.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
+    const duplicated = await duplicateBinaries(binariesOf(roots));
+    if (!duplicated.ok) return duplicated;
+    return Ok({ roots, sourceIds: [...sourceIds], ...duplicated.value });
+  }
+
+  /** Put a copy of each binary's bytes; if any put fails, the ones already put are released. */
+  async function duplicateBinaries(
+    binaries: readonly CopySourceFile[],
+  ): Promise<Result<{ binaries: Map<string, string>; putKeys: string[] }, ContextError>> {
     const duplicates = new Map<string, string>();
-    for (const file of binaries) {
-      const duplicated = await prepareBinaryCopy({
-        objectStore: deps.objectStore,
-        source: {
-          uri: file.uri,
-          storageUrl: file.storageUrl ?? "",
-          ...(file.mimeType ? { mimeType: file.mimeType } : {}),
-        },
-      });
-      if (!duplicated.ok) return duplicated;
-      putKeys.push(duplicated.value.key);
-      duplicates.set(file.documentId, duplicated.value.storageUrl);
+    const putKeys: string[] = [];
+    try {
+      for (const file of binaries) {
+        const duplicated = await prepareBinaryCopy({
+          objectStore: deps.objectStore,
+          source: {
+            uri: file.uri,
+            storageUrl: file.storageUrl ?? "",
+            ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+          },
+        });
+        if (!duplicated.ok) {
+          await deps.release.keys(putKeys);
+          return duplicated;
+        }
+        putKeys.push(duplicated.value.key);
+        duplicates.set(file.documentId, duplicated.value.storageUrl);
+      }
+    } catch (error) {
+      await deps.release.keys(putKeys);
+      throw error;
     }
-    return Ok({ roots, sourceIds: [...sourceIds], binaries: duplicates });
+    return Ok({ binaries: duplicates, putKeys });
   }
 
   async function prepareDocuments(
@@ -379,6 +404,8 @@ interface PreparedCopy {
   sourceIds: string[];
   /** Old document id → the duplicated object the copy's row will name. */
   binaries: Map<string, string>;
+  /** The duplicated objects' keys, released if no row commits to name them. */
+  putKeys: string[];
 }
 
 function unsupportedSource(uri: string): Result<never, ContextError> {
