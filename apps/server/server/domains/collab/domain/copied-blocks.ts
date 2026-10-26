@@ -53,15 +53,46 @@ export function createCopyIdentityMap(input: {
   folders: readonly (CopiedFolder & { sourceFolderId: string; sourceUri: string })[];
 }): CopyIdentityMap {
   return {
-    documents: new Map(
-      input.documents.map(({ sourceDocumentId, ...target }) => [sourceDocumentId, target]),
+    documents: indexOnce(
+      input.documents,
+      (entry) => entry.sourceDocumentId,
+      ({ sourceDocumentId, sourceUri, ...target }) => target,
     ),
-    folders: new Map(
-      input.folders.map(({ sourceFolderId, ...target }) => [sourceFolderId, target]),
+    folders: indexOnce(
+      input.folders,
+      (entry) => entry.sourceFolderId,
+      ({ sourceFolderId, sourceUri, ...target }) => target,
     ),
-    documentsAt: new Map(input.documents.map(({ sourceUri, ...target }) => [sourceUri, target])),
-    foldersAt: new Map(input.folders.map(({ sourceUri, ...target }) => [sourceUri, target])),
+    documentsAt: indexOnce(
+      input.documents,
+      (entry) => entry.sourceUri,
+      ({ sourceDocumentId, sourceUri, ...target }) => target,
+    ),
+    foldersAt: indexOnce(
+      input.folders,
+      (entry) => entry.sourceUri,
+      ({ sourceFolderId, sourceUri, ...target }) => target,
+    ),
   };
+}
+
+/**
+ * A source maps to exactly one copy. Two targets for one source (a nested selection copied
+ * twice) would let the last win and send the copied set's internal links outside it, so
+ * the caller must collapse the selection first.
+ */
+function indexOnce<Entry, Target>(
+  entries: readonly Entry[],
+  key: (entry: Entry) => string,
+  target: (entry: Entry) => Target,
+): Map<string, Target> {
+  const indexed = new Map<string, Target>();
+  for (const entry of entries) {
+    const source = key(entry);
+    if (indexed.has(source)) throw new Error(`A copy maps ${source} to more than one target`);
+    indexed.set(source, target(entry));
+  }
+  return indexed;
 }
 
 export function remapCopiedBlocks(input: {
