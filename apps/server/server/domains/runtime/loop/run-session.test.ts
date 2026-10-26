@@ -395,23 +395,43 @@ describe("RunSession", () => {
       threadId: f.thread.id,
       userText: "parent",
       ...(childParent
-        ? { child: { parentThreadId: "ancestor", background: false, origin: "spawn" as const } }
+        ? {
+            child: {
+              parentThreadId: "ancestor",
+              background: false,
+              origin: "spawn" as const,
+              sender: { ref: "c0", title: "Ancestor" },
+            },
+          }
         : {}),
     });
     const foreground = await f.runtime.prepare({
       threadId: fg.id,
       userText: "fg",
-      child: { parentThreadId: f.thread.id, background: false, origin: "message" },
+      child: {
+        parentThreadId: f.thread.id,
+        background: false,
+        origin: "message",
+        sender: { ref: "c1", title: "Parent" },
+      },
     });
     const foregroundTurn = await f.repos.turns.findById(foreground.userTurnId);
     expect(foregroundTurn && classifyHistoryItem(foregroundTurn)).toEqual({
       kind: "agent_request",
       source: "foreground_message",
     });
+    expect(foregroundTurn?.metadata).toMatchObject({
+      sender: { threadId: f.thread.id, ref: "c1", title: "Parent" },
+    });
     const background = await f.runtime.prepare({
       threadId: bg.id,
       userText: "bg",
-      child: { parentThreadId: f.thread.id, background: true, origin: "spawn" },
+      child: {
+        parentThreadId: f.thread.id,
+        background: true,
+        origin: "spawn",
+        sender: { ref: "c1", title: "Parent" },
+      },
     });
     expect((await parent.execute()).status).toBe("complete");
     expect((await foreground.execute()).status).toBe("cancelled");

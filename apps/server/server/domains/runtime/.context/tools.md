@@ -37,7 +37,8 @@ allow the target, and the action policy must allow the operation.
   chain and feeds file-policy per call. A read chain cannot write files except
   its own scratch where the file-policy contract allows it.
 - `actionPolicy` gates non-file actions. Work changes are denied to read chains;
-  list/show run; model `work switch` resolves and asks but never rebinds.
+  list/show run. An edit Agent can switch its chat's Work and queue its chat's
+  write mode for the next reply.
   An action-policy refusal is `permission_denied` with reason `action_denied`.
 
 Advertisement and the per-turn gate use this policy. Dispatch and direct
@@ -45,8 +46,9 @@ executor calls do not silently reapply it; callers must choose the policy seam.
 `ask` creates a durable question for a primary chat and ends that execution.
 The answer's tool result is written onto the asking turn before an internal
 continuation starts through ordinary request assembly. Agent definitions keep
-the `ask_user` capability name. Children temporarily do not receive the Flow
-tool; the subagent-question change removes that exclusion.
+the `ask_user` capability name. The action policy retains `ask` for future
+actions, but no current action maps to it. Children temporarily do not receive
+the Flow tool; the subagent-question change removes that exclusion.
 
 ## Document and cost boundaries
 

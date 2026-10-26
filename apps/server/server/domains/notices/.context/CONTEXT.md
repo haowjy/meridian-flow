@@ -16,17 +16,18 @@ remains stable.
 
 Preparation failure or cancellation leaves rows pending. A Work-switch notice
 is one-shot causal context and never replaces persistent hidden Work context;
-the model cannot rebind a Work. Current notice kinds are `undo`,
-`awareness_degraded`, and writer-origin `work_switched`.
+the writer route and model tool both record it through the canonical rebind
+transition. Current notice kinds are `undo`, `awareness_degraded`, and
+`work_switched`.
 
 ## Failure boundary
 
 Failure policy belongs to the producer. Collaboration notices are best-effort
 after the underlying edit commits; the composition layer catches and logs
-failures and may enqueue `awareness_degraded`. A writer Work rebind records
+failures and may enqueue `awareness_degraded`. A Work rebind records
 `work_switched` in the same transaction as the binding transition, so notice
 failure rolls the transition back rather than committing a silent switch.
 
-Notices never become mutation authority or a write fence. A writer
-reverses a switch by selecting the previous Work normally; no switch-specific
-Undo/Redo path exists.
+Notices never become mutation authority or a write fence. Another ordinary
+switch can return a chat to its previous Work; no switch-specific Undo/Redo path
+exists.

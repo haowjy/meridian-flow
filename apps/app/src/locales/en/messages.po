@@ -2563,6 +2563,10 @@ msgstr "Fork from here"
 #~ msgid "Form payload is malformed."
 #~ msgstr "Form payload is malformed."
 
+#: src/features/chat/subagent/DeliveryEventRows.tsx
+msgid "From {senderName}: "
+msgstr "From {senderName}: "
+
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
 msgstr "Go ahead"

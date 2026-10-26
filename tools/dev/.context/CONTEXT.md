@@ -28,15 +28,34 @@ lock session. Domain-specific conversion stays beside its migration, not in tool
 
 Managed DB tests provision owned databases and route each worker to its own
 clone. Cleanup hands only this invocation's databases to the detached cleanup
-child, verifies owner liveness, and leaves failures for GC. CI clones 3 worker
+child, verifies owner liveness, and leaves failures for GC. Suite-owned
+databases use the managed template's `-worker-` prefix and never drop inline on
+managed runs: PostgreSQL makes each drop wait for an immediate checkpoint, so
+the detached collector removes them after Vitest exits. Unmanaged runs have no
+collector and drop their suite-owned databases inline. CI clones 3 worker
 databases from the one its workflow migrated, on the runner's own loopback
 Postgres (`isCiRunnerPostgres`), and leaves them to die with the runner. Any
 other shared or deployed Postgres stays serial. Fixtures isolate state with rollback or the catalog-
 derived FK delete policy, not per-case truncation. Only managed worker URLs get
-`synchronous_commit=off` (a session startup setting); never change shared server
-settings or dev database durability. Do not scale workers with CPU count against
-the shared connection limit, and do not run `pnpm check` and `pnpm test:db` at
-once in one worktree. `pnpm test:all` runs unit and DB projects together; its DB
+`synchronous_commit=off` (a session startup setting); never change the shared
+server's durability settings or dev database durability. Do not scale workers
+with CPU count against the shared connection limit, and do not run `pnpm check`
+and `pnpm test:db` at once in one worktree.
+
+Concurrent managed runs from different checkouts share the dev server with no
+cross-run queue, and they all pass as long as no test waits on a drop inline.
+Under four concurrent full runs a single empty-database drop took 3–44 s
+(0.1 s idle), enough to time out a 30 s hook. Serialising runs with an advisory
+lock only hides that wait: with two concurrent full runs, both finished in a
+median 119 s with the lock against 68 s without, and neither failed. Capacity
+comes from `max_connections=300` in `docker-compose.yml` (a full run peaks near
+20 connections), so host memory limits concurrent runs before connections do.
+Raise that limit rather than shrinking fixture pools, which would change what
+the tests exercise. Local runs use 4 workers (`DB_TEST_WORKERS` overrides);
+don't size them per run from `vitest list`, whose 0.5–1.1 s discovery costs
+more than the clones it would save (about 0.1 s each, created in parallel).
+
+`pnpm test:all` runs unit and DB projects together; its DB
 reporter rejects a run with no passed or failed DB test, so a unit-only result
 is not combined-run evidence.
 
@@ -136,7 +155,7 @@ alias can point at the deleted branch), and a remote-tracking candidate must
 still exist upstream and still contain the commit when planning checks it (a
 branch that moved is refreshed once), so a deleted or reset integration branch
 cannot be cited. PR evidence rests on
-GitHub's merge record rather than a local ref. Cleanup executes one run at a
+GitHub's merge record rather than a local ref. Worktree deletion executes one run at a
 time per repository: a second run refuses while one is executing, because two
 runs' containment refs can be each other's branches, and a stale lock refuses
 too rather than risking two owners; an interrupted run can leave a stale lock
@@ -167,6 +186,51 @@ still applies.
 
 The `./mf` CLI is [`tools/mf`](../../mf/.context/CONTEXT.md). It reads this
 directory's Portless route contract (see [`AGENTS.md`](../AGENTS.md)).
+
+### Missing-checkout sessions
+
+`lib/worktree-cleanup-orphans.ts` discovers from tmux rather than Git alone, so
+unregistered/deleted worktrees remain visible. `pnpm dev` runs this sweep before
+start/reuse, but not for `--print` or `--stop`. The independent `--orphans` cleanup
+mode requires confirmation or `--yes` and supports `--dry-run`; it needs no PR,
+branch-merge evidence, database access, or Meridian work-item discovery.
+
+A candidate must have a managed session name with the SHA-256 path hash from
+`session-identity.ts`, a missing session creation directory, and every pane cwd
+still under that directory. A registered locked checkout is protected.
+Unregistered candidates must be immediate children of the primary checkout's
+sibling `<repo>.worktrees/` directory; arbitrary missing paths do not prove repo
+ownership. Existing directories, dangling symlinks, and inspection failures are
+not deletion evidence.
+
+Git discovery uses the canonical `runGit` boundary, ignoring inherited `GIT_*`
+repository overrides. Discovery and execution use the same session authorization
+rules. Before each shutdown phase, execution rechecks repository/lock/path
+ownership and all remaining panes against the original plan: original panes may
+exit during TERM, but newly added or relocated panes refuse teardown.
+
+`owned-process-tree.ts` captures same-user descendants, sends SIGTERM, and extends
+the owned set during the bounded grace period through still-valid captured
+ancestors. Captured detached/reparented children stay owned by PID, UID, start time
+and command; an unobserved process never becomes owned by cwd alone. After the
+fully authorized exact tmux session is closed, survivors are quiesced with
+SIGSTOP and repeated descendant censuses until the stopped set is stable, then
+force-killed. Quiescence must follow session closure because tmux resumes stopped
+pane leaders. On refusal/error, this invocation's paused survivors receive
+SIGCONT; processes already stopped by someone else are not resumed. Zombies count
+as exited. A final identity/descendant census always runs before tmux teardown,
+even if signaling/logging crossed the grace deadline. A present PID whose
+UID/start/command identity changed refuses cleanup, rather than being silently
+dropped; this includes exec during shutdown. A fresh
+plan may authorize its replacement only while session ownership remains provable.
+Resumption skips changed identities without stranding other matching survivors.
+Processes that fork and reparent before an identity or ancestry can be captured
+remain unprovable and are left alone.
+
+`portless-maintenance.ts` runs shared route pruning independently of teardown.
+Failures produce a warning and retry command, never a startup failure. Executing
+`--orphans` retries maintenance even when no sessions remain; dry-run/cancellation
+never touches routes. No branch, worktree, database, or work-item state is deleted.
 
 ## Migration and observability helpers
 
