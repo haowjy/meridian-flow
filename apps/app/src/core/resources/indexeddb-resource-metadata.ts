@@ -7,6 +7,7 @@ import type {
   NamespaceIntent,
   ResourceCatalogCheckpoint,
   ResourceDescriptor,
+  ResourceDestination,
   ResourceKey,
   ResourceMetadataStore,
   ResourceProjectionSnapshot,
@@ -20,6 +21,7 @@ import {
   planFolderDeletionResources,
   resourceForDocumentIdentity,
   resourceVisibleInProject,
+  untitledDestination,
   validateFolderNamespaceUpdate,
   validateResourceRecordUpdate,
 } from "@meridian/resource-replica";
@@ -28,6 +30,18 @@ import Dexie, { liveQuery, type Table } from "dexie";
 type StoredCatalog = ResourceCatalogCheckpoint & { key: string };
 /** Account-wide counters kept beside the journals; `placementHighWater` is the highest admission order assigned. */
 type StoredMeta = { key: "placementHighWater"; value: number };
+/** The `create` intent kind, and a placement destination that could be absent, removed by the model change. */
+type LegacyDesired =
+  | {
+      kind: "create";
+      folderPath: string;
+      provisionalName?: string;
+      destination?: ResourceDestination;
+    }
+  | { kind: "set-location"; typedName: string; destination?: ResourceDestination }
+  | { kind: "set-folder-location"; typedName: string; destination: ResourceDestination }
+  | { kind: "delete" };
+type LegacyIntent = Omit<NamespaceIntent, "desired"> & { desired: LegacyDesired };
 type AccountProjectionSnapshot = {
   records: readonly ResourceRecord[];
   folders: readonly FolderNamespaceRecord[];
@@ -102,6 +116,86 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
             highest = Math.max(highest, intent.admission?.order ?? 0);
         });
         await transaction.table("meta").put({ key: "placementHighWater", value: highest });
+      });
+    // A document's first placement is a `set-location` that always names its destination, and its
+    // home comes from `materialization`. A journal written before that keeps its pending work: a
+    // create intent becomes the placement it now is, and a placement with no destination (the
+    // editor's nameless create) names the home its materialization records.
+    this.database
+      .version(5)
+      .stores({})
+      .upgrade(async (transaction) => {
+        const resources = transaction.table<ResourceDescriptor, string>("resources");
+        const intents = transaction.table<LegacyIntent, string>("intents");
+        for (const resource of await resources.toArray()) {
+          const held = await intents.where("handle").equals(resource.handle).toArray();
+          const creates = held
+            .filter((intent) => intent.desired.kind === "create")
+            .sort((left, right) => left.sequence - right.sequence);
+          const placements = held.filter(
+            (intent): intent is LegacyIntent & { desired: { kind: "set-location" } } =>
+              intent.desired.kind === "set-location",
+          );
+          if (creates.length === 0 && !placements.some((intent) => !intent.desired.destination))
+            continue;
+          const first = creates[0]?.desired;
+          const materialization =
+            first?.kind === "create"
+              ? {
+                  kind: "untitled" as const,
+                  folderPath: first.folderPath,
+                  provisionalName: first.provisionalName ?? "Untitled",
+                }
+              : resource.materialization;
+          if (!materialization) continue;
+          // A record is unnamed only while no placement names it: the writer's first placement
+          // (a filed create) means the local row no longer invites a home.
+          const names = [
+            ...creates.flatMap((intent) =>
+              intent.desired.kind === "create" ? [intent.desired.destination] : [],
+            ),
+            ...placements.map((intent) => intent.desired.destination),
+          ];
+          const unnamed = names.length > 0 && names.every((destination) => !destination);
+          const put = (intent: LegacyIntent): NamespaceIntent => {
+            if (intent.desired.kind === "create")
+              return {
+                ...intent,
+                desired: {
+                  kind: "set-location",
+                  typedName: materialization.provisionalName,
+                  destination:
+                    intent.desired.destination ??
+                    untitledDestination(
+                      materialization.folderPath,
+                      materialization.provisionalName,
+                    ),
+                },
+              };
+            if (intent.desired.kind === "set-location" && !intent.desired.destination)
+              return {
+                ...intent,
+                desired: {
+                  ...intent.desired,
+                  destination: untitledDestination(
+                    materialization.folderPath,
+                    intent.desired.typedName,
+                  ),
+                },
+              };
+            return intent as NamespaceIntent;
+          };
+          await resources.put({
+            ...resource,
+            materialization: {
+              kind: "untitled",
+              folderPath: materialization.folderPath,
+              provisionalName: materialization.provisionalName,
+              ...(unnamed ? { unnamed: true as const } : {}),
+            },
+          });
+          for (const intent of held) await intents.put(put(intent));
+        }
       });
     this.resources = this.database.table("resources");
     this.intents = this.database.table("intents");
