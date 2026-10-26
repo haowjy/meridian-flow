@@ -243,18 +243,28 @@ export async function placeLiveSibling(
   },
 ): Promise<"placed" | "stale-anchor"> {
   let parentPolicy = await liveParentOrderPolicy(db, input.sourceId, input.parentId);
-  if (parentPolicy === "default" && !input.position) {
-    if (input.arrived)
+  if (!input.position) {
+    if (!input.arrived) return "placed";
+    if (parentPolicy === "manual") {
+      await placeArrivedBatch(db, {
+        sourceId: input.sourceId,
+        parentId: input.parentId,
+        nodes: [{ kind: input.node.kind, id: input.node.id }],
+        excludeId: input.node.id,
+      });
+    } else {
+      // The allocator leaves default-parent rows as the caller inserted them, so a single
+      // arrival clears the rank it carried from where it came.
       await setRank(
         db,
         { kind: input.node.kind === "folder" ? "folder" : "file", id: input.node.id },
         null,
       );
+    }
     return "placed";
   }
-  if (parentPolicy === "manual" && !input.position && !input.arrived) return "placed";
   let rows: Sibling[] | null = null;
-  if (input.position && parentPolicy === "default") {
+  if (parentPolicy === "default") {
     rows = await siblings(db, input.sourceId, input.parentId);
     if (!rows.some((row) => row.id === input.node.id))
       throw new Error("Moved node is absent from its committed parent");
@@ -329,27 +339,47 @@ export async function placeLiveSibling(
   return "placed";
 }
 
-/**
- * Places rows that arrived together under one parent, as `placeLiveSibling` would one by one
- * with `arrived: true`: a default parent keeps them unranked; a manual parent appends them in
- * default order after its last rank. One allocation and one write per table, so a reveal of
- * thousands of rows stays set-wise. The rows must already be inserted unranked, under the
- * caller's namespace lock. `name` is the displayed filename.
- */
+/** Rows that arrived together under one parent, for `placeArrivedBatch`. */
 export type ArrivedBatch = {
   sourceId: ContextSourceId;
   parentId: FolderId | null;
-  nodes: { kind: "document" | "folder"; id: string; name: string }[];
+  nodes: {
+    kind: "document" | "folder";
+    id: string;
+    /** Displayed filename; orders a multi-row batch and is absent for a single arrival. */
+    name?: string;
+  }[];
+  /** A row already under the parent that must not bound the append it joins. */
+  excludeId?: string;
 };
 
+/**
+ * The one arrival rule: a new entry lands at the end, in default order. A manual parent
+ * appends the rows after its last rank, one allocation and one write per table, so a reveal
+ * of thousands of rows stays set-wise; a default parent leaves them as inserted, so the rows
+ * must already be unranked. Caller holds the namespace lock.
+ */
 export async function placeArrivedBatch(db: Database, input: ArrivedBatch): Promise<void> {
   if (input.nodes.length === 0) return;
   if ((await liveParentOrderPolicy(db, input.sourceId, input.parentId)) === "default") return;
-  const last = await liveRankBoundary(db, { ...input, direction: "before" });
+  const last = await liveRankBoundary(db, {
+    sourceId: input.sourceId,
+    parentId: input.parentId,
+    movingId: input.excludeId,
+    direction: "before",
+  });
   const ordered = [...input.nodes].sort((left, right) =>
     compareDefaultSiblings(
-      { kind: left.kind === "folder" ? "folder" : "file", name: left.name, identity: left.id },
-      { kind: right.kind === "folder" ? "folder" : "file", name: right.name, identity: right.id },
+      {
+        kind: left.kind === "folder" ? "folder" : "file",
+        name: left.name ?? "",
+        identity: left.id,
+      },
+      {
+        kind: right.kind === "folder" ? "folder" : "file",
+        name: right.name ?? "",
+        identity: right.id,
+      },
     ),
   );
   const ranks = generateNKeysBetween(last?.rank ?? null, null, ordered.length);
