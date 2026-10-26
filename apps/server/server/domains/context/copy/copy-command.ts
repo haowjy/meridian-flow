@@ -5,15 +5,20 @@
  * version its surface shows (live, or a draft tab's draft). It then, in order:
  *
  * 1. duplicates every binary's object — bytes leave the database's reach before any row
- *    names them, and their keys are released if no transaction commits to name them (D24).
- *    Steps 1 and the reads hold no transaction: a source room that is not open loads through a
- *    second connection, so a transaction held across the read could starve the pool;
- * 2. opens the operation receipt's transaction and, inside it, the command transaction that
- *    takes the source and destination Works and namespaces;
- * 3. rechecks the destination and every root under those locks;
- * 4. asks the destination adapter to insert the tree, binding each document's content for
- *    the address it will have through `collab/domain/copied-blocks.ts` — one identity map
- *    across the whole selection, so a link between two roots names both copies.
+ *    names them, and their keys are released if no transaction commits to name them (D24);
+ * 2. asks the destination adapter to plan the tree (names and identities), and binds each
+ *    document's content for the address its copy will have through
+ *    `collab/domain/copied-blocks.ts` — one identity map across the whole selection, so a link
+ *    between two roots names both copies. Steps 1-2 and the reads hold no transaction and no
+ *    lock: a source room that is not open loads through a second connection, so a transaction
+ *    held across the read could starve the pool, and a lock held across them would stall every
+ *    writer in the destination for the length of the tree;
+ * 3. opens the operation receipt's transaction and, inside it, the command transaction that
+ *    takes the destination's Work and namespace (the sources are a frozen cut and are not
+ *    locked);
+ * 4. rechecks the destination under that lock and asks the destination adapter to insert the
+ *    plan. If a concurrent write took a root's name since the plan, the adapter inserts
+ *    nothing and the command plans and binds again, now under the lock.
  *
  * A refusal is typed and recorded on the receipt, so a replay reads the same answer. An
  * infrastructure failure, or a source whose room has not yet received the client's edits,
@@ -48,7 +53,9 @@ import type {
   ContextCommandTransaction,
 } from "../ports/context-command-transaction.js";
 import type {
+  CopiedContent,
   CopyCreatedEntry,
+  CopyPlan,
   CopySourceEntry,
   CopySourceFile,
   CopySourceFolder,
@@ -60,6 +67,8 @@ const SOURCE_CATCH_UP_MS = 2_000;
 const SOURCE_CATCH_UP_POLL_MS = 100;
 /** Derivations in flight at once after a copy: each takes a pool connection, and the pool is shared. */
 const DERIVE_CONCURRENCY = 4;
+/** Documents bound between yields to the event loop. */
+const BIND_YIELD_EVERY = 25;
 
 /** One selected root, already resolved to its adapter and read view by the route. */
 export interface CopySourceHandoff {
@@ -144,9 +153,11 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
         // The rows name these objects only if this operation commits.
         const { putKeys } = prepared.value;
         if (putKeys.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
-        return commandTransaction.run(() => write(selected, prepared.value), scopesOf(selected), {
-          sourceIds: prepared.value.sourceIds,
-        });
+        return commandTransaction.run(
+          () => write(selected, prepared.value),
+          [scopeOf(input.destination)],
+          { sourceIds: prepared.value.sourceIds },
+        );
       });
     } finally {
       // A replay, a mismatch or a throw before the receipt's callback ran leaves them unclaimed.
@@ -154,15 +165,15 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     }
   }
 
-  /** Read every source and put every binary's bytes before any transaction or lock is taken. */
+  /**
+   * Read every source, put every binary's bytes, and plan and bind the tree, before any
+   * transaction or lock is taken.
+   */
   async function prepare(input: ContextCopyInput): Promise<Result<PreparedCopy, ContextError>> {
     const roots: PreparedRoot[] = [];
-    const sourceIds = new Set<string>();
     for (const source of input.sources) {
       const copy = source.adapter.copy;
       if (!copy) return unsupportedSource(source.uri);
-      const sourceId = await copy.sourceId();
-      if (sourceId) sourceIds.add(sourceId);
       const snapshot = await copy.snapshotSource(source.path);
       if (!snapshot.ok) return Err(adapterFaultToContextError(snapshot.error, source.uri));
       if (snapshot.value.kind !== source.expected.kind) {
@@ -176,12 +187,71 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       roots.push({ uri: source.uri, snapshot: snapshot.value, documents: documents.value });
     }
 
-    const destinationSourceId = await input.destination.adapter.copy?.sourceId();
-    if (destinationSourceId) sourceIds.add(destinationSourceId);
-
     const duplicated = await duplicateBinaries(binariesOf(roots));
     if (!duplicated.ok) return duplicated;
-    return Ok({ roots, sourceIds: [...sourceIds], ...duplicated.value });
+    const ready = seededRoots(roots, duplicated.value.binaries);
+    const documents = new Map(roots.flatMap((root) => [...root.documents]));
+    const destinationSourceId = await input.destination.adapter.copy?.sourceId();
+    return Ok({
+      roots,
+      sourceIds: destinationSourceId ? [destinationSourceId] : [],
+      putKeys: duplicated.value.putKeys,
+      ready,
+      documents,
+      // A destination that cannot take a copy is refused where the destination is rechecked,
+      // after the stale-destination and inside-itself answers.
+      plan: await planAndBind(input.destination, ready, documents),
+    });
+  }
+
+  /** Plan the tree at the destination and bind every tracked document's content to its plan. */
+  async function planAndBind(
+    destination: CopyDestinationHandoff,
+    roots: readonly CopySourceEntry[],
+    documents: ReadonlyMap<string, PreparedDocument>,
+  ): Promise<Result<PlannedCopy, ContextError>> {
+    const copy = destination.adapter.copy;
+    if (!copy) {
+      return Err({
+        code: "invalid_operation",
+        uri: destination.uri,
+        message: "This destination cannot take a copy",
+      });
+    }
+    const planned = await copy.planCopy({ dir: destination.dir, roots });
+    if (!planned.ok) return Err(adapterFaultToContextError(planned.error, destination.uri));
+    return Ok({ plan: planned.value, contents: await bind(planned.value, documents) });
+  }
+
+  async function bind(
+    plan: CopyPlan,
+    documents: ReadonlyMap<string, PreparedDocument>,
+  ): Promise<Map<string, CopiedContent>> {
+    const contents = new Map<string, CopiedContent>();
+    for (const { source: file, uri } of plan.documents) {
+      const read = documents.get(file.documentId);
+      if (!read) throw new Error(`No content was read for ${file.path}`);
+      contents.set(file.documentId, {
+        state:
+          read.blocks.length === 0
+            ? null
+            : deps.documentSync.encodeSeed(
+                deps.documentSync.bindCopiedBlocks({
+                  uri,
+                  filetype: file.filetype,
+                  sourceHolderUri: read.holderUri,
+                  blocks: read.blocks,
+                  aheadSettlements: read.aheadSettlements,
+                  map: plan.map,
+                }),
+                { type: "system" },
+              ),
+        copiedFrom: { uri: read.uri, version: read.version, revision: read.revision },
+      });
+      // Binding is CPU the whole way; let other requests run between documents.
+      if (contents.size % BIND_YIELD_EVERY === 0) await delay(0);
+    }
+    return contents;
   }
 
   /** Put a copy of each binary's bytes; if any put fails, the ones already put are released. */
@@ -298,7 +368,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     }
   }
 
-  /** Under the locks: recheck the destination and every root, then insert the tree. */
+  /** Under the destination's lock: recheck the destination, then insert the plan. */
   async function write(
     input: ContextCopyInput,
     prepared: PreparedCopy,
@@ -307,70 +377,40 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     if (!destination.ok) return destination;
     const dest = destination.value;
 
-    for (const source of input.sources) {
-      const peeked = await source.adapter.copy?.peekSource(source.path);
-      if (!peeked?.ok) {
-        return peeked
-          ? Err(adapterFaultToContextError(peeked.error, source.uri))
-          : unsupportedSource(source.uri);
-      }
-      if (!peeked.value) return Err({ code: "not_found", uri: source.uri });
-      if (
-        peeked.value.kind !== source.expected.kind ||
-        peeked.value.nodeId !== source.expected.nodeId
-      ) {
-        return Err({ code: "stale_source", uri: source.uri });
-      }
-    }
-
-    const ready = seededRoots(prepared.roots, prepared.binaries);
-    const documents = new Map(
-      prepared.roots.flatMap((root) =>
-        [...root.documents].map(([documentId, document]) => [documentId, document] as const),
-      ),
-    );
-    const inserted = await dest.adapter.copy?.copyInto({
-      dir: dest.dir,
-      roots: ready,
-      ...(input.request.position ? { position: input.request.position } : {}),
-      bind: async ({ file, uri, map }) => {
-        const source = documents.get(file.documentId);
-        if (!source) {
-          return Err({ code: "io_error", message: `No content was read for ${file.path}` });
-        }
-        return Ok({
-          state:
-            source.blocks.length === 0
-              ? null
-              : deps.documentSync.encodeSeed(
-                  deps.documentSync.bindCopiedBlocks({
-                    uri,
-                    filetype: file.filetype,
-                    sourceHolderUri: source.holderUri,
-                    blocks: source.blocks,
-                    aheadSettlements: source.aheadSettlements,
-                    map,
-                  }),
-                  { type: "system" },
-                ),
-          copiedFrom: { uri: source.uri, version: source.version, revision: source.revision },
-        });
-      },
-    });
-    if (!inserted) {
-      return Err({
-        code: "invalid_operation",
-        uri: dest.uri,
-        message: "This destination cannot take a copy",
+    let planned = prepared.plan;
+    let entries: CopyCreatedEntry[] | null = null;
+    for (let replans = 0; !entries; replans++) {
+      if (!planned.ok) return planned;
+      const inserted = await dest.adapter.copy?.copyInto({
+        dir: dest.dir,
+        plan: planned.value.plan,
+        contents: planned.value.contents,
+        ...(input.request.position ? { position: input.request.position } : {}),
       });
+      if (!inserted) {
+        return Err({
+          code: "invalid_operation",
+          uri: dest.uri,
+          message: "This destination cannot take a copy",
+        });
+      }
+      if (!inserted.ok) return Err(adapterFaultToContextError(inserted.error, dest.uri));
+      if (inserted.value.kind === "copied") {
+        entries = inserted.value.entries;
+        break;
+      }
+      // Under the lock nothing can take the names again, so a second plan must hold.
+      if (replans > 0) throw new Error("A copy planned under the namespace lock did not hold");
+      planned = await planAndBind(dest, prepared.ready, prepared.documents);
     }
-    if (!inserted.ok) return Err(adapterFaultToContextError(inserted.error, dest.uri));
     await deriveAfterCommit(
-      inserted.value.flatMap((entry) =>
-        entry.kind === "file" && documents.has(entry.copiedFrom) ? [entry.id as DocumentId] : [],
+      entries.flatMap((entry) =>
+        entry.kind === "file" && prepared.documents.has(entry.copiedFrom)
+          ? [entry.id as DocumentId]
+          : [],
       ),
     );
-    return Ok({ status: "copied", entries: inserted.value.map(toEntry) });
+    return Ok({ status: "copied", entries: entries.map(toEntry) });
   }
 
   /**
@@ -413,7 +453,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   return { copy };
 }
 
-/** A source subtree as the destination inserts it, with content bound later. */
+/** A source subtree and the content read for its tracked documents. */
 interface PreparedRoot {
   uri: string;
   snapshot: CopySourceEntry;
@@ -435,12 +475,22 @@ interface PreparedDocument {
 
 interface PreparedCopy {
   roots: PreparedRoot[];
-  /** Every source namespace this command locks. */
+  /** The destination namespace this command locks; the sources are a frozen cut, not locked. */
   sourceIds: string[];
-  /** Old document id → the duplicated object the copy's row will name. */
-  binaries: Map<string, string>;
   /** The duplicated objects' keys, released if no row commits to name them. */
   putKeys: string[];
+  /** The source trees with each binary rewritten to the object the copy duplicated. */
+  ready: CopySourceEntry[];
+  /** Every tracked document's read, by source document id. */
+  documents: Map<string, PreparedDocument>;
+  /** The destination's plan and the content bound to it; an error is answered once the destination is rechecked. */
+  plan: Result<PlannedCopy, ContextError>;
+}
+
+interface PlannedCopy {
+  plan: CopyPlan;
+  /** Bound content by source document id. */
+  contents: Map<string, CopiedContent>;
 }
 
 function unsupportedSource(uri: string): Result<never, ContextError> {
@@ -465,19 +515,8 @@ function outermostRoots(sources: readonly CopySourceHandoff[]): CopySourceHandof
   });
 }
 
-function scopesOf(input: ContextCopyInput): ContextCommandScope[] {
-  const ends: ContextCommandScope[] = [
-    ...input.sources.map((source) => ({
-      scheme: source.adapter.name as ContextScheme,
-      workId: source.workScopeId,
-    })),
-    {
-      scheme: input.destination.adapter.name as ContextScheme,
-      workId: input.destination.workScopeId,
-    },
-  ];
-  const seen = new Map(ends.map((end) => [`${end.scheme}:${end.workId ?? ""}`, end]));
-  return [...seen.values()];
+function scopeOf(destination: CopyDestinationHandoff): ContextCommandScope {
+  return { scheme: destination.adapter.name as ContextScheme, workId: destination.workScopeId };
 }
 
 function receiptCommand(

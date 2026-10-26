@@ -1,7 +1,7 @@
 /**
- * One ContextFS source's Copy capability: the frozen subtree read a copy starts from, the
- * identity check it repeats under the locks, and the insertion half (`copy-tree.ts`).
- * `context/copy/` decides what to copy and in what order; this only knows this namespace.
+ * One ContextFS source's Copy capability: the frozen subtree read a copy starts from, and the
+ * destination half (`copy-tree.ts`): the plan and the insert. `context/copy/` decides what to
+ * copy and in what order; this only knows this namespace.
  */
 
 import { compareCatalogSiblings } from "@meridian/resource-replica";
@@ -17,7 +17,7 @@ import type {
 import type { ContextDocument, ContextFolder } from "../../ports/context-document-store.js";
 import { LIVE_TREE } from "../../tree/tree-view.js";
 import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
-import { type CopyTreeDeps, insertCopiedTree } from "./copy-tree.js";
+import { type CopyTreeDeps, insertCopiedTree, planCopyTree } from "./copy-tree.js";
 import { AMBIGUOUS_PATH_FAULT } from "./create-placement.js";
 
 export interface ContextFsCopyDeps extends CopyTreeDeps {
@@ -46,23 +46,6 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
     if (document.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
     if (document.kind === "found") return Ok(fileSnapshot(clean, document.node));
     return Err({ code: "not_found" });
-  }
-
-  /** The identity at one source path, without reading anything below it. */
-  async function peekSource(
-    path: string,
-  ): Promise<Result<{ kind: "file" | "folder"; nodeId: string } | null, AdapterFault>> {
-    const clean = path.replace(/\/+$/, "");
-    if (!clean) return Ok(null);
-    const folder = await store.resolveFolderAt(LIVE_TREE, clean);
-    if (folder.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
-    if (folder.kind === "found" && folder.node) {
-      return Ok({ kind: "folder", nodeId: folder.node.id });
-    }
-    const document = await store.resolveDocumentAt(LIVE_TREE, clean);
-    if (document.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
-    if (document.kind === "found") return Ok({ kind: "file", nodeId: document.node.id });
-    return Ok(null);
   }
 
   async function folderSnapshot(path: string, folder: ContextFolder): Promise<CopySourceFolder> {
@@ -130,10 +113,10 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
   return {
     sourceId: () => store.existingContextSourceId(),
     snapshotSource,
-    peekSource,
-    copyInto: (input) => {
+    planCopy: async (input) => {
       const refused = deps.refuseReceive();
-      return refused ? Promise.resolve(Err(refused)) : insertCopiedTree(deps, input);
+      return refused ? Err(refused) : Ok(await planCopyTree(deps, input));
     },
+    copyInto: (input) => insertCopiedTree(deps, input),
   };
 }

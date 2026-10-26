@@ -1,11 +1,12 @@
 /**
  * What one tree must tell a Copy about itself, and what it must do with what a Copy made.
  *
- * A Copy reads its source subtree once in an explicit view, binds every document's content
- * for the address it will have, and then inserts the whole tree in the caller's transaction.
- * The destination adapter owns naming and insertion because names are its namespace's, and
- * the callback it receives is the only thing it needs from the layer above: the bound
- * content for one file's final address. `context/copy/` owns the orchestration.
+ * A Copy reads its source subtree once in an explicit view. The destination adapter then plans
+ * the tree it will insert (names and identities, which are its namespace's to decide), the
+ * layer above binds every document's content for the address its copy will have, and the
+ * adapter inserts the whole tree in the caller's transaction. Planning and binding hold no
+ * lock: the insert confirms under its lock that the plan still holds, and says `replan` when a
+ * concurrent write took a name. `context/copy/` owns the orchestration.
  *
  * Binaries are not bound: their bytes were duplicated before the transaction, and the
  * inserted row carries that object.
@@ -74,6 +75,52 @@ export interface CopyCreatedEntry {
   copiedFrom: string;
 }
 
+/** One folder of the tree a copy will insert: the source it copies and the identity it gets. */
+export interface PlannedCopyFolder {
+  kind: "folder";
+  source: CopySourceFolder;
+  id: string;
+  /** The allocated name. */
+  name: string;
+  /** Scheme-relative path of the copy, including its name. */
+  path: string;
+  /** Canonical address of the copy. */
+  uri: string;
+  children: PlannedCopyNode[];
+}
+
+/** One file of the tree a copy will insert. */
+export interface PlannedCopyFile {
+  kind: "file";
+  source: CopySourceFile;
+  id: string;
+  /** The allocated name and extension, split as the row stores them. */
+  name: string;
+  extension: string;
+  path: string;
+  uri: string;
+}
+
+export type PlannedCopyNode = PlannedCopyFolder | PlannedCopyFile;
+
+/**
+ * Names and identities for one copy, made without a lock. A name is only as good as the
+ * occupants it was allocated around, so `copyInto` confirms the roots' names under its lock.
+ */
+export interface CopyPlan {
+  /** The destination folder the roots were planned into. */
+  dir: readonly string[];
+  /** One per selected root, in the order selected. */
+  roots: readonly PlannedCopyNode[];
+  /** Every identity this copy creates, old→new: complete before the first bind. */
+  map: CopyIdentityMap;
+  /** The tracked documents whose content the caller binds. */
+  documents: readonly PlannedCopyFile[];
+}
+
+/** What an insert did: the identities it created, or that its plan no longer holds. */
+export type CopyOutcome = { kind: "copied"; entries: CopyCreatedEntry[] } | { kind: "replan" };
+
 /** The copy capability of one scheme adapter. */
 export interface ContextCopyAdapter {
   /** This adapter's context source, provisioned; the copy command locks it. */
@@ -85,30 +132,24 @@ export interface ContextCopyAdapter {
    */
   snapshotSource(path: string): Promise<Result<CopySourceEntry, AdapterFault>>;
   /**
-   * Just the identity at `path`, or null. The copy command rechecks every root under its
-   * locks: a source deleted between the read and the commit is a gone source, not a copy.
+   * Plan `roots` under the scheme-relative folder `dir`: allocate every name and mint every
+   * identity, writing nothing and holding no lock. Names are allocated against live
+   * occupants, hidden occupants (never revealed), and the rest of the batch. A copied folder
+   * keeps its source ordering policy, and its children arrive in source order.
    */
-  peekSource(
-    path: string,
-  ): Promise<Result<{ kind: "file" | "folder"; nodeId: string } | null, AdapterFault>>;
+  planCopy(input: {
+    dir: readonly string[];
+    roots: readonly CopySourceEntry[];
+  }): Promise<Result<CopyPlan, AdapterFault>>;
   /**
-   * Insert `roots` under the scheme-relative folder `dir`, inside the caller's transaction.
-   *
-   * Names are allocated against live occupants, hidden occupants (never revealed), and the
-   * rest of the batch. Every created node gets its identity before any row is written, so
-   * `bind` sees the whole old→new map and cross-root links can point at their copies. A
-   * copied folder keeps its source ordering policy, and its children arrive in source order.
+   * Insert a plan, inside the caller's transaction and under its locks. `contents` has one
+   * entry per tracked document in the plan, by source document id. When the roots' names are
+   * no longer the ones the plan allocated, nothing is inserted and the answer is `replan`.
    */
   copyInto(input: {
     dir: readonly string[];
-    roots: readonly CopySourceEntry[];
+    plan: CopyPlan;
+    contents: ReadonlyMap<string, CopiedContent>;
     position?: ContextSiblingPosition;
-    bind(input: {
-      file: CopySourceFile;
-      /** The canonical address the copy will have. */
-      uri: string;
-      /** Every identity this copy creates, old→new, complete before the first bind. */
-      map: CopyIdentityMap;
-    }): Promise<Result<CopiedContent, AdapterFault>>;
-  }): Promise<Result<CopyCreatedEntry[], AdapterFault>>;
+  }): Promise<Result<CopyOutcome, AdapterFault>>;
 }
