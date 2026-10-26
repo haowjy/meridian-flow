@@ -162,11 +162,7 @@ function ImportToast({
         <div className="space-y-2">
           {otherProject && project ? <p>{project.title}</p> : null}
           {presentation.note ? <p>{presentation.note}</p> : null}
-          {summary.destination.fellBack ? (
-            <p>
-              <Trans>The destination was deleted. Added at the area root.</Trans>
-            </p>
-          ) : null}
+          {presentation.fallback ? <p>{presentation.fallback}</p> : null}
           {local.stopLost ? (
             <p>
               <Trans>It finished before it could stop.</Trans>
@@ -213,6 +209,7 @@ function ImportToast({
     presentation.detail,
     presentation.progress,
     presentation.note,
+    presentation.fallback,
     state,
     summary,
     local,

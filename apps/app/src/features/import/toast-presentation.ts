@@ -44,6 +44,22 @@ export function toastState(summary: ImportSummary, local: LocalUpload, now: numb
   if (local.phase === "uploading") return "uploading";
   return now - Date.parse(summary.lastActivityAt) >= 60000 ? "paused" : "elsewhere";
 }
+/** What a deleted destination means for this card, in the tense of its state. */
+function fallbackNote(state: ToastState): string | undefined {
+  switch (state) {
+    case "done":
+    case "needs-look":
+      return t`The destination was deleted. Added at the area root.`;
+    case "failed":
+      return t`The destination was deleted. Trying again adds it at the area root.`;
+    case "stop":
+    case "expired":
+    case "refused":
+      return undefined;
+    default:
+      return t`The destination was deleted. It will be added at the area root.`;
+  }
+}
 export function toastPresentation(summary: ImportSummary, local: LocalUpload, now: number) {
   const state = toastState(summary, local, now);
   const { files, received, receivedBytes, bytes, prepared, skipped, failed, organized, needsLook } =
@@ -121,5 +137,9 @@ export function toastPresentation(summary: ImportSummary, local: LocalUpload, no
     refused: { title: t`Import didn't start`, detail: local.error },
     expired: { title: t`Import discarded`, detail: t`It was waiting for 7 days.` },
   };
-  return { state, ...rows[state] };
+  return {
+    state,
+    ...rows[state],
+    fallback: summary.destination.fellBack ? fallbackNote(state) : undefined,
+  };
 }

@@ -5060,8 +5060,16 @@ msgstr ""
 msgid "The change didn't fit the current draft. The AI will read it again."
 msgstr ""
 
-#: src/features/import/ImportToasts.tsx
+#: src/features/import/toast-presentation.ts
 msgid "The destination was deleted. Added at the area root."
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "The destination was deleted. It will be added at the area root."
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "The destination was deleted. Trying again adds it at the area root."
 msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
