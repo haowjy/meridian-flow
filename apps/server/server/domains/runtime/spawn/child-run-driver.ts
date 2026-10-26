@@ -60,6 +60,7 @@ export interface ChildRunDriver {
     options: { background?: boolean; signal?: AbortSignal; origin: "spawn" | "message" },
   ): Promise<PreparedChild>;
   admit(prepared: PreparedChild, input: ChildDriveInput): Promise<AdmittedChildRun>;
+  admitContinuation(prepared: PreparedChild, input: ChildDriveInput): Promise<AdmittedChildRun>;
   execute(admitted: AdmittedChildRun): Promise<SpawnResult>;
   executeBackground(admitted: AdmittedChildRun): void;
   readSavedReport(childThreadId: ThreadId, executionTurnId: TurnId): Promise<SpawnResult | null>;
@@ -111,6 +112,30 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       handle.executionTurnId,
     );
     if (!report) throw new Error("Admitted child run has no execution report");
+    await deps.publisher.projectRunning(prepared.child.id as ThreadId, handle.executionTurnId);
+    return { prepared, handle, admittedAt: report.admittedAt };
+  }
+
+  async function admitContinuation(
+    prepared: PreparedChild,
+    input: ChildDriveInput,
+  ): Promise<AdmittedChildRun> {
+    const handle = await deps.orchestrator.prepare({
+      threadId: prepared.child.id as ThreadId,
+      drain: true,
+      signal: prepared.signal,
+      child: {
+        parentThreadId: input.parentThread.id as ThreadId,
+        background: prepared.background,
+        origin: prepared.origin,
+      },
+      treeBudget: input.budget,
+    });
+    const report = await deps.repos.executionReports.findByExecution(
+      prepared.child.id as ThreadId,
+      handle.executionTurnId,
+    );
+    if (!report) throw new Error("Admitted child continuation has no execution report");
     await deps.publisher.projectRunning(prepared.child.id as ThreadId, handle.executionTurnId);
     return { prepared, handle, admittedAt: report.admittedAt };
   }
@@ -196,5 +221,5 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     return savedReportToSpawnResult(saved, ask);
   }
 
-  return { register, admit, execute, executeBackground, readSavedReport };
+  return { register, admit, admitContinuation, execute, executeBackground, readSavedReport };
 }
