@@ -42,7 +42,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
     }
     for (const domain of domains.splice(0)) {
       await domain.drainHocuspocusPersistence();
-      domain.dispose();
+      await domain.dispose();
     }
     await deleteDrizzleRows(db, [users]);
     await db.close();
