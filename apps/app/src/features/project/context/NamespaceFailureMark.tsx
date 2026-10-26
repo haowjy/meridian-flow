@@ -1,6 +1,6 @@
 /**
- * The mark a document or folder row carries when the server refused its delete
- * or rename/move and reconciliation put the row back. The Editor tree shows it as an
+ * The mark a document or folder row carries when the server refused its delete,
+ * rename/move or first creation and reconciliation put the row back. The Editor tree shows it as an
  * icon with a tooltip; the Work Files tab has room to say it in words.
  */
 import { t } from "@lingui/core/macro";
@@ -16,6 +16,7 @@ function namespaceFailureMessage(
   folder: boolean,
   move: boolean,
 ): string {
+  if (failure === "create") return t`Couldn't create this document. Try again.`;
   if (failure === "delete")
     return folder
       ? t`Couldn't delete this folder. Try again.`

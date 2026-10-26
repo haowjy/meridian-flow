@@ -5,6 +5,7 @@ import {
   catalogEntryOwner,
   type NamespaceIdentityAvailability,
   type NamespaceRequest,
+  namespaceRequestId,
   type ResourceNamespaceTransport,
 } from "@meridian/resource-replica";
 import { httpErrorStatus, isMeridianApiError } from "@/client/api/http-client";
@@ -129,18 +130,18 @@ export function createResourceNamespaceTransport(
 
   async function submitWithin(signal: AbortSignal, projectId: string, request: NamespaceRequest) {
     requireOpen();
-    if (request.kind === "create") {
-      const result = await createUntitledContextDocument(
-        projectId,
-        "unfiled",
-        request.body,
-        undefined,
-        { signal },
-      );
-      requireOpen();
-      return { kind: "create" as const, result };
-    }
     try {
+      if (request.kind === "create") {
+        const result = await createUntitledContextDocument(
+          projectId,
+          "unfiled",
+          request.body,
+          undefined,
+          { signal },
+        );
+        requireOpen();
+        return { kind: "create" as const, result };
+      }
       if (request.kind === "move") {
         await moveContextEntry(projectId, request.scheme, request.body, { signal });
       } else {
@@ -167,7 +168,7 @@ export function createResourceNamespaceTransport(
       ) {
         return {
           kind: "refusal" as const,
-          operationId: request.body.operationId,
+          operationId: namespaceRequestId(request),
           error: error.envelope,
         };
       }

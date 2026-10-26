@@ -24,8 +24,8 @@ type CatalogFileBase = {
   localContent?: true;
   /** The writer's own move of this document, or of a folder above it, is not yet confirmed. */
   placementPending?: true;
-  /** Durable namespace work that needs the writer to retry. */
-  namespaceFailure?: "delete" | "set-location";
+  /** Durable namespace work that needs the writer to retry; `create`: the server never took this document. */
+  namespaceFailure?: "delete" | "set-location" | "create";
   namespaceRepairName?: string;
   namespaceRepairMove?: ResourceDestination;
   /** When the refusal settled locally; separates a fresh failure from one already there on load. */

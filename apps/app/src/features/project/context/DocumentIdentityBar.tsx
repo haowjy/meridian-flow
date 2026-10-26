@@ -102,10 +102,12 @@ export function DocumentIdentityBar({
       ? resource.handle === tab.resourceHandle
       : resource.identity.documentId === tab.documentId,
   );
-  const repair = resource ? projectResourceNeedsRepair(projectId, resource) : null;
+  const failed = resource ? projectResourceNeedsRepair(projectId, resource) : null;
+  // A refused delete has no placement to repair here; a refused create and a refused move do.
+  const repair = failed?.kind === "delete" ? null : failed;
   const identityFailure =
-    location.provisional && repair?.kind === "set-location" && repair.intentId !== dismissedRepairId
-      ? ({ kind: "error", name: repair.name } as const)
+    location.provisional && repair && repair.intentId !== dismissedRepairId
+      ? ({ kind: "error", name: repair.name, created: repair.kind === "create" } as const)
       : null;
   const repairMove = resource?.resource.canonical
     ? refusedMoveDestination(repair?.destination, placement.parentForResource(resource))
@@ -118,10 +120,9 @@ export function DocumentIdentityBar({
   const passiveFailure = failedFolder
     ? t`Couldn't move to ${failedFolder}. Use Move… in the file list to try again.`
     : t`Couldn't rename. Use Rename in the file list to try again.`;
-  const failureAt =
-    repair?.kind === "set-location"
-      ? resource?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
-      : undefined;
+  const failureAt = repair
+    ? resource?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
+    : undefined;
   useRepairOnFreshFailure(identityFailure && !readOnly ? failureAt : undefined, () =>
     setFieldOpen(true),
   );
@@ -187,7 +188,7 @@ export function DocumentIdentityBar({
                   // Leaving the field acknowledges any failure receipt — it must
                   // not reopen the editor it just closed.
                   setFieldOpen(false);
-                  if (repair?.kind === "set-location") setDismissedRepairId(repair.intentId);
+                  if (repair) setDismissedRepairId(repair.intentId);
                   if (reason === "escape") focusEditorProse(tab.documentId);
                 }}
                 onOpenExisting={onOpenExisting}
@@ -213,7 +214,7 @@ export function DocumentIdentityBar({
             ) : null}
             <ManuscriptStateSlot state={manuscriptState} className="ml-1" />
             {/* Only a provisional placement refusal offers repair here; list failures are passive. */}
-            {repair?.kind === "set-location" && !placementOpen ? (
+            {repair && !placementOpen ? (
               location.provisional && !readOnly ? (
                 <button
                   type="button"
@@ -223,10 +224,10 @@ export function DocumentIdentityBar({
                     setFieldOpen(true);
                   }}
                 >
-                  <NamespaceFailureMark failure="set-location" labelled />
+                  <NamespaceFailureMark failure={repair.kind} labelled />
                 </button>
               ) : (
-                <NamespaceFailureMark failure="set-location" message={passiveFailure} />
+                <NamespaceFailureMark failure={repair.kind} message={passiveFailure} />
               )
             ) : null}
             <IdentityChipSlot
