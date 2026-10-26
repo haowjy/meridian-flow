@@ -116,3 +116,14 @@ A create also takes `destination.position` (`{kind: "start" | "end" | "before" |
 siblingId}`), resolved under the same move lock and walk as a document create: an anchor
 the server does not hold leaves the folder at the parent's end, a malformed position is a
 typed 400.
+
+## A replay is answered from the id the server holds
+
+The route reads `folderId` before any authority or Work-lifecycle check on the destination
+(`answerHeldFolder`, `ContextPort.heldFolder`). With `./mf api`: create a folder F in a
+Work's Scratch (`created`), post the same body (`already-exists`), archive the Work, then
+post the same body and a repair to Manuscript. Both answer 409 `{status: "conflict"}`, never
+403 `work_archived`; the device settles the refusal and keeps its folder. After `unarchive`
+the repair answers `already-exists` at the Work's Scratch. A deleted Work answers the replay
+404 `work_missing` and the repair 409 `conflict`. An id held by a document or a deleted
+folder also answers 409 `{status: "conflict"}`, before any destination work.
