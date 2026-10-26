@@ -150,10 +150,9 @@ export interface ToolExecutor {
  *
  * Base handlers receive only execution identity, cancellation, and the narrow
  * stdout/stderr streaming sink. Interactive or orchestrator-adjacent powers are
- * explicit registration-declared capabilities: `interrupt` receives the
- * user-input suspend/resume callbacks, `spawn` receives the nested-agent
- * launcher, `thread_message` receives the thread-messenger, and
- * `return_result` receives the child-to-parent completion hook. The executor
+ * explicit registration-declared capabilities: `spawn` receives the nested-agent
+ * launcher, `thread_message` receives the thread-messenger, and `return_result`
+ * receives the child-to-parent completion hook. The executor
  * enforces that capability declaration before injecting those extensions, so
  * ordinary handlers never see channels they did not request.
  */

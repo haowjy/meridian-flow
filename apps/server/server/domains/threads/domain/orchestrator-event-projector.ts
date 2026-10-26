@@ -296,7 +296,7 @@ export function createOrchestratorEventProjector() {
 
         // Text/reasoning/tool blocks already have delta-based AG-UI paths.
         // Custom component blocks do not, so projecting only this type avoids
-        // both the interrupt UI gap and double-emitting streamed blocks.
+        // double-emitting streamed blocks.
         const events: AGUIEvent[] = closeOpenMessages();
         events.push(
           parseAguiEvent({
