@@ -807,7 +807,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
             });
             if (!parent.ok) return parent;
             const target = await resolveMutation(
-              joinContextPath(parent.value.path, [name]),
+              joinContextPath(parent.value.canonical, [name]),
               options?.origin,
             );
             if (!target.ok) return Err({ code: "destination_missing", uri: destinationUri });
