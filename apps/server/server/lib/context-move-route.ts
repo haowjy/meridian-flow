@@ -104,7 +104,7 @@ function parseWorkId(raw: unknown, field: "sourceWorkId" | "destinationWorkId") 
   if (typeof raw !== "string" || raw.trim() === "") {
     throw createError({ statusCode: 400, message: `\`${field}\` must be a non-empty string` });
   }
-  return raw.trim();
+  return requireRequestId(raw.trim(), field);
 }
 
 function parseLocator(input: {

@@ -129,6 +129,8 @@ async function destinationRootUri(
   const { scheme, owner } = parent;
   let authority: CanonicalContextAuthority = { kind: "contextual" };
   if (owner.rootThreadId) {
+    if (scheme !== "scratch")
+      throw createError({ statusCode: 400, message: "Only Scratch belongs to a chat" });
     const lineage = await app.contextPorts.lineages.byId(projectId, owner.rootThreadId);
     if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
     authority = { kind: "lineage", rootThreadRef: lineage.rootThreadRef };
