@@ -1491,7 +1491,13 @@ export function createInMemoryRepositories(
       async recordRelayOnce(id, relay) {
         const row = asks.get(id);
         if (!row) throw new Error("Forwarded ask disappeared while recording its relay");
-        if (row.relay && JSON.stringify(row.relay) !== JSON.stringify(relay))
+        if (
+          row.relay &&
+          (row.relay.childAskId !== relay.childAskId ||
+            row.relay.mode !== relay.mode ||
+            row.relay.childExecutionId !== relay.childExecutionId ||
+            row.relay.messageId !== relay.messageId)
+        )
           throw new Error("Forwarded ask already has a different relay");
         const updated = { ...row, relay: row.relay ?? relay };
         asks.set(id, updated);
