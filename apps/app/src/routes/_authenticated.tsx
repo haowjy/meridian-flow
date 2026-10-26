@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
-import { lazy, Suspense, useCallback, useEffect } from "react";
+import { lazy, Suspense, useCallback, useEffect, useSyncExternalStore } from "react";
 import { getAccountSettings, nextAccountSettingsGeneration } from "@/client/api/account-api";
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
@@ -36,7 +36,6 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { parseProjectAddress } from "@/features/project/routing/project-address";
-import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { originalBrowserSearch } from "@/router-search";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
@@ -56,6 +55,22 @@ const DebugOverlay =
   import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1"
     ? lazy(() => import("@/features/debug/DebugOverlay").then((m) => ({ default: m.DebugOverlay })))
     : null;
+
+// The query devtools launcher floats over the top-right corner, where a narrow window's top bar
+// keeps its context toggle. Narrow by width, not pointer: a desktop browser resized to phone
+// width gets the same top bar as a phone.
+const NARROW_QUERY = "(max-width: 767px)";
+function useNarrowViewport(): boolean {
+  return useSyncExternalStore(
+    (notify) => {
+      const query = window.matchMedia(NARROW_QUERY);
+      query.addEventListener("change", notify);
+      return () => query.removeEventListener("change", notify);
+    },
+    () => window.matchMedia(NARROW_QUERY).matches,
+    () => true,
+  );
+}
 
 const ReactQueryDevtools = import.meta.env.DEV
   ? lazy(() =>
@@ -200,7 +215,7 @@ function AuthenticatedProviderTree({
   };
 }) {
   const resources = useOptionalAccountResourceReplica();
-  const phone = usePhoneShell();
+  const narrow = useNarrowViewport();
 
   // Browser persistence is initialized only after the Query composition root
   // exists. Constructing these services during SSR crashes the authenticated shell.
@@ -233,8 +248,7 @@ function AuthenticatedProviderTree({
                       <DebugOverlay />
                     </Suspense>
                   ) : null}
-                  {/* Keep development controls out of the activity card and phone top bar. */}
-                  {ReactQueryDevtools && phone === false ? (
+                  {ReactQueryDevtools && !narrow ? (
                     <Suspense fallback={null}>
                       <ReactQueryDevtools buttonPosition="top-right" initialIsOpen={false} />
                     </Suspense>
