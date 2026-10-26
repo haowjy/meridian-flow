@@ -4,7 +4,10 @@
  * lights the target and says what the drop will do. Desktop file drops arrive
  * with import.
  */
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type {
+  ContextSiblingPosition,
+  ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import {
   createContext,
   type DragEvent,
@@ -26,6 +29,8 @@ export type TreeDropTarget = {
   catalogRootId: string;
   /** The folder row, or null for the catalog's top level (the area header). */
   folder: { entryId: string; path: string; name: string } | null;
+  /** A sibling edge; absent while the folder/container region owns the target. */
+  position?: ContextSiblingPosition;
 };
 
 /**
@@ -48,15 +53,20 @@ export type TreeDropState = "idle" | "over" | "refused";
 
 const SPRING_MS = 600;
 
-type Over = { key: string; refused: boolean } | null;
+type Over = { key: string; refused: boolean; target: TreeDropTarget } | null;
 
 type ScopeValue = {
   route: EntriesRoute;
   over: Over;
   /** An element of `key` came under the drag; arms the spring for an accepted target. */
-  enter(key: string, refused: boolean, reveal: (() => void) | undefined): void;
+  enter(
+    key: string,
+    target: TreeDropTarget,
+    refused: boolean,
+    reveal: (() => void) | undefined,
+  ): void;
   /** Re-lights `key` on every `dragover` (its verdict can change while hovering). */
-  relight(key: string, refused: boolean): void;
+  relight(key: string, target: TreeDropTarget, refused: boolean): void;
   /** An element of `key` left; the target goes dark once none remain. */
   leave(key: string): void;
   /** Bumps when a drag ends anywhere; holds from an earlier drag are void. */
@@ -65,8 +75,9 @@ type ScopeValue = {
 
 const ScopeContext = createContext<ScopeValue | null>(null);
 
-function targetKey(target: TreeDropTarget): string {
-  return `${target.scheme}:${target.folder?.entryId ?? target.catalogRootId}`;
+/** One key per distinct target: catalog, folder and, for an edge, its side and anchor. */
+export function treeDropTargetKey(target: TreeDropTarget): string {
+  return `${target.scheme}:${target.folder?.entryId ?? target.catalogRootId}:${JSON.stringify(target.position)}`;
 }
 
 /**
@@ -89,9 +100,14 @@ export function TreeDropScope({ route, children }: { route: EntriesRoute; childr
       springs.current.delete(key);
     };
     return {
-      enter(key: string, refused: boolean, reveal: (() => void) | undefined) {
+      enter(
+        key: string,
+        target: TreeDropTarget,
+        refused: boolean,
+        reveal: (() => void) | undefined,
+      ) {
         counts.current.set(key, (counts.current.get(key) ?? 0) + 1);
-        setOver({ key, refused });
+        setOver({ key, refused, target });
         if (!refused && reveal && !springs.current.has(key))
           springs.current.set(
             key,
@@ -101,9 +117,9 @@ export function TreeDropScope({ route, children }: { route: EntriesRoute; childr
             }, SPRING_MS),
           );
       },
-      relight(key: string, refused: boolean) {
+      relight(key: string, target: TreeDropTarget, refused: boolean) {
         setOver((current) =>
-          current?.key === key && current.refused === refused ? current : { key, refused },
+          current?.key === key && current.refused === refused ? current : { key, refused, target },
         );
         if (refused) stopSpring(key);
       },
@@ -158,24 +174,61 @@ const NO_PROPS: DropProps = {};
 const claimed = new WeakSet<Event>();
 
 /**
- * Drop handlers for one target. A file row passes its folder as the target, so
- * hovering anywhere in an open folder lights that folder. Each element remembers
- * whether it lit its target, so it always gives that back on leave, whatever
- * the verdict is by then. `reveal` shows what the target holds (a collapsed
- * folder opens): after hovering an accepted target for 600 ms, and on its drop,
- * so the rows that arrived are in view.
+ * A row's top and bottom bands are sibling edges: before or after `siblingId`
+ * in the row's actual parent (`folder`). `band` is each edge's share of the
+ * row's height; `after` is false for an open folder, whose bottom borders its
+ * own first child rather than its next sibling.
+ */
+export type RowEdges = {
+  folder: TreeDropTarget["folder"];
+  siblingId: string;
+  band: number;
+  after: boolean;
+};
+
+export type DropEdge = "before" | "after";
+
+/** The target under the pointer: an edge when it is in an edge band, otherwise the row's own target. */
+function targetAt(target: TreeDropTarget, edges: RowEdges | undefined, event: DragEvent) {
+  if (!edges) return target;
+  const rect = event.currentTarget.getBoundingClientRect();
+  const y = event.clientY - rect.top;
+  const band = rect.height * edges.band;
+  const kind: DropEdge | null =
+    y < band ? "before" : edges.after && y > rect.height - band ? "after" : null;
+  if (!kind) return target;
+  return {
+    scheme: target.scheme,
+    catalogRootId: target.catalogRootId,
+    folder: edges.folder,
+    position: { kind, siblingId: edges.siblingId },
+  };
+}
+
+/**
+ * Drop handlers for one row or region. A file row passes its folder as the
+ * target, so hovering anywhere in an open folder lights that folder; with
+ * `edges`, the row's top and bottom bands are sibling positions instead, and
+ * each event resolves to exactly one target. An edge claims its event even
+ * when its answer is "nothing", so the folder region under it never takes
+ * over. An element holds at most one target at a time and always gives that
+ * one back (moving from one edge to the other releases the first and its
+ * spring at once, without waiting for `dragleave`), whatever its verdict is
+ * by then. `reveal` shows what the row's own target holds (a collapsed folder
+ * opens): after hovering it accepted for 600 ms, and on its drop, so the rows
+ * that arrived are in view. Edges don't spring.
  */
 export function useTreeDropTarget(
   target: TreeDropTarget,
-  options: { reveal?: () => void } = {},
-): { dropProps: DropProps; dropState: TreeDropState } {
+  options: { reveal?: () => void; edges?: RowEdges } = {},
+): { dropProps: DropProps; dropState: TreeDropState; edge: DropEdge | null } {
   const scope = useContext(ScopeContext);
-  const key = targetKey(target);
-  const held = useRef<{ generation: number } | null>(null);
-  const latest = useRef({ target, scope, reveal: options.reveal });
-  latest.current = { target, scope, reveal: options.reveal };
+  const key = treeDropTargetKey(target);
+  const held = useRef<{ generation: number; key: string } | null>(null);
+  const latest = useRef({ target, scope, ...options });
+  latest.current = { target, scope, ...options };
 
-  /** Claims the event for this target when the drag carries rows and the scope has a route. */
+  /** Claims the event for this element when the drag carries rows and the scope has a route. */
   const claim = useCallback((event: DragEvent): boolean => {
     if (!latest.current.scope || claimed.has(event.nativeEvent)) return false;
     if (dragPayloadKind(Array.from(event.dataTransfer?.types ?? [])) !== "entries") return false;
@@ -183,32 +236,47 @@ export function useTreeDropTarget(
     return true;
   }, []);
 
-  const verdictFor = useCallback((): EntriesVerdict | null => {
-    const { target: current, scope: currentScope } = latest.current;
-    return currentScope?.route.verdict(current) ?? null;
+  const resolve = useCallback((event: DragEvent) => {
+    const { target: own, edges } = latest.current;
+    const current = targetAt(own, edges, event);
+    return { target: current, key: treeDropTargetKey(current) };
   }, []);
 
-  const holding = useCallback(() => {
+  const verdictFor = useCallback(
+    (current: TreeDropTarget): EntriesVerdict | null =>
+      latest.current.scope?.route.verdict(current) ?? null,
+    [],
+  );
+
+  const holding = useCallback((): string | null => {
     const currentScope = latest.current.scope;
-    return held.current !== null && held.current.generation === currentScope?.generation();
+    return held.current && held.current.generation === currentScope?.generation()
+      ? held.current.key
+      : null;
   }, []);
 
   const release = useCallback(() => {
-    if (!holding()) return;
+    const heldKey = holding();
     held.current = null;
-    latest.current.scope?.leave(key);
-  }, [holding, key]);
+    if (heldKey) latest.current.scope?.leave(heldKey);
+  }, [holding]);
 
   const show = useCallback(
-    (event: DragEvent, verdict: EntriesVerdict) => {
+    (
+      event: DragEvent,
+      current: { target: TreeDropTarget; key: string },
+      verdict: EntriesVerdict,
+    ) => {
       const currentScope = latest.current.scope;
       if (!currentScope) return;
       const refused = verdict.kind === "refuse";
-      if (!holding()) {
-        held.current = { generation: currentScope.generation() };
-        currentScope.enter(key, refused, latest.current.reveal);
-      } else currentScope.relight(key, refused);
-      showDragHint(key, verdict, event);
+      if (holding() !== current.key) {
+        release();
+        held.current = { generation: currentScope.generation(), key: current.key };
+        const reveal = current.target.position ? undefined : latest.current.reveal;
+        currentScope.enter(current.key, current.target, refused, reveal);
+      } else currentScope.relight(current.key, current.target, refused);
+      showDragHint(current.key, verdict, event);
       if (refused) {
         event.dataTransfer.dropEffect = "none";
         return;
@@ -217,18 +285,19 @@ export function useTreeDropTarget(
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
     },
-    [holding, key],
+    [holding, release],
   );
 
   const hover = useCallback(
     (event: DragEvent) => {
       if (!claim(event)) return;
-      const verdict = verdictFor();
-      if (verdict) show(event, verdict);
-      // The verdict went quiet while hovering: give the target back.
+      const current = resolve(event);
+      const verdict = verdictFor(current.target);
+      if (verdict) show(event, current, verdict);
+      // The verdict went quiet while hovering (or the pointer reached a quiet edge): give the target back.
       else release();
     },
-    [claim, verdictFor, show, release],
+    [claim, resolve, verdictFor, show, release],
   );
 
   useEffect(() => release, [release]);
@@ -243,24 +312,31 @@ export function useTreeDropTarget(
       },
       onDrop(event) {
         if (!claim(event)) return;
-        const verdict = verdictFor();
+        const { target: dropped } = resolve(event);
+        const verdict = verdictFor(dropped);
         release();
         if (!verdict || verdict.kind === "refuse") return;
         event.preventDefault();
         event.stopPropagation();
-        const { scope: currentScope, target: dropped } = latest.current;
-        currentScope?.route.drop(dropped);
-        latest.current.reveal?.();
+        latest.current.scope?.route.drop(dropped);
+        if (!dropped.position) latest.current.reveal?.();
       },
     }),
-    [hover, claim, verdictFor, release],
+    [hover, claim, resolve, verdictFor, release],
   );
 
-  if (!scope) return { dropProps: NO_PROPS, dropState: "idle" };
-  const lit = scope.over?.key === key;
+  if (!scope) return { dropProps: NO_PROPS, dropState: "idle", edge: null };
+  const over = scope.over;
+  const lit = over?.key === key;
+  const position = over && !over.refused ? over.target.position : undefined;
+  const edge =
+    position && "siblingId" in position && position.siblingId === options.edges?.siblingId
+      ? (position.kind as DropEdge)
+      : null;
   return {
     dropProps,
-    dropState: !lit ? "idle" : scope.over?.refused ? "refused" : "over",
+    dropState: !lit ? "idle" : over?.refused ? "refused" : "over",
+    edge,
   };
 }
 

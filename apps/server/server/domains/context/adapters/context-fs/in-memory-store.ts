@@ -471,6 +471,10 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     );
   }
 
+  async parentOrderPolicy(_view: TreeView, _parentId: string | null) {
+    return "default" as const;
+  }
+
   async listFolders(_view: TreeView, parentId: string | null): Promise<ContextFolder[]> {
     const out: ContextFolder[] = [];
     for (const folder of this.backing.folders.values()) {

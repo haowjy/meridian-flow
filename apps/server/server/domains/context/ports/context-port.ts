@@ -158,6 +158,7 @@ interface BaseListEntry {
   uri: string;
   title?: string | null;
   documentId?: string;
+  folderId?: string;
   sizeBytes?: number;
   updatedAt?: string;
   /** True when the entry's scheme is read-only. */
@@ -295,6 +296,7 @@ export interface ContextWriteOptions {
 
 export interface ContextLocationOptions extends ContextWriteOptions {
   destinationParent?: MoveContextEntryRequest["destinationParent"];
+  position?: MoveContextEntryRequest["position"];
   /** Reconfirm the resolved destination's edit authority under its namespace locks. */
   authorizeDestination?: (uri: string) => Promise<boolean>;
   operationId?: string;
@@ -315,7 +317,15 @@ export type ContextBranchTreeCommand = {
   documentId: string;
   changedBy: BranchChangeAuthor;
   record(change: RecordedBranchTreeChange): Promise<void>;
-} & ({ op: "move"; sourceUri: string; destinationUri: string } | { op: "delete"; uri: string });
+} & (
+  | {
+      op: "move";
+      sourceUri: string;
+      destinationUri: string;
+      position?: MoveContextEntryRequest["position"];
+    }
+  | { op: "delete"; uri: string }
+);
 
 export type ContextBranchTreeResult = { uri: string; moved: boolean };
 

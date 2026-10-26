@@ -124,6 +124,7 @@ export type AdapterMoveResult = {
   linkUpdate?: { links: number; documents: number };
   movedNodeId?: string;
   path: string;
+  locationVersion?: string;
 };
 
 export type AdapterDeleteResult = {
@@ -163,6 +164,7 @@ export interface ContextBranchTreeAdapter {
       from: { path: string; filetype: Filetype | null; sourceId: string };
       changedBy: BranchChangeAuthor;
       record(change: RecordedBranchTreeChange): Promise<void>;
+      position?: import("@meridian/contracts/protocol").ContextSiblingPosition;
     },
   ): Promise<Result<{ moved: boolean; path: string }, AdapterFault>>;
   delete(

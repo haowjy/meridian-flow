@@ -32,6 +32,7 @@ import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import { bumpLocationVersions } from "../../tree/node-locations.js";
 import { moveNode } from "../../tree/node-moves.js";
 import { lockDocuments } from "../../tree/node-rows.js";
+import { liveSiblingPlacement, placeLiveSibling } from "../../tree/sibling-order.js";
 import { createTreeReader, LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
 import {
@@ -274,8 +275,39 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
 
       const targetToken =
         input.expectedTarget.state === "occupied" ? input.expectedTarget.token : null;
+      const movedRef = {
+        kind: input.source.kind === "file" ? ("document" as const) : ("folder" as const),
+        id: input.source.nodeId,
+      };
+      const beforePlacement = await liveSiblingPlacement(this.db, movedRef);
       if (targetToken) {
-        if (targetToken.nodeId === input.source.nodeId) return Err({ code: "invalid_operation" });
+        if (targetToken.nodeId === input.source.nodeId) {
+          if (!input.position || !beforePlacement) return Err({ code: "invalid_operation" });
+          const placed = await placeLiveSibling(this.db, {
+            node: movedRef,
+            sourceId: beforePlacement.sourceId,
+            parentId: beforePlacement.parentId,
+            position: input.position,
+            arrived: false,
+          });
+          if (placed === "stale-anchor") rollback("stale_target");
+          await bumpLocationVersions(this.db, {
+            ...(movedRef.kind === "document"
+              ? { documentIds: [movedRef.id] }
+              : { folderIds: [movedRef.id] }),
+          });
+          await this.catalogMutations?.refreshSources(
+            [beforePlacement.sourceId],
+            [input.source.nodeId],
+          );
+          const settledPlacement = await liveSiblingPlacement(this.db, movedRef);
+          if (!settledPlacement) rollback("stale_source");
+          return Ok({
+            movedNodeId: input.source.nodeId,
+            destinationPath,
+            locationVersion: settledPlacement.locationVersion.toString(),
+          });
+        }
         if (
           input.overwrite &&
           (targetToken.kind !== input.source.kind || input.source.kind === "directory")
@@ -340,6 +372,18 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         filetype: input.destinationFiletype ?? null,
       });
       if (!moved.ok) rollback(moved.error.code);
+      const afterPlacement = await liveSiblingPlacement(this.db, movedRef);
+      if (!afterPlacement) rollback("stale_source");
+      const placed = await placeLiveSibling(this.db, {
+        node: movedRef,
+        sourceId: afterPlacement.sourceId,
+        parentId: afterPlacement.parentId,
+        ...(input.position ? { position: input.position } : {}),
+        arrived:
+          beforePlacement?.sourceId !== afterPlacement.sourceId ||
+          beforePlacement?.parentId !== afterPlacement.parentId,
+      });
+      if (placed === "stale-anchor") rollback("stale_target");
       if (
         input.source.kind === "file" &&
         (targetBasename !== treeBasename(input.source.path) ||
@@ -356,6 +400,8 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         [...new Set([input.source.sourceId, input.destinationSourceId])],
         [input.source.nodeId],
       );
+      const settledPlacement = await liveSiblingPlacement(this.db, movedRef);
+      if (!settledPlacement) rollback("stale_source");
       return Ok({
         movedNodeId: input.source.nodeId,
         destinationPath: [
@@ -364,6 +410,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             ? renderDocumentFilename(moved.value.target.name, moved.value.target.extension)
             : moved.value.target.name,
         ].join("/"),
+        locationVersion: settledPlacement.locationVersion.toString(),
         linkUpdate,
       });
     });

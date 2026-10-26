@@ -151,30 +151,39 @@ function treeLineKey(target: TurnEditedDocumentId | TurnTreeEntry): string {
 
 /**
  * Each document's net tree line, per destination: deleted when the turn left it deleted, moved when it left it
- * living somewhere other than where the turn found it. A destination the entry didn't record
+ * living somewhere other than where the turn found it, or moved in place when it only changed
+ * position (`to` equals `from`). A destination the entry didn't record
  * (a restore's) leaves the location as it was.
  */
 function treeLines(entries: readonly TurnTreeEntry[]): Map<string, TurnTreeLine> {
-  const folded = new Map<string, { from: string; at: string; living: boolean }>();
+  const folded = new Map<
+    string,
+    { from: string; at: string; living: boolean; repositioned: boolean }
+  >();
   for (const entry of entries) {
     const key = treeLineKey(entry);
     const state = folded.get(key) ?? {
       from: entry.shownAt ?? "",
       at: entry.shownAt ?? "",
       living: true,
+      repositioned: false,
     };
     if (entry.op === "delete") state.living = false;
     else {
       state.living = true;
-      if (entry.op === "move" && entry.landedAt) state.at = entry.landedAt;
+      if (entry.op === "move" && entry.landedAt) {
+        // A move that kept the path it was shown at changed only the position among siblings.
+        if (entry.landedAt === entry.shownAt) state.repositioned = true;
+        state.at = entry.landedAt;
+      }
     }
     folded.set(key, state);
   }
   const lines = new Map<string, TurnTreeLine>();
-  for (const [key, { from, at, living }] of folded) {
+  for (const [key, { from, at, living, repositioned }] of folded) {
     if (!from) continue;
     if (!living) lines.set(key, { op: "delete", from });
-    else if (at !== from) lines.set(key, { op: "move", from, to: at });
+    else if (at !== from || repositioned) lines.set(key, { op: "move", from, to: at });
   }
   return lines;
 }
