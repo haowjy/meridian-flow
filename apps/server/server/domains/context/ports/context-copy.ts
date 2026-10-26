@@ -38,6 +38,8 @@ export interface CopySourceFile {
   storageUrl: string | null;
   mimeType: string | null;
   sizeBytes: number | null;
+  /** Set by the command on a selected root only: the client's id for the root's copy. */
+  copyId?: string;
 }
 
 /** One folder in a source tree, with the children a reader sees in it. */
@@ -53,6 +55,8 @@ export interface CopySourceFolder {
   orderPolicy: ContextParentOrderPolicy;
   /** Children in the folder's visible order (empty folders included). */
   children: CopySourceEntry[];
+  /** Set by the command on a selected root only: the client's id for the root's copy. */
+  copyId?: string;
 }
 
 export type CopySourceEntry = CopySourceFolder | CopySourceFile;
@@ -133,7 +137,8 @@ export interface ContextCopyAdapter {
   snapshotSource(path: string): Promise<Result<CopySourceEntry, AdapterFault>>;
   /**
    * Plan `roots` under the scheme-relative folder `dir`: allocate every name and mint every
-   * identity, writing nothing and holding no lock. Names are allocated against live
+   * identity, writing nothing and holding no lock. A selected root that carries the device's
+   * `copyId` takes it; every descendant is minted here. Names are allocated against live
    * occupants, hidden occupants (never revealed), and the rest of the batch. A copied folder
    * keeps its source ordering policy, and its children arrive in source order.
    */

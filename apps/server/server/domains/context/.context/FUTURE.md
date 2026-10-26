@@ -33,12 +33,12 @@ The purge batch bounds completed purges, not inspected candidates. Documents hel
 changes can make each sweep scan the full overdue backlog. Measure that backlog before changing the
 query or adding a held-candidate cursor.
 
-## Copy: client intent, root identities and draft destinations
+## Copy: client intent and draft destinations
 
 The server Copy command exists (`copy/`); the browser's Copy intent does not. K2 models each
-copied root as a create-shaped replica record, so it may want client-minted root identities
-for optimistic projection: the command mints every identity itself today, and the receipt
-carries them. Copy also refuses a draft placement destination (`invalid_operation`): a
+copied root as a create-shaped replica record, so a request may mint each root's identity
+(`copyId`, a UUID); the command takes it and mints descendants itself. K2 should send it and
+record in `DECISIONS.md` if its design rules that out. Copy still refuses a draft placement destination (`invalid_operation`): a
 draft-mode chat's copy would need a branch create, which is E2's replica intent work. A
 document that exists only in a Work's draft cannot be a source for the same reason: the
 listing reads the live tree.
