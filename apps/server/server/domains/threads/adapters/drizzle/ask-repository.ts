@@ -134,11 +134,13 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
         .set({ relay })
         .where(and(eq(asks.id, id), isNull(asks.relay)))
         .returning();
-      const existing =
-        row ?? (await currentDrizzleDb(db).select().from(asks).where(eq(asks.id, id)).limit(1))[0];
+      if (row) return storedAsk(row);
+      const existing = (
+        await currentDrizzleDb(db).select().from(asks).where(eq(asks.id, id)).limit(1)
+      )[0];
       if (!existing) throw new Error("Forwarded ask disappeared while recording its relay");
       const stored = storedAsk(existing);
-      if (JSON.stringify(stored.relay) !== JSON.stringify(relay))
+      if (!sameRelayAdmission(stored.relay, relay))
         throw new Error("Forwarded ask already has a different relay");
       return stored;
     },
@@ -201,4 +203,13 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
       return row ? storedAsk(row) : null;
     },
   };
+}
+
+function sameRelayAdmission(left: AskRelay | null, right: AskRelay): boolean {
+  return (
+    left?.childAskId === right.childAskId &&
+    left.mode === right.mode &&
+    left.childExecutionId === right.childExecutionId &&
+    left.messageId === right.messageId
+  );
 }
