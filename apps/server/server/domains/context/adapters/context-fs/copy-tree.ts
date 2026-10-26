@@ -125,7 +125,7 @@ export async function insertCopiedTree(
         ? [
             {
               sourceDocumentId: node.source.documentId,
-              sourceUri: deps.holderUri(node.source.path),
+              sourceUri: node.source.uri,
               documentId: node.id,
               uri: node.uri,
             },
@@ -137,7 +137,7 @@ export async function insertCopiedTree(
         ? [
             {
               sourceFolderId: node.source.folderId,
-              sourceUri: deps.holderUri(node.source.path),
+              sourceUri: node.source.uri,
               folderId: node.id,
               uri: node.uri,
             },
