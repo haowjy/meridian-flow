@@ -15,4 +15,8 @@
 - Rejected `submitted` namespace requests are retried on every journal change and
   every 30 s. Offline with two tabs, about a dozen identical retries ran in 85 s.
   They carry one operation id, so they are harmless; back the retry off if the
-  chatter shows up in a profile or the server log.
+  chatter shows up in a profile or the server log. A first create with the network
+  down sends twice within a few milliseconds: committing the prepared attempt
+  changes the journal while its runner is in flight, so `scheduleOnce` records a
+  rerun that replays the failed attempt as soon as the runner ends. Skipping the
+  rerun after an uncertain result would remove it.
