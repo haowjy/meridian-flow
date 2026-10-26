@@ -398,7 +398,7 @@ export async function runtimeScenario(
   });
   const projectedEvents: SequencedEventInternal[] = [];
   const waiters = new Set<{ type: AGUIEvent["type"]; resolve: (event: AGUIEvent) => void }>();
-  hub.subscribe(thread.id, (entry) => {
+  await hub.catchupAndSubscribe(thread.id, 0n, (entry) => {
     projectedEvents.push(entry);
     for (const waiter of waiters)
       if (waiter.type === entry.event.type) {

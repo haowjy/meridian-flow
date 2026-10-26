@@ -1,10 +1,7 @@
 /** Project and Work resolution shared by thread, doc, and seed commands. */
 import { decodeWorkHandle, type WorkHandle } from "@meridian/contracts/handles";
-import {
-  apiProjectWorksPath,
-  projectBootstrapResponseSchema,
-  workCatalogIdentitySchema,
-} from "@meridian/contracts/protocol";
+import { apiProjectWorksPath, projectBootstrapResponseSchema } from "@meridian/contracts/protocol";
+import { worksSnapshotSchema } from "@meridian/contracts/works";
 import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
 import { jsonResponse } from "../../core/session";
@@ -27,7 +24,7 @@ export async function resolveWork(
   const text = raw.startsWith("@") ? raw.slice(1) : raw;
   const handle = decodeWorkHandle(text);
   const snapshot = await session.request("GET", apiProjectWorksPath(projectId), undefined, {
-    decode: jsonResponse(workCatalogIdentitySchema),
+    decode: jsonResponse(worksSnapshotSchema),
   });
   const work = snapshot.works.find((entry) =>
     handle ? entry.handle === handle : entry.id === text,

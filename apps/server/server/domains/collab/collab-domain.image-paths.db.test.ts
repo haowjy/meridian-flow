@@ -369,7 +369,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const before = await collab.readEffectiveHashlines(draftRead);
       expect(before.ok && before.value.content.join("\n")).toContain("Suffix.");
       await collab.documentDerivations.stop();
-      collab.dispose();
+      await collab.dispose();
       collab = start();
       const undone = await collab
         .agentEdit()

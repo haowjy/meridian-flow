@@ -163,14 +163,18 @@ restart smoke check.
 
 - **Protects:** `[A][/compact][B]` adopts A and B at the next tool boundary,
   then compacts after the turn. Without another boundary, the next run answers
-  B before compacting. Stop uses the same message-first rule.
+  B before compacting. Send now preserves the queue; chat Stop instead hands
+  waiting messages back to the composer (see [queue controls](queue-controls.md)).
 - **Stack:** mock.
 - **Steps:** during a delayed reply, enqueue A, compact, then B and let the model
-  cross a tool boundary. Repeat without a later boundary, and repeat with Stop.
-  Enqueue compact alone and Stop. Withdraw a queued compact while B waits.
+  cross a tool boundary. Repeat without a later boundary, then with Send now.
+  Separately use chat Stop and confirm B returns to the composer before the
+  queued compaction runs. Enqueue compact alone and Stop. Withdraw a queued
+  compact while B waits.
 - **Expect:** the tool-boundary request ends with B and C follows the reply. In
-  the other message cases the successor request ends with B and C follows it.
-  Compact alone runs after Stop. Withdrawal leaves the messages unaffected.
+  no-boundary and Send now cases the successor request ends with B and C follows it.
+  Compact alone runs after Stop; Stop does not send handed-back messages.
+  Withdrawal leaves the messages and running reply unaffected.
 - **Evidence:** pending snapshots, complete request message arrays, C metadata,
   and durable turn positions proving the chain matches writer-visible order.
 - **Last run:** not recorded for this exact recipe.
@@ -281,11 +285,11 @@ restart smoke check.
   ./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\"}" --json > "$E/retry-while-pending.json"
   ./mf thread view "$DEST" --json
   ./mf thread cancel "$DEST" --turn "$S" --json
+  wait "$SEND"  # Retry needs the destination claim free, including the queued reply.
   ./mf mock script '[{"text":"Retried brief."}]' --json
   S2=$(node -p 'crypto.randomUUID()')
   ./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$S2\"}" --json > "$E/retry.json"
   ./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$S2\"}" --json > "$E/retry-replay.json"
-  wait "$SEND"
   ./mf thread context "$DEST" --all --view raw --json
   ```
 
@@ -297,9 +301,19 @@ restart smoke check.
   200. Destination context contains the brief/source ref, never source transcript
   text. The brief has no fallback: a failed attempt is a card on the
   brief ("This handoff brief couldn't be generated. Try again.", the server's `turn.error`) and the
-  header's Retry is the next attempt. A failed Stop on a generating brief is a second card on it
+  header's Retry is the next attempt while the failure is still actionable. A
+  failed Stop on a generating brief is a second card on it
   ("Couldn't stop the brief." with Try again), and a refused or lost Retry is a card too
   ("Couldn't retry." / "Couldn't start a new brief."); see [failure cards](failure-cards.md).
+- **Failure and writer Retry:** hold the brief with a delayed partial response
+  and `finishReason: "length"`, send a destination message before it ends, and
+  verify that the failed seed stays `error/max_tokens` while the queued message
+  is answered. After a later reply completes, the old brief has no failure card
+  or Retry, under the current failure-lifetime policy. Test the browser's Retry
+  on a separate failed handoff with no later reply: it appends a new seed, keeps
+  the old seed, and generates in place. A6's ordinary-run Retry describes failed
+  assistant replies, not handoff seeds. The API can still append a brief after
+  a later reply has settled; a held destination claim refuses it with 409.
 - **Crash variant:** start a second delayed handoff, kill the app process while
   its brief is in flight, restart it, and wait one orphan-repair interval. S
   settles with generic failure copy, internal `interrupted` reason, an

@@ -8,7 +8,7 @@ import { parseHandle } from "@meridian/contracts/handles";
 import {
   apiProjectDocumentAddressPath,
   type ContextOwner,
-  documentAddressReferenceSchema,
+  documentAddressSchema,
   type ProjectContextTreeScheme,
   parseDocumentFilename,
   renderFilename,
@@ -108,7 +108,7 @@ export async function resolveDocument(session: Session, projectId: string, targe
     "GET",
     apiProjectDocumentAddressPath(projectId, target.scheme, target.path, ownerOf(target)),
     undefined,
-    { decode: jsonResponse(documentAddressReferenceSchema) },
+    { decode: jsonResponse(documentAddressSchema) },
   );
   if (address.kind === "unavailable") {
     throw new CliError("not_found", `No live document at ${target.uri}`, {

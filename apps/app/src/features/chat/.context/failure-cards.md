@@ -43,3 +43,31 @@ One announcer, `useChatCardAnnouncer`, speaks each card key once, and only for a
 card the writer watched appear: a card already present when the history settles
 is silent. It clears the live region when the card ends. A card never passes
 `announce`, and hooks never call `announceError` for a chat failure.
+
+## Feed availability and diagnostics
+
+A terminal socket close or refused subscription supplies an `unavailable`
+occurrence through `ThreadSync`, separate from retryable diagnostic errors.
+`chatCards` places it above the composer: “Chat updates disconnected”, “Reload
+to see the latest replies.”, Reload. Sending remains available. Socket recovery
+alone is insufficient: the affected subscription must acknowledge catchup.
+The global connection banner only describes transient reconnects.
+
+Command owners emit `failure.recorded` and `failure.ended` at their transitions,
+using the same occurrence key as the card. Rendering and announcing do not log.
+`FailureLogProvider` keeps a bounded local trace and sends bounded, best-effort
+metadata batches to authenticated `/api/diagnostics/failures`. It fences batches
+to the account and gives each request a two-second deadline; ingestion failure
+stays local and never changes an action's outcome. Missing or foreign targets
+lose thread/turn correlation, not the authenticated failure record. Owned
+deleted targets retain correlation. No message, prompt, response body or exception text enters that route.
+The non-chat `useFailure` hook owns the same lifetime for Work goal editing;
+this is not a migration of every error surface.
+
+Queued compactions keep one owner entry for admission evidence, enqueue and
+withdrawal attempts, and snapshot removal proof. The owner reconciles raw
+server items and transcript answers before projecting rows. Optimistic hiding
+never deletes pending-attempt evidence; hidden targets still request a fresh
+snapshot when the server drops them. A snapshot older than admission cannot
+retire an unadmitted enqueue. Write-mode switches retain their submission-journal
+owner; the queued list does not take over that durable lifetime.

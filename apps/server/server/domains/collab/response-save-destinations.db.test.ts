@@ -128,7 +128,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
     const hocuspocus = fakeHocuspocus();
-    const collabs: Array<{ dispose(): void }> = [];
+    const collabs: Array<{ dispose(): Promise<void> }> = [];
     const createTestCollab = (
       options: { livePullDebounceMs?: number; links?: DocumentLinkScopes } = {},
     ) => {
@@ -151,8 +151,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return collab;
     };
 
-    afterEach(() => {
-      for (const collab of collabs.splice(0)) collab.dispose();
+    afterEach(async () => {
+      for (const collab of collabs.splice(0)) await collab.dispose();
     });
     type Collab = ReturnType<typeof createTestCollab>;
 

@@ -7,6 +7,12 @@
  * and generation fencing; `dispatch-ws-server-message` owns message routing.
  */
 import {
+  classifyUnavailable,
+  type FailureLog,
+  type FailureOccurrence,
+  noFailureLog,
+} from "@meridian/contracts/failures";
+import {
   type AGUIEvent,
   type CancelTurnResponse,
   type MeridianError,
@@ -29,14 +35,18 @@ import { WsThreadSubscriptionRegistry } from "./ws-thread-subscription";
 
 export type ThreadSocketClientOptions = SocketLifecycleOptions & {
   url: () => string;
+  failureLog?: FailureLog;
   toError: (error: MeridianError) => Error;
   cancelTurn: (threadId: string, turnId: string) => Promise<CancelTurnResponse>;
 };
 
 export class ThreadSocketClient implements ThreadTransport {
   private readonly socket: SocketLifecycleController;
+  private connectionFailure: FailureOccurrence | null = null;
   private readonly subscriptions = new WsThreadSubscriptionRegistry({
     isConnected: () => this.socket.isServerConnected(),
+    failureLog: { record: (record) => (this.options.failureLog ?? noFailureLog).record(record) },
+    connectionFailure: () => this.connectionFailure,
     nextRequestId: () => this.nextRequestId(),
     send: (message) => this.send(message),
   });
@@ -86,6 +96,8 @@ export class ThreadSocketClient implements ThreadTransport {
     this.wantsConnection = false;
     this.socket.teardown();
     this.subscriptions.connectionLost();
+    this.subscriptions.clearAvailability();
+    this.endConnectionFailure("moot");
   }
 
   reconnect(): void {
@@ -192,7 +204,11 @@ export class ThreadSocketClient implements ThreadTransport {
       toError: this.options.toError,
       dispatchSequencedEvent: (threadId, seq, aguiEvent, error, sourceThreadId) =>
         this.dispatchSequencedEvent(threadId, seq, aguiEvent, error, sourceThreadId),
-      onSubscribed: (subscribed) => this.subscriptions.handleSubscribed(subscribed),
+      onSubscribed: (subscribed) => {
+        this.subscriptions.handleSubscribed(subscribed);
+        if (this.connectionFailure && !this.subscriptions.hasUnavailable(this.connectionFailure))
+          this.endConnectionFailure("resolved");
+      },
       handleGap: (gap) => this.subscriptions.handleGap(gap),
       send: (payload) => this.send(payload),
       onConnected: () => {
@@ -238,10 +254,27 @@ export class ThreadSocketClient implements ThreadTransport {
   }
 
   private publishConnectionState(state: ConnectionState): void {
+    if (state.kind === "terminal" || state.kind === "unauthorized" || state.kind === "reset") {
+      if (!this.connectionFailure) {
+        this.connectionFailure = {
+          occurrenceId: `connection:${globalThis.crypto.randomUUID()}`,
+          failure: classifyUnavailable("socket_closed", state.code),
+        };
+        this.options.failureLog?.record({ ...this.connectionFailure, phase: "recorded" });
+      }
+      this.subscriptions.connectionUnavailable(this.connectionFailure);
+    }
+
     for (const listener of this.connectionListeners) {
       listener(state);
     }
     for (const handler of this.subscriptions.handlers()) handler.onConnectionState?.(state);
+  }
+
+  private endConnectionFailure(end: "resolved" | "moot"): void {
+    if (!this.connectionFailure) return;
+    this.options.failureLog?.record({ ...this.connectionFailure, phase: "ended", end });
+    this.connectionFailure = null;
   }
 
   private publishError(error: Error): void {

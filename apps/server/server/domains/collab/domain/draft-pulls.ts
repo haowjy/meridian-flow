@@ -54,6 +54,8 @@ export type DraftPullService = {
   scheduleLivePull(documentId: DocumentId): void;
   /** Drops debounced pulls that haven't started; in-flight pulls finish. */
   cancelScheduledPulls(): void;
+  /** Stop scheduling and join pulls already in flight before their store is destroyed. */
+  shutdown(): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
   ensureThreadPeer(input: {
     documentId: DocumentId;
@@ -131,6 +133,7 @@ export function createDraftPullService(input: {
   liveJournal: Pick<UpdateJournal, "read">;
   diagnostics?: DraftPullDiagnostics;
 }): DraftPullService {
+  let stopped = false;
   const debounceMs = input.debounceMs ?? 2000;
   const maxDebounceMs = input.maxDebounceMs ?? 10000;
   const timers = new Map<
@@ -255,6 +258,7 @@ export function createDraftPullService(input: {
   }
 
   async function run(documentId: DocumentId): Promise<void> {
+    if (stopped) return;
     const current = timers.get(documentId);
     if (current?.running) {
       // A joiner needs a snapshot captured after its call, not the in-flight
@@ -308,6 +312,7 @@ export function createDraftPullService(input: {
 
   return {
     scheduleLivePull(documentId) {
+      if (stopped) return;
       const entry = timers.get(documentId) ?? {};
       if (entry.running) backgroundPull(documentId);
       armDebounce(documentId, entry);
@@ -326,6 +331,16 @@ export function createDraftPullService(input: {
         entry.max = undefined;
         if (!entry.running && !entry.queued) timers.delete(documentId);
       }
+    },
+
+    async shutdown() {
+      stopped = true;
+      this.cancelScheduledPulls();
+      // A queued rerun observes stopped before touching the store. Failures are already
+      // reported by the background caller; teardown must join every other pull as well.
+      await Promise.allSettled(
+        [...timers.values()].flatMap((entry) => [entry.running, entry.queued].filter(Boolean)),
+      );
     },
 
     flushLivePull(documentId) {

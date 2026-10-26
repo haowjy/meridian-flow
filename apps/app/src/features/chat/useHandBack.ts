@@ -23,7 +23,8 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { postCommand } from "@/client/api/threads-api";
 import { composerSessionDraft } from "@/client/composer-drafts";
-import { useThreadActions } from "@/client/stores";
+import { useFailureLog } from "@/client/failures/failure-log";
+import { useRunState, useThreadActions } from "@/client/stores";
 
 export type ChatHandBack = {
   operation: HandBackOperation;
@@ -41,6 +42,8 @@ export function useHandBack(input: {
 }): ChatHandBack {
   const { threadId, accountId, scope } = input;
   const actions = useThreadActions();
+  const failureLog = useFailureLog();
+  const view = useRunState(threadId);
   const latest = useRef({ actions, scope });
   useLayoutEffect(() => {
     latest.current = { actions, scope };
@@ -87,23 +90,28 @@ export function useHandBack(input: {
     return createHandBackOperation({
       threadId,
       ports: {
+        failureLog,
         http: postCommand,
         runState,
         removeTurns: (ids, version) => latest.current.actions.removeTurns(threadId, ids, version),
         store,
       },
     });
-  }, [draft, threadId]);
+  }, [draft, threadId, failureLog]);
 
   useEffect(() => {
+    operation.open();
     const stopListening = operation.subscribe(redraw);
     void operation.resume();
     const stopWatching = draft.subscribe(() => operation.reconcile());
     return () => {
       stopListening();
       stopWatching();
+      operation.close();
     };
   }, [draft, operation, redraw]);
+
+  useEffect(() => operation.reconcile(view), [operation, view]);
 
   const unresolved = useMemo(() => operation.unresolved(), [operation, revision]);
   const stopFacts = useMemo(() => operation.stopFacts(), [operation, revision]);

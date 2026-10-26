@@ -108,7 +108,12 @@ export type CommandFailureInput = {
 
 /** The only place a command failure's source is chosen. A refused command is the writer's to dismiss or redo. */
 export function classifyCommandFailure(input: CommandFailureInput): Failure {
-  const source: FailureSource = input.kind === "refused" ? "refusal" : "transport";
+  const source: FailureSource =
+    input.code === "malformed_response"
+      ? "bug"
+      : input.kind === "refused"
+        ? "refusal"
+        : "transport";
   const code = input.code ?? (input.kind === "unsaved" ? "unsaved" : input.kind);
   return {
     category: "command",
@@ -122,3 +127,33 @@ export function classifyCommandFailure(input: CommandFailureInput): Failure {
 export function usageFailure(reason: string): Failure {
   return { category: "usage", source: "usage", actionable: true, cause: { code: reason } };
 }
+
+/** One client-owned failure; the same id keys its visible card and diagnostics. */
+export type FailureOccurrence = { occurrenceId: string; failure: Failure };
+
+export function classifyUnavailable(code: string, status?: number): Failure {
+  return {
+    category: "unavailable",
+    source: "transport",
+    actionable: true,
+    cause: { code, ...(status === undefined ? {} : { status }) },
+  };
+}
+
+/** Client diagnostics contain metadata only, never request or response bodies. */
+export type ClientFailureRecord = FailureOccurrence & {
+  threadId?: string;
+  turnId?: string;
+  requestId?: string;
+  submissionId?: string;
+} & ({ phase: "recorded" } | { phase: "ended"; end: FailureEnd });
+
+export interface FailureLog {
+  record(record: ClientFailureRecord): void;
+}
+export const noFailureLog: FailureLog = { record() {} };
+export {
+  clientFailureBatchSchema,
+  clientFailureEvent,
+  clientFailureRecordSchema,
+} from "./client.js";

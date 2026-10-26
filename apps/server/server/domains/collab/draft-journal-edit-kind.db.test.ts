@@ -77,6 +77,6 @@ it("returns editKind from the pending part's origin, independent of current text
       ]);
     });
   } finally {
-    await harness.cancelScheduledPulls();
+    await harness.dispose();
   }
 });
