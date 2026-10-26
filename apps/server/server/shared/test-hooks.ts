@@ -56,6 +56,8 @@ const TEST_HOOK_POINTS = [
   "ask.pending",
   /** An answer, result block, completed asking turn, and continuation committed together. */
   "ask.answer.afterCommit",
+  /** A parent's answer and its `direct` continuation row committed; nothing has admitted it. */
+  "ask.parentAnswer.afterCommit",
 ] as const;
 export type TestHookPoint = (typeof TEST_HOOK_POINTS)[number];
 

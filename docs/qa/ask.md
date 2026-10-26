@@ -171,10 +171,12 @@ scripts cannot interpolate the ids returned by an earlier tool call.
    original ask binding.
 7. Forward a descendant's question so the root also has an open ask. Cancel the
    root asking turn with `./mf thread cancel "$root" --turn "$rootAskingTurn"`.
-   Do not use chat Stop on an idle root; it is a no-op and does not exercise
-   ancestor cancellation. PASS: every open ask in that subtree becomes
-   cancelled, including children absent from the live session map, and no
-   continuation starts.
+   PASS: every open ask in the subtrees that turn's execution spawned becomes
+   cancelled, including children absent from the live session map, each parked
+   child's card and `spawn_status` read cancelled, and no continuation starts. A
+   background child spawned in an earlier root turn keeps its open question.
+   Then press Stop on the root, even while it is idle. PASS: that earlier child is
+   cancelled too; Stop ends the whole subtree.
 8. Hold a background child's continuation with a slow mock step. PASS: the same
    parent card moves from “Asked a question” while the ask is open, to running
    as soon as the continuation starts, to its final outcome. The primary chat
@@ -182,3 +184,22 @@ scripts cannot interpolate the ids returned by an earlier tool call.
 9. Open a forwarded question in the primary chat at 390 px wide. PASS: the
    takeover attributes the question as `@child asks: …`; the options, own-answer
    field, Skip and countdown remain usable.
+10. Park a middle child on a question while its background leaf runs a 40 s mock
+    step, then press Stop on the root. PASS within about two seconds: the leaf's
+    report is `cancelled`, the middle's ask is cancelled, both cards and
+    `spawn_status` read cancelled, the middle's inbox has no pending notice, and
+    no middle turn starts after Stop. Repeat with a middle that finishes instead
+    of asking: its running and parked leaves end the same way.
+11. Crash windows. Start the stack with
+    `HOOK_CRASH_AT=ask.parentAnswer.afterCommit HOOK_CRASH_ARM=<file>`, arm it,
+    and answer a forwarded question. PASS after the worker restarts: the child's
+    `direct` `ask_resolved` row is still there, the relay replays, and the parent's
+    result carries the child's continuation report. Separately, `kill -9` the
+    server while that child continuation runs, then restart the stack with the
+    same environment (`pnpm dev:restart` drops it). PASS: the continuation settles
+    `failed` (`orphaned`), and the parent's replayed relay carries that report.
+12. Redelivery. Set a consumed `ask_resolved` row back to undelivered
+    (`UPDATE thread_inbox_messages SET delivered_at = NULL WHERE id = …`), for a
+    plain child question and for a forwarded middle. PASS: the wake sweep admits a
+    second continuation report for the same ask, acknowledges the row, emits no
+    `wake.failed`, and a later writer message to that child still runs.
