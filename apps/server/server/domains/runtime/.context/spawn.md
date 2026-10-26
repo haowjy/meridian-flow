@@ -52,11 +52,14 @@ continuation relays its answer before the first model request and replaces the
 provisional ask result with the child report, or with `late: true` when the
 child question had already resolved. Relay state is stored on the forwarded
 ask; the continuation receipt stays unacknowledged until relay and result
-replacement finish. Foreground relay admission stores the exact child execution
-on that ask in the child turn-start transaction. Waiting and result enrichment
-happen afterward, outside locks; replay reads the stored execution rather than
-admitting another child run. The child driver exposes admission separately from
-execution/report reading so ordinary calls and relay recovery use one machine.
+replacement finish. Direct and queued answers enter one continuation admission;
+the resolved ask id is stored on its execution report, inherited report
+correlation is admitted, and the card projects to running. A relay records the
+exact child execution in that turn-start transaction. Waiting and result
+enrichment happen afterward, outside locks; replay reads the execution bound to
+that ask rather than selecting a later child report. The child driver exposes
+admission separately from execution/report reading so ordinary calls and relay
+recovery use one machine.
 
 ## Cards, reports, and activity
 
@@ -95,4 +98,6 @@ Maximum spawn depth is operator-configured at tree creation. Child creation,
 Agent binding, and Work membership are one transaction. A child starts with an
 unfrozen prompt; ordinary preparation adds its persona and report instruction.
 Terminal persistence precedes helper/Work cleanup, and a child terminal run
-aborts its descendants. `asked` is non-terminal for this lifetime rule.
+aborts its descendants and cancels their parked asks through database lineage.
+`asked` is non-terminal for this lifetime rule, so descendants keep running and
+their notifications wait behind the question barrier.
