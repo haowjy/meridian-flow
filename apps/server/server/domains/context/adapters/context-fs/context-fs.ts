@@ -56,17 +56,11 @@ import type {
 } from "../../ports/context-adapter.js";
 import { schemeCapabilities } from "../../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../../ports/context-command-transaction.js";
-import type {
-  ContextCopyAdapter,
-  CopySourceEntry,
-  CopySourceFile,
-  CopySourceFolder,
-} from "../../ports/context-copy.js";
+import type { ContextCopyAdapter } from "../../ports/context-copy.js";
 import {
   type ContextDocument,
   type ContextDocumentStore,
   ContextEntryConflictError,
-  type ContextFolder,
 } from "../../ports/context-document-store.js";
 import type {
   AdapterCreateUntitledOptions,
@@ -86,7 +80,7 @@ import type {
 import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { LineageScratchUnavailableError } from "../lineage-scratch-lifecycle.js";
 import { BoundWrites, binaryTrackedWriteFault, DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
-import { insertCopiedTree } from "./copy-tree.js";
+import { createContextFsCopyAdapter } from "./copy-adapter.js";
 import {
   AMBIGUOUS_PATH_FAULT,
   type ContextPlacement,
@@ -209,7 +203,6 @@ export class ContextFS implements ContextSchemeAdapter {
   private readonly commandExecutor: ResultAwareCommandExecutor<AdapterFault>;
   private readonly placement: CreatePlacement;
   private readonly liveCreate: LiveCreate;
-  private readonly documentCreation: DocumentCreationAggregate;
   private readonly readView?: ThreadContextView;
   private readonly scheme: ContextScheme;
   private readonly holder: ContextFSDeps["holder"];
@@ -223,9 +216,7 @@ export class ContextFS implements ContextSchemeAdapter {
   };
   readonly branchTree?: ContextBranchTreeAdapter;
   /** Copy's read and insert halves (`context/copy/` decides what to copy). */
-  get copy(): ContextCopyAdapter {
-    return this.copyAdapter;
-  }
+  readonly copy: ContextCopyAdapter;
 
   constructor(deps: ContextFSDeps) {
     this.links = deps.links;
@@ -238,7 +229,6 @@ export class ContextFS implements ContextSchemeAdapter {
       createDocumentCreationAggregate({
         atomic: (operation) => deps.store.transaction(operation),
       });
-    this.documentCreation = documentCreation;
     this.commandExecutor = createResultAwareCommandExecutor({
       transaction: deps.commandTransaction ?? {
         run: (operation) => deps.store.transaction(() => operation({ branch: null })),
@@ -286,6 +276,14 @@ export class ContextFS implements ContextSchemeAdapter {
       executor: this.commandExecutor,
       documentSync: deps.documentSync,
       liveCreate: this.liveCreate,
+    });
+    this.copy = createContextFsCopyAdapter({
+      store: deps.store,
+      documentCreation,
+      documentSync: deps.documentSync,
+      holderUri: (path) => this.holderUri(path),
+      syncFault: (error) => this.syncFault(error),
+      refuseReceive: () => this.placement.refuse("receive a copy"),
     });
     const branchTree = this.placement.branchTree;
     if (branchTree) {
@@ -341,134 +339,6 @@ export class ContextFS implements ContextSchemeAdapter {
       case "corrupt_state":
         return { code: "io_error", message: error.message };
     }
-  }
-
-  /**
-   * Copy's source and destination halves for this source (`context/copy/` orchestrates):
-   * a frozen subtree read here, and insertion of the names this namespace owns.
-   */
-  private readonly copyAdapter: ContextCopyAdapter = {
-    sourceId: () => this.store.existingContextSourceId(),
-    snapshotSource: (path) => this.snapshotCopySource(path),
-    peekSource: (path) => this.peekCopySource(path),
-    copyInto: (input) => {
-      const refused = this.placement.refuse("receive a copy");
-      if (refused) return Promise.resolve(Err(refused));
-      return insertCopiedTree(
-        {
-          store: this.store,
-          documentCreation: this.documentCreation,
-          documentSync: this.documentSync,
-          holderUri: (path) => this.holderUri(path),
-          syncFault: (error) => this.syncFault(error),
-        },
-        input,
-      );
-    },
-  };
-
-  /** The frozen source subtree at one path: the folder with every descendant, or one file. */
-  private async snapshotCopySource(path: string): Promise<Result<CopySourceEntry, AdapterFault>> {
-    const clean = path.replace(/\/+$/, "");
-    if (!clean) {
-      return Err({
-        code: "invalid_operation",
-        message: "The source root cannot be copied; copy a file or a folder in it.",
-      });
-    }
-    const folder = await this.store.resolveFolderAt(LIVE_TREE, clean);
-    if (folder.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
-    if (folder.kind === "found" && folder.node) {
-      return Ok(await this.copyFolderSnapshot(clean, folder.node));
-    }
-    const document = await this.store.resolveDocumentAt(LIVE_TREE, clean);
-    if (document.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
-    if (document.kind === "found") return Ok(this.copyFileSnapshot(clean, document.node));
-    return Err({ code: "not_found" });
-  }
-
-  /** The identity at one source path, without reading anything below it. */
-  private async peekCopySource(
-    path: string,
-  ): Promise<Result<{ kind: "file" | "folder"; nodeId: string } | null, AdapterFault>> {
-    const clean = path.replace(/\/+$/, "");
-    if (!clean) return Ok(null);
-    const folder = await this.store.resolveFolderAt(LIVE_TREE, clean);
-    if (folder.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
-    if (folder.kind === "found" && folder.node) {
-      return Ok({ kind: "folder", nodeId: folder.node.id });
-    }
-    const document = await this.store.resolveDocumentAt(LIVE_TREE, clean);
-    if (document.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
-    if (document.kind === "found") return Ok({ kind: "file", nodeId: document.node.id });
-    return Ok(null);
-  }
-
-  private async copyFolderSnapshot(path: string, folder: ContextFolder): Promise<CopySourceFolder> {
-    const [orderPolicy, folders, documents] = await Promise.all([
-      this.store.parentOrderPolicy(LIVE_TREE, folder.id),
-      this.store.listFolders(LIVE_TREE, folder.id),
-      this.store.listDocuments(LIVE_TREE, folder.id),
-    ]);
-    const siblings = [
-      ...folders.map((child) => ({
-        order: {
-          kind: "folder" as const,
-          name: child.name,
-          rank: child.rank,
-          entryId: child.id,
-        },
-        folder: child,
-      })),
-      ...documents.map((child) => ({
-        order: {
-          kind: "file" as const,
-          name: renderFilename(child.name, child.extension),
-          rank: child.rank,
-          entryId: child.id,
-        },
-        document: child,
-      })),
-    ].sort((left, right) =>
-      compareCatalogSiblings(orderPolicy === "manual", left.order, right.order),
-    );
-    const children: CopySourceEntry[] = [];
-    for (const sibling of siblings) {
-      children.push(
-        "folder" in sibling
-          ? await this.copyFolderSnapshot(joinPath(path, sibling.folder.name), sibling.folder)
-          : this.copyFileSnapshot(
-              joinPath(path, renderFilename(sibling.document.name, sibling.document.extension)),
-              sibling.document,
-            ),
-      );
-    }
-    return {
-      kind: "folder",
-      path,
-      uri: this.holderUri(path),
-      folderId: folder.id,
-      name: folder.name,
-      orderPolicy,
-      children,
-    };
-  }
-
-  private copyFileSnapshot(path: string, document: ContextDocument): CopySourceFile {
-    const binary = document.fileType !== null;
-    return {
-      kind: "file",
-      path,
-      uri: this.holderUri(path),
-      documentId: document.id,
-      name: document.name,
-      extension: document.extension,
-      filetype: document.filetype ?? DEFAULT_EDITABLE_FILETYPE,
-      fileType: document.fileType,
-      storageUrl: binary ? document.storageUrl : null,
-      mimeType: binary ? document.mimeType : null,
-      sizeBytes: binary ? document.sizeBytes : null,
-    };
   }
 
   /**

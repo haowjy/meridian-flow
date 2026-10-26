@@ -7,7 +7,6 @@
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import type { CanonicalContextAuthority, OwnerSlip } from "@meridian/contracts/context-uri";
 import {
-  type CopyContextEntriesResult,
   type DeleteContextEntryResult,
   filenameForBinary,
   type ParsedDocumentFilename,
@@ -17,17 +16,13 @@ import {
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
-import {
-  type CopyDestinationHandoff,
-  type CopySourceHandoff,
-  createContextCopyCommand,
-} from "../copy/copy-command.js";
+import type { ContextCopyCommandDeps } from "../copy/copy-command.js";
+import { createContextCopyPort } from "../copy/copy-port.js";
 import { type ContextualOwner, type ProjectOwners, unknownWorkMessage } from "../owner-lookup.js";
 import type { AdapterFault, ContextSchemeAdapter } from "../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../ports/context-command-transaction.js";
 import type {
   ContextBinaryWriteResult,
-  ContextCopyRequest,
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentOptions,
   ContextCreateUntitledDocumentResult,
@@ -72,18 +67,8 @@ export interface ContextPortRouterDeps {
   resolveLineageSource?: (ref: string) => Promise<ContextSourceBinding | null>;
   moveLinks?: ConstructorParameters<typeof ContextTreeMover>[2];
   operationReceipts?: import("./context-operation-receipts.js").ContextOperationReceipts;
-  /**
-   * Copy's read and insert halves: collab's frozen-cut read and copied-block binder, plus
-   * the object store binaries duplicate into. Absent compositions refuse Copy typed.
-   */
-  copy?: {
-    documents: Pick<
-      import("../../collab/index.js").CollabDomain,
-      "readEffectiveBlocks" | "bindCopiedBlocks"
-    >;
-    objectStore: import("../../storage/index.js").ObjectStorePort;
-    release: Pick<import("../../storage/index.js").ObjectRelease, "keys">;
-  };
+  /** Copy's collab cut and bind, and the object store its binaries duplicate into. */
+  copy?: ContextCopyCommandDeps;
   sources: ReadonlyMap<
     ContextScheme,
     ContextSourceBinding | (() => Promise<ContextSourceBinding | null>)
@@ -511,102 +496,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return uri ? Ok({ uri }) : Err({ code: "destination_missing", uri: folderId });
     },
 
-    /**
-     * One Copy. Every address here is canonical (the route resolved the writer's locators),
-     * so this only dispatches: each source's adapter reads its subtree, the destination's
-     * inserts it, and `context/copy/` builds the receipt and the bound content.
-     */
-    async copy(
-      request: ContextCopyRequest,
-    ): Promise<Result<CopyContextEntriesResult, ContextError>> {
-      const receipts = deps.operationReceipts;
-      const commandTransaction = deps.commandTransaction;
-      if (!deps.copy || !receipts || !commandTransaction) {
-        return Err({
-          code: "invalid_operation",
-          uri: request.destinationUri,
-          message: "Copy is not available here",
-        });
-      }
-      const sources: CopySourceHandoff[] = [];
-      for (const source of request.sources) {
-        const resolved = await resolve(source.uri);
-        if (!resolved.ok) return resolved;
-        const { adapter, workScopeId, canonical } = resolved.value;
-        if (!adapter.copy) {
-          return Err({
-            code: "invalid_operation",
-            uri: canonical,
-            message: "This source cannot be copied",
-          });
-        }
-        sources.push({
-          uri: canonical,
-          adapter,
-          path: resolved.value.path,
-          workScopeId,
-          view: source.view ?? { kind: "live" },
-          expected: source.expected,
-          ...(source.stateVector ? { stateVector: source.stateVector } : {}),
-        });
-      }
-
-      const destination = await resolve(request.destinationUri);
-      if (!destination.ok) return destination;
-      if (!destination.value.adapter.copy) {
-        return Err({
-          code: "invalid_operation",
-          uri: destination.value.canonical,
-          message: "This destination cannot take a copy",
-        });
-      }
-      const handoff = (dispatch: Dispatch): CopyDestinationHandoff => ({
-        uri: dispatch.canonical,
-        adapter: dispatch.adapter,
-        dir: dispatch.path.split("/").filter(Boolean),
-        workScopeId: dispatch.workScopeId,
-      });
-
-      const copyCommand = createContextCopyCommand({
-        documentSync: deps.copy.documents,
-        objectStore: deps.copy.objectStore,
-        release: deps.copy.release,
-      });
-      return copyCommand.copy({
-        environment: { receipts, commandTransaction },
-        request,
-        sources,
-        destination: handoff(destination.value),
-        ...(request.destinationParent?.kind === "folder"
-          ? {
-              resolveDestination: async (): Promise<
-                Result<CopyDestinationHandoff, ContextError>
-              > => {
-                const fresh = await deps.resolveDestinationFolder?.(
-                  request.destinationParent?.kind === "folder"
-                    ? request.destinationParent.folderId
-                    : "",
-                );
-                if (!fresh)
-                  return Err({ code: "destination_missing", uri: request.destinationUri });
-                const suffix = request.destinationParent?.createFolders ?? [];
-                const target = await resolve(
-                  suffix.length === 0 ? fresh : [fresh.replace(/\/$/, ""), ...suffix].join("/"),
-                );
-                if (!target.ok)
-                  return Err({ code: "destination_missing", uri: request.destinationUri });
-                if (
-                  request.authorizeDestination &&
-                  !(await request.authorizeDestination(target.value.canonical))
-                ) {
-                  return Err({ code: "permission_denied", uri: target.value.canonical });
-                }
-                return Ok(handoff(target.value));
-              },
-            }
-          : {}),
-      });
-    },
+    /** One Copy (`copy/` reads, binds and writes; this only resolves its addresses). */
+    copy: createContextCopyPort({
+      copy: deps.copy,
+      receipts: deps.operationReceipts,
+      commandTransaction: deps.commandTransaction,
+      resolveDestinationFolder: deps.resolveDestinationFolder,
+      resolve,
+    }),
 
     async stat(uri: string): Promise<Result<FileRef, ContextError>> {
       const resolved = await resolve(uri);
