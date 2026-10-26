@@ -38,7 +38,7 @@ export type AskResolutionPlan =
   | {
       kind: "resume";
       toolResult: AskToolResultPlan;
-      continuation: { kind: "queue" };
+      continuation: AskContinuationPlan;
     }
   | {
       kind: "cancel";
@@ -63,7 +63,16 @@ export interface AskService {
     askId: string;
     submissionId: string;
     text: string;
-  }): Promise<AskAnswerResult>;
+    delivery: "direct" | "background";
+  }): Promise<
+    AskAnswerResult & {
+      continuation?: {
+        correlation: import("@meridian/contracts/spawn").ExecutionReportCorrelation;
+        agentSlug: string | null;
+        name: string | null;
+      };
+    }
+  >;
   expireDue(now?: Date, limit?: number): Promise<number>;
   cancelOpen(threadId: ThreadId, askId: string): Promise<AskAnswerResult>;
   /** Joins a thread lifecycle transaction; claims the ask before its thread lock. */
@@ -242,11 +251,13 @@ export function createAskService(deps: {
     resolution: AskResolution;
     submissionId?: string;
     claimLive?: boolean;
+    continuation?: AskContinuationPlan;
   }): Promise<AskAnswerResult> {
     return deps.repos.transaction(async () => {
       const claimed = await claim(input);
       if (claimed.kind === "finished") return claimed.result;
       const plan = resolutionPlan(input.resolution);
+      if (input.continuation && plan.kind === "resume") plan.continuation = input.continuation;
       // The conditional ask claim precedes the thread lock for every resolver.
       return deps.delivery.withThreadLock(input.threadId, async (producer) => {
         await writeToolResult({
@@ -299,13 +310,35 @@ export function createAskService(deps: {
         };
       }
       if (!input.text.trim()) return { ok: false, code: "invalid_answer", ask: threadAsk(stored) };
-      return resolve({
+      const askingExecution = await deps.repos.executionReports.findByTurn(
+        input.childThreadId,
+        stored.askingTurnId,
+      );
+      if (!askingExecution) throw new Error("Child ask has no admitted execution report");
+      const result = await resolve({
         askId: stored.id,
         threadId: input.childThreadId,
         status: "answered",
         resolution: { kind: "parent", text: input.text },
         submissionId: input.submissionId,
+        continuation: input.delivery === "direct" ? { kind: "none" } : { kind: "queue" },
       });
+      if (!result.ok) return result;
+      return {
+        ...result,
+        continuation: {
+          correlation: {
+            callerThreadId: askingExecution.callerThreadId,
+            callerTurnId: askingExecution.callerTurnId,
+            toolCallId: askingExecution.toolCallId,
+            cardBlockId: askingExecution.cardBlockId,
+            origin: askingExecution.origin,
+            deliveryMode: input.delivery === "direct" ? "direct" : "background_notification",
+          },
+          agentSlug: askingExecution.agentSlug,
+          name: askingExecution.name,
+        },
+      };
     },
     async expireDue(now = new Date(), limit = 100) {
       const due = await deps.repos.asks.listOpenDueBy(now, limit);
