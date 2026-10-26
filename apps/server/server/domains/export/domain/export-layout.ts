@@ -59,7 +59,7 @@ export function buildExportLayout(
     }
     return parent;
   }
-  for (const source of [...sources].sort((a, b) => a.uri.localeCompare(b.uri))) {
+  for (const source of [...sources].sort((a, b) => (a.uri < b.uri ? -1 : a.uri > b.uri ? 1 : 0))) {
     const root = rootFor(source);
     if (root) roots.set(source.uri, root);
   }
