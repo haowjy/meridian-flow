@@ -202,11 +202,15 @@ export type NamespaceAttempt = {
   };
 }[NamespaceRequest["kind"]];
 
-/** An intent a later one waits on, found in the journal of `kind` under `handle`. */
+/**
+ * A placement a later one waits on, named by its admission `order` in the journal of `kind` under
+ * `handle`. The order is the placement's logical identity: a remint replaces its intent but the
+ * replacement inherits the admission, so the reference follows it (`latestAdmittedPlacement`).
+ */
 export type PlacementPredecessor = {
   kind: "resource" | "folder";
   handle: string;
-  intentId: string;
+  order: number;
   /** The later intent's position names this predecessor's subject, so a failure changes its premise. */
   anchor?: true;
 };

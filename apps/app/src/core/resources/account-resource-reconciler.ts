@@ -10,6 +10,7 @@ import {
   type FolderNamespaceRecord,
   folderNeedsBackgroundReconciliation,
   joinReservation,
+  latestAdmittedPlacement,
   type NamespaceIntent,
   type PlacementVerdict,
   pendingJoinTarget,
@@ -254,18 +255,18 @@ export class AccountResourceReconciler {
       const predecessors = intent.admission?.predecessors ?? [];
       if (predecessors.length === 0) return "go";
       this.waiting.set(id, rerun);
-      const found = new Map<string, NamespaceIntent | undefined>();
+      const found = new Map<number, NamespaceIntent | undefined>();
       for (const ref of predecessors) {
         const journal =
           ref.kind === "folder"
             ? await this.ports.metadata.readFolder({ handle: ref.handle })
             : await this.ports.metadata.readResource({ handle: ref.handle });
         found.set(
-          ref.intentId,
-          journal?.intents.find((candidate) => candidate.intentId === ref.intentId),
+          ref.order,
+          journal ? latestAdmittedPlacement(journal.intents, ref.order) : undefined,
         );
       }
-      const verdict = placementDispatchVerdict(intent, (ref) => found.get(ref.intentId));
+      const verdict = placementDispatchVerdict(intent, (ref) => found.get(ref.order));
       if (verdict !== "wait") this.waiting.delete(id);
       return verdict;
     };

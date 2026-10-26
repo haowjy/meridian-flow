@@ -163,17 +163,17 @@ export function capturePlacementAdmission(input: {
       op.intent.admission.scope.some((key) => mine.has(key)),
   );
   const covered = new Set(
-    overlapping.flatMap((op) => op.intent.admission.predecessors.map((p) => p.intentId)),
+    overlapping.flatMap((op) => op.intent.admission.predecessors.map((p) => p.order)),
   );
   const predecessors: PlacementPredecessor[] = overlapping.flatMap((op) => {
     const anchored = op.subject === anchor;
-    return covered.has(op.intent.intentId) && !anchored
+    return covered.has(op.intent.admission.order) && !anchored
       ? []
       : [
           {
             kind: op.kind,
             handle: op.handle,
-            intentId: op.intent.intentId,
+            order: op.intent.admission.order,
             ...(anchored ? { anchor: true as const } : {}),
           },
         ];
@@ -186,6 +186,21 @@ export function capturePlacementAdmission(input: {
 }
 
 export type PlacementVerdict = "go" | "wait" | "repair";
+
+/**
+ * The live intent standing for the placement admitted at `order`: the newest in the journal,
+ * because a remint replaces an intent without ending the placement it carries.
+ */
+export function latestAdmittedPlacement(
+  intents: readonly NamespaceIntent[],
+  order: number,
+): NamespaceIntent | undefined {
+  let latest: NamespaceIntent | undefined;
+  for (const intent of intents)
+    if (intent.admission?.order === order && (!latest || intent.sequence > latest.sequence))
+      latest = intent;
+  return latest;
+}
 
 /**
  * Whether a pending placement may dispatch. It waits while any predecessor is unresolved,
