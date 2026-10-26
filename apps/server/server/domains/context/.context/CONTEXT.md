@@ -226,9 +226,12 @@ one source's tree contributes.
   hidden candidate, hidden-name yield) are skipped on purpose: they are what makes a
   create cost fifteen statements, and the plan has already allocated around every name.
   Projections and link rows are derived after the transaction commits, four documents at a
-  time (`refreshDocumentProjection`); a derivation that fails is logged and the stale sweep
-  recovers it. `metadata.copiedFrom` records the source URI, the version read and that
-  version's revision; folder provenance lives in the receipt.
+  time (`refreshDocumentProjection`), and the answer does not wait for them. So a successful
+  answer means the rows are committed, not derived: until they fill, a model `ls` word count
+  and backlinks miss the copies, and a ref the copy itself owns (`ahead:`) registers then.
+  Reading a copy through its room shows its text immediately. A derivation that fails is
+  logged and the stale sweep recovers it. `metadata.copiedFrom` records the source URI, the
+  version read and that version's revision; folder provenance lives in the receipt.
 - Refusals are typed and recorded on the receipt, so a replay under the same operation ID
   answers the same result: `not_found` or `stale_source` for a gone or changed source,
   `destination_missing` for a destination that no longer exists, `stale_target` for one that
@@ -239,6 +242,10 @@ one source's tree contributes.
   destination. Uploads as the destination (by path or by folder identity), a malformed path
   or state vector, a vector sent for a folder, and a draft view whose chat is not in the
   project are refused by the route before the domain runs, typed and unrecorded.
+- A duplicate request with the same operation ID waits for an in-flight prepare in this
+  process before reading, then answers from the receipt the first attempt recorded (or
+  prepares itself when that attempt recorded none). Another process still re-prepares; only
+  a committed receipt is shared.
 - A client-held source sends its Yjs state vector with a document source (a folder source
   with a vector is a 400). The vector is compared with the room of the view being read, live
   or draft. When the cut lacks updates it names, the read waits up to 2 s for the room to
