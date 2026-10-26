@@ -145,12 +145,13 @@ export function createReportPublisher(deps: {
         const asked =
           report.outcome === "asked" && report.terminalTurnId
             ? (await deps.repos.asks.listByTurnIds([report.terminalTurnId])).find(
-                (candidate) => candidate.status === "open" && candidate.kind === "question",
+                (candidate) => candidate.kind === "question",
               )
             : null;
         if (report.outcome === "asked" && !asked) {
-          throw new Error("Asked execution report has no open question");
+          throw new Error("Asked execution report has no historical question");
         }
+        const actionableAsk = asked?.status === "open" ? asked : null;
         const events: OrchestratorEvent[] = [];
         const cardEvent = await cardProjection(report, "terminal");
         if (cardEvent) events.push(cardEvent);
@@ -170,39 +171,44 @@ export function createReportPublisher(deps: {
           events,
         }));
         if (report.deliveryMode === "background_notification") {
-          const question = asked
-            ? (asked.payload as import("@meridian/contracts/threads").QuestionAskPayload)
+          const question = actionableAsk
+            ? (actionableAsk.payload as import("@meridian/contracts/threads").QuestionAskPayload)
             : null;
-          await producer.enqueue({
-            threadId: callerThreadId,
-            intent: "message",
-            provenance: {
-              kind: "child",
-              threadId: report.childThreadId,
-              handle: report.handle,
-              agentName,
-              ...(asked && question
-                ? {
-                    ask: {
-                      id: asked.id,
-                      question: question.question,
-                      options: question.options.map((option) => option.label),
-                      ...(question.recommended ? { recommended: question.recommended } : {}),
-                    },
-                  }
-                : { reportId: report.executionTurnId, outcome: report.outcome }),
-            },
-            body: {
-              kind: "text",
-              text:
-                asked && question
-                  ? questionText(report.handle, asked.id, question)
-                  : notificationText(report),
-            },
-            idempotencyKey: asked
-              ? `child-question:${asked.id}`
-              : `child-report:${report.executionTurnId}`,
-          });
+          // A delayed asked publication whose question already settled has no
+          // actionable notification. Its ordered card projection still runs,
+          // then the obligation is retired below.
+          if (report.outcome !== "asked" || (actionableAsk && question)) {
+            await producer.enqueue({
+              threadId: callerThreadId,
+              intent: "message",
+              provenance: {
+                kind: "child",
+                threadId: report.childThreadId,
+                handle: report.handle,
+                agentName,
+                ...(actionableAsk && question
+                  ? {
+                      ask: {
+                        id: actionableAsk.id,
+                        question: question.question,
+                        options: question.options.map((option) => option.label),
+                        ...(question.recommended ? { recommended: question.recommended } : {}),
+                      },
+                    }
+                  : { reportId: report.executionTurnId, outcome: report.outcome }),
+              },
+              body: {
+                kind: "text",
+                text:
+                  actionableAsk && question
+                    ? questionText(report.handle, actionableAsk.id, question)
+                    : notificationText(report),
+              },
+              idempotencyKey: actionableAsk
+                ? `child-question:${actionableAsk.id}`
+                : `child-report:${report.executionTurnId}`,
+            });
+          }
         }
         await deps.repos.executionReports.markPublished(
           childThreadId,
