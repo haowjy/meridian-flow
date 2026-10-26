@@ -1,19 +1,21 @@
 /**
  * Parent-first publication B for immutable child execution reports. An asked
- * report whose question was cancelled projects as a cancelled invocation: the
- * report stays immutable, the card and spawn status stop waiting on it.
+ * report whose question resolved with no continuation left to run (withdrawn, or
+ * its continuation dropped by a cancellation) projects as a cancelled invocation:
+ * the report stays immutable, the card and spawn status stop waiting on it.
  */
 
 import { GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
 import { buildInvocationCardContent, parseInvocationCard } from "@meridian/contracts/components";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
-import type { OrchestratorEvent } from "@meridian/contracts/threads";
+import type { OrchestratorEvent, QuestionAskPayload } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { LiveEventWriter, StoredAsk, ThreadRepositories } from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
-import type { DeliveryProducer } from "../loop/runtime-delivery.js";
+import type { DeliveryProducer, RuntimeDelivery } from "../loop/runtime-delivery.js";
+import { readAskContinuation } from "./ask-continuation.js";
 import { invocationAgentName, invocationCardProps } from "./spawn-output.js";
 
 export type PublicationOutcome = "published" | "parked" | "already";
@@ -21,7 +23,7 @@ export type PublicationOutcome = "published" | "parked" | "already";
 export interface ReportPublisher {
   projectRunning(childThreadId: ThreadId, executionTurnId: TurnId): Promise<void>;
   publish(childThreadId: ThreadId, executionTurnId: TurnId): Promise<PublicationOutcome>;
-  /** Finalizes a child parked on a question that was cancelled; a no-op otherwise. */
+  /** Finalizes a child parked on a question whose continuation was cancelled; a no-op otherwise. */
   settleCancelledAsk(childThreadId: ThreadId): Promise<void>;
   sweep(limit: number): Promise<number>;
 }
@@ -29,7 +31,7 @@ export interface ReportPublisher {
 export function createReportPublisher(deps: {
   repos: ThreadRepositories;
   eventWriter: LiveEventWriter;
-  delivery: DeliveryProducer;
+  delivery: DeliveryProducer & Pick<RuntimeDelivery, "selectPending">;
   eventSink: EventSink;
 }): ReportPublisher {
   let cursor: TurnId | undefined;
@@ -44,10 +46,21 @@ export function createReportPublisher(deps: {
     return ask;
   }
 
-  /** What the invocation shows for this report: a withdrawn question ends it cancelled. */
-  function projectedTerminal(report: SavedExecutionReport, ask: StoredAsk | null) {
-    return ask?.status === "cancelled"
-      ? { outcome: "cancelled" as const, terminalAt: ask.resolvedAt?.toISOString() ?? null }
+  /** Whether an asked report's question resolved and nothing will continue it. */
+  async function continuationCancelled(report: SavedExecutionReport, ask: StoredAsk | null) {
+    if (!ask || ask.status === "open" || ask.status === "pending") return false;
+    const continuation = await readAskContinuation(
+      { delivery: deps.delivery, executionReports: deps.repos.executionReports },
+      report.childThreadId,
+      ask.id,
+    );
+    return continuation.kind === "cancelled";
+  }
+
+  /** What the invocation shows for this report: a cancelled continuation ends it cancelled. */
+  async function projectedTerminal(report: SavedExecutionReport, ask: StoredAsk | null) {
+    return (await continuationCancelled(report, ask))
+      ? { outcome: "cancelled" as const, terminalAt: ask?.resolvedAt?.toISOString() ?? null }
       : { outcome: report.outcome, terminalAt: report.terminalAt };
   }
 
@@ -174,9 +187,7 @@ export function createReportPublisher(deps: {
           events,
         }));
         if (report.deliveryMode === "background_notification") {
-          const question = actionableAsk
-            ? (actionableAsk.payload as import("@meridian/contracts/threads").QuestionAskPayload)
-            : null;
+          const question = actionableAsk ? (actionableAsk.payload as QuestionAskPayload) : null;
           // A delayed asked publication whose question already settled has no
           // actionable notification. Its ordered card projection still runs,
           // then the obligation is retired below.
@@ -228,7 +239,7 @@ export function createReportPublisher(deps: {
     asked: StoredAsk | null,
     callerThreadId: ThreadId,
   ): Promise<OrchestratorEvent[]> {
-    const terminal = projectedTerminal(report, asked);
+    const terminal = await projectedTerminal(report, asked);
     const events: OrchestratorEvent[] = [];
     const cardEvent = await cardProjection(report, "terminal", terminal);
     if (cardEvent) events.push(cardEvent);
@@ -247,10 +258,10 @@ export function createReportPublisher(deps: {
   }
 
   async function settleCancelledAsk(childThreadId: ThreadId): Promise<void> {
-    const report = (await deps.repos.executionReports.listFinishedByChild(childThreadId)).at(-1);
+    const report = await deps.repos.executionReports.findLatestFinishedByChild(childThreadId);
     if (report?.outcome !== "asked") return;
     const asked = await askedQuestion(report);
-    if (asked?.status !== "cancelled") return;
+    if (!(await continuationCancelled(report, asked))) return;
     if (report.origin === "spawn")
       await deps.repos.threads.updateSpawnLifecycle(childThreadId, { spawnStatus: "cancelled" });
     // An unpublished asked report takes the same projection through its obligation.
@@ -303,11 +314,7 @@ export function createReportPublisher(deps: {
   return { projectRunning, publish, settleCancelledAsk, sweep };
 }
 
-function questionText(
-  handle: string,
-  askId: string,
-  payload: import("@meridian/contracts/threads").QuestionAskPayload,
-): string {
+function questionText(handle: string, askId: string, payload: QuestionAskPayload): string {
   const options = payload.options.map((option) => option.label).join(", ");
   return `@${handle} asks (ask ${askId}): ${payload.question} (options: ${options})`;
 }

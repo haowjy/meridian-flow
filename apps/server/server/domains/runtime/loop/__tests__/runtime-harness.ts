@@ -170,6 +170,18 @@ export function createRuntimeHarness(
         return false;
       },
     },
+    // No subagent threads: nothing below a run to cancel or publish.
+    lineage: {
+      async targets() {
+        return [];
+      },
+      async withdraw() {},
+      async settle() {},
+    },
+    reports: {
+      async projectRunning() {},
+      async publish() {},
+    },
     delivery:
       overrides.delivery ??
       createInMemoryRuntimeDelivery({

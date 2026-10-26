@@ -213,6 +213,8 @@ export interface ExecutionReportRepository {
   /** Latest admitted execution per child, ordered from report admission truth. */
   listLatestByChildren(childThreadIds: readonly ThreadId[]): Promise<LatestChildExecution[]>;
   listFinishedByChild(childThreadId: ThreadId): Promise<SavedExecutionReport[]>;
+  /** The last of `listFinishedByChild`, read alone. */
+  findLatestFinishedByChild(childThreadId: ThreadId): Promise<SavedExecutionReport | null>;
   /** Bounded metadata for admitted executions still lacking terminal truth. */
   listUnfinalized(
     limit: number,

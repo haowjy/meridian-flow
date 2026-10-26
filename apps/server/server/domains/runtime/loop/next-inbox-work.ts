@@ -78,7 +78,12 @@ function isControl(row: InboxMessage): row is ControlMessage {
   return row.intent === "control" && row.body.kind !== "ask_resolved";
 }
 
-function isAskResolved(row: InboxMessage): row is AskResolvedMessage {
+/**
+ * A resolved ask's continuation obligation. The row is pending exactly while the
+ * obligation is outstanding: until its continuation is admitted (a forwarded ask's,
+ * until its relay result is written), or until a cancellation drops it.
+ */
+export function isAskResolved(row: InboxMessage): row is AskResolvedMessage {
   return row.intent === "control" && row.body.kind === "ask_resolved";
 }
 

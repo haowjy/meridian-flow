@@ -1075,6 +1075,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       runClaim,
       delivery,
       asks,
+      openAsks: ports.threadRepos.asks,
       publisher: reportPublisher,
       refreshActivity: refreshSubagentActivity,
     }),
@@ -1707,7 +1708,6 @@ export function createInMemoryAppServices(): AppServices {
       async cancel() {
         return "not_found" as const;
       },
-      async cancelLineage() {},
     },
     async stopThreadRun() {},
     runStarter,
