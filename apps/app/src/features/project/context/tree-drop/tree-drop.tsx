@@ -51,8 +51,9 @@ export type EntriesRoute = {
   drop(target: TreeDropTarget): void;
 };
 
+/** Desktop files: the verdict is `EntriesVerdict`'s shape too, so the hint says what the drop will do. */
 export type FilesRoute = {
-  accepts(target: TreeDropTarget): boolean;
+  verdict(target: TreeDropTarget): EntriesVerdict | null;
   drop(target: TreeDropTarget, items: DroppedItems): void;
 };
 
@@ -265,8 +266,7 @@ export function useTreeDropTarget(
   const verdictFor = useCallback(
     (kind: DragPayloadKind, current: TreeDropTarget): EntriesVerdict | null => {
       const routes = latest.current.scope?.routes;
-      if (kind === "entries") return routes?.entries?.verdict(current) ?? null;
-      return routes?.files?.accepts(current) ? { kind: "accept", label: "" } : null;
+      return (kind === "entries" ? routes?.entries : routes?.files)?.verdict(current) ?? null;
     },
     [],
   );

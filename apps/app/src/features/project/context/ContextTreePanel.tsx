@@ -82,7 +82,10 @@ export function ContextTreePanel(props: ContextTreePanelProps) {
   const dropImport = imports?.drop;
   const files = useMemo<FilesRoute>(
     () => ({
-      accepts: (target) => destinationOf(target.scheme, target.folder) !== null,
+      verdict: (target) => {
+        const destination = destinationOf(target.scheme, target.folder);
+        return destination ? { kind: "accept", label: t`Import into ${destination.name}` } : null;
+      },
       drop: (target, items) => {
         const destination = destinationOf(target.scheme, target.folder);
         if (destination) dropImport?.(destination, items);

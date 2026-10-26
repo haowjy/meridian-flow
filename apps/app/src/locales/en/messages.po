@@ -2880,6 +2880,11 @@ msgstr "Import discarded"
 msgid "Import in progress. Show activity"
 msgstr "Import in progress. Show activity"
 
+#. placeholder {0}: destination.name
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Import into {0}"
+msgstr "Import into {0}"
+
 #: src/features/import/ImportToasts.tsx
 msgid "Import without them"
 msgstr "Import without them"
