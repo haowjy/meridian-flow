@@ -68,9 +68,10 @@ the resource handle, persistence database, Y.Doc, editor ancestry, tab instance,
 cursor, and undo history.
 
 `contextTabFromResource` is the single optimistic tab projection. An unnamed
-local resource is `new`; an explicitly filed local resource immediately becomes
-a route-owning `tracked` tab even while offline; acknowledgement keeps it tracked
-and preserves whether its name is still provisional. Projection reconciliation
+local resource (`materialization.unnamed`) is `new`; an explicitly filed local
+resource immediately becomes a route-owning `tracked` tab even while offline;
+acknowledgement keeps it tracked, and from then on the catalog's `provisionalName`
+says whether its name is still provisional. Projection reconciliation
 targets the resource handle, so a delayed old document ID cannot replace a
 reopened member. Closing a tab removes only browser-local membership. It never
 deletes the durable resource.

@@ -300,9 +300,11 @@ Bare HTTP or network failures still need receipt evidence and stay replayable.
 The journal accepts a refusal on every request kind, so a request kind added later
 (folder create, Copy) settles the same way and only has to say what its identity is.
 
-A refused first placement is the first placement refused. How the server materializes an
-identity is a property of the resource (`ResourceDescriptor.materialization`: an untitled
-document, or a Copy), and the placement is always `set-location` / `set-folder-location`.
+A refused first placement is the first placement refused. How the server materializes a
+document identity is a property of the resource (`ResourceDescriptor.materialization`: an
+untitled document the server names, with `unnamed` for the editor's create), and the placement
+is always `set-location` / `set-folder-location`, naming its destination. Copy is one operation
+over several roots and does not ride this seam; its client journal is a separate decision.
 A document the server holds no row for sends a `create`; once it holds one, the same
 intent sends a move (`prepareNamespaceAttempt`). The intent is `needs-repair`, never
 resent and not woken by the 30-second retry; the document stays local (lifecycle
