@@ -77,6 +77,16 @@ which returns a cancelled result. It wakes on the child's committed thread event
 The report publisher uses the same reader: an asked invocation whose question
 resolved with its continuation cancelled ends cancelled, like a withdrawn question.
 
+Two delivery limits follow from one obligation per ask:
+
+- A forwarded parent's rerun notifies its own parent twice. The crashed
+  continuation is stale-settled `failed (orphaned)` and published, then the rerun
+  publishes its own report, and a `background_notification` parent runs a turn for
+  each. The card ends on the rerun's report.
+- A `direct` continuation whose parent call died with the parent's own run (not a
+  relay crash, which reruns) is run by the wake sweep with `deliveryMode = direct`.
+  Its report updates the card but never reaches the parent model.
+
 ## Cards, reports, and activity
 
 Cards retain the bound Agent identity, parent turn, child thread, delivery mode,
