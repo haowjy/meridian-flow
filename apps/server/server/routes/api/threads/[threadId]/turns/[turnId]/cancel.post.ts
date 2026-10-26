@@ -18,6 +18,7 @@ export default defineEventHandler(async (event) => {
     if (ask?.askingTurnId === turnId && (await app.asks.cancelOpen(thread.id, ask.id)).ok)
       status = "cancelled";
   }
+  if (status === "cancelled") await app.asks.cancelForThreadLifecycle(thread.id);
 
   return { threadId: thread.id, turnId, status };
 });
