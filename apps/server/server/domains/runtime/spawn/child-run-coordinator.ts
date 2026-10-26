@@ -432,8 +432,19 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         askId: request.boundAskId,
         submissionId: `parent-message:${request.toolCallId}`,
         text: request.prompt,
+        delivery: background ? "background" : "direct",
       });
       if (answered.ok) {
+        if (!background) {
+          if (!answered.continuation)
+            throw new Error("Direct parent answer has no continuation identity");
+          const prepared = await prepareForegroundMessage(request, authorized.target);
+          if ("status" in prepared) return prepared;
+          return driver.drive(prepared, {
+            ...request,
+            reportCorrelation: answered.continuation.correlation,
+          });
+        }
         const binding = await deps.agentRevisions.readThreadBinding(authorized.target.id);
         return {
           status: "background",
