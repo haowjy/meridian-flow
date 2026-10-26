@@ -12,8 +12,8 @@
   not the document journal; folders do not
   have document resource handles or Yjs content sessions.
 
-- Rejected `submitted` namespace requests are retried on every journal change and
-  every 30 s. Offline with two tabs, about a dozen identical retries ran in 85 s.
+- `submitted` namespace requests with no answer (offline, timeouts) are retried on every
+  journal change and every 30 s. Offline with two tabs, about a dozen identical retries ran in 85 s.
   They carry one operation id, so they are harmless; back the retry off if the
   chatter shows up in a profile or the server log. A first create with the network
   down sends twice within a few milliseconds: committing the prepared attempt

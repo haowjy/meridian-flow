@@ -289,10 +289,14 @@ resent and not woken by the 30-second retry; the document stays local (lifecycle
 exact content. Queued moves behind it are cancelled (`resolveRefusedLocationChain`) and the
 newest one is offered back as the repair destination (`namespaceRepairDestination`). The
 writer repairs it by placing it: `planResourceLocation` supersedes the refused create
-and files a new create under the same document id at the picked destination (no remint,
-since the server never held the id). Deleting it settles locally (`resourceNeverAccepted`:
+and files a new create under the same document id at the picked destination, with its
+sibling `position` (no remint: the create route answers an id it holds before it checks
+authority, so a final refusal means the server holds none; an id held where the writer can
+no longer edit answers `conflict`). Deleting it settles locally (`resourceNeverAccepted`:
 local, unplaced, every answered request refused), including a delete queued behind the
-in-flight create when the refusal arrives (`prepareNamespaceAttempt`). Only a create the
+in-flight create when the refusal arrives (`prepareNamespaceAttempt`). The local deletion keeps
+the exact content for `LOCAL_DELETION_UNDO_MS` (`cleanup.notBefore`); `planLocalDeletionUndo`
+supersedes it and sends the create again inside the window. Only a create the
 server answered `conflict` or `joined` is the runner's to repair (`createAwaitsRemint`): it
 is reminted under a new id and its queued work moves with it.
 

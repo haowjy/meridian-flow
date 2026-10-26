@@ -38,7 +38,8 @@ exports rather than implementation modules.
   against the request's identity (`namespaceRequestId`: a move's or delete's
   operation id, a create's document id). Network failures remain replayable
   until receipt evidence exists. A refused create leaves the document local and
-  repairable, never deleted.
+  repairable, never deleted. Deleting a document the server never accepted keeps its
+  exact content until an Undo window closes (`cleanup.notBefore`).
 - A confirmed deletion is versioned. Only strictly newer evidence can restore;
   stale catalog pages, exact-ID presence where disallowed, and scoped absence
   never revive or authorize purge.
