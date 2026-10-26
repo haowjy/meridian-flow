@@ -9,7 +9,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { occurrenceIdentity, spelledLinks, walkLinkOccurrences } from "@meridian/markup/links";
+import { settledAheads, spelledLinks } from "@meridian/markup/links";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -24,30 +24,13 @@ import { documentRevision, versioned } from "./document-revision.js";
 import type { DraftPullService } from "./draft-pulls.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
-import type { DocumentLinkScopes, HolderLinkScope } from "./ports/document-link-scope.js";
+import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 type EffectiveReadInput = {
   documentId: DocumentId;
   threadId?: ThreadId | null;
   responseId?: string | null;
 } & EffectiveReadVersion;
-
-/** Where each `ahead:` ref in these blocks points now; only a settled ref names a document. */
-function aheadSettlements(
-  blocks: readonly import("@meridian/markup").PMNode[],
-  scope: HolderLinkScope,
-): ReadonlyMap<string, string> {
-  const settled = new Map<string, string>();
-  for (const occurrence of walkLinkOccurrences(blocks)) {
-    const identity = occurrenceIdentity(occurrence);
-    if (!identity?.startsWith("ahead:")) continue;
-    const resolution = scope.resolve({ ref: identity, href: occurrence.attrs.href });
-    if (resolution.kind === "document" && resolution.document) {
-      settled.set(identity, resolution.document.documentId);
-    }
-  }
-  return settled;
-}
 
 export function createEffectiveDocumentReader(input: {
   drafts: ApplicationDraftStore;
@@ -136,7 +119,7 @@ export function createEffectiveDocumentReader(input: {
           revision: documentRevision(doc, scope),
           holderUri: scope.holder.uri,
           stateVector: Y.encodeStateVector(doc),
-          aheadSettlements: aheadSettlements(blocks, scope),
+          aheadSettlements: settledAheads(blocks, scope),
         };
       });
     },

@@ -36,7 +36,7 @@ import {
 } from "@meridian/contracts";
 import type { Node as PMNode } from "prosemirror-model";
 
-import { walkLinkOccurrences } from "./link-occurrences.js";
+import { occurrenceIdentity, walkLinkOccurrences } from "./link-occurrences.js";
 import type { DocumentLinkScope } from "./types.js";
 
 /** One holder's synchronous view over a catalog. */
@@ -273,6 +273,27 @@ export function writtenAddresses(
     if (target) out.set(`${target.kind}:${target.uri}`, target);
   }
   return [...out.values()];
+}
+
+/**
+ * Where each `ahead:` ref in `blocks` points now. Only a settled ref names a document: a copy
+ * reads these from the same scope that spelled its cut, so it can remap a settled ref like a
+ * `doc:` one.
+ */
+export function settledAheads(
+  blocks: readonly PMNode[],
+  scope: Pick<HolderLinkScope, "resolve">,
+): ReadonlyMap<string, string> {
+  const settled = new Map<string, string>();
+  for (const occurrence of walkLinkOccurrences(blocks)) {
+    const identity = occurrenceIdentity(occurrence);
+    if (!identity?.startsWith("ahead:")) continue;
+    const resolution = scope.resolve({ ref: identity, href: occurrence.attrs.href });
+    if (resolution.kind === "document" && resolution.document) {
+      settled.set(identity, resolution.document.documentId);
+    }
+  }
+  return settled;
 }
 
 /** A written image/figure source as a decoded document address, or null. */
